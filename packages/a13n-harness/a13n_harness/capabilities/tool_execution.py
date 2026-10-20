@@ -50,7 +50,7 @@ class ToolExecutionCapability(AbstractModelContextCapability):
         return FunctionToolset(
             [tool_execution_info, tool_execution_result, tool_execution_wait, tool_execution_cancel],
             id="tool-execution",
-            metadata={TOOL_EXECUTION_METADATA_KEY: "foreground"},
+            metadata={TOOL_EXECUTION_METADATA_KEY: "control"},
         )
 
     async def wrap_model_context(
@@ -106,6 +106,10 @@ async def tool_execution_info(
 async def _result(ctx: RunContext[AgentContext], execution: StoredToolExecution | None) -> Any:
     if execution is None:
         return {"status": "unavailable"}
+    if execution.retry_prompt is not None:
+        # The original call has already handed off. Return its correction as data
+        # rather than charging the retrieval tool's native retry budget.
+        return {**execution.record.model_dump(mode="json"), "retry_prompt": execution.retry_prompt}
     if execution.record.result_available:
         assert ctx.tool_call_id is not None
         paths: dict[str, str] = {}

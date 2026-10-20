@@ -305,7 +305,7 @@ defaults:
 | `tools.interaction_timeout_seconds`       | `120`    | 每次 TUI 交互或完整 WebUI 根决策批次的正有限秒数；不限制模型执行 |
 | `tools.enable_codeact`                    | `true`   | 包含原生 CodeAct runner 和显式 `store`/`load`/`forget` 状态工具  |
 | `tools.execution.mode`                    | `inline` | 等待完成；显式选择 `auto` 后，支持的工具超过前台等待时间就交接   |
-| `tools.execution.foreground_wait_seconds` | `1.0`    | `auto` 模式下的非负有限等待秒数，也控制 shell 的首次等待         |
+| `tools.execution.foreground_wait_seconds` | `5.0`    | 自动工具交接和原生 shell 调用的非负有限等待秒数                  |
 | `subagents.include`                       | `[]`     | 有序的内置名称：`code-reviewer`、`executor`、`explorer`          |
 
 设置向导将工具开关和交互超时显式写入所选根 YAML（默认 `~/.a13n-harness-ui/a13n-harness-ui.yaml`），用上述默认值补齐省略字段，保留现有值。
@@ -314,7 +314,7 @@ defaults:
 
 全部内置角色使用 `[code-reviewer, executor, explorer]`；部分选择可用 `[explorer]` 等。高级设置提供全部或不选；常规设置包含全部三种。定义仍由包维护；包含选择不会写入 `subagents/*.md`。[内置 subagent](agents-and-subagents.md#built-in-subagents)说明继承和名称冲突。
 
-Harness UI 默认开启即时 steering，并等待工具完成。自动后台执行需显式开启。两项都通过全局配置切换，输入框直接使用所选策略，不再逐条选择：
+Harness UI 默认使用即时 steering 和 inline 工具执行。选择 `auto` 后，支持的工具调用会在前台等待到期后转入后台。这些全局设置适用于根级和子级 Run：
 
 ```yaml
 input:
@@ -322,10 +322,14 @@ input:
 tools:
   execution:
     mode: inline           # auto enables timeout-based backgrounding
-    foreground_wait_seconds: 1.0
+    foreground_wait_seconds: 5.0
 ```
 
-工具默认等待结果，直到即时 steering 交接支持的调用，或 `auto` 模式的前台等待时间到期。交接后的调用保留原始配置，只执行一次；CodeAct 以整个程序为单位转到后台。等待时间不是执行期限。`input.steering_mode` 支持 `immediate`（默认）或 `queued`，作用于后续根级和子级 steering 请求。它与超时后台执行独立：即使在 `inline` 模式下，即时 steering 也可交接支持的工具。执行策略在每次 Run 开始时捕获。支持进程的 shell 仍返回普通进程引用，不会重复创建工具执行记录。记录和保留结果只存在于当前 App 进程及其有界保留策略内。状态与取消操作见 [WebUI](webui.md#tool-executions-and-immediate-steering)。
+每次 Run 捕获自己的工具执行策略。`inline` 模式等待通用工具调用的结果；`auto` 模式在前台等待到期后，为支持的调用返回执行回执。即时 steering 可以提前释放两种模式的等待。原始调用按捕获的配置继续执行，CodeAct 以整个程序为单位保留执行。
+
+原生进程 shell 在两种模式下使用相同的等待时长：默认五秒后，仍在运行的命令返回 `process_id`。这项能力也可在未绑定通用执行 runtime 时使用。观察和控制操作见 [shell 执行](../a13n-harness/environments.md)。
+
+`input.steering_mode` 为后续用户输入选择即时交接或排队送达。App 在内存中保留工具记录和结果，并限制已完成历史的数量。状态与取消操作见 [WebUI](webui.md#tool-executions-and-immediate-steering)。
 
 ## 优先级与修改生效时间
 

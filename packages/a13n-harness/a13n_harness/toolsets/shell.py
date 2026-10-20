@@ -257,7 +257,7 @@ class ShellToolset:
         execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: _MountAlias = None,
     ) -> ShellExecToolResult:
-        """Run a command; return a Run-local process reference when auto policy or steering releases a live wait."""
+        """Run a command for the Host-configured wait, then return output and a process reference if still live."""
         try:
             request = self._command_request(
                 command,
@@ -288,11 +288,7 @@ class ShellToolset:
             result = await self._process_controller.start(
                 request,
                 alias=alias,
-                yield_time_seconds=(
-                    ctx.deps._tool_executions.config.foreground_wait_seconds
-                    if ctx.deps._tool_executions.config.mode == "auto"
-                    else None
-                ),
+                yield_time_seconds=ctx.deps._tool_executions.config.foreground_wait_seconds,
                 expected_mount_id=mount_id,
             )
             if ctx.tool_call_id is not None:
@@ -442,9 +438,7 @@ class ShellToolset:
             function,
             name=name,
             metadata={
-                TOOL_EXECUTION_METADATA_KEY: self._execution_mode
-                if tool_id == "environment.shell_exec"
-                else "foreground"
+                TOOL_EXECUTION_METADATA_KEY: self._execution_mode if tool_id == "environment.shell_exec" else "control"
             },
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,

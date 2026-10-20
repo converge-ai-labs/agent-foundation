@@ -17,7 +17,7 @@ from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import CallToolsNode, RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, AgentNode, CapabilityOrdering, ValidatedToolArgs
-from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
@@ -399,7 +399,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         call_id = ctx.tool_call_id or name
         unsupported = (
             not _OWNED_TOOL_EXECUTION.get()
-            and (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY) != "foreground"
+            and (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY) != "control"
         )
         if unsupported:
             ctx.deps._tool_executions.unsupported_calls.add(call_id)
@@ -599,12 +599,12 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
         if callable(mode):
             mode = mode(tool_args)
-        if mode in {"foreground", "process"}:
+        if mode in {"control", "process"}:
             state.unsupported_calls.discard(ctx.tool_call_id or tool.tool_def.name)
         sequential = tool.tool_def.sequential or (
             ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
         )
-        if _OWNED_TOOL_EXECUTION.get() or runtime is None or not state.enabled or mode == "foreground":
+        if _OWNED_TOOL_EXECUTION.get() or runtime is None or not state.enabled or mode == "control":
             return await operation()
         if self._scope is None or mode != "owned":
             return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)
@@ -646,6 +646,8 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             result = await runtime.result(ctx.deps.thread_id, record.execution_id)
         if result is not None and result.record.result_available:
             return state.delivered_result(ctx.tool_call_id, result.record, result.result)
+        if result is not None and result.retry_prompt is not None:
+            raise ModelRetry(result.retry_prompt)
         if result is not None and result.record.terminal:
             raise ToolFailed(result.record.error or f"Tool execution {result.record.status}.")
         runtime.release_foreground(ctx.deps.thread_id, record.execution_id)

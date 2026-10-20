@@ -305,7 +305,7 @@ Display defaults are read at startup. `--display` and live `/mode` override the 
 | `tools.interaction_timeout_seconds`       | `120`    | Positive finite seconds per TUI interaction or complete WebUI root decision batch; not model execution |
 | `tools.enable_codeact`                    | `true`   | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                        |
 | `tools.execution.mode`                    | `inline` | Wait for completion; opt into `auto` to release eligible work after the foreground wait                |
-| `tools.execution.foreground_wait_seconds` | `1.0`    | Nonnegative finite wait in seconds for `auto` mode, including the initial shell wait                   |
+| `tools.execution.foreground_wait_seconds` | `5.0`    | Nonnegative finite wait in seconds for automatic tool handoff and native shell calls                   |
 | `subagents.include`                       | `[]`     | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                       |
 
 Setup writes the tool switches and interaction timeout explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
@@ -314,7 +314,7 @@ Global disabled tool switches take precedence over explicit Agent Capability sel
 
 For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, for example, `[explorer]`. Advanced setup offers all or none; normal setup includes all three. Definitions remain package-owned; inclusion does not write `subagents/*.md`. [Built-in subagents](agents-and-subagents.md#built-in-subagents) explains inheritance and name conflicts.
 
-Harness UI enables immediate steering and waits for tool completion by default. Automatic background execution is opt-in. Configure both globally; the composer uses the selected policy without a per-message switch:
+Harness UI uses immediate steering and inline tool execution by default. Select `auto` to let eligible tool calls continue in the background after the foreground wait. These global settings apply to root and child Runs:
 
 ```yaml
 input:
@@ -322,10 +322,14 @@ input:
 tools:
   execution:
     mode: inline           # auto enables timeout-based backgrounding
-    foreground_wait_seconds: 1.0
+    foreground_wait_seconds: 5.0
 ```
 
-Tools wait for their results until immediate steering releases supported work, or the foreground wait expires in `auto` mode. Released calls continue once under their original configuration; CodeAct runs in the background as a whole program. The wait is not an execution deadline. `input.steering_mode` accepts `immediate` (default) or `queued` and applies to subsequent root and child steering requests. It is independent of timeout-based backgrounding: immediate steering can release a supported tool even in `inline` mode. Execution policy is captured for each Run. Process-backed shell calls keep their normal process references and do not create duplicate tool executions. Records and retained results last only for the running App and its bounded retention policy. See [WebUI](webui.md#tool-executions-and-immediate-steering) for status and cancellation.
+Each Run captures its tool execution policy. In `inline` mode, generic tool calls wait for their results; in `auto` mode, eligible calls return an execution receipt after the foreground wait. Immediate steering can release either wait early. The original call continues with its captured configuration, and CodeAct retains the whole program as one execution.
+
+Native process-backed shell calls use the same wait duration in both modes: after five seconds by default, a running command returns a `process_id`. This behavior also works without a generic execution runtime. See [shell execution](../a13n-harness/environments.md) for observation and process control.
+
+`input.steering_mode` selects immediate handoff or queued delivery for subsequent user input. The App retains tool records and results in memory with bounded completed-history retention. See [WebUI](webui.md#tool-executions-and-immediate-steering) for status and cancellation.
 
 ## What wins, and when edits apply
 

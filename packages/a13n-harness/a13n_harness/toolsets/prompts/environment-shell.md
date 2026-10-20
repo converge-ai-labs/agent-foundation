@@ -1,6 +1,6 @@
 Check the current Environment context before relying on paths. Establish the shell dialect before using platform-specific syntax; a mount name or path spelling is not evidence of the operating system.
 
-Use `shell_exec` for shell commands. The Host configures waiting: inline mode waits for process termination; auto mode releases the wait after a bounded interval. Immediate steering can also release a supported wait. On a process-capable Environment, completed output returns directly when possible; a released live wait returns a Run-local `process_id` with explicit stdout and stderr offsets. Do not look for a background mode or reissue a command that already returned a process reference.
+Use `shell_exec` for shell commands. On a process-capable Environment it waits up to the Host-configured interval (five seconds by default), then returns completed output or a Run-local `process_id` with explicit stdout and stderr offsets. This native process wait works independently of the generic tool execution mode. Immediate steering can release a supported wait early. Do not look for a background mode or reissue a command that already returned a process reference.
 
 Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page. Set `timeout_seconds=0` for a non-blocking poll. Reads are non-consuming, so repeating the same offsets is safe.
 

@@ -180,7 +180,9 @@ capabilities = (
 | `shell_input`  | 写入 UTF-8 stdin，按需关闭 stdin，不读取输出                     |
 | `shell_signal` | 请求支持的 `interrupt`、`terminate` 或 `kill` 控制，不读取输出   |
 
-`shell_exec` 的 `execution_timeout_seconds` 请求由 provider 实施的硬执行期限。原生 E2B 等 provider 无法实施时，会在启动前拒绝。共享的 `ToolExecutionConfig` 默认为 `inline`：`shell_exec` 等待进程终止，除非即时 steering 释放等待。显式开启的 `auto` 模式使用 `foreground_wait_seconds`（默认一秒）。该时长和 `shell_wait.timeout_seconds` 只限制等待。`shell_exec` 不再暴露由模型选择的 yield 时长。支持进程的调用仍返回现有进程引用，即时 steering 后也是如此，不会重复创建通用工具执行记录。没有后台模式标志；`shell_info` 负责列表和状态，`shell_signal` 负责 kill。
+在支持进程的 Environment 中，`shell_exec` 按 `ToolExecutionConfig.foreground_wait_seconds` 等待，默认五秒。命令已完成时返回结果；仍在运行时返回当前输出和 `process_id`，供后续查询、等待和控制。这项原生进程能力适用于两种工具执行模式，也可在未绑定 `ToolExecutionRuntime` 时使用。即时 steering 可以提前释放等待，并返回同一个进程引用。
+
+后续等待时长由 `shell_wait.timeout_seconds` 指定。需要硬执行期限时，向 `shell_exec` 传入 `execution_timeout_seconds`，由选定的 Provider 实施。原生 E2B 等不支持该期限的 Provider 会在启动命令前拒绝请求。
 
 只有所选挂载支持进程列表时，才使用 `shell_info(alias="workspace", limit=50)` 发现可恢复的运行命令。Direct Local 支持检查，不支持发现：其 `shell_info` schema 要求本次执行 `shell_exec` 返回的 `process_id`，不提供 `limit`。`shell_info(process_id=...)` 只检查，不附加、读取、刷新或重置输出。列表和检查分别授权。`alias` 是环境上下文中的已有挂载名，不是命令/进程标签；省略时选择默认挂载。未知或冲突别名会失败，不会重新指定命令或引用的目标。列表绝不公开原生 PID、任意参数或环境变量。
 

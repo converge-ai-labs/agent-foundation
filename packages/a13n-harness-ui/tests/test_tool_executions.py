@@ -582,7 +582,7 @@ async def test_tool_wait_policy_is_captured_and_old_compositions_default_inline(
     assert restored == captured
     path.write_text('schema_version: "1"\n')
     defaults = _resolve(await load_harness_ui_configuration(path)).tool_execution
-    assert defaults.mode == "inline" and defaults.foreground_wait_seconds == 1.0
+    assert defaults.mode == "inline" and defaults.foreground_wait_seconds == 5.0
     rebuilt = AgentReconstructor().reconstruct(restored, subagent_operator=_UnusedOperator())
     capability = next(
         item for item in rebuilt.executable.definition.capabilities if isinstance(item, ToolExecutionCapability)

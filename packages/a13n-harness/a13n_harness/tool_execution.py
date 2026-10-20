@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.exceptions import ModelRetry, ToolFailed
 
 _OWNED_TOOL_EXECUTION: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_owned_tool_execution", default=False)
 
@@ -28,7 +28,7 @@ class ToolExecutionConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     mode: Literal["inline", "auto"] = "inline"
-    foreground_wait_seconds: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+    foreground_wait_seconds: float = Field(default=5.0, ge=0, allow_inf_nan=False)
 
 
 class ToolExecutionRecord(BaseModel):
@@ -75,6 +75,7 @@ class StoredToolExecution:
     record: ToolExecutionRecord
     result: Any = None
     artifacts: tuple[ToolExecutionArtifact, ...] = ()
+    retry_prompt: str | None = None
 
 
 class ToolExecutionStore(Protocol):
@@ -119,9 +120,12 @@ class MemoryToolExecutionStore:
 
     async def save(self, execution: StoredToolExecution) -> None:
         self._executions[execution.record.execution_id] = deepcopy(execution)
-        completed = [key for key, value in self._executions.items() if value.record.terminal]
-        for key in completed[: -self._max_completed]:
-            del self._executions[key]
+        completed = sorted(
+            (value.record for value in self._executions.values() if value.record.terminal),
+            key=lambda record: record.completed_at or record.created_at,
+        )
+        for record in completed[: -self._max_completed]:
+            del self._executions[record.execution_id]
 
     async def get(self, thread_id: str, execution_id: str) -> StoredToolExecution | None:
         execution = self._executions.get(execution_id)
@@ -263,6 +267,7 @@ class ToolExecutionRuntime:
         result: Any = None
         status: Literal["succeeded", "failed", "cancelled"] = "failed"
         error: str | None = None
+        retry_prompt: str | None = None
         try:
             await self.store.save(StoredToolExecution(live.record))
             if live.cancel_requested:
@@ -274,6 +279,9 @@ class ToolExecutionRuntime:
             status = "succeeded"
         except asyncio.CancelledError:
             status = "cancelled"
+        except ModelRetry as exc:
+            retry_prompt = exc.message
+            error = exc.message
         except Exception as exc:
             # Provider exceptions can contain credentials or raw response bodies.
             error = str(exc) if isinstance(exc, ToolFailed) else "Tool execution failed."
@@ -285,9 +293,10 @@ class ToolExecutionRuntime:
                 try:
                     await release()
                 except asyncio.CancelledError:
-                    status = "cancelled"
+                    status, retry_prompt = "cancelled", None
                 except Exception:
                     status, error = "failed", "Tool execution resource cleanup failed."
+                    retry_prompt = None
             self._release_slot(live.record.thread_id, slot)
             terminal = live.record.model_copy(
                 update={
@@ -301,6 +310,7 @@ class ToolExecutionRuntime:
                 terminal,
                 result if status == "succeeded" else None,
                 tuple(artifacts) if status == "succeeded" else (),
+                retry_prompt=retry_prompt,
             )
             try:
                 await self.store.save(saved)

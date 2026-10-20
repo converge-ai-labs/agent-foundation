@@ -568,52 +568,48 @@ async def test_cancellation_during_admission_settles_original_process(
         assert (await environment.processes.inspect(entry.handle)).status.phase == "running"
 
 
+@pytest.mark.parametrize("mode", ["inline", "auto"])
 @pytest.mark.parametrize("wait_seconds", [None, 0, 0.125])
-async def test_shell_uses_common_foreground_wait_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wait_seconds):
+async def test_shell_uses_common_foreground_wait_policy(tmp_path: Path, monkeypatch, mode, wait_seconds):
     async with _bound_process_environment(tmp_path) as environment:
         toolset = ShellToolset(environment)
         ctx = _ctx()
         config = (
-            ToolExecutionConfig()
+            ToolExecutionConfig(mode=mode)
             if wait_seconds is None
-            else ToolExecutionConfig(mode="auto", foreground_wait_seconds=wait_seconds)
+            else ToolExecutionConfig(mode=mode, foreground_wait_seconds=wait_seconds)
         )
         ctx.deps._tool_executions.config = config
         start = AsyncMock(wraps=toolset._process_controller.start)
         monkeypatch.setattr(toolset._process_controller, "start", start)
         await toolset.shell_exec(ctx, "echo value")
-        assert start.await_args.kwargs["yield_time_seconds"] == wait_seconds
+        assert start.await_args.kwargs["yield_time_seconds"] == (5.0 if wait_seconds is None else wait_seconds)
         await toolset.close()
 
 
-async def test_inline_shell_waits_through_provider_timeout_until_process_exits(tmp_path: Path, monkeypatch) -> None:
+async def test_shell_without_execution_runtime_returns_live_reference_after_default_wait(tmp_path, monkeypatch):
     async with _bound_process_environment(tmp_path) as environment:
         toolset = ShellToolset(environment)
         ctx = _ctx()
-        ctx.deps._tool_executions.config = ToolExecutionConfig(foreground_wait_seconds=0)
-        waiting = asyncio.Event()
+        ctx.deps.tool_execution = None
+        ctx.deps._tool_executions.config = ToolExecutionConfig()
         original_wait = environment.processes.wait
-        waits = 0
-
-        async def wait(*args, **kwargs):
-            nonlocal waits
-            waits += 1
-            if waits == 1:
-                raise EnvironmentError("Wait expired", code="environment_timeout")
-            waiting.set()
-            return await original_wait(*args, **kwargs)
-
+        wait = AsyncMock(side_effect=EnvironmentError("Wait expired", code="environment_timeout"))
         monkeypatch.setattr(environment.processes, "wait", wait)
-        operation = asyncio.create_task(
-            toolset.shell_exec(ctx, "while [ ! -f release ]; do sleep 0.01; done; printf done")
-        )
-        await asyncio.wait_for(waiting.wait(), 2)
-        assert not operation.done()
+        result = await toolset.shell_exec(ctx, "while [ ! -f release ]; do sleep 0.01; done; printf done")
+        assert result["ok"] is True, result
+        assert wait.await_count == 1
+        assert wait.await_args.kwargs["timeout_seconds"] == 5.0
+        assert result["status"]["phase"] == "running"
+        process_id = result["process_id"]
+        assert process_id is not None
         (tmp_path / "release").touch()
-        result = await asyncio.wait_for(operation, 2)
-        assert result["status"]["phase"] == "exited"
-        assert result["stdout"]["text"] == "done"
-        assert waits == 2
+        await original_wait(
+            toolset._process_controller._entries[process_id].handle, condition="initial_terminal", timeout_seconds=2
+        )
+        completed = await toolset.shell_wait(ctx, process_id, timeout_seconds=2)
+        assert completed["status"]["phase"] == "exited"
+        assert completed["stdout"]["text"] == "done"
         await toolset.close()
 
 

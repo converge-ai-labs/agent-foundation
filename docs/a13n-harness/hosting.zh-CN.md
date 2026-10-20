@@ -60,7 +60,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import ToolExecutionCapability
 
 capability = ToolExecutionCapability(
-    ToolExecutionConfig(mode="auto", foreground_wait_seconds=1.0)
+    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
 )
 runtime = ToolExecutionRuntime()
 thread_values = CodeActStateOwner()
@@ -69,11 +69,11 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。CodeAct runner 可整体转到后台，嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
 
-自动后台执行和即时 steering 都要求 Host 提供 `RunBindings.tool_execution`。Harness 提供 runtime 及其默认内存存储，由 Host 实例化并持有。仅提供 store 无法承担运行中执行的所有权。未绑定 runtime 时，阻塞工具和普通排队 steering 仍然可用。`auto` 在 Run 准备阶段拒绝缺少绑定的配置；即时 steering 在接收输入或抢占前拒绝，包括仅生成模型输出的阶段。
+通过 `RunBindings.tool_execution` 绑定 Harness runtime，即可启用自动后台执行和即时 steering。runtime 管理活动调用，store 保留记录和结果。未绑定时，Run 使用阻塞式通用工具、排队 steering，以及 Environment 的原生 shell 进程控制。启用 `auto` 时在 Run 准备阶段检查绑定；请求即时 steering 时在接收输入前检查绑定。
 
-具备绑定后，`await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，同时保留逻辑 Run 和支持的工具执行；在 `inline` 模式下同样可用。`auto` 则无需新用户输入即可释放前台等待，让 Agent 继续执行。普通 steering 默认为 `immediate=False`。已接受但尚未送达的输入通过正常状态导出保留，不会强制每条消息写入检查点。
+`await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，在同一个逻辑 Run 中送达新输入并继续执行。两种执行模式都能保留支持的工具调用。自动模式在前台等待到期时把控制权交还 Agent。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
 
-Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。读取限定在所属 Thread。只有真实结果进入规范历史后，才确认结果已交付。默认内存存储有界保留已完成记录，重启后丢失。自定义 `ToolExecutionStore` 持久化事实和结果，不保存可恢复的 Python 任务。
+Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
 
 通过运行时的 `on_completed` 回调安排 Host 投递，不阻塞执行。关闭共享客户端前，先停止 Host 新准入并结束交互等待，再调用 `await runtime.close(timeout_seconds=...)` 和 `await runtime.join()`。`close` 限制取消等待时间；`join` 保持所有权直到协作式清理完成。对话取消与工具取消由不同策略控制。
 

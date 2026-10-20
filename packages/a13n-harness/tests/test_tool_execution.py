@@ -90,6 +90,51 @@ async def test_receipt_during_result_publication_is_reported_as_detached(monkeyp
     await runtime.close()
 
 
+@pytest.mark.parametrize("acknowledge_fast", [False, True])
+async def test_completed_retention_preserves_long_call_that_finishes_last(acknowledge_fast):
+    store = MemoryToolExecutionStore(max_completed=3)
+    runtime = ToolExecutionRuntime(store=store)
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def slow():
+        entered.set()
+        await finish.wait()
+        return "slow result"
+
+    async def fast():
+        return "fast result"
+
+    slow_record = admit(runtime, slow)
+    await entered.wait()
+    fast_records = []
+    for _ in range(5):
+        record = admit(runtime, fast)
+        await runtime.wait("thread-a", record.execution_id)
+        if acknowledge_fast:
+            await runtime.acknowledge_delivery("thread-a", record.execution_id)
+        fast_records.append(record)
+    assert (await runtime.info("thread-a", slow_record.execution_id)).status == "running"
+    finish.set()
+    result = await runtime.wait("thread-a", slow_record.execution_id)
+    assert result.result == "slow result"
+    assert (await runtime.info("thread-a", slow_record.execution_id)).status == "succeeded"
+    assert (await runtime.result("thread-a", slow_record.execution_id)).result == "slow result"
+    assert await runtime.result("thread-b", slow_record.execution_id) is None
+    assert {record.execution_id for record in await store.list("thread-a")} == {
+        slow_record.execution_id,
+        *(record.execution_id for record in fast_records[-2:]),
+    }
+    # Metadata updates keep the original completion age for eviction.
+    oldest = fast_records[-2]
+    await store.save(await store.get("thread-a", oldest.execution_id))
+    await runtime.acknowledge_delivery("thread-a", oldest.execution_id)
+    newest = admit(runtime, fast)
+    await runtime.wait("thread-a", newest.execution_id)
+    assert await runtime.result("thread-a", oldest.execution_id) is None
+    assert (await runtime.result("thread-a", slow_record.execution_id)).result == "slow result"
+    await runtime.close()
+
+
 async def test_summary_prioritizes_queued_and_unconsumed_work():
     runtime = ToolExecutionRuntime()
 
@@ -425,6 +470,203 @@ def tool_agent(operation, *, config, owned=True):
         ),
     )
     return executable, observed
+
+
+@pytest.mark.parametrize("bound", [False, True])
+@pytest.mark.parametrize("exhaust_retries", [False, True])
+async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaust_retries):
+    from pydantic_ai import ModelRetry
+    from pydantic_ai.messages import RetryPromptPart
+
+    calls = 0
+    prompts = []
+
+    async def lookup(location: str):
+        nonlocal calls
+        calls += 1
+        if location != "Paris" or exhaust_retries:
+            raise ModelRetry("Provide a valid location")
+        return "sunny"
+
+    async def model(messages, info):
+        retries = [part for message in messages for part in message.parts if isinstance(part, RetryPromptPart)]
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if returns:
+            assert returns[-1].content == "sunny"
+            yield "done"
+        else:
+            if retries:
+                assert retries[-1].content == "Provide a valid location"
+                assert retries[-1].tool_name == "lookup"
+                prompts.append(retries[-1])
+            yield {
+                0: DeltaToolCall(
+                    name="lookup",
+                    json_args='{"location":"Paris"}' if retries else '{"location":"?"}',
+                    tool_call_id=f"lookup-{len(retries)}",
+                )
+            }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            ToolExecutionCapability(),
+            Capability(tools=[Tool(lookup, max_retries=1, metadata={TOOL_EXECUTION_METADATA_KEY: "owned"})]),
+        ),
+    )
+    runtime = ToolExecutionRuntime()
+    try:
+        result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime if bound else None))
+        assert result.status == ("failed" if exhaust_retries else "completed")
+        assert calls == 2 and len(prompts) == 1
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("retriever", ["tool_execution_result", "tool_execution_wait"])
+async def test_detached_retry_returns_original_correction_without_retrying_retrieval(retriever):
+    import json
+
+    from pydantic_ai import ModelRetry
+    from pydantic_ai.messages import RetryPromptPart
+
+    finish = asyncio.Event()
+    calls = 0
+
+    async def lookup():
+        nonlocal calls
+        calls += 1
+        await finish.wait()
+        raise ModelRetry("Provide a valid location")
+
+    runtime = ToolExecutionRuntime()
+    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="auto", foreground_wait_seconds=0))
+    try:
+        first = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
+        execution_id = observed[0].content["execution_id"]
+        finish.set()
+        stored = await runtime.wait(first.thread_id, execution_id)
+        assert stored.retry_prompt == "Provide a valid location"
+        assert stored.record.status == "failed"
+
+        async def model(messages, info):
+            assert not any(isinstance(part, RetryPromptPart) for message in messages for part in message.parts)
+            returns = [
+                part
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.tool_name == retriever
+            ]
+            if returns:
+                assert returns[-1].content["retry_prompt"] == "Provide a valid location"
+                assert returns[-1].content["tool_name"] == "lookup"
+                yield "correction retrieved"
+            else:
+                yield {0: DeltaToolCall(name=retriever, json_args=json.dumps({"execution_id": execution_id}))}
+
+        reader = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(ToolExecutionCapability(),),
+        )
+        result = await reader.run(
+            "retrieve", previous_state=first.state, bindings=RunBindings.embedded(tool_execution=runtime)
+        )
+        assert result.output_or_raise() == "correction retrieved"
+        assert calls == 1
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("foreground_mode", [None, "foreground"])
+async def test_foreground_tool_obeys_cross_run_barrier_while_controls_remain_available(monkeypatch, foreground_mode):
+    import json
+
+    entered, queued = asyncio.Event(), asyncio.Event()
+    ran = False
+
+    async def slow():
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def foreground():
+        nonlocal ran
+        ran = True
+        return "foreground completed"
+
+    runtime = ToolExecutionRuntime()
+    from a13n_harness import HarnessState
+
+    previous = HarnessState.new()
+    slow_record = runtime.admit(
+        slow, thread_id=previous.thread_id, run_id="run-first", tool_call_id="slow", tool_name="slow", sequential=True
+    )
+    await entered.wait()
+    original_inline = runtime.inline
+
+    async def inline(operation, *, thread_id, sequential):
+        # Signal entry into the production scheduler, then wait for its barrier.
+        queued.set()
+        return await original_inline(operation, thread_id=thread_id, sequential=sequential)
+
+    monkeypatch.setattr(runtime, "inline", inline)
+
+    async def model(messages, info):
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if returns:
+            yield "done"
+        else:
+            yield {0: DeltaToolCall(name="foreground", json_args="{}")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            ToolExecutionCapability(),
+            Capability(tools=[Tool(foreground, metadata={TOOL_EXECUTION_METADATA_KEY: foreground_mode})]),
+        ),
+    )
+    # A separate Run shares the exact Thread with the admitted sequential work.
+    pending = asyncio.create_task(
+        executable.run("start", previous_state=previous, bindings=RunBindings.embedded(tool_execution=runtime))
+    )
+    try:
+        await asyncio.wait_for(queued.wait(), 2)
+        assert not ran and not pending.done()
+
+        async def control_model(messages, info):
+            returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+            if returns:
+                yield "cancelled"
+            else:
+                yield {
+                    0: DeltaToolCall(
+                        name="tool_execution_cancel", json_args=json.dumps({"execution_id": slow_record.execution_id})
+                    )
+                }
+
+        controller = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=control_model),
+            capabilities=(ToolExecutionCapability(),),
+        )
+        controlled = await asyncio.wait_for(
+            controller.run("cancel", previous_state=previous, bindings=RunBindings.embedded(tool_execution=runtime)), 2
+        )
+        assert controlled.output_or_raise() == "cancelled"
+        result = await asyncio.wait_for(pending, 2)
+        assert result.output_or_raise() == "done" and ran
+        assert (await runtime.info(previous.thread_id, slow_record.execution_id)).status == "cancelled"
+    finally:
+        await runtime.close()
+        if not pending.done():
+            pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
 
 
 async def test_auto_without_runtime_rejects_before_tool_execution():

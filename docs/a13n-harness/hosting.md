@@ -60,7 +60,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import ToolExecutionCapability
 
 capability = ToolExecutionCapability(
-    ToolExecutionConfig(mode="auto", foreground_wait_seconds=1.0)
+    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
 )
 runtime = ToolExecutionRuntime()
 thread_values = CodeActStateOwner()
@@ -69,11 +69,11 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Whole CodeAct runners can detach; their nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
 
-Automatic background execution and immediate steering both require a Host-supplied `RunBindings.tool_execution`. Harness supplies the runtime and its default memory store; Hosts instantiate and hold them. A store alone cannot own live execution. Without the runtime, blocking tools and ordinary queued steering remain available. `auto` rejects a missing binding during Run preparation; immediate steering rejects it before accepting input or preempting, even during model-only generation.
+Bind the Harness runtime through `RunBindings.tool_execution` to enable automatic background execution and immediate steering. The runtime owns active calls; its store retains records and results. Runs without this binding use blocking generic tools, queued steering, and the Environment's native shell process controls. Enabling `auto` requires the binding at Run preparation; requesting immediate steering requires it before input acceptance.
 
-With that binding, `await stream.steer(message, immediate=True)` preempts the current native attempt while keeping the logical Run and supported tool work alive. It also works in `inline` mode. In contrast, `auto` releases the foreground wait without new user input so the Agent can continue. Ordinary steering defaults to `immediate=False`. Accepted pending input is preserved through normal state export; this does not force a checkpoint per message.
+`await stream.steer(message, immediate=True)` delivers new input by preempting the current native attempt and continuing the same logical Run. Supported tool work remains active in either execution mode. Automatic mode returns control to the Agent when the foreground wait expires. Ordinary steering defaults to `immediate=False`, and accepted pending input is included in normal state exports.
 
-The Agent can inspect, retrieve, wait for and cancel work through `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. Reads are Thread-scoped. Result delivery is acknowledged only after the real result enters canonical history. The default memory store bounds completed retention and is lost on restart. A custom `ToolExecutionStore` persists facts and results, not resumable Python tasks.
+The Agent inspects, retrieves, waits for and cancels work through `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. Reads are scoped to the owning Thread. A real result entering canonical history acknowledges delivery. The default memory store keeps active work and the most recently completed records; its contents last for the Host process lifetime. Hosts can supply a `ToolExecutionStore` with their own persistence and retention policy.
 
 Use the runtime's `on_completed` callback to schedule Host delivery without blocking execution. Before closing shared clients, stop new Host admission, settle interactive waiters, then call `await runtime.close(timeout_seconds=...)` and `await runtime.join()`. `close` bounds its cancellation wait; `join` preserves ownership until cooperative cleanup finishes. Conversation cancellation and tool cancellation are separate policies.
 

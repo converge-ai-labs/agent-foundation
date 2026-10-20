@@ -62,7 +62,9 @@ flowchart TD
 | 查找 Thread 当前活动 | `active_root_operation(thread_id)`                                                       |
 | 引导或取消活动执行   | `steer_root_operation(receipt_id=..., message=...)`、`cancel_root_operation(receipt_id)` |
 
-根级与子级 steering 使用当前全局 `input.steering_mode`：默认为 `immediate`，选择 `queued` 则等待下一个安全边界。App 默认通过 `tools.execution.mode: inline` 阻塞等待；设置为 `auto` 可开启超时后台执行。App 在两种模式下都提供 runtime 绑定，因此即时 steering 始终可用。`app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；`app.cancel_tool_execution(thread_id, execution_id)` 请求取消。App 持有共享 Harness 运行时直到关闭。取消对话会在新输入到来前禁止完成事件自动唤醒，与工具取消相互独立。这些记录只存在于当前进程，重启后消失。
+根级与子级 steering 使用当前全局 `input.steering_mode`：默认为 `immediate`，选择 `queued` 则等待下一个安全边界。App 默认通过 `tools.execution.mode: inline` 等待通用工具完成；设置为 `auto` 可开启超时移交。原生进程 shell 在两种模式下都使用配置的前台等待时长，默认五秒。App 提供即时 steering 和自动移交所需的 runtime 绑定。
+
+`app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；`app.cancel_tool_execution(thread_id, execution_id)` 请求取消。App 持有共享 Harness 运行时直到关闭。取消对话会在新输入到来前禁止完成事件自动唤醒，与工具取消相互独立。这些记录只存在于当前进程，重启后消失。
 
 状态包括 preparing、running、completed、suspended、failed 和 cancelled。准备阶段可能在产生执行结果前失败。存在 `outcome` 时，分别查看：
 

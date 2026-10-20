@@ -604,6 +604,57 @@ async def test_fresh_process_binding_adds_run_owned_process_tools(tmp_path: Path
 
 
 @requires_posix_process_groups
+async def test_native_shell_default_wait_works_without_tool_execution_binding(tmp_path: Path):
+    import asyncio
+
+    started = 0.0
+    elapsed = 0.0
+
+    async def model(messages, info):
+        nonlocal started, elapsed
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returns:
+            started = asyncio.get_running_loop().time()
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps({"command": "while [ ! -f release ]; do sleep 0.01; done; printf done"}),
+                    tool_call_id="shell-one",
+                )
+            }
+        elif len(returns) == 1 or returns[-1].content["status"]["phase"] == "running":
+            result = returns[0].content
+            if len(returns) == 1:
+                elapsed = asyncio.get_running_loop().time() - started
+                assert result["status"]["phase"] == "running"
+                assert "execution_id" not in result
+                (tmp_path / "release").touch()
+            yield {
+                0: DeltaToolCall(
+                    name="shell_wait",
+                    json_args=json.dumps({"process_id": result["process_id"], "timeout_seconds": 2}),
+                    tool_call_id=f"shell-wait-{len(returns)}",
+                )
+            }
+        else:
+            assert returns[-1].content["status"]["phase"] == "exited"
+            assert returns[-1].content["stdout"]["text"] == "done"
+            yield "completed"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    bindings = RunBindings.embedded(environment=_local_binding(tmp_path, process_output=True))
+    assert bindings.tool_execution is None
+    result = await asyncio.wait_for(executable.run("start", bindings=bindings), 15)
+    assert result.output_or_raise() == "completed"
+    assert elapsed >= 5.0
+
+
+@requires_posix_process_groups
 async def test_immediate_shell_steer_keeps_admitted_process_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import asyncio
 

@@ -394,7 +394,7 @@ async def shell_signal(
 ) -> ProcessSignalResult: ...
 ```
 
-The initial shell wait follows `ToolExecutionConfig.mode`: `inline` waits for process termination unless steering releases the wait; `auto` uses `foreground_wait_seconds`, defaulting to one second. Bounded provider wait expiry alone does not release an inline call. The model-facing `shell_exec` schema has no `yield_time_seconds` argument. This policy and `shell_wait.timeout_seconds` bound waiting only. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. There is no generic default deadline for a backend lacking that guarantee. There is no model-selected background mode.
+Process-backed `shell_exec` waits up to `ToolExecutionConfig.foreground_wait_seconds`, defaulting to five seconds, then returns the command result or a live process reference. This native process wait applies in both `inline` and `auto` modes and works without a `RunBindings.tool_execution` binding. The Host supplies the initial wait policy; `shell_wait.timeout_seconds` controls subsequent waits. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported.
 
 Process-backed shell execution keeps its existing provider-owned process path and receives no duplicate generic tool-execution record. Immediate steering after process admission settles the interrupted wait with the admitted process reference. Process-backed calls still respect Thread-wide tool sequential barriers. Foreground-only shell backends use generic tool execution when their retained scope supports it.
 
