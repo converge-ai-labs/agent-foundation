@@ -234,7 +234,7 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "packaging", specifier = ">=24,<27" },
     { name = "prometheus-client", specifier = ">=0.21,<1" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6,<4" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.55.0,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },

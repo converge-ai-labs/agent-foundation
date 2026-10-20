@@ -468,6 +468,7 @@ def test_python_compatibility_keeps_runtime_tests_separate_from_codegen() -> Non
 
     workflow = yaml.safe_load((WORKFLOWS / "ci-python-compatibility.yml").read_text())
     job = workflow["jobs"]["compatibility"]
+    assert job["env"]["UV_PYTHON"] == "${{ matrix.python }}"
     matrix = job["strategy"]["matrix"]["include"]
     assert {(entry["python"], entry["options"]) for entry in matrix} == {
         ("3.13", ""),
