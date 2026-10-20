@@ -1,11 +1,12 @@
 """API-serving roles answer browser paths from the bundled Console build and leave the API unchanged."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.app import build_app
 from a13n_service.settings import ProcessRole, Settings
+from fastapi import FastAPI
 
 pytestmark = pytest.mark.anyio
 
@@ -22,13 +23,19 @@ def console(tmp_path: Path) -> Path:
     return root
 
 
-def _client(console: Path, role: ProcessRole = "all") -> httpx2.AsyncClient:
-    app = build_app(role=role, settings=Settings(), console=console)
-    return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://127.0.0.1:8000")
+@pytest.fixture
+def client_factory(service_app: Callable[..., FastAPI]) -> Callable[..., httpx2.AsyncClient]:
+    def create(console: Path, role: ProcessRole = "all") -> httpx2.AsyncClient:
+        app = service_app(role=role, settings=Settings(), console=console)
+        return httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://127.0.0.1:8000")
+
+    return create
 
 
-async def test_browser_paths_answer_the_uncached_index(console: Path) -> None:
-    async with _client(console) as client:
+async def test_browser_paths_answer_the_uncached_index(
+    console: Path, client_factory: Callable[..., httpx2.AsyncClient]
+) -> None:
+    async with client_factory(console) as client:
         for path in ("/", "/index.html", "/workspaces/ws_1/agents", "/login?next=%2F"):
             response = await client.get(path)
             assert response.status_code == 200, path
@@ -40,8 +47,10 @@ async def test_browser_paths_answer_the_uncached_index(console: Path) -> None:
         assert head.status_code == 200 and head.content == b""
 
 
-async def test_assets_are_cached_for_good_and_confined_to_the_build(console: Path) -> None:
-    async with _client(console) as client:
+async def test_assets_are_cached_for_good_and_confined_to_the_build(
+    console: Path, client_factory: Callable[..., httpx2.AsyncClient]
+) -> None:
+    async with client_factory(console) as client:
         asset = await client.get("/assets/index-3f2a.js")
         assert asset.status_code == 200 and asset.text == "export {};"
         assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
@@ -51,8 +60,10 @@ async def test_assets_are_cached_for_good_and_confined_to_the_build(console: Pat
             assert missing.json()["error"]["details"]["kind"] == "route"
 
 
-async def test_api_answers_are_the_same_with_a_console(console: Path, tmp_path: Path) -> None:
-    async with _client(console) as bundled, _client(tmp_path / "absent") as bare:
+async def test_api_answers_are_the_same_with_a_console(
+    console: Path, tmp_path: Path, client_factory: Callable[..., httpx2.AsyncClient]
+) -> None:
+    async with client_factory(console) as bundled, client_factory(tmp_path / "absent") as bare:
         for method, path in (
             ("GET", "/api"),
             ("GET", "/api/v1/unknown"),
@@ -68,9 +79,11 @@ async def test_api_answers_are_the_same_with_a_console(console: Path, tmp_path: 
         assert (await bundled.get("/healthz/")).status_code == 307
 
 
-async def test_only_api_serving_roles_with_a_build_serve_the_console(console: Path, tmp_path: Path) -> None:
-    async with _client(console, role="worker") as worker, _client(tmp_path / "absent") as bare:
+async def test_only_api_serving_roles_with_a_build_serve_the_console(
+    console: Path, tmp_path: Path, client_factory: Callable[..., httpx2.AsyncClient]
+) -> None:
+    async with client_factory(console, role="worker") as worker, client_factory(tmp_path / "absent") as bare:
         assert (await worker.get("/")).status_code == 404
         assert (await bare.get("/")).status_code == 404
-    async with _client(console, role="control") as control:
+    async with client_factory(console, role="control") as control:
         assert (await control.get("/")).text == INDEX

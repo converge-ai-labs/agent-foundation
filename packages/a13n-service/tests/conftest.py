@@ -11,7 +11,6 @@ import json
 import os
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from copy import deepcopy
 from dataclasses import replace
 from functools import partial
 from pathlib import Path
@@ -22,6 +21,7 @@ from uuid import uuid4
 import httpx2
 import pytest
 import uvicorn
+from a13n_service import api_tools as api_tools_module
 from a13n_service import app as app_module
 from a13n_service.app import build_app, open_runtime
 from a13n_service.distribution import OSS, Distribution
@@ -44,6 +44,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from fastmcp.server.http import StarletteWithLifespan
+from fastmcp.utilities.openapi import HTTPRoute
 from pydantic import SecretStr
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
@@ -187,30 +188,50 @@ async def tenant(runtime: Runtime) -> Bootstrapped:
 
 @pytest.fixture(scope="session")
 def service_app() -> Callable[..., FastAPI]:
-    """Compile the fixed OSS contract once per worker, not once per database-backed test.
+    """Compile fixed OSS definitions once per worker.
 
-    Only schema data is reused; applications, MCP tools and lifespans remain independent. Extensions and
-    direct build_app calls (including contract tests) still compile their own contracts through production code.
+    JSON snapshots restore independent OpenAPI and parsed MCP schemas without repeatedly compiling them.
+    Only definitions and migration head IDs are reused; apps, tools, runtimes and lifespans are always fresh.
+    Extensions and direct build_app calls still use the unpatched production builders.
     """
-    schema: dict[str, Any] | None = None
+    schema: str | None = None
+    operations: list[str] | None = None
+    expected = heads(OSS)
 
-    def build(distribution: Distribution = OSS, *, role: ProcessRole = "control", settings: Settings) -> FastAPI:
+    def build(
+        distribution: Distribution = OSS,
+        *,
+        role: ProcessRole = "control",
+        settings: Settings,
+        console: Path = app_module.CONSOLE,
+    ) -> FastAPI:
         if distribution is not OSS or role == "worker":
-            return build_app(distribution, role=role, settings=settings)
+            return build_app(distribution, role=role, settings=settings, console=console)
 
         def assemble(app: FastAPI, config: Settings, routes: Sequence[APIRoute]) -> StarletteWithLifespan:
             nonlocal schema
             if schema is not None:
-                app.openapi_schema = deepcopy(schema)
-            mcp = build_mcp(app, config, routes)
+                app.openapi_schema = json.loads(schema)
+            parse = api_tools_module.parse_openapi_to_http_routes
+
+            def parsed(document: dict[str, Any]) -> list[HTTPRoute]:
+                nonlocal operations
+                if operations is None:
+                    operations = [route.model_dump_json(by_alias=True) for route in parse(document)]
+                return [HTTPRoute.model_validate_json(route) for route in operations]
+
+            with pytest.MonkeyPatch.context() as patch:
+                patch.setattr(api_tools_module, "parse_openapi_to_http_routes", parsed)
+                mcp = build_mcp(app, config, routes)
             if schema is None:
-                schema = deepcopy(app.openapi())
+                schema = json.dumps(app.openapi())
             return mcp
 
         # Assembly is synchronous: restore the production builder before entering any asynchronous lifespan.
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(app_module, "build_mcp", assemble)
-            return build_app(distribution, role=role, settings=settings)
+            patch.setattr(app_module, "heads", lambda _: expected)
+            return build_app(distribution, role=role, settings=settings, console=console)
 
     return build
 

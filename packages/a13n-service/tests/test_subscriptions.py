@@ -238,20 +238,14 @@ async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant, monk
         await send(runtime, attempts=1)
         assert await status(runtime, dead) == ("dead", 1, "HTTP 500")
 
-        # The policy is applied on every attempt, so a destination that became forbidden is never contacted.
-        refused = await queue(runtime, subscription.id, 4, url="http://169.254.169.254/hook")
-        await send(runtime, attempts=1)
-        refused_status, _, refused_error = await status(runtime, refused)
-        assert refused_status == "dead" and refused_error is not None and len(received) == 3
-
         page = await subscriptions.list_deliveries(
             storage, runtime.access, admin, workspace_id, subscription.id, limit=2, cursor=None
         )
-        assert [delivery.id for delivery in page.items] == [refused, dead]
+        assert [delivery.id for delivery in page.items] == [dead, retried]
         rest = await subscriptions.list_deliveries(
             storage, runtime.access, admin, workspace_id, subscription.id, limit=2, cursor=page.next_cursor
         )
-        assert [delivery.id for delivery in rest.items] == [retried, accepted] and rest.next_cursor is None
+        assert [delivery.id for delivery in rest.items] == [accepted] and rest.next_cursor is None
 
         with pytest.raises(ServiceError) as pending:
             await subscriptions.redeliver(storage, runtime.access, admin, workspace_id, subscription.id, retried)

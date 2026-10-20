@@ -51,13 +51,17 @@ def statements(runtime: Runtime, *, timings: list[float] | None = None) -> Itera
         event.remove(engine, "before_cursor_execute", capture)
 
 
-@pytest.mark.parametrize("count", [1, 4, 8, 128])
+# One row and a batch whose subscribed recovery crosses the 256-row outbox chunk boundary.
+@pytest.mark.parametrize("count", [1, 128])
 @pytest.mark.parametrize("subscribed", [False, True])
 async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_kit: SimpleNamespace, count, subscribed):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
-    for index in range(count):
-        await runs_kit.start_thread(service, agent, str(index))
+    # Setup uses independent threads; bound concurrent requests below the database pool size.
+    for start in range(0, count, 8):
+        await asyncio.gather(
+            *(runs_kit.start_thread(service, agent, str(index)) for index in range(start, min(start + 8, count)))
+        )
     if subscribed:
         response = await service.client.post(
             f"{service.api}/subscriptions",
@@ -99,8 +103,13 @@ async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_k
             f"{(finished - timings[1]) * 1000:.1f} ms candidate query through commit"
         )
         if not recovery:
-            for lease in leases:
-                await release_attempt(service.runtime, lease, status="yielded", yield_reason="drain")
+            for start in range(0, len(leases), 8):
+                await asyncio.gather(
+                    *(
+                        release_attempt(service.runtime, lease, status="yielded", yield_reason="drain")
+                        for lease in leases[start : start + 8]
+                    )
+                )
 
 
 async def test_empty_claim_only_reads_time_and_candidates(service, runs_kit):  # type: ignore[no-untyped-def]
