@@ -122,7 +122,7 @@ flowchart TD
 
 优先保留最近调用的工具，最多 32 个，发现上下文的估算预算为 64 KiB。预算计入原生 schema 展开和两个 CodeAct runner 目录，不计入恢复用 metadata。这是 UTF-8 字节估算，不是 token 限制。每个入选工具都保留完整的当前 schema；已移除、不可用或来源身份改变的工具会被丢弃。通过 `load_capability` 激活延迟 Capability 的生命周期不在此保留策略内。
 
-Harness 从当前定义重建一份精简的合成搜索结果，并明确提示这是重建记录、保留集合不完整、需要其他工具时可以重新搜索。此过程不会执行搜索。搜到 A 和 B 后仅调用 A，则只保留 A；B 不占用保留预算。
+Harness 从当前定义重建一份精简的合成搜索结果，并明确提示这是重建记录、保留集合不完整、需要其他工具时可以重新搜索。此过程不会执行搜索，也不保留原始查询：原生 `queries` 和代理 `query` 都使用明确的占位符 `[query omitted during context replacement]`。搜到 A 和 B 后仅调用 A，则只保留 A；B 不占用保留预算。
 
 例如，发现 `crm__customer_name` 并查询客户 42 后，替换上下文按以下顺序组织：
 

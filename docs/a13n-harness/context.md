@@ -122,7 +122,7 @@ Both `summarize` and automatic compaction retain a bounded set of previously cal
 
 Retention selects the most recently called tools, up to 32 distinct tools within a 64 KiB estimated discovery-context budget. The estimate includes native schema expansion and both CodeAct runner directories, excluding recovery metadata. This is a UTF-8 byte estimate, not a token limit. Each selected tool keeps its complete current schema. Removed, unavailable or changed-source tools are dropped. Deferred Capability activation through `load_capability` is outside this retention policy.
 
-Harness rebuilds a compact synthetic search result from current definitions. A notice explicitly identifies the reconstruction, explains that the retained set is partial, and tells the Agent to search again for other tools. No search is executed. Searching for A and B and then calling only A retains only A; B does not consume the retention budget.
+Harness rebuilds a compact synthetic search result from current definitions. A notice explicitly identifies the reconstruction, explains that the retained set is partial, and tells the Agent to search again for other tools. No search is executed. Original queries are not retained: native `queries` and proxy `query` use the explicit placeholder `[query omitted during context replacement]`. Searching for A and B and then calling only A retains only A; B does not consume the retention budget.
 
 For example, after discovering `crm__customer_name` and looking up customer 42, the replacement has this order:
 

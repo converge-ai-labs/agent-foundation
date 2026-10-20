@@ -35,10 +35,12 @@ _DISCOVERY_ID = "a13n.tool-discovery"
 _MAX_TOOLS = 32
 _MAX_CONTEXT_BYTES = 64 * 1024
 _MAX_STATE_BYTES = 128 * 1024
+_OMITTED_QUERY = "[query omitted during context replacement]"
 _NOTICE = (
     "<retained-tool-discovery>\n"
     "Tool discovery was pruned during context replacement. The following synthetic search results were "
     "rebuilt from current definitions for a bounded subset of previously called tools; no search was executed. "
+    "Original search queries were not retained and are replaced with an omission marker. "
     "Only the listed tools were retained. Search again if you need another tool. Each retained tool's schema "
     "is complete. Ordinary tool permissions and approvals still apply.\n"
     "</retained-tool-discovery>"
@@ -192,7 +194,7 @@ def _discovery_messages(
         names = sorted(native)
         messages.extend(
             [
-                ModelResponse(parts=[ToolSearchCallPart(args={"queries": names}, tool_call_id=call_id)]),
+                ModelResponse(parts=[ToolSearchCallPart(args={"queries": [_OMITTED_QUERY]}, tool_call_id=call_id)]),
                 ModelRequest(
                     parts=[
                         ToolSearchReturnPart(
@@ -209,9 +211,7 @@ def _discovery_messages(
         proxy_id = f"{call_id}-proxy"
         messages.extend(
             [
-                ModelResponse(
-                    parts=[ToolCallPart(proxy_search, {"query": "retained called tools"}, tool_call_id=proxy_id)]
-                ),
+                ModelResponse(parts=[ToolCallPart(proxy_search, {"query": _OMITTED_QUERY}, tool_call_id=proxy_id)]),
                 ModelRequest(
                     parts=[
                         ToolReturnPart(

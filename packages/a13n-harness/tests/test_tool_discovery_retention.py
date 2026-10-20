@@ -594,6 +594,11 @@ async def test_multi_tool_search_retains_only_called_member(monkeypatch, mode):
     messages, info = snapshots[-1]
     results = [p for msg in messages for p in msg.parts if isinstance(p, ToolReturnPart)]
     assert len(results) == 1
+    retained_calls = [p for msg in messages for p in msg.parts if isinstance(p, ToolCallPart)]
+    assert len(retained_calls) == 1
+    marker = "[query omitted during context replacement]"
+    assert retained_calls[0].args_as_dict() == ({"query": marker} if proxy else {"queries": [marker]})
+    assert "Original search queries were not retained" in ModelMessagesTypeAdapter.dump_json(messages).decode()
     if proxy:
         assert [entry["tool"] for entry in results[0].content["tools"]] == ["double"]
         assert results[0].content["partial"] is True
