@@ -149,6 +149,84 @@ async def test_shutdown_joins_retained_cleanup_after_bounded_cancellation():
         await closed.wait()
 
 
+@pytest.mark.parametrize("failure", ["rejected", "exception"])
+async def test_completion_racing_failed_delivery_is_retried_without_loss(failure):
+    owner = ToolExecutions()
+    entered, release, delivered = Event(), Event(), Event()
+    attempts = []
+
+    async def deliver(thread_id, prompt):
+        attempts.append(prompt)
+        if len(attempts) == 1:
+            entered.set()
+            await release.wait()
+            if failure == "exception":
+                raise RuntimeError("preparation failed")
+            return False
+        delivered.set()
+        return True
+
+    owner.deliver = deliver
+    async with create_task_group() as group:
+        owner.start(group)
+        await complete(owner, "first")
+        with fail_after(10):
+            await entered.wait()
+            await complete(owner, "second")
+            release.set()
+            await delivered.wait()
+        assert len(attempts) == 2
+        assert "first" in attempts[1] and "second" in attempts[1]
+        for execution_id in ("first", "second"):
+            assert not (await owner.runtime.info("thread-a", execution_id)).delivery_acknowledged
+        await owner.close(timeout_seconds=0)
+
+
+@pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled", "lost"])
+async def test_terminal_notifications_are_status_only_and_refresh_suppressed_threads(status):
+    owner = ToolExecutions()
+    changed, delivered = Event(), Event()
+    hints = []
+
+    async def refresh(thread_id):
+        assert thread_id == "thread-a"
+        changed.set()
+
+    async def deliver(thread_id, prompt):
+        hints.append(prompt)
+        delivered.set()
+        return True
+
+    owner.changed, owner.deliver = refresh, deliver
+    record = ToolExecutionRecord(
+        execution_id="exec-terminal",
+        thread_id="thread-a",
+        run_id="run-a",
+        tool_call_id="call-a",
+        tool_name="lookup",
+        status=status,
+        result_available=status == "succeeded",
+        foreground_released=True,
+        error="PRIVATE FAILURE DETAIL" if status != "succeeded" else None,
+    )
+    await owner.runtime.store.save(StoredToolExecution(record, "PRIVATE RESULT BODY"))
+    async with create_task_group() as group:
+        owner.start(group)
+        owner._completed(record)
+        with fail_after(10):
+            await delivered.wait()
+        assert len(hints) == 1 and f"lookup ({status})" in hints[0]
+        assert "PRIVATE" not in hints[0]
+        assert not (await owner.runtime.info("thread-a", record.execution_id)).delivery_acknowledged
+        owner.suppress("thread-a")
+        changed = Event()
+        owner._completed(record)
+        with fail_after(10):
+            await changed.wait()
+        assert len(hints) == 1
+        await owner.close(timeout_seconds=0)
+
+
 def install_slow_tool(monkeypatch, slow):
     original = AgentReconstructor.reconstruct
 
@@ -174,10 +252,14 @@ def install_slow_tool(monkeypatch, slow):
     monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
 
 
-async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state(tmp_path, monkeypatch):
+@pytest.mark.parametrize("complete_while_active", [False, True])
+async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state(
+    tmp_path, monkeypatch, complete_while_active
+):
     path = _write_configuration(tmp_path)
     path.write_text(path.read_text() + "tools:\n  execution: {mode: auto, foreground_wait_seconds: 0}\n")
     entered, finish, resumed = Event(), Event(), Event()
+    waiting, delivered, continue_model = Event(), Event(), Event()
     calls = 0
     stage = 0
     execution_id = None
@@ -211,6 +293,9 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
                 if isinstance(part, ToolReturnPart) and part.tool_call_id == "runner"
             )
             execution_id = result.content["execution_id"]
+            waiting.set()
+            if complete_while_active:
+                await continue_model.wait()
             yield "Waiting for the retained operation."
         elif current == 2:
             yield {
@@ -230,16 +315,32 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         thread = await app.create_thread()
+        original_deliver = app._tool_executions.deliver
+
+        async def observe_delivery(thread_id, prompt):
+            accepted = await original_deliver(thread_id, prompt)
+            if accepted:
+                delivered.set()
+            return accepted
+
+        app._tool_executions.deliver = observe_delivery
         first = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
         with fail_after(10):
-            outcome = await app.wait_root_operation(first.receipt_id)
-        assert outcome.status is RootOperationStatus.completed, outcome
+            await waiting.wait()
+            if not complete_while_active:
+                outcome = await app.wait_root_operation(first.receipt_id)
+                assert outcome.status is RootOperationStatus.completed, outcome
         assert entered.is_set(), await app._tool_executions.runtime.result(thread.thread_id, execution_id)
         assert execution_id is not None
         record = await app._tool_executions.runtime.info(thread.thread_id, execution_id)
         assert record.status == "running" and record.foreground_released
         finish.set()
         with fail_after(10):
+            await delivered.wait()
+            if complete_while_active:
+                active = await app.active_root_operation(thread.thread_id)
+                assert active is not None and active.receipt.receipt_id == first.receipt_id
+                continue_model.set()
             await resumed.wait()
             while (active := await app.active_root_operation(thread.thread_id)) is not None:
                 await app.wait_root_operation(active.receipt.receipt_id)
@@ -253,7 +354,7 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
             for part in entry.parts
             if part.metadata.source_id == "tool_execution.completion"
         ]
-        assert hints and all(not part.metadata.display for part in hints)
+        assert len(hints) == 1 and not hints[0].metadata.display
         assert (await app._tool_executions.state(thread.thread_id).snapshot()).values == {"late": 42}
         other = await app.create_thread()
         assert await app.tool_executions(other.thread_id) == ()

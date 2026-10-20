@@ -73,7 +73,7 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 `await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，在同一个逻辑 Run 中送达新输入并继续执行。两种执行模式都能保留支持的工具调用。自动模式在前台等待到期时把控制权交还 Agent。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
 
-Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
+Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。只有 Run 同时启用 `ToolExecutionCapability` 并绑定 runtime，才会提供这些控制工具和仅含状态的上下文摘要；`inline` 与 `auto` 模式遵循同一规则。未绑定的 inline Run 不提供这两项。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
 
 通过运行时的 `on_completed` 回调安排 Host 投递，不阻塞执行。关闭共享客户端前，先停止 Host 新准入并结束交互等待，再调用 `await runtime.close(timeout_seconds=...)` 和 `await runtime.join()`。`close` 限制取消等待时间；`join` 保持所有权直到协作式清理完成。对话取消与工具取消由不同策略控制。
 

@@ -10,6 +10,7 @@ from pydantic import Field
 from pydantic_ai import FunctionToolset, RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.toolsets import DynamicToolset
 
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
@@ -43,10 +44,15 @@ class ToolExecutionCapability(AbstractModelContextCapability):
                 "Automatic tool execution requires RunBindings.tool_execution.", code="tool_execution_unbound"
             )
         ctx.deps._tool_executions.config = self.config
-        ctx.deps._tool_executions.enabled = True
+        ctx.deps._tool_executions.enabled = ctx.deps.tool_execution is not None
         return self
 
-    def get_toolset(self) -> FunctionToolset[AgentContext]:
+    def get_toolset(self) -> DynamicToolset[AgentContext]:
+        return DynamicToolset(self._toolset_for_run, per_run_step=False, id="tool-execution")
+
+    async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> FunctionToolset[AgentContext] | None:
+        if ctx.deps.tool_execution is None:
+            return None
         return FunctionToolset(
             [tool_execution_info, tool_execution_result, tool_execution_wait, tool_execution_cancel],
             id="tool-execution",
