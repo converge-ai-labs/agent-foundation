@@ -5,7 +5,6 @@ import {
   ClipboardTextIcon,
   KeyIcon,
   StackIcon,
-  EnvelopeIcon,
   EyeIcon,
   MonitorIcon,
   GearSixIcon,
@@ -106,13 +105,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       permission: "admin",
     },
     {
-      value: "invitations",
-      label: "Invitations",
-      description: "Invite people and manage pending invitations.",
-      icon: EnvelopeIcon,
-      permission: "admin",
-    },
-    {
       value: "api-keys",
       label: "My API keys",
       description:
@@ -154,12 +146,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Members",
       description: "Manage the people who belong to this organization.",
       icon: UsersIcon,
-    },
-    {
-      value: "invitations",
-      label: "Invitations",
-      description: "Invite people and manage pending invitations.",
-      icon: EnvelopeIcon,
     },
     {
       value: "workspaces",

@@ -233,16 +233,18 @@ async def test_interrupted_stream_is_searchable_only_after_terminal_display(
     import asyncio
 
     agent = await runs_kit.create_agent(executing, scripted_model)
-    scripted_model.say("partialkeyword", " neverfinished", interval=30)
+    next_chunk = asyncio.Event()
+    scripted_model.say("partialkeyword", " neverfinished", chunk_gate=next_chunk)
     submitted = await runs_kit.start_thread(executing, agent, "inputkeyword")
     run_id, thread_id = submitted["run"]["id"], submitted["run"]["thread_id"]
-    async with asyncio.timeout(10):
-        while "partialkeyword" not in str(await executing.runtime.redis.xrange(f"a13n:thread:{thread_id}")):
-            await asyncio.sleep(0.01)
-    response = await executing.client.get(f"{executing.api}/runs", params={"text_query": "partialkeyword"})
-    assert response.json()["items"] == []
-    stopped = await executing.client.post(f"{executing.api}/runs/{run_id}/interrupt")
-    assert stopped.status_code == 200, stopped.text
-    assert (await runs_kit.sealed(executing, run_id))["status"] == "cancelled"
-    response = await executing.client.get(f"{executing.api}/runs", params={"text_query": "partialkeyword"})
-    assert [row["id"] for row in response.json()["items"]] == [run_id]
+    try:
+        await runs_kit.streamed_text(executing.runtime, thread_id, "partialkeyword")
+        response = await executing.client.get(f"{executing.api}/runs", params={"text_query": "partialkeyword"})
+        assert response.json()["items"] == []
+        stopped = await executing.client.post(f"{executing.api}/runs/{run_id}/interrupt")
+        assert stopped.status_code == 200, stopped.text
+        assert (await runs_kit.sealed(executing, run_id))["status"] == "cancelled"
+        response = await executing.client.get(f"{executing.api}/runs", params={"text_query": "partialkeyword"})
+        assert [row["id"] for row in response.json()["items"]] == [run_id]
+    finally:
+        next_chunk.set()

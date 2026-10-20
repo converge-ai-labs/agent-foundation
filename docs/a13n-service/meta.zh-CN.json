@@ -12,6 +12,7 @@
     "---构建 agent---",
     "agent-composer",
     "agents-and-runs",
+    "schedules",
     "models",
     "tools",
     "skills",

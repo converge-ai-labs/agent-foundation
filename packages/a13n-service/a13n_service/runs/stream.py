@@ -7,7 +7,8 @@ run and attempt are current.
 
 Each Control process has one `SessionHub`. For the sessions that have readers it shares one blocking XREAD over
 their threads and, every `control.stream_refresh_seconds` or sooner when a reader meets a run it does not follow,
-reads their state and each reader's authority once. A connection sends four frames:
+reads their state and each reader's authority once. Schedule-owned Sessions also send compact
+`schedule` / `occurrence` state. Every Thread uses the same four output frames:
 
 - `thread`: a thread's current state, whenever it changes;
 - `items`: a run's committed items from an ordinal on, whenever the connection follows the run from a fresh base:
@@ -22,7 +23,7 @@ import asyncio
 import json
 import time
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -32,9 +33,7 @@ from a13n_stream_protocol.display import MAX_FIELD_CHARS, DisplayContinuation, I
 from pydantic import BaseModel
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
-from sqlalchemy import and_, func, or_, select, text, tuple_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, defer
+from sqlalchemy import func, select
 
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
@@ -42,14 +41,17 @@ from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_ra
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, Pointer, TailPointer
 from a13n_service.runs.contents import ContentObject, decode
-from a13n_service.runs.display import Observed, Page, StreamPosition, Tail
-from a13n_service.runs.runs import NEWEST_ITEMS, newest, run_views
+from a13n_service.runs.display import Observed, Page, Tail
+from a13n_service.runs.runs import NEWEST_ITEMS, newest
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import EntryView, RunView, ThreadView
+from a13n_service.runs.schedules import observation
+from a13n_service.runs.session_state import Progress, Scope, ThreadState, Watch, may_read, repeatable
+from a13n_service.runs.session_state import states as thread_states
+from a13n_service.runs.session_state import versions as thread_versions
 from a13n_service.runs.sessions import find_session
-from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow, ThreadRow
+from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
 from a13n_service.settings import Settings
-from a13n_service.tenancy.access import Access, Authenticated, reauthenticate, workspace_scope
+from a13n_service.tenancy.access import Authenticated, workspace_scope
 
 logger = get_logger(__name__)
 
@@ -75,16 +77,6 @@ STREAM_PREFIX = "a13n:thread:"
 
 def stream_key(thread_id: str) -> str:
     return STREAM_PREFIX + thread_id
-
-
-class ThreadState(BaseModel):
-    """A thread's current state: the thread, the runs its pointers name and its open inbox entries."""
-
-    thread: ThreadView
-    current_run: RunView | None
-    last_run: RunView | None
-    # Pending and assigned entries, in inbox order.
-    entries: list[EntryView]
 
 
 class RunSnapshot(BaseModel):
@@ -117,9 +109,16 @@ class Gap(BaseModel):
     run_id: str
 
 
-type FrameName = Literal["thread", "items", "delta", "gap"]
+type FrameName = Literal["thread", "items", "delta", "gap", "schedule", "occurrence"]
 # The SSE `event` name of each frame and the model of its `data`.
-FRAMES: dict[FrameName, type[BaseModel]] = {"thread": ThreadState, "items": RunSnapshot, "delta": Delta, "gap": Gap}
+FRAMES: dict[FrameName, type[BaseModel]] = {
+    "thread": ThreadState,
+    "items": RunSnapshot,
+    "delta": Delta,
+    "gap": Gap,
+    "schedule": observation.ScheduleEvent,
+    "occurrence": observation.OccurrenceEvent,
+}
 
 
 def frames_schema() -> dict[str, Any]:
@@ -238,17 +237,6 @@ def _retained_from(boundary: str, window: float) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class Progress:
-    """A current run as a refresh found it: its latest attempt and the position and first ordinal of its committed
-    display."""
-
-    run_id: str
-    attempt: int
-    position: StreamPosition
-    first: int
-
-
-@dataclass(frozen=True, slots=True)
 class Update:
     """What one refresh found for one thread: its state frame when the state changed, its current run's progress,
     and for a thread new to the hub the Redis position after which its live entries arrive."""
@@ -259,11 +247,16 @@ class Update:
     cursor: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class StateFrame:
+    frame: str
+
+
 class Close:
     """The connection ends: its reader lost access or fell too far behind."""
 
 
-type Signal = StreamEntry | Update | Close
+type Signal = StreamEntry | Update | StateFrame | Close
 
 
 @dataclass(eq=False)
@@ -274,6 +267,10 @@ class Reader:
     signals: asyncio.Queue[Signal] = field(default_factory=asyncio.Queue)
     size: int = 0
     closed: bool = False
+
+    @property
+    def scope(self) -> Scope:
+        return Scope(self.workspace_id, self.session_id)
 
     def send(self, signal: Signal) -> None:
         if self.closed:
@@ -297,33 +294,11 @@ def _size(signal: Signal) -> int:
     return sum(len(value) for value in signal.fields.values()) if isinstance(signal, StreamEntry) else 0
 
 
-@dataclass(frozen=True, slots=True)
-class _Version:
-    thread_id: str
-    session_id: str
-    # The thread's version and those of the runs its pointers name: a `thread` frame follows any change.
-    key: tuple[int, int | None, int | None]
-    # Its current run's, None without one.
-    progress: Progress | None
-
-    def watch(self, frame: str) -> "_Watch":
-        return _Watch(self.key, self.progress.run_id if self.progress is not None else None, frame)
-
-
-@dataclass(frozen=True, slots=True)
-class _Watch:
-    """A watched thread: its version key, current run and latest `thread` frame."""
-
-    key: tuple[int, int | None, int | None]
-    current_run_id: str | None
-    frame: str
-
-
 @dataclass(eq=False)
-class _Watched:
-    workspace_id: str
+class Watched:
+    frames: dict[str, str] = field(default_factory=dict)
     readers: set[Reader] = field(default_factory=set)
-    threads: dict[str, _Watch] = field(default_factory=dict)
+    threads: dict[str, Watch] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,118 +317,14 @@ class _Base:
     preview: int | None
 
 
-async def _repeatable(session: AsyncSession) -> None:
-    """Read the rest of this session from one snapshot, so a frame's thread, runs and entries agree."""
-    await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
-
-
-async def _versions(session: AsyncSession, sessions: Sequence[tuple[str, str]]) -> list[_Version]:
-    """Every thread of the watched sessions, oldest first, with its version key and its current run's progress."""
-    current, last = aliased(RunRow), aliased(RunRow)
-    latest = (
-        select(func.max(AttemptRow.number))
-        .where(AttemptRow.run_id == ThreadRow.current_run_id)
-        .correlate(ThreadRow)
-        .scalar_subquery()
-    )
-    position = current.tail["position"]
-    rows = await session.execute(
-        select(
-            ThreadRow.id,
-            ThreadRow.session_id,
-            ThreadRow.version,
-            ThreadRow.current_run_id,
-            current.version,
-            last.version,
-            latest,
-            position["attempt"].as_integer(),
-            position["sequence"].as_integer(),
-            current.tail["first"].as_integer(),
-        )
-        .outerjoin(current, current.id == ThreadRow.current_run_id)
-        .outerjoin(last, last.id == ThreadRow.last_run_id)
-        .where(tuple_(ThreadRow.workspace_id, ThreadRow.session_id).in_(sessions))
-        .order_by(ThreadRow.created_at, ThreadRow.id)
-    )
-    return [
-        _Version(
-            thread_id,
-            session_id,
-            (version, current_version, last_version),
-            Progress(run_id, attempt or 0, StreamPosition(attempt=committed or 0, sequence=sequence or 0), first or 1)
-            if run_id is not None
-            else None,
-        )
-        for (
-            thread_id,
-            session_id,
-            version,
-            run_id,
-            current_version,
-            last_version,
-            attempt,
-            committed,
-            sequence,
-            first,
-        ) in rows
-    ]
-
-
-async def _states(session: AsyncSession, thread_ids: Sequence[str]) -> dict[str, ThreadState]:
-    threads = (
-        await session.scalars(
-            select(ThreadRow).options(defer(ThreadRow.message_history)).where(ThreadRow.id.in_(thread_ids))
-        )
-    ).all()
-    current = [thread.current_run_id for thread in threads if thread.current_run_id is not None]
-    named = {*current, *(thread.last_run_id for thread in threads if thread.last_run_id is not None)}
-    rows = (await session.scalars(select(RunRow).where(RunRow.id.in_(named)))).all()
-    runs = {view.id: view for view in await run_views(session, rows)}
-    # Assigned entries belong to the thread's current run, pending ones to the thread: each finds its partial index.
-    entries = await session.scalars(
-        select(InboxEntryRow)
-        .where(
-            or_(
-                and_(InboxEntryRow.status == "pending", InboxEntryRow.thread_id.in_(thread_ids)),
-                and_(InboxEntryRow.status == "assigned", InboxEntryRow.assigned_run_id.in_(current)),
-            )
-        )
-        .order_by(InboxEntryRow.position)
-    )
-    open_entries: dict[str, list[EntryView]] = {}
-    for entry in entries:
-        open_entries.setdefault(entry.thread_id, []).append(EntryView.model_validate(entry))
-    return {
-        thread.id: ThreadState(
-            thread=ThreadView.model_validate(thread),
-            current_run=runs.get(thread.current_run_id or ""),
-            last_run=runs.get(thread.last_run_id or ""),
-            entries=open_entries.get(thread.id, []),
-        )
-        for thread in threads
-    }
-
-
-async def _may_read(session: AsyncSession, access: Access, credential: Authenticated, workspace_id: str) -> bool:
-    """Whether the credential still reads the workspace; an unavailable database decides nothing."""
-    try:
-        principal = await reauthenticate(session, access, credential)
-        await workspace_scope(session, principal, workspace_id, "read")
-    except ServiceError as error:
-        if error.code == "unavailable":
-            raise
-        return False
-    return True
-
-
 class SessionHub:
     """The session streams of this process: one shared blocking XREAD and one periodic refresh."""
 
     def __init__(self, runtime: Runtime):
         self.runtime = runtime
-        self.sessions: dict[str, _Watched] = {}
-        # Redis key → its thread's session, and the last entry the shared read returned.
-        self.owners: dict[str, str] = {}
+        self.sessions: dict[Scope, Watched] = {}
+        # Redis key → the subscription scopes following it; one cursor per shared Thread stream.
+        self.owners: dict[str, set[Scope]] = {}
         self.cursors: dict[str, str] = {}
         # Serializes refreshes and the first reader of a session, so frames reach each reader in commit order.
         self.lock = asyncio.Lock()
@@ -467,59 +338,70 @@ class SessionHub:
             group.create_task(self._read())
             group.create_task(self._refresh())
 
-    async def join(self, reader: Reader) -> tuple[dict[str, _Watch], dict[str, str]]:
-        """Register the reader: its session's threads and the Redis position after which each thread's live entries
-        reach it."""
+    async def join(self, reader: Reader) -> tuple[dict[str, Watch], dict[str, str], list[str]]:
+        """Readers of the same Session share its state and output subscription."""
         async with self.lock:
-            watched = self.sessions.get(reader.session_id)
+            watched = self.sessions.get(reader.scope)
             if watched is None:
-                watched = await self._watch(reader.session_id, reader.workspace_id)
-            # No await from here on: live entries start exactly after these cursors.
+                watched = await self._watch(reader.scope)
             watched.readers.add(reader)
-            return dict(watched.threads), {
-                thread_id: self.cursors[stream_key(thread_id)] for thread_id in watched.threads
-            }
+            return (
+                dict(watched.threads),
+                {thread_id: self.cursors[stream_key(thread_id)] for thread_id in watched.threads},
+                list(watched.frames.values()),
+            )
 
     def leave(self, reader: Reader) -> None:
-        watched = self.sessions.get(reader.session_id)
+        watched = self.sessions.get(reader.scope)
         if watched is None:
             return
         watched.readers.discard(reader)
         if not watched.readers:
-            del self.sessions[reader.session_id]
+            del self.sessions[reader.scope]
             for thread_id in watched.threads:
-                self.owners.pop(stream_key(thread_id), None)
-                self.cursors.pop(stream_key(thread_id), None)
+                self._remove(thread_id, reader.scope)
+
+    def _remove(self, thread_id: str, scope: Scope) -> None:
+        key = stream_key(thread_id)
+        owners = self.owners.get(key)
+        if owners is not None:
+            owners.discard(scope)
+            if not owners:
+                del self.owners[key]
+                self.cursors.pop(key, None)
 
     def nudge(self) -> None:
         """Refresh now: a reader met a run or attempt it does not follow yet."""
         self.nudged.set()
 
-    async def _watch(self, session_id: str, workspace_id: str) -> _Watched:
+    async def _watch(self, scope: Scope) -> Watched:
         async with short_session(self.runtime.storage) as session:
-            await _repeatable(session)
-            versions = await _versions(session, [(workspace_id, session_id)])
-            states = await _states(session, [version.thread_id for version in versions])
+            await repeatable(session)
+            snapshot = (await observation.snapshots(session, [scope])).get(scope)
+            versions = await thread_versions(session, [(scope.workspace_id, scope.session_id)])
+            states = await thread_states(session, [version.thread_id for version in versions])
         cursors = await asyncio.gather(*(self._cursor(version.thread_id) for version in versions))
-        # No await from here on: a connection that closed during these reads leaves nothing watched.
-        watched = self.sessions[session_id] = _Watched(workspace_id)
+        watched = self.sessions[scope] = Watched(frames=_metadata(snapshot))
         for version, cursor in zip(versions, cursors, strict=True):
             watched.threads[version.thread_id] = version.watch(_frame("thread", states[version.thread_id]))
-            self._add(version.thread_id, session_id, cursor)
+            self._add(version.thread_id, scope, cursor)
         return watched
 
     async def _cursor(self, thread_id: str) -> str:
         """The thread's newest Redis entry: its live entries start after it."""
+        if (cursor := self.cursors.get(stream_key(thread_id))) is not None:
+            return cursor
         try:
             return await last_id(self.runtime.redis, stream_key(thread_id))
         except ServiceError:
             # Redis is down: read what it stores from now on. Earlier output reaches readers through their bases.
             return f"{time.time_ns() // 1_000_000}-0"
 
-    def _add(self, thread_id: str, session_id: str, cursor: str) -> None:
+    def _add(self, thread_id: str, scope: Scope, cursor: str) -> None:
         """Add a thread's Redis stream to the shared read, after `cursor`."""
         key = stream_key(thread_id)
-        self.cursors[key], self.owners[key] = cursor, session_id
+        self.cursors.setdefault(key, cursor)
+        self.owners.setdefault(key, set()).add(scope)
         self.joined.set()
 
     async def _read(self) -> None:
@@ -538,9 +420,10 @@ class SessionHub:
                 if entry.key not in self.cursors:
                     continue
                 self.cursors[entry.key] = entry.id
-                if (watched := self.sessions.get(self.owners[entry.key])) is not None:
-                    for reader in watched.readers:
-                        reader.send(entry)
+                for scope in self.owners[entry.key]:
+                    if (watched := self.sessions.get(scope)) is not None:
+                        for reader in watched.readers:
+                            reader.send(entry)
             if entries:
                 await asyncio.sleep(READ_PAUSE)
 
@@ -560,54 +443,64 @@ class SessionHub:
                 )
 
     async def _refresh_once(self) -> None:
-        """One snapshot of every watched thread's state, and one authority check per credential and workspace."""
+        """Snapshot Session state and recheck each credential before delivery."""
         async with self.lock:
             sessions = dict(self.sessions)
             readers = [reader for watched in sessions.values() for reader in watched.readers]
             async with short_session(self.runtime.storage) as session:
-                await _repeatable(session)
-                versions = await _versions(session, [(watched.workspace_id, key) for key, watched in sessions.items()])
-                changed = [
+                await repeatable(session)
+                snapshots = await observation.snapshots(session, list(sessions))
+                versions = await thread_versions(
+                    session, [(scope.workspace_id, scope.session_id) for scope in sessions]
+                )
+                scoped = {
+                    scope: [version for version in versions if version.session_id == scope.session_id]
+                    for scope in sessions
+                }
+                changed = {
                     version.thread_id
-                    for version in versions
-                    if (watch := sessions[version.session_id].threads.get(version.thread_id)) is None
-                    or watch.key != version.key
-                ]
-                states = await _states(session, changed) if changed else {}
+                    for scope, values in scoped.items()
+                    for version in values
+                    if (watch := sessions[scope].threads.get(version.thread_id)) is None or watch.key != version.key
+                }
+                states = await thread_states(session, list(changed)) if changed else {}
                 readable: dict[tuple[str, str], bool] = {}
                 for reader in readers:
                     key = (reader.credential.credential_id, reader.workspace_id)
                     if key not in readable:
-                        readable[key] = await _may_read(
+                        readable[key] = await may_read(
                             session, self.runtime.access, reader.credential, reader.workspace_id
                         )
-            new = {
-                version.thread_id: await self._cursor(version.thread_id)
-                for version in versions
-                if version.thread_id not in sessions[version.session_id].threads
+            new_ids = {
+                version.thread_id
+                for scope, values in scoped.items()
+                for version in values
+                if version.thread_id not in sessions[scope].threads
             }
-            # No await from here on: every reader receives these updates before any later entry of a new thread.
-            updates: dict[str, list[Update]] = {}
-            for version in versions:
-                watched = sessions[version.session_id]
-                if self.sessions.get(version.session_id) is not watched:
-                    continue  # Its last reader left while the refresh read.
-                frame = None
-                if version.thread_id in states:
-                    frame = _frame("thread", states[version.thread_id])
-                    watched.threads[version.thread_id] = version.watch(frame)
-                if (cursor := new.get(version.thread_id)) is not None:
-                    self._add(version.thread_id, version.session_id, cursor)
-                if frame is not None or version.progress is not None:
-                    updates.setdefault(version.session_id, []).append(
-                        Update(version.thread_id, frame, version.progress, cursor)
-                    )
-            for reader in readers:
-                if not readable[(reader.credential.credential_id, reader.workspace_id)]:
-                    reader.send(Close())
+            new = {thread_id: await self._cursor(thread_id) for thread_id in new_ids}
+            # From here no await: updates and finalization reach readers in this snapshot's order.
+            for scope, watched in sessions.items():
+                if self.sessions.get(scope) is not watched:
                     continue
-                for update in updates.get(reader.session_id, ()):
-                    reader.send(update)
+                updates: list[Update | StateFrame] = []
+                metadata = _metadata(snapshots.get(scope))
+                updates.extend(StateFrame(frame) for key, frame in metadata.items() if watched.frames.get(key) != frame)
+                watched.frames = metadata
+                for version in scoped[scope]:
+                    frame = _frame("thread", states[version.thread_id]) if version.thread_id in states else None
+                    cursor = new.get(version.thread_id)
+                    if frame is not None:
+                        watched.threads[version.thread_id] = version.watch(frame)
+                    if cursor is not None:
+                        self._add(version.thread_id, scope, cursor)
+                    if frame is not None or version.progress is not None:
+                        updates.append(Update(version.thread_id, frame, version.progress, cursor))
+                for reader in watched.readers:
+                    if not readable[(reader.credential.credential_id, reader.workspace_id)]:
+                        reader.send(Close())
+                    else:
+                        for update in updates:
+                            reader.send(update)
 
     async def base(self, run_id: str, first: int | None) -> _Base:
         """The run's committed items from ordinal `first` on, or its newest ones as a default items read returns them
@@ -701,12 +594,26 @@ class SessionHub:
         return tail
 
 
-async def open_stream(runtime: Runtime, credential: Authenticated, workspace_id: str, session_id: str) -> Reader:
-    """Authorize before the response starts, so refusals are ordinary HTTP errors."""
+async def open_stream(
+    runtime: Runtime,
+    credential: Authenticated,
+    workspace_id: str,
+    session_id: str,
+) -> Reader:
+    """Authorize the Session before HTTP starts."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, credential.principal, workspace_id, "read")
         found = await find_session(session, scope.workspace_id, session_id)
     return Reader(credential, scope.workspace_id, found.id)
+
+
+def _metadata(snapshot: observation.Snapshot | None) -> dict[str, str]:
+    if snapshot is None:
+        return {}
+    return {
+        "schedule": _frame("schedule", snapshot.schedule),
+        **{item.occurrence.id: _frame("occurrence", item) for item in snapshot.occurrences},
+    }
 
 
 def _frame(event: FrameName, data: BaseModel) -> str:
@@ -747,15 +654,16 @@ class _Connection:
         self.asked: set[tuple[str, int]] = set()
 
     async def open(self) -> list[str]:
-        threads, self.positions = await self.hub.join(self.reader)
-        frames: list[str] = []
+        threads, self.positions, frames = await self.hub.join(self.reader)
         for thread_id, watch in threads.items():
             frames.append(watch.frame)
             if watch.current_run_id is not None:
                 frames += await self.follow(thread_id, watch.current_run_id, None)
         return frames
 
-    async def handle(self, signal: StreamEntry | Update) -> list[str]:
+    async def handle(self, signal: StreamEntry | Update | StateFrame) -> list[str]:
+        if isinstance(signal, StateFrame):
+            return [signal.frame]
         if isinstance(signal, StreamEntry):
             return self.entry(signal)
         return await self.update(signal)
@@ -850,6 +758,7 @@ class _Connection:
     async def follow(self, thread_id: str, run_id: str, first: int | None) -> list[str]:
         """Send a fresh base of the run, then the deltas Redis retains after it up to this connection's position."""
         base = await self.hub.base(run_id, first)
+        self.asked.difference_update(key for key in self.asked.copy() if key[0] == run_id)
         frames = [_frame("items", base.snapshot)]
         if base.snapshot.complete:
             self.follows.pop(run_id, None)

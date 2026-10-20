@@ -1198,6 +1198,41 @@
       "title": "RunSearch",
       "type": "object"
     },
+    "Schedules": {
+      "additionalProperties": false,
+      "properties": {
+        "scan_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Scan Seconds",
+          "type": "number"
+        },
+        "batch": {
+          "default": 100,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Batch",
+          "type": "integer"
+        },
+        "max_per_workspace": {
+          "default": 1000,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Max Per Workspace",
+          "type": "integer"
+        },
+        "dispatch_max_attempts": {
+          "default": 5,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Dispatch Max Attempts",
+          "type": "integer"
+        }
+      },
+      "title": "Schedules",
+      "type": "object"
+    },
     "Server": {
       "additionalProperties": false,
       "properties": {
@@ -1626,6 +1661,9 @@
     },
     "control": {
       "$ref": "#/$defs/Control"
+    },
+    "schedules": {
+      "$ref": "#/$defs/Schedules"
     },
     "outbox": {
       "$ref": "#/$defs/Outbox"

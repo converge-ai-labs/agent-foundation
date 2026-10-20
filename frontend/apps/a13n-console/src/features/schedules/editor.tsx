@@ -1,0 +1,468 @@
+import { ClockIcon, PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Button,
+  Checkbox,
+  ChoiceField,
+  FormField,
+  Input,
+  Label,
+  ModalFrame,
+  SegmentedControl,
+} from "a13n-ui";
+import { useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useClient } from "../../auth/context";
+import { useWorkspace } from "../../layout/workspace";
+import { ApiError } from "../../service-client";
+import { data, type Schema } from "../../shared/api";
+import { ConflictNotice } from "../../shared/dialogs";
+import { ErrorNotice } from "../../shared/feedback";
+import {
+  FormActions,
+  TextAreaField,
+  scheduleInvocation,
+} from "../../shared/forms";
+import { useIdempotency } from "../../shared/idempotency";
+import shared from "../../shared/shared.module.css";
+import {
+  scheduleCommands,
+  scheduleKeys,
+  scheduleQueries,
+  type Schedule,
+} from "./api";
+import styles from "./schedules.module.css";
+import { JsonDraftSyntaxError } from "./json-draft";
+import { invocationFields, type InvocationDraft } from "./invocation-draft";
+import { ScheduleRevisionField } from "./revision-field";
+
+export function ScheduleEditor({
+  schedule,
+  onSaved,
+}: {
+  schedule?: Schedule;
+  onSaved?: (schedule: Schedule) => void;
+}) {
+  const { t } = useTranslation(),
+    [open, setOpen] = useState(false);
+  return (
+    <ModalFrame
+      open={open}
+      onOpenChange={setOpen}
+      keepVisibleWhenNested
+      size="lg"
+      closeLabel={t("Close")}
+      title={t(schedule ? "Edit schedule" : "Create schedule")}
+      description={t(
+        schedule
+          ? "Changes apply to future triggers. Existing work keeps its saved input."
+          : "Preview the timing, then choose whether to enable the schedule on creation.",
+      )}
+      trigger={
+        <Button variant={schedule ? "outline" : "default"} type="button">
+          {schedule ? <PencilSimpleIcon size={14} /> : <PlusIcon size={14} />}
+          {t(schedule ? "Edit schedule" : "Create schedule")}
+        </Button>
+      }
+    >
+      {open && (
+        <ScheduleForm
+          schedule={schedule}
+          onCancel={() => setOpen(false)}
+          onSaved={(saved) => {
+            setOpen(false);
+            onSaved?.(saved);
+          }}
+        />
+      )}
+    </ModalFrame>
+  );
+}
+
+function ScheduleForm({
+  schedule: initial,
+  onCancel,
+  onSaved,
+}: {
+  schedule?: Schedule;
+  onCancel: () => void;
+  onSaved: (schedule: Schedule) => void;
+}) {
+  const client = useClient(),
+    { workspace } = useWorkspace(),
+    cache = useQueryClient(),
+    { t } = useTranslation();
+  // The draft keeps the version it was opened against; live updates cannot silently replace its ETag.
+  const [schedule] = useState(initial);
+  const [invocationBase, setInvocationBase] = useState<
+    InvocationDraft | undefined
+  >(schedule?.invocation);
+  const [name, setName] = useState(schedule?.name ?? "");
+  const [description, setDescription] = useState(schedule?.description ?? "");
+  const [enableImmediately, setEnableImmediately] = useState(false);
+  const [expression, setExpression] = useState(
+    schedule?.schedule.expression ?? "0 9 * * *",
+  );
+  const [timezone, setTimezone] = useState(
+    schedule?.schedule.timezone ??
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+  const [lateness, setLateness] = useState(
+    schedule?.max_lateness_seconds ?? 300,
+  );
+  const [agentId, setAgentId] = useState(schedule?.invocation.agent_id ?? "");
+  const [revision, setRevision] = useState(
+    schedule?.invocation.agent_revision_id ?? "",
+  );
+  const firstPart = schedule?.invocation.payload.content[0];
+  const [input, setInput] = useState(
+    firstPart?.type === "text" ? firstPart.text : "",
+  );
+  const simple =
+    !schedule ||
+    (schedule.invocation.payload.content.length === 1 &&
+      firstPart?.type === "text");
+  const [mode, setMode] = useState(simple ? "fields" : "json");
+  const [json, setJson] = useState(
+    JSON.stringify(schedule?.invocation ?? {}, null, 2),
+  );
+  const [fieldsSnapshot, setFieldsSnapshot] = useState<string>();
+  const [showModeError, setShowModeError] = useState(false);
+  const jsonInput = useRef<HTMLTextAreaElement>(null);
+  const parsed = useMemo(() => {
+    try {
+      return { fields: invocationFields(json) };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  }, [json]);
+  const agents = useQuery(scheduleQueries(client, workspace.id).agents());
+  const request = useIdempotency();
+  // Field state stays untouched while editing JSON, so discarding restores the exact draft.
+  const fieldInvocation = (): InvocationDraft => ({
+    ...invocationBase,
+    agent_id: agentId,
+    agent_revision_id: revision.trim() || null,
+    payload: {
+      ...invocationBase?.payload,
+      content: [
+        {
+          ...invocationBase?.payload.content[0],
+          type: "text",
+          text: input,
+        },
+      ],
+    },
+  });
+  const save = useMutation({
+    mutationFn: async () => {
+      const body: Schema["ScheduleCreate"] = {
+        name: name.trim(),
+        description: description.trim() || null,
+        schedule: {
+          type: "cron",
+          expression: expression.trim(),
+          timezone: timezone.trim(),
+        },
+        max_lateness_seconds: lateness,
+        invocation: scheduleInvocation(
+          mode === "json" ? json : JSON.stringify(fieldInvocation()),
+        ),
+      };
+      if (schedule)
+        return scheduleCommands(client, workspace.id, schedule).update(body);
+      body.state = enableImmediately ? "enabled" : "paused";
+      return client
+        .workspace(workspace.id)
+        .POST("/api/v1/schedules", {
+          body,
+          params: { header: { "Idempotency-Key": request.forBody(body) } },
+        })
+        .then(data);
+    },
+    onSuccess: (saved) => {
+      void cache.invalidateQueries({
+        queryKey: scheduleKeys(workspace.id).root,
+      });
+      onSaved(saved);
+    },
+  });
+  const preview = useMutation({
+    mutationFn: () =>
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/schedules/preview", {
+          body: {
+            schedule: {
+              expression: expression.trim(),
+              timezone: timezone.trim(),
+            },
+            after: new Date().toISOString(),
+            count: 5,
+          },
+        })
+        .then(data),
+  });
+  const stale = save.error instanceof ApiError && save.error.status === 412;
+  return (
+    <form
+      className={shared.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <FormField label={t("Name")}>
+        <Input
+          required
+          maxLength={128}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+      </FormField>
+      <TextAreaField
+        label={t("Description")}
+        rows={2}
+        value={description}
+        onChange={setDescription}
+        maxLength={2048}
+      />
+      <div className={styles.timing}>
+        <FormField
+          label={t("Cron expression")}
+          description={t("Minute, hour, day, month and weekday.")}
+        >
+          <Input
+            required
+            value={expression}
+            onChange={(event) => {
+              setExpression(event.target.value);
+              preview.reset();
+            }}
+          />
+        </FormField>
+        <FormField
+          label={t("Time zone")}
+          description={t("Use an IANA zone, for example Asia/Shanghai.")}
+        >
+          <Input
+            required
+            value={timezone}
+            onChange={(event) => {
+              setTimezone(event.target.value);
+              preview.reset();
+            }}
+          />
+        </FormField>
+      </div>
+      <div>
+        <Button
+          type="button"
+          variant="outline"
+          loading={preview.isPending}
+          onClick={() => preview.mutate()}
+        >
+          <ClockIcon size={14} />
+          {t("Preview next times")}
+        </Button>
+      </div>
+      <ErrorNotice error={preview.error} />
+      {preview.data && (
+        <ol className={styles.preview} aria-label={t("Next scheduled times")}>
+          {preview.data.items.map((time) => (
+            <li key={time.utc}>
+              {time.local} <span className={styles.notice}>· {time.utc}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <FormField
+        label={t("Maximum delay (seconds)")}
+        description={t(
+          "Skip a trigger when it cannot be submitted within this time.",
+        )}
+      >
+        <Input
+          type="number"
+          min={60}
+          max={86400}
+          required
+          value={lateness}
+          onChange={(event) => setLateness(event.target.valueAsNumber)}
+        />
+      </FormField>
+      <SegmentedControl
+        label={t("Invocation editor")}
+        value={mode}
+        onValueChange={(next) => {
+          if (next === mode) return;
+          if (next === "json") {
+            const snapshot = JSON.stringify(fieldInvocation(), null, 2);
+            setFieldsSnapshot(snapshot);
+            setJson(snapshot);
+            setMode("json");
+          } else {
+            if (json === fieldsSnapshot) {
+              setMode("fields");
+              return;
+            }
+            if (parsed.fields) {
+              const { draft, input } = parsed.fields;
+              setInvocationBase(draft);
+              setAgentId(draft.agent_id);
+              setRevision(draft.agent_revision_id ?? "");
+              setInput(input);
+              setMode("fields");
+            } else {
+              setShowModeError(true);
+            }
+          }
+        }}
+        options={[
+          { value: "fields", label: t("Fields") },
+          { value: "json", label: t("JSON") },
+        ]}
+      />
+      <ModalFrame
+        open={showModeError}
+        onOpenChange={setShowModeError}
+        finalFocus={jsonInput}
+        title={t("Cannot switch to fields")}
+        description={parsed.error ? t(parsed.error.message) : undefined}
+        closeLabel={t("Close")}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowModeError(false)}
+            >
+              {t("Continue editing")}
+            </Button>
+            {fieldsSnapshot !== undefined && (
+              <Button
+                type="button"
+                onClick={() => {
+                  setJson(fieldsSnapshot);
+                  setShowModeError(false);
+                  if (!stale) save.reset();
+                  setMode("fields");
+                }}
+              >
+                {t("Discard JSON changes and return to fields")}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {parsed.error instanceof JsonDraftSyntaxError && (
+          <p>
+            {t("Line {{line}}, column {{column}}", {
+              line: parsed.error.line,
+              column: parsed.error.column,
+            })}
+          </p>
+        )}
+        {fieldsSnapshot !== undefined && (
+          <p className={styles.notice}>
+            {t(
+              "Restores the form as it was before you opened JSON. Other schedule fields are kept.",
+            )}
+          </p>
+        )}
+      </ModalFrame>
+      {mode === "json" ? (
+        <TextAreaField
+          ref={jsonInput}
+          label={t("Invocation JSON")}
+          code
+          rows={12}
+          value={json}
+          invalid={!!parsed.error}
+          onChange={setJson}
+        />
+      ) : (
+        <>
+          <ErrorNotice
+            error={agents.error}
+            retry={() => void agents.refetch()}
+          />
+          <ChoiceField
+            label={t("Agent")}
+            required
+            value={agentId}
+            placeholder={t("Select an agent")}
+            onValueChange={(next) => {
+              if (next === agentId) return;
+              setAgentId(next);
+              setRevision("");
+            }}
+            options={(agents.data ?? []).map((agent) => ({
+              value: agent.id,
+              label: agent.name,
+            }))}
+          />
+          <ScheduleRevisionField
+            agentId={agentId}
+            value={revision}
+            onValueChange={setRevision}
+          />
+          <TextAreaField
+            label={t("Input")}
+            rows={5}
+            value={input}
+            onChange={setInput}
+          />
+        </>
+      )}
+      <p className={styles.notice}>
+        {t(
+          "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.",
+        )}
+      </p>
+      {stale ? (
+        <ConflictNotice
+          title={t("Schedule changed")}
+          description={t(
+            "Another change was saved. Reload the schedule before editing again.",
+          )}
+          recover={{
+            label: t("Discard and reload"),
+            onClick: () => {
+              void cache.invalidateQueries({
+                queryKey: scheduleKeys(workspace.id).root,
+              });
+              onCancel();
+            },
+          }}
+        />
+      ) : (
+        <ErrorNotice error={save.error} />
+      )}
+      <FormActions
+        onCancel={onCancel}
+        pending={save.isPending}
+        disabled={stale || (mode === "fields" && (!agentId || !input.trim()))}
+        leading={
+          !schedule && (
+            <Label>
+              <Checkbox
+                checked={enableImmediately}
+                onCheckedChange={setEnableImmediately}
+                disabled={save.isPending}
+              />
+              {t("Enable immediately")}
+            </Label>
+          )
+        }
+        label={t(
+          schedule
+            ? "Save changes"
+            : enableImmediately
+              ? "Create and enable"
+              : "Create schedule",
+        )}
+      />
+    </form>
+  );
+}

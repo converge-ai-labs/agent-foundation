@@ -223,6 +223,13 @@ class Control(Section):
     stream_refresh_seconds: float = Field(default=2, gt=0, le=60)
 
 
+class Schedules(Section):
+    scan_seconds: float = Field(default=5, gt=0, le=300)
+    batch: int = Field(default=100, ge=1, le=1000)
+    max_per_workspace: int = Field(default=1000, ge=1, le=100000)
+    dispatch_max_attempts: int = Field(default=5, ge=1, le=20)
+
+
 class Outbox(Section):
     purge_interval_seconds: float = Field(default=60, gt=0, le=3600)
     purge_batch: int = Field(default=1000, ge=1, le=10000)
@@ -542,6 +549,7 @@ class Settings(Section):
     auth: Authentication = Field(default_factory=Authentication)
     encryption: Encryption = Field(default_factory=Encryption)
     control: Control = Field(default_factory=Control)
+    schedules: Schedules = Field(default_factory=Schedules)
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
     run_search: RunSearch = Field(default_factory=RunSearch)

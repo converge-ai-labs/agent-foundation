@@ -171,6 +171,7 @@ dependencies = [
     { name = "argon2-cffi" },
     { name = "botocore" },
     { name = "click" },
+    { name = "croniter" },
     { name = "cryptography" },
     { name = "docker" },
     { name = "e2b" },
@@ -198,6 +199,7 @@ dependencies = [
     { name = "referencing" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
+    { name = "tzdata" },
     { name = "uvicorn" },
     { name = "zstandard" },
 ]
@@ -214,6 +216,7 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=25,<26" },
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
     { name = "click", specifier = ">=8.2,<9" },
+    { name = "croniter", specifier = ">=6,<7" },
     { name = "cryptography", specifier = ">=50,<51" },
     { name = "docker", specifier = ">=7.2,<8" },
     { name = "e2b", specifier = ">=2.46.4,<3" },
@@ -241,6 +244,7 @@ requires-dist = [
     { name = "referencing", specifier = ">=0.37,<1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "starlette", specifier = ">=0.52,<2" },
+    { name = "tzdata", specifier = ">=2026.3" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
@@ -1002,6 +1006,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8b/b5/63e14ab9d4d4cc58818562db4120a35fa7454e3035633da41bdc6b712abd/connectrpc-0.11.1.tar.gz", hash = "sha256:18277f7838847b4271ca38d40c7d2387b5a2ea6a29f240689c19e1ec84aaff66", size = 46222, upload-time = "2026-07-15T06:33:31.601Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/ac/aa647675812cd075f2cb9acb00d62f4f2cbcbc6736049a62342b7371ce5b/connectrpc-0.11.1-py3-none-any.whl", hash = "sha256:8a52e2e92a485fa9681c1101a79a5ebeb31807e3ea3d5aabd41f484a6398bc7b", size = 64991, upload-time = "2026-07-15T06:33:29.396Z" },
+]
+
+[[package]]
+name = "croniter"
+version = "6.2.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/57/2e2a65aee2a70483cb28e2b7e15a072d00a523207593b44400d4717bb100/croniter-6.2.4.tar.gz", hash = "sha256:fc124f751b1b04805c2a04b061898b436b45ab2320b045e1e052ea895de65189", size = 166267, upload-time = "2026-07-10T09:52:59.955Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/ba/d678e5bd329646ca51d3c92addbc77804e86d21f4b6b6a027218e6abb010/croniter-6.2.4-py3-none-any.whl", hash = "sha256:8ef3d544107a5c05a150a2d78f8bf5a8eb9c5c4d93405a736b824109574e3f4d", size = 46677, upload-time = "2026-07-10T09:52:58.425Z" },
 ]
 
 [[package]]

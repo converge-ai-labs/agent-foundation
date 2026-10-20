@@ -13,7 +13,6 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from types import SimpleNamespace
 
-import anyio
 import httpx2
 import pytest
 from a13n_service.app import build_app
@@ -778,7 +777,8 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
     assert await audit_actions(service, target_kind="user") == ["user.update", "user.password.change"]
 
 
-async def test_expire_credentials_keeps_history(service) -> None:  # type: ignore[no-untyped-def]
+async def test_expire_credentials_keeps_history(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
     storage, client = service.runtime.storage, service.client
     await client.post(f"{service.workspace}/invitations", json={"email": "stale@example.com", "role": "viewer"})
     async with AsyncExitStack() as stack:
@@ -899,7 +899,16 @@ async def test_invitation_needs_the_inviters_current_authority(service) -> None:
     assert event.details["principal_id"] == joined_id and event.details["invitation_id"]
 
 
-async def test_administration_rechecks_authority_inside_its_transaction(service) -> None:  # type: ignore[no-untyped-def]
+async def test_administration_rechecks_authority_inside_its_transaction(service, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.tenancy import access as access_module
+
+    locking = asyncio.Event()
+
+    async def observed_lock(session, organization_id):
+        locking.set()
+        await lock_organization(session, organization_id)
+
+    monkeypatch.setattr(access_module, "lock_organization", observed_lock)
     storage, access, organization_id = service.runtime.storage, service.runtime.access, service.tenant.organization_id
     async with AsyncExitStack() as stack:
         deputy = await join(service, stack, "deputy@example.com", "admin", scope=service.organization)
@@ -909,10 +918,11 @@ async def test_administration_rechecks_authority_inside_its_transaction(service)
     # A revocation holds the organization while the deputy's change, authenticated as an admin, starts.
     async with transaction(storage) as session:
         await lock_organization(session, organization_id)
+        locking.clear()
         change = asyncio.create_task(
             create_workspace(storage, access, authenticated, organization_id, WorkspaceCreate(name="Late"))
         )
-        await asyncio.sleep(0.2)
+        await asyncio.wait_for(locking.wait(), timeout=10)
         assert not change.done()
         await session.execute(delete(GrantRow).where(GrantRow.principal_id == deputy_id))
     with pytest.raises(ServiceError, match="cannot perform"):
@@ -1096,21 +1106,34 @@ async def test_outbox_ends_claims_that_never_settle_and_keeps_deferred_ones(runt
                 purpose=purpose,
             )
 
+    entered, deferred = asyncio.Event(), asyncio.Event()
+
     async def handle(claimed: Claim) -> None:
         if claimed.target["purpose"] == "deferred":
             async with transaction(runtime.storage) as session:
                 await settle(session, claimed, "deferred", error="not_yet")
+            deferred.set()
             return
-        await asyncio.sleep(3600)  # cancelled with the pass, as a sweep deadline or a shutdown would
+        entered.set()
+        await asyncio.Event().wait()
 
     delivery = Delivery(
         runtime.storage, {"email": handle}, owner="test", policies={"email": Policy(batch=10, max_attempts=2)}
     )
-    for _ in range(3):
-        with anyio.move_on_after(0.5):
-            await delivery()
+    for _ in range(2):
+        entered.clear()
+        deferred.clear()
+        task = asyncio.create_task(delivery())
+        try:
+            async with asyncio.timeout(10):
+                await entered.wait()
+                await deferred.wait()
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         async with transaction(runtime.storage) as session:
             await session.execute(update(OutboxRow).values(lease_expires_at=func.now(), available_at=func.now()))
+    await delivery()  # Exhausted claims become dead; the deferred row remains retryable.
     async with short_session(runtime.storage) as session:
         rows = (await session.scalars(select(OutboxRow))).all()
     # Every claim of the cancelled delivery used an attempt; a deferral gave its attempt back each time.

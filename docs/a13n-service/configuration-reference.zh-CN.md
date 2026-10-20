@@ -107,6 +107,15 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `control.import_timeout`         | `A13N_CONTROL__IMPORT_TIMEOUT`         | 数值        | maximum=120; exclusiveMinimum=0; default=30     |
 | `control.stream_refresh_seconds` | `A13N_CONTROL__STREAM_REFRESH_SECONDS` | 数值        | maximum=60; exclusiveMinimum=0; default=2       |
 
+## `schedules`
+
+| 设置                              | 环境变量                                | 类型 / 选项 | 约束与默认值                               |
+| --------------------------------- | --------------------------------------- | ----------- | ------------------------------------------ |
+| `schedules.scan_seconds`          | `A13N_SCHEDULES__SCAN_SECONDS`          | 数值        | maximum=300; exclusiveMinimum=0; default=5 |
+| `schedules.batch`                 | `A13N_SCHEDULES__BATCH`                 | 整数        | minimum=1; maximum=1000; default=100       |
+| `schedules.max_per_workspace`     | `A13N_SCHEDULES__MAX_PER_WORKSPACE`     | 整数        | minimum=1; maximum=100000; default=1000    |
+| `schedules.dispatch_max_attempts` | `A13N_SCHEDULES__DISPATCH_MAX_ATTEMPTS` | 整数        | minimum=1; maximum=20; default=5           |
+
 ## `outbox`
 
 | 设置                                          | 环境变量                                                          | 类型 / 选项 | 约束与默认值                                   |

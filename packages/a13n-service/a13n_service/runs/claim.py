@@ -20,7 +20,9 @@ from a13n_service.resources.subscriptions.delivery import Transition, prepare_we
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import AttemptRow, RunRow
+from a13n_service.runs.schedules.tables import OccurrenceRow
+from a13n_service.runs.schemas import ScheduleOrigin
+from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
 from a13n_service.runs.webhooks import lifecycle_transition, notify_subscribers
 
 logger = get_logger(__name__)
@@ -39,15 +41,23 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
     waits: list[float] = []
     async with transaction(runtime.storage) as session:
         current = await now(session)
-        runs = (
-            await session.scalars(
-                select(RunRow)
+        candidates = (
+            await session.execute(
+                select(RunRow, OccurrenceRow.schedule_id, OccurrenceRow.id)
+                .join(ThreadRow, ThreadRow.id == RunRow.thread_id)
+                .outerjoin(OccurrenceRow, OccurrenceRow.id == ThreadRow.schedule_occurrence_id)
                 .where(RunRow.status == "accepted", RunRow.available_at <= current, checkpoints.claimable())
                 .order_by(RunRow.available_at, RunRow.id)
                 .limit(limit)
-                .with_for_update(skip_locked=True)
+                .with_for_update(of=RunRow, skip_locked=True)
             )
         ).all()
+        runs = [run for run, _, _ in candidates]
+        schedule_origins = {
+            run.thread_id: ScheduleOrigin(schedule_id=schedule_id, occurrence_id=occurrence_id)
+            for run, schedule_id, occurrence_id in candidates
+            if schedule_id is not None and occurrence_id is not None
+        }
         if not runs:
             return []
         latest = (
@@ -118,7 +128,13 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
             run.status, run.current_attempt_id = "running", attempt.id
             run.started_at = run.started_at or current
             transitions.append(
-                lifecycle_transition(run, ["run.running", "run_attempt.leased"], at=current, attempt=attempt)
+                lifecycle_transition(
+                    run,
+                    ["run.running", "run_attempt.leased"],
+                    at=current,
+                    attempt=attempt,
+                    schedule_origin=schedule_origins.get(run.thread_id),
+                )
             )
             if previous is not None:
                 takeovers.append((run, attempt.number))

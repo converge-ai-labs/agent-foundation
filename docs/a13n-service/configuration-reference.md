@@ -107,6 +107,15 @@ The complete machine-readable validation schema, including named enum/union defi
 | `control.import_timeout`         | `A13N_CONTROL__IMPORT_TIMEOUT`         | number         | maximum=120; exclusiveMinimum=0; default=30     |
 | `control.stream_refresh_seconds` | `A13N_CONTROL__STREAM_REFRESH_SECONDS` | number         | maximum=60; exclusiveMinimum=0; default=2       |
 
+## `schedules`
+
+| Setting                           | Environment variable                    | Type / choices | Constraints and default                    |
+| --------------------------------- | --------------------------------------- | -------------- | ------------------------------------------ |
+| `schedules.scan_seconds`          | `A13N_SCHEDULES__SCAN_SECONDS`          | number         | maximum=300; exclusiveMinimum=0; default=5 |
+| `schedules.batch`                 | `A13N_SCHEDULES__BATCH`                 | integer        | minimum=1; maximum=1000; default=100       |
+| `schedules.max_per_workspace`     | `A13N_SCHEDULES__MAX_PER_WORKSPACE`     | integer        | minimum=1; maximum=100000; default=1000    |
+| `schedules.dispatch_max_attempts` | `A13N_SCHEDULES__DISPATCH_MAX_ATTEMPTS` | integer        | minimum=1; maximum=20; default=5           |
+
 ## `outbox`
 
 | Setting                                       | Environment variable                                               | Type / choices | Constraints and default                        |

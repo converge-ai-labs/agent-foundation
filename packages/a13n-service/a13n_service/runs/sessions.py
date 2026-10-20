@@ -14,6 +14,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.runs.memories.session_memory import configure
+from a13n_service.runs.schedules.tables import ScheduleRow
 from a13n_service.runs.schemas import (
     SessionCreate,
     SessionPage,
@@ -50,8 +51,13 @@ def new_session(organization_id: str, workspace_id: str, created_by_id: str) -> 
 
 
 async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[SessionView]:
-    """Views with the latest run's preview and each session's run count, two queries per page."""
+    """Views with the latest run's preview and each session's run count, and Schedule association, batched per page."""
     ids = [row.id for row in rows]
+    schedules = dict(
+        (await session.execute(select(ScheduleRow.session_id, ScheduleRow.id).where(ScheduleRow.session_id.in_(ids))))
+        .tuples()
+        .all()
+    )
     previews: dict[str, SessionPreview] = {}
     for session_id, run, agent_name, payload in (
         await session.execute(
@@ -88,6 +94,7 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
             update={
                 "preview": previews.get(row.id),
                 "run_count": counts.get(row.id, 0),
+                "schedule_id": schedules.get(row.id),
             }
         )
         for row in rows
@@ -182,6 +189,8 @@ async def update_session(
             row.labels = dict(body.labels)
         if body.memory is not None:
             require_conversation(row)
+            if await session.scalar(select(ScheduleRow.id).where(ScheduleRow.session_id == row.id)) is not None:
+                raise conflict("session", row.id, "schedule_managed_memory")
             await configure(session, row, body.memory)
         await session.flush()
         return (await _views(session, [row]))[0]

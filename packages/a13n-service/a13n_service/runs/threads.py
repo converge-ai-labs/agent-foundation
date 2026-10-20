@@ -58,12 +58,14 @@ def new_thread(
     origin_run_id: str | None = None,
     origin_tool_call_id: str | None = None,
     subagent: str | None = None,
+    schedule_occurrence_id: str | None = None,
 ) -> ThreadRow:
     return ThreadRow(
         id=new_object_id("thread"),
         organization_id=session_row.organization_id,
         workspace_id=session_row.workspace_id,
         session_id=session_row.id,
+        schedule_occurrence_id=schedule_occurrence_id,
         origin=origin,
         origin_thread_id=origin_thread_id,
         origin_run_id=origin_run_id,
@@ -92,6 +94,7 @@ async def list_threads(
     limit: int,
     cursor: str | None,
     text_query: str | None = None,
+    occurrence_id: str | None = None,
 ) -> ThreadPage:
     """Oldest first, so a session opens at its first thread and child threads follow their parents."""
     match = predicate(RunRow.search_vector, text_query)
@@ -104,6 +107,8 @@ async def list_threads(
         )
         if session_id is not None:
             query = query.where(ThreadRow.session_id == session_id)
+        if occurrence_id is not None:
+            query = query.where(ThreadRow.schedule_occurrence_id == occurrence_id)
         if match is not None:
             query = query.where(
                 ThreadRow.id.in_(select(RunRow.thread_id).where(RunRow.workspace_id == scope.workspace_id, match))
@@ -113,7 +118,7 @@ async def list_threads(
             query,
             (ThreadRow.created_at, ThreadRow.id),
             kind="threads",
-            owner=cursors.query_owner(scope.workspace_id, session_id, label, text_query),
+            owner=cursors.query_owner(scope.workspace_id, session_id, label, text_query, occurrence_id),
             cursor=cursor,
             limit=limit,
             newest_first=False,

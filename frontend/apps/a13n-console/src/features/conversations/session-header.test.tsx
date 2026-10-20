@@ -95,7 +95,10 @@ const child = fixtureThread({
   origin_thread_id: "thr_1",
 });
 
+let contextRequests: URL[];
+
 beforeEach(() => {
+  contextRequests = [];
   labels = { "a13n.console": "debug" };
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = createClient({
@@ -112,7 +115,8 @@ beforeEach(() => {
         });
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
-      if (url.pathname.endsWith("/usage/context"))
+      if (url.pathname.endsWith("/usage/context")) {
+        contextRequests.push(url);
         return Response.json({
           run_id: "run_2",
           record_id: "record",
@@ -120,6 +124,7 @@ beforeEach(() => {
           output_tokens: 2000,
           context_window_tokens: 200000,
         });
+      }
       if (url.pathname.endsWith("/usage")) return Response.json(usage);
       if (url.pathname.endsWith("/models"))
         return Response.json({
@@ -169,7 +174,7 @@ function show(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route
-            path="/sessions/:sessionId/threads/:threadId/runs/:runId"
+            path="/sessions/:sessionId/threads/:threadId/runs?/:runId?"
             element={
               <RunCollapseProvider>
                 <SessionHeader threads={threads} />
@@ -292,6 +297,8 @@ it("shows the session's spend and breaks it down by model and by run", async () 
   const dialog = await screen.findByRole("dialog", { name: "Session usage" });
   expect(await within(dialog).findByText("42k / 200k")).toBeTruthy();
   expect(within(dialog).getByText("21%")).toBeTruthy();
+  expect(contextRequests.at(-1)?.searchParams.get("run_id")).toBe("run_2");
+  expect(contextRequests.at(-1)?.searchParams.has("thread_id")).toBe(false);
   expect(screen.queryByRole("button", { name: /Context window:/ })).toBeNull();
   // Cached input is part of input, so the rate is weighted by input.
   expect(within(dialog).getByText("3k cached · 75.0% cache hit")).toBeTruthy();
@@ -323,4 +330,14 @@ it("keeps usage out of Chat", async () => {
   show([fixtureThread()], "/sessions/ses_1/threads/thr_1/runs/run_2?view=chat");
   expect(await screen.findByText("Thread")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Session usage/ })).toBeNull();
+});
+
+it("uses the latest run of the thread when no run is selected", async () => {
+  show([fixtureThread()], "/sessions/ses_1/threads/thr_1?view=debug");
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Session usage: $0.30" }));
+  await screen.findByText("42k / 200k");
+  expect(contextRequests.at(-1)?.searchParams.get("thread_id")).toBe("thr_1");
+  expect(contextRequests.at(-1)?.searchParams.has("run_id")).toBe(false);
 });

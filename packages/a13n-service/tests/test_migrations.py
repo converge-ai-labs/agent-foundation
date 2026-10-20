@@ -60,6 +60,25 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     assert len(migrated) >= len(OSS.rules())
 
 
+def test_schedule_revision_upgrades_and_restores_main_schema(empty_database: Database) -> None:
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, "fed344f2d755")
+    original_rules = rows(empty_database, RULES)
+    original_objects = rows(empty_database, OBJECTS)
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    assert len(rows(empty_database, "SELECT version_num FROM alembic_version")) == 1
+    assert rows(
+        empty_database,
+        "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public'"
+        " AND table_name = 'schedule_occurrences' AND column_name = 'next_attempt_at'",
+    ) == [("YES",)]
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, "fed344f2d755")
+    assert rows(empty_database, RULES) == original_rules
+    assert rows(empty_database, OBJECTS) == original_objects
+
+
 def test_revisions_downgrade_to_an_empty_schema_and_upgrade_again(empty_database: Database) -> None:
     upgrade(empty_database, OSS)
     with migration_connection(empty_database, OSS) as config:
@@ -144,6 +163,8 @@ async def test_history_migration_preserves_existing_rows_and_guards_order(databa
 
 @pytest.mark.anyio
 async def test_legacy_toolsets_and_platform_selections_are_rewritten(database, service, runs_kit, scripted_model):  # type: ignore[no-untyped-def]
+    # Synchronous migration DDL must not compete with background transactions on this database.
+    await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     overridden = {"overrides": {"toolsets": {"web": {"enabled": False}}}}
     run = (await runs_kit.start_thread(service, agent, "hi", options=overridden))["run"]
@@ -223,6 +244,7 @@ def test_run_search_migration_retries_after_concurrent_index_build(
     upgrade(empty_database, OSS)
     with migration_connection(empty_database, OSS) as config:
         # The additive DDL and concurrent build committed, but the process died before stamping its revision.
+        command.downgrade(config, "4d51a94777d9")
         command.stamp(config, "2e9655a2d223")
         if invalid_index:
             connection = config.attributes["connection"]
