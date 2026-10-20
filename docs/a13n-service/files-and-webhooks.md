@@ -40,7 +40,7 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 
 - `kinds` selects events: `run.accepted`, `run.running`, `run.waiting`, `run.completed`, `run.failed`, `run.cancelled`, and for attempts `run_attempt.leased`, `run_attempt.running`, `run_attempt.succeeded`, `run_attempt.yielded`, `run_attempt.failed`, `run_attempt.cancelled`.
 - `filter` optionally narrows events to an `agent_id`, `session_id` or `thread_id`.
-- `signing_secret` is optional: `whsec_` followed by the standard base64 of 24 to 64 bytes, as [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) defines it. Without it the Service generates one from 32 random bytes. Any other value is rejected with `invalid_argument`. The secret is returned only in the creation response. Subscriptions created before this format must be re-keyed: send a `PATCH` with a new `whsec_…` secret as an admin, or recreate the subscription.
+- `signing_secret` is optional: `whsec_` followed by the standard base64 of 24 to 64 bytes, as [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) defines it. Without it the Service generates one from 32 random bytes. Any other value is rejected with `invalid_argument`. The secret is returned only in the creation response. Subscriptions created before this format must be re-keyed: send a `PATCH` with a new `whsec_…` secret as an admin, or recreate the subscription. Deliveries queued before the upgrade cannot be recovered: they fail with `signing_secret_unavailable`, and redelivering them reuses the old secret.
 - `PATCH` changes the name, URL, kinds, filter, `enabled` or `signing_secret`; `DELETE` removes the subscription. Both take `If-Match`. Changes affect only deliveries queued afterwards.
 - A workspace has at most `control.subscriptions` subscriptions (32 by default). The URL must pass the [outbound policy](configuration.md#outbound-requests) when saved and on every delivery.
 
@@ -70,7 +70,7 @@ Deliveries are signed with the [Standard Webhooks](https://github.com/standard-w
 | `webhook-timestamp` | Unix seconds when the request was signed.                                                                                            |
 | `webhook-signature` | `v1,` followed by the base64 HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{body}`, keyed with the base64-decoded signing secret. |
 
-Verify with a Standard Webhooks library over the raw body, exactly as received and not re-serialized. The library rejects a timestamp more than five minutes from your clock, so keep the receiver's clock synchronized. This breaking change replaced the earlier `X-A13n-*` headers and hex signature without a transition period.
+Verify with a Standard Webhooks library over the raw body, exactly as received and not re-serialized. The library rejects a timestamp more than five minutes from your clock, so keep the receiver's clock synchronized. The earlier `X-A13n-*` headers and hex signature are no longer sent.
 
 ```python
 from standardwebhooks import Webhook, WebhookVerificationError
@@ -79,7 +79,7 @@ def handle(secret: str, headers, body: bytes) -> None:
     try:
         event = Webhook(secret).verify(body, headers)  # webhook-id, webhook-timestamp, webhook-signature
     except WebhookVerificationError:
-        ...  # reject with a 4xx
+        return  # reject with a 4xx
     ...  # skip the event when headers["webhook-id"] was already processed
 ```
 

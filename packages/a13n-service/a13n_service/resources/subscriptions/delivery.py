@@ -57,8 +57,12 @@ class RunFacts:
 
 
 def webhook_target(keys: KeyRing, subscription: SubscriptionRow, delivery_id: str) -> dict[str, JsonValue]:
-    """The outbox target of one delivery; the secret is re-encrypted for the outbox row `delivery_id`."""
+    """The outbox target of one delivery; the secret is re-encrypted for the outbox row `delivery_id`.
+
+    A secret that is not a Standard Webhooks key, such as one stored before that scheme, raises `ValueError`.
+    """
     secret = keys.reveal(Envelope.model_validate(subscription.signing_secret), signing_location(subscription))
+    signing_key(secret.decode())
     protected = keys.protect(secret, secret_location(subscription.organization_id, delivery_id, "target"))
     return WebhookTarget(url=subscription.url, signing_secret=protected).model_dump(mode="json")
 
@@ -153,7 +157,7 @@ def _prepare(keys: KeyRing, subscription: SubscriptionRow, payload: dict[str, Js
         target = webhook_target(keys, subscription, delivery_id)
     except (ServiceError, ValueError) as error:
         logger.error(
-            "Subscription signing secret cannot be decrypted",
+            "Subscription signing secret is unavailable",
             extra={"subscription_id": subscription.id, "exception_details": exception_details(error)},
         )
         target, dead = {"url": subscription.url}, SECRET_UNAVAILABLE
@@ -169,11 +173,9 @@ def _prepare(keys: KeyRing, subscription: SubscriptionRow, payload: dict[str, Js
     )
 
 
-def signature(secret: bytes, timestamp: str, delivery_id: str, body: bytes) -> str:
+def signature(key: bytes, timestamp: str, delivery_id: str, body: bytes) -> str:
     """The `webhook-signature` value: `v1,` and the standard-base64 HMAC-SHA256 over the delivery and body."""
-    digest = hmac.new(
-        signing_key(secret.decode("ascii")), f"{delivery_id}.{timestamp}.".encode() + body, hashlib.sha256
-    ).digest()
+    digest = hmac.new(key, f"{delivery_id}.{timestamp}.".encode() + body, hashlib.sha256).digest()
     return "v1," + base64.b64encode(digest).decode("ascii")
 
 
@@ -202,13 +204,17 @@ class WebhookSender:
         try:
             target = WebhookTarget.model_validate(claim.target)
             secret = self.keys.reveal(target.signing_secret, secret_location(claim.organization_id, claim.id, "target"))
+            try:
+                key = signing_key(secret.decode())
+            except ValueError:  # staged before the Standard Webhooks scheme: re-key and let new deliveries replace it
+                return SECRET_UNAVAILABLE
             body = json.dumps(claim.payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
             timestamp = str(int(time.time()))
             headers = {
                 "content-type": "application/json",
                 DELIVERY_HEADER: claim.id,
                 TIMESTAMP_HEADER: timestamp,
-                SIGNATURE_HEADER: signature(secret, timestamp, claim.id, body),
+                SIGNATURE_HEADER: signature(key, timestamp, claim.id, body),
             }
             with anyio.fail_after(self.timeout):
                 async with (

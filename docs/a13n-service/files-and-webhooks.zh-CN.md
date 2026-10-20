@@ -40,7 +40,7 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 
 - `kinds` 选择事件：`run.accepted`、`run.running`、`run.waiting`、`run.completed`、`run.failed`、`run.cancelled`，以及执行尝试事件 `run_attempt.leased`、`run_attempt.running`、`run_attempt.succeeded`、`run_attempt.yielded`、`run_attempt.failed`、`run_attempt.cancelled`。
 - `filter` 可选限定到 `agent_id`、`session_id` 或 `thread_id`。
-- `signing_secret` 可选：`whsec_` 加上 24 到 64 个字节的标准 base64，即 [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) 定义的格式。未提供时由 Service 用 32 个随机字节生成。其他取值会以 `invalid_argument` 拒绝。密钥仅在创建响应中返回。在此格式之前创建的订阅必须重新设置密钥：以管理员身份用新的 `whsec_…` 密钥执行 `PATCH`，或重新创建订阅。
+- `signing_secret` 可选：`whsec_` 加上 24 到 64 个字节的标准 base64，即 [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) 定义的格式。未提供时由 Service 用 32 个随机字节生成。其他取值会以 `invalid_argument` 拒绝。密钥仅在创建响应中返回。在此格式之前创建的订阅必须重新设置密钥：以管理员身份用新的 `whsec_…` 密钥执行 `PATCH`，或重新创建订阅。升级前已排队的投递无法恢复：它们会以 `signing_secret_unavailable` 失败，重新投递也会沿用旧密钥。
 - `PATCH` 修改名称、URL、kinds、filter、`enabled` 或 `signing_secret`；`DELETE` 移除订阅。两者都需要 `If-Match`。修改只影响之后排队的投递。
 - 一个工作空间最多 `control.subscriptions` 个订阅（默认 32）。保存时和每次投递时，URL 都必须符合[出站策略](configuration.md#outbound-requests)。
 
@@ -70,7 +70,7 @@ Run 事件包含 `attempt: null`；执行尝试事件添加 attempt 的 `id`、`
 | `webhook-timestamp` | 请求签名时的 Unix 秒数。                                                                                |
 | `webhook-signature` | `v1,` 加上 `{webhook-id}.{webhook-timestamp}.{body}` 的 HMAC-SHA256 的 base64，密钥为解码后的签名密钥。 |
 
-使用 Standard Webhooks 库，基于收到的原始请求体（不要重新序列化）进行验证。库会拒绝与接收端时钟相差超过五分钟的时间戳，因此请保持接收端时钟同步。这是一次有意的破坏性变更：原来的 `X-A13n-*` 请求头和十六进制签名已被替换，没有过渡期。
+使用 Standard Webhooks 库，基于收到的原始请求体（不要重新序列化）进行验证。库会拒绝与接收端时钟相差超过五分钟的时间戳，因此请保持接收端时钟同步。原来的 `X-A13n-*` 请求头和十六进制签名不再发送。
 
 ```python
 from standardwebhooks import Webhook, WebhookVerificationError
@@ -79,7 +79,7 @@ def handle(secret: str, headers, body: bytes) -> None:
     try:
         event = Webhook(secret).verify(body, headers)  # webhook-id、webhook-timestamp、webhook-signature
     except WebhookVerificationError:
-        ...  # 以 4xx 拒绝
+        return  # 以 4xx 拒绝
     ...  # 若 headers["webhook-id"] 已处理过，则跳过该事件
 ```
 
