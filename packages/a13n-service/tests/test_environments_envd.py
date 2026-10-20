@@ -199,9 +199,9 @@ async def test_proxy_reads_real_envd_without_session_and_exports_selected_source
             row.token = external.seal(service.runtime.keys, row, TOKEN)
         original = collection.read
 
-        async def checked_read(runtime, selection):
+        async def checked_read(runtime, selection, *, credential_cache=None):
             assert runtime.storage.engine.pool.checkedout() == 0
-            return await original(runtime, selection)
+            return await original(runtime, selection, credential_cache=credential_cache)
 
         monkeypatch.setattr(collection, "read", checked_read)
         async with asyncio.timeout(10):
@@ -393,13 +393,14 @@ async def test_reverse_device_real_envd_export_cross_replica_query_and_revocatio
     from websockets.exceptions import InvalidStatus
 
     from .conftest import listening
-    from .test_monitoring_devices import registration
+    from .test_monitoring_devices import allow_loopback, registration
     from .test_monitoring_export import receiver
     from .test_monitoring_proxy import controlled
 
     owner = await controlled(service)
-    peer = Proxy(replace(service.runtime, metrics_proxy=None))
-    owner_runtime = service.runtime
+    allow_loopback(service, monkeypatch)
+    owner_runtime = service.app.state.runtime
+    peer = Proxy(replace(owner_runtime, metrics_proxy=None))
     tasks = [asyncio.create_task(owner.route()), asyncio.create_task(peer.route())]
     await asyncio.wait_for(asyncio.gather(owner.ready.wait(), peer.ready.wait()), timeout=5)
 
