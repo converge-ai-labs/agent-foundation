@@ -65,6 +65,45 @@ it("uses the explicitly supplied locale for calendar headings", async () => {
   const picker = screen.getByRole("dialog", { name: "Expiration date" });
   expect(picker.textContent).toContain("2026年9月");
   expect(picker.textContent).not.toContain("September");
+  expect(within(picker).getByRole("option", { name: "9月" })).toBeTruthy();
+});
+it("jumps to a future year and month without changing the selected date until confirmation", async () => {
+  const { user, change } = setup("en", "second");
+  await user.click(screen.getByRole("button", { name: "Expiration date" }));
+  const picker = within(
+    screen.getByRole("dialog", { name: "Expiration date" }),
+  );
+  const futureYear = String(new Date().getFullYear() + 5);
+  await user.selectOptions(
+    picker.getByRole("combobox", { name: "Choose the Year" }),
+    futureYear,
+  );
+  await user.selectOptions(
+    picker.getByRole("combobox", { name: "Choose the Month" }),
+    "1",
+  );
+  expect(
+    picker.getByRole("grid", { name: `February ${futureYear}` }),
+  ).toBeTruthy();
+  expect(change).not.toHaveBeenCalled();
+  await user.click(picker.getByRole("button", { name: "Apply" }));
+  expect(change).toHaveBeenLastCalledWith("2026-09-09T14:30:15");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Expiration date" }));
+  const reopened = within(
+    screen.getByRole("dialog", { name: "Expiration date" }),
+  );
+  await user.selectOptions(
+    reopened.getByRole("combobox", { name: "Choose the Year" }),
+    futureYear,
+  );
+  await user.selectOptions(
+    reopened.getByRole("combobox", { name: "Choose the Month" }),
+    "1",
+  );
+  await user.click(reopened.getByRole("button", { name: /February 10/ }));
+  await user.click(reopened.getByRole("button", { name: "Apply" }));
+  expect(change).toHaveBeenLastCalledWith(`${futureYear}-02-10T14:30:15`);
 });
 it("opens from the keyboard and preserves seconds while changing the date and time", async () => {
   const { user, change } = setup("en", "second");

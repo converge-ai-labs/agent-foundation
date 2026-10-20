@@ -21,8 +21,14 @@ export function Calendar({
   ...props
 }: React.ComponentProps<typeof DayPicker>): React.ReactElement {
   const defaultClassNames = {
-    button_next: buttonClassNames,
-    button_previous: buttonClassNames,
+    button_next: cn(
+      buttonClassNames,
+      props.navLayout === "around" && "absolute end-0 top-0",
+    ),
+    button_previous: cn(
+      buttonClassNames,
+      props.navLayout === "around" && "absolute start-0 top-0",
+    ),
     caption_label:
       "text-base sm:text-sm font-medium flex items-center gap-2 h-full",
     day: "size-(--cell-size) text-sm py-px",
@@ -36,7 +42,7 @@ export function Calendar({
     dropdowns:
       "w-full flex items-center text-base sm:text-sm justify-center h-(--cell-size) gap-1.5 *:[span]:font-medium",
     hidden: "invisible",
-    month: "w-full",
+    month: "relative w-full",
     month_caption:
       "relative mx-(--cell-size) px-1 mb-1 flex h-(--cell-size) items-center justify-center z-2",
     months: "relative flex flex-col sm:flex-row gap-2",

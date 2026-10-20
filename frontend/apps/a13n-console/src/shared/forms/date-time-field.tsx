@@ -48,6 +48,8 @@ export function DateTimeField({
   const [day, setDay] = useState<Date>();
   const [time, setTime] = useState("00:00");
   const selected = parseLocalDateTime(value);
+  const currentYear = new Date().getFullYear();
+  const selectedYear = selected?.getFullYear() ?? currentYear;
   const draft = day ? `${formatLocalDateTime(day).slice(0, 10)}T${time}` : "";
   const valid = parseLocalDateTime(draft);
   const display = selected
@@ -99,7 +101,7 @@ export function DateTimeField({
         <PopoverPopup
           align="start"
           aria-label={label}
-          className="w-auto max-w-[calc(100vw-2rem)] [&_[data-slot=popover-viewport]]:p-4"
+          className="w-auto min-w-fit max-w-[calc(100vw-2rem)] [&_[data-slot=popover-viewport]]:p-4"
         >
           <div className="flex flex-col gap-4">
             <Calendar
@@ -107,6 +109,18 @@ export function DateTimeField({
               selected={day}
               onSelect={setDay}
               defaultMonth={selected}
+              captionLayout="dropdown"
+              navLayout="around"
+              startMonth={
+                new Date(Math.min(currentYear - 100, selectedYear), 0)
+              }
+              endMonth={new Date(Math.max(currentYear + 100, selectedYear), 11)}
+              formatters={{
+                formatMonthDropdown: (date) =>
+                  new Intl.DateTimeFormat(locale, { month: "short" }).format(
+                    date,
+                  ),
+              }}
               locale={locale?.startsWith("zh") ? zhCN : enUS}
               autoFocus
             />
