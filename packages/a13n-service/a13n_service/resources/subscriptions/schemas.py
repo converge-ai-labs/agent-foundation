@@ -1,9 +1,20 @@
 """Lifecycle kinds, subscription requests and representations, and the webhook delivery shapes."""
 
+import base64
+import re
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SecretStr,
+    StringConstraints,
+    field_validator,
+)
 
 from a13n_service.infra.crypto import Envelope
 from a13n_service.infra.ids import ObjectId
@@ -30,7 +41,30 @@ SECRET_UNAVAILABLE = "signing_secret_unavailable"
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Url = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
 Kinds = Annotated[list[LifecycleKind], Field(min_length=1, max_length=len(LIFECYCLE_KINDS))]
-SigningSecret = Annotated[SecretStr, Field(min_length=16, max_length=256)]
+SECRET_PREFIX = "whsec_"
+# A Standard Webhooks secret: `whsec_` and the standard base64 of a 24 to 64 byte key, 32 to 88 characters. The prefix
+# and alphabet are checked here so a malformed value is a request validation error; where the key is used, it must
+# also decode to 24 to 64 bytes.
+_SIGNING_SECRET_BODY = re.compile(r"[A-Za-z0-9+/]+={0,2}")
+
+
+def _standard_signing_secret(value: SecretStr) -> SecretStr:
+    secret = value.get_secret_value()
+    if not secret.startswith(SECRET_PREFIX) or _SIGNING_SECRET_BODY.fullmatch(secret[len(SECRET_PREFIX) :]) is None:
+        raise ValueError("must be whsec_ followed by standard base64 of a 24 to 64 byte key")
+    return value
+
+
+SigningSecret = Annotated[
+    SecretStr,
+    Field(min_length=len(SECRET_PREFIX) + 32, max_length=len(SECRET_PREFIX) + 88),
+    AfterValidator(_standard_signing_secret),
+]
+
+
+def signing_key(secret: str) -> bytes:
+    """The HMAC key of a signing secret: the standard base64 body after its `whsec_` prefix."""
+    return base64.b64decode(secret.removeprefix(SECRET_PREFIX), validate=True)
 
 
 class SubscriptionFilter(BaseModel):

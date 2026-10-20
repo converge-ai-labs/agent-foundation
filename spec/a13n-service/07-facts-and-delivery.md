@@ -293,13 +293,15 @@ The payload describes the transition, never secrets:
  attempt: {id, number, status, start_reason, yield_reason, failure} | null}
 ```
 
-The sender POSTs the payload as compact JSON with sorted keys and these headers:
+The sender POSTs the payload as compact JSON with sorted keys, signed with the [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md) scheme. The bytes sent are exactly the bytes signed. The headers are:
 
-- `X-A13n-Delivery-Id`: the delivery ID;
-- `X-A13n-Webhook-Timestamp`: Unix seconds;
-- `X-A13n-Webhook-Signature`: `v1=` and the hex HMAC-SHA256 of `"<timestamp>.<delivery id>.<body>"` with the subscription's signing secret.
+- `webhook-id`: the delivery ID;
+- `webhook-timestamp`: Unix seconds;
+- `webhook-signature`: `v1,` and the standard base64 of the HMAC-SHA256 of `"<delivery id>.<timestamp>.<body>"`. The key is the base64-decoded body of the subscription's signing secret, without its `whsec_` prefix ([04](04-resources.md#subscriptions)). One signature is sent; the header is a space-delimited list so that later key rotation needs no new format.
 
-The endpoint policy ([08](08-providers.md#outbound-endpoint-policy)) is checked on every attempt, redirects are not followed, the response body is never read, and `control.webhook_timeout` bounds the whole POST. A 2xx status is delivered; anything else is `Undelivered` with `HTTP {status}` or the error's type name, and the outbox retries it. A retry after an uncertain result can deliver twice and deliveries are unordered, so receivers deduplicate by delivery ID and read the run when they need current state.
+A receiver verifies the request with a Standard Webhooks library over the raw body, which also rejects timestamps more than five minutes from its clock, and uses `webhook-id` as the idempotency key. There is no other signature format and no negotiation. A stored secret that is not in this format cannot sign: its deliveries fail and retry until dead, so such a subscription must be re-keyed ([04](04-resources.md#subscriptions)).
+
+The endpoint policy ([08](08-providers.md#outbound-endpoint-policy)) is checked on every attempt, redirects are not followed, the response body is never read, and `control.webhook_timeout` bounds the whole POST. A 2xx status is delivered; anything else is `Undelivered` with `HTTP {status}` or the error's type name, and the outbox retries it. A retry after an uncertain result can deliver twice and deliveries are unordered, so receivers deduplicate by `webhook-id` (the delivery ID) and read the run when they need current state.
 
 `GET …/subscriptions/{id}/deliveries` lists a subscription's deliveries newest first with status, attempts, next attempt time, last error and payload. `POST …/deliveries/{delivery}/redeliver` returns a dead delivery to pending, due now with a fresh attempt budget and the same delivery ID; a delivery that is not dead is `conflict` (`not_dead`), and one staged without a secret is `conflict` (`signing_secret_unavailable`). Both need workspace `admin`; redelivery is audited as `webhook_delivery.redeliver`.
 

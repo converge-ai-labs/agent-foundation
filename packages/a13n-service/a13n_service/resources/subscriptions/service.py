@@ -1,8 +1,11 @@
 """Webhook subscriptions and inspection of their deliveries; all of it is workspace `admin` configuration."""
 
+import base64
+import binascii
 import secrets
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from pydantic import SecretStr
 from sqlalchemy import func, select
 
 from a13n_service.infra import cursors
@@ -15,6 +18,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.resources.rows import audit_row, find_row, given, record_update
 from a13n_service.resources.subscriptions.schemas import (
+    SECRET_PREFIX,
     SECRET_UNAVAILABLE,
     CreatedSubscription,
     DeliveryPage,
@@ -23,6 +27,7 @@ from a13n_service.resources.subscriptions.schemas import (
     SubscriptionPage,
     SubscriptionUpdate,
     WebhookDelivery,
+    signing_key,
 )
 from a13n_service.resources.subscriptions.tables import SubscriptionRow
 from a13n_service.tenancy.access import Access, administering_workspace
@@ -31,6 +36,20 @@ from a13n_service.tenancy.authorize import Principal
 
 def signing_location(row: SubscriptionRow) -> SecretLocation:
     return SecretLocation(row.organization_id, "subscriptions", "signing_secret", row.id)
+
+
+def _signing_secret(supplied: SecretStr | None) -> str:
+    """A fresh Standard Webhooks secret, or the supplied one once its shape decodes to a 24 to 64 byte key."""
+    if supplied is None:
+        return SECRET_PREFIX + base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+    secret = supplied.get_secret_value()
+    try:
+        key = signing_key(secret) if secret.startswith(SECRET_PREFIX) else b""
+    except (binascii.Error, ValueError):
+        key = b""
+    if not 24 <= len(key) <= 64:
+        raise invalid("signing_secret", "must be whsec_ followed by standard base64 of a 24 to 64 byte key")
+    return secret
 
 
 async def _permitted_url(
@@ -69,7 +88,6 @@ async def create_subscription(
 ) -> CreatedSubscription:
     """The signing secret, generated unless supplied, is returned here and never again."""
     url = await _permitted_url(storage, access, policy, actor, workspace_id, body.url, action="subscription.create")
-    secret = body.signing_secret.get_secret_value() if body.signing_secret else "whsec_" + secrets.token_urlsafe(32)
     async with administering_workspace(storage, access, actor, workspace_id, action="subscription.create") as (
         session,
         scope,
@@ -93,6 +111,7 @@ async def create_subscription(
             created_by_id=actor.id,
             updated_by_id=actor.id,
         )
+        secret = _signing_secret(body.signing_secret)
         row.signing_secret = keys.protect(secret.encode(), signing_location(row)).model_dump()
         session.add(row)
         audit_row(session, actor, row, "create")
@@ -160,7 +179,7 @@ async def update_subscription(
         if body.signing_secret is not None:
             # Write-only: a replacement always changes the stored envelope, equal or not.
             row.signing_secret = keys.protect(
-                body.signing_secret.get_secret_value().encode(), signing_location(row)
+                _signing_secret(body.signing_secret).encode(), signing_location(row)
             ).model_dump()
             changed.append("signing_secret")
         if record_update(session, actor, row, changed):

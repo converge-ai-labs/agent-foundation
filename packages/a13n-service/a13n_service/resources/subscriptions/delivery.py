@@ -1,10 +1,12 @@
 """Webhook delivery: staging a transition's deliveries in the outbox, and the sender that settles each claim.
 
-Receivers verify `X-A13n-Webhook-Signature: v1=<hex HMAC-SHA256 of "<timestamp>.<delivery id>.<body>">` with
-the subscription's signing secret, and deduplicate by `X-A13n-Delivery-Id`: a retry after an uncertain result
-can deliver twice, and deliveries are not ordered.
+Deliveries follow the Standard Webhooks scheme: `webhook-signature` is `v1,<base64 HMAC-SHA256>` over
+"<delivery id>.<timestamp>." and the body, keyed by the base64-decoded signing secret without its `whsec_`
+prefix. Receivers verify it with a Standard Webhooks library and deduplicate by `webhook-id`: a retry after an
+uncertain result can deliver twice, and deliveries are not ordered.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -28,15 +30,20 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbound import open_http
 from a13n_service.infra.outbox import Claim, OutboxRow, Undelivered, prepare, secret_location, settle
-from a13n_service.resources.subscriptions.schemas import SECRET_UNAVAILABLE, LifecycleKind, WebhookTarget
+from a13n_service.resources.subscriptions.schemas import (
+    SECRET_UNAVAILABLE,
+    LifecycleKind,
+    WebhookTarget,
+    signing_key,
+)
 from a13n_service.resources.subscriptions.service import signing_location
 from a13n_service.resources.subscriptions.tables import SubscriptionRow
 
 logger = get_logger(__name__)
 
-DELIVERY_HEADER = "X-A13n-Delivery-Id"
-TIMESTAMP_HEADER = "X-A13n-Webhook-Timestamp"
-SIGNATURE_HEADER = "X-A13n-Webhook-Signature"
+DELIVERY_HEADER = "webhook-id"
+TIMESTAMP_HEADER = "webhook-timestamp"
+SIGNATURE_HEADER = "webhook-signature"
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,7 +170,11 @@ def _prepare(keys: KeyRing, subscription: SubscriptionRow, payload: dict[str, Js
 
 
 def signature(secret: bytes, timestamp: str, delivery_id: str, body: bytes) -> str:
-    return "v1=" + hmac.new(secret, f"{timestamp}.{delivery_id}.".encode() + body, hashlib.sha256).hexdigest()
+    """The `webhook-signature` value: `v1,` and the standard-base64 HMAC-SHA256 over the delivery and body."""
+    digest = hmac.new(
+        signing_key(secret.decode("ascii")), f"{delivery_id}.{timestamp}.".encode() + body, hashlib.sha256
+    ).digest()
+    return "v1," + base64.b64encode(digest).decode("ascii")
 
 
 @dataclass(frozen=True, slots=True)

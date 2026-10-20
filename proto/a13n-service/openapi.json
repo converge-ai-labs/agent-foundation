@@ -16675,8 +16675,8 @@
             "anyOf": [
               {
                 "format": "password",
-                "maxLength": 256,
-                "minLength": 16,
+                "maxLength": 94,
+                "minLength": 38,
                 "type": "string",
                 "writeOnly": true
               },
@@ -16834,8 +16834,8 @@
             "anyOf": [
               {
                 "format": "password",
-                "maxLength": 256,
-                "minLength": 16,
+                "maxLength": 94,
+                "minLength": 38,
                 "type": "string",
                 "writeOnly": true
               },

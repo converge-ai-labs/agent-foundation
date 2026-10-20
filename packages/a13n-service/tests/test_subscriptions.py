@@ -1,5 +1,6 @@
 """Subscriptions: admin configuration, write-only signing secrets, signed webhook delivery and redelivery."""
 
+import base64
 import json
 import threading
 from collections.abc import Iterator
@@ -34,10 +35,11 @@ from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 from a13n_service.tenancy.tables import GrantRow, PrincipalRow
 from sqlalchemy import select
+from standardwebhooks import Webhook
 
 pytestmark = pytest.mark.anyio
 
-SECRET = "whsec_test_signing_secret_value"
+SECRET = "whsec_" + base64.b64encode(b"a13n test signing secret 32byte!").decode()
 THREAD = "thread_" + "0" * 32
 
 
@@ -136,6 +138,44 @@ async def test_subscription_configuration_is_admin_only(service) -> None:  # typ
     assert denial is not None and denial.action == "subscription.read"
 
 
+def standard_secret(size: int) -> str:
+    return "whsec_" + base64.b64encode(bytes(range(size))).decode()
+
+
+async def test_signing_secrets_must_have_the_standard_shape(service) -> None:  # type: ignore[no-untyped-def]
+    base = f"{service.api}/subscriptions"
+    body = {"name": "Runs", "url": "http://127.0.0.1:9/hook", "kinds": ["run.completed"]}
+    generated = (await service.client.post(base, json=body)).json()["signing_secret"]
+    assert generated.startswith("whsec_") and len(base64.b64decode(generated[6:], validate=True)) == 32
+
+    for size in (24, 64):
+        accepted = await service.client.post(base, json={**body, "signing_secret": standard_secret(size)})
+        assert accepted.status_code == 201, accepted.text
+
+    # Refused by the schema: no prefix, the old free-form text, or the URL-safe alphabet.
+    for malformed in (SECRET.removeprefix("whsec_"), "whsec_test_signing_secret_value", "whsec_" + "-_" * 20):
+        refused = await service.client.post(base, json={**body, "signing_secret": malformed})
+        assert refused.status_code == 400, malformed
+        fields = refused.json()["error"]["details"]["fields"]
+        assert fields[0]["field"].endswith("signing_secret"), fields
+
+    # Well-formed text that does not decode to a 24 to 64 byte key is refused by the Service, on create and PATCH.
+    unusable = (standard_secret(23), standard_secret(65), "whsec_" + "A" * 31 + "=")
+    for secret in unusable:
+        refused = await service.client.post(base, json={**body, "signing_secret": secret})
+        assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "signing_secret"
+
+    created = (await service.client.post(base, json=body)).json()
+    item = f"{base}/{created['id']}"
+    for secret in unusable:
+        refused = await service.client.patch(item, json={"signing_secret": secret}, headers={"if-match": etag(created)})
+        assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "signing_secret"
+    replaced = await service.client.patch(
+        item, json={"signing_secret": standard_secret(32)}, headers={"if-match": etag(created)}
+    )
+    assert replaced.status_code == 200 and "signing_secret" not in replaced.json()
+
+
 @contextmanager
 def receiver(
     statuses: list[int], *, headers: dict[str, str] | None = None, body: bytes = b""
@@ -227,9 +267,11 @@ async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant, monk
         assert await status(runtime, accepted) == ("delivered", 1, None)
         headers, sent = received[0]
         assert json.loads(sent) == {"kind": "run.completed", "sequence": 1, "text": "é"}
-        assert headers["x-a13n-delivery-id"] == accepted
-        timestamp = headers["x-a13n-webhook-timestamp"]
-        assert headers["x-a13n-webhook-signature"] == signature(SECRET.encode(), timestamp, accepted, sent)
+        assert headers["webhook-id"] == accepted
+        timestamp = headers["webhook-timestamp"]
+        assert headers["webhook-signature"] == signature(SECRET.encode(), timestamp, accepted, sent)
+        # The request the sender produced verifies with the unmodified reference library.
+        assert Webhook(SECRET).verify(sent, headers) == {"kind": "run.completed", "sequence": 1, "text": "é"}
 
         retried = await queue(runtime, subscription.id, 2)
         await send(runtime, attempts=3)
@@ -254,7 +296,7 @@ async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant, monk
         assert (restored.status, restored.attempts) == ("pending", 0)
         await send(runtime, attempts=1)
         assert await status(runtime, dead) == ("delivered", 1, None)
-        assert received[-1][0]["x-a13n-delivery-id"] == dead
+        assert received[-1][0]["webhook-id"] == dead
 
 
 async def subscribe(service: SimpleNamespace, url: str, kinds: list[str], **fields: object) -> dict:
