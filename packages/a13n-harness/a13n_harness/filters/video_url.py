@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -51,7 +51,7 @@ def project_video_urls(
                     error = video_url_error(item, characteristics)
                 elif isinstance(item, BinaryContent) and item.media_type.startswith("video/"):
                     # Exact-error healing mutates its input. Detach even unchanged
-                    # inline videos; deepcopy shares immutable bytes, not envelopes.
+                    # inline videos, while sharing their immutable bytes.
                     detach = True
                     size = encoded_video_bytes(len(item.data))
                     if not binary_supported:
@@ -82,4 +82,25 @@ def project_video_urls(
                 message_changed = True
         if message_changed:
             projected[message_index] = replace(message, parts=parts)
-    return deepcopy(projected) if detach else None
+    return _detach_media_envelopes(projected) if detach else None
+
+
+def _detach_media_envelopes(messages: list[ModelMessage]) -> list[ModelMessage]:
+    # Recovery assigns request and response fields, but never mutates unrelated
+    # tool JSON. Copy envelopes, not the entire recursively structured history.
+    detached = [replace(message, parts=[copy(part) for part in message.parts]) for message in messages]
+    for message in detached:
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            if not isinstance(part, UserPromptPart) and type(part) is not ToolReturnPart:
+                continue
+            content = part.content
+            if isinstance(part, ToolReturnPart) and isinstance(content, (BinaryContent, VideoUrl)):
+                part.content = deepcopy(content)
+            elif isinstance(content, (list, tuple)) and any(
+                isinstance(item, (BinaryContent, VideoUrl)) for item in content
+            ):
+                items = [deepcopy(item) if isinstance(item, (BinaryContent, VideoUrl)) else item for item in content]
+                part.content = tuple(items) if isinstance(content, tuple) else items
+    return detached

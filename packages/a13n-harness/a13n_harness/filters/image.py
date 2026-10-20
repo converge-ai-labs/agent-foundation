@@ -18,11 +18,14 @@ from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.content import ContentItem, annotate_prompt, prompt_content
 from a13n_harness.context import AgentContext
+from a13n_harness.errors import DefinitionError
 from a13n_harness.image_input import ImageInputPolicy
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 
 IMAGE_FILTER_CAPABILITY_ID = "a13n.filter.image"
 _MAX_PROCESSING_PIXELS = 80_000_000
+_MAX_CACHE_ENTRIES = 256
+_MAX_CACHE_BYTES = 64 * 1024 * 1024
 _MEDIA_TYPES = {"PNG": "image/png", "JPEG": "image/jpeg", "GIF": "image/gif", "WEBP": "image/webp"}
 _REMOVED_INVALID = "<system-reminder>This image was removed because it is broken or corrupted.</system-reminder>"
 _REMOVED_LIMIT = (
@@ -42,6 +45,21 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
 
     def __init__(self, configuration: ImageInputPolicy | None = None) -> None:
         self.configuration = (configuration or ImageInputPolicy()).model_copy(deep=True)
+        self._preparation_cache = _ImagePreparationCache(self.configuration)
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        if isinstance(ctx.deps, AgentContext):
+            existing = ctx.deps._run_capability(IMAGE_FILTER_CAPABILITY_ID)
+            if existing is not None:
+                if not isinstance(existing, ImageFilterCapability):
+                    raise DefinitionError(
+                        "Image filter has an incompatible run replacement.", code="capability_type_mismatch"
+                    )
+                return existing
+        replacement = ImageFilterCapability(self.configuration)
+        if isinstance(ctx.deps, AgentContext):
+            ctx.deps._record_run_capability(IMAGE_FILTER_CAPABILITY_ID, replacement)
+        return replacement
 
     def get_ordering(self) -> CapabilityOrdering:
         # Run after committed context projection, but before model adapters and
@@ -54,7 +72,9 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         del ctx
-        projected = await anyio.to_thread.run_sync(_project_images, request_context.messages, self.configuration)
+        projected = await anyio.to_thread.run_sync(
+            _project_images, request_context.messages, self.configuration, self._preparation_cache
+        )
         if projected is None:
             return request_context
         updated = copy(request_context)
@@ -62,7 +82,66 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
         return updated
 
 
-def _project_images(messages: list[ModelMessage], configuration: ImageInputPolicy) -> list[ModelMessage] | None:
+# Metadata is reapplied from the current input, never retained in the cache.
+_ImageKey = tuple[type[BinaryContent], bytes, str, str]
+
+
+def _image_key(item: BinaryContent) -> _ImageKey:
+    return type(item), item.data, item.media_type, item.identifier
+
+
+class _ImagePreparationCache:
+    def __init__(self, configuration: ImageInputPolicy) -> None:
+        self.configuration = configuration
+        self.entries: dict[_ImageKey, tuple[list[BinaryContent | str], int]] = {}
+        self.size = 0
+
+    def prune(self, messages: list[ModelMessage], configuration: ImageInputPolicy) -> None:
+        if configuration != self.configuration:
+            self.entries.clear()
+            self.size = 0
+            self.configuration = configuration
+        if not self.entries:
+            return
+        live = {
+            _image_key(item)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            for item in (_image_content_items(part) or ())
+            if isinstance(item, BinaryContent) and item.is_image
+        }
+        for key in self.entries.keys() - live:
+            _, size = self.entries.pop(key)
+            self.size -= size
+
+    def prepare(self, item: BinaryContent, configuration: ImageInputPolicy) -> list[BinaryContent | str]:
+        key = _image_key(item)
+        entry = self.entries.get(key)
+        if entry is None:
+            source = copy(item)
+            source.vendor_metadata = None
+            prepared = _prepare_binary_image(source, configuration)
+            size = len(item.data) + sum(len(value.data) for value in prepared if isinstance(value, BinaryContent))
+            # Keep live entries rather than evicting them during a forward scan:
+            # histories larger than the cache must not thrash on every request.
+            if len(self.entries) < _MAX_CACHE_ENTRIES and self.size + size <= _MAX_CACHE_BYTES:
+                self.entries[key] = prepared, size
+                self.size += size
+        else:
+            prepared, _ = entry
+        result = deepcopy(prepared)
+        for value in result:
+            if isinstance(value, BinaryContent):
+                value.vendor_metadata = deepcopy(item.vendor_metadata)
+        return result
+
+
+def _project_images(
+    messages: list[ModelMessage], configuration: ImageInputPolicy, cache: _ImagePreparationCache | None = None
+) -> list[ModelMessage] | None:
+    if cache is not None:
+        cache.prune(messages, configuration)
     if not _needs_image_projection(messages, configuration):
         return None
     # Recovery assigns message/part fields, so detach every envelope, including
@@ -86,7 +165,11 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
                 if isinstance(item, BinaryContent) and item.is_image:
                     # Copy only native image envelopes/metadata; immutable bytes
                     # stay shared. Preparation and adapters cannot modify originals.
-                    replacements = _prepare_binary_image(deepcopy(item), configuration)
+                    replacements = (
+                        cache.prepare(item, configuration)
+                        if cache is not None
+                        else _prepare_binary_image(deepcopy(item), configuration)
+                    )
                 else:
                     replacements = [deepcopy(item) if isinstance(item, ImageUrl) else item]
                 image_count += sum(_is_image(replacement) for replacement in replacements)

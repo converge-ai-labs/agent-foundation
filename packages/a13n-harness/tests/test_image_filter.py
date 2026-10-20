@@ -1024,3 +1024,251 @@ def test_image_projection_detaches_all_envelopes_for_provider_repair() -> None:
     assert _drop_inline_media(projected) == 3
     assert _images(projected) == []
     assert history == original
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [ImageInputPolicy(max_images=2), ImageInputPolicy(max_images=0), ImageInputPolicy(support_gif=False)],
+)
+async def test_preparation_cache_preserves_complete_projection(policy, monkeypatch: pytest.MonkeyPatch) -> None:
+    native = BinaryImage(_png((12, 5000)), media_type="image/png", identifier="tall")
+    images = [
+        native,
+        BinaryContent(b"broken", media_type="image/png"),
+        BinaryImage(_animated(), media_type="image/gif"),
+        native,
+    ]
+    history = [ModelRequest(parts=[UserPromptPart(images)])]
+    expected = _project_images(history, policy)
+    cache = image_module._ImagePreparationCache(policy)
+    original = image_module._prepare_binary_image
+    calls = []
+
+    def prepare(item, configuration):
+        calls.append(item.identifier)
+        return original(item, configuration)
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", prepare)
+    for _ in range(2):
+        assert _project_images(history, policy, cache) == expected
+    assert len(calls) == 3
+
+
+async def test_preparation_cache_refreshes_metadata_and_detaches_outputs(monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = ImageInputPolicy()
+    cache = image_module._ImagePreparationCache(policy)
+    native = BinaryImage(
+        _png((12, 5000)), media_type="image/png", identifier="source", vendor_metadata={"nested": {"value": "original"}}
+    )
+    history = [ModelRequest(parts=[UserPromptPart([native])])]
+    first = _project_images(history, policy, cache)
+    assert first is not None
+    first_image = _images(first)[0]
+    assert isinstance(first_image, BinaryImage)
+    first_image.data = b"provider mutation"
+    first_image.vendor_metadata["nested"]["value"] = "mutated"
+    native.vendor_metadata["nested"]["value"] = "updated"
+
+    def unexpected_prepare(*args):
+        pytest.fail("Metadata changes must not repeat pixel processing")
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", unexpected_prepare)
+    second = _project_images(deepcopy(history), policy, cache)
+    assert second is not None
+    assert all(isinstance(item, BinaryImage) for item in _images(second))
+    assert _images(second)[0].identifier == "source-segment-1"
+    assert _images(second)[0].data != b"provider mutation"
+    assert _images(second)[0].vendor_metadata == {"nested": {"value": "updated"}}
+    assert native.vendor_metadata == {"nested": {"value": "updated"}}
+
+
+@pytest.mark.parametrize("change", ["data", "media_type", "identifier", "subtype", "policy"])
+async def test_preparation_cache_invalidates_changed_inputs(change, monkeypatch: pytest.MonkeyPatch) -> None:
+    policy = ImageInputPolicy()
+    cache = image_module._ImagePreparationCache(policy)
+    native = BinaryContent(_png((12, 12)), media_type="image/png", identifier="same")
+    history = [ModelRequest(parts=[UserPromptPart([native])])]
+    _project_images(history, policy, cache)
+    if change == "data":
+        native.data = _png((20, 20))
+    elif change == "media_type":
+        native.media_type = "image/jpeg"
+    elif change == "identifier":
+        native._identifier = "different"
+    elif change == "subtype":
+        history[0].parts[0].content = [BinaryImage(native.data, media_type="image/png", identifier="same")]
+    else:
+        policy = ImageInputPolicy(max_image_dimension=5)
+    original = image_module._prepare_binary_image
+    calls = []
+
+    def prepare(item, configuration):
+        calls.append(item)
+        return original(item, configuration)
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", prepare)
+    actual = _project_images(history, policy, cache)
+    assert len(calls) == 1
+    assert actual == _project_images(history, policy)
+    assert len(cache.entries) == 1
+
+
+@pytest.mark.parametrize("bound", ["entries", "bytes"])
+async def test_preparation_cache_bounds_and_prunes_without_scan_thrashing(
+    bound, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    policy = ImageInputPolicy()
+    cache = image_module._ImagePreparationCache(policy)
+    data = _png((12, 12))
+    monkeypatch.setattr(image_module, "_MAX_CACHE_ENTRIES", 2 if bound == "entries" else 256)
+    monkeypatch.setattr(image_module, "_MAX_CACHE_BYTES", 4 * len(data) if bound == "bytes" else 64 * 1024 * 1024)
+    images = [BinaryImage(data, media_type="image/png", identifier=str(i)) for i in range(3)]
+    history = [ModelRequest(parts=[UserPromptPart(images)])]
+    original = image_module._prepare_binary_image
+    calls = []
+
+    def prepare(item, configuration):
+        calls.append(item.identifier)
+        return original(item, configuration)
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", prepare)
+    _project_images(history, policy, cache)
+    assert len(cache.entries) == 2 and cache.size == 4 * len(data)
+    _project_images(history, policy, cache)
+    assert calls == ["0", "1", "2", "2"]
+    _project_images([ModelRequest(parts=[UserPromptPart([images[-1]])])], policy, cache)
+    assert len(cache.entries) == 1 and cache.size == 2 * len(data)
+    assert _project_images([ModelRequest(parts=[UserPromptPart("no images")])], policy, cache) is None
+    assert cache.entries == {} and cache.size == 0
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_preparation_cache_is_logical_run_local_across_tool_rounds(
+    streaming: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    native = BinaryImage(_png((12, 5000)), media_type="image/png")
+    original = image_module._prepare_binary_image
+    preparations = []
+
+    def prepare(item, configuration):
+        preparations.append(item.data)
+        return original(item, configuration)
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", prepare)
+
+    def lookup() -> str:
+        return "ok"
+
+    async def respond(messages, info):
+        del info
+        latest_input = max(index for index, message in enumerate(messages) if _images([message]))
+        returns = sum(isinstance(part, ToolReturnPart) for message in messages[latest_input:] for part in message.parts)
+        if returns < 2:
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id=f"lookup-{latest_input}-{returns}")}
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=respond),
+        output_type=str,
+        capabilities=(Capability(tools=[lookup], id="test.lookup"),),
+    )
+
+    async def run(previous=None):
+        if streaming:
+            async with executable.stream([native], previous_state=previous, bindings=RunBindings.embedded()) as stream:
+                async for _ in stream:
+                    pass
+                result = stream.result
+        else:
+            result = await executable.run([native], previous_state=previous, bindings=RunBindings.embedded())
+        assert result is not None and result.output_or_raise() == "done"
+        return result
+
+    first = await run()
+    assert len(preparations) == 1
+    await run(first.state)
+    assert len(preparations) == 2
+    await asyncio.gather(run(), run())
+    assert len(preparations) == 4
+
+
+async def test_preparation_cache_survives_nested_compaction(monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness.capabilities.context import CompactionCapability, CompactionPolicy
+    from pydantic_ai.usage import RequestUsage
+
+    native = BinaryImage(_png((12, 5000)), media_type="image/png")
+    original = image_module._prepare_binary_image
+    preparations = []
+    requests = []
+
+    def prepare(item, configuration):
+        preparations.append(item.data)
+        return original(item, configuration)
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", prepare)
+
+    async def respond(messages, info):
+        del info
+        requests.append(messages)
+        yield "summary" if len(requests) == 1 else "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("old")]),
+            ModelResponse(parts=[TextPart("old answer")], usage=RequestUsage(input_tokens=2100, output_tokens=100)),
+        )
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2000)),),
+    )
+    result = await executable.run([native], previous_state=previous, bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 2
+    assert all(len(_images(messages)) == 2 for messages in requests)
+    assert len(preparations) == 1
+
+
+async def test_cached_preparation_keeps_batch_boundaries_across_appends() -> None:
+    policy = ImageInputPolicy()
+    cache = image_module._ImagePreparationCache(policy)
+    history = []
+    for index in range(36):
+        history.append(
+            ModelRequest(
+                parts=[UserPromptPart([BinaryImage(_png((4, 4)), media_type="image/png", identifier=str(index))])]
+            )
+        )
+        assert _project_images(deepcopy(history), policy, cache) == _project_images(history, policy)
+
+
+async def test_native_agent_preparation_cache_is_fresh_for_each_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = image_module._prepare_binary_image
+    calls = []
+
+    def prepare(item, configuration):
+        calls.append(item.data)
+        return original(item, configuration)
+
+    monkeypatch.setattr(image_module, "_prepare_binary_image", prepare)
+    native = BinaryImage(_png((12, 12)), media_type="image/png")
+
+    def lookup() -> str:
+        return "ok"
+
+    def respond(messages, info):
+        del info
+        if any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            return ModelResponse(parts=[TextPart("done")])
+        return ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="lookup-1")])
+
+    agent = Agent(FunctionModel(respond), tools=[lookup], capabilities=[ImageFilterCapability()])
+    for count in (1, 2):
+        assert (await agent.run([native])).output == "done"
+        assert len(calls) == count
