@@ -2,13 +2,15 @@ import { ClockIcon, PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  Checkbox,
   ChoiceField,
   FormField,
   Input,
+  Label,
   ModalFrame,
   SegmentedControl,
 } from "a13n-ui";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -35,6 +37,9 @@ import {
   type Schedule,
 } from "./api";
 import styles from "./schedules.module.css";
+import { JsonDraftSyntaxError } from "./json-draft";
+import { invocationFields, type InvocationDraft } from "./invocation-draft";
+import { ScheduleRevisionField } from "./revision-field";
 
 export function ScheduleEditor({
   schedule,
@@ -49,13 +54,14 @@ export function ScheduleEditor({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
+      keepVisibleWhenNested
       size="lg"
       closeLabel={t("Close")}
       title={t(schedule ? "Edit schedule" : "Create schedule")}
       description={t(
         schedule
           ? "Changes apply to future triggers. Existing work keeps its saved input."
-          : "New schedules start paused. Preview the timing before enabling.",
+          : "Preview the timing, then choose whether to enable the schedule on creation.",
       )}
       trigger={
         <Button variant={schedule ? "outline" : "default"} type="button">
@@ -94,10 +100,11 @@ function ScheduleForm({
   // The draft keeps the version it was opened against; live updates cannot silently replace its ETag.
   const [schedule] = useState(initial);
   const [invocationBase, setInvocationBase] = useState<
-    Schema["ScheduleInvocation-Input"] | undefined
+    InvocationDraft | undefined
   >(schedule?.invocation);
   const [name, setName] = useState(schedule?.name ?? "");
   const [description, setDescription] = useState(schedule?.description ?? "");
+  const [enableImmediately, setEnableImmediately] = useState(false);
   const cron =
     schedule?.schedule.type === "cron" ? schedule.schedule : undefined;
   const [timingType, setTimingType] = useState(
@@ -132,21 +139,18 @@ function ScheduleForm({
   const [json, setJson] = useState(
     JSON.stringify(schedule?.invocation ?? {}, null, 2),
   );
-  const [modeError, setModeError] = useState<unknown>();
+  const [fieldsSnapshot, setFieldsSnapshot] = useState<string>();
+  const [showModeError, setShowModeError] = useState(false);
+  const jsonInput = useRef<HTMLTextAreaElement>(null);
+  const parsed = useMemo(() => {
+    try {
+      return { fields: invocationFields(json) };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  }, [json]);
   const agents = useQuery(scheduleQueries(client, workspace.id).agents());
   const request = useIdempotency();
-  const invocation = (): Schema["ScheduleInvocation-Input"] =>
-    mode === "json"
-      ? scheduleInvocation(json)
-      : {
-          ...invocationBase,
-          agent_id: agentId,
-          agent_revision_id: revision.trim() || null,
-          payload: {
-            ...invocationBase?.payload,
-            content: [{ type: "text", text: input }],
-          },
-        };
   const timing = (): Schema["ScheduleCreate"]["schedule"] => {
     if (timingType === "once") {
       // Preserve the saved instant's precision and offset when only other fields change.
@@ -154,6 +158,10 @@ function ScheduleForm({
         return schedule.schedule;
       const date = parseLocalDateTime(runAt);
       if (!date) throw new Error(t("Choose a valid date and time."));
+      if (!schedule && date.getTime() <= Date.now())
+        throw new Error(
+          t("This time has already passed. Choose a future date and time."),
+        );
       return { type: "once", run_at: date.toISOString() };
     }
     return {
@@ -162,6 +170,22 @@ function ScheduleForm({
       timezone: timezone.trim(),
     };
   };
+  // Field state stays untouched while editing JSON, so discarding restores the exact draft.
+  const fieldInvocation = (): InvocationDraft => ({
+    ...invocationBase,
+    agent_id: agentId,
+    agent_revision_id: revision.trim() || null,
+    payload: {
+      ...invocationBase?.payload,
+      content: [
+        {
+          ...invocationBase?.payload.content[0],
+          type: "text",
+          text: input,
+        },
+      ],
+    },
+  });
   const save = useMutation({
     mutationFn: async () => {
       const body: Schema["ScheduleCreate"] = {
@@ -169,17 +193,20 @@ function ScheduleForm({
         description: description.trim() || null,
         schedule: timing(),
         max_lateness_seconds: lateness,
-        invocation: invocation(),
+        invocation: scheduleInvocation(
+          mode === "json" ? json : JSON.stringify(fieldInvocation()),
+        ),
       };
-      return schedule
-        ? scheduleCommands(client, workspace.id, schedule).update(body)
-        : client
-            .workspace(workspace.id)
-            .POST("/api/v1/schedules", {
-              body,
-              params: { header: { "Idempotency-Key": request.forBody(body) } },
-            })
-            .then(data);
+      if (schedule)
+        return scheduleCommands(client, workspace.id, schedule).update(body);
+      body.state = enableImmediately ? "enabled" : "paused";
+      return client
+        .workspace(workspace.id)
+        .POST("/api/v1/schedules", {
+          body,
+          params: { header: { "Idempotency-Key": request.forBody(body) } },
+        })
+        .then(data);
     },
     onSuccess: (saved) => {
       void cache.invalidateQueries({
@@ -239,6 +266,7 @@ function ScheduleForm({
       />
       {timingType === "once" ? (
         <DateTimeField
+          futureOnly={!schedule}
           label={t("Run at")}
           hint={t("Date and time in {{timezone}}.", {
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -333,42 +361,90 @@ function ScheduleForm({
         label={t("Invocation editor")}
         value={mode}
         onValueChange={(next) => {
-          setModeError(undefined);
+          if (next === mode) return;
           if (next === "json") {
-            setJson(JSON.stringify(invocation(), null, 2));
+            const snapshot = JSON.stringify(fieldInvocation(), null, 2);
+            setFieldsSnapshot(snapshot);
+            setJson(snapshot);
             setMode("json");
           } else {
-            try {
-              const value = scheduleInvocation(json),
-                part = value.payload.content[0];
-              if (value.payload.content.length !== 1 || part?.type !== "text")
-                throw new Error(
-                  t(
-                    "Fields require one text input. Use JSON to edit structured input.",
-                  ),
-                );
-              setInvocationBase(value);
-              setAgentId(value.agent_id);
-              setRevision(value.agent_revision_id ?? "");
-              setInput(part.text);
+            if (json === fieldsSnapshot) {
               setMode("fields");
-            } catch (error) {
-              setModeError(error);
+              return;
+            }
+            if (parsed.fields) {
+              const { draft, input } = parsed.fields;
+              setInvocationBase(draft);
+              setAgentId(draft.agent_id);
+              setRevision(draft.agent_revision_id ?? "");
+              setInput(input);
+              setMode("fields");
+            } else {
+              setShowModeError(true);
             }
           }
         }}
         options={[
-          { value: "fields", label: t("Fields"), disabled: !simple },
+          { value: "fields", label: t("Fields") },
           { value: "json", label: t("JSON") },
         ]}
       />
-      <ErrorNotice error={modeError} />
+      <ModalFrame
+        open={showModeError}
+        onOpenChange={setShowModeError}
+        finalFocus={jsonInput}
+        title={t("Cannot switch to fields")}
+        description={parsed.error ? t(parsed.error.message) : undefined}
+        closeLabel={t("Close")}
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowModeError(false)}
+            >
+              {t("Continue editing")}
+            </Button>
+            {fieldsSnapshot !== undefined && (
+              <Button
+                type="button"
+                onClick={() => {
+                  setJson(fieldsSnapshot);
+                  setShowModeError(false);
+                  if (!stale) save.reset();
+                  setMode("fields");
+                }}
+              >
+                {t("Discard JSON changes and return to fields")}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {parsed.error instanceof JsonDraftSyntaxError && (
+          <p>
+            {t("Line {{line}}, column {{column}}", {
+              line: parsed.error.line,
+              column: parsed.error.column,
+            })}
+          </p>
+        )}
+        {fieldsSnapshot !== undefined && (
+          <p className={styles.notice}>
+            {t(
+              "Restores the form as it was before you opened JSON. Other schedule fields are kept.",
+            )}
+          </p>
+        )}
+      </ModalFrame>
       {mode === "json" ? (
         <TextAreaField
+          ref={jsonInput}
           label={t("Invocation JSON")}
           code
           rows={12}
           value={json}
+          invalid={!!parsed.error}
           onChange={setJson}
         />
       ) : (
@@ -382,23 +458,21 @@ function ScheduleForm({
             required
             value={agentId}
             placeholder={t("Select an agent")}
-            onValueChange={setAgentId}
+            onValueChange={(next) => {
+              if (next === agentId) return;
+              setAgentId(next);
+              setRevision("");
+            }}
             options={(agents.data ?? []).map((agent) => ({
               value: agent.id,
               label: agent.name,
             }))}
           />
-          <FormField
-            label={t("Agent revision (optional)")}
-            description={t(
-              "Leave empty to use the latest revision at each trigger.",
-            )}
-          >
-            <Input
-              value={revision}
-              onChange={(event) => setRevision(event.target.value)}
-            />
-          </FormField>
+          <ScheduleRevisionField
+            agentId={agentId}
+            value={revision}
+            onValueChange={setRevision}
+          />
           <TextAreaField
             label={t("Input")}
             rows={5}
@@ -439,7 +513,25 @@ function ScheduleForm({
           (timingType === "once" && !runAt) ||
           (mode === "fields" && (!agentId || !input.trim()))
         }
-        label={t(schedule ? "Save changes" : "Create schedule")}
+        leading={
+          !schedule && (
+            <Label>
+              <Checkbox
+                checked={enableImmediately}
+                onCheckedChange={setEnableImmediately}
+                disabled={save.isPending}
+              />
+              {t("Enable immediately")}
+            </Label>
+          )
+        }
+        label={t(
+          schedule
+            ? "Save changes"
+            : enableImmediately
+              ? "Create and enable"
+              : "Create schedule",
+        )}
       />
     </form>
   );

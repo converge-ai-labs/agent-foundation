@@ -59,6 +59,9 @@ importers:
       i18next:
         specifier: ^25.0.0
         version: 25.10.10(typescript@5.9.3)
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
       openapi-fetch:
         specifier: 0.17.0
         version: 0.17.0
@@ -2505,6 +2508,9 @@ packages:
 
   json-schema-typed@8.0.2:
     resolution: {integrity: sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA==}
+
+  jsonc-parser@3.3.1:
+    resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
 
   katex@0.16.47:
     resolution: {integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==}
@@ -5601,6 +5607,8 @@ snapshots:
 
   json-schema-typed@8.0.2:
     optional: true
+
+  jsonc-parser@3.3.1: {}
 
   katex@0.16.47:
     dependencies:

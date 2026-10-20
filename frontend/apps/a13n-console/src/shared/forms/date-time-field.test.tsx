@@ -7,7 +7,11 @@ import { expect, it, vi } from "vitest";
 import { DateTimeField } from "./date-time-field";
 import { formatLocalDateTime, parseLocalDateTime } from "../local-date-time";
 
-function setup(locale = "en", precision: "minute" | "second" = "minute") {
+function setup(
+  locale = "en",
+  precision: "minute" | "second" = "minute",
+  futureOnly = false,
+) {
   const change = vi.fn();
   const i18n = createInstance();
   void i18n.init({
@@ -23,6 +27,7 @@ function setup(locale = "en", precision: "minute" | "second" = "minute") {
           precision === "second" ? "2026-09-09T14:30:15" : "2026-09-09T14:30"
         }
         precision={precision}
+        futureOnly={futureOnly}
         onValueChange={change}
       />
     </I18nextProvider>,
@@ -138,4 +143,82 @@ it("rejects nonexistent dates and round-trips a valid local time", () => {
   expect(formatLocalDateTime(parseLocalDateTime("2024-02-29T14:30")!)).toBe(
     "2024-02-29T14:30",
   );
+});
+
+it("disables past dates and time units while leaving future dates unrestricted", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(
+    new Date(2026, 8, 9, 14, 30, 10).getTime(),
+  );
+  const { user, change } = setup("en", "second", true);
+  await user.click(screen.getByRole("button", { name: "Expiration date" }));
+  const picker = within(
+    screen.getByRole("dialog", { name: "Expiration date" }),
+  );
+  expect(
+    (picker.getByRole("button", { name: /September 8/ }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  for (const [label, past, future] of [
+    ["Hour", "13", "14"],
+    ["Minute", "29", "30"],
+    ["Second", "10", "11"],
+  ]) {
+    await user.click(picker.getByRole("combobox", { name: label }));
+    expect(
+      (await screen.findByRole("option", { name: past })).getAttribute(
+        "aria-disabled",
+      ),
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("option", { name: future })
+        .getAttribute("aria-disabled"),
+    ).not.toBe("true");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  }
+  await user.click(picker.getByRole("button", { name: "Apply" }));
+  expect(change).toHaveBeenLastCalledWith("2026-09-09T14:30:15");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Expiration date" }));
+  await user.click(screen.getByRole("button", { name: /September 10/ }));
+  for (const label of ["Hour", "Minute", "Second"]) {
+    await user.click(screen.getByRole("combobox", { name: label }));
+    await user.click(await screen.findByRole("option", { name: "00" }));
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  }
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(change).toHaveBeenLastCalledWith("2026-09-10T00:00:00");
+  vi.restoreAllMocks();
+}, 15_000);
+
+it("expires an open selection and blocks applying a time that has just passed", async () => {
+  const clock = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(new Date(2026, 8, 9, 14, 30, 10).getTime());
+  const { user, change } = setup("en", "second", true);
+  await user.click(screen.getByRole("button", { name: "Expiration date" }));
+  clock.mockReturnValue(new Date(2026, 8, 9, 14, 30, 15).getTime());
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(change).not.toHaveBeenCalled();
+  expect(
+    (screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(screen.getByRole("alert").textContent).toContain(
+    "This time has already passed.",
+  );
+  clock.mockReturnValue(new Date(2026, 8, 10, 0, 0, 0).getTime());
+  await waitFor(
+    () =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: /September 9/,
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true),
+    { timeout: 2000 },
+  );
+  vi.restoreAllMocks();
 });
