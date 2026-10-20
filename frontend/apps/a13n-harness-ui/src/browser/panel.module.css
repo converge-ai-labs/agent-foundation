@@ -1,0 +1,125 @@
+.panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--a13n-text);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.viewport {
+  min-width: 0;
+  max-width: min(220px, 100%);
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text);
+  font: inherit;
+  font-size: 12px;
+}
+.connection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 12px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.desktop {
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  overflow: hidden;
+  background: #171a21;
+}
+.screen {
+  position: absolute;
+  inset: 0;
+}
+.snapshot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: rgb(40 40 40);
+  pointer-events: none;
+}
+.readOnlyGuard {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: not-allowed;
+}
+.readOnlyGuard:focus-visible {
+  outline: 2px solid var(--a13n-secondary);
+  outline-offset: -2px;
+}
+.controlHint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 10px 14px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 10px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 12%);
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.controlHint svg {
+  flex-shrink: 0;
+}
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+}
+.empty strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.empty p {
+  max-width: 310px;
+  margin: 0;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+}
+.footnote {
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--a13n-tertiary);
+}
+.notice {
+  margin: 4px 12px;
+  font-size: 12px;
+  color: var(--a13n-text);
+}

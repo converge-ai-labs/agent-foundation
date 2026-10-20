@@ -90,6 +90,39 @@ Thread 链接直接打开对应的 Thread 页面，Project 链接增加简洁的
 
 副本包含已保存的历史、笔记、任务、设置和 Thread 自有文件。原对话仍在执行时，复制的是最后保存的检查点，不包含尚未保存的实时输出。Project 目录、远程目标和沙箱仍指向相同的外部资源，副本不会将它们隔离。Coordinator、其 Worker、Subagent Thread 和内部 Memory/Live Thread 无法创建副本。创建结果不确定时，先检查对话列表再决定是否重试。
 
+## 使用 Linux Host 浏览器
+
+**Browser** 旁栏显示 WebUI 服务器上独立运行的 Chromium。浏览器是可选功能。启用 WebUI 电脑共享后，打开空闲的 **Full Control** 对话并选择 **Browser**，旁栏会检测 Host，列出缺少的浏览器自动化、兼容浏览器和 Linux 桌面组件。在使用 apt 且 WebUI 已以管理员账户运行的 Linux Host 上，点击 **Install browser support** 即可后台安装。面板显示进度和安装输出，完成后自动重新检测，再选择 **Enable browser → Start browser**；整个流程无需输入终端命令。
+
+WebUI 使用现有系统账户，不会自行提权或索取 sudo 密码。缺少权限或不支持自动使用该发行版的包管理器时，会明确说明需要管理员处理。展开 **Manual installation commands**，在运行 Harness UI 的 Host 环境中执行命令，再点击 **Check again**。浏览器运行时支持的系统基线包括 Ubuntu 22.04/24.04/26.04 和 Debian 12/13。Ubuntu 20.04 可以运行 Harness UI，但当前浏览器运行时已不再支持它，操作系统的延长维护不能改变这一限制。
+
+已安装的 Chrome、Chromium 或 Edge 可以直接复用，不必重复下载浏览器；存在 Playwright 自带的 Chromium 时优先使用它。全新 Debian/Ubuntu Host 的完整准备命令如下：
+
+```bash
+uv pip install 'a13n-harness-ui[browser]'
+python -m playwright install --with-deps --no-shell chromium
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-tools x11-xserver-utils xauth openbox
+```
+
+已有兼容浏览器时可跳过 Chromium 安装命令。Docker 中的按钮会安装到当前容器，停止再启动同一容器仍会保留安装结果，替换容器则会丢失；要在替换后保留依赖，应将组件加入镜像。检测确认组件是否存在，系统共享库缺失或浏览器不兼容仍可能在启动时报告错误。
+
+关闭面板不影响后台安装，重新打开可以继续查看进度。失败时先查看输出，再点击 **Retry installation**，已检测到的组件会跳过。重启服务器会中断安装并清除进度日志，已安装的软件包仍会保留；系统包管理器被中断后，可能需要管理员先修复再重试。
+
+检测通过后，依次选择 **Enable browser → Start browser**。启用后 Agent 也可通过导航启动浏览器。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
+
+Host 使用独立的虚拟显示器、窗口管理器和 VNC 服务运行 Chromium。Playwright 提供浏览器自动化并管理兼容的 Chromium 版本；TigerVNC 的 `Xtigervnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb、x11vnc 或 websockify 服务。Openbox 管理浏览器窗口，xrandr 调整显示尺寸，xauth 限制显示访问。界面包含完整的标签页、地址栏、菜单和设置。
+
+接管后，通过浏览器工具栏中的尺寸选择器 切换桌面、笔记本、高清桌面、平板和手机尺寸，平板和手机均提供横竖屏预设。标注的是网页 CSS 视口尺寸，不包括浏览器外框。切换会触发响应式排版，不刷新页面，也不丢失登录状态；其他查看者会看到同样的尺寸。Stop/Start 和 Reset 保留当前选择，WebUI 服务器重启后恢复默认桌面尺寸。这些预设用于响应式布局，不模拟手机操作系统、User-Agent 或触摸硬件。
+
+默认只能观看。**Take control** 会暂停 Agent 的浏览器操作、页面采集和截图，你可以直接完成登录、验证码或修正。**Hand back to Agent** 撤销人类输入，Agent 必须重新观察后才能继续操作。每次只有一个控制端，其他设备保持只读。控制设备断线后，Agent 仍保持暂停，需要已认证用户明确交还控制。
+
+接管期间，浏览器桌面获得焦点时会自动双向同步纯文本剪贴板。输入前先点击远端桌面。macOS 的 Command 会映射为 Linux Host 的 Ctrl，适用于全选、复制、粘贴和撤销等快捷键。使用平常的复制、粘贴快捷键即可，支持中文和 emoji，最多传输 65536 个字符。同步要求 HTTPS 或 localhost，并获得本机浏览器的剪贴板权限；权限被阻止时，面板会提示如何开启。交还控制权、断线或关闭查看面板后停止同步。剪贴板不传输图片或文件。文件对话框访问 Host 文件，尚不支持从客户端自动传文件。浏览器使用 Host 权限与网络，不继承 Sandbox 隔离。独立登录配置保存在所选配置数据目录的 `browsers/<thread_id>` 中，不导入个人浏览器配置。
+
+关闭旁栏、切换对话或结束 Run 都保留浏览器。**Stop browser** 关闭实时进程，保留配置并显示 **Start browser**。**Reset browser**（圆形箭头）关闭后立即重启浏览器，并将窗口恢复到桌面内，适合窗口被拖出视野的情况。查看器断线时可以点击 **Reconnect viewer**，只重新连接画面，不重启 Chromium。服务器退出也会关闭实时进程，服务器重启后需要重新启用浏览器。内嵌远程查看器采用 [noVNC](https://github.com/novnc/noVNC)，对应版本的未修改源码链接与许可声明位于 `/assets/LICENSE.noVNC`，其他打包依赖声明位于 `/third-party-licenses.txt`。
+
+关闭一个标签页会保留其他标签页。关闭最后一个窗口、Chromium 崩溃或必要的显示进程退出时，统一进入与 **Stop browser** 相同的停止状态，需要时点击 **Start browser**；异常退出还会显示原因。停止后启动和 Reset 都保留原有配置，创建新的只读会话，需要时再次接管。正在等待交还的 Agent 工具会报告会话失效，不会无限暂停，也不会重放旧操作。上一轮 Run 无法操作替代浏览器；发送新提示后，Agent 必须重新观察再操作。未保存的页面内容、崩溃前尚未写入的数据可能丢失。
+
 ## 查看 Memory
 
 启用 Memory 后，左下导航的 **Memory** 按钮会打开一个只能观测的 Memory 页面。Global memory 与各个 Project 的作用域分开。中间区域复用对话历史、实时工具活动和 **Inspect & usage** ，但没有输入框或手动执行控件。每次自动整理 Run 都使用新的模型上下文，之前的轮次和记录的用量仍可查看，服务器重启后也会保留。

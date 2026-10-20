@@ -90,6 +90,39 @@ Use a fork to try another approach while keeping the original conversation.
 
 The fork copies saved history, notes, tasks, settings and Thread-owned files. An active source contributes its last saved checkpoint, not unsaved live output. Project directories, remote targets and sandboxes remain the same external resources; the fork does not isolate them. Coordinators, their Workers, Subagent Threads and internal Memory/Live Threads cannot be forked. If creation has an uncertain outcome, inspect the conversation list before trying again.
 
+## Browse on the Linux Host
+
+The **Browser** drawer shows a dedicated Chromium browser running on the WebUI server. Browser support is optional. With computer sharing enabled, open an idle **Full Control** conversation and select **Browser**. The drawer checks the Host and lists missing browser automation, compatible browser and Linux desktop components. On an apt-based Linux Host where the WebUI already runs as an administrator, select **Install browser support**. Progress and installation output appear in the panel; it checks readiness automatically when finished. Then choose **Enable browser → Start browser**. No terminal command is needed in this flow.
+
+The WebUI uses its existing system account and never elevates privileges or asks for a sudo password. Without sufficient privileges or a supported package manager, it explains what needs administrator attention. Expand **Manual installation commands**, run them on the Host in the Harness UI environment, then select **Check again**. Supported browser runtime baselines include Ubuntu 22.04/24.04/26.04 and Debian 12/13. Ubuntu 20.04 can run Harness UI but the current browser runtime no longer supports it, even with extended OS maintenance.
+
+An existing Chrome, Chromium or Edge can be reused; downloading a browser is unnecessary when one is detected. Installed Playwright Chromium is preferred when present. For a fresh Debian/Ubuntu Host, the complete preparation is:
+
+```bash
+uv pip install 'a13n-harness-ui[browser]'
+python -m playwright install --with-deps --no-shell chromium
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-tools x11-xserver-utils xauth openbox
+```
+
+Skip the Chromium installation command if a compatible browser already exists. In Docker, the button installs into the running container; installation survives stopping that container but not replacing it. Include the components in your image to retain them across replacement. Detection checks component presence; missing shared libraries or browser incompatibilities can still appear as startup errors.
+
+Closing the panel leaves installation running. Reopen it to see progress. On failure, review the output and select **Retry installation**; already detected components are skipped. Restarting the server interrupts installation and discards its progress log. Packages already installed remain; an interrupted system package manager may require administrator repair before retrying.
+
+Once ready, choose **Enable browser → Start browser**. The Agent can also start an enabled browser by navigating. Ordinary Files, Shell and chat use do not start Chromium or a graphical session. Installed use requires no separately installed Node.js. macOS and Windows Hosts detect existing compatible browsers but cannot run the remote desktop yet; the drawer explains this instead of offering Linux installation commands. Web browsers on these platforms can view a Linux Host.
+
+The Host runs Chromium with a dedicated virtual display, window manager and VNC server. Playwright supplies browser automation and manages its compatible Chromium build. TigerVNC (`Xtigervnc`) supplies both the X display and native VNC permissions in one process; no separate Xvfb, x11vnc or websockify service is required. Openbox manages browser windows, xrandr resizes the display, and xauth restricts display access. The full browser interface includes tabs, the address bar, menus and settings.
+
+After taking control, use the viewport selector in the browser toolbar to switch among desktop, laptop, HD desktop, tablet and phone sizes, including portrait and landscape tablet/phone presets. The displayed dimensions are CSS page dimensions, not the surrounding browser frame. Pages reflow without reloading or losing login state; other viewers see the same size. Stop/Start and Reset retain the selection until the WebUI server restarts. These are responsive layout sizes; they do not emulate a mobile operating system, user agent or touch device.
+
+Viewing is read-only by default. **Take control** pauses Agent browser operations and page collection so you can complete login, verification or corrections directly. **Hand back to Agent** revokes human input; the Agent must observe the updated page before continuing. Only one controlling viewer is allowed. Other devices can watch read-only. If the controlling device disconnects, Agent browser access stays paused until an authenticated user selects Hand back.
+
+During human control, plain-text clipboards synchronize automatically while the browser desktop is focused. Click inside the desktop before typing. On macOS, Command maps to Ctrl on the Linux Host, including select-all, copy, paste and undo. Use your usual copy and paste shortcuts; Unicode text, including Chinese and emoji, is supported up to 65536 characters. Synchronization requires HTTPS or localhost and clipboard permission in your browser. If access is blocked, the drawer explains how to enable it. Handback, disconnection and closing the viewer stop synchronization. Images and files are not transferred through the clipboard. File dialogs operate on Host files; automatic file transfer from your device is not available. The browser uses Host permissions and networking, outside Sandbox isolation. Login information is kept in a dedicated profile under `browsers/<thread_id>` in the selected configuration's data root; your personal browser profile is never imported.
+
+Closing the drawer, switching conversations and completing a Run leave the browser running. **Stop browser** closes its live processes and shows **Start browser**, keeping the saved profile. **Reset browser** (the circular arrow) closes and immediately restarts the browser, restoring its window within the desktop if you moved it out of view. A disconnected viewer can use **Reconnect viewer** to reconnect without restarting Chromium. Server shutdown also closes live processes; after a server restart, enable the browser again. The embedded remote viewer uses [noVNC](https://github.com/novnc/noVNC), whose unmodified source and license notices are identified in `/assets/LICENSE.noVNC`; other bundled dependency notices are served at `/third-party-licenses.txt`.
+
+Closing a browser tab keeps other tabs open. Closing the last window, a Chromium crash or a required display process exiting returns to the same stopped state as **Stop browser**. Click **Start browser** when ready; abnormal exits also show the reason. Start after Stop and Reset retain the profile and create a new read-only session; take control again if needed. Waiting Agent tools fail instead of remaining paused indefinitely, and old actions are never replayed. The previous Run cannot operate the replacement browser; send a new prompt to use it, and the Agent must observe it before acting. Unsaved page contents and data not flushed before a crash may be lost.
+
 ## Observe Memory
 
 The **Memory** button in the bottom-left navigation opens an observation-only Memory page when Memory is enabled. Global memory is separate from Project scopes. The center reuses conversation history, live tool activity and **Inspect & usage**, but has no input area or manual execution controls. Each automatic organization Run starts with fresh model context while previous rounds and recorded usage remain visible, including after server restart.

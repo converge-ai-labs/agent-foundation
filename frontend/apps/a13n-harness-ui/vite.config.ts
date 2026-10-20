@@ -1,9 +1,10 @@
 import tailwindcss from "@tailwindcss/vite";
 import { cossLicense } from "a13n-ui/vite";
 import { defineConfig } from "vite";
+import { novncLicense } from "./novnc-license";
 
 export default defineConfig({
-  plugins: [tailwindcss(), cossLicense()],
+  plugins: [tailwindcss(), cossLicense(), novncLicense()],
   server: {
     host: "127.0.0.1",
     port: 5174,
@@ -17,6 +18,7 @@ export default defineConfig({
     },
   },
   build: {
+    license: { fileName: "third-party-licenses.txt" },
     outDir: "dist",
     emptyOutDir: true,
   },

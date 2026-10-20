@@ -158,6 +158,7 @@ function setup(
                       host_files: sharing,
                       host_git: sharing,
                       host_terminal: sharing,
+                      browser: sharing,
                     },
                   }
                 : url === "/api/projects"
@@ -920,3 +921,27 @@ it.each([false, true])(
     }
   },
 );
+
+it("shows one resizable Browser drawer and restores Files without mounting both", async () => {
+  setup("/threads/current");
+  const browser = await screen.findByRole("button", {
+    name: "Browser",
+  });
+  fireEvent.click(browser);
+  expect(
+    await screen.findByRole("complementary", { name: "Browser panel" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("complementary", { name: "File explorer" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("separator", { name: "Resize supporting panel" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  expect(
+    await screen.findByRole("complementary", { name: "File explorer" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("complementary", { name: "Browser panel" }),
+  ).toBeNull();
+});
