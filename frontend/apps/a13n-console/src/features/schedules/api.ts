@@ -108,6 +108,23 @@ export function scheduleQueries(client: Client, workspaceId: string) {
               .then(data),
           ),
       }),
+    revisions: (agentId: string) =>
+      queryOptions({
+        queryKey: ["schedule-agent-revisions", workspaceId, agentId],
+        enabled: !!agentId,
+        queryFn: ({ signal }) =>
+          allPages((cursor) =>
+            api
+              .GET("/api/v1/agents/{agent_id}/revisions", {
+                params: {
+                  path: { agent_id: agentId },
+                  query: { cursor, limit: 100 },
+                },
+                signal,
+              })
+              .then(data),
+          ),
+      }),
   };
 }
 

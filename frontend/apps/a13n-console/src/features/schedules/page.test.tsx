@@ -33,7 +33,10 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, values: Record<string, unknown> = {}) =>
+      key.replace(/{{(\w+)}}/g, (match, name: string) =>
+        String(values[name] ?? match),
+      ),
     i18n: { resolvedLanguage: "en" },
   }),
 }));
@@ -57,7 +60,7 @@ const schedule: Schema["Schedule"] = {
   pause_reason: "manual",
   schedule: { type: "cron", expression: "0 9 * * *", timezone: "UTC" },
   invocation: {
-    agent_id: "agt_one",
+    agent_id: "agt_0123456789abcdef0123",
     agent_revision_id: null,
     payload: { content: [{ type: "text", text: "Report" }] },
   },
@@ -161,83 +164,421 @@ function live(
   );
 }
 
-it("previews explicit timing and retries an unchanged create with the same request key", async () => {
-  const user = userEvent.setup(),
-    creates: Request[] = [],
-    bodies: unknown[] = [],
-    previews: unknown[] = [];
-  show("/workspace/ws_one/schedules", async (request) => {
-    const path = new URL(request.url).pathname;
-    if (path === "/api/v1/schedules" && request.method === "GET")
-      return Response.json({ items: [], next_cursor: null });
-    if (path === "/api/v1/agents")
+async function openCreateDraft(
+  respond?: (request: Request) => Response | undefined,
+) {
+  const user = userEvent.setup();
+  const writes: Request[] = [];
+  show("/workspace/ws_one/schedules", (request) => {
+    if (request.method !== "GET") writes.push(request);
+    const response = respond?.(request);
+    if (response) return response;
+    if (new URL(request.url).pathname === "/api/v1/agents")
       return Response.json({
-        items: [{ id: "agt_one", name: "Reporter" }],
+        items: [{ id: "agt_0123456789abcdef0123", name: "Reporter" }],
         next_cursor: null,
       });
-    if (path.endsWith("/preview")) {
-      previews.push(await request.json());
-      return Response.json({
-        items: [{ utc: at, local: "2026-10-20T08:00:00+08:00" }],
-      });
-    }
-    if (path === "/api/v1/schedules") {
-      creates.push(request);
-      bodies.push(await request.json());
-      if (creates.length === 1)
-        return Response.json(
-          { error: { code: "unavailable", message: "Temporary outage" } },
-          { status: 503 },
-        );
-      return Response.json(schedule, { status: 201 });
-    }
-    if (path.endsWith("/status")) return Response.json(status);
-    if (path.endsWith("/occurrences"))
-      return Response.json({ items: [], next_cursor: null });
-    if (path.endsWith("/stream")) return live(request, []);
-    return Response.json(schedule);
+    return Response.json({ items: [], next_cursor: null });
   });
   await user.click(
     await screen.findByRole("button", { name: "Create schedule" }),
   );
-  const dialog = screen.getByRole("dialog");
-  await user.type(within(dialog).getByLabelText("Name"), "Morning report");
-  await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
-  await user.click(await screen.findByRole("option", { name: "Reporter" }));
-  await user.type(within(dialog).getByLabelText("Input"), "Report");
-  await user.click(
-    within(dialog).getByRole("button", { name: "Preview next times" }),
+  return { user, dialog: within(screen.getByRole("dialog")), writes };
+}
+
+it("returns unchanged and incomplete JSON drafts to fields without submitting", async () => {
+  const { user, dialog, writes } = await openCreateDraft();
+  await user.type(dialog.getByLabelText("Input"), " unfinished ");
+  await user.click(dialog.getByRole("button", { name: "JSON" }));
+  await user.click(dialog.getByRole("button", { name: "Fields" }));
+  expect((dialog.getByLabelText("Input") as HTMLTextAreaElement).value).toBe(
+    " unfinished ",
   );
-  expect(await screen.findByText(/2026-10-20T08:00:00/)).toBeTruthy();
-  expect(previews[0]).toMatchObject({
-    schedule: { expression: "0 9 * * *" },
-    count: 5,
-  });
-  await user.click(
-    within(dialog).getByRole("button", {
-      name: "Create schedule",
+  expect(dialog.queryByRole("alert")).toBeNull();
+
+  await user.click(dialog.getByRole("button", { name: "JSON" }));
+  await user.clear(dialog.getByLabelText("Invocation JSON"));
+  await user.paste(
+    JSON.stringify({
+      agent_id: "",
+      payload: { content: [{ type: "text", text: "Unfinished report" }] },
     }),
   );
-  await screen.findByText("Temporary outage");
-  await user.click(
-    within(dialog).getByRole("button", {
-      name: "Create schedule",
-    }),
+  await user.click(dialog.getByRole("button", { name: "Fields" }));
+  expect((dialog.getByLabelText("Input") as HTMLTextAreaElement).value).toBe(
+    "Unfinished report",
   );
-  await screen.findByRole("heading", { name: "Morning report" });
-  expect(creates).toHaveLength(2);
-  expect(creates[0].headers.get("Idempotency-Key")).toBe(
-    creates[1].headers.get("Idempotency-Key"),
-  );
-  expect(bodies[0]).toEqual(bodies[1]);
-  expect(bodies[0]).toMatchObject({
-    invocation: {
-      agent_id: "agt_one",
-      agent_revision_id: null,
-      payload: { content: [{ type: "text", text: "Report" }] },
-    },
-  });
+  expect(dialog.queryByRole("alert")).toBeNull();
+  expect(
+    (
+      dialog.getByRole("button", {
+        name: "Create schedule",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(writes).toHaveLength(0);
 });
+
+it("restores the latest form draft after malformed or structured JSON without losing other edits", async () => {
+  const { user, dialog, writes } = await openCreateDraft();
+  await user.type(dialog.getByLabelText("Name"), "Local draft");
+  await user.type(dialog.getByLabelText("Input"), "Original input");
+  await user.click(dialog.getByRole("button", { name: "JSON" }));
+  await user.clear(dialog.getByLabelText("Invocation JSON"));
+  await user.paste(
+    JSON.stringify({
+      agent_id: "",
+      agent_revision_id: "revision draft",
+      memories: [],
+      payload: { content: [{ type: "text", text: "Updated input" }] },
+    }),
+  );
+  await user.click(dialog.getByRole("button", { name: "Fields" }));
+  expect((dialog.getByLabelText("Input") as HTMLTextAreaElement).value).toBe(
+    "Updated input",
+  );
+
+  for (const broken of [
+    "{",
+    JSON.stringify({
+      payload: { content: [{ type: "json", value: { keep: true } }] },
+    }),
+  ]) {
+    await user.click(dialog.getByRole("button", { name: "JSON" }));
+    const snapshot = (
+      dialog.getByLabelText("Invocation JSON") as HTMLTextAreaElement
+    ).value;
+    expect(JSON.parse(snapshot).memories).toEqual([]);
+    await user.clear(dialog.getByLabelText("Invocation JSON"));
+    await user.paste(broken);
+    expect(
+      dialog.getByLabelText("Invocation JSON").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(dialog.queryByRole("alert")).toBeNull();
+    expect(
+      dialog.queryByRole("button", {
+        name: "Discard JSON changes and return to fields",
+      }),
+    ).toBeNull();
+    await user.clear(dialog.getByLabelText("Name"));
+    await user.type(dialog.getByLabelText("Name"), "Other edits kept");
+    await user.click(dialog.getByRole("button", { name: "Fields" }));
+    const recovery = within(
+      screen.getByRole("dialog", { name: "Cannot switch to fields" }),
+    );
+    expect(
+      (dialog.getByLabelText("Invocation JSON") as HTMLTextAreaElement).value,
+    ).toBe(broken);
+    await user.click(
+      recovery.getByRole("button", {
+        name: "Discard JSON changes and return to fields",
+      }),
+    );
+    expect(dialog.queryByRole("alert")).toBeNull();
+    expect((dialog.getByLabelText("Input") as HTMLTextAreaElement).value).toBe(
+      "Updated input",
+    );
+    expect(
+      dialog.getByRole("combobox", { name: "Agent revision (optional)" })
+        .textContent,
+    ).toContain("revision draft");
+    expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe(
+      "Other edits kept",
+    );
+    await user.click(dialog.getByRole("button", { name: "JSON" }));
+    expect(
+      (dialog.getByLabelText("Invocation JSON") as HTMLTextAreaElement).value,
+    ).toBe(snapshot);
+    await user.click(dialog.getByRole("button", { name: "Fields" }));
+  }
+  expect(writes).toHaveLength(0);
+});
+
+it.each(["outside", "escape"])(
+  "dismisses only the nested error dialog with %s and keeps the draft",
+  async (dismiss) => {
+    const { user, dialog, writes } = await openCreateDraft();
+    await user.type(dialog.getByLabelText("Name"), "Retained draft");
+    await user.click(dialog.getByRole("button", { name: "JSON" }));
+    await user.clear(dialog.getByLabelText("Invocation JSON"));
+    await user.paste("{");
+    await user.click(dialog.getByRole("button", { name: "Fields" }));
+    const errorDialog = screen.getByRole("dialog", {
+      name: "Cannot switch to fields",
+    });
+    if (dismiss === "outside") {
+      await user.click(errorDialog.closest('[data-slot="dialog-viewport"]')!);
+    } else {
+      await user.keyboard("{Escape}");
+    }
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Cannot switch to fields" }),
+      ).toBeNull(),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Create schedule" }),
+    ).toBeTruthy();
+    expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe(
+      "Retained draft",
+    );
+    const json = dialog.getByLabelText(
+      "Invocation JSON",
+    ) as HTMLTextAreaElement;
+    expect(json.value).toBe("{");
+    await user.click(json);
+    await user.clear(json);
+    await user.paste("{}");
+    expect(json.value).toBe("{}");
+    expect(writes).toHaveLength(0);
+  },
+);
+
+it("lets users correct JSON after a failed switch and still rejects invalid submissions", async () => {
+  const { user, dialog, writes } = await openCreateDraft();
+  await user.type(dialog.getByLabelText("Name"), "Draft");
+  await user.click(dialog.getByRole("button", { name: "JSON" }));
+  await user.clear(dialog.getByLabelText("Invocation JSON"));
+  await user.paste("{");
+  await user.click(dialog.getByRole("button", { name: "Fields" }));
+  const recovery = within(
+    screen.getByRole("dialog", { name: "Cannot switch to fields" }),
+  );
+  expect(recovery.getByText("Expected a closing brace.")).toBeTruthy();
+  expect(recovery.getByText("Line 1, column 2")).toBeTruthy();
+  await user.click(recovery.getByRole("button", { name: "Continue editing" }));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      dialog.getByLabelText("Invocation JSON"),
+    ),
+  );
+  expect(
+    (dialog.getByLabelText("Invocation JSON") as HTMLTextAreaElement).value,
+  ).toBe("{");
+  await user.clear(dialog.getByLabelText("Invocation JSON"));
+  await user.paste(
+    JSON.stringify({
+      agent_id: "agt_0123456789abcdef0123",
+      agent_revision_id: "unfinished",
+      payload: { content: [{ type: "text", text: "Report" }] },
+    }),
+  );
+  expect(dialog.queryByRole("alert")).toBeNull();
+  expect(
+    dialog.getByLabelText("Invocation JSON").getAttribute("aria-invalid"),
+  ).not.toBe("true");
+  await user.click(dialog.getByRole("button", { name: "Fields" }));
+  expect((dialog.getByLabelText("Input") as HTMLTextAreaElement).value).toBe(
+    "Report",
+  );
+  await user.click(dialog.getByRole("button", { name: "Create schedule" }));
+  expect(await dialog.findByRole("alert")).toBeTruthy();
+  expect(writes).toHaveLength(0);
+});
+
+it.each(["pinned", "default"])(
+  "selects a revision and submits the %s choice",
+  async (choice) => {
+    const revisionId = "apr_0123456789abcdef0123";
+    const { user, dialog, writes } = await openCreateDraft((request) => {
+      if (new URL(request.url).pathname.endsWith("/revisions"))
+        return Response.json({
+          items: [{ id: revisionId, number: 1, note: "Stable" }],
+          next_cursor: null,
+        });
+      if (request.method === "POST")
+        return Response.json(
+          { error: { code: "unavailable", message: "Temporary outage" } },
+          { status: 503 },
+        );
+    });
+    const revision = dialog.getByRole("combobox", {
+      name: "Agent revision (optional)",
+    });
+    expect(revision.textContent).toContain("Default");
+    expect((revision as HTMLButtonElement).disabled).toBe(true);
+    await user.click(dialog.getByRole("combobox", { name: "Agent" }));
+    await user.click(await screen.findByRole("option", { name: "Reporter" }));
+    await user.click(revision);
+    await user.click(await screen.findByRole("option", { name: "v1 Stable" }));
+    if (choice === "default") {
+      await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+      await user.click(
+        dialog.getByRole("combobox", { name: "Agent revision (optional)" }),
+      );
+      await user.click(await screen.findByRole("option", { name: "Default" }));
+    }
+    const expected = choice === "default" ? null : revisionId;
+    await user.click(dialog.getByRole("button", { name: "JSON" }));
+    expect(
+      JSON.parse(
+        (dialog.getByLabelText("Invocation JSON") as HTMLTextAreaElement).value,
+      ).agent_revision_id,
+    ).toBe(expected);
+    await user.click(dialog.getByRole("button", { name: "Fields" }));
+    expect(
+      dialog.getByRole("combobox", { name: "Agent revision (optional)" })
+        .textContent,
+    ).toContain(choice === "default" ? "Default" : "v1");
+    await user.type(dialog.getByLabelText("Name"), "Report");
+    await user.type(dialog.getByLabelText("Input"), "Hello");
+    await user.click(dialog.getByRole("button", { name: "Create schedule" }));
+    await dialog.findByText("Temporary outage");
+    expect(writes).toHaveLength(1);
+    expect(await writes[0].json()).toMatchObject({
+      invocation: { agent_revision_id: expected },
+    });
+  },
+);
+
+it("loads all revision pages and resets the pinned version when the agent changes", async () => {
+  const first = "agt_0123456789abcdef0123",
+    second = "agt_1123456789abcdef0123";
+  const reads: string[] = [];
+  const { user, dialog, writes } = await openCreateDraft((request) => {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/v1/agents")
+      return Response.json({
+        items: [
+          { id: first, name: "Reporter" },
+          { id: second, name: "Reviewer" },
+        ],
+        next_cursor: null,
+      });
+    if (url.pathname.endsWith("/revisions")) {
+      reads.push(url.pathname + url.search);
+      if (url.pathname.includes(second))
+        return Response.json({
+          items: [
+            { id: "apr_2123456789abcdef0123", number: 1, note: "Review" },
+          ],
+          next_cursor: null,
+        });
+      const laterPage = url.searchParams.has("cursor");
+      return Response.json({
+        items: [
+          {
+            id: laterPage
+              ? "apr_1123456789abcdef0123"
+              : "apr_0123456789abcdef0123",
+            number: laterPage ? 1 : 2,
+            note: laterPage ? "Earlier" : "Latest",
+          },
+        ],
+        next_cursor: laterPage ? null : "older",
+      });
+    }
+  });
+  await user.click(dialog.getByRole("combobox", { name: "Agent" }));
+  await user.click(await screen.findByRole("option", { name: "Reporter" }));
+  await user.click(
+    dialog.getByRole("combobox", { name: "Agent revision (optional)" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "v1 Earlier" }));
+  expect(reads.some((url) => url.includes("cursor=older"))).toBe(true);
+  await user.click(dialog.getByRole("combobox", { name: "Agent" }));
+  await user.click(screen.getByRole("option", { name: "Reviewer" }));
+  const revision = dialog.getByRole("combobox", {
+    name: "Agent revision (optional)",
+  });
+  expect(revision.textContent).toContain("Default");
+  await user.click(revision);
+  expect(await screen.findByRole("option", { name: "v1 Review" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "v1 Earlier" })).toBeNull();
+  expect(writes).toHaveLength(0);
+});
+
+it.each([false, true])(
+  "previews timing and retries creation with the same request key (enable immediately: %s)",
+  async (enableImmediately) => {
+    const user = userEvent.setup(),
+      creates: Request[] = [],
+      bodies: unknown[] = [],
+      previews: unknown[] = [];
+    show("/workspace/ws_one/schedules", async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/schedules" && request.method === "GET")
+        return Response.json({ items: [], next_cursor: null });
+      if (path.endsWith("/revisions"))
+        return Response.json({ items: [], next_cursor: null });
+      if (path === "/api/v1/agents")
+        return Response.json({
+          items: [{ id: "agt_0123456789abcdef0123", name: "Reporter" }],
+          next_cursor: null,
+        });
+      if (path.endsWith("/preview")) {
+        previews.push(await request.json());
+        return Response.json({
+          items: [{ utc: at, local: "2026-10-20T08:00:00+08:00" }],
+        });
+      }
+      if (path === "/api/v1/schedules") {
+        creates.push(request);
+        bodies.push(await request.json());
+        if (creates.length === 1)
+          return Response.json(
+            { error: { code: "unavailable", message: "Temporary outage" } },
+            { status: 503 },
+          );
+        return Response.json(schedule, { status: 201 });
+      }
+      if (path.endsWith("/status")) return Response.json(status);
+      if (path.endsWith("/occurrences"))
+        return Response.json({ items: [], next_cursor: null });
+      if (path.endsWith("/stream")) return live(request, []);
+      return Response.json(schedule);
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Create schedule" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    const enable = within(dialog).getByRole("checkbox", {
+      name: "Enable immediately",
+    });
+    expect(enable.getAttribute("aria-checked")).toBe("false");
+    if (enableImmediately) await user.click(enable);
+    const createLabel = enableImmediately
+      ? "Create and enable"
+      : "Create schedule";
+    await user.type(within(dialog).getByLabelText("Name"), "Morning report");
+    await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
+    await user.click(await screen.findByRole("option", { name: "Reporter" }));
+    await user.type(within(dialog).getByLabelText("Input"), "Report");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Preview next times" }),
+    );
+    expect(await screen.findByText(/2026-10-20T08:00:00/)).toBeTruthy();
+    expect(previews[0]).toMatchObject({
+      schedule: { expression: "0 9 * * *" },
+      count: 5,
+    });
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: createLabel,
+      }),
+    );
+    await screen.findByText("Temporary outage");
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: createLabel,
+      }),
+    );
+    await screen.findByRole("heading", { name: "Morning report" });
+    expect(creates).toHaveLength(2);
+    expect(creates[0].headers.get("Idempotency-Key")).toBe(
+      creates[1].headers.get("Idempotency-Key"),
+    );
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect(bodies[0]).toMatchObject({
+      state: enableImmediately ? "enabled" : "paused",
+      invocation: {
+        agent_id: "agt_0123456789abcdef0123",
+        agent_revision_id: null,
+        payload: { content: [{ type: "text", text: "Report" }] },
+      },
+    });
+  },
+);
 
 it("pages history, distinguishes failed input from submission, and refreshes an old result on reconnect", async () => {
   vi.spyOn(Math, "random").mockReturnValue(0);
@@ -417,7 +758,8 @@ it("preserves execution across occurrence frames and refreshes unchanged submiss
 it("keeps an open draft's original ETag after live configuration changes", async () => {
   const user = userEvent.setup(),
     controllers: ReadableStreamDefaultController<Uint8Array>[] = [],
-    tags: string[] = [];
+    tags: string[] = [],
+    updates: Request[] = [];
   let version = 1;
   show("/workspace/ws_one/schedules/sch_one", (request) => {
     const path = new URL(request.url).pathname;
@@ -425,12 +767,15 @@ it("keeps an open draft's original ETag after live configuration changes", async
     if (path.endsWith("/status")) return Response.json(status);
     if (path.endsWith("/occurrences"))
       return Response.json({ items: [], next_cursor: null });
+    if (path.endsWith("/revisions"))
+      return Response.json({ items: [], next_cursor: null });
     if (path === "/api/v1/agents")
       return Response.json({
-        items: [{ id: "agt_one", name: "Reporter" }],
+        items: [{ id: "agt_0123456789abcdef0123", name: "Reporter" }],
         next_cursor: null,
       });
     if (request.method === "PATCH") {
+      updates.push(request);
       tags.push(request.headers.get("If-Match") ?? "");
       return Response.json(
         { error: { code: "precondition_failed", message: "Stale version" } },
@@ -443,6 +788,9 @@ it("keeps an open draft's original ETag after live configuration changes", async
     await screen.findByRole("button", { name: "Edit schedule" }),
   );
   const dialog = screen.getByRole("dialog");
+  expect(
+    within(dialog).queryByRole("checkbox", { name: "Enable immediately" }),
+  ).toBeNull();
   await user.type(within(dialog).getByLabelText("Name"), " edited");
   await act(async () => {
     version = 2;
@@ -467,6 +815,7 @@ it("keeps an open draft's original ETag after live configuration changes", async
   );
   expect(await screen.findByText("Schedule changed")).toBeTruthy();
   expect(tags).toEqual(['"sch_one:1"']);
+  expect(await updates[0].json()).not.toHaveProperty("state");
   expect(
     (within(dialog).getByLabelText("Name") as HTMLInputElement).value,
   ).toBe("Morning report edited");
