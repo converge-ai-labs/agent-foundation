@@ -91,6 +91,8 @@ def log_after_commit(
             _log,
             {
                 "schedule_id": row.id,
+                "schedule_type": row.schedule_type,
+                "schedule_state": row.state,
                 "occurrence_id": item.id,
                 "status": item.status,
                 "reason": item.reason,
@@ -187,21 +189,22 @@ async def _failed_attempt(
         else:
             reason = "authority_invalid" if code in {"forbidden", "unauthenticated"} else "target_invalid"
             lifecycle.finish(row, item, current, status="failed", reason=reason)
-            await lifecycle.close_due(session, row, current, reason)
-            row.state, row.pause_reason, row.next_fire_at = "paused", reason, None
-            record(
-                session,
-                WorkspaceScope(row.organization_id, row.workspace_id),
-                actor_id=None,
-                action="schedule.auto_pause",
-                target_kind="schedule",
-                target_id=row.id,
-                details={
-                    "principal_id": row.principal_id,
-                    "session_id": row.session_id,
-                    "occurrence_id": item.id,
-                    "reason": reason,
-                },
-            )
+            if row.state != "completed":
+                await lifecycle.close_due(session, row, current, reason)
+                row.state, row.pause_reason, row.next_fire_at = "paused", reason, None
+                record(
+                    session,
+                    WorkspaceScope(row.organization_id, row.workspace_id),
+                    actor_id=None,
+                    action="schedule.auto_pause",
+                    target_kind="schedule",
+                    target_id=row.id,
+                    details={
+                        "principal_id": row.principal_id,
+                        "session_id": row.session_id,
+                        "occurrence_id": item.id,
+                        "reason": reason,
+                    },
+                )
         await session.flush()
         log_after_commit(session, row, item)

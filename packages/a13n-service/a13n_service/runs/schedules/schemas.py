@@ -1,6 +1,6 @@
 """Schedule configuration, immutable trigger intent and compact history projections."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -20,7 +20,7 @@ from a13n_service.runs.schemas import (
     canonical_json,
 )
 
-type ScheduleState = Literal["paused", "enabled", "archived"]
+type ScheduleState = Literal["paused", "enabled", "completed", "archived"]
 type OccurrenceStatus = Literal["pending", "submitted", "skipped", "failed", "cancelled"]
 type ScheduleTrigger = Literal["scheduled", "manual"]
 
@@ -38,6 +38,20 @@ class CronSchedule(_Model):
     def valid(self) -> Self:
         Calendar.parse(self.expression, self.timezone)
         return self
+
+
+class OnceSchedule(_Model):
+    type: Literal["once"]
+    run_at: AwareDatetime
+
+    @field_validator("run_at")
+    @classmethod
+    def utc(cls, value: datetime) -> datetime:
+        return value.astimezone(UTC)
+
+
+# Keep cron's omitted type compatible with existing requests and stored snapshots.
+type ScheduleRule = CronSchedule | OnceSchedule
 
 
 class ScheduleInvocation(_Model):
@@ -59,7 +73,7 @@ class ScheduleConfig(_Model):
     name: str = Field(min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2048)
     labels: Labels = Field(default_factory=dict)
-    schedule: CronSchedule
+    schedule: ScheduleRule
     max_lateness_seconds: int = Field(default=300, ge=60, le=86400)
     invocation: ScheduleInvocation
 
@@ -78,7 +92,7 @@ class ScheduleUpdate(_Model):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     description: str | None = Field(default=None, max_length=2048)
     labels: Labels | None = None
-    schedule: CronSchedule | None = None
+    schedule: ScheduleRule | None = None
     max_lateness_seconds: int | None = Field(default=None, ge=60, le=86400)
     invocation: ScheduleInvocation | None = None
 
@@ -122,7 +136,7 @@ class ScheduleQuery(_Model):
 
 class OccurrenceSnapshot(_Model):
     name: str
-    schedule: CronSchedule
+    schedule: ScheduleRule
     max_lateness_seconds: int
     invocation: ScheduleInvocation
     timezone_data_version: str
@@ -211,7 +225,7 @@ class ScheduleStatus(_Model):
 
 
 class SchedulePreviewRequest(_Model):
-    schedule: CronSchedule
+    schedule: ScheduleRule
     after: AwareDatetime
     count: int = Field(default=5, ge=1, le=10)
 

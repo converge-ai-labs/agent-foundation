@@ -51,6 +51,7 @@ async def plan_next(runtime: Runtime) -> str | None:
                 status="skipped" if reason else "pending",
                 reason=reason,
             )
+            lifecycle.complete_once(row, item)
             dispatch.log_after_commit(session, row, item)
         row.last_processed_fire_at = max(row.last_processed_fire_at, latest) if row.last_processed_fire_at else latest
         row.next_fire_at = lifecycle.next_fire(row, current)
