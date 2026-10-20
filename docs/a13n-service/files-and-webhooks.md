@@ -57,7 +57,7 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 - `PATCH` changes the name, URL, kinds, filter, `enabled` or `signing_secret`; `DELETE` removes the subscription. Both take `If-Match`. Changes affect only deliveries queued afterwards.
 - A workspace has at most `control.subscriptions` subscriptions (32 by default). The URL must pass the [outbound policy](configuration.md#outbound-requests) when saved and on every delivery.
 
-Schedule events are `schedule.enabled`, `schedule.paused`, `schedule.completed` and `schedule.archived`. Occurrence events are `schedule_occurrence.submitted`, `.skipped`, `.failed`, `.cancelled` and `.completed`. Scheduling completion and execution completion are separate: see [schedule results](schedules.md#read-the-result). Paused creation emits nothing; enabled creation emits `schedule.enabled`. Retries and unchanged commands do not create duplicate transition notices. Historical completion repair does not send past events.
+Schedule events are `schedule.enabled`, `schedule.paused`, `schedule.completed` and `schedule.archived`. Occurrence events are `schedule_occurrence.submitted`, `.skipped`, `.failed`, `.cancelled` and `.completed`. Scheduling completion and execution completion are separate: see [schedule results](schedules.md#read-the-result). Paused creation emits nothing; enabled creation emits `schedule.enabled`. Retries and unchanged commands do not create duplicate transition notices. Historical completion records are not backfilled and past events are not replayed.
 
 ### Payload and signature
 

@@ -184,7 +184,6 @@ class OccurrenceRow(Stamped, Base):
             "uq_schedule_occurrences_pending", "schedule_id", unique=True, postgresql_where=text("status = 'pending'")
         ),
         Index("ix_schedule_occurrences_history", "schedule_id", "created_at", "id"),
-        Index("ix_schedule_occurrences_submitted", "id", postgresql_where=text("status = 'submitted'")),
         Index(
             "ix_schedule_occurrences_pending",
             text("LEAST(next_attempt_at, deadline_at)"),

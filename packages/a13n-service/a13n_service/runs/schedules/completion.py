@@ -1,13 +1,13 @@
-"""Complete an occurrence at its root Thread's first final Run; repair older history in bounded batches."""
+"""Complete an occurrence at its root Thread's first final Run."""
 
 from datetime import datetime
 from functools import partial
 
 from a13n_logging import get_logger
-from sqlalchemy import select, true, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra.db import after_commit, transaction
+from a13n_service.infra.db import after_commit
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.tables import OccurrenceRow
 from a13n_service.runs.schedules.webhooks import occurrence_changed
@@ -60,7 +60,7 @@ async def _complete(
 async def complete(session: AsyncSession, runtime: Runtime, thread: ThreadRow, run: RunRow, at: datetime) -> None:
     if thread.schedule_occurrence_id is None or thread.origin == "child" or run.status not in _OUTCOMES:
         return
-    # Historical submitted rows may already have an earlier final Run before backfill reaches them.
+    # Only the first final Run can complete an occurrence; historical results remain unchanged.
     first = (
         await session.execute(
             select(RunRow.id, RunRow.status, RunRow.sealed_at)
@@ -76,7 +76,7 @@ async def complete(session: AsyncSession, runtime: Runtime, thread: ThreadRow, r
             .limit(1)
         )
     ).one_or_none()
-    if first is None:
+    if first is None or first.id != run.id:
         return
     item = await _complete(
         session,
@@ -87,52 +87,5 @@ async def complete(session: AsyncSession, runtime: Runtime, thread: ThreadRow, r
         status=first.status,
         at=first.sealed_at,
     )
-    if item is not None and first.id == run.id:
+    if item is not None:
         await occurrence_changed(session, runtime, item, at)
-
-
-async def backfill(runtime: Runtime) -> None:
-    """Repair pre-upgrade completed execution without replaying historical notifications.
-
-    New seals persist completion atomically. Older workers during a rolling upgrade are covered on the next sweep.
-    The legacy unfinished predicate remains correct until every old occurrence has been repaired.
-    """
-    async with transaction(runtime.storage) as session:
-        first = (
-            select(RunRow.id, RunRow.status, RunRow.sealed_at)
-            .where(
-                RunRow.thread_id == OccurrenceRow.thread_id,
-                RunRow.workspace_id == OccurrenceRow.workspace_id,
-                RunRow.status.in_(tuple(_OUTCOMES)),
-            )
-            .order_by(RunRow.sealed_at, RunRow.id)
-            .limit(1)
-            .lateral()
-        )
-        rows = (
-            await session.execute(
-                select(
-                    OccurrenceRow.id,
-                    OccurrenceRow.workspace_id,
-                    OccurrenceRow.thread_id,
-                    first.c.id.label("run_id"),
-                    first.c.status,
-                    first.c.sealed_at,
-                )
-                .join(first, true())
-                .where(OccurrenceRow.status == "submitted")
-                .order_by(OccurrenceRow.id)
-                .limit(runtime.settings.schedules.batch)
-                .with_for_update(of=OccurrenceRow, skip_locked=True)
-            )
-        ).all()
-        for row in rows:
-            await _complete(
-                session,
-                occurrence_id=row.id,
-                workspace_id=row.workspace_id,
-                thread_id=row.thread_id,
-                run_id=row.run_id,
-                status=row.status,
-                at=row.sealed_at,
-            )

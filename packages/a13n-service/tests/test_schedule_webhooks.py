@@ -1,7 +1,6 @@
 """Schedule notices share transaction, filtering and completion boundaries with their recorded facts."""
 
 import asyncio
-from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import AsyncMock
 
@@ -12,7 +11,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.resources.subscriptions.schemas import LIFECYCLE_KINDS
 from a13n_service.runs import seal
-from a13n_service.runs.schedules import completion, dispatch
+from a13n_service.runs.schedules import dispatch
 from a13n_service.runs.schedules.sweep import plan_next
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.schemas import Outcome
@@ -166,41 +165,6 @@ async def test_permanent_submission_failure_notifies_and_auto_pauses(service, sc
     assert next(e["occurrence"] for e in events if "occurrence" in e)["reason"] == "authority_invalid"
 
 
-async def test_backfill_is_bounded_idempotent_and_does_not_notify(service, scripted_model, runs_kit, monkeypatch):  # type: ignore[no-untyped-def]
-    schedule, _ = await schedule_for(service, scripted_model, runs_kit)
-    sub = await subscribe(service, schedule_id=schedule["id"])
-    # Simulate execution by a pre-upgrade worker. It leaves submitted evidence after sealing the Run.
-    monkeypatch.setattr(seal, "complete_occurrence", AsyncMock())
-    ids = []
-    for index in range(2):
-        item = await trigger(service, schedule, runs_kit, key=f"old-{index}")
-        ids.append(item["id"])
-        await dispatch.process(service.runtime, schedule["id"])
-        scripted_model.say("Done")
-        await (await runs_kit.attempt(service))
-    events = await deliveries(service, sub)
-    runtime = replace(
-        service.runtime,
-        settings=service.runtime.settings.model_copy(
-            update={
-                "schedules": service.runtime.settings.schedules.model_copy(update={"batch": 1}),
-            }
-        ),
-    )
-    await completion.backfill(runtime)
-    async with short_session(runtime.storage) as session:
-        items = (await session.scalars(select(OccurrenceRow).where(OccurrenceRow.id.in_(ids)))).all()
-        assert sorted(item.status for item in items) == ["completed", "submitted"]
-    await asyncio.gather(completion.backfill(runtime), completion.backfill(runtime))
-    async with short_session(runtime.storage) as session:
-        items = (await session.scalars(select(OccurrenceRow).where(OccurrenceRow.id.in_(ids)))).all()
-        assert all(item.status == "completed" and item.execution_outcome == "succeeded" for item in items)
-        for item in items:
-            run = await session.get_one(RunRow, item.completion_run_id)
-            assert item.completed_at == run.sealed_at
-    assert await deliveries(service, sub) == events
-
-
 async def test_child_completion_and_waiting_do_not_complete_root_occurrence(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.delegating(service, scripted_model, "async", user_questions=True)
@@ -254,7 +218,7 @@ async def test_child_completion_and_waiting_do_not_complete_root_occurrence(serv
     assert any(e["type"] == "run_attempt.succeeded" for e in events)
 
 
-async def test_later_run_preserves_earliest_legacy_completion(service, scripted_model, runs_kit, monkeypatch):  # type: ignore[no-untyped-def]
+async def test_later_run_does_not_complete_historical_occurrence(service, scripted_model, runs_kit, monkeypatch):  # type: ignore[no-untyped-def]
     schedule, agent = await schedule_for(service, scripted_model, runs_kit)
     sub = await subscribe(service, schedule_id=schedule["id"])
     item = await trigger(service, schedule, runs_kit)
@@ -266,13 +230,14 @@ async def test_later_run_preserves_earliest_legacy_completion(service, scripted_
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
         thread = await session.get_one(ThreadRow, stored.thread_id)
-        original_run = await session.get_one(RunRow, thread.last_run_id)
     continued = await runs_kit.submit(service, thread.id, runs_kit.message(agent, "Follow up"))
     assert continued.status_code == 201
     scripted_model.say("Later result")
     await (await runs_kit.attempt(service))
     async with short_session(service.runtime.storage) as session:
         stored = await session.get_one(OccurrenceRow, item["id"])
-        assert stored.status == "completed" and stored.completion_run_id == original_run.id
-        assert stored.completed_at == original_run.sealed_at
+        assert stored.status == "submitted"
+        assert stored.completion_run_id is None
+        assert stored.completed_at is None
+        assert stored.execution_outcome is None
     assert not any(e["type"] == "schedule_occurrence.completed" for e in await deliveries(service, sub))

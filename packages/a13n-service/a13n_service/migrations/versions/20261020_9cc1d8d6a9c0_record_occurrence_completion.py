@@ -70,14 +70,6 @@ CREATE OR REPLACE FUNCTION guard_schedule_occurrence() RETURNS trigger LANGUAGE 
             END $$
     """)
 
-    op.create_index(
-        "ix_schedule_occurrences_submitted",
-        "schedule_occurrences",
-        ["id"],
-        unique=False,
-        postgresql_where=sa.text("status = 'submitted'"),
-    )
-
 
 def downgrade() -> None:
     # Completion evidence cannot be represented by the old schema. Refuse a lossy rollback.
@@ -117,11 +109,6 @@ CREATE OR REPLACE FUNCTION guard_schedule_occurrence() RETURNS trigger LANGUAGE 
     """)
     op.drop_constraint(op.f("ck_schedule_occurrences_completion"), "schedule_occurrences", type_="check")
     op.drop_constraint("fk_schedule_occurrences_completion_run", "schedule_occurrences", type_="foreignkey")
-    op.drop_index(
-        "ix_schedule_occurrences_submitted",
-        table_name="schedule_occurrences",
-        postgresql_where=sa.text("status = 'submitted'"),
-    )
     op.drop_column("schedule_occurrences", "execution_outcome")
     op.drop_column("schedule_occurrences", "completion_run_id")
     op.drop_column("schedule_occurrences", "completed_at")
