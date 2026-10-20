@@ -34,10 +34,12 @@ export function SessionUsage({
   sessionId,
   threads,
   thread,
+  runId,
 }: {
   sessionId: string;
   threads: readonly Thread[];
   thread?: Thread;
+  runId?: string;
 }) {
   const { t } = useTranslation();
   const client = useClient(),
@@ -82,6 +84,7 @@ export function SessionUsage({
       <SessionUsageReport
         sessionId={sessionId}
         thread={open ? thread : undefined}
+        runId={runId}
         summary={usage.data}
         threads={threads}
         close={() => setOpen(false)}
@@ -95,12 +98,14 @@ function SessionUsageReport({
   summary,
   threads,
   thread,
+  runId,
   close,
 }: {
   sessionId: string;
   summary: Summary;
   threads: readonly Thread[];
   thread?: Thread;
+  runId?: string;
   close: () => void;
 }) {
   const { t } = useTranslation();
@@ -172,7 +177,7 @@ function SessionUsageReport({
         context={
           thread && (
             <ContextWindow
-              scope={{ thread_id: thread.id }}
+              scope={runId ? { run_id: runId } : { thread_id: thread.id }}
               live={!!thread.current_run_id}
               statLabel={threadName(thread, threads, t)}
             />

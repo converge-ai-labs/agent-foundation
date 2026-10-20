@@ -4057,7 +4057,7 @@
         "type": "object"
       },
       "ContextUsage": {
-        "description": "One reported generation, compared with its currently configured window.",
+        "description": "A Run's configured window and its latest eligible generation, when available.",
         "properties": {
           "context_window_tokens": {
             "anyOf": [
@@ -4093,8 +4093,15 @@
             "title": "Output Tokens"
           },
           "record_id": {
-            "title": "Record Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Id"
           },
           "run_id": {
             "title": "Run Id",

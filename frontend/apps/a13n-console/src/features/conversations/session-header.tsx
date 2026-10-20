@@ -134,6 +134,7 @@ export function SessionHeader({
             sessionId={sessionId}
             threads={threads}
             thread={thread}
+            runId={runId}
           />
         )}
         {thread && (
