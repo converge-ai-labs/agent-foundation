@@ -1,5 +1,7 @@
 """Same-server resource references, not Host URLs or file paths."""
 
+__lazy_modules__ = ["fastmcp.resources.template"]
+
 from fastmcp.resources.template import expand_uri_template, match_uri_template
 from pydantic import Field, JsonValue
 

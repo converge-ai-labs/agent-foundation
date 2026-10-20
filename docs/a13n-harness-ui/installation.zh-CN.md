@@ -17,6 +17,24 @@ a13n-harness-ui
 
 可选的 Bash/Zsh 快捷方式：在 shell 配置文件中加入 `alias anui='a13n-harness-ui'`。
 
+### 使用 Python 3.15 加快 TUI 启动
+
+Harness UI 支持 Python 3.13 及以上版本。选择 Python 3.15 即可使用原生惰性导入，减少 TUI 启动时的加载工作。可选功能的依赖会在需要时加载，因此首次使用某个功能时可能需要承担这部分延后开销。不需要添加解释器参数或修改配置。
+
+全新安装：
+
+```console
+uv tool install --python 3.15 a13n-harness-ui
+```
+
+切换已有的 uv-tool 安装时，先按照[升级](#upgrade)说明停止 App，再运行：
+
+```console
+uv tool upgrade --python 3.15 a13n-harness-ui
+```
+
+Python 3.13 和 3.14 仍受支持，原生惰性导入声明在这两个版本中按普通即时导入执行。实际启动收益取决于配置和启用的扩展。
+
 ## 升级
 
 1. 停止共享数据根目录的所有 TUI 和 WebUI App。

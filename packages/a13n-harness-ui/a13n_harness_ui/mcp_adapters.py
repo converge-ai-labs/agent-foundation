@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "a13n_harness_ui.mcp_apps.connections",
+    "a13n_harness_ui.mcp_runtime.connections",
+    "a13n_harness_ui.mcp_runtime.projection",
+    "fastmcp",
+    "fastmcp.client.transports",
+    "pydantic_ai.mcp",
+]
+
 import os
 import re
 from functools import partial
@@ -121,6 +130,18 @@ class HarnessUiMCP(MCP[AgentContext]):
         return replacement
 
 
+def _prepare_runtime() -> None:
+    # Load SDK code off the event loop; clients/transports remain loop-owned.
+    from importlib import import_module
+
+    for name in (
+        "a13n_harness_ui.mcp_runtime.client",
+        "a13n_harness_ui.mcp_runtime.projection",
+        "a13n_harness_ui.mcp_runtime.transports",
+    ):
+        import_module(name)
+
+
 async def prepare_mcp_transport(
     recipe: ResolvedMcpRecipe,
     configuration_root: Path | None,
@@ -128,6 +149,7 @@ async def prepare_mcp_transport(
     configuration: RunConfiguration | None = None,
 ) -> tuple[ClientTransport, str, int]:
     """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
+    await to_thread.run_sync(_prepare_runtime)
     transport = recipe.transport
     configuration = configuration or RunConfiguration()
     if isinstance(transport, McpRemoteTransport):

@@ -12,8 +12,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from rich.logging import RichHandler
-
 _STANDARD_RECORD_FIELDS = frozenset(logging.makeLogRecord({}).__dict__) | {
     "asctime",
     "highlighter",
@@ -92,11 +90,13 @@ def _logging_config(
     normalized_level = level.upper()
     handlers: dict[str, dict[str, Any]] = {}
     if stdout:
-        handlers["stdout"] = (
-            {"()": RichHandler, "markup": False, "rich_tracebacks": True, "show_path": False}
-            if log_format is LogFormat.pretty
-            else {"class": "logging.StreamHandler", "stream": "ext://sys.stdout"}
-        ) | {"formatter": log_format.value}
+        if log_format is LogFormat.pretty:
+            from rich.logging import RichHandler
+
+            handler = {"()": RichHandler, "markup": False, "rich_tracebacks": True, "show_path": False}
+        else:
+            handler = {"class": "logging.StreamHandler", "stream": "ext://sys.stdout"}
+        handlers["stdout"] = handler | {"formatter": log_format.value}
     if file is not None:
         handlers["file"] = {
             "class": "logging.handlers.RotatingFileHandler",

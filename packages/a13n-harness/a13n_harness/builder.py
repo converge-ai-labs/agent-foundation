@@ -2,10 +2,46 @@
 
 from __future__ import annotations
 
+# Build-time implementations stay dormant when a Host imports definition types.
+# Ordinary imports preserve eager behavior on Python 3.13 and 3.14.
+__lazy_modules__ = [
+    "a13n_harness._capability_contract",
+    "a13n_harness._output_contract",
+    "a13n_harness.capabilities.context",
+    "a13n_harness.capabilities.input",
+    "a13n_harness.capabilities.lifecycle",
+    "a13n_harness.capabilities.steering",
+    "a13n_harness.capabilities.tool_search",
+    "a13n_harness.capabilities.video_url",
+    "a13n_harness.capability_types",
+    "a13n_harness.execution",
+    "a13n_harness.filters.image",
+    "a13n_harness.filters.integrity",
+    "a13n_harness.model_context",
+    "a13n_harness.models.binding",
+    "a13n_harness.models.capability",
+    "a13n_harness.models.inference",
+    "a13n_harness.models.profile",
+    "a13n_harness.models.request_headers",
+    "a13n_harness.models.structured_output",
+    "a13n_harness.observation",
+    "a13n_harness.output_schema",
+    "a13n_harness.plugin_configuration",
+    "a13n_harness.plugin_factories",
+    "a13n_harness.plugins",
+    "a13n_harness.pricing",
+    "a13n_harness.tools.discovery",
+    "a13n_harness.tools.invocation",
+    "a13n_harness.tools.permissions",
+    "a13n_harness.tools.surface",
+    "a13n_harness.usage",
+]
+
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from dataclasses import fields as dataclass_fields
+from functools import cache
 from typing import Any, Literal, Self, cast, overload
 from uuid import uuid4
 
@@ -119,7 +155,11 @@ from a13n_harness.tools.surface import (
 )
 from a13n_harness.usage import UsageCapability
 
-_EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
+
+@cache
+def _empty_capability_type_catalog() -> CapabilityTypeCatalog:
+    # Schema validation belongs to builder construction, not symbol discovery.
+    return CapabilityTypeCatalog()
 
 
 class _UnsetOutputType:
@@ -447,7 +487,7 @@ class HarnessBuilder:
         if not isinstance(self_healing_enabled, bool):
             raise TypeError("self_healing_enabled must be a boolean")
         self._self_healing_enabled = self_healing_enabled
-        self._capability_type_catalog = capability_type_catalog or _EMPTY_CAPABILITY_TYPE_CATALOG
+        self._capability_type_catalog = capability_type_catalog or _empty_capability_type_catalog()
         self._gateway_provider_factory = gateway_provider_factory
         resolved_instrumentation = (
             HarnessInstrumentation.from_environment() if instrumentation == "environment" else instrumentation

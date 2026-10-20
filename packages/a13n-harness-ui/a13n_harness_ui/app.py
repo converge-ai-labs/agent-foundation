@@ -149,7 +149,7 @@ from a13n_harness_ui.live import (
     SummaryCursor,
     SummarySubscription,
 )
-from a13n_harness_ui.mcp_apps.connections import Connections
+from a13n_harness_ui.mcp_apps.connections import Connections, prepare_client
 from a13n_harness_ui.mcp_apps.context import AppContext, AppContextReference, AppContextUpdate
 from a13n_harness_ui.mcp_apps.messages import AppMessageReceipt, AppMessageRequest
 from a13n_harness_ui.mcp_apps.models import AppPresentation, AppReference
@@ -3104,6 +3104,8 @@ async def open_harness_ui_app(
                     thread = await store.threads.get(thread.parent_thread_id)
                 await summary_hub.publish(kind="thread", thread_id=thread.thread_id if thread else thread_id)
 
+            if host_mode == "webui":
+                await to_thread.run_sync(prepare_client)
             mcp_inputs = Inputs(input_changed) if host_mode == "webui" or mcp_input_enabled else None
             mcp_connections = (
                 Connections(input_handler=mcp_inputs, cleanup_timeout_seconds=settings.shutdown_timeout_seconds)

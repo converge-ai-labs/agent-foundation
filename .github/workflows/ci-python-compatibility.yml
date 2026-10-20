@@ -1,0 +1,86 @@
+name: Python compatibility CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-python-compatibility.yml"
+      - "packages/**"
+      - "conftest.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/check_python_compatibility.py"
+      - "scripts/tests/test_ci_inputs.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-python-compatibility.yml"
+      - "packages/**"
+      - "conftest.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "scripts/check_python_compatibility.py"
+      - "scripts/tests/test_ci_inputs.py"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Python ${{ matrix.python }} (${{ matrix.mode }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.13"
+            mode: normal
+            options: ""
+          - python: "3.14"
+            mode: normal
+            options: ""
+          - python: "3.15"
+            mode: native
+            options: ""
+          - python: "3.15"
+            mode: filter-disabled
+            options: "--eager"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Synchronize runtime and test dependencies
+        # Code generation stays in the existing Python 3.13 component jobs.
+        run: uv sync --locked --all-packages --no-default-groups --group test
+      - name: Check disposable database prerequisite
+        run: docker info
+      - name: Test import boundaries and selected lifecycles
+        # The runner applies the selected import mode in every pytest child.
+        run: uv run --locked --no-sync python scripts/check_python_compatibility.py ${{ matrix.options }} -q --junit-directory=test-results
+      - name: Retain compatibility test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-${{ matrix.python }}-${{ matrix.mode }}-${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 7

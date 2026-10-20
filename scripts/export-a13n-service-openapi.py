@@ -5,11 +5,7 @@ import json
 from pathlib import Path
 
 from a13n_service.api_tools import tool_name
-from a13n_service.app import build_app
 from a13n_service.infra.platform import PLATFORM_GROUPS, PLATFORM_METADATA
-from a13n_service.resources.agents.schemas import AgentConfig
-from a13n_service.runs.stream import frames_schema
-from a13n_service.runs.thread_stream import frames_schema as thread_frames_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "proto/a13n-service"
@@ -35,6 +31,10 @@ def platform_tools(openapi: dict) -> list[dict]:
 
 
 def documents() -> dict[Path, object]:
+    from a13n_service.app import build_app
+    from a13n_service.runs.stream import frames_schema
+    from a13n_service.runs.thread_stream import frames_schema as thread_frames_schema
+
     openapi = build_app().openapi()
     return {
         TARGET / "openapi.json": openapi,
@@ -49,6 +49,8 @@ def main() -> None:
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--skills-only", action="store_true", help="Prepare only release-bundled Skill schemas")
     args = parser.parse_args()
+    from a13n_service.resources.agents.schemas import AgentConfig
+
     changed = []
     outputs = {} if args.skills_only else documents()
     outputs[SKILL_SCHEMA] = AgentConfig.model_json_schema()

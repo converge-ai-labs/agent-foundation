@@ -905,6 +905,14 @@ def render_init(index: SchemaIndex, options: OptionReader) -> str:
     public_models = sorted(model_names)
     lines = [
         GENERATED_HEADER.rstrip(),
+        "# Python 3.15 resolves each generated surface on first access; older Python stays eager.",
+        "__lazy_modules__ = [",
+        *[
+            f"    'a13n_envd_client.eip.v1.{module}',"
+            for module in ("client", "codec", "data_frame", "methods", "models", "protocol")
+        ],
+        "]",
+        "",
         "from .client import EIPClient, EIPRequester",
         "from .codec import decode_model, encode_model",
         "from .data_frame import (",

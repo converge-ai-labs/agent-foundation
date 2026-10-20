@@ -1,8 +1,11 @@
 """One composed graph and dedicated, bounded migration connection."""
 
+from __future__ import annotations
+
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alembic import command
 from alembic.config import Config
@@ -10,8 +13,9 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-from a13n_service.distribution import Distribution
-from a13n_service.settings import Database
+if TYPE_CHECKING:
+    from a13n_service.distribution import Distribution
+    from a13n_service.settings import Database
 
 MIGRATION_LOCK_KEY = 169029633
 

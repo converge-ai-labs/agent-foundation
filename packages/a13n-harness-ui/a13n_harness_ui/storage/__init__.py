@@ -1,5 +1,14 @@
 """Harness UI local metadata and content-addressed object storage."""
 
+__lazy_modules__ = [
+    "a13n_harness_ui.storage.contracts",
+    "a13n_harness_ui.storage.database",
+    "a13n_harness_ui.storage.layout",
+    "a13n_harness_ui.storage.objects",
+    "a13n_harness_ui.storage.repositories",
+    "a13n_harness_ui.storage.runtime",
+]
+
 from .contracts import (
     AgentResourceSource,
     AgentSource,

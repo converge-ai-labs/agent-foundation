@@ -2,25 +2,26 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["a13n_harness_ui.mcp_apps.client"]
+
 import json
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
 from a13n_harness.context import AgentContext
-from fastmcp.client.progress import ProgressHandler
 from mcp.client.extension import advertise
 from mcp.types import CallToolResult, Tool
 from pydantic_ai import RunContext, ToolDefinition
 from pydantic_ai.capabilities import MCP, ValidatedToolArgs, WrapToolExecuteHandler
 from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.toolsets import ToolsetTool
 
-from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient, InputHandler
+from a13n_harness_ui.mcp_runtime.connections import Connection, InputHandler
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
-from a13n_harness_ui.mcp_runtime.projection import HostToolset
+
+from .client import AppClient
+from .client import AppToolset as AppToolset
 
 MIME_TYPE = "text/html;profile=mcp-app"
 _MAX_CAPTURE_BYTES = 8 * 1024 * 1024
@@ -69,60 +70,6 @@ class AppMCP(MCP[AgentContext]):
             return await handler(args)
         finally:
             _return_boundary.reset(token)
-
-
-class AppClient(HostClient):
-    """Capture at the terminal raw boundary; preserve upstream model conversion."""
-
-    async def call_tool_mcp(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        progress_handler: ProgressHandler | None = None,
-        timeout: timedelta | float | int | None = None,
-        meta: dict[str, Any] | None = None,
-    ) -> CallToolResult:
-        result = await super().call_tool_mcp(name, arguments, progress_handler, timeout, meta)
-        capture = _capture.get()
-        if capture is not None:
-            # Presentation failure cannot retry a completed business operation.
-            try:
-                capture.captures.add(
-                    capture.run_id,
-                    capture.call_id,
-                    CapturedCall(self.connection, capture.tool, dict(arguments), result),
-                )
-            except (ValueError, TypeError):
-                pass
-        return result
-
-
-class AppToolset(HostToolset):
-    def __init__(self, connection: Connection, captures: Captures) -> None:
-        super().__init__(connection)
-        self.captures = captures
-
-    async def list_tools(self) -> list[Tool]:
-        tools = await super().list_tools()
-        return [tool for tool in tools if "model" in visibility(tool)]
-
-    async def call_tool(
-        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
-    ) -> Any:
-        declaration = next((item for item in await self.client.list_tools() if item.name == name), None)
-        if (tool.tool_def.metadata or {}).get("task"):
-            raise ValueError("Task-based tools are not supported by this MCP Apps profile.")
-        if declaration is not None:
-            require_classic_tool(declaration)
-        if declaration is None or resource_uri(declaration) is None:
-            return await super().call_tool(name, tool_args, ctx, tool)
-        boundary = _return_boundary.get()
-        call_id = boundary[1] if boundary is not None and boundary[0] == ctx.deps.run_id else ctx.tool_call_id
-        token = _capture.set(CallCapture(declaration, self.captures, ctx.deps.run_id, call_id))
-        try:
-            return await super().call_tool(name, tool_args, ctx, tool)
-        finally:
-            _capture.reset(token)
 
 
 class Captures:
@@ -186,3 +133,8 @@ def visibility(tool: Tool) -> list[str]:
     ui = (tool.meta or {}).get("ui")
     value = ui.get("visibility") if isinstance(ui, dict) else None
     return value if isinstance(value, list) else ["model", "app"]
+
+
+def prepare_client() -> type[AppClient]:
+    """Load SDK adapter code before constructing WebUI-owned resources."""
+    return AppClient

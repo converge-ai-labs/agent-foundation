@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "a13n_harness.providers.model.oauth",
+    "a13n_harness_ui.app",
+    "a13n_harness_ui.configuration",
+    "a13n_harness_ui.model_accounts",
+    "a13n_harness_ui.surfaces",
+]
+
 import asyncio
 import json
 from collections.abc import Mapping
@@ -35,6 +43,11 @@ from a13n_harness_ui.surfaces import (
 )
 
 
+def _load_app():
+    # Reify the App import in a worker before entering its async resource lifetime.
+    return open_harness_ui_app
+
+
 async def _run(request: CliRequest) -> int:
     source = await load_harness_ui_settings(request.config_path, data_root=request.data_root)
     await asyncio.to_thread(ensure_default_directories, source)
@@ -46,10 +59,11 @@ async def _run(request: CliRequest) -> int:
     )
     if request.command == "plugin":
         return await _run_content_plugins(request, settings.storage.data_root)
+    open_app = await asyncio.to_thread(_load_app)
     use_device_code = request.device_code
 
     def app_factory() -> AbstractAsyncContextManager[HarnessUiApp]:
-        return open_harness_ui_app(
+        return open_app(
             settings,
             configuration_path=source.path,
             configuration_error=source.candidate_error,

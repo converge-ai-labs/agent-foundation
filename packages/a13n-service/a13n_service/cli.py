@@ -1,5 +1,18 @@
 """Installed entry point; configure logging and metrics once and select explicit operations."""
 
+# Python 3.15 defers command implementations; older interpreters retain ordinary imports.
+__lazy_modules__ = [
+    "uvicorn",
+    "a13n_service.app",
+    "a13n_service.distribution",
+    "a13n_service.infra.db",
+    "a13n_service.infra.telemetry",
+    "a13n_service.migrations",
+    "a13n_service.migrations.runner",
+    "a13n_service.tenancy.bootstrap",
+    "a13n_service.tenancy.users",
+]
+
 import asyncio
 import json
 import sys
@@ -15,9 +28,9 @@ import uvicorn
 from a13n_logging import configure_logging
 from pydantic import SecretStr, ValidationError
 
-from a13n_service.app import build_app, check_schema, open_objects, open_storage
+from a13n_service.app import build_app, open_objects
 from a13n_service.distribution import OSS
-from a13n_service.infra.db import Storage
+from a13n_service.infra.db import Storage, check_schema, open_storage
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import serve_metrics
 from a13n_service.migrations import run_objects

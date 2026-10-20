@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = ["a13n_harness.codeact.runtime"]
+
 from dataclasses import dataclass, replace
 
+import anyio.to_thread
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelResponse, ToolCallPart
@@ -27,6 +30,12 @@ from a13n_harness.toolsets.codeact import CodeActToolset, render_codeact_runner_
 from a13n_harness.toolsets.codeact_state import CODEACT_STATE_ID, CodeActStateToolset
 
 CODEACT_CAPABILITY_ID = CODEACT_STATE_ID
+
+
+def _prepare_runtime() -> type[CodeActRunState]:
+    # Reify the native lazy import off the event loop; construct run-owned locks
+    # and resources on the caller's loop after this synchronous import completes.
+    return CodeActRunState
 
 
 @dataclass(init=False)
@@ -56,9 +65,10 @@ class CodeActCapability(AbstractModelContextCapability):
             if existing._context is not ctx.deps:
                 raise DefinitionError("CodeAct state cannot cross logical runs.", code="capability_scope_invalid")
             return existing
+        state_type = await anyio.to_thread.run_sync(_prepare_runtime)
         replacement = CodeActCapability(self.config)
         replacement._context = ctx.deps
-        replacement._state = CodeActRunState(replacement.config)
+        replacement._state = state_type(replacement.config)
         replacement._stored_values = CodeActStateToolset(ctx.deps, replacement.config)
         replacement._stored_values.validate(await replacement._stored_values.snapshot())
         ctx.deps._record_run_capability(CODEACT_CAPABILITY_ID, replacement)

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+# Python 3.15 resolves Pillow in the existing image-processing worker thread.
+__lazy_modules__ = ["PIL"]
+
 import io
 from contextlib import ExitStack
 from copy import copy, deepcopy

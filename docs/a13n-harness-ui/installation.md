@@ -17,6 +17,24 @@ No source checkout or Node.js is required. If your shell cannot find the command
 
 Optional Bash/Zsh shortcut: `alias anui='a13n-harness-ui'` in your shell profile.
 
+### Faster TUI startup with Python 3.15
+
+Harness UI supports Python 3.13 and newer. Choose Python 3.15 to use native lazy imports and reduce TUI startup work. Optional feature dependencies load when needed; the first use of a feature can pay that deferred cost. No interpreter flags or configuration changes are required.
+
+For a new installation:
+
+```console
+uv tool install --python 3.15 a13n-harness-ui
+```
+
+To switch an existing uv-tool installation, stop the Apps as described under [Upgrade](#upgrade), then run:
+
+```console
+uv tool upgrade --python 3.15 a13n-harness-ui
+```
+
+Python 3.13 and 3.14 remain supported with ordinary eager imports for the native lazy-import declarations. Startup gains depend on your configuration and selected extensions.
+
 ## Upgrade
 
 1. Stop every TUI and WebUI App sharing the data root.

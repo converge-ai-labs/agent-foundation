@@ -1,5 +1,12 @@
 """Harness UI accepted-generation resolution and per-Run composition."""
 
+__lazy_modules__ = [
+    "a13n_harness_ui.composition.models",
+    "a13n_harness_ui.composition.reconstruction",
+    "a13n_harness_ui.composition.resolver",
+    "a13n_harness_ui.composition.service",
+]
+
 from .models import (
     DependencyProvenance,
     ResolvedAgentNode,

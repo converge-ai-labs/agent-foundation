@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, replace
 from typing import Literal
 from urllib.parse import quote
 
 from pydantic_ai import RunContext
-from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 from pydantic_ai.toolsets.prefixed import PrefixedToolset
@@ -66,6 +66,10 @@ def identify_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
         managed = normalize_harness_tool_metadata(metadata[HARNESS_TOOL_METADATA_KEY])
         identity = ToolIdentity(managed.tool_id)
     else:
+        # A real MCP source has already loaded its defining module. Ordinary
+        # function tools must not import the MCP SDK on the event loop.
+        mcp_module = sys.modules.get("pydantic_ai.mcp")
+        mcp_type = vars(mcp_module).get("MCPToolset") if mcp_module is not None else None
         source = tool.toolset
         name = tool.tool_def.name
         while isinstance(source, WrapperToolset):
@@ -74,10 +78,11 @@ def identify_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
             elif isinstance(source, RenamedToolset):
                 name = source.name_map.get(name, name)
             source = source.wrapped
-        if isinstance(source, MCPToolset) and source.id is None:
+        is_mcp = isinstance(mcp_type, type) and isinstance(source, mcp_type)
+        if is_mcp and source.id is None:
             raise DefinitionError("MCP sources require a stable id.", code="tool_source_id_required")
         identity = ToolIdentity(
-            source_tool_id(source.id or "native", name, kind="mcp" if isinstance(source, MCPToolset) else "tool"),
+            source_tool_id(source.id or "native", name, kind="mcp" if is_mcp else "tool"),
             "allow",
         )
     metadata[TOOL_IDENTITY_KEY] = identity

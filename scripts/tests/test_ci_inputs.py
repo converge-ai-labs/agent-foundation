@@ -460,3 +460,33 @@ def test_failure_report_contains_fixture_phase_and_captured_output(tmp_path: Pat
     contents = report.read_text()
     for witness in ("setup witness", "call witness", "teardown witness", "primary failure", "cleanup failure"):
         assert witness in contents
+
+
+def test_python_compatibility_keeps_runtime_tests_separate_from_codegen() -> None:
+    import runpy
+    import tomllib
+
+    workflow = yaml.safe_load((WORKFLOWS / "ci-python-compatibility.yml").read_text())
+    job = workflow["jobs"]["compatibility"]
+    matrix = job["strategy"]["matrix"]["include"]
+    assert {(entry["python"], entry["options"]) for entry in matrix} == {
+        ("3.13", ""),
+        ("3.14", ""),
+        ("3.15", ""),
+        ("3.15", "--eager"),
+    }
+    commands = [step.get("run", "") for step in job["steps"]]
+    assert "uv sync --locked --all-packages --no-default-groups --group test" in commands
+    assert any("--no-sync python scripts/check_python_compatibility.py" in command for command in commands)
+    assert any(step.get("if") == "always()" and "upload-artifact" in step.get("uses", "") for step in job["steps"])
+    groups = tomllib.loads((ROOT / "pyproject.toml").read_text())["dependency-groups"]
+    assert {"include-group": "test"} in groups["dev"]
+    assert any(str(item).startswith("grpcio-tools") for item in groups["dev"])
+    assert not any(str(item).startswith("grpcio-tools") for item in groups["test"])
+    runner = runpy.run_path(str(ROOT / "scripts/check_python_compatibility.py"))
+    targets = [*runner["IMPORT_TESTS"], *runner["LIFECYCLE_TESTS"]]
+    assert len(runner["IMPORT_TESTS"]) == 6
+    for target in targets:
+        assert (ROOT / target).is_file()
+        for event in ("pull_request", "push"):
+            assert any(Path(target).full_match(pattern) for pattern in workflow[True][event]["paths"])

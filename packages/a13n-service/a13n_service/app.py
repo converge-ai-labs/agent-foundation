@@ -4,6 +4,11 @@
 `worker` executes runs only and never migrates.
 """
 
+__lazy_modules__ = [
+    "a13n_service.mcp",
+    "a13n_service.runs.execute",
+]
+
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -21,18 +26,17 @@ from fastapi.dependencies.models import Dependant
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute, APIRouter
 from redis.asyncio import Redis
-from sqlalchemy import text
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import CredentialAccess
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
-from a13n_service.infra.db import Storage, short_session
+from a13n_service.infra.db import check_schema as check_schema
+from a13n_service.infra.db import open_storage as open_storage
 from a13n_service.infra.http import document_errors, install_error_envelope
 from a13n_service.infra.ingress import BodyLimit
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.infra.objects.local import LocalObjects
-from a13n_service.infra.objects.s3 import open_s3
 from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
@@ -49,8 +53,8 @@ from a13n_service.runs.platform_tokens import RunAuthenticator
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import SessionHub
 from a13n_service.runs.thread_stream import ThreadHub
-from a13n_service.runs.worker import Worker
-from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
+from a13n_service.runs.worker import Execute, Worker
+from a13n_service.settings import Encryption, Objects, ProcessRole, Settings, load_settings
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
 from a13n_service.tenancy.requests import current_credential
 
@@ -124,19 +128,18 @@ def contract(app: FastAPI, *, locally_authenticated: Sequence[APIRouter]) -> dic
     return document
 
 
-async def check_schema(storage: Storage, expected: tuple[str, ...]) -> None:
-    async with short_session(storage) as session:
-        actual = tuple(
-            (await session.execute(text("SELECT version_num FROM alembic_version ORDER BY version_num"))).scalars()
-        )
-    if actual != tuple(sorted(expected)) or not expected:
-        raise RuntimeError("Database schema is incompatible; run a13n-service migrate")
-
-
 async def open_objects(stack: AsyncExitStack, config: Objects) -> ObjectStore:
     if config.backend == "local":
         return LocalObjects(config.root, max_bytes=config.max_bytes, timeout=config.timeout)
     assert config.bucket is not None
+
+    def load_s3():
+        from a13n_service.infra.objects.s3 import open_s3
+
+        return open_s3
+
+    # Import the selected SDK off-loop; its session and clients belong to this loop.
+    open_s3 = await run_sync(load_s3)
     return await stack.enter_async_context(
         open_s3(
             bucket=config.bucket,
@@ -152,14 +155,9 @@ async def open_objects(stack: AsyncExitStack, config: Objects) -> ObjectStore:
     )
 
 
-def open_storage(config: Database) -> Storage:
-    """The process's database pool; the caller closes it."""
-    return Storage(
-        config.url.get_secret_value(),
-        pool_size=config.pool_size,
-        connect_timeout=config.connect_timeout,
-        statement_timeout=config.statement_timeout,
-    )
+def _prepare_execution() -> Execute:
+    """Resolve the executor before workers start, without creating loop-owned resources."""
+    return execute
 
 
 async def open_runtime(
@@ -266,6 +264,8 @@ def build_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if executes:
+            await run_sync(_prepare_execution)
         if role != "worker" and config.database.auto_migrate:
             await run_sync(partial(upgrade, config.database, distribution))
         async with AsyncExitStack() as stack:

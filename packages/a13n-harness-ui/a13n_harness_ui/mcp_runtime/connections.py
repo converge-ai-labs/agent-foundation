@@ -2,32 +2,35 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = [
+    "a13n_harness_ui.mcp_runtime.client",
+    "a13n_harness_ui.mcp_runtime.transports",
+    "fastmcp.client.elicitation",
+]
+
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import timedelta
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import uuid4
 
 from a13n_logging import get_logger
-from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
-from fastmcp.client.progress import ProgressHandler
-from fastmcp.client.transports import ClientTransport
 from mcp.client.extension import ClientExtension
 from mcp.types import (
     CallToolRequest,
-    CallToolResult,
     ElicitRequestParams,
     GetPromptRequest,
-    GetPromptResult,
     ReadResourceRequest,
-    ReadResourceResult,
 )
 
+from .client import HostClient as HostClient
 from .transports import ObservedTransport
+
+if TYPE_CHECKING:
+    from fastmcp.client.transports import ClientTransport
 
 
 @dataclass(frozen=True)
@@ -46,62 +49,6 @@ class InputHandler(Protocol):
     ) -> ElicitResult[Any]: ...
 
 
-class HostClient(Client[ClientTransport]):
-    """One dispatch lane and stable Host callbacks for all consumers of a client."""
-
-    connection: Connection
-
-    async def call_tool_mcp(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        progress_handler: ProgressHandler | None = None,
-        timeout: timedelta | float | int | None = None,
-        meta: dict[str, Any] | None = None,
-    ) -> CallToolResult:
-        async with self.connection.operation():
-            return await super().call_tool_mcp(name, arguments, progress_handler, timeout, meta)
-
-    async def read_resource_mcp(self, uri: Any, meta: dict[str, Any] | None = None) -> ReadResourceResult:
-        async with self.connection.operation():
-            return await super().read_resource_mcp(uri, meta)
-
-    async def get_prompt_mcp(
-        self, name: str, arguments: dict[str, Any] | None = None, meta: dict[str, Any] | None = None
-    ) -> GetPromptResult:
-        async with self.connection.operation():
-            return await super().get_prompt_mcp(name, arguments, meta)
-
-    async def call_app_tool(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        *,
-        authorize: Callable[[], Awaitable[None]],
-        operation: Operation | None = None,
-    ) -> CallToolResult:
-        async with self.app_dispatch(authorize, operation):
-            return await super().call_tool_mcp(name, arguments)
-
-    async def read_app_resource(
-        self, uri: str, *, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
-    ) -> ReadResourceResult:
-        async with self.app_dispatch(authorize, operation):
-            return await super().read_resource_mcp(uri)
-
-    @asynccontextmanager
-    async def app_dispatch(
-        self, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
-    ) -> AsyncIterator[None]:
-        async with self.connection.operation(authorize=authorize, operation=operation):
-            self.connection.require_admission()
-            self.connection._borrows += 1
-            try:
-                yield
-            finally:
-                self.connection.release()
-
-
 class Connection:
     """A dedicated task enters/exits the SDK client while callers borrow projections."""
 
@@ -114,7 +61,7 @@ class Connection:
         binding: str | None = None,
         *,
         protocol: str = "auto",
-        client_factory: type[HostClient] = HostClient,
+        client_factory: type[HostClient] | None = None,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
         init_timeout: int = 30,
@@ -135,7 +82,7 @@ class Connection:
         self.retired = False
         self._closed = False
         self._borrows = 0
-        self.client = client_factory(
+        self.client = (client_factory or HostClient)(
             ObservedTransport(transport, self._disconnected, self._before_request),
             mode=protocol,
             cache=False,
@@ -287,7 +234,7 @@ class Connections:
     def __init__(
         self,
         *,
-        client_factory: type[HostClient] = HostClient,
+        client_factory: type[HostClient] | None = None,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
         cleanup_timeout_seconds: float = 10,

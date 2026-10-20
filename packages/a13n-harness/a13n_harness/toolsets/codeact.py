@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+# Policy and tool-directory declarations do not need the sandbox engine.
+__lazy_modules__ = [
+    "a13n_harness.codeact.executor",
+    "a13n_harness.codeact.programs",
+    "pydantic_monty",
+]
+
 import ast
 import asyncio
 import hashlib
@@ -14,7 +21,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from functools import partial
 from types import MappingProxyType
-from typing import Annotated, Any, Protocol, Self, cast, runtime_checkable
+from typing import TYPE_CHECKING, Annotated, Any, Protocol, Self, cast, runtime_checkable
 from uuid import uuid4
 
 from pydantic import Field, JsonValue, ValidationError
@@ -40,7 +47,6 @@ from a13n_harness.codeact.programs import (
     load_program_source,
     program_inputs,
 )
-from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState
 from a13n_harness.codeact.values import bounded_json_size
 from a13n_harness.context import AgentContext
 from a13n_harness.environment import EnvironmentError
@@ -54,6 +60,9 @@ from a13n_harness.events import (
 from a13n_harness.tools.tool_search import proxy_control, proxy_membership, resolve_proxy_call
 
 from ._instructions import tool_instruction
+
+if TYPE_CHECKING:
+    from a13n_harness.codeact.runtime import CodeActExecution, CodeActRunState
 
 _RUN_CODE = "run_code"
 _RUN_PROGRAM = "run_program"
