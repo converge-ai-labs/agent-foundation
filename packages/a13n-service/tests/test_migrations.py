@@ -60,13 +60,23 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     assert len(migrated) >= len(OSS.rules())
 
 
-@pytest.mark.parametrize("revision", ["d954aa461cb4", "fed344f2d755"])
-def test_schedule_and_platform_branches_upgrade_to_one_head(empty_database: Database, revision: str) -> None:
+def test_schedule_revision_upgrades_and_restores_main_schema(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
-        command.upgrade(config, revision)
+        command.upgrade(config, "fed344f2d755")
+    original_rules = rows(empty_database, RULES)
+    original_objects = rows(empty_database, OBJECTS)
     upgrade(empty_database, OSS)
     check(empty_database, OSS)
     assert len(rows(empty_database, "SELECT version_num FROM alembic_version")) == 1
+    assert rows(
+        empty_database,
+        "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public'"
+        " AND table_name = 'schedule_occurrences' AND column_name = 'next_attempt_at'",
+    ) == [("YES",)]
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, "fed344f2d755")
+    assert rows(empty_database, RULES) == original_rules
+    assert rows(empty_database, OBJECTS) == original_objects
 
 
 def test_revisions_downgrade_to_an_empty_schema_and_upgrade_again(empty_database: Database) -> None:

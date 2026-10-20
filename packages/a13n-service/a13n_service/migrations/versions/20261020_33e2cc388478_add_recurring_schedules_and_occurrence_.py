@@ -1,7 +1,7 @@
 """add recurring schedules and occurrence ownership
 
-Revision ID: 85f3c977dfba
-Revises: 4d51a94777d9
+Revision ID: 33e2cc388478
+Revises: fed344f2d755
 
 Rollout: additive tables and nullable Thread provenance require no backfill.
 The Thread composite constraint and indexes on Threads/outbox are transactional
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "85f3c977dfba"
-down_revision = "4d51a94777d9"
+revision = "33e2cc388478"
+down_revision = "fed344f2d755"
 branch_labels = None
 depends_on = None
 
@@ -114,7 +114,7 @@ def upgrade() -> None:
         sa.Column("status", sa.String(), nullable=False),
         sa.Column("deadline_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("dispatch_attempts", sa.Integer(), nullable=False),
-        sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_error", sa.String(), nullable=True),
         sa.Column("reason", sa.String(), nullable=True),
         sa.Column("thread_id", sa.String(length=72), nullable=True),
