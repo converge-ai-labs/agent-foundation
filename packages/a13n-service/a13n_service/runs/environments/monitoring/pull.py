@@ -47,6 +47,8 @@ def receipt_key(kind: Kind) -> str:
 async def selections(runtime: Runtime, kind: Kind) -> tuple[list[Selection], bool, dict[str, TargetStatus]]:
     """Return bounded, detached inputs. Provider discovery happens after closing the session."""
     limit = runtime.settings.monitoring.collector_targets
+    scan_budget = 4 * limit
+    scanned = 0
     selected: list[Selection] = []
     failures: dict[str, TargetStatus] = {}
     after = ""
@@ -66,10 +68,13 @@ async def selections(runtime: Runtime, kind: Kind) -> tuple[list[Selection], boo
                         WorkspaceRow.archived_at.is_(None),
                     )
                     .order_by(EnvironmentRow.id)
-                    .limit(limit + 1)
+                    .limit(min(limit + 1, scan_budget - scanned + 1))
                 )
             ).all()
         for env, source in rows:
+            if scanned == scan_budget:
+                return selected, True, failures
+            scanned += 1
             try:
                 # Each target owns its SQL scope: a failed query cannot poison the next target.
                 async with short_session(runtime.storage) as session:

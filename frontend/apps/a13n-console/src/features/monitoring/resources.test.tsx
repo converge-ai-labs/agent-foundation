@@ -411,13 +411,11 @@ it("clears deployment credential consent when the destination changes and preser
   });
   expect(screen.getByDisplayValue("https://another.example.com")).toBeTruthy();
   expect(screen.getByDisplayValue(deploymentPreset.name)).toBeTruthy();
-  await user.click(
-    screen.getByRole("combobox", { name: "Use deployment query credentials" }),
-  );
   expect(
-    screen.getByRole("option", { name: "Yes" }).getAttribute("aria-disabled"),
-  ).toBe("true");
-  await user.click(screen.getByRole("option", { name: "No" }));
+    screen.getByRole("combobox", { name: "Use deployment query credentials" })
+      .textContent,
+  ).toContain("No");
+  // Save without touching consent again: manually selecting No hides a broken reset.
   await user.click(screen.getByRole("button", { name: "Save data source" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
   expect(

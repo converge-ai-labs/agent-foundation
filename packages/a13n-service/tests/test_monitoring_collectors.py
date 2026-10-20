@@ -227,6 +227,36 @@ async def test_ineligible_targets_do_not_consume_collector_capacity(service, tmp
     assert len(selected) == 1 and truncated
 
 
+@pytest.mark.parametrize("failed", [False, True])
+async def test_collector_scan_budget_counts_ineligible_and_failed_rows(service, tmp_path, monkeypatch, failed):
+    await configure_service(service, tmp_path, "http://127.0.0.1:9")
+    runtime = replace(
+        service.runtime,
+        settings=service.runtime.settings.model_copy(
+            update={
+                "monitoring": service.runtime.settings.monitoring.model_copy(update={"collector_targets": 1}),
+            }
+        ),
+    )
+    source_id = await source(service)
+    for _ in range(6):
+        await external_row(service, source_id)
+    original = collection.selected
+    scanned = []
+
+    async def selected(runtime, session, env, source):
+        scanned.append(env.id)
+        if failed:
+            raise ValueError("broken target")
+        return replace(await original(runtime, session, env, source), target=None)
+
+    monkeypatch.setattr(collection, "selected", selected)
+    items, truncated, failures = await pull.selections(runtime, "vmagent")
+    assert not items and truncated
+    assert len(scanned) == 4
+    assert len(failures) == (1 if failed else 0)
+
+
 async def test_missing_config_is_discoverable_without_fallback(service):
     await controlled(service)
     response = await service.client.get(f"{service.api}/metrics-data-sources/capabilities")

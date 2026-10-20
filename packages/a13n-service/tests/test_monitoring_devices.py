@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import time
 from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -18,6 +20,7 @@ from a13n_service.runs.environments.monitoring.proxy import Proxy, lease_key
 from a13n_service.runs.environments.tables import EnvironmentRow
 from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 
 from .test_metrics_queries import builder
 from .test_monitoring_proxy import controlled, fake_observation, local_source
@@ -240,6 +243,72 @@ async def test_reverse_renewal_retires_revoked_attachment_without_polling(servic
             assert identity not in proxy.entries and identity not in proxy.reverse
             lease = await service.runtime.redis.get(lease_key(identity))
             assert lease == ("replacement-owner" if reason == "owner_loss" else None)
+        finally:
+            renewal.cancel()
+            await asyncio.gather(renewal, return_exceptions=True)
+
+
+@pytest.mark.parametrize("outcome", ["recover", "expire", "owner_loss"])
+async def test_reverse_database_grace_preserves_carrier_until_recovery_or_retirement(service, monkeypatch, outcome):
+    proxy = await controlled(service)
+    identity = (await registration(service, source=await local_source(service))).json()["device"]["id"]
+    selection = await collection.resolve(service.runtime, identity)
+    monkeypatch.setattr(proxy_module, "observe", AsyncMock(return_value=fake_observation()))
+    async with proxy.reverse_connection(selection) as connection:
+        await proxy.poll(identity)
+        entry = proxy.entries[identity]
+        close = AsyncMock(wraps=connection.close)
+        monkeypatch.setattr(connection, "close", close)
+        now = 100.0
+        monkeypatch.setattr(proxy_module, "time", SimpleNamespace(monotonic=lambda: now, time=time.time))
+        original = collection.resolve
+        monkeypatch.setattr(
+            collection, "resolve", AsyncMock(side_effect=OperationalError("SELECT", {}, RuntimeError("offline")))
+        )
+        await proxy.poll(identity)
+        assert proxy.reverse[identity] is connection
+        assert entry.cache.status == "offline"
+        checked = asyncio.Event()
+        original_resolve = proxy.resolve
+
+        async def resolve(target_id, expected):
+            try:
+                return await original_resolve(target_id, expected)
+            finally:
+                checked.set()
+
+        monkeypatch.setattr(proxy, "resolve", resolve)
+        proxy.config = proxy.config.model_copy(update={"poll_seconds": 0.01})
+        renewal = asyncio.create_task(proxy.renew())
+        try:
+            await asyncio.wait_for(checked.wait(), timeout=3)
+            assert proxy.entries[identity] is entry
+            close.assert_not_awaited()
+            if outcome == "recover":
+                monkeypatch.setattr(collection, "resolve", original)
+                checked.clear()
+                await asyncio.wait_for(checked.wait(), timeout=3)
+                assert proxy.entries[identity] is entry
+                assert entry.authority_failed_at is None
+                close.assert_not_awaited()
+            else:
+                retired = asyncio.Event()
+
+                async def closed():
+                    await close()
+                    retired.set()
+
+                monkeypatch.setattr(connection, "close", closed)
+                if outcome == "expire":
+                    now += 3 * proxy.config.poll_seconds + 1
+                else:
+                    await service.runtime.redis.set(lease_key(identity), "replacement-owner")
+                await asyncio.wait_for(retired.wait(), timeout=3)
+                assert identity not in proxy.entries and identity not in proxy.reverse
+                close.assert_awaited_once()
+                assert await service.runtime.redis.get(lease_key(identity)) == (
+                    "replacement-owner" if outcome == "owner_loss" else None
+                )
         finally:
             renewal.cancel()
             await asyncio.gather(renewal, return_exceptions=True)

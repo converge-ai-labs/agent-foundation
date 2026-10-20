@@ -1,11 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { Link, MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
 import { DashboardsPage } from "./page";
+import { usePanelData } from "./queries";
 import type { Dashboard } from "./api";
 const state = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -28,7 +36,12 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
+        values?.[name] === undefined ? match : String(values[name]),
+      ),
+  }),
 }));
 vi.mock("./chart", () => ({ MetricsChart: () => null }));
 vi.mock("react-grid-layout", () => ({
@@ -146,8 +159,22 @@ it("discards edited time defaults without leaking them into a later name-only sa
   await user.click(screen.getByRole("button", { name: /Time range:/ }));
   await user.click(screen.getByRole("combobox", { name: "Auto refresh" }));
   await user.click(screen.getByRole("option", { name: "Off" }));
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await user.clear(screen.getByLabelText("From"));
+  await user.type(screen.getByLabelText("From"), "2026-10-19T10:00");
+  await user.clear(screen.getByLabelText("To"));
+  await user.type(screen.getByLabelText("To"), "2026-10-19T12:00");
+  await user.click(screen.getByRole("button", { name: "Apply range" }));
+  expect(screen.getByRole("button", { name: "Back to live" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Discard" }));
+  expect(screen.queryByRole("button", { name: "Back to live" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: /Time range:/ }).textContent,
+  ).toContain("Last 1h");
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  expect(
+    screen.getByRole("combobox", { name: "Auto refresh" }).textContent,
+  ).toContain("30s");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
   await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
   await user.type(
     screen.getByRole("textbox", { name: "Dashboard name" }),
@@ -447,7 +474,7 @@ it("keeps the initial view focused and applies preset, refresh and absolute time
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: /Time range:/ }));
   await user.click(screen.getByRole("combobox", { name: "Auto refresh" }));
-  await user.click(screen.getByRole("option", { name: "10s" }));
+  await user.click(await screen.findByRole("option", { name: "10s" }));
   await user.clear(screen.getByLabelText("From"));
   await user.type(screen.getByLabelText("From"), "2026-10-19T10:00");
   await user.clear(screen.getByLabelText("To"));
@@ -502,6 +529,56 @@ it("opens secondary dashboard actions from the menu and cancels creation without
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(state.POST).not.toHaveBeenCalled();
+});
+
+it("retains completed panel queries across an asynchronous unmount gap", async () => {
+  state.POST.mockResolvedValue({
+    data: { status: "success", data: { resultType: "matrix", result: [] } },
+    response: new Response(),
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const panel = {
+    ...dashboard.config.panels![0],
+    queries: [
+      { kind: "promql" as const, source_id: "mds_test", expression: "up" },
+    ],
+  };
+  const range = { start: 1000, end: 2000 };
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={cache}>{children}</QueryClientProvider>
+  );
+  const first = renderHook(() => usePanelData(panel, null, range, 0), {
+    wrapper,
+  });
+  await waitFor(() => expect(first.result.current.loading).toBe(false));
+  expect(state.POST).toHaveBeenCalledOnce();
+  vi.useFakeTimers();
+  try {
+    first.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    const second = renderHook(() => usePanelData(panel, null, range, 0), {
+      wrapper,
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(state.POST).toHaveBeenCalledOnce();
+    expect(second.result.current.loading).toBe(false);
+    second.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(
+      cache.getQueryCache().findAll({ queryKey: ["metric-series"] }),
+    ).toHaveLength(0);
+  } finally {
+    vi.useRealTimers();
+    cache.clear();
+  }
 });
 
 it("refreshes a live dashboard when visible again and reuses results across responsive remounts", async () => {

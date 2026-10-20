@@ -13,10 +13,12 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.metrics_data_sources.tables import DataSourceRow
 from a13n_service.runs.environments import external
 from a13n_service.runs.environments.monitoring import collection
+from a13n_service.runs.environments.monitoring import proxy as proxy_module
 from a13n_service.runs.environments.monitoring.proxy import Proxy, lease_key
 from a13n_service.runs.environments.monitoring.query import EnvironmentQuery, query_environment
 from a13n_service.runs.environments.tables import EnvironmentRow
 from redis.exceptions import ConnectionError as RedisConnectionError
+from sqlalchemy.exc import OperationalError
 
 from .test_metrics_queries import builder
 from .test_monitoring_history import report
@@ -357,6 +359,110 @@ async def test_selection_failure_retires_only_bad_target_and_preserves_cancellat
     monkeypatch.setattr(collection, "resolve", AsyncMock(side_effect=asyncio.CancelledError))
     with pytest.raises(asyncio.CancelledError):
         await proxy.poll(healthy)
+
+
+@pytest.mark.parametrize("failure_at", ["selection", "publication"])
+async def test_transient_database_failure_preserves_history_but_not_authority(service, monkeypatch, failure_at):
+    proxy = await controlled(service)
+    environment = await external_row(service, await local_source(service))
+    read = AsyncMock(return_value=fake_observation())
+    monkeypatch.setattr(collection, "read", read)
+    await proxy.poll(environment)
+    entry = proxy.entries[environment]
+    history = entry.cache.read(query(), now=time.time())
+    original = collection.resolve
+    calls = 0
+
+    async def failed(runtime, identity):
+        nonlocal calls
+        calls += 1
+        if failure_at == "publication" and calls == 1:
+            return await original(runtime, identity)
+        raise OperationalError("SELECT", {}, RuntimeError("database temporarily unavailable"))
+
+    monkeypatch.setattr(collection, "resolve", failed)
+    read.reset_mock()
+    read.return_value = fake_observation(sequence=2)
+    await proxy.poll(environment)
+    assert proxy.entries[environment] is entry
+    assert entry.cache.status == "offline"
+    assert entry.cache.read(query(), now=time.time()).series == history.series
+    assert read.await_count == (1 if failure_at == "publication" else 0)
+    assert proxy.exporter.health().queued == 0
+    for check in (proxy.current(entry), proxy.local(environment, entry.selection.revision, query())):
+        with pytest.raises(OperationalError):
+            await check
+    monkeypatch.setattr(collection, "resolve", original)
+    await proxy.poll(environment)
+    assert proxy.entries[environment] is entry
+    assert entry.authority_failed_at is None
+    assert entry.cache.status == "ready"
+    assert entry.cache.read(query(), now=time.time()).series[0].points
+
+
+async def test_discovery_failure_still_polls_owned_entries_and_renewal_expires_database_grace(service, monkeypatch):
+    proxy = await controlled(service)
+    environment = await external_row(service, await local_source(service))
+    monkeypatch.setattr(collection, "read", AsyncMock(return_value=fake_observation()))
+    await proxy.poll(environment)
+    entry = proxy.entries[environment]
+    now = 100.0
+    monkeypatch.setattr(proxy_module, "time", SimpleNamespace(monotonic=lambda: now, time=time.time))
+    failure = OperationalError("SELECT", {}, RuntimeError("database unavailable"))
+    monkeypatch.setattr(collection, "candidates", AsyncMock(side_effect=failure))
+    resolve = AsyncMock(side_effect=failure)
+    monkeypatch.setattr(collection, "resolve", resolve)
+    await proxy.tick()
+    assert proxy.entries[environment] is entry
+    assert entry.cache.status == "offline"
+    assert entry.authority_failed_at == now
+    resolve.assert_awaited_once()
+    assert await service.runtime.redis.get(lease_key(environment)) == entry.lease
+
+    # No further polling: independent renewal must expire ordinary entries too.
+    proxy.config = proxy.config.model_copy(update={"poll_seconds": 0.01})
+    now += 3 * proxy.config.poll_seconds + 1
+    retired = asyncio.Event()
+    original_drop = proxy.drop
+
+    async def drop(target_id, *, expected):
+        await original_drop(target_id, expected=expected)
+        retired.set()
+
+    monkeypatch.setattr(proxy, "drop", drop)
+    renewal = asyncio.create_task(proxy.renew())
+    try:
+        await asyncio.wait_for(retired.wait(), timeout=3)
+        assert environment not in proxy.entries
+        assert await service.runtime.redis.get(lease_key(environment)) is None
+        resolve.assert_awaited_once()
+    finally:
+        renewal.cancel()
+        await asyncio.gather(renewal, return_exceptions=True)
+
+
+@pytest.mark.parametrize("retirement", ["deadline", "lost_lease", "redis_error"])
+async def test_database_grace_never_retains_unowned_or_expired_entries(service, monkeypatch, retirement):
+    proxy = await controlled(service)
+    environment = await external_row(service, await local_source(service))
+    monkeypatch.setattr(collection, "read", AsyncMock(return_value=fake_observation()))
+    await proxy.poll(environment)
+    entry = proxy.entries[environment]
+    monkeypatch.setattr(
+        collection, "resolve", AsyncMock(side_effect=OperationalError("SELECT", {}, RuntimeError("offline")))
+    )
+    await proxy.poll(environment)
+    assert proxy.entries[environment] is entry
+    if retirement == "deadline":
+        entry.authority_failed_at = time.monotonic() - 3 * proxy.config.poll_seconds
+    elif retirement == "lost_lease":
+        await service.runtime.redis.set(lease_key(environment), "replacement-owner")
+    else:
+        monkeypatch.setattr(service.runtime.redis, "get", AsyncMock(side_effect=RedisConnectionError()))
+    await proxy.poll(environment)
+    assert environment not in proxy.entries
+    if retirement == "lost_lease":
+        assert await service.runtime.redis.get(lease_key(environment)) == "replacement-owner"
 
 
 async def test_proxy_credential_cache_is_per_entry_and_cleared_after_failure(service, monkeypatch):

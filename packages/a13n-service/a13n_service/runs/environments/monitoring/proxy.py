@@ -24,6 +24,7 @@ from a13n_harness.providers.environment.remote_envd.managed import ManagedCreden
 from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel, ConfigDict, Field
 from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 
 from a13n_service.infra.errors import ServiceError, rate_limited
 from a13n_service.providers.environment.metrics import observe
@@ -87,6 +88,7 @@ class Entry:
     cache: Cache
     projection: Projection
     last_export: float = 0
+    authority_failed_at: float | None = None
     export_health: ExportHealth = field(default_factory=ExportHealth)
     credential_cache: ManagedCredentialCache = field(default_factory=ManagedCredentialCache, repr=False)
 
@@ -108,11 +110,33 @@ class Proxy:
         self.cursor = ""
         self.lease_ms = int((self.config.poll_seconds + self.config.request_seconds) * 3000)
 
+    async def resolve(self, target_id: str, entry: Entry | None) -> Selection | None:
+        """Retain owned history briefly on DB failure, without using stale authority."""
+        try:
+            selection = await collection.resolve(self.runtime, target_id)
+        except SQLAlchemyError:
+            if entry is not None and self.entries.get(target_id) is entry:
+                entry.cache.status = "offline"
+                entry.cache.invalidate_rates()
+                entry.credential_cache.clear()
+                now = time.monotonic()
+                if entry.authority_failed_at is None:
+                    entry.authority_failed_at = now
+                if (
+                    now - entry.authority_failed_at >= 3 * self.config.poll_seconds
+                    or await self.runtime.redis.get(lease_key(target_id)) != entry.lease
+                ):
+                    await self.drop(target_id, expected=entry)
+            raise
+        if entry is not None:
+            entry.authority_failed_at = None
+        return selection
+
     async def current(self, entry: Entry) -> bool:
         """Fence an observation/export with both current configuration and ephemeral ownership."""
         if self.entries.get(entry.selection.target_id) is not entry:
             return False
-        selection = await collection.resolve(self.runtime, entry.selection.target_id)
+        selection = await self.resolve(entry.selection.target_id, entry)
         if selection is None or selection.revision != entry.selection.revision or selection.target is None:
             return False
         lease = await self.runtime.redis.get(lease_key(selection.target_id))
@@ -176,7 +200,7 @@ class Proxy:
             entry = self.entries.get(target_id)
             reverse = self.reverse.get(target_id)
             try:
-                selection = await collection.resolve(self.runtime, target_id)
+                selection = await self.resolve(target_id, entry)
                 if self.entries.get(target_id) is not entry:
                     return
                 if selection is None or selection.target is None:
@@ -268,8 +292,13 @@ class Proxy:
                     if entry.cache.status in {"offline", "unsupported"}:
                         entry.credential_cache.clear()
                         entry.cache.invalidate_rates()
+            except SQLAlchemyError as error:
+                logger.warning(
+                    "Environment monitoring authority unavailable",
+                    extra={"environment_id": target_id, "exception_details": exception_details(error)},
+                )
             except Exception as error:
-                # Failed selection/ownership checks retire this target without cancelling siblings.
+                # Invalid configuration or ownership uncertainty retires only this target.
                 logger.warning(
                     "Environment monitoring target failed",
                     extra={"environment_id": target_id, "exception_details": exception_details(error)},
@@ -285,9 +314,16 @@ class Proxy:
         # Existing entries retain admission; the cursor advances through candidates not owned here.
         ids = list(self.entries)
         if len(ids) < self.config.max_devices:
-            found = await collection.candidates(self.runtime, after=self.cursor, limit=self.config.max_devices)
-            self.cursor = found[-1] if len(found) == self.config.max_devices else ""
-            ids = list(dict.fromkeys([*ids, *found]))
+            try:
+                found = await collection.candidates(self.runtime, after=self.cursor, limit=self.config.max_devices)
+            except SQLAlchemyError as error:
+                logger.warning(
+                    "Environment monitoring discovery unavailable",
+                    extra={"exception_details": exception_details(error)},
+                )
+            else:
+                self.cursor = found[-1] if len(found) == self.config.max_devices else ""
+                ids = list(dict.fromkeys([*ids, *found]))
         async with asyncio.TaskGroup() as group:
             for target_id in ids:
                 group.create_task(self.poll(target_id))
@@ -307,14 +343,25 @@ class Proxy:
                 for (target_id, entry), retained in zip(entries, renewed, strict=True):
                     if self.entries.get(target_id) is not entry:
                         continue
+                    if (
+                        entry.authority_failed_at is not None
+                        and time.monotonic() - entry.authority_failed_at >= 3 * self.config.poll_seconds
+                    ):
+                        await self.drop(target_id, expected=entry)
+                        continue
                     if retained and isinstance(entry.selection.target, ReverseTarget):
                         try:
-                            selection = await collection.resolve(self.runtime, target_id)
+                            selection = await self.resolve(target_id, entry)
                             retained = (
                                 selection is not None
                                 and isinstance(selection.target, ReverseTarget)
                                 and selection.target.token_hash == entry.selection.target.token_hash
                             )
+                        except SQLAlchemyError:
+                            # resolve() checks ownership and expires the bounded DB grace.
+                            retained = self.entries.get(target_id) is entry
+                        except RedisError:
+                            raise
                         except Exception:
                             retained = False
                     if not retained:
@@ -342,7 +389,7 @@ class Proxy:
         if entry is None or entry.selection.revision != revision:
             return None
         # Non-ready targets can retain temporary history while still owned; only exports require ready.
-        selection = await collection.resolve(self.runtime, target_id)
+        selection = await self.resolve(target_id, entry)
         if selection is None or selection.revision != revision:
             return None
         if await self.runtime.redis.get(lease_key(target_id)) != entry.lease:
