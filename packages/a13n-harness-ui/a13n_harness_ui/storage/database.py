@@ -8,12 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
+from a13n_harness.providers.environment.direct_local.protected_files import protect_local_files
 from alembic.util.exc import CommandError
 from anyio import CancelScope, Lock, Semaphore, fail_after, move_on_after, to_thread
 from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
@@ -60,16 +62,21 @@ class Database:
 async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator[Database]:
     """Migrate, open, verify, and close one file-backed SQLite database."""
 
-    migrator = DatabaseMigrator(path, busy_timeout_seconds=settings.busy_timeout_seconds)
+    # Native search/preview runs in this process too. Opening and closing these
+    # files outside SQLite can drop SQLite's POSIX locks, even for binary reads.
+    path = path.resolve()
+    protection = protect_local_files(Path(f"{path}{suffix}") for suffix in ("", "-wal", "-shm", "-journal"))
+    engine: AsyncEngine | None = None
     try:
-        await to_thread.run_sync(migrator.upgrade)
-    except (CommandError, DatabaseSchemaError, MigrationGraphError, OSError, SQLAlchemyError) as exc:
-        raise StoreIntegrityError(
-            "Harness UI metadata migration failed.",
-            code="database_migration_failed",
-        ) from exc
-    engine = _create_engine(path, settings)
-    try:
+        migrator = DatabaseMigrator(path, busy_timeout_seconds=settings.busy_timeout_seconds)
+        try:
+            await to_thread.run_sync(migrator.upgrade)
+        except (CommandError, DatabaseSchemaError, MigrationGraphError, OSError, SQLAlchemyError) as exc:
+            raise StoreIntegrityError(
+                "Harness UI metadata migration failed.",
+                code="database_migration_failed",
+            ) from exc
+        engine = _create_engine(path, settings)
         database = Database(
             engine=engine,
             sessions=DatabaseSessions(engine),
@@ -83,8 +90,17 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
             ) from exc
         yield database
     finally:
-        with move_on_after(settings.cleanup_timeout_seconds, shield=True):
-            await engine.dispose()
+        if engine is None:
+            protection.close()
+        else:
+            # dispose() closes idle connections only, and resets the pool's
+            # counters. Inspect outstanding checkouts before disposal. Retain
+            # protection for this process if handles may have escaped cleanup.
+            checked_out = cast(AsyncAdaptedQueuePool, engine.pool).checkedout()
+            with move_on_after(settings.cleanup_timeout_seconds, shield=True):
+                await engine.dispose()
+                if checked_out == 0:
+                    protection.close()
 
 
 @asynccontextmanager

@@ -15,7 +15,7 @@ import tempfile
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from a13n_logging import get_logger
 from pathspec.gitignore import GitIgnoreSpec
@@ -45,6 +45,10 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentOperati
 from a13n_harness.environment.text import apply_unified_diff
 from a13n_harness.providers.environment._file_patterns import PathPattern, PatternError, content_pattern
 from a13n_harness.providers.environment._file_search import search_text_file
+from a13n_harness.providers.environment.direct_local.protected_files import (
+    check_local_file_access,
+    is_protected_local_file,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.providers.environment.direct_local.shared import _DirectLocalFilePolicy
@@ -88,7 +92,7 @@ class _LocalWriter:
 
     async def _copy_append_source(self) -> None:
         try:
-            source = await asyncio.to_thread(self._native_path.open, "rb")
+            source = await asyncio.to_thread(_open_read_stream, self._native_path)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="open an append source") from exc
         decoder = codecs.getincrementaldecoder("utf-8")("strict") if self._validate_text_append else None
@@ -294,6 +298,7 @@ class LocalFileOperator:
     def _resolve_file(self, path: str, subject: str) -> Path:
         native = self._resolve(path)
         try:
+            check_local_file_access(native)
             is_file = stat_module.S_ISREG(native.stat().st_mode)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="inspect a file") from exc
@@ -309,10 +314,14 @@ class LocalFileOperator:
             )
         return native
 
-    def _require_writable(self, path: Path) -> None:
+    def _require_writable(self, path: Path, *, descendants: bool = False) -> None:
         self._require_open()
         if path == self._root:
             raise EnvironmentError("The provider root cannot be mutated.", code="environment_denied")
+        try:
+            check_local_file_access(path, descendants=descendants)
+        except OSError as exc:
+            raise _environment_error_from_os(exc, action="mutate a file in use by host storage") from exc
 
     @staticmethod
     def _validate_writer_destination(path: Path) -> None:
@@ -455,7 +464,7 @@ class LocalFileOperator:
         effective_chunk_size = min(chunk_size, self._policy.max_value_bytes)
         native = await asyncio.to_thread(self._resolve_file, path, "Raw read source")
         try:
-            file = await asyncio.to_thread(native.open, "rb")
+            file = await asyncio.to_thread(_open_read_stream, native)
         except OSError as exc:
             raise _environment_error_from_os(exc, action="open a binary file") from exc
         try:
@@ -655,6 +664,11 @@ class LocalFileOperator:
                     "hint": "Select a regular file or directory; special files cannot be searched.",
                 },
             )
+        if single_file:
+            try:
+                check_local_file_access(root)
+            except OSError as exc:
+                raise _environment_error_from_os(exc, action="search a file in use by host storage") from exc
         try:
             include = PathPattern(request.include, "include")
             regex = content_pattern(request.pattern, request.regex, request.case_sensitive)
@@ -682,6 +696,13 @@ class LocalFileOperator:
                 continue
             metadata = _regular_search_file_metadata(native)
             if metadata is None or metadata.st_size > request.max_file_bytes:
+                continue
+            try:
+                if is_protected_local_file(native):
+                    continue
+            except OSError as exc:
+                if single_file:
+                    raise _environment_error_from_os(exc, action="search a file") from exc
                 continue
             if request.max_files is not None and files_scanned >= request.max_files:
                 raise EnvironmentError(
@@ -738,7 +759,7 @@ class LocalFileOperator:
         # Ensuring the existing writable root is a no-op, not root creation.
         if native == self._root and exist_ok and await asyncio.to_thread(native.is_dir):
             return FileMutationResult(path=path, receipt=self._receipt())
-        self._require_writable(native)
+        await asyncio.to_thread(self._require_writable, native)
         try:
             await asyncio.to_thread(native.mkdir, parents=parents, exist_ok=exist_ok)
         except OSError as exc:
@@ -765,8 +786,8 @@ class LocalFileOperator:
             follow_final=False,
             require_exists=False,
         )
-        self._require_writable(source_native)
-        self._require_writable(destination_native)
+        self._require_writable(source_native, descendants=True)
+        self._require_writable(destination_native, descendants=True)
         source_metadata = source_native.lstat()
         if source_native == destination_native:
             return
@@ -822,7 +843,7 @@ class LocalFileOperator:
 
     def _remove_native(self, path: str, recursive: bool) -> None:
         native = self._resolve(path, follow_final=False)
-        self._require_writable(native)
+        self._require_writable(native, descendants=True)
         metadata = native.lstat()
         if stat_module.S_ISLNK(metadata.st_mode) or stat_module.S_ISREG(metadata.st_mode):
             native.unlink()
@@ -843,7 +864,7 @@ class LocalFileOperator:
         validate_text_append: bool,
     ) -> AsyncGenerator[_LocalWriter]:
         native = await asyncio.to_thread(self._resolve, path, follow_final=False, require_exists=False)
-        self._require_writable(native)
+        await asyncio.to_thread(self._require_writable, native)
         await asyncio.to_thread(self._validate_writer_destination, native)
         writer = _LocalWriter(
             self,
@@ -884,13 +905,18 @@ class LocalFileOperator:
         )
 
 
+def _open_read_stream(path: Path) -> BinaryIO:
+    check_local_file_access(path)
+    return path.open("rb")
+
+
 def _read_bytes_at_most(
     path: Path,
     offset: int,
     length: int | None,
     max_bytes: int,
 ) -> bytes:
-    with path.open("rb") as file:
+    with _open_read_stream(path) as file:
         file.seek(offset)
         return file.read(max_bytes + 1 if length is None else length)
 
@@ -944,7 +970,7 @@ def _read_text_page(
     selected_bytes = 0
     truncated_lines: list[int] = []
     line_index = 0
-    with path.open("rb") as file:
+    with _open_read_stream(path) as file:
         while line_index < line_offset:
             if read_line(file) is None:
                 return "", 0, False, ()
@@ -1090,7 +1116,7 @@ def _iter_native_paths(
 
 def _load_git_ignore(path: Path) -> GitIgnoreSpec | None:
     try:
-        if not path.is_file() or path.stat().st_size > 1024 * 1024:
+        if is_protected_local_file(path) or not path.is_file() or path.stat().st_size > 1024 * 1024:
             return None
         patterns: list[GitIgnoreSpecPattern] = []
         invalid_count = 0

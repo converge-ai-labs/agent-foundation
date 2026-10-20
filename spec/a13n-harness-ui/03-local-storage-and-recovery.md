@@ -109,6 +109,8 @@ Attachments reuse the existing Thread-scoped staging and retained-input lifecycl
 
 SQLite uses WAL, foreign keys, a bounded busy timeout, UTC-aware persistence values, and short transactions. A transaction never spans Agent execution, model or tool I/O, Environment operations, a wait, a sleep, configuration-file mutation, or live streaming.
 
+Before migration, the App registers its exact metadata database and `-wal`, `-shm`, and `-journal` paths with the process-local native file protection owner. Direct Local tools and Host Files must not open these files as ordinary content: on POSIX, even closing a read-only descriptor can release SQLite's process-owned advisory locks and allow another connection to remove still-live sidecars. Protection includes symbolic and hard-link aliases, files created after registration, and ancestor directory mutations; ordinary project databases are unaffected. Successful connection cleanup releases the registration. A timed-out disposal or outstanding checked-out connection conservatively retains protection until process exit. This guard does not repair an already damaged store or replace the database's normal multi-process locking.
+
 The conceptual groups are:
 
 | Group            | Representative facts                                                                                                                    |
