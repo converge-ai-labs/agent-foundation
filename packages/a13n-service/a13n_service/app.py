@@ -31,8 +31,6 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from a13n_service.api_access import CredentialAccess
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.crypto import FILE_KEY_ID, KeyRing, file_key
-from a13n_service.infra.db import check_schema as check_schema
-from a13n_service.infra.db import open_storage as open_storage
 from a13n_service.infra.http import document_errors, install_error_envelope
 from a13n_service.infra.ingress import BodyLimit
 from a13n_service.infra.objects.interface import ObjectStore
@@ -55,6 +53,8 @@ from a13n_service.runs.stream import SessionHub
 from a13n_service.runs.thread_stream import ThreadHub
 from a13n_service.runs.worker import Execute, Worker
 from a13n_service.settings import Encryption, Objects, ProcessRole, Settings, load_settings
+from a13n_service.storage import check_schema as check_schema
+from a13n_service.storage import open_storage as open_storage
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
 from a13n_service.tenancy.requests import current_credential
 

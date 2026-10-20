@@ -42,6 +42,7 @@ forbidden_modules =
     a13n_service.api_tools
     a13n_service.api_access
     a13n_service.documentation
+    a13n_service.storage
 
 [importlinter:contract:infrastructure]
 name = Infrastructure cannot import configuration

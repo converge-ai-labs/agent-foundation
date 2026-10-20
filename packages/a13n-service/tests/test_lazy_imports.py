@@ -25,8 +25,7 @@ def _child(source: str, *, eager: bool = False) -> str:
     return result.stdout
 
 
-@pytest.mark.skipif(sys.version_info < (3, 15), reason="native lazy imports require Python 3.15")
-def test_native_cli_help_does_not_assemble_the_service() -> None:
+def test_cli_help_respects_interpreter_import_mode() -> None:
     _child("""
         import sys
         from click.testing import CliRunner
@@ -34,29 +33,29 @@ def test_native_cli_help_does_not_assemble_the_service() -> None:
         for command in [[], ['run'], ['migrate'], ['bootstrap'], ['user']]:
             result = CliRunner().invoke(main, [*command, '--help'])
             assert result.exit_code == 0, result.output
-        assert 'a13n_service.app' not in sys.modules
-        assert 'a13n_service.distribution' not in sys.modules
-        assert 'a13n_service.runs.execute' not in sys.modules
+        eager = sys.version_info < (3, 15)
+        for module in ('a13n_service.app', 'a13n_service.distribution', 'a13n_service.runs.execute'):
+            assert (module in sys.modules) == eager, module
         assert 'aiobotocore' not in sys.modules
     """)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 15), reason="native lazy imports require Python 3.15")
 @pytest.mark.parametrize("role", ["control", "worker", "all"])
-def test_native_roles_keep_full_assembly_validation(role: str) -> None:
+def test_roles_keep_full_assembly_validation(role: str) -> None:
     _child(f"""
         import sys
         from dataclasses import replace
         from a13n_service.app import build_app, check_schema, open_storage
         from a13n_service.distribution import OSS
-        from a13n_service.infra import db
+        from a13n_service import storage
         from a13n_service.settings import Settings
-        assert check_schema is db.check_schema
-        assert open_storage is db.open_storage
+        assert check_schema is storage.check_schema
+        assert open_storage is storage.open_storage
         app = build_app(role={role!r}, settings=Settings())
-        assert 'a13n_service.runs.execute' not in sys.modules
+        eager = sys.version_info < (3, 15)
+        assert ('a13n_service.runs.execute' in sys.modules) == eager
         assert 'aiobotocore' not in sys.modules
-        assert ('a13n_service.mcp' in sys.modules) == ({role!r} != 'worker')
+        assert ('a13n_service.mcp' in sys.modules) == (eager or {role!r} != 'worker')
         assert bool(app.openapi_url) == ({role!r} != 'worker')
         for invalid, message in [
             (replace(OSS, routers=OSS.routers + OSS.routers[:1]), 'Duplicate route'),
@@ -100,16 +99,13 @@ def test_composed_schema_matches_eager_imports() -> None:
     assert len(normal["sha256"]) == 64
 
 
-@pytest.mark.skipif(sys.version_info < (3, 15), reason="native lazy imports require Python 3.15")
-def test_selected_executor_and_s3_load_off_loop_and_retry() -> None:
+def test_selected_executor_and_s3_import_lifecycle() -> None:
     _child("""
         import asyncio, importlib.abc, sys, threading
         from contextlib import AsyncExitStack
         from tempfile import TemporaryDirectory
         from pathlib import Path
         from anyio.to_thread import run_sync
-        from a13n_service.app import _prepare_execution, open_objects
-        from a13n_service.settings import Objects
         imports = {}
         def audit(event, args):
             if event == 'import' and args[0] in (
@@ -117,25 +113,29 @@ def test_selected_executor_and_s3_load_off_loop_and_retry() -> None:
             ):
                 imports[args[0]] = threading.get_ident()
         sys.addaudithook(audit)
+        from a13n_service.app import _prepare_execution, open_objects
+        from a13n_service.settings import Objects
         class Broken(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
                 if fullname == 'a13n_service.runs.execute':
                     raise ImportError('executor unavailable')
         async def main():
             owner = threading.get_ident()
-            blocker = Broken()
-            sys.meta_path.insert(0, blocker)
-            try:
-                await run_sync(_prepare_execution)
-            except ImportError as error:
-                assert str(error) == 'executor unavailable'
-            else:
-                raise AssertionError('executor failure must propagate')
-            finally:
-                sys.meta_path.remove(blocker)
+            native = sys.version_info >= (3, 15)
+            if native:
+                blocker = Broken()
+                sys.meta_path.insert(0, blocker)
+                try:
+                    await run_sync(_prepare_execution)
+                except ImportError as error:
+                    assert str(error) == 'executor unavailable'
+                else:
+                    raise AssertionError('executor failure must propagate')
+                finally:
+                    sys.meta_path.remove(blocker)
             executors = await asyncio.gather(*(run_sync(_prepare_execution) for _ in range(4)))
             assert all(executor is executors[0] for executor in executors)
-            assert imports['a13n_service.runs.execute'] != owner
+            assert (imports['a13n_service.runs.execute'] != owner) == native
             with TemporaryDirectory() as root:
                 async with AsyncExitStack() as stack:
                     local = await open_objects(stack, Objects(root=Path(root)))

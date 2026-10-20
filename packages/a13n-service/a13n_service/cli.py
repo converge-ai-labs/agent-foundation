@@ -9,6 +9,7 @@ __lazy_modules__ = [
     "a13n_service.infra.telemetry",
     "a13n_service.migrations",
     "a13n_service.migrations.runner",
+    "a13n_service.storage",
     "a13n_service.tenancy.bootstrap",
     "a13n_service.tenancy.users",
 ]
@@ -30,12 +31,13 @@ from pydantic import SecretStr, ValidationError
 
 from a13n_service.app import build_app, open_objects
 from a13n_service.distribution import OSS
-from a13n_service.infra.db import Storage, check_schema, open_storage
+from a13n_service.infra.db import Storage
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import serve_metrics
 from a13n_service.migrations import run_objects
 from a13n_service.migrations.runner import check, generate, heads, upgrade
 from a13n_service.settings import ProcessRole, Settings, load_settings
+from a13n_service.storage import check_schema, open_storage
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap
 from a13n_service.tenancy.users import set_account_status
 

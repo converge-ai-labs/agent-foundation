@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 import anyio
 from a13n_logging import exception_details, get_logger
@@ -14,9 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from a13n_service.infra.errors import ServiceError
-
-if TYPE_CHECKING:
-    from a13n_service.settings import Database
 
 logger = get_logger(__name__)
 
@@ -146,25 +143,6 @@ class Storage:
     async def close(self) -> None:
         with anyio.move_on_after(5, shield=True):
             await self.engine.dispose()
-
-
-def open_storage(config: "Database") -> Storage:
-    """The process's database pool; the caller closes it."""
-    return Storage(
-        config.url.get_secret_value(),
-        pool_size=config.pool_size,
-        connect_timeout=config.connect_timeout,
-        statement_timeout=config.statement_timeout,
-    )
-
-
-async def check_schema(storage: Storage, expected: tuple[str, ...]) -> None:
-    async with short_session(storage) as session:
-        actual = tuple(
-            (await session.execute(text("SELECT version_num FROM alembic_version ORDER BY version_num"))).scalars()
-        )
-    if actual != tuple(sorted(expected)) or not expected:
-        raise RuntimeError("Database schema is incompatible; run a13n-service migrate")
 
 
 @asynccontextmanager
