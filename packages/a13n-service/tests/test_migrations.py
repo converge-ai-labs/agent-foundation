@@ -70,8 +70,9 @@ def test_monitoring_revision_upgrades_and_restores_main_schema(empty_database: D
         " WHERE table_schema = 'public' AND table_name = 'environments' ORDER BY ordinal_position"
     )
     original_columns = rows(empty_database, columns)
-    upgrade(empty_database, OSS)
-    check(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        # Exercise monitoring independently of later additive revisions.
+        command.upgrade(config, "36c442fa1a5e")
     assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("36c442fa1a5e",)]
     with migration_connection(empty_database, OSS) as config:
         # Retire only the monitoring branch; keep main's occurrence completion schema.

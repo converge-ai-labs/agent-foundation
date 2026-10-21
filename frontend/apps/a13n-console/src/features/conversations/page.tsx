@@ -84,6 +84,7 @@ export function NewConversation() {
       await client.workspace(workspace.id).POST("/api/v1/sessions", {
         body: {
           labels: CONSOLE_SESSION_LABELS,
+          origin: { application: "a13n-console", name: "Console" },
           ...(memory === null ? {} : { memory }),
         },
       }),

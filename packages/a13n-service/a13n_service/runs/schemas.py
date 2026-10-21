@@ -15,6 +15,7 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -171,6 +172,41 @@ type McpHeaders = Annotated[
 type InitialMounts = Annotated[tuple[MountCreate, ...], Field(max_length=MAX_MOUNTS)]
 
 
+SessionTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+
+
+class SessionOrigin(_Frozen):
+    """Caller-supplied display context, not execution provenance or an authorization boundary."""
+
+    application: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)] | None = None
+    external_id: str | None = Field(default=None, min_length=1, max_length=512)
+    url: str | None = Field(default=None, min_length=8, max_length=2048)
+
+    @field_validator("url")
+    @classmethod
+    def public_link(cls, value: str | None) -> str | None:
+        if value is not None:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username is not None
+                or parsed.password is not None
+                or any(ord(char) < 32 for char in value)
+            ):
+                raise ValueError("Session origin requires an HTTP(S) link without embedded credentials")
+        return value
+
+
+class SessionCreate(_Frozen):
+    title: SessionTitle | None = None
+    origin: SessionOrigin | None = None
+    labels: Labels = Field(default_factory=dict)
+    # Omitted/null inherits the first accepted business Agent revision's defaults.
+    memory: SessionMemorySettings | None = None
+
+
 class Message(_Frozen):
     kind: Literal["message"] = "message"
     delivery: Delivery = "steer"
@@ -183,10 +219,18 @@ class Message(_Frozen):
 class NewThread(Message):
     message_history: MessageHistory = Field(default_factory=list)
     session_id: ObjectId | None = None
+    # Preserve the canonical digest of requests submitted before this optional field existed.
+    session: SessionCreate | None = Field(default=None, exclude_if=lambda value: value is None)
     mcp_headers: McpHeaders = Field(default_factory=dict)
     environments: InitialMounts = ()
     # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
     memories: MemoryMounts = ()
+
+    @model_validator(mode="after")
+    def new_or_existing_session(self) -> Self:
+        if self.session_id is not None and self.session is not None:
+            raise ValueError("Session creation details cannot be combined with session_id")
+        return self
 
 
 class Fork(Message):
@@ -350,13 +394,10 @@ class SpaceOrganizationStatus(_Frozen):
     failure: Failure | None = None
 
 
-class SessionCreate(_Frozen):
-    labels: Labels = Field(default_factory=dict)
-    # Omitted/null inherits the first accepted business Agent revision's defaults.
-    memory: SessionMemorySettings | None = None
-
-
 class SessionUpdate(_Frozen):
+    # Omission preserves the value; explicit null clears it.
+    title: SessionTitle | None = None
+    origin: SessionOrigin | None = None
     labels: Labels | None = None
     memory: SessionMemorySettings | None = None
 
@@ -368,7 +409,12 @@ class SessionQuery(_Frozen):
     text_query: str | None = Field(
         default=None, max_length=1024, description="All search terms must match one run's retained user/assistant text"
     )
-    q: str | None = Field(default=None, max_length=72, description="A session or thread ID")
+    q: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="Session/thread ID, title, origin, label value or retained conversation text",
+    )
+    application: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, max_length=72)
     status: tuple[RunStatus, ...] = Field(default=(), max_length=6)
     trigger: tuple[Trigger, ...] = Field(default=(), max_length=5)
@@ -397,6 +443,8 @@ class SessionView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str
+    title: str | None = None
+    origin: SessionOrigin | None = None
     labels: dict[str, str]
     created_by_id: str
     last_run_id: str | None

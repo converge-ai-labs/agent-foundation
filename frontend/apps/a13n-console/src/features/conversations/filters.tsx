@@ -1,5 +1,6 @@
 import {
   Button,
+  Input,
   Menu,
   MenuCheckboxItem,
   MenuPopup,
@@ -44,6 +45,8 @@ const triggers: Schema["Trigger"][] = [
 ];
 const keys = [
   "q",
+  "application",
+  "label",
   "agent_id",
   "status",
   "trigger",
@@ -54,6 +57,8 @@ const keys = [
 export function readSessionFilters(search: URLSearchParams): SessionFilters {
   return {
     q: search.get("q")?.trim() || undefined,
+    application: search.get("application") || undefined,
+    label: search.getAll("label"),
     agent_id: search.get("agent_id") || undefined,
     status: known(search.getAll("status"), statuses),
     trigger: known(search.getAll("trigger"), triggers),
@@ -134,9 +139,16 @@ export function SessionFilterBar({
       <Toolbar
         search={query}
         onSearchChange={onSearchChange}
-        searchLabel={t("Search by title, session or thread ID")}
+        searchLabel={t("Search sessions")}
+        searchPlaceholder={t("Title, source, ID, or message…")}
         filters={
           <>
+            <SourceFilter
+              value={search.get("application") ?? ""}
+              onChange={(value) =>
+                update({ application: value ? [value] : [] })
+              }
+            />
             <div className={styles.agentFilter}>
               <SearchPicker
                 label={t("Agent")}
@@ -198,8 +210,94 @@ export function SessionFilterBar({
           </>
         }
       />
+      {search.getAll("label").length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {search.getAll("label").map((value) => (
+            <Button
+              key={value}
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                update({
+                  label: search
+                    .getAll("label")
+                    .filter((label) => label !== value),
+                })
+              }
+            >
+              {value} <span aria-hidden="true">×</span>
+              <span className="sr-only">{t("Remove filter")}</span>
+            </Button>
+          ))}
+        </div>
+      )}
       <ErrorNotice error={agents.error} retry={() => void agents.refetch()} />
     </>
+  );
+}
+
+function SourceFilter({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setDraft(value);
+      }}
+    >
+      <PopoverTrigger render={<Button size="sm" variant="outline" />}>
+        {value || t("Source")}
+        <CaretDownIcon aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverPopup align="start" className="w-64 p-4">
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onChange(draft.trim());
+            setOpen(false);
+          }}
+        >
+          <label
+            className="text-xs font-medium"
+            htmlFor="session-source-filter"
+          >
+            {t("Source application")}
+          </label>
+          <Input
+            id="session-source-filter"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            maxLength={128}
+            placeholder="a13n-bot"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              {t("Clear")}
+            </Button>
+            <Button size="sm" type="submit">
+              {t("Apply")}
+            </Button>
+          </div>
+        </form>
+      </PopoverPopup>
+    </Popover>
   );
 }
 

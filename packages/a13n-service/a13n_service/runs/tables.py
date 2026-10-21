@@ -77,6 +77,8 @@ class SessionRow(Stamped, Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
+    title: Mapped[str | None] = mapped_column(String(256))
+    origin: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     labels: Mapped[dict] = mapped_column(JSONB)
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     memory: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))

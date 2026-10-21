@@ -12846,6 +12846,16 @@
           "payload": {
             "$ref": "#/components/schemas/MessagePayload"
           },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionCreate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "session_id": {
             "anyOf": [
               {
@@ -17835,6 +17845,29 @@
                 "type": "null"
               }
             ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
         "title": "SessionCreate",
@@ -17860,6 +17893,62 @@
           }
         },
         "title": "SessionMemorySettings",
+        "type": "object"
+      },
+      "SessionOrigin": {
+        "additionalProperties": false,
+        "description": "Caller-supplied display context, not execution provenance or an authorization boundary.",
+        "properties": {
+          "application": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Application",
+            "type": "string"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "application"
+        ],
+        "title": "SessionOrigin",
         "type": "object"
       },
       "SessionPage": {
@@ -18001,6 +18090,29 @@
                 "type": "null"
               }
             ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
         "title": "SessionUpdate",
@@ -18042,6 +18154,16 @@
           "memory": {
             "$ref": "#/components/schemas/SessionMemorySettings"
           },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "preview": {
             "anyOf": [
               {
@@ -18076,6 +18198,17 @@
               }
             ],
             "title": "Schedule Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "updated_at": {
             "format": "date-time",
@@ -40570,22 +40703,40 @@
             }
           },
           {
-            "description": "A session or thread ID",
+            "description": "Session/thread ID, title, origin, label value or retained conversation text",
             "in": "query",
             "name": "q",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "maxLength": 72,
+                  "maxLength": 1024,
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "A session or thread ID",
+              "description": "Session/thread ID, title, origin, label value or retained conversation text",
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "application",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Application"
             }
           },
           {

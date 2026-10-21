@@ -15,6 +15,7 @@ import {
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
+  PencilSimpleIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -32,6 +33,8 @@ import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
 import { ThreadMountsDialog } from "./thread-mounts";
+import { SessionEditor } from "./session-editor";
+import { originLink, sessionTitle } from "./session-identity";
 import styles from "./conversations.module.css";
 
 /**
@@ -60,6 +63,9 @@ export function SessionHeader({
   const { runs } = useThreadRuns(threadId);
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const title = session.data && sessionTitle(session.data);
+  const source = originLink(session.data?.origin);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
@@ -82,7 +88,11 @@ export function SessionHeader({
       </Link>
       <span className={styles.headerRule} aria-hidden="true" />
       <div className={styles.sessionIdentity}>
-        {agent.data ? (
+        {title ? (
+          <span className={styles.agentLink} title={title}>
+            <span className={styles.agentName}>{title}</span>
+          </span>
+        ) : agent.data ? (
           <Link
             className={styles.agentLink}
             to={`${basePath}/agents/${agent.data.id}`}
@@ -177,6 +187,20 @@ export function SessionHeader({
           <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
         </MenuTrigger>
         <MenuPopup align="end">
+          {can("run") && session.data && (
+            <MenuItem onClick={() => setEditing(true)}>
+              <PencilSimpleIcon size={14} aria-hidden="true" />
+              {t("Edit session details")}
+            </MenuItem>
+          )}
+          {source && (
+            <MenuItem
+              render={<a href={source} target="_blank" rel="noreferrer" />}
+            >
+              <ArrowSquareOutIcon size={14} aria-hidden="true" />
+              {t("Open source")}
+            </MenuItem>
+          )}
           {level === "debug" && collapse && (
             <MenuItem onClick={() => collapse.setAll(!collapse.allCollapsed)}>
               {collapse.allCollapsed ? (
@@ -218,6 +242,12 @@ export function SessionHeader({
           thread={thread}
           open={mounts}
           onOpenChange={setMounts}
+        />
+      )}
+      {editing && session.data && (
+        <SessionEditor
+          session={session.data}
+          onClose={() => setEditing(false)}
         />
       )}
     </header>

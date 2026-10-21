@@ -32,6 +32,16 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 [Schedules](13-schedules.md#objects-and-ownership) create one fixed empty Session and new independent root Threads. Their nullable immutable Thread provenance and Session Memory restriction are owned by that contract; ordinary input and Run lifecycles remain unchanged.
 
+## Session display identity
+
+A Session optionally carries a caller-owned `title` and structured `origin`, independent of Thread execution lineage. Applications set these values in `POST /sessions` or in the optional `session` object of `POST /threads`, alongside Session labels and memory settings. `session` and `session_id` are mutually exclusive; inline creation and the first input commit atomically under the existing idempotency key. Omitting `session` preserves the previous request digest and creation behavior.
+
+`title` is trimmed, nonempty when supplied, and at most 256 characters. If the Session has no title when its first input is accepted, Service stores the first input's text with whitespace collapsed and a 256-character limit. Later inputs do not replace that title. Existing Sessions are not backfilled from historical input.
+
+`origin` contains a required application key `application` (up to 128 characters), optional readable `name` (256), application-owned `external_id` (512), and HTTP(S) `url` (2048). Links exclude embedded credentials and control characters. These fields describe where to find the conversation; they grant no authority, do not establish verified provenance, and are not inserted into model context. Project, role and other application dimensions use existing Session labels.
+
+`PATCH /sessions/{session}` uses the Session's existing `run` permission and `If-Match` precondition. Omitted identity fields remain unchanged; explicit null clears them. A supplied origin replaces the entire object. Creation, read, list and update representations expose both fields, including null for older Sessions.
+
 ## Execution queries
 
 Read-only JSON queries expose Session and Thread lists/details, inbox lists/entries, Thread Runs, Run details, a Run's agent, display items and saved content, lineage, Attempt lists/details, traces and Findings through the HTTP API and explicitly admitted MCP operations. Live output streams and execution commands remain outside internal platform admission.
@@ -42,7 +52,7 @@ Read-only JSON queries expose Session and Thread lists/details, inbox lists/entr
 
 ### Text search
 
-`GET /sessions`, `GET /threads` and `GET /runs` accept optional `text_query` (at most 1024 characters and 64 distinct query terms). All terms must match within one Run; Session and Thread queries select those with at least one matching Run in the authorized workspace. Existing filters, time ordering and pagination remain in force, and cursors include `text_query`. Session `q` remains exact Session/Thread ID lookup. Empty or punctuation-only search matches nothing. There is no relevance ranking, phrase search, highlighting, fuzzy matching or arbitrary substring guarantee.
+`GET /sessions`, `GET /threads` and `GET /runs` accept optional `text_query` (at most 1024 characters and 64 distinct query terms). All terms must match within one Run; Session and Thread queries select those with at least one matching Run in the authorized workspace. Existing filters, time ordering and pagination remain in force, and cursors include `text_query`. A canonical Session/Thread ID in Session `q` selects only its exact owner. Other `q` values match literal case-insensitive substrings in title, origin fields and label values, OR the same retained Run text search. The optional `application` filter matches `origin.application` exactly; it combines with labels and other filters using AND. Metadata substring matching treats `%` and `_` literally. Empty or punctuation-only `text_query` matches nothing. There is no relevance ranking, phrase search, highlighting, fuzzy matching or arbitrary substring guarantee.
 
 Each Run owns one internal `search_vector` PostgreSQL `tsvector`, with a GIN index and an empty default. No PostgreSQL extension, duplicate raw-text column or historical backfill is required. The vector is omitted from ordinary row reads and public views. Lexemes carry neither positions nor weights. Application tokenization uses the pinned Jieba 0.42.1 bundled dictionary with HMM disabled, search mode for documents and precise mode for queries, Unicode NFKC/case folding, and additional snake/camel identifier components in documents. Query terms are escaped literals combined with AND. Lexemes of 2048 UTF-8 bytes or more are omitted.
 
@@ -72,7 +82,7 @@ The tenant foreign-key rules in [03](03-tenancy.md#tenant-integrity) apply throu
 
 ```
 sessions
-  id  organization_id  workspace_id  labels  memory  purpose  created_by_id  last_run_id NULL
+  id  organization_id  workspace_id  title NULL  origin JSONB NULL  labels  memory  purpose  created_by_id  last_run_id NULL
   version  created_at  updated_at
   -- last_run_id and updated_at change without a version bump
 

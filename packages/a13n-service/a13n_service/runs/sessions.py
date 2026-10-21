@@ -1,5 +1,6 @@
-"""Sessions as resources: listing with previews, reads, creation and labels."""
+"""Caller-owned Session identity and listings with bounded execution previews."""
 
+import re
 from collections.abc import Sequence
 
 from pydantic import JsonValue
@@ -10,7 +11,7 @@ from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.http import require_match
-from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.ids import OBJECT_ID_PATTERN, new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.runs.memories.session_memory import configure
@@ -40,12 +41,17 @@ def _input_text(payload: dict[str, JsonValue] | None) -> str | None:
     return "\n".join(texts)[:PREVIEW_INPUT] if texts else None
 
 
-def new_session(organization_id: str, workspace_id: str, created_by_id: str) -> SessionRow:
+def new_session(
+    organization_id: str, workspace_id: str, created_by_id: str, details: SessionCreate | None = None
+) -> SessionRow:
+    details = details or SessionCreate()
     return SessionRow(
         id=new_object_id("sess"),
         organization_id=organization_id,
         workspace_id=workspace_id,
-        labels={},
+        title=details.title,
+        origin=details.origin.model_dump(mode="json") if details.origin is not None else None,
+        labels=dict(details.labels),
         created_by_id=created_by_id,
     )
 
@@ -115,7 +121,7 @@ async def find_session(session: AsyncSession, workspace_id: str, session_id: str
 
 
 async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, filters: SessionQuery) -> SessionPage:
-    """Most recently updated first: a run's acceptance or a label edit updates a session."""
+    """Most recently updated first; identity search and retained text share the authorized workspace."""
     match = predicate(RunRow.search_vector, filters.text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -124,11 +130,37 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
             SessionRow.purpose == "conversation",
             label_filter(SessionRow.labels, list(filters.label)),
         )
-        if filters.q:
+        if filters.q and (needle := filters.q.strip()):
             by_thread = select(ThreadRow.session_id).where(
-                ThreadRow.workspace_id == scope.workspace_id, ThreadRow.id == filters.q
+                ThreadRow.workspace_id == scope.workspace_id, ThreadRow.id == needle
             )
-            query = query.where(or_(SessionRow.id == filters.q, SessionRow.id.in_(by_thread)))
+            matches = [SessionRow.id == needle, SessionRow.id.in_(by_thread)]
+            exact_id = needle.startswith(("sess_", "thread_")) and re.fullmatch(OBJECT_ID_PATTERN, needle)
+            if not exact_id:
+                label_values = func.jsonb_each_text(SessionRow.labels).table_valued("key", "value")
+                matches.extend(
+                    [
+                        SessionRow.title.icontains(needle, autoescape=True),
+                        *[
+                            SessionRow.origin[field].astext.icontains(needle, autoescape=True)
+                            for field in ("application", "name", "external_id", "url")
+                        ],
+                        select(1)
+                        .select_from(label_values)
+                        .where(label_values.c.value.icontains(needle, autoescape=True))
+                        .exists(),
+                    ]
+                )
+                text_match = predicate(RunRow.search_vector, needle)
+                if text_match is not None:
+                    matches.append(
+                        SessionRow.id.in_(
+                            select(RunRow.session_id).where(RunRow.workspace_id == scope.workspace_id, text_match)
+                        )
+                    )
+            query = query.where(or_(*matches))
+        if filters.application:
+            query = query.where(SessionRow.origin["application"].astext == filters.application)
         if filters.updated_after:
             query = query.where(SessionRow.updated_at >= filters.updated_after)
         if filters.updated_before:
@@ -168,8 +200,7 @@ async def create_session(storage: Storage, actor: Principal, workspace_id: str, 
     """An empty session; threads join it through `POST /threads` with its ID."""
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
-        row = new_session(scope.organization_id, scope.workspace_id, actor.id)
-        row.labels = dict(body.labels)
+        row = new_session(scope.organization_id, scope.workspace_id, actor.id, body)
         session.add(row)
         await session.flush()
         if body.memory is not None:
@@ -185,6 +216,10 @@ async def update_session(
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await find_session(session, scope.workspace_id, session_id, lock=True)
         require_match(if_match, row.id, row.version)
+        if "title" in body.model_fields_set:
+            row.title = body.title
+        if "origin" in body.model_fields_set:
+            row.origin = body.origin.model_dump(mode="json") if body.origin is not None else None
         if body.labels is not None:
             row.labels = dict(body.labels)
         if body.memory is not None:
