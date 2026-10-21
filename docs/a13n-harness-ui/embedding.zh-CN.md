@@ -62,7 +62,7 @@ flowchart TD
 | 查找 Thread 当前活动 | `active_root_operation(thread_id)`                                                       |
 | 引导或取消活动执行   | `steer_root_operation(receipt_id=..., message=...)`、`cancel_root_operation(receipt_id)` |
 
-根级与子级 steering 使用当前全局 `input.steering_mode`：默认为 `immediate`，选择 `queued` 则等待下一个安全边界。App 默认通过 `tools.execution.mode: inline` 等待通用工具完成；设置为 `auto` 可开启超时移交。顶层 Shell 调用遵循相同执行模式，在 App 保留执行期间可跨 Run 控制。App 提供即时 steering 和自动移交所需的 runtime 绑定。
+根级与子级 steering 使用当前全局 `input.steering_mode`：默认为 `immediate`，选择 `queued` 则等待下一个安全边界。App 默认通过 `tools.execution.mode: inline` 等待通用工具完成；设置为 `auto` 可开启超时移交。支持进程的顶层 Shell 调用在两种模式下都会在前台等待到期后自动让出，在 App 保留执行期间可跨 Run 控制。仅支持前台执行的挂载遵循通用执行模式。App 提供即时 steering 和自动移交所需的 runtime 绑定。
 
 `app.tool_executions(thread_id, offset=0, limit=20)` 读取指定 Thread 的状态，不消耗结果；`app.cancel_tool_execution(thread_id, execution_id)` 请求取消。App 持有共享 Harness 运行时直到关闭。取消对话会在新输入到来前禁止完成事件自动唤醒，与工具取消相互独立。这些记录只存在于当前进程，重启后消失。
 

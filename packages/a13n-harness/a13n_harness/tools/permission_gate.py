@@ -352,7 +352,7 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
         unsupported = (
             tool.tool_def.kind != "external"
             and not _OWNED_TOOL_EXECUTION.get()
-            and mode not in {"owned", "control", "process"}
+            and mode not in {"owned", "owned_auto", "control", "process"}
         )
         call_id = ctx.tool_call_id or tool.tool_def.name
         if unsupported:

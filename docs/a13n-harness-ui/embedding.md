@@ -62,7 +62,7 @@ flowchart TD
 | Find current Thread activity       | `active_root_operation(thread_id)`                                                       |
 | Steer or cancel active work        | `steer_root_operation(receipt_id=..., message=...)`, `cancel_root_operation(receipt_id)` |
 
-Root and child steering use the current global `input.steering_mode`: `immediate` by default, or `queued` to wait for the next safe boundary. The App defaults to inline generic tool execution with `tools.execution.mode: inline`; set `auto` to enable timeout-based handoff. Top-level Shell calls follow the same execution mode and remain controllable across Runs while the App retains their execution. The App supplies the runtime binding for immediate steering and automatic handoff.
+Root and child steering use the current global `input.steering_mode`: `immediate` by default, or `queued` to wait for the next safe boundary. The App defaults to inline generic tool execution with `tools.execution.mode: inline`; set `auto` to enable timeout-based handoff. Process-backed top-level Shell calls automatically yield after the foreground wait in both modes and remain controllable across Runs while the App retains their execution. Foreground-only mounts follow the generic execution mode. The App supplies the runtime binding for immediate steering and automatic handoff.
 
 `app.tool_executions(thread_id, offset=0, limit=20)` reads exact-Thread status without consuming results; `app.cancel_tool_execution(thread_id, execution_id)` requests cancellation. The App holds the shared Harness runtime until shutdown. Conversation cancellation suppresses automatic completion wake until new input, independently of tool cancellation. These records are process-local and disappear on restart.
 

@@ -34,7 +34,7 @@ def source(root):
     )
 
 
-def executable(calls, results, *, capabilities=(), wait_seconds=0):
+def executable(calls, results, *, capabilities=(), wait_seconds=0, mode="auto"):
     index = 0
 
     async def model(messages, info):
@@ -55,7 +55,7 @@ def executable(calls, results, *, capabilities=(), wait_seconds=0):
         model=FunctionModel(stream_function=model),
         capabilities=(
             DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
-            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=wait_seconds)),
+            ToolExecutionCapability(ToolExecutionConfig(mode=mode, foreground_wait_seconds=wait_seconds)),
             *capabilities,
         ),
     )
@@ -70,13 +70,16 @@ def bindings(runtime, **kwargs):
     )
 
 
-async def test_shell_survives_run_close_and_next_run_controls_original_process(tmp_path):
+@pytest.mark.parametrize("mode", ["inline", "auto"])
+async def test_shell_survives_run_close_and_next_run_controls_original_process(tmp_path, mode):
     runtime = ToolExecutionRuntime()
     first_results, next_results = [], []
     try:
         async with asyncio.timeout(15):
             first = await executable(
-                [("shell_exec", {"command": "printf ready; read line; printf 'done:%s' \"$line\""})], first_results
+                [("shell_exec", {"command": "printf ready; read line; printf 'done:%s' \"$line\""})],
+                first_results,
+                mode=mode,
             ).run("start", environment=source(tmp_path), bindings=bindings(runtime))
             assert first.output_or_raise() == "done"
             receipt = first_results[0]
@@ -107,6 +110,61 @@ async def test_shell_survives_run_close_and_next_run_controls_original_process(t
             assert settled.result["stdout"]["text"] == "readydone:accepted"
             assert runtime.resource(thread_id, execution_id) is None
             assert len(await runtime.summarize(thread_id)) == 1
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("selection", ["only", "default", "alias", "cwd"])
+async def test_inline_foreground_only_target_does_not_handoff(tmp_path, selection):
+    from a13n_harness.environment import EnvironmentAction, EnvironmentMount, EnvironmentPermissionSet
+    from a13n_harness.environment.advanced import create_environment_runtime
+
+    foreground = tmp_path / "foreground"
+    foreground.mkdir()
+    mounts = {
+        "foreground": EnvironmentMount(
+            source=source(foreground),
+            mount_path="/foreground",
+            permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.SHELL_EXEC})),
+        )
+    }
+    if selection != "only":
+        process = tmp_path / "process"
+        process.mkdir()
+        mounts["process"] = EnvironmentMount(source=source(process))
+    environment = create_environment_runtime(
+        mounts=mounts, default_mount="process" if selection in {"alias", "cwd"} else "foreground"
+    )
+    arguments = {"command": "sleep 0.05; printf finished"}
+    if selection == "alias":
+        arguments["alias"] = "foreground"
+    elif selection == "cwd":
+        arguments["cwd"] = "/foreground"
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable([("shell_exec", arguments)], results, mode="inline").run(
+            "foreground", bindings=bindings(runtime, environment=environment)
+        )
+        assert results[0]["stdout"]["text"] == "finished", results
+        records = await runtime.summarize(first.thread_id)
+        assert len(records) == 1
+        assert records[0].status == "succeeded" and not records[0].foreground_released
+    finally:
+        await runtime.close()
+
+
+async def test_inline_quick_shell_returns_final_result(tmp_path):
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable(
+            [("shell_exec", {"command": "printf finished"})], results, mode="inline", wait_seconds=5
+        ).run("quick", environment=source(tmp_path), bindings=bindings(runtime))
+        assert results[0]["stdout"]["text"] == "finished", results
+        assert "process_id" not in results[0]
+        records = await runtime.summarize(first.thread_id)
+        assert len(records) == 1 and not records[0].foreground_released
     finally:
         await runtime.close()
 
@@ -310,7 +368,8 @@ async def test_current_permissions_reject_input_before_any_bytes(tmp_path, monke
         await runtime.close()
 
 
-async def test_codeact_shell_calls_return_native_results_without_nested_executions(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["inline", "auto"])
+async def test_codeact_shell_calls_return_native_results_without_nested_executions(tmp_path, monkeypatch, mode):
     from a13n_harness.capabilities import CodeActCapability
     from a13n_harness.codeact.state import CodeActStateOwner
     from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
@@ -344,12 +403,17 @@ async def test_codeact_shell_calls_return_native_results_without_nested_executio
             ],
             results,
             capabilities=(CodeActCapability(),),
+            mode=mode,
         ).run("nested", environment=source(tmp_path), bindings=bindings(runtime, codeact_state=CodeActStateOwner()))
-        async with asyncio.timeout(10):
-            settled = await runtime.wait(first.thread_id, results[0]["execution_id"])
-        assert settled.record.status == "succeeded", settled
-        assert settled.result.return_value == "nested", settled.result
         records = await runtime.summarize(first.thread_id)
+        if mode == "inline":
+            assert results[0] == "nested"
+            assert not records[0].foreground_released
+        else:
+            async with asyncio.timeout(10):
+                settled = await runtime.wait(first.thread_id, results[0]["execution_id"])
+            assert settled.record.status == "succeeded", settled
+            assert settled.result.return_value == "nested", settled.result
         assert len(records) == 1 and records[0].tool_name == "run_code"
     finally:
         await runtime.close()

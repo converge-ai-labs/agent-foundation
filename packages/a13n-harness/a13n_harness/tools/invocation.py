@@ -401,7 +401,8 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         if callable(mode):
             mode = mode(tool_args)
         unsupported = not _OWNED_TOOL_EXECUTION.get() and (
-            mode not in {"owned", "control", "process"} or (mode == "owned" and self._scope is None)
+            mode not in {"owned", "owned_auto", "control", "process"}
+            or (mode in {"owned", "owned_auto"} and self._scope is None)
         )
         if unsupported:
             ctx.deps._tool_executions.unsupported_calls.add(call_id)
@@ -616,7 +617,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             or mode == "control"
         ):
             return await operation()
-        if self._scope is None or mode != "owned":
+        if self._scope is None or mode not in {"owned", "owned_auto"}:
             return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)
         assert ctx.tool_call_id is not None
         resources = AsyncExitStack()
@@ -647,7 +648,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         state.calls[ctx.tool_call_id] = record
         state.unsupported_calls.discard(ctx.tool_call_id)
         try:
-            result = await state.wait_foreground(runtime, ctx.deps.thread_id, record.execution_id)
+            result = await state.wait_foreground(
+                runtime, ctx.deps.thread_id, record.execution_id, automatic=mode == "owned_auto"
+            )
         except asyncio.CancelledError:
             result = await runtime.result(ctx.deps.thread_id, record.execution_id)
         if result is not None and result.record.result_available:

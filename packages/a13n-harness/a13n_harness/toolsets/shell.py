@@ -532,7 +532,9 @@ class ShellToolset:
         return HarnessTool(
             function,
             name=name,
-            metadata={TOOL_EXECUTION_METADATA_KEY: "owned" if tool_id == "environment.shell_exec" else "control"},
+            metadata={
+                TOOL_EXECUTION_METADATA_KEY: self._execution_mode if tool_id == "environment.shell_exec" else "control"
+            },
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=frozenset(effects),
@@ -551,6 +553,24 @@ class ShellToolset:
                 ),
             ),
         )
+
+    def _execution_mode(self, arguments: dict[str, Any]) -> Literal["owned", "owned_auto"]:
+        """Bound process-backed waits without changing foreground-only mounts."""
+        try:
+            request = self._command_request(
+                arguments["command"],
+                cwd=arguments.get("cwd"),
+                environment=arguments.get("environment"),
+                execution_timeout_seconds=arguments.get("execution_timeout_seconds"),
+                keep_stdin_open=False,
+            )
+            _, process_capable = self._environment._select_command_actions(
+                request, alias=arguments.get("alias"), actions=_PROCESS_OBSERVATION_ACTIONS
+            )
+        except EnvironmentError:
+            # Dispatch owns the model-facing selection/request error.
+            return "owned"
+        return "owned_auto" if process_capable else "owned"
 
     @staticmethod
     def _command_request(

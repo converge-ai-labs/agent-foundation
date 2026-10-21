@@ -71,7 +71,7 @@ class RunToolExecutions:
         await self._drained.wait()
 
     async def wait_foreground(
-        self, runtime: ToolExecutionRuntime, thread_id: str, execution_id: str
+        self, runtime: ToolExecutionRuntime, thread_id: str, execution_id: str, *, automatic: bool = False
     ) -> StoredToolExecution | None:
         """Release only the waiter on handoff; the runtime keeps the operation."""
         if self.handoff_requested.is_set():
@@ -80,7 +80,9 @@ class RunToolExecutions:
             runtime.wait(
                 thread_id,
                 execution_id,
-                timeout_seconds=self.config.foreground_wait_seconds if self.config.mode == "auto" else None,
+                timeout_seconds=(
+                    self.config.foreground_wait_seconds if automatic or self.config.mode == "auto" else None
+                ),
             )
         )
         handoff = asyncio.create_task(self.handoff_requested.wait())

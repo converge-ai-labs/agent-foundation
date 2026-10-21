@@ -180,7 +180,7 @@ capabilities = (
 | `shell_input`  | 写入 UTF-8 stdin，按需关闭 stdin，不读取输出                     |
 | `shell_signal` | 请求支持的 `interrupt`、`terminate` 或 `kill` 控制，不读取输出   |
 
-绑定 Host 持有的 `ToolExecutionRuntime` 后，顶层 `shell_exec` 遵循配置的执行模式。`inline` 等待最终结果；`auto` 在 `ToolExecutionConfig.foreground_wait_seconds` 到期后返回 `exec-*` 回执，默认等待五秒。即时 steering 可以提前返回该回执。原命令和输出捕获可在同一 Host、同一 Thread 的多个 Run 之间保留。在支持进程的挂载上，将存活执行的 `execution_id` 作为 `process_id` 传给 Shell 控制工具。执行结束后，通过 `tool_execution_result` 获取最终状态和有界输出。
+在支持进程的挂载上，顶层 `shell_exec` 在 `inline` 和 `auto` 两种模式下都最多等待 `ToolExecutionConfig.foreground_wait_seconds`，默认五秒。绑定 Host 持有的 `ToolExecutionRuntime` 后，届时仍在运行的命令会返回 `exec-*` 回执。仅支持前台执行的挂载保留通用执行策略：`inline` 等待完成，`auto` 允许定时交接。即时 steering 可以提前返回该回执。原命令和输出捕获可在同一 Host、同一 Thread 的多个 Run 之间保留。在支持进程的挂载上，将存活执行的 `execution_id` 作为 `process_id` 传给 Shell 控制工具。执行结束后，通过 `tool_execution_result` 获取最终状态和有界输出。
 
 未由 runtime 持有时，包括 CodeAct 内的 Shell 回调，支持进程的挂载会返回原生输出；命令在配置的等待时间后仍存活时，还会返回 Run 内的 `process-*` 引用。嵌套调用不创建独立执行回执，只有外层 CodeAct runner 可以移交。
 
