@@ -227,7 +227,7 @@ async def test_terminal_notifications_are_status_only_and_refresh_suppressed_thr
         await owner.close(timeout_seconds=0)
 
 
-def install_slow_tool(monkeypatch, slow):
+def install_slow_tool(monkeypatch, slow, *, execution_mode="owned"):
     original = AgentReconstructor.reconstruct
 
     def reconstruct(self, composition, **kwargs):
@@ -240,7 +240,7 @@ def install_slow_tool(monkeypatch, slow):
                 Capability(
                     toolsets=[
                         CodeActPolicyToolset(
-                            wrapped=FunctionToolset([Tool(slow, metadata={"a13n.tool-execution": "owned"})]),
+                            wrapped=FunctionToolset([Tool(slow, metadata={"a13n.tool-execution": execution_mode})]),
                             policy=CodeActToolPolicy(tools={"slow": True}),
                         )
                     ]
@@ -250,6 +250,65 @@ def install_slow_tool(monkeypatch, slow):
         )
 
     monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
+
+
+async def test_app_steering_queues_during_unsupported_tool_and_delivers_once(tmp_path, monkeypatch):
+    from pydantic_ai.messages import UserPromptPart
+
+    path = _write_configuration(tmp_path)
+    entered, finish = Event(), Event()
+    calls = 0
+    requests = []
+
+    async def slow() -> int:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await finish.wait()
+        return 42
+
+    install_slow_tool(monkeypatch, slow, execution_mode="unsupported")
+
+    async def model(messages, info):
+        requests.append(messages)
+        if len(requests) == 1:
+            yield {0: DeltaToolCall(name="slow", json_args="{}", tool_call_id="slow-call")}
+        else:
+            yield "Guidance received."
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Start")
+        with fail_after(10):
+            await entered.wait()
+            first = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="First guidance")
+            second = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="Second guidance")
+            assert first.accepted and second.accepted
+            assert first.enqueue_id and second.enqueue_id and first.enqueue_id != second.enqueue_id
+            assert not finish.is_set() and len(requests) == 1 and calls == 1
+            finish.set()
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome
+        assert calls == 1 and len(requests) == 2
+        prompts = [
+            part.content for message in requests[-1] for part in message.parts if isinstance(part, UserPromptPart)
+        ]
+        assert [prompt for prompt in prompts if prompt in ("First guidance", "Second guidance")] == [
+            "First guidance",
+            "Second guidance",
+        ]
+        results = [
+            part.content
+            for message in requests[-1]
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.tool_call_id == "slow-call"
+        ]
+        assert results == [42]
+        assert not (await app.steer_root_operation(receipt_id=receipt.receipt_id, message="Too late")).accepted
 
 
 @pytest.mark.parametrize("complete_while_active", [False, True])

@@ -106,6 +106,7 @@ from a13n_harness_ui.observation import (
 )
 from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
 from a13n_harness_ui.restart_models import RestartItem, RestartPrincipal
+from a13n_harness_ui.steering import steer_stream
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -762,7 +763,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             if self._restart is not None:
                 self._restart.require_input()
-            enqueue_id = await active.stream.steer(message, immediate=immediate)
+            enqueue_id = await steer_stream(active.stream, message, immediate=immediate)
         except Exception:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
         return SubagentSteerResult(

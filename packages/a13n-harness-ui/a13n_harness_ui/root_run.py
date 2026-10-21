@@ -34,6 +34,7 @@ from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
+from a13n_harness_ui.steering import steer_stream
 from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
 from a13n_harness_ui.storage.contracts import ThreadExecution
 from a13n_harness_ui.surfaces import (
@@ -547,7 +548,7 @@ class RootRunCoordinator:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
-            enqueue_id = await stream.steer(prepared, immediate=immediate)
+            enqueue_id = await steer_stream(stream, prepared, immediate=immediate)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:
