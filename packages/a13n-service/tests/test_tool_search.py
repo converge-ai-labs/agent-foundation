@@ -239,7 +239,7 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
         assert selected.connection_tools[0].defer_loading
         root = resolved(agent["id"], agent["default_revision_id"], selected, connection_types={connection_id: "mcp"})
         actor, workspace = admin(service), scope(service)
-        run = RunRow(memory_mounts=[], mcp_headers={connection_id: {"x-trace": "native-search"}})
+        run = RunRow(options={}, memory_mounts=[], mcp_headers={connection_id: {"x-trace": "native-search"}})
         async with short_session(service.runtime.storage) as session:
             plan = await resolve_host(
                 session, run, actor, workspace, root, authority=execution_authority(actor, workspace)
