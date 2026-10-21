@@ -53,7 +53,10 @@ function initialRange(params: URLSearchParams): RangeSelection {
   if (!from) return defaultRange;
   const start = new Date(from),
     end = new Date(params.get("to") ?? Date.now());
-  return Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())
+  const duration = end.getTime() - start.getTime();
+  return Number.isFinite(duration) &&
+    duration > 0 &&
+    duration <= 31 * DAY * 1000
     ? { start, end }
     : defaultRange;
 }
@@ -212,6 +215,8 @@ function TraceBrowser({
                 value={range}
                 presets={timePresets}
                 maxDays={31}
+                minSeconds={0}
+                precision="second"
                 earliest={earliest}
                 resolvePreset={(seconds) => lastSeconds(seconds, Date.now())}
                 onChange={(next) => {
