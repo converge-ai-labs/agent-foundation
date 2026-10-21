@@ -211,12 +211,16 @@ def _discovery_messages(
         proxy_id = f"{call_id}-proxy"
         messages.extend(
             [
-                ModelResponse(parts=[ToolCallPart(proxy_search, {"query": _OMITTED_QUERY}, tool_call_id=proxy_id)]),
+                ModelResponse(
+                    parts=[
+                        ToolCallPart(proxy_search, {"query": _OMITTED_QUERY, "detail": "full"}, tool_call_id=proxy_id)
+                    ]
+                ),
                 ModelRequest(
                     parts=[
                         ToolReturnPart(
                             proxy_search,
-                            {"tools": entries, "retained": True, "partial": True},
+                            {"detail": "full", "tools": entries, "retained": True, "partial": True},
                             tool_call_id=proxy_id,
                         )
                     ]

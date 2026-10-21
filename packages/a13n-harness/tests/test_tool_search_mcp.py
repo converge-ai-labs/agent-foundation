@@ -103,7 +103,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             if isinstance(text, str) and text in {"alpha", "beta"}
         )
         # Inspect the live projection, while the server genuinely discovers and executes MCP tools.
-        expected = {"search_proxy_tools", "call_proxy_tool"}
+        expected = {"discover_tools", "describe_tool", "call_tool"}
         if codeact:
             expected |= {"run_code", "run_program", "store", "load", "forget"}
         assert {tool.name for tool in info.function_tools} == expected
@@ -115,17 +115,17 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
         if attempt == 1:
             yield {
                 0: DeltaToolCall(
-                    name="search_proxy_tools",
-                    json_args='{"query":"identity","group":"context"}',
+                    name="discover_tools",
+                    json_args='{"query":"","group":"context","detail":"full"}',
                     tool_call_id="discover",
                 )
             }
         elif attempt == 2:
             yield {
                 0: DeltaToolCall(
-                    name="run_code" if codeact else "call_proxy_tool",
+                    name="run_code" if codeact else "call_tool",
                     json_args=(
-                        json.dumps({"code": "await call_proxy_tool(group='context', tool='identity', arguments={})"})
+                        json.dumps({"code": "await call_tool(group='context', tool='identity', arguments={})"})
                         if codeact
                         else '{"group":"context","tool":"identity","arguments":{}}'
                     ),

@@ -2549,8 +2549,13 @@
       "description": "Names and bounded discovery settings for one Agent's proxy surface.",
       "properties": {
         "call_name": {
-          "default": "call_proxy_tool",
+          "default": "call_tool",
           "title": "Call Name",
+          "type": "string"
+        },
+        "describe_name": {
+          "default": "describe_tool",
+          "title": "Describe Name",
           "type": "string"
         },
         "max_results": {
@@ -2570,7 +2575,7 @@
           "type": "string"
         },
         "search_name": {
-          "default": "search_proxy_tools",
+          "default": "discover_tools",
           "title": "Search Name",
           "type": "string"
         }

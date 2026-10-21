@@ -170,7 +170,7 @@ async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bo
         if requests == 1:
             yield {
                 0: DeltaToolCall(
-                    name="search_tools" if native else "search_proxy_tools",
+                    name="search_tools" if native else "discover_tools",
                     json_args=json.dumps(
                         {"queries": ["tool_execution_info"]} if native else {"query": "tool_execution_info"}
                     ),

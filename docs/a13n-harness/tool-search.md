@@ -3,7 +3,7 @@ title: Grouped ToolSearch
 description: Expose large tool collections through search and call tools so the model sees a compact list of tool groups.
 ---
 
-ToolSearch groups local tools for native or proxy discovery. In proxy mode, it exposes two model-facing control tools: `search_proxy_tools` and `call_proxy_tool`. The model sees a compact list of domains, discovers exact argument schemas when needed, and invokes the selected tool with an arguments object.
+ToolSearch groups local tools for native or proxy discovery. In proxy mode, it exposes three model-facing tools: `discover_tools`, `describe_tool`, and `call_tool`. The model browses compact candidates, loads a selected tool's complete definition when needed, and invokes it with an arguments object.
 
 Tools execute through the current `ToolManager`, their original Toolset, and the Harness execution boundary. This path handles validation, policy, credentials, hooks, results, and usage.
 
@@ -11,7 +11,7 @@ Tools execute through the current `ToolManager`, their original Toolset, and the
 
 Choose how the model discovers and calls grouped tools through `config` on `ToolSearchCapability` or `ToolSearchPlan`:
 
-- `ProxyToolSearchConfig()` (default): use `search_proxy_tools` and `call_proxy_tool`. Configure the control names and discovery limits on this branch.
+- `ProxyToolSearchConfig()` (default): use `discover_tools`, `describe_tool`, and `call_tool`. Configure the control names and discovery limits on this branch.
 - `NativeToolSearchConfig(strategy=None)`: use provider-native tool search. Omit `strategy` or set it to `None` for the provider default, or select `"bm25"` or `"regex"`. Provider adapters validate support for the selected strategy. Grouped tools have `defer_loading=True` and names such as `crm__customer_name`. The model calls each tool directly after discovery, using standard usage accounting and approval/resume. Source Toolset instructions retain their normal behavior.
 
 ```python
@@ -69,7 +69,13 @@ The model's discovery call is:
 {"query": "customer name", "group": "crm"}
 ```
 
-The result includes `tools`, `total`, and `next_offset`. Each match contains its `group`, local `tool` name, description, full `parameters_json_schema`, `return_schema`, source `instructions`, and `codeact_eligible` flag. The model then calls `call_proxy_tool` with:
+The result includes the actual `detail` (`summary` or `full`), `tools`, `total`, and `next_offset`. This keyword query returns summaries with `group`, local `tool` name, a short description, and `codeact_eligible`. The model obtains the selected definition with `describe_tool`:
+
+```json
+{"group": "crm", "tool": "customer_name"}
+```
+
+Description returns `{"detail": "full", "tool": ...}` with the complete description, `parameters_json_schema`, `return_schema`, source `instructions`, and `codeact_eligible`. After reading that contract, the model calls `call_tool` with:
 
 ```json
 {
@@ -85,19 +91,33 @@ Use groups for domains such as `crm`, `knowledge`, and `billing`, not one group 
 
 ## Instructions and dynamic parameters
 
-Only current group summaries are placed in the control tool descriptions. Source Toolset instructions are returned with discovered tools instead of eagerly filling every model request. Separate Capability-level instructions keep their native behavior.
+Only current group summaries are placed in the control tool descriptions. Source Toolset instructions are returned with complete definitions instead of eagerly filling every model request. Summary search does not read those instructions or copy schemas. Separate Capability-level instructions keep their native behavior.
 
-The prepared control tools include a current `group` enum. Search returns the current member schema after source preparation and Harness surface resolution, so unavailable or superseded tools do not remain callable through an old index. The `call_proxy_tool` schema stays small: it does not contain a union of every member's arguments.
+The prepared control tools include a current `group` enum. Full discovery and description read the current member schema after source preparation and Harness surface resolution, so unavailable or superseded tools do not remain callable through an old index. The `call_tool` schema stays small: it does not contain a union of every member's arguments.
 
 The generated instructions teach the model to:
 
-1. select a domain and discover the exact schema;
-2. use the returned local name and an arguments object matching that schema;
+1. select a domain and discover candidates; read `detail` and describe a selected summary unless its complete current definition is already known;
+2. use the returned local name and an arguments object matching the complete schema;
 3. reuse a known current schema rather than search before every call;
 4. paginate results and refresh discovery when a tool becomes unavailable;
 5. inspect uncertain side effects rather than blindly retry a mutation.
 
-An empty query browses a group or all groups. Keyword matching uses group names, tool names, and descriptions; it is deterministic local search, not semantic retrieval. `offset` and `next_offset` apply to the current step's query results, not a durable cursor. Disabling Toolset instructions also disables generated proxy instructions and source instructions in search results.
+An empty or whitespace-only query browses a group or all groups. Exact local or `group__tool` names take priority, ignoring case and surrounding whitespace but preserving separators. If a local name appears in multiple groups, select a group to disambiguate it.
+
+Otherwise all query words must match across group identifiers, local names, and full descriptions. Whitespace, punctuation, underscores, hyphens, and camelCase split words; repeated words add no weight. Tool-name words rank first, then whole-word matches, with substrings as weaker matches and canonical names breaking ties. Group descriptions do not make every member match. Use short keywords rather than a sentence; reduce keywords if there are no matches. A punctuation-only nonempty query is invalid. This is deterministic local search, not semantic retrieval or Chinese word segmentation.
+
+Choose discovery detail per call:
+
+| `detail`         | Behavior                                                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Return summaries, except for a unique exact name whose complete response fits 8 KiB and the configured byte cap.     |
+| `summary`        | Always return candidates; descriptions collapse whitespace and are limited to 256 characters including any ellipsis. |
+| `full`           | Return complete definitions; never silently downgrade to summaries.                                                  |
+
+A single fuzzy match or `limit=1` does not make auto expand. The response always identifies its actual representation, and a page never mixes summaries and full definitions. To obtain a known tool directly, call `describe_tool(group=..., tool=...)` without searching first. Discovery and description invoke no business operation.
+
+Follow `next_offset` using the same query, group, and detail; byte limits can shorten a page. Offsets apply to the current directory, not a snapshot or durable cursor. A changing directory can shift pages. Disabling Toolset instructions also disables generated guidance and source instructions in complete definitions.
 
 ## Configure names and discovery limits
 
@@ -108,6 +128,7 @@ proxy = ToolSearchCapability(
     groups={"crm": ToolSearchGroup(source=source, description="Customer records")},
     config=ProxyToolSearchConfig(
         search_name="find_operations",
+        describe_name="describe_operation",
         call_name="invoke_operation",
         max_results=10,
         max_search_bytes=32_768,
@@ -117,7 +138,9 @@ proxy = ToolSearchCapability(
 
 Generated descriptions and instructions use the configured names. Names must differ and must not collide with other tools. The defaults avoid colliding with native `ToolSearch`'s `search_tools`; native search can coexist for separate ungrouped tools.
 
-`max_results` accepts 1-100. Search's omitted or null `limit` defaults to `min(5, max_results)`. The UTF-8 JSON search budget accepts 1,024-32,768 bytes. A page contains only complete schemas and instructions: entries that do not fit move to the next page. If one entry cannot fit by itself, search fails explicitly. Expose that tool directly or simplify its schema instead of relying on a truncated contract.
+`max_results` accepts 1-100. An omitted or null `limit` defaults to `min(10, max_results)` for summaries and `min(5, max_results)` for full definitions. The UTF-8 JSON response budget accepts 1,024-32,768 bytes and bounds the entire discovery or description response. Entries that do not fit move to the next page; schemas and instructions are never truncated. If one entry cannot fit by itself, full discovery or description fails explicitly. That tool can still appear as a summary. Expose it directly or simplify its definition to read the complete contract.
+
+The old default names `search_proxy_tools` and `call_proxy_tool` are not registered as aliases. Update model instructions and saved programs to the new names; programs that require schemas directly from search should request `detail="full"`.
 
 When no grouped tools survive preparation, neither proxy control tool nor generated proxy instructions are exposed. Grouping reduces model context; sources still initialize and prepare their tools normally. It does not eliminate MCP tool-listing traffic or make a thousand Toolsets free to construct.
 
@@ -183,9 +206,9 @@ capabilities = (proxy, CodeActCapability())
 The runner directory contains the proxy control tools, not every grouped tool declaration. Restricted Python can discover and call within one `run_code` invocation:
 
 ```python
-found = await search_proxy_tools(query="customer name", group="crm")
+found = await discover_tools(query="customer name", group="crm", detail="full")
 match = found["tools"][0]
-name = await call_proxy_tool(
+name = await call_tool(
     group=match["group"],
     tool=match["tool"],
     arguments={"customer_id": 42},
@@ -197,7 +220,7 @@ A reusable `lookup.codeact.py` program uses the same bridge:
 
 ```python
 async def main(inputs):
-    return await call_proxy_tool(
+    return await call_tool(
         group="crm",
         tool="customer_name",
         arguments={"customer_id": inputs["customer_id"]},
@@ -318,7 +341,7 @@ For an existing third-party middleware plugin, a `ToolSearchPlan` selects its or
 ## Execution, usage, and limitations
 
 - **One execution path:** target validation, Capability hooks, managed authorization, credentials, timeouts, result bounds, and Toolset dispatch remain native. Search is discovery, not authorization.
-- **Native accounting:** a successful ordinary proxy invocation counts the `call_proxy_tool` call and the target, for two successful tool calls. CodeAct resolves the `call_proxy_tool` call without executing an extra proxy layer: a runner plus one target also counts two; one additional search makes three. Usage limits are checked before target dispatch.
+- **Native accounting:** a successful ordinary proxy invocation counts the `call_tool` call and the target, for two successful tool calls. CodeAct resolves the `call_tool` call without executing an extra proxy layer: a runner plus one target also counts two; each additional discovery or description adds one. Usage limits are checked before target dispatch.
 - **Retries:** ordinary target validation and `ModelRetry` retain the target's native retry state. ToolSearch does not replay effects or maintain a retry engine. CodeAct retains its bounded runner-failure semantics.
 - **Inline approval only:** native handlers can approve or deny within the current invocation. Unresolved approval or external deferral fails the proxy call rather than suspending a nested continuation. Expose tools requiring cross-turn Host interaction directly.
 - **Supported targets:** local function tools, including locally executed MCP tools and inline approval-gated tools. External/client tools, provider-native tools, control/output tools, CodeAct runners, and deferred-loading tools are not supported as grouped targets.

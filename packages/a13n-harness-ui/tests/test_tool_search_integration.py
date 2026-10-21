@@ -151,12 +151,12 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
                 assert {tool.name for tool in info.function_tools} == (
                     {"status", "search_tools", "knowledge__lookup", "knowledge__remember"}
                     if native_search
-                    else {"status", "search_proxy_tools", "call_proxy_tool"}
+                    else {"status", "discover_tools", "describe_tool", "call_tool"}
                 )
                 commands = [
-                    ("search_proxy_tools", {"query": "", "group": "knowledge"}),
-                    ("call_proxy_tool", {"group": "knowledge", "tool": "lookup", "arguments": {}}),
-                    ("call_proxy_tool", {"group": "knowledge", "tool": "remember", "arguments": {}}),
+                    ("discover_tools", {"query": "", "group": "knowledge"}),
+                    ("call_tool", {"group": "knowledge", "tool": "lookup", "arguments": {}}),
+                    ("call_tool", {"group": "knowledge", "tool": "remember", "arguments": {}}),
                     ("status", {}),
                 ]
                 if native_search:
@@ -200,7 +200,7 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
 
 
 @pytest.mark.parametrize(
-    "names,visible", [(frozenset({"call_proxy_tool"}), False), (frozenset({"group__allowed", "call_proxy_tool"}), True)]
+    "names,visible", [(frozenset({"call_tool"}), False), (frozenset({"group__allowed", "call_tool"}), True)]
 )
 async def test_exact_target_allowlist_never_grants_all_group_members(names: frozenset[str], visible: bool) -> None:
     from a13n_harness import AgentSpec, HarnessBuilder
@@ -212,11 +212,11 @@ async def test_exact_target_allowlist_never_grants_all_group_members(names: froz
         raise AssertionError("denied member must not execute")
 
     source = Capability(toolsets=[FunctionToolset([allowed, denied])])
-    allowlist = _ToolAllowlistCapability(names, optional_controls=frozenset({"call_proxy_tool", "search_proxy_tools"}))
+    allowlist = _ToolAllowlistCapability(names, optional_controls=frozenset({"call_tool", "discover_tools"}))
 
     async def model(messages, info):
         assert {tool.name for tool in info.function_tools} == (
-            {"search_proxy_tools", "call_proxy_tool"} if visible else set()
+            {"discover_tools", "describe_tool", "call_tool"} if visible else set()
         )
         yield "done"
 
