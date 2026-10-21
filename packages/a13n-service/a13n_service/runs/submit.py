@@ -188,7 +188,7 @@ async def prepare_thread(
     """Create a new Thread and validated first Entry in the caller's transaction, ready for ordinary acceptance."""
     await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
     if body.session_id is not None:
-        owner = await find_session(session, scope.workspace_id, body.session_id, lock=True)
+        owner = await find_session(session, scope.workspace_id, body.session_id)
         require_conversation(owner)
     else:
         owner = new_session(scope.organization_id, scope.workspace_id, actor.id, body.session)
