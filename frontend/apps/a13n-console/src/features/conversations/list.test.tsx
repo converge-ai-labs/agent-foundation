@@ -196,15 +196,11 @@ it.each([
     );
     await screen.findByText("First");
     const user = userEvent.setup();
-    if (action === "Continue thread")
-      await user.click(screen.getByRole("button", { name: "Session actions" }));
-    const link = await screen.findByRole(
-      action === "Continue thread" ? "menuitem" : "link",
-      { name: action },
-    );
+    await user.click(screen.getByRole("button", { name: "Session actions" }));
+    const link = await screen.findByRole("menuitem", { name: action });
     if (!permission)
       expect(
-        screen.queryByRole("link", { name: "Continue thread" }),
+        screen.queryByRole("menuitem", { name: "Continue thread" }),
       ).toBeNull();
     await userEvent.setup().click(link);
     expect(await screen.findByText(expected)).toBeTruthy();

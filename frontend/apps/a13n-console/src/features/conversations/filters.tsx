@@ -74,20 +74,11 @@ function known<T extends string>(values: string[], options: T[]): T[] {
   );
 }
 
-export function SessionFilterBar({
-  search,
-  setSearch,
-}: {
-  search: URLSearchParams;
-  setSearch: SetURLSearchParams;
-}) {
-  const { t } = useTranslation();
+/** The workspace's agents, shared by the Agent filter and the rows' avatars. */
+export function useSessionAgents() {
   const { workspace, can } = useWorkspace();
   const client = useClient();
-  const committedQuery = search.get("q") ?? "";
-  const [query, setQuery] = useState(committedQuery);
-  useEffect(() => setQuery(committedQuery), [committedQuery]);
-  const agents = useQuery({
+  return useQuery({
     queryKey: ["session-filter-agents", workspace.id],
     enabled: can("read"),
     staleTime: 60_000,
@@ -104,6 +95,20 @@ export function SessionFilterBar({
           .then(data),
       ),
   });
+}
+
+export function SessionFilterBar({
+  search,
+  setSearch,
+}: {
+  search: URLSearchParams;
+  setSearch: SetURLSearchParams;
+}) {
+  const { t } = useTranslation();
+  const committedQuery = search.get("q") ?? "";
+  const [query, setQuery] = useState(committedQuery);
+  useEffect(() => setQuery(committedQuery), [committedQuery]);
+  const agents = useSessionAgents();
   const update = (patch: Record<string, string[]>) =>
     setSearch((previous) => {
       const next = new URLSearchParams(previous);

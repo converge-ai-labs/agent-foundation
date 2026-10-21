@@ -1,11 +1,10 @@
-import { Button, MenuItem } from "a13n-ui";
+import { BrandIcon, Button, MenuItem } from "a13n-ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ArrowRightIcon,
   ArrowUpRightIcon,
   ChatsIcon,
   CopyIcon,
-  LinkSimpleIcon,
   PencilSimpleIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
@@ -29,8 +28,13 @@ import {
 } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { Page } from "../../shared/page";
+import { AgentAvatar } from "../agents/avatar";
 import { conversationQueries, type SessionFilters } from "./api";
-import { SessionFilterBar, readSessionFilters } from "./filters";
+import {
+  SessionFilterBar,
+  readSessionFilters,
+  useSessionAgents,
+} from "./filters";
 import { originLink, sessionPath, sessionTitle } from "./session-identity";
 import { SessionEditor } from "./session-editor";
 import styles from "./session-list.module.css";
@@ -94,6 +98,7 @@ function SessionResults({
     placeholderData: keepPreviousData,
     refetchInterval: REFRESH_MS,
   });
+  const agents = useSessionAgents();
   if (sessions.isPending) return <Loading variant="table" columns={4} />;
   if (!sessions.data)
     return (
@@ -103,6 +108,9 @@ function SessionResults({
       />
     );
   const items = sessions.data.items;
+  const agentImages = new Map(
+    agents.data?.map((agent) => [agent.id, agent.image_url]),
+  );
   const path = (id: string) => sessionPath(basePath, id, filters.q);
   const filtered = Object.values(filters).some((value) =>
     Array.isArray(value) ? value.length > 0 : !!value,
@@ -111,111 +119,117 @@ function SessionResults({
     <>
       <ErrorNotice error={sessions.error} />
       {items.length ? (
-        <ResourceTable
-          items={items}
-          caption={t("Sessions")}
-          className={styles.table}
-          onRowActivate={(session) =>
-            navigate(`${path(session.id)}?view=debug`)
-          }
-          columns={[
-            {
-              label: t("Session"),
-              tone: "primary",
-              dataColumn: "identity",
-              render: (session) => (
-                <SessionIdentity
-                  session={session}
-                  href={`${path(session.id)}?view=debug`}
-                  onFilter={onFilter}
-                />
-              ),
-            },
-            {
-              label: t("Source"),
-              dataColumn: "source",
-              render: (session) => (
-                <SessionSource session={session} onFilter={onFilter} />
-              ),
-            },
-            {
-              label: t("Latest run"),
-              dataColumn: "state",
-              render: (session) => (
-                <div className={styles.state}>
-                  {session.preview ? (
-                    <>
+        <div className={styles.collection}>
+          <ResourceTable
+            items={items}
+            caption={t("Sessions")}
+            className={styles.table}
+            onRowActivate={(session) =>
+              navigate(`${path(session.id)}?view=debug`)
+            }
+            columns={[
+              {
+                label: t("Session"),
+                tone: "primary",
+                dataColumn: "identity",
+                render: (session) => (
+                  <SessionIdentity
+                    session={session}
+                    agentImage={
+                      session.preview &&
+                      agentImages.get(session.preview.agent_id)
+                    }
+                    href={`${path(session.id)}?view=debug`}
+                    onFilter={onFilter}
+                  />
+                ),
+              },
+              {
+                label: t("Source"),
+                dataColumn: "source",
+                render: (session) => (
+                  <SessionSource session={session} onFilter={onFilter} />
+                ),
+              },
+              {
+                label: t("Status"),
+                dataColumn: "state",
+                render: (session) => (
+                  <div
+                    className={styles.state}
+                    title={
+                      session.preview
+                        ? t(`trigger.${session.preview.trigger}`, {
+                            defaultValue: session.preview.trigger,
+                          })
+                        : undefined
+                    }
+                  >
+                    {session.preview ? (
                       <StatePill state={session.preview.status} />
-                      <span>
-                        {t(`trigger.${session.preview.trigger}`, {
-                          defaultValue: session.preview.trigger,
-                        })}
+                    ) : (
+                      <span className={styles.unspecified}>
+                        {t("Not started")}
                       </span>
-                    </>
-                  ) : (
-                    <span>{t("Not started")}</span>
-                  )}
-                </div>
-              ),
-            },
-            {
-              label: t("Activity"),
-              dataColumn: "activity",
-              align: "right",
-              render: (session) => (
-                <div className={styles.activity}>
-                  <Timestamp value={session.updated_at} relative />
-                  <span>
-                    {session.run_count == null
-                      ? "—"
-                      : t("{{count}} runs", { count: session.run_count })}
+                    )}
+                  </div>
+                ),
+              },
+              {
+                label: t("Runs"),
+                dataColumn: "runs",
+                align: "right",
+                render: (session) => (
+                  <span className={styles.runCount}>
+                    {session.run_count ?? "—"}
                   </span>
-                </div>
-              ),
-            },
-            {
-              label: t("Inspect execution"),
-              header: <span className="sr-only">{t("Inspect execution")}</span>,
-              dataColumn: "open",
-              render: (session) => (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t("Inspect execution")}
-                  title={t("Inspect execution")}
+                ),
+              },
+              {
+                label: t("Updated"),
+                dataColumn: "activity",
+                render: (session) => (
+                  <span className={styles.activity}>
+                    <Timestamp value={session.updated_at} relative />
+                  </span>
+                ),
+              },
+            ]}
+            rowMenuLabel={t("Session actions")}
+            rowMenu={(session) => (
+              <>
+                <MenuItem
                   render={<Link to={`${path(session.id)}?view=debug`} />}
                 >
-                  <ArrowRightIcon size={16} />
-                </Button>
-              ),
-            },
-          ]}
-          rowMenuLabel={t("Session actions")}
-          rowMenu={(session) => (
-            <>
-              {can("run") && (
+                  <ArrowRightIcon aria-hidden="true" />
+                  {t("Inspect execution")}
+                </MenuItem>
+                {can("run") && (
+                  <MenuItem
+                    render={<Link to={`${path(session.id)}?view=chat`} />}
+                  >
+                    <ChatsIcon aria-hidden="true" />
+                    {t("Continue thread")}
+                  </MenuItem>
+                )}
+                {can("run") && (
+                  <MenuItem onClick={() => setEditing(session)}>
+                    <PencilSimpleIcon aria-hidden="true" />
+                    {t("Edit session details")}
+                  </MenuItem>
+                )}
                 <MenuItem
-                  render={<Link to={`${path(session.id)}?view=chat`} />}
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(session.id)
+                  }
                 >
-                  <ChatsIcon aria-hidden="true" />
-                  {t("Continue thread")}
+                  <CopyIcon aria-hidden="true" />
+                  {t("Copy session ID")}
                 </MenuItem>
-              )}
-              {can("run") && (
-                <MenuItem onClick={() => setEditing(session)}>
-                  <PencilSimpleIcon aria-hidden="true" />
-                  {t("Edit session details")}
-                </MenuItem>
-              )}
-              <MenuItem
-                onClick={() => void navigator.clipboard?.writeText(session.id)}
-              >
-                <CopyIcon aria-hidden="true" />
-                {t("Copy session ID")}
-              </MenuItem>
-            </>
-          )}
-        />
+              </>
+            )}
+          />
+        </div>
       ) : (
         <Empty
           icon={<ChatsIcon aria-hidden="true" />}
@@ -248,68 +262,89 @@ function SessionResults({
   );
 }
 
+const VISIBLE_LABELS = 2;
+
+/** The latest Run's Agent is the row's face; labels narrow the list in place. */
 function SessionIdentity({
   session,
+  agentImage,
   href,
   onFilter,
 }: {
   session: Schema["SessionView"];
+  agentImage?: string | null;
   href: string;
   onFilter: (key: "application" | "label", value: string) => void;
 }) {
   const { t } = useTranslation();
-  const title = sessionTitle(session) ?? t("Untitled session");
+  const title = sessionTitle(session);
+  const agent = session.preview;
   const labels = Object.entries(session.labels).filter(
     ([key]) => !key.startsWith("a13n."),
   );
-  const output = session.preview?.output_text?.replace(/\s+/g, " ").trim();
+  const hidden = labels.slice(VISIBLE_LABELS);
   return (
     <div className={styles.identity}>
-      <span className={styles.avatar} aria-hidden="true">
-        {session.origin ? (
-          <LinkSimpleIcon size={18} />
-        ) : (
-          <ChatsIcon size={18} />
-        )}
-      </span>
+      {agent ? (
+        <AgentAvatar
+          name={agent.agent_name}
+          id={agent.agent_id}
+          url={agentImage}
+          className={styles.avatar}
+        />
+      ) : (
+        <span className={styles.avatar} aria-hidden="true">
+          <ChatsIcon size={16} />
+        </span>
+      )}
       <div className={styles.identityText}>
-        <Link className={styles.title} to={href} title={title}>
-          {title}
+        <Link
+          className={styles.title}
+          data-untitled={!title || undefined}
+          to={href}
+          title={title ?? undefined}
+        >
+          {title ?? t("Untitled session")}
         </Link>
-        {output && (
-          <p className={styles.preview} title={output}>
-            {output}
-          </p>
-        )}
         <div className={styles.metadata}>
-          {!session.title && (
-            <span className={styles.sessionId}>{session.id}</span>
+          {!title && <span className={styles.sessionId}>{session.id}</span>}
+          {agent && (
+            <span className={styles.agent} title={agent.agent_name}>
+              {agent.agent_name}
+            </span>
           )}
-          {session.preview?.agent_name && (
-            <span className={styles.agent}>{session.preview.agent_name}</span>
-          )}
-          {labels.slice(0, 3).map(([key, value]) => (
-            <button
-              key={key}
-              type="button"
-              className={styles.tag}
-              title={`${key}: ${value}`}
-              aria-label={t("Filter by {{label}}", {
-                label: `${key}: ${value}`,
-              })}
-              onClick={() => onFilter("label", `${key}:${value}`)}
-            >
-              {value || key}
-            </button>
-          ))}
-          {labels.length > 3 && (
-            <span
-              title={labels
-                .slice(3)
-                .map(([key, value]) => `${key}: ${value}`)
-                .join(" · ")}
-            >
-              +{labels.length - 3}
+          {labels.length > 0 && (
+            <span className={styles.tags}>
+              {labels.slice(0, VISIBLE_LABELS).map(([key, value]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={styles.tag}
+                  title={`${key}: ${value}`}
+                  aria-label={t("Filter by {{label}}", {
+                    label: `${key}: ${value}`,
+                  })}
+                  onClick={() => onFilter("label", `${key}:${value}`)}
+                >
+                  {value ? (
+                    <>
+                      <span className={styles.tagKey}>{key}</span> {value}
+                    </>
+                  ) : (
+                    key
+                  )}
+                </button>
+              ))}
+              {hidden.length > 0 && (
+                <span
+                  className={styles.tag}
+                  title={hidden
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join("\n")}
+                >
+                  +{hidden.length}
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -318,6 +353,7 @@ function SessionIdentity({
   );
 }
 
+/** The named conversation leads; its application is the caption that filters. */
 function SessionSource({
   session,
   onFilter,
@@ -328,39 +364,46 @@ function SessionSource({
   const { t } = useTranslation();
   const origin = session.origin;
   if (!origin)
-    return <span className={styles.unspecified}>{t("Not specified")}</span>;
+    return (
+      <span className={styles.unspecified} title={t("Not specified")}>
+        <span aria-hidden="true">—</span>
+        <span className="sr-only">{t("Not specified")}</span>
+      </span>
+    );
   const link = originLink(origin);
+  const name = origin.name || (link && new URL(link).hostname);
   return (
     <div className={styles.source}>
-      <button
-        type="button"
-        className={styles.application}
-        onClick={() => onFilter("application", origin.application)}
-        title={t("Filter by {{label}}", { label: origin.application })}
-      >
-        {origin.application}
-      </button>
-      {link ? (
-        <a
-          className={styles.sourceLink}
-          href={link}
-          target="_blank"
-          rel="noreferrer"
-          title={origin.name || link}
+      <span className={styles.sourceMark} aria-hidden="true">
+        <BrandIcon alias={origin.application} endpoint={link} size={14} />
+      </span>
+      <div className={styles.sourceText}>
+        {link ? (
+          <a
+            className={styles.sourceName}
+            href={link}
+            target="_blank"
+            rel="noreferrer"
+            title={origin.name || link}
+          >
+            <span>{name}</span>
+            <ArrowUpRightIcon size={11} aria-hidden="true" />
+          </a>
+        ) : name ? (
+          <span className={styles.sourceName} title={name}>
+            <span>{name}</span>
+          </span>
+        ) : null}
+        <button
+          type="button"
+          className={styles.application}
+          data-lead={!name || undefined}
+          onClick={() => onFilter("application", origin.application)}
+          title={t("Filter by {{label}}", { label: origin.application })}
         >
-          <span>{origin.name || new URL(link).hostname}</span>
-          <ArrowUpRightIcon size={12} aria-hidden="true" />
-        </a>
-      ) : origin.name ? (
-        <span className={styles.sourceName} title={origin.name}>
-          {origin.name}
-        </span>
-      ) : null}
-      {origin.external_id && (
-        <span className={styles.externalId} title={origin.external_id}>
-          {origin.external_id}
-        </span>
-      )}
+          {origin.application}
+        </button>
+      </div>
     </div>
   );
 }

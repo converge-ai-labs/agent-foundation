@@ -100,9 +100,9 @@ it("renders a full Session page from collection previews without per-row Thread 
   ).toEqual([
     "Session",
     "Source",
-    "Latest run",
-    "Activity",
-    "Inspect execution",
+    "Status",
+    "Runs",
+    "Updated",
     "Session actions",
   ]);
   expect(screen.getByText("Not started")).toBeTruthy();
