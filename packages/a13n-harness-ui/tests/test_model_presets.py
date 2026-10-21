@@ -39,6 +39,8 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
         from pydantic_ai.models.xai import XaiModel
 
         assert isinstance(model, XaiModel)
+    elif provider.route in {"cloudflare", "cloudflare-responses"}:
+        assert str(model.provider.base_url).rstrip("/") == f"{endpoint}/v1"
     elif provider.transport == "openai-client":
         assert str(model.client.base_url).rstrip("/") == endpoint
     else:
@@ -566,7 +568,11 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     for value in (
         "api",
         provider.route,
-        *(("",) if provider.transport != "xai" else ()),
+        *(
+            (provider.base_url or "https://api.cloudflare.com/client/v4/accounts/" + "a" * 32 + "/ai",)
+            if provider.transport != "xai"
+            else ()
+        ),
         "new",
         "env:TEST_KEY",
     ):

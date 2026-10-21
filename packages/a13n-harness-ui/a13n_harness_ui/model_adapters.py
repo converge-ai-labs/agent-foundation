@@ -97,6 +97,8 @@ class PydanticAiModelAdapter:
             )
         try:
             configuration = _ModelConfiguration.model_validate(dict(model_cfg), strict=True)
+            if provider.startswith("cloudflare") and configuration.base_url is None:
+                raise ValueError("Cloudflare requires an account-scoped Base URL ending in /ai")
             if configuration.base_url is not None and (
                 provider == "xai"
                 or ROUTE_ALIASES.get(provider, provider)

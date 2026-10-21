@@ -54,6 +54,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
         "typesafe.system_one": TypeSafeModel,
     }
     configurations = {
+        "cloudflare_ai_gateway": {"account_id": "a" * 32},
         "aws_bedrock": {"region": "us-east-1"},
         "azure_openai": {"base_url": "https://example.openai.azure.com/openai/v1"},
         "google_vertex": {"project_id": "project", "location": "us-central1"},
@@ -92,7 +93,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 21
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 22
 
 
 class Configuration(BaseModel):
