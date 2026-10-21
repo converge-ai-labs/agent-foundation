@@ -975,6 +975,7 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         "enqueue_id": enqueue_id,
         "source": "async_subagent",
         "references": ["subagent-1"],
+        "handoff_requested": False,
     }
 
 

@@ -1041,19 +1041,28 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._attempt_events is not None:
             self._attempt_events.cancel()
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None, immediate: bool = False) -> str:
+    async def steer(
+        self,
+        input: RunInputValue,
+        *,
+        input_id: str | None = None,
+        immediate: bool = False,
+        best_effort: bool = False,
+    ) -> str:
         """Deliver one user steering value through native Pydantic enqueue.
 
         `input_id` is the host's identity for the value; it is recorded on the delivered request, where
         `steering_input_ids` reads it back from exported state. Immediate steering waits up to five
         seconds for native readiness and unsupported calls, without accepting input while waiting.
+        With `best_effort=True`, accept ordinary queued input when immediate handoff is unavailable.
+        This option only affects immediate steering; it does not suppress input or lifecycle errors.
         """
         if not self._entered or self._closed or self._context is None:
             raise RunError("The run is not active.", code="run_not_active")
         context = self._context
         if not immediate:
             return await context._steering.steer(input, input_id=input_id)
-        if context.tool_execution is None:
+        if context.tool_execution is None and not best_effort:
             raise RunError(
                 "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",
                 code="tool_execution_unbound",
@@ -1066,17 +1075,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         def check_handoff() -> None:
             if self._steering_stopped.is_set():
                 raise RunError("The run is not active.", code="run_not_active")
-            if context._tool_executions.unsupported_calls:
+            if context._tool_executions.unsupported_calls and not best_effort:
                 raise RunError(
                     "An active tool does not support immediate handoff; ordinary steering remains available.",
                     code="tool_handoff_unsupported",
                 )
 
-        def request_handoff() -> None:
-            # Acceptance is committed. Slow event delivery must not turn it into a timeout rejection.
+        def request_handoff() -> bool:
+            # Acceptance and this decision share the bridge lock, without yielding.
             waiting.reschedule(None)
-            if self._preempt_requested or self._cancel_event.is_set():
-                return
+            if context.tool_execution is None or context._tool_executions.unsupported_calls:
+                return False
+            if self._preempt_requested:
+                return True
+            if self._cancel_event.is_set():
+                return False
             if context._steering.model_active:
                 self._preempt_requested = True
                 context._steering.pause()
@@ -1086,6 +1099,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 # Review, preparation and native tool-result integration stay in
                 # the same attempt. Later admissions in this batch see this too.
                 context._tool_executions.handoff_requested.set()
+            return True
 
         try:
             async with waiting:

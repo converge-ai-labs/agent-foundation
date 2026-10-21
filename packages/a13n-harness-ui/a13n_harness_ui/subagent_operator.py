@@ -762,7 +762,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             if self._restart is not None:
                 self._restart.require_input()
-            enqueue_id = await active.stream.steer(message, immediate=immediate)
+            enqueue_id = await active.stream.steer(message, immediate=immediate, best_effort=True)
         except Exception:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
         return SubagentSteerResult(

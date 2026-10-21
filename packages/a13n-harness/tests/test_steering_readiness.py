@@ -146,7 +146,8 @@ async def test_wait_abandonment_never_accepts_input(ending, monkeypatch):
         await runtime.close()
 
 
-async def test_wait_for_initial_native_binding(monkeypatch):
+@pytest.mark.parametrize("best_effort", [False, True])
+async def test_wait_for_initial_native_binding(monkeypatch, best_effort):
     binding, release = asyncio.Event(), asyncio.Event()
 
     async def model(messages, info):
@@ -177,7 +178,9 @@ async def test_wait_for_initial_native_binding(monkeypatch):
             waits = observe_waits(stream, monkeypatch)
             consumer = asyncio.create_task(consume(stream))
             await binding.wait()
-            steering = asyncio.create_task(stream.steer("early", input_id="early", immediate=True))
+            steering = asyncio.create_task(
+                stream.steer("early", input_id="early", immediate=True, best_effort=best_effort)
+            )
             await waits.get()
             release.set()
             await steering
@@ -377,4 +380,169 @@ async def test_wait_snapshots_mutable_multimodal_input(monkeypatch):
             assert steering_input_ids(stream.result.state.message_history) == ("image",)
     finally:
         finish.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize("phase", ["validation", "execution"])
+async def test_best_effort_accepts_ordered_input_before_barrier_release(phase, monkeypatch):
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls, observed = [], []
+
+    async def validate(ctx):
+        if phase == "validation":
+            entered.set()
+            await release.wait()
+
+    async def lookup():
+        calls.append("lookup")
+        if phase == "execution":
+            entered.set()
+            await release.wait()
+        return 42
+
+    async def model(messages, info):
+        if len(messages) == 1:
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="call")}
+        else:
+            yield "done"
+
+    runtime = ToolExecutionRuntime()
+    try:
+        async with (
+            asyncio.timeout(5),
+            build(model, [Tool(lookup, args_validator=validate)]).stream(
+                "start", bindings=RunBindings.embedded(tool_execution=runtime, producer_observer=observed.append)
+            ) as stream,
+        ):
+            waits = observe_waits(stream, monkeypatch)
+            consumer = asyncio.create_task(consume(stream))
+            await entered.wait()
+            ids = await asyncio.gather(
+                *(stream.steer(text, input_id=text, immediate=True, best_effort=True) for text in ("first", "second"))
+            )
+            assert len(set(ids)) == 2
+            assert waits.empty()
+            assert len(stream.context._steering._pending_requests) == 2
+            assert not stream.context._tool_executions.handoff_requested.is_set()
+            events = [
+                event.event.payload
+                for event in observed
+                if isinstance(event.event, HarnessExtensionEvent)
+                and event.event.payload.get("type") == "steering_input_enqueued"
+            ]
+            assert [event["enqueue_id"] for event in events] == ids
+            assert all(event["handoff_requested"] is False for event in events)
+            release.set()
+            await consumer
+            assert calls == ["lookup"]
+            assert steering_input_ids(stream.result.state.message_history) == ("first", "second")
+    finally:
+        release.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize("bound,immediate", [(True, True), (False, True), (True, False)])
+async def test_best_effort_model_handoff_or_ordinary_queue(bound, immediate):
+    entered, release = asyncio.Event(), asyncio.Event()
+    observed = []
+
+    async def model(messages, info):
+        if any(isinstance(part, UserPromptPart) and part.content == "change" for msg in messages for part in msg.parts):
+            yield "changed"
+        else:
+            entered.set()
+            yield "working"
+            await release.wait()
+
+    runtime = ToolExecutionRuntime()
+    try:
+        async with (
+            asyncio.timeout(5),
+            build(model, []).stream(
+                "start",
+                bindings=RunBindings.embedded(
+                    tool_execution=runtime if bound else None,
+                    producer_observer=observed.append,
+                ),
+            ) as stream,
+        ):
+            consumer = asyncio.create_task(consume(stream))
+            await entered.wait()
+            await stream.steer("change", input_id="change", immediate=immediate, best_effort=True)
+            events = [
+                event.event.payload
+                for event in observed
+                if isinstance(event.event, HarnessExtensionEvent)
+                and event.event.payload.get("type") == "steering_input_enqueued"
+            ]
+            assert len(events) == 1
+            assert events[0]["handoff_requested"] is (bound and immediate)
+            if not (bound and immediate):
+                assert not consumer.done()
+                release.set()
+            await consumer
+            assert stream.result.output == "changed"
+            assert steering_input_ids(stream.result.state.message_history) == ("change",)
+    finally:
+        release.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize("ending", ["timeout", "caller_cancel", "stop", "invalid"])
+async def test_best_effort_does_not_hide_readiness_or_input_failures(ending, monkeypatch):
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def model(messages, info):
+        yield "done"
+
+    runtime = ToolExecutionRuntime()
+    try:
+        async with (
+            asyncio.timeout(5),
+            build(model, []).stream("start", bindings=RunBindings.embedded(tool_execution=runtime)) as stream,
+        ):
+            original = stream.context._steering.bind
+
+            async def bind(ctx):
+                entered.set()
+                await release.wait()
+                return await original(ctx)
+
+            monkeypatch.setattr(stream.context._steering, "bind", bind)
+            monkeypatch.setattr("a13n_harness._run_stream._IMMEDIATE_STEERING_WAIT_SECONDS", 0.05)
+            waits = observe_waits(stream, monkeypatch)
+            consumer = asyncio.create_task(consume(stream))
+            await entered.wait()
+            steering = asyncio.create_task(
+                stream.steer(
+                    "change",
+                    input_id="" if ending == "invalid" else "change",
+                    immediate=True,
+                    best_effort=True,
+                )
+            )
+            if ending != "invalid":
+                await waits.get()
+            if ending == "caller_cancel":
+                steering.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await steering
+            else:
+                if ending == "stop":
+                    stream.cancel()
+                with pytest.raises(RunError) as caught:
+                    await steering
+                assert (
+                    caught.value.code
+                    == {
+                        "invalid": "input_invalid",
+                        "stop": "run_not_active",
+                        "timeout": "steering_timeout",
+                    }[ending]
+                )
+            assert not stream.context._steering._pending_requests
+            release.set()
+            await consumer
+    finally:
+        release.set()
         await runtime.close()

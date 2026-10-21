@@ -154,7 +154,7 @@ class SteeringBridge:
         *,
         input_id: str | None = None,
         before_accept: Callable[[], None] | None = None,
-        after_accept: Callable[[], None] | None = None,
+        after_accept: Callable[[], bool] | None = None,
     ) -> str:
         """Enqueue one user steering value for the active native run.
 
@@ -184,9 +184,8 @@ class SteeringBridge:
             if enqueue_id is None:
                 raise RunError("Steering input must not be empty.", code="input_empty")
             self._pending_requests[enqueue_id] = deepcopy(request)
-            if after_accept is not None:
-                after_accept()
-        await self._emit_enqueued(enqueue_id, source="external", references=())
+            handoff_requested = after_accept() if after_accept is not None else False
+        await self._emit_enqueued(enqueue_id, source="external", references=(), handoff_requested=handoff_requested)
         return enqueue_id
 
     async def notify(
@@ -333,6 +332,7 @@ class SteeringBridge:
         *,
         source: SteeringInputSource,
         references: tuple[str, ...],
+        handoff_requested: bool = False,
     ) -> None:
         try:
             await emit_harness_event(
@@ -342,6 +342,7 @@ class SteeringBridge:
                     enqueue_id=enqueue_id,
                     source=source,
                     references=references,
+                    handoff_requested=handoff_requested,
                 ),
             )
         except RunError:

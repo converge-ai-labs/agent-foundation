@@ -1,4 +1,4 @@
-"""Real App steering waits for Harness readiness without client retries."""
+"""Real App steering uses best effort without a user configuration switch."""
 
 import asyncio
 
@@ -87,12 +87,18 @@ async def test_one_steer_request_waits_and_delivers_once(tmp_path, monkeypatch, 
         if phase == "tool":
             await entered.wait()
         steering = asyncio.create_task(app.steer_root_operation(receipt_id=receipt.receipt_id, message="change course"))
-        await waiting.wait()
-        assert not steering.done()
-        assert not streams[0].context._steering._pending_requests
-        release.set()
+        if phase == "startup":
+            await waiting.wait()
+            assert not steering.done()
+            assert not streams[0].context._steering._pending_requests
+            release.set()
         result = await steering
         assert result.accepted and result.enqueue_id
+        if phase == "tool":
+            assert not waiting.is_set()
+            assert len(streams[0].context._steering._pending_requests) == 1
+            assert not streams[0].context._tool_executions.handoff_requested.is_set()
+            release.set()
         outcome = await app.wait_root_operation(receipt.receipt_id)
         assert outcome.status is RootOperationStatus.completed
         assert calls == (["slow"] if phase == "tool" else [])
