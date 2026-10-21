@@ -228,7 +228,6 @@ class Status:
             f"cache {self.cache_rate_text}",
             cost,
             f"{'think' if compact else 'Thinking'} {self.thinking}",
-            *((f"Fast {self.fast_label}",) if speed_label is None else ()),
             *((f"Mode {self.reasoning_mode_label}",) if self.reasoning_mode != "pro" else ()),
             self.model.split(":")[-1],
             _elapsed_text(elapsed),
