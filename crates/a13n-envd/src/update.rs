@@ -350,10 +350,12 @@ fn verify_checksum(archive: &Path, name: &str, bytes: &[u8]) -> Result<()> {
     let mut expected = None;
     for line in checksums.lines() {
         let fields: Vec<_> = line.split_whitespace().collect();
-        if fields
-            .last()
-            .is_some_and(|value| value.trim_start_matches('*') == name)
-        {
+        if fields.last().is_some_and(|value| {
+            // sha256sum may mark binary input with `*`; release checksums name
+            // files relative to `find .`, with one leading `./`.
+            let value = value.strip_prefix('*').unwrap_or(value);
+            value.strip_prefix("./").unwrap_or(value) == name
+        }) {
             if fields.len() != 2
                 || expected.is_some()
                 || fields[0].len() != 64
@@ -637,11 +639,31 @@ mod tests {
         let archive = tempfile::NamedTempFile::new().unwrap();
         fs::write(archive.path(), b"content").unwrap();
         let line = format!("{:x}  archive.tar.gz\n", Sha256::digest(b"content"));
-        verify_checksum(archive.path(), "archive.tar.gz", line.as_bytes()).unwrap();
+        for filename in [
+            "archive.tar.gz",
+            "./archive.tar.gz",
+            "*archive.tar.gz",
+            "*./archive.tar.gz",
+        ] {
+            let checksums = line.replace("archive.tar.gz", filename);
+            verify_checksum(archive.path(), "archive.tar.gz", checksums.as_bytes()).unwrap();
+        }
         for bad in [
             String::new(),
             line.repeat(2),
+            format!(
+                "{line}{}",
+                line.replace("archive.tar.gz", "./archive.tar.gz")
+            ),
+            format!(
+                "{line}{}",
+                line.replace("archive.tar.gz", "*./archive.tar.gz")
+            ),
             line.replace("archive.tar.gz", "other.tar.gz"),
+            line.replace("archive.tar.gz", "nested/archive.tar.gz"),
+            line.replace("archive.tar.gz", "../archive.tar.gz"),
+            line.replace("archive.tar.gz", "././archive.tar.gz"),
+            line.replace("archive.tar.gz", "**archive.tar.gz"),
             format!("{}  archive.tar.gz\n", "0".repeat(64)),
             "invalid archive.tar.gz".into(),
         ] {
@@ -749,7 +771,8 @@ mod tests {
             };
             let name = format!("a13n-envd-9.8.7-{}.tar.gz", target().unwrap());
             let checksum = format!(
-                "{:x}  {name}\n",
+                // release-a13n-envd.yml uses `find . ... | xargs -0 sha256sum`.
+                "{:x}  ./{name}\n",
                 Sha256::digest(if failure == "checksum" {
                     b"wrong".as_slice()
                 } else {
