@@ -109,9 +109,15 @@ from a13n_service.runs.tables import (
     RunItemPageRow,
     RunRow,
     SessionRow,
+    ThreadCodeActRow,
     ThreadRow,
+    ToolExecutionRow,
     UsageRecordRow,
 )
+from a13n_service.runs.tool_executions.cleanup import prune as prune_tool_results
+from a13n_service.runs.tool_executions.cleanup import reconcile as reconcile_tool_executions
+from a13n_service.runs.tool_executions.delivery import tool_results
+from a13n_service.runs.tool_executions.routes import router as tool_executions_router
 from a13n_service.runs.trace_routes import router as traces_router
 from a13n_service.settings import Section
 from a13n_service.tenancy.access import Access, Authenticator, GrantSource
@@ -224,6 +230,24 @@ def _expire_leases(runtime: Runtime) -> Sweep:
     )
 
 
+def _reconcile_tool_executions(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="reconcile_tool_executions",
+        every=runtime.settings.worker.authority_seconds,
+        run=partial(reconcile_tool_executions, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=max(30, runtime.settings.worker.lease_seconds),
+    )
+
+
+def _prune_tool_results(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="prune_tool_results",
+        every=runtime.settings.control.scan_seconds,
+        run=partial(prune_tool_results, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=60,
+    )
+
+
 def _expire_credentials(runtime: Runtime) -> Sweep:
     return Sweep(
         name="expire_credentials",
@@ -255,6 +279,7 @@ def _deliver_outbox(runtime: Runtime) -> Sweep:
             {
                 "webhook": webhooks,
                 "child_result": child_results(runtime),
+                "tool_result": tool_results(runtime),
                 "email": mail,
                 MEMORY_PURGE: MemoryPurger(runtime),
                 CLEANUP: partial(clean, runtime),
@@ -337,6 +362,8 @@ OSS = Distribution(
         SessionRow,
         SpaceOrganizationRow,
         ThreadRow,
+        ThreadCodeActRow,
+        ToolExecutionRow,
         EnvironmentRow,
         DesktopExecutionRow,
         DesktopTargetRow,
@@ -368,6 +395,7 @@ OSS = Distribution(
         devices_router,
         schedules_router,
         runs_router,
+        tool_executions_router,
         usage_router,
         traces_router,
         findings_router,
@@ -387,6 +415,8 @@ OSS = Distribution(
         _advance_threads,
         organization_sweep,
         _expire_leases,
+        _reconcile_tool_executions,
+        _prune_tool_results,
         desktop_assistance_sweep,
         _expire_credentials,
         maintenance_sweep,

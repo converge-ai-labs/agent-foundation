@@ -18,6 +18,7 @@ from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tool_executions.authority import lock_owner, prove
 
 TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id"}
 
@@ -117,10 +118,11 @@ async def operation(
 ) -> AsyncIterator[None]:
     key = target_key(state)
     if key is None:
+        await prove(runtime, lease)
         yield
         return
     async with transaction(runtime.storage) as session:
-        await lock_lease(session, lease)
+        await lock_owner(session, runtime, lease)
         row = await target(session, key, environment_id=environment_id, run_id=lease.run_id)
         assistance = await session.get(DesktopAssistanceRow, row.holder_id) if row.holder_id else None
         from a13n_service.runs.desktop_assistance.execution import admitted_run

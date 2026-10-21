@@ -296,8 +296,9 @@ async def test_retained_wait_does_not_block_input(tmp_path):
         waiting = asyncio.Event()
 
         async def wait():
-            async with resource.access(
-                environment,
+            async with environment.authorize_retained_process(
+                resource.identity,
+                backing_identity=resource.backing_identity,
                 actions=frozenset(
                     {
                         EnvironmentAction.PROCESS_WAIT,
@@ -307,22 +308,26 @@ async def test_retained_wait_does_not_block_input(tmp_path):
                 ),
                 alias=None,
                 timeout_seconds=10,
-            ) as (controller, ref, processes):
+            ):
                 waiting.set()
-                return await controller.wait(
-                    ref, stdout_offset=0, stderr_offset=0, timeout_seconds=10, processes=processes
+                return await runtime.call_resource(
+                    first.thread_id, execution_id, {"operation": "wait", "timeout_seconds": 10}
                 )
 
         waiter = asyncio.create_task(wait())
-        await waiting.wait()
         async with asyncio.timeout(2):
-            async with resource.access(
-                environment,
+            await waiting.wait()
+        async with asyncio.timeout(2):
+            async with environment.authorize_retained_process(
+                resource.identity,
+                backing_identity=resource.backing_identity,
                 actions=frozenset({EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_INSPECT}),
                 alias=None,
                 timeout_seconds=0,
-            ) as (controller, ref, processes):
-                await controller.write_input(ref, "unblocked\n", close_stdin=False, processes=processes)
+            ):
+                await runtime.call_resource(
+                    first.thread_id, execution_id, {"operation": "input", "data": "unblocked\n"}
+                )
             observed = await waiter
         assert observed["stdout"]["text"] == "readyunblocked"
         assert (await runtime.wait(first.thread_id, execution_id)).record.status == "succeeded"

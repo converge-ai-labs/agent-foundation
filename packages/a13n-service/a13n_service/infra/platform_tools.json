@@ -698,6 +698,30 @@
   {
     "effect": "read",
     "group": "execution",
+    "key": "list_tool_executions",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}/tool-executions",
+    "summary": "List Tool Executions"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_tool_execution",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}/tool-executions/{execution_id}",
+    "summary": "Get Tool Execution"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
+    "key": "get_tool_execution_result",
+    "method": "GET",
+    "path": "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/result",
+    "summary": "Get Tool Execution Result"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
     "key": "get_trace_backend",
     "method": "GET",
     "path": "/api/v1/trace-backend",

@@ -1045,7 +1045,8 @@
         "kind": {
           "enum": [
             "message",
-            "child_result"
+            "child_result",
+            "tool_result"
           ],
           "title": "Kind",
           "type": "string"
@@ -3843,6 +3844,7 @@
         "queued",
         "resume",
         "child_result",
+        "tool_result",
         "spawned"
       ],
       "type": "string"

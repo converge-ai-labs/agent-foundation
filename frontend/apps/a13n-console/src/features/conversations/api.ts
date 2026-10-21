@@ -36,6 +36,8 @@ export function conversationKeys(workspaceId: string) {
     agent: (runId: string) => [...root, "agent", runId] as const,
     items: (runId: string) => [...root, "items", runId] as const,
     attempts: (runId: string) => [...root, "attempts", runId] as const,
+    toolExecutions: (threadId: string, runId?: string) =>
+      [...root, "tool-executions", threadId, runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
     context: (id: string) => [...root, "context", id] as const,
     requestMetrics: (runId: string, recordId: string) =>
@@ -186,6 +188,23 @@ export function conversationQueries(client: Client, workspaceId: string) {
      * The Run and its ancestors, nearest first, across fork origins. Pages are
      * read as the reader reaches further back, never all up front.
      */
+    toolExecutions: (thread_id: string, run_id?: string) =>
+      infiniteQueryOptions({
+        queryKey: keys.toolExecutions(thread_id, run_id),
+        initialPageParam: undefined as string | undefined,
+        queryFn: ({ signal, pageParam }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads/{thread_id}/tool-executions", {
+              params: {
+                path: { thread_id },
+                query: { run_id, cursor: pageParam, limit: 20 },
+              },
+              signal,
+            })
+            .then(data),
+        getNextPageParam: (page) => page.next_cursor ?? undefined,
+      }),
     lineage: (run_id: string) =>
       infiniteQueryOptions({
         queryKey: keys.lineage(run_id),

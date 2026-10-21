@@ -34,6 +34,7 @@ from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRunt
 
 from .events import ShellStatusEvent
 from .output import tool_output_size
+from .shell_control import ShellControl, ShellTarget
 from .shell_results import (
     OutputPageProjection,
     ProcessInfoSuccess,
@@ -96,15 +97,8 @@ class _OwnedProcess:
         self._readers = 0
         self._closed = False
 
-    @asynccontextmanager
-    async def access(
-        self,
-        environment: BoundEnvironment,
-        *,
-        actions: frozenset[EnvironmentAction],
-        alias: str | None,
-        timeout_seconds: float,
-    ) -> AsyncGenerator[tuple[_ProcessController, str, BoundProcessOperations]]:
+    async def call(self, request: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        control = ShellControl.model_validate(request)
         async with self._condition:
             if self._closed:
                 raise EnvironmentError(
@@ -113,15 +107,15 @@ class _OwnedProcess:
                 )
             self._readers += 1
         try:
-            async with environment.retained_process_lease(
+            if control.operation == "describe":
+                return ShellTarget(
+                    resource_id=self.resource_id, identity=self.identity, backing_identity=self.backing_identity
+                ).model_dump(mode="json")
+            async with self.controller._environment.retained_process_dispatch(
                 self.controller._entry(self.process_id).handle,
-                owner=self.controller._environment,
-                backing_identity=self.backing_identity,
-                actions=actions,
-                alias=alias,
-                timeout_seconds=timeout_seconds,
+                actions=control.actions,
             ) as processes:
-                yield self.controller, self.process_id, processes
+                return await self.controller.control(self.process_id, control, processes=processes)
         finally:
             async with self._condition:
                 self._readers -= 1
@@ -320,6 +314,38 @@ class _ProcessController:
                 await _await_cleanup_shielded(self._release_observation(entry))
                 raise
             return entry
+
+    async def control(
+        self,
+        process_id: str,
+        control: ShellControl,
+        *,
+        processes: BoundProcessOperations | None = None,
+        alias: str | None = None,
+    ) -> dict[str, JsonValue]:
+        match control.operation:
+            case "inspect":
+                result = await self.info(process_id, alias=alias, limit=1, processes=processes)
+            case "wait":
+                result = await self.wait(
+                    process_id,
+                    stdout_offset=control.stdout_offset,
+                    stderr_offset=control.stderr_offset,
+                    timeout_seconds=control.timeout_seconds,
+                    processes=processes,
+                )
+            case "input":
+                result = await self.write_input(
+                    process_id,
+                    control.data,
+                    close_stdin=control.close_stdin,
+                    processes=processes,
+                )
+            case "signal":
+                result = await self.signal(process_id, control.signal, processes=processes)
+            case _:
+                raise EnvironmentError("Invalid process control.", code="environment_request_invalid")
+        return cast(dict[str, JsonValue], result)
 
     async def wait(
         self,

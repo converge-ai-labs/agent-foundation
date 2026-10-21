@@ -7,6 +7,7 @@ deadline, still renewing; unfinished attempts then rely on lease expiry.
 """
 
 import asyncio
+import os
 import socket
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from a13n_service.infra.telemetry import Gauge
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, renew
 from a13n_service.runs.claim import claim
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.tool_executions.authority import heartbeat
 
 logger = get_logger(__name__)
 
@@ -57,6 +59,7 @@ class Worker:
         self._report_slots()
         async with asyncio.TaskGroup() as group:
             group.create_task(self._supervise(), name="lease-supervisor")
+            group.create_task(self.runtime.executions.routing.run(self.id), name="shell-control-routing")
             try:
                 while not self.stopping:
                     if self.free == 0:
@@ -91,11 +94,40 @@ class Worker:
 
     async def _drain(self) -> None:
         self.stopping = True
+        self.runtime.executions.stop_admission()
         for running in self.running.values():
             running.control.handoff.set()
         tasks = [running.task for running in self.running.values()]
         if tasks:
             await asyncio.wait(tasks, timeout=self.runtime.settings.worker.drain_seconds)
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        policy = self.runtime.settings.tool_executions
+        join = asyncio.create_task(self.runtime.executions.join())
+        try:
+            done, _ = await asyncio.wait({join}, timeout=policy.shutdown_grace_seconds)
+            if done:
+                join.result()
+        finally:
+            join.cancel()
+            await asyncio.gather(join, return_exceptions=True)
+        # Cancellation is local and non-blocking, even when persistence is unavailable. Give publication
+        # and attempt cleanup one shared finalization window, then let control reconcile any missing result.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + policy.finalization_seconds
+        pending_executions = await self.runtime.executions.close(
+            timeout_seconds=policy.finalization_seconds,
+            reason="Worker shutdown interrupted the tool; external effects may have completed.",
+        )
+        if tasks:
+            await asyncio.wait(tasks, timeout=max(0, deadline - loop.time()))
+        if pending_executions or any(not task.done() for task in tasks):
+            logger.error(
+                "Worker finalization exceeded shutdown deadline; forcing process exit",
+                extra={"attempts": len(self.running), "executions": len(pending_executions)},
+            )
+            os._exit(1)
 
     async def _attempt(self, lease: Lease, control: AttemptControl) -> None:
         # Every record of the attempt, the Harness's included, names its run and attempt.
@@ -134,8 +166,31 @@ class Worker:
         """
         settings = self.runtime.settings.worker
         loop = asyncio.get_running_loop()
+        tool_deadline = loop.time() + settings.lease_seconds
         while True:
             await asyncio.sleep(settings.authority_seconds)
+            sent = loop.time()
+            try:
+                async with asyncio.timeout(settings.authority_seconds):
+                    cancellations = await heartbeat(self.runtime, self.id)
+                tool_deadline = sent + settings.lease_seconds
+                for thread_id, execution_id in cancellations:
+                    self.runtime.executions.request_cancellation(thread_id, execution_id)
+            except Exception as error:
+                logger.warning("Tool execution heartbeat failed", extra={"error_type": type(error).__name__})
+                if tool_deadline - loop.time() <= settings.lease_seconds / 3:
+                    # Do not depend on another database transaction to stop an owner whose renewal failed.
+                    for record in self.runtime.executions.active:
+                        self.runtime.executions.request_cancellation(
+                            record.thread_id,
+                            record.execution_id,
+                            reason="Tool execution lease renewal failed; external effects may have completed.",
+                        )
+                if loop.time() >= tool_deadline and self.runtime.executions.active:
+                    # Control may now reconcile this incarnation as lost. Do not leave local work alive
+                    # after its Environment use can be released by another process.
+                    logger.error("Tool execution owner lease expired; forcing process exit")
+                    os._exit(1)
             attempts = list(self.running.values())
             if not attempts:
                 continue

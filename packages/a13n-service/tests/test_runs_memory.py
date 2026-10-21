@@ -11,8 +11,8 @@ from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.providers.memory import MemoryStoreError, Origin
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow
-from a13n_service.runs.attempts import Lease
 from a13n_service.runs.boundaries import Boundaries, Staged
+from a13n_service.runs.claim import claim
 from a13n_service.runs.display import DisplayFold, Tail
 from a13n_service.runs.memories.execution import PlannedMemory, file_memory
 from a13n_service.runs.memories.schemas import FrozenMemoryMount
@@ -279,7 +279,7 @@ async def test_a_takeover_keeps_the_open_memory_read_out_of_pages_until_it_answe
     assert call["state"] == "completed" and "Oolong" in call["content"]["result"], call
 
 
-async def test_store_calls_recheck_the_run_principal_under_its_authority(service) -> None:  # type: ignore[no-untyped-def]
+async def test_store_calls_recheck_the_run_principal_under_its_authority(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     memory = await team_memory(service)
     tenant = service.tenant
     viewer = Principal(
@@ -291,18 +291,15 @@ async def test_store_calls_recheck_the_run_principal_under_its_authority(service
         workspace_id=tenant.workspace_id,
         verbs=frozenset({"read", "run"}),
     )
-    run = RunRow(
-        id="run_0123456789abcdef0123456789",
-        organization_id=tenant.organization_id,
-        workspace_id=tenant.workspace_id,
-        principal_id=tenant.principal_id,
-    )
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "work")
+    (lease,) = await claim(service.runtime, worker_id="memory-worker", worker_build="test", limit=1)
     planned = (PlannedMemory(FrozenMemoryMount(name="team", memory_id=memory["id"], access="write"), None, ()),)
     capability = file_memory(
-        service.runtime.storage,
-        service.runtime.settings.memory,
+        service.runtime,
         planned,
-        lease=Lease(run.id, "rat_test", "thr_test", run.organization_id, run.workspace_id, 1, "worker", "token"),
+        lease=lease,
         principal=viewer,
         authority=authority,
         cursors=MemoryCursors(),
@@ -312,7 +309,7 @@ async def test_store_calls_recheck_the_run_principal_under_its_authority(service
     [store] = [mount.store for mount in capability.mounts]
     assert (await store.read("notes/tea.md")).text == "Oolong\n"
     with pytest.raises(MemoryStoreError) as refused:
-        await store.write("notes/new.md", "x\n", expected=None, origin=Origin(run_id=run.id))
+        await store.write("notes/new.md", "x\n", expected=None, origin=Origin(run_id=lease.run_id))
     assert refused.value.code == "forbidden"
 
 

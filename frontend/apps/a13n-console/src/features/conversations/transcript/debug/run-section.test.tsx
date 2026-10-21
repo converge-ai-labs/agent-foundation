@@ -105,6 +105,11 @@ beforeEach(() => {
             },
           ],
         });
+      if (url.pathname.endsWith("/tool-executions")) {
+        expect(url.pathname).toBe("/api/v1/threads/thr_1/tool-executions");
+        expect(url.searchParams.get("run_id")).toBe("run_2");
+        return Response.json({ items: [], next_cursor: null });
+      }
       if (url.pathname.endsWith("/lineage"))
         return Response.json({ items: [fixtureRun()], next_cursor: null });
       if (url.pathname.endsWith("/environments"))

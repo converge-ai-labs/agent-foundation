@@ -41,6 +41,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.skill_cache import Cache
+from a13n_service.runs.tool_executions.authority import lock_owner
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -181,7 +182,7 @@ async def _inspect(
 ) -> tuple[Target | None, Operation | None]:
     """Inspect readiness, beginning and claiming new work atomically under the lease and instance locks."""
     async with transaction(runtime.storage) as session:
-        await lock_lease(session, lease)
+        _, principal = await lock_owner(session, runtime, lease)
         environment = await lock(session, EnvironmentRow, environment_id)
         if environment is None:
             raise not_found("environment", environment_id)

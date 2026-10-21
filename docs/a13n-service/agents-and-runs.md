@@ -394,6 +394,23 @@ The accompanying input does not replace any required result. Ordinary inbox mess
 
 Every ended run is the history its thread continues, whatever its outcome. After a failed or cancelled run, the next run starts from its last checkpoint, or from where the run started if it failed before one, and tool calls it left unfinished read as interrupted rather than running again. When the history itself caused the failure, for example a model provider rejecting it, fork an earlier run instead.
 
+## Retained tool executions
+
+Supported tool calls use automatic handoff: after the foreground wait (5 seconds by default), the model receives an `exec-*` receipt and can continue while the same invocation runs on its original worker. A receipt is a reference, not a result. A whole CodeAct invocation and its nested calls stay together; later runs may execute on another worker. Owner loss marks unfinished work `lost`; Service never replays the invocation automatically.
+
+Inspect these calls from **Tool executions** in the existing Console session menu or a run's details. Refresh updates status; **Inspect** opens metadata and **Read result** fetches a bounded fragment. Closing the inspector releases its local result text.
+
+| Endpoint under `/api/v1/threads/{thread_id}`  | Purpose                                                                          |
+| --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /tool-executions`                        | Page through calls; filter by Service `run_id` or `active`.                      |
+| `GET /tool-executions/{execution_id}`         | Inspect status without acknowledging delivery.                                   |
+| `GET /tool-executions/{execution_id}/result`  | Read a result fragment using `offset`, `limit` and `version`.                    |
+| `POST /tool-executions/{execution_id}/cancel` | Request cancellation; HTTP 202 is acceptance, not completed cleanup or rollback. |
+
+References belong to the exact Thread. Result reads acknowledge delivery; the first acknowledgement starts the configured reread window (one hour by default), bounded by the maximum age (24 hours after completion by default). Repeated reads do not extend it. Expired records return 404. Status reads and receipts leave retention unchanged.
+
+Completion hints follow ordinary inbox ordering and capacity rules. Stopping the originating run requests cancellation of its retained calls and prevents late results from restarting the conversation. Stopping a later run does not cancel earlier runs' calls. An Environment remains in use until the retained operation and its cleanup actually finish, even after cancellation is accepted.
+
 ## Results
 
 Read `GET …/runs/{run_id}` and branch on `status`. A completed run has `output` (text or JSON matching `output_spec`); a waiting run has `pending`; a failed run has `failure {code, message}`. The [API reference](api-reference/index.md) lists the run's configuration, lineage, mounts and timestamps.

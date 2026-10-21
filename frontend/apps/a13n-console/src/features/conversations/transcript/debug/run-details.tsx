@@ -29,6 +29,7 @@ import { conversationQueries, runPath } from "../../api";
 import { formatDuration } from "../../format";
 import { useRun, useRunUsage } from "../../queries";
 import { UsageTable } from "../../usage-table";
+import { ToolExecutions } from "../../tool-executions";
 import {
   computerPermissionMode,
   computerPermissionLabels,
@@ -229,6 +230,9 @@ function RunDetails({ selected }: { selected: Run }) {
             ))}
           </ol>
         )}
+      </Section>
+      <Section title={t("Tool executions")}>
+        <ToolExecutions key={run.id} threadId={run.thread_id} runId={run.id} />
       </Section>
       <Section title={t("Lineage")}>
         <ErrorNotice error={lineage.error} />

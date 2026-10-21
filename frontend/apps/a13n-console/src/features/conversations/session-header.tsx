@@ -16,6 +16,7 @@ import {
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
   PencilSimpleIcon,
+  TerminalIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -35,6 +36,7 @@ import { ThreadBranches } from "./thread-branches";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
 import { originLink, sessionTitle } from "./session-identity";
+import { ThreadToolExecutionsDialog } from "./tool-executions";
 import styles from "./conversations.module.css";
 
 /**
@@ -66,6 +68,7 @@ export function SessionHeader({
   const [editing, setEditing] = useState(false);
   const title = session.data && sessionTitle(session.data);
   const source = originLink(session.data?.origin);
+  const [tools, setTools] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
@@ -219,6 +222,12 @@ export function SessionHeader({
               {t("Environments and memory")}
             </MenuItem>
           )}
+          {thread && can("read") && (
+            <MenuItem onClick={() => setTools(true)}>
+              <TerminalIcon size={14} aria-hidden="true" />
+              {t("Tool executions")}
+            </MenuItem>
+          )}
           {can("read") && (
             <MenuItem
               render={
@@ -237,6 +246,14 @@ export function SessionHeader({
           </MenuItem>
         </MenuPopup>
       </Menu>
+      {thread && (
+        <ThreadToolExecutionsDialog
+          key={thread.id}
+          threadId={thread.id}
+          open={tools}
+          onOpenChange={setTools}
+        />
+      )}
       {thread && (
         <ThreadMountsDialog
           thread={thread}

@@ -14,8 +14,8 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import Iterable, Mapping
-from contextlib import AsyncExitStack
+from collections.abc import AsyncIterator, Iterable, Mapping
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Literal
@@ -81,7 +81,7 @@ from a13n_service.runs.environments.execution import EnvironmentUnavailable, ope
 from a13n_service.runs.environments.lifecycle import public_message
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
-from a13n_service.runs.host import HostPlan, open_host, resolve_host
+from a13n_service.runs.host import Host, HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
@@ -100,6 +100,9 @@ from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
+from a13n_service.runs.tool_executions.owner import resources
+from a13n_service.runs.tool_executions.recovery import restore as restore_executions
+from a13n_service.runs.tool_executions.state import SharedCodeActState
 from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -260,6 +263,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         baseline = await _baseline(session, parent)
         previous = [EnvironmentMount.model_validate(mount) for mount in baseline.environment_mounts] if baseline else []
         baseline_checkpoint = checkpoints.require_compatible(baseline) if baseline is not None else None
+        baseline_run_id = baseline.id if baseline is not None else None
         pending = Pending.model_validate(parent.pending) if parent is not None and parent.pending is not None else None
         answers = Resume.model_validate(run.resume) if run.resume is not None else None
         history = HISTORY.validate_python(thread.message_history)
@@ -296,7 +300,12 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
     reminder = None if consumed else inputs.reminder(inputs.mount_changes(previous, mounts))
     if own is not None:
         state = own.harness
-        resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
+        resume = replace(resume, recovery=True) if resume is not None else None
+    origin_run_id = lease.run_id if own is not None else baseline_run_id
+    if origin_run_id is not None:
+        state = await restore_executions(runtime, state, thread_id=lease.thread_id, origin_run_id=origin_run_id)
+    if resume is not None:
+        resume = resume.remaining(state.message_history)
     return _Plan(
         session_id=session_id,
         configuration=options.configuration or RunConfiguration(),
@@ -400,6 +409,7 @@ class _Attempt:
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
         self.offers = _Offers(plan.assigned)
+        self.offer_lock = asyncio.Lock()
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
             primary=any(mount.name == PRIMARY for mount in plan.mounts),
@@ -443,14 +453,9 @@ class _Attempt:
             else:
                 await self._seal_interrupted(outcome)
 
-    async def _stream(self) -> HarnessRunResult | None:
-        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
-        runtime, lease = self.runtime, self.lease
-        root = self.plan.agent
-        if self.desktop_enabled:
-            await desktop_execution.prepare(runtime, lease, supported=not root.subagents)
-        if not root.config.lazy_environment and not await self._prepare_environments():
-            return None
+    @asynccontextmanager
+    async def _open_resources(self) -> AsyncIterator[Host]:
+        runtime, lease, root = self.runtime, self.lease, self.plan.agent
         skill_cache = Cache()
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
@@ -481,13 +486,24 @@ class _Attempt:
                     environments=environments,
                 )
             )
+            yield host
+
+    async def _stream(self) -> HarnessRunResult | None:
+        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
+        runtime, lease = self.runtime, self.lease
+        root = self.plan.agent
+        if self.desktop_enabled:
+            await desktop_execution.prepare(runtime, lease, supported=not root.subagents)
+        if not root.config.lazy_environment and not await self._prepare_environments():
+            return None
+        async with resources(lease, self._open_resources()) as host, AsyncExitStack() as stack:
             executable = agent.build(
                 root,
                 capabilities=lambda node: (
                     [
                         self.boundaries,
                         *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
-                        *host.capabilities(node),
+                        *host.capabilities(node, root=True),
                         *host.memory,
                         *(
                             [DesktopAssistanceCapability(runtime, lease, self.plan.principal)]
@@ -526,7 +542,7 @@ class _Attempt:
 
             self.boundaries.freeze_display = freeze_display
             bindings = replace(
-                host.bindings(root, self._bindings(agent.model_resolver(root, models))),
+                host.bindings(root, self._bindings(agent.model_resolver(root, host.models))),
                 producer_observer=output.observe,
                 environment=host.environment,
             )
@@ -546,15 +562,16 @@ class _Attempt:
             )
             stream = start()
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
-            async with stream:
-                interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
+            async with stream, asyncio.TaskGroup() as monitors:
+                interrupt = monitors.create_task(self._cancel_when_stopped(stream))
+                incoming = monitors.create_task(self._poll_input(stream))
                 try:
                     async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
                         async for item in stream:
                             await self._observe(item, output)
                 finally:
                     interrupt.cancel()
-                    await asyncio.gather(interrupt, return_exceptions=True)
+                    incoming.cancel()
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
@@ -722,22 +739,23 @@ class _Attempt:
     async def _offer(self, stream: HarnessRunStream, steers: list[Offered]) -> None:
         """Offer the steers assigned at this boundary, and any the Harness could not take before, to the run's next
         request."""
-        self.offers.unsent.extend(steers)
-        while self.offers.unsent and self.boundaries.accepting_steers:
-            entry = self.offers.unsent[0]
-            content = await self._read(entry, stream.context.environment)
-            if content is None:
-                self.offers.unsent.pop(0)
-                continue
-            if not self.boundaries.accepting_steers:
-                return  # Keep the unconsumed entry for continuation after native completion.
-            try:
-                await stream.steer(content, input_id=entry.id)
-            except RunError as error:
-                if error.code != "run_not_active":
-                    raise
-                return
-            self.offers.open[entry.id] = self.offers.unsent.pop(0)
+        async with self.offer_lock:
+            self.offers.unsent.extend(steers)
+            while self.offers.unsent and self.boundaries.accepting_steers:
+                entry = self.offers.unsent[0]
+                content = await self._read(entry, stream.context.environment)
+                if content is None:
+                    self.offers.unsent.pop(0)
+                    continue
+                if not self.boundaries.accepting_steers:
+                    return  # Keep the unconsumed entry for continuation after native completion.
+                try:
+                    await stream.steer(content, input_id=entry.id, immediate=entry.kind == "message")
+                except RunError as error:
+                    if error.code != "run_not_active":
+                        raise
+                    return
+                self.offers.open[entry.id] = self.offers.unsent.pop(0)
 
     async def _assigned_input(self, context: RunPreparationContext) -> tuple[UserContent, ...]:
         """The Harness input factory: the assigned entries' content, read once the environments are ready, so the
@@ -784,6 +802,30 @@ class _Attempt:
             await inbox.fail_assigned(session, run.id, entry.id, failure, at=current)
         self.offers.open.pop(entry.id, None)
         return None
+
+    async def _poll_input(self, stream: HarnessRunStream) -> None:
+        """Assign durable input during generation/tool waits; checkpoints still own incorporation."""
+        while True:
+            await asyncio.sleep(0.2)
+            if not self.boundaries.accepting_steers:
+                return
+            try:
+                async with transaction(self.runtime.storage) as session:
+                    thread, run, _, _ = await lock_thread_lease(session, self.lease)
+                    await authorize_execution(session, self.runtime.access, run)
+                    entries = await inbox.assign_steers(
+                        session,
+                        thread,
+                        run,
+                        max_count=self.runtime.settings.worker.delivery_count,
+                        max_bytes=self.runtime.settings.worker.delivery_bytes,
+                        scan=self.runtime.settings.control.inbox_count,
+                    )
+                    offers = [Offered.of(entry) for entry in entries]
+                await self._offer(stream, offers)
+            except ServiceError as error:
+                if error.code != "unavailable":
+                    raise
 
     async def _cancel_when_stopped(self, stream: HarnessRunStream) -> None:
         await self.control.stopped.wait()
@@ -929,6 +971,8 @@ class _Attempt:
     def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease
         return RunBindings(
+            tool_execution=self.runtime.executions,
+            codeact_state=SharedCodeActState(self.runtime.storage, lease.thread_id),
             configuration=self.plan.configuration,
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-service", subject=self.plan.principal.id),

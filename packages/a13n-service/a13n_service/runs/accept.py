@@ -391,7 +391,9 @@ async def _source(
         return await Source.load(session, runtime, thread, entry, "queued")
     # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
     origin = await session.get_one(RunRow, entry.origin_run_id)
-    return await Source.inherited(session, runtime, origin, "child_result", entry=entry)
+    return await Source.inherited(
+        session, runtime, origin, "tool_result" if entry.kind == "tool_result" else "child_result", entry=entry
+    )
 
 
 async def accept(

@@ -30,6 +30,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Pending, Resume, Returned
 from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tool_executions.authority import lock_owner
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
@@ -97,7 +98,7 @@ async def verify_continuation(runtime: Runtime, lease: Lease, selected: Target) 
     if key is None:
         return
     async with transaction(runtime.storage) as session:
-        await lock_lease(session, lease)
+        await lock_owner(session, runtime, lease)
         control = await lock(session, DesktopTargetRow, key)
         row = await session.get(DesktopAssistanceRow, control.holder_id) if control and control.holder_id else None
         if row is None or row.state != "consumed" or row.successor_id != lease.run_id:

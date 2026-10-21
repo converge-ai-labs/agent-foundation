@@ -14,6 +14,7 @@ from functools import partial
 
 from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
+from a13n_harness.capabilities.tool_execution import ToolExecutionCapability, ToolExecutionConfig
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from a13n_harness.tools import ToolIdentity
@@ -33,7 +34,7 @@ from a13n_service.resources.agents.toolsets import (
 from a13n_service.resources.connections.runtime import SelectedConnection, open_connections, resolve_connections
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
-from a13n_service.runs.attempts import Lease, prove
+from a13n_service.runs.attempts import Lease
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.memories.execution import (
@@ -49,6 +50,7 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.skill_cache import Cache
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.runs.web import ResolvedWeb, open_web, resolve_web
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -127,9 +129,19 @@ class Host:
     memory: tuple[AbstractCapability[AgentContext], ...]
     environment: EnvironmentRuntime
 
-    def capabilities(self, agent: ResolvedAgent) -> list[AbstractCapability[AgentContext]]:
+    def capabilities(self, agent: ResolvedAgent, *, root: bool = False) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
+        if root:
+            # Inline children are part of the delegating call, not independent Service executions.
+            features.append(
+                ToolExecutionCapability(
+                    ToolExecutionConfig(
+                        mode="auto",
+                        foreground_wait_seconds=self.runtime.settings.tool_executions.foreground_wait_seconds,
+                    )
+                )
+            )
         parts = self.plan.parts[agent.revision_id]
         skills = parts.skills
         sync = agent.config.skill_sync
@@ -142,7 +154,7 @@ class Host:
                     sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
-                    prove_lease=partial(prove, self.runtime.storage, self.lease),
+                    prove_lease=partial(prove, self.runtime, self.lease),
                 )
             )
         if enabled_tool(agent.config.toolsets, "assets", "publish") is not None:
@@ -206,8 +218,7 @@ async def open_host(
                     open_web(parts.web, check, runtime=runtime, configuration=configuration)
                 )
         files = file_memory(
-            runtime.storage,
-            runtime.settings.memory,
+            runtime,
             plan.memories,
             lease=lease,
             principal=principal,

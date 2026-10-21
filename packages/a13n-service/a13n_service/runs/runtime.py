@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import partial
+from functools import cached_property, partial
 from typing import TYPE_CHECKING
 
 from a13n_harness import HarnessInstrumentation
@@ -28,6 +28,7 @@ from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 if TYPE_CHECKING:
     from a13n_service.runs.environments.monitoring.proxy import Proxy
+    from a13n_service.runs.tool_executions.owner import Executions
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,12 @@ class Runtime:
     plugins: HarnessPluginFactoryCatalog = field(default_factory=lambda: HarnessPluginFactoryCatalog(()))
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
+
+    @cached_property
+    def executions(self) -> Executions:
+        from a13n_service.runs.tool_executions.owner import Executions
+
+        return Executions(self)
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:

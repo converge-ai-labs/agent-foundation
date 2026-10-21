@@ -1,4 +1,9 @@
 {
+  "List Tool Executions": "列出工具执行",
+  "Get Tool Execution": "获取工具执行",
+  "Get Tool Execution Result": "获取工具执行结果",
+  "Cancel Tool Execution": "取消工具执行",
+  "Run identity is the Service Run; attempt and worker identify the retained owner.": "Run 标识指 Service Run；attempt 和 worker 标识保留执行的所有者。",
   "List Dashboards": "列出仪表盘",
   "Create Dashboard": "创建仪表盘",
   "Get Dashboard Preset": "获取仪表盘默认配置",
