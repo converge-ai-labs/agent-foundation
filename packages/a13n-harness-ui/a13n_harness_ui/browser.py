@@ -22,6 +22,7 @@ from a13n_harness.capabilities.browser import (
 )
 from pydantic import Field
 
+from a13n_harness_ui.browser_auth import vnc_passwords, write_private
 from a13n_harness_ui.browser_cursor import Cursor
 from a13n_harness_ui.browser_install import BrowserInstaller
 from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserSetup, inspect_browser
@@ -185,29 +186,7 @@ class BrowserSession:
         if self.password_file is None:
             return
         password, readonly = secrets.token_urlsafe(6), secrets.token_urlsafe(6)
-        process = await asyncio.create_subprocess_exec(
-            "tigervncpasswd",
-            "-f",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        try:
-            encoded, _ = await asyncio.wait_for(process.communicate(f"{password}\n{readonly}\n".encode()), 5)
-        except BaseException:
-            await terminate(process)
-            raise
-        if process.returncode != 0 or len(encoded) != 16:
-            raise failure("VNC authentication could not be prepared.", "runtime_unavailable")
-        path = self.password_file
-
-        def publish() -> None:
-            replacement = path.with_suffix(".new")
-            replacement.touch(mode=0o600, exist_ok=False)
-            replacement.write_bytes(encoded)
-            replacement.replace(path)
-
-        await asyncio.to_thread(publish)
+        await asyncio.to_thread(write_private, self.password_file, vnc_passwords(password, readonly))
         self.password, self.readonly_password = password, readonly
 
     async def invalidate(self) -> None:
