@@ -60,23 +60,22 @@ export class ProcessObservations {
     )
       return;
     const value = parsed(content);
-    if (!object(value) || typeof value.process_id !== "string") return;
-    const item = this.observe(runId, value.process_id);
+    if (!object(value)) return;
+    const startsProcess = name === "shell_exec" || name === "shell_start";
+    // Host-owned starts return an execution receipt; later Shell observations
+    // use that same execution ID as their process handle.
+    const processId =
+      startsProcess && value.type === "tool_execution_receipt"
+        ? value.execution_id
+        : value.process_id;
+    if (typeof processId !== "string") return;
+    const item = this.observe(runId, processId);
     const input = parsed(args);
-    if (
-      (name === "shell_exec" || name === "shell_start") &&
-      object(input) &&
-      typeof input.command === "string"
-    )
+    if (startsProcess && object(input) && typeof input.command === "string")
       item.command = input.command.replace(/\s+/g, " ").trim().slice(0, 500);
     if (!object(value.status) || typeof value.status.phase !== "string") return;
     if (value.status.phase === "running") item.background = true;
-    this.status(
-      runId,
-      value.process_id,
-      value.status.phase,
-      value.status.exit_code,
-    );
+    this.status(runId, processId, value.status.phase, value.status.exit_code);
   }
   status(runId: string, processId: string, phase: string, exitCode: unknown) {
     const item = this.observe(runId, processId);
