@@ -333,6 +333,7 @@
   "Create Session": "创建会话",
   "Get Session": "获取会话",
   "Get Message Authors": "获取消息作者",
+  "Get message senders' current display names, emails, account kinds, status and avatar URLs.\n\nSupply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;\nonly message entries in that session are returned. This is not an arbitrary user or member-directory lookup.\nUse returned names to identify senders in answers; retain IDs when needed for precise references.": "获取消息发送者当前的显示名称、邮箱、账号类型、状态和头像 URL。\n\n传入会话 ID 和从线程收件箱中取得的 1–100 个条目 ID。需要工作空间读取权限；\n仅返回该会话中的消息条目，不能用于查询任意用户或成员目录。\n回答时使用返回的名称标识发送者；需要准确引用时保留 ID。",
   "Session Stream": "会话事件流",
   "Thread Stream": "线程事件流",
   "Live output of one thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.\nResumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.": "通过 SSE 提供单个线程运行的实时输出：`delta`、`boundary` 帧，以及 `changed`、`reset`、`gap`。\n可从 `Last-Event-ID` 或运行的 `position` 恢复；不跟踪这些位置的客户端适合使用会话事件流。",

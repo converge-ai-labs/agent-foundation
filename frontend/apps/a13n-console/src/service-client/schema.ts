@@ -2704,7 +2704,14 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Message Authors */
+    /**
+     * Get Message Authors
+     * @description Get message senders' current display names, emails, account kinds, status and avatar URLs.
+     *
+     *     Supply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;
+     *     only message entries in that session are returned. This is not an arbitrary user or member-directory lookup.
+     *     Use returned names to identify senders in answers; retain IDs when needed for precise references.
+     */
     get: operations["get_message_authors"];
     put?: never;
     post?: never;

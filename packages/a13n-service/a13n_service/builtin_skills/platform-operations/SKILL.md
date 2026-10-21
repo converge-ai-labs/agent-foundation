@@ -11,9 +11,12 @@ Use filtered `view=compact` reads for discovery, then select IDs, names and sect
 
 Text and JSON fragments count Unicode code points. Start at `offset=0`, then send the returned `version` and `next_offset`; changed content requires restarting. `representation=fragment` is explicitly partial. Reassemble all fragments before interpreting a full JSON definition or configuration. A section or compact summary cannot replace an entire configuration.
 
+In user-facing answers, prefer readable user, organization, workspace and resource names over bare IDs. Use names from available context or authorized tool results; never invent a name or use it as authorization. For message senders, use `get_message_authors` as described in [Execution and diagnostics](references/execution-and-diagnostics.md). Include an email when relevant to the request or needed to distinguish people with the same name. Keep IDs for precise references, troubleshooting and tool arguments. If a name cannot be resolved with the available tools, show its ID and state the limitation.
+
 Typical tasks:
 
 - Find a conversation by remembered message content: use `text_query` on Session, Thread or Run lists, then inspect matching Runs. Read [Execution and diagnostics](references/execution-and-diagnostics.md) for matching rules and coverage limits.
+- Identify who sent a message: obtain its inbox entry ID and call `get_message_authors` for that Session to read the sender's name, email and other profile fields.
 - Diagnose a failure: filter Runs, read a selected failure section, find matching items or spans, and read their necessary input or output.
 - Choose a capability: search a model or tool index, select exact names, and read complete definitions or model characteristics and pricing.
 - Edit configuration: read the Agent head and target revision, obtain the complete configuration, validate the change, and submit with the original ETag and required review.
