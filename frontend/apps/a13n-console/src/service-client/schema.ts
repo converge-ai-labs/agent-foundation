@@ -10139,8 +10139,6 @@ export interface components {
       external_id?: string | null;
       /** Name */
       name?: string | null;
-      /** Url */
-      url?: string | null;
     };
     /** SessionPage */
     SessionPage: {

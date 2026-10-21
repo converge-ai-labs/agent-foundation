@@ -66,7 +66,6 @@
   color: var(--a13n-secondary);
 }
 .title:hover,
-a.sourceName:hover > span,
 .application:hover {
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
@@ -141,45 +140,21 @@ button.tag:hover .tagKey {
 }
 
 /* Source -------------------------------------------------------------------- */
+/* One column track, so long names truncate inside the cell instead of widening it. */
 .source {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-}
-.sourceMark {
-  display: flex;
-  align-items: center;
-  flex: none;
-  height: 20px;
-  color: var(--a13n-tertiary);
-}
-.sourceText {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   justify-items: start;
-  min-width: 0;
-  flex: 1;
 }
 .sourceName {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   max-width: 100%;
-  color: var(--a13n-text-supporting);
-  font-size: var(--a13n-text-sm);
-  line-height: 20px;
-  text-decoration: none;
-}
-.sourceName > span {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sourceName svg {
-  flex: none;
-  color: var(--a13n-tertiary);
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
 }
 .application {
   cursor: pointer;
@@ -314,12 +289,6 @@ button.tag:hover .tagKey {
   }
   .table tbody td:last-child > div {
     opacity: 1;
-  }
-  .source {
-    gap: 6px;
-  }
-  .sourceMark {
-    height: 18px;
   }
   .sourceName {
     display: none;

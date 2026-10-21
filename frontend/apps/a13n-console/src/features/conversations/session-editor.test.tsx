@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createClient, type Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import { SessionEditor } from "./session-editor";
-import { originLink, sessionPath } from "./session-identity";
+import { sessionPath } from "./session-identity";
 
 let client: Client;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
@@ -30,7 +30,6 @@ const session = {
     application: "review-bot",
     name: "GitHub · acme/widgets",
     external_id: "main_42",
-    url: "https://github.com/acme/widgets/pull/42",
   },
   version: 1,
   run_count: 0,
@@ -120,7 +119,7 @@ it("preserves an edit on conflict, reloads explicitly, then clears identity unde
   cache.clear();
 });
 
-it("opens only exact Thread IDs and refuses executable or credential-bearing source links", () => {
+it("opens only exact Thread IDs", () => {
   expect(sessionPath("/workspace/ws", "sess_one", "fix deployment")).toBe(
     "/workspace/ws/sessions/sess_one",
   );
@@ -133,14 +132,7 @@ it("opens only exact Thread IDs and refuses executable or credential-bearing sou
   ).toBe(
     "/workspace/ws/sessions/sess_one/threads/thread_0123456789abcdef0123456789abcdef",
   );
-  for (const url of [
-    "javascript:alert(1)",
-    "https://name:secret@example.com",
-    "not a URL",
-  ])
-    expect(originLink({ application: "app", url })).toBeUndefined();
   expect(sessionPath("/workspace/ws", "sess_one", "thread_external_name")).toBe(
     "/workspace/ws/sessions/sess_one",
   );
-  expect(originLink(session.origin)).toBe(session.origin?.url);
 });

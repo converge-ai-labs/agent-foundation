@@ -181,22 +181,6 @@ class SessionOrigin(_Frozen):
     application: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)] | None = None
     external_id: str | None = Field(default=None, min_length=1, max_length=512)
-    url: str | None = Field(default=None, min_length=8, max_length=2048)
-
-    @field_validator("url")
-    @classmethod
-    def public_link(cls, value: str | None) -> str | None:
-        if value is not None:
-            parsed = urlsplit(value)
-            if (
-                parsed.scheme not in {"http", "https"}
-                or not parsed.hostname
-                or parsed.username is not None
-                or parsed.password is not None
-                or any(ord(char) < 32 for char in value)
-            ):
-                raise ValueError("Session origin requires an HTTP(S) link without embedded credentials")
-        return value
 
 
 class SessionCreate(_Frozen):

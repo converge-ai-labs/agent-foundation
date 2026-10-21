@@ -1,8 +1,7 @@
-import { BrandIcon, Button, MenuItem } from "a13n-ui";
+import { Button, MenuItem } from "a13n-ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   ArrowRightIcon,
-  ArrowUpRightIcon,
   ChatsIcon,
   CopyIcon,
   PencilSimpleIcon,
@@ -35,7 +34,7 @@ import {
   readSessionFilters,
   useSessionAgents,
 } from "./filters";
-import { originLink, sessionPath, sessionTitle } from "./session-identity";
+import { sessionPath, sessionTitle } from "./session-identity";
 import { SessionEditor } from "./session-editor";
 import styles from "./session-list.module.css";
 
@@ -370,40 +369,22 @@ function SessionSource({
         <span className="sr-only">{t("Not specified")}</span>
       </span>
     );
-  const link = originLink(origin);
-  const name = origin.name || (link && new URL(link).hostname);
   return (
     <div className={styles.source}>
-      <span className={styles.sourceMark} aria-hidden="true">
-        <BrandIcon alias={origin.application} endpoint={link} size={14} />
-      </span>
-      <div className={styles.sourceText}>
-        {link ? (
-          <a
-            className={styles.sourceName}
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            title={origin.name || link}
-          >
-            <span>{name}</span>
-            <ArrowUpRightIcon size={11} aria-hidden="true" />
-          </a>
-        ) : name ? (
-          <span className={styles.sourceName} title={name}>
-            <span>{name}</span>
-          </span>
-        ) : null}
-        <button
-          type="button"
-          className={styles.application}
-          data-lead={!name || undefined}
-          onClick={() => onFilter("application", origin.application)}
-          title={t("Filter by {{label}}", { label: origin.application })}
-        >
-          {origin.application}
-        </button>
-      </div>
+      {origin.name && (
+        <span className={styles.sourceName} title={origin.name}>
+          {origin.name}
+        </span>
+      )}
+      <button
+        type="button"
+        className={styles.application}
+        data-lead={!origin.name || undefined}
+        onClick={() => onFilter("application", origin.application)}
+        title={t("Filter by {{label}}", { label: origin.application })}
+      >
+        {origin.application}
+      </button>
     </div>
   );
 }

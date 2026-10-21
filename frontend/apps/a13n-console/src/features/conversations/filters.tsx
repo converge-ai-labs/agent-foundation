@@ -1,6 +1,5 @@
 import {
   Button,
-  Input,
   Menu,
   MenuCheckboxItem,
   MenuPopup,
@@ -10,7 +9,7 @@ import {
   PopoverTrigger,
   SearchPicker,
 } from "a13n-ui";
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { SetURLSearchParams } from "react-router";
@@ -139,6 +138,9 @@ export function SessionFilterBar({
   if (agentId && !agentOptions.some((agent) => agent.value === agentId))
     agentOptions.push({ value: agentId, label: agentId, keywords: [] });
   const active = keys.some((key) => search.has(key));
+  // Row sources and labels narrow the list; each stays visible until removed.
+  const application = search.get("application");
+  const labels = search.getAll("label");
   return (
     <>
       <Toolbar
@@ -148,12 +150,6 @@ export function SessionFilterBar({
         searchPlaceholder={t("Title, source, ID, or message…")}
         filters={
           <>
-            <SourceFilter
-              value={search.get("application") ?? ""}
-              onChange={(value) =>
-                update({ application: value ? [value] : [] })
-              }
-            />
             <div className={styles.agentFilter}>
               <SearchPicker
                 label={t("Agent")}
@@ -215,25 +211,28 @@ export function SessionFilterBar({
           </>
         }
       />
-      {search.getAll("label").length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {search.getAll("label").map((value) => (
-            <Button
-              key={value}
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                update({
-                  label: search
-                    .getAll("label")
-                    .filter((label) => label !== value),
-                })
-              }
-            >
-              {value} <span aria-hidden="true">×</span>
-              <span className="sr-only">{t("Remove filter")}</span>
-            </Button>
-          ))}
+      {(application || labels.length > 0) && (
+        <div className={styles.activeFilters}>
+          {application && (
+            <FilterChip
+              name={t("Source")}
+              value={application}
+              onRemove={() => update({ application: [] })}
+            />
+          )}
+          {labels.map((label) => {
+            const [key, ...value] = label.split(":");
+            return (
+              <FilterChip
+                key={label}
+                name={key}
+                value={value.join(":")}
+                onRemove={() =>
+                  update({ label: labels.filter((item) => item !== label) })
+                }
+              />
+            );
+          })}
         </div>
       )}
       <ErrorNotice error={agents.error} retry={() => void agents.refetch()} />
@@ -241,68 +240,29 @@ export function SessionFilterBar({
   );
 }
 
-function SourceFilter({
+function FilterChip({
+  name,
   value,
-  onChange,
+  onRemove,
 }: {
+  name: string;
   value: string;
-  onChange: (value: string) => void;
+  onRemove: () => void;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(value);
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) setDraft(value);
-      }}
-    >
-      <PopoverTrigger render={<Button size="sm" variant="outline" />}>
-        {value || t("Source")}
-        <CaretDownIcon aria-hidden="true" />
-      </PopoverTrigger>
-      <PopoverPopup align="start" className="w-64 p-4">
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onChange(draft.trim());
-            setOpen(false);
-          }}
-        >
-          <label
-            className="text-xs font-medium"
-            htmlFor="session-source-filter"
-          >
-            {t("Source application")}
-          </label>
-          <Input
-            id="session-source-filter"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            maxLength={128}
-            placeholder="a13n-bot"
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-              }}
-            >
-              {t("Clear")}
-            </Button>
-            <Button size="sm" type="submit">
-              {t("Apply")}
-            </Button>
-          </div>
-        </form>
-      </PopoverPopup>
-    </Popover>
+    <span className={styles.activeFilter}>
+      <span className={styles.activeFilterName}>{name}</span>
+      <span className={styles.activeFilterValue}>{value}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`${t("Remove filter")} ${name}: ${value}`}
+        title={t("Remove filter")}
+      >
+        <XIcon size={11} weight="bold" aria-hidden="true" />
+      </button>
+    </span>
   );
 }
 

@@ -33,7 +33,6 @@ export function SessionEditor({
   const [externalId, setExternalId] = useState(
     session.origin?.external_id ?? "",
   );
-  const [url, setUrl] = useState(session.origin?.url ?? "");
   const save = useMutation({
     mutationFn: () =>
       client
@@ -50,7 +49,6 @@ export function SessionEditor({
                   application: application.trim(),
                   name: name.trim() || null,
                   external_id: externalId.trim() || null,
-                  url: url.trim() || null,
                 }
               : null,
           },
@@ -77,7 +75,6 @@ export function SessionEditor({
       setApplication(value.origin?.application ?? "");
       setName(value.origin?.name ?? "");
       setExternalId(value.origin?.external_id ?? "");
-      setUrl(value.origin?.url ?? "");
       save.reset();
     },
   });
@@ -92,7 +89,7 @@ export function SessionEditor({
       }}
       title={t("Edit session details")}
       description={t(
-        "Give this session a recognizable name and a link to where it started.",
+        "Give this session a recognizable name and record where it started.",
       )}
       closeLabel={t("Close")}
     >
@@ -134,16 +131,6 @@ export function SessionEditor({
                 maxLength={256}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={t("Repository, channel, or discussion")}
-              />
-            </FormField>
-            <FormField label={t("Source link")}>
-              <Input
-                type="url"
-                value={url}
-                disabled={!application.trim()}
-                maxLength={2048}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://…"
               />
             </FormField>
             <FormField label={t("External ID")}>

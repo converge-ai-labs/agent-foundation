@@ -143,7 +143,7 @@ async def list_sessions(storage: Storage, actor: Principal, workspace_id: str, f
                         SessionRow.title.icontains(needle, autoescape=True),
                         *[
                             SessionRow.origin[field].astext.icontains(needle, autoescape=True)
-                            for field in ("application", "name", "external_id", "url")
+                            for field in ("application", "name", "external_id")
                         ],
                         select(1)
                         .select_from(label_values)
