@@ -422,7 +422,7 @@ async def test_a_legacy_signing_secret_fails_with_a_clear_reason(
     assert await status(runtime, delivery_id) == ("dead", 1, SECRET_UNAVAILABLE)
 
     # New deliveries are staged dead at once, with the same reason, until the subscription is re-keyed.
-    run = RunFacts(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
+    run = Subject(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
     async with transaction(storage) as session:
         await stage_webhooks(session, runtime.keys, run, ["run.completed"], {"seq": 2}, limit=32)
     staged = [row for row in await webhook_rows(service) if row.payload.get("seq") == 2]
