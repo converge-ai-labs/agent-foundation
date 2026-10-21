@@ -3159,7 +3159,9 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
         ctx.tool_call_id = None
         from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 
-        assert toolset.get_toolset().tools["shell_exec"].metadata[TOOL_EXECUTION_METADATA_KEY] == "owned"
+        execution_mode = toolset.get_toolset().tools["shell_exec"].metadata[TOOL_EXECUTION_METADATA_KEY]
+        assert execution_mode({"command": "printf foreground", "cwd": "/workspace"}) == "owned"
+        assert execution_mode({"command": "printf process", "cwd": "/environment/shared"}) == "owned_auto"
         foreground = await toolset.shell_exec(
             ctx,
             "printf foreground",
