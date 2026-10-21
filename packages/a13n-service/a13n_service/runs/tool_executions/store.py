@@ -17,7 +17,7 @@ from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import lock, now, short_session, transaction
 from a13n_service.infra.objects.interface import ObjectRef, read
 from a13n_service.infra.outbox import enqueue
-from a13n_service.runs.attempts import Lease, LeaseLost, lock_lease
+from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ToolExecutionRow
 from a13n_service.runs.tool_executions.payload import Payload
@@ -121,7 +121,8 @@ class Store:
                 # Only initial admission may create a row. Expired identities cannot be resurrected.
                 if record.status != "queued":
                     raise LeaseLost()
-                run, _, current = await lock_lease(session, lease)
+                # The INSERT's Thread foreign key also takes a row lock: follow Thread → Run → Attempt.
+                _, run, _, current = await lock_thread_lease(session, lease)
                 if run.cancel_requested_at is not None:
                     raise LeaseLost()
                 row = ToolExecutionRow(

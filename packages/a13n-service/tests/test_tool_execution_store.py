@@ -229,6 +229,47 @@ async def test_admission_requires_current_attempt_and_matching_thread(service, s
     assert await store.get(lease.thread_id, record.execution_id) is None
 
 
+async def test_admission_waits_for_thread_before_locking_run(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_service.infra.db import lock, short_session
+    from a13n_service.runs import attempts
+    from a13n_service.runs.tables import RunRow, ThreadRow
+    from sqlalchemy import text
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    store, record = Store(service.runtime), _record(lease)
+    entered = asyncio.Event()
+    admission_pid = None
+    native_lock = attempts.lock
+
+    async def observe_lock(session, model, key, **kwargs):
+        nonlocal admission_pid
+        if admission_pid is None:
+            admission_pid = await session.scalar(text("SELECT pg_backend_pid()"))
+            entered.set()
+        return await native_lock(session, model, key, **kwargs)
+
+    monkeypatch.setattr(attempts, "lock", observe_lock)
+    async with asyncio.timeout(5), asyncio.TaskGroup() as tasks:
+        async with transaction(service.runtime.storage) as session:
+            await lock(session, ThreadRow, lease.thread_id)
+            holder_pid = await session.scalar(text("SELECT pg_backend_pid()"))
+            admission = tasks.create_task(_save(store, lease, StoredToolExecution(record)))
+            await entered.wait()
+            # Wait for real database contention, then exercise the poller's Thread → Run suffix.
+            while True:
+                async with short_session(service.runtime.storage) as observation:
+                    blocked = await observation.scalar(
+                        text("SELECT :holder = ANY(pg_blocking_pids(:admission))"),
+                        {"holder": holder_pid, "admission": admission_pid},
+                    )
+                if blocked:
+                    break
+                await asyncio.sleep(0)
+            assert await lock(session, RunRow, lease.run_id, skip_locked=True) is not None
+        await admission
+    assert await store.get(lease.thread_id, record.execution_id) is not None
+
+
 async def test_shared_codeact_late_writes_and_fresh_snapshot_do_not_overwrite_each_other(
     service, scripted_model, runs_kit
 ):

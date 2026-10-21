@@ -15,11 +15,13 @@ from a13n_service.runs.schemas import Message
 pytestmark = pytest.mark.anyio
 
 
-def test_wrapped_endpoint_refusals_keep_the_safe_reason():
+@pytest.mark.parametrize("grouped", [False, True])
+def test_wrapped_endpoint_refusals_keep_the_safe_reason(grouped):
     refusal = EndpointPolicyError("endpoint must use HTTPS")
     wrapped = RunError("Agent execution failed.", code="agent_run_failed")
     wrapped.__cause__ = refusal
-    outcome = _deterministic(_own(wrapped))
+    error = ExceptionGroup("monitors", [ExceptionGroup("stream", [wrapped])]) if grouped else wrapped
+    outcome = _deterministic(_own(error))
     assert outcome is not None and outcome.failure is not None
     assert outcome.failure.model_dump() == {
         "code": "provider_endpoint_denied",
@@ -93,8 +95,10 @@ async def test_steering_retains_or_matches_the_accepted_configuration(service, s
     rule = f"regex:{re.escape(host)}" if use_regex else host
     configuration = {"allowed_hosts": [rule], "extensions": {"example.filter": {"images": ["keep"]}}}
     gate = asyncio.Event()
-    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate)
-    scripted_model.say("Done")
+    # Every native request stays open while configuration is checked; immediate steering may
+    # cancel either of the first two requests before the equal-config entry is incorporated.
+    for _ in range(3):
+        scripted_model.say("Done", gate=gate)
     started = await runs_kit.start_thread(service, agent, "start", options={"configuration": configuration})
     thread_id = started["thread"]["id"]
     run_id = started["run"]["id"]
@@ -124,6 +128,8 @@ async def test_steering_retains_or_matches_the_accepted_configuration(service, s
         service, thread_id, runs_kit.message(agent, "same config", options={"configuration": configuration})
     )
     assert equal.status_code == 201, equal.text
+    while "same config" not in str(runs_kit.user_texts(await scripted_model.request())):
+        pass
     gate.set()
     await running
     entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}

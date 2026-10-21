@@ -188,6 +188,9 @@ def _failure(lease: Lease, error: Exception) -> Outcome | None:
 def _own(error: Exception) -> Exception:
     """The Service's own failure inside a Harness hook, such as a skill package read or a lease proof, which the
     Harness wraps and keeps as the cause; it keeps its meaning. Any other error is itself."""
+    # The attempt's monitor TaskGroup also wraps failures from its stream body.
+    while isinstance(error, ExceptionGroup) and len(error.exceptions) == 1:
+        error = error.exceptions[0]
     current: BaseException = error
     while isinstance(current, HarnessError) and current.__cause__ is not None:
         current = current.__cause__
@@ -410,6 +413,7 @@ class _Attempt:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
         self.offers = _Offers(plan.assigned)
         self.offer_lock = asyncio.Lock()
+        self.incoming: asyncio.Task[None] | None = None
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
             primary=any(mount.name == PRIMARY for mount in plan.mounts),
@@ -564,14 +568,15 @@ class _Attempt:
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
             async with stream, asyncio.TaskGroup() as monitors:
                 interrupt = monitors.create_task(self._cancel_when_stopped(stream))
-                incoming = monitors.create_task(self._poll_input(stream))
+                self.incoming = monitors.create_task(self._poll_input(stream))
                 try:
                     async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
                         async for item in stream:
                             await self._observe(item, output)
                 finally:
                     interrupt.cancel()
-                    incoming.cancel()
+                    self.incoming.cancel()
+                    self.incoming = None
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
@@ -712,6 +717,10 @@ class _Attempt:
                 if pending is not None and pending.desktop_control_id:
                     outcome = Outcome(status="waiting", pending=pending)
             if outcome is not None:
+                # Stop input polling before our seal releases the lease. A poll already waiting for
+                # this transaction's Thread lock must not mistake our own completion for lease loss.
+                if self.incoming is not None:
+                    self.incoming.cancel()
                 await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
             else:
                 entries = await inbox.assign_steers(
@@ -808,7 +817,7 @@ class _Attempt:
         while True:
             await asyncio.sleep(0.2)
             if not self.boundaries.accepting_steers:
-                return
+                continue
             try:
                 async with transaction(self.runtime.storage) as session:
                     thread, run, _, _ = await lock_thread_lease(session, self.lease)

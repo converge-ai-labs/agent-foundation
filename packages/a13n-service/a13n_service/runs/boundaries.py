@@ -105,6 +105,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         owner = self.primary is None
         if owner:
             self.primary = ctx.run_id
+            # A preempted request may restart with the same message count but new steering input.
+            self.staged_length = -1
             self.accepting_steers = True
         try:
             try:
@@ -119,13 +121,6 @@ class Boundaries(AbstractCapability[AgentContext]):
                 # Steering can read attachments through the still-entered Environment.
                 await self.drain()
             return result
-        except asyncio.CancelledError:
-            if owner and self._writer is not None:
-                # Public iteration tears down the native scope before leaving process().
-                # Stop I/O here rather than waiting on a writer cancelled only by that exit.
-                self._writer.cancel()
-                await asyncio.gather(self._writer, return_exceptions=True)
-            raise
         finally:
             if owner:
                 self.accepting_steers = False
