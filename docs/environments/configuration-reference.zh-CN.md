@@ -281,19 +281,14 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `ModalEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                           |
-| ------------------------- | ----- | ------------- | ------------------------------------------------------ |
-| `root`                    | false | string        | default="/"                                            |
-| `python`                  | false | string        | default="/usr/local/bin/python3"                       |
-| `shell`                   | false | string        | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer       | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `image`                   | false | string        | minLength=1; maxLength=256; default="python:3.13-slim" |
-| `timeout_seconds`         | false | integer       | minimum=300; maximum=86400; default=86400              |
-| `cpu`                     | false | number        | maximum=64; exclusiveMinimum=0; default=1              |
-| `memory`                  | false | integer       | minimum=128; maximum=262144; default=1024              |
+| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                 |
+| ------------------------- | ----- | ------------- | -------------------------------------------- |
+| `image`                   | true  | string        | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean       | default=false                                |
+| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false | integer       | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false | number        | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false | integer       | minimum=128; maximum=262144; default=1024    |
 
 ## `VercelEnvironmentConfiguration`
 

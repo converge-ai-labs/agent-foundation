@@ -1,5 +1,5 @@
 import { Button, ChoiceField } from "a13n-ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
@@ -33,6 +33,7 @@ export function DesktopAssistance({
     client = useClient(),
     { workspace } = useWorkspace();
   const api = client.workspace(workspace.id);
+  const cache = useQueryClient();
   const [selectedMount, setSelectedMount] = useState(
     mounts?.[0] ?? "workspace",
   );
@@ -355,16 +356,33 @@ export function DesktopAssistance({
     setBusy(true);
     setError(null);
     try {
-      data(
-        await api.POST("/api/v1/runs/{run_id}/desktop-control", {
+      const next = data(
+        await api.POST("/api/v1/runs/{run_id}/desktop-control/view", {
           params: { path: { run_id: runId } },
           body: {
             mount: selectedMount,
-            reason: "User-initiated desktop control",
+            reason: "User-initiated desktop viewing",
+            session_id: sessionId,
           },
         }),
       );
-      await query.refetch();
+      if (mounted.current) {
+        // Cache only public assistance metadata, never the access credentials.
+        cache.setQueryData(
+          ["desktop-assistance", workspace.id, runId, callId],
+          next.assistance,
+        );
+        epoch.current = next.assistance.epoch;
+        setAccess(next);
+      } else {
+        await api.POST(
+          "/api/v1/desktop-assistance/{assistance_id}/disconnect",
+          {
+            params: { path: { assistance_id: next.assistance.id } },
+            body: { session_id: sessionId, epoch: next.assistance.epoch },
+          },
+        );
+      }
     } catch (cause) {
       failed(cause);
     } finally {
@@ -411,7 +429,7 @@ export function DesktopAssistance({
           disabled={busy || query.isLoading}
           onClick={() => void openDesktop()}
         >
-          {t("Open desktop")}
+          {t("Open read-only desktop")}
         </Button>
       )}
       <div className={styles.status} role="status">

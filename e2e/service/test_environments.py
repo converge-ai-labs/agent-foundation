@@ -129,10 +129,16 @@ async def hosted_account(provider: str, config: pytest.Config) -> AsyncIterator[
         organization = os.environ.get("DAYTONA_ORGANIZATION_ID") or await daytona_organization(key)
         yield {"organization_id": organization}, {"api_key": key}, {}
     elif provider == "modal":
-        token_id, token_secret = variables(config, provider, "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET")
+        token_id, token_secret, image = variables(
+            config, provider, "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET", "MODAL_ENVD_IMAGE"
+        )
         async with modal_app(token_id, token_secret) as app:
             account = {"workspace": os.environ.get("MODAL_WORKSPACE", "service-e2e"), "app_name": app}
-            yield account, {"token_id": token_id, "token_secret": token_secret}, {"timeout_seconds": 900}
+            yield (
+                account,
+                {"token_id": token_id, "token_secret": token_secret},
+                {"image": image, "timeout_seconds": 900},
+            )
     elif provider == "vercel":
         token, team, project = variables(config, provider, "VERCEL_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID")
         # A Hobby plan refuses sandboxes that may run longer than 45 minutes.

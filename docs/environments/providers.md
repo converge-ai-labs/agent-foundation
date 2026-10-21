@@ -133,14 +133,14 @@ With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the 
 
 E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. E2B supplies Native Files & Shell; the other five use the general Envd execution path. Advanced capabilities on an E2B target also use a compatible Envd connection. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
 
-| Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                         |
-| -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------ |
-| E2B            | `domain`, optional `api_url`                                                   | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`         |
-| Daytona        | `organization_id`, `target` (default `us`)                                     | `api_key`                       | `snapshot`, which sets the sandbox's resources                                 |
-| Modal          | `workspace`, existing deployed `app_name`, `environment_name` (default `main`) | `token_id`, `token_secret`      | `image` (default `python:3.13-slim`), `cpu`, `memory` (MiB), `timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `runtime` (default `python3.13`), `vcpus`, `timeout_seconds`                   |
-| Fly.io Sprites | `organization`                                                                 | `api_key` (Sprites token)       | `region`                                                                       |
-| Runloop        | `organization`                                                                 | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                        |
+| Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                                |
+| -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------- |
+| E2B            | `domain`, optional `api_url`                                                   | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                |
+| Daytona        | `organization_id`, `target` (default `us`)                                     | `api_key`                       | `snapshot`, which sets the sandbox's resources                                        |
+| Modal          | `workspace`, existing deployed `app_name`, `environment_name` (default `main`) | `token_id`, `token_secret`      | required Envd-compatible `image`, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `runtime` (default `python3.13`), `vcpus`, `timeout_seconds`                          |
+| Fly.io Sprites | `organization`                                                                 | `api_key` (Sprites token)       | `region`                                                                              |
+| Runloop        | `organization`                                                                 | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                               |
 
 Use the organization, team, or Modal `workspace` that owns the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a recipe or reconnect state.
 
@@ -257,7 +257,26 @@ New Daytona organizations must choose a default region in the dashboard before c
 
 ### Modal
 
-Default image: `python:3.13-slim`, with `/usr/local/bin/python3`; root `/` is writable by that image's root user. Use an existing deployed App. Managed stop snapshots files before termination; resume replaces the native sandbox, and successful readiness permits snapshot cleanup. Running sandbox TTL cannot be extended beyond its known deadline.
+Supply an explicit Envd-compatible `image`: a registry image or a Modal image ID (`im-...`) in the same account. Use an existing deployed App. Agent file, shell, process and Computer operations use Envd/EIP with `/workspace` as the default working directory and UID/GID 1000. Migrate old plain-Python images and native settings such as `root` and `python`, then create a new environment.
+
+Authenticate with `modal token new` and prepare a compatible Linux amd64 Envd binary before running the image builder. The builder does not embed runtime credentials:
+
+```sh
+uv run --locked python examples/environment-provider/modal_desktop_image.py \
+  --app a13n-sandbox-dev --binary /path/to/linux-amd64/a13n-envd
+```
+
+Use the resulting image ID in the recipe:
+
+```json
+{"image": "im-yourImageId", "desktop": true, "desktop_assistance": true, "cpu": 2, "memory": 4096}
+```
+
+`desktop` requires an observable, input-ready desktop on create and resume. The Service-only `desktop_assistance` setting also requires the desktop access supervisor. A separate TLS tunnel on port 6081 provides read-only viewing, exclusive control, revocation and handback. The TLS tunnel on port 8888 carries Envd with its own guest token; the browser receives neither Modal nor Envd credentials. Enable Agent Computer tools and mount permissions separately.
+
+Managed stop snapshots the filesystem before termination. Explicit start allocates from that snapshot and starts fresh desktop processes. Successful readiness permits snapshot cleanup. Files persist; old observation references and human grants become invalid. Running sandbox TTL cannot extend beyond its known deadline, at most 24 hours. Execution attachment does not resume or renew a sandbox.
+
+`test_modal_desktop_live.py` and `test_modal_access_live.py` verify EIP/desktop/resume and human endpoint authorization/revocation/expiry respectively. `test_modal_takeover_live.py` exercises Service HTTP admission, safe pause, real RFB control, revocation and successor observation with a scripted model and a seeded ready lifecycle receipt. It does not exercise the Console browser UI. Set `A13N_TEST_MODAL_DESKTOP=1`, `A13N_TEST_MODAL_IMAGE`, `A13N_TEST_MODAL_BACKEND_JSON` and `A13N_TEST_MODAL_CREDENTIAL_JSON`. These tests allocate billable targets and attempt cleanup.
 
 ### Vercel Sandbox
 

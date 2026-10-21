@@ -1,9 +1,15 @@
 """Durable Agent-requested assistance. Provider I/O always runs outside storage scopes."""
 
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, nullcontext
+from dataclasses import dataclass
 from datetime import timedelta
+from functools import partial
 from typing import Literal
 from urllib.parse import quote
 
+import anyio
+from a13n_harness.providers.environment.modal.diagnostics import desktop_operation
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +18,7 @@ from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment import desktop_access as wire
+from a13n_service.providers.environment.management import DesktopSessionProvider
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import Lease, execution_principals, lock_lease
@@ -32,6 +39,11 @@ from a13n_service.runs.schemas import Pending, Resume, Returned
 from a13n_service.runs.tables import RunRow, ThreadRow
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
+
+# Access performs discovery, optional renewal and grant as sequential remote calls.
+# Bound the entire request before the durable claim can be reclaimed by a sweep.
+_ACCESS_TIMEOUT_SECONDS = 90
+_ACCESS_CLEANUP_SECONDS = 15
 
 TOOL = "request_desktop_assistance"
 LIVE = ("preparing", "awaiting_user", "claiming", "human_control", "revoking", "ready_to_resume", "blocked", "consumed")
@@ -55,7 +67,7 @@ async def provider_target(
     )
     if environment.provider_identity != provider_identity(runtime.registry, provider):
         raise conflict("environment", environment.id, "provider_identity_changed")
-    if provider.type not in {"docker", "e2b", "daytona"}:
+    if provider.type not in {"docker", "e2b", "daytona", "modal"}:
         raise conflict("environment", environment.id, "desktop_assistance_unsupported")
     if handle.recipe.get("init_script"):
         raise conflict("environment", environment.id, "desktop_background_work_unconfirmed")
@@ -77,15 +89,44 @@ async def audit_transition(session: AsyncSession, actor: Principal, row: Desktop
 
 
 async def dispatch(runtime: Runtime, target: Target, request: wire.Request, *, operation_id: str) -> wire.Reply:
+    with (
+        desktop_operation(operation_id, request.operation)
+        if target.state is not None and target.state.provider_key == "modal"
+        else nullcontext()
+    ):
+        provider = await open_provider(runtime, target)
+        try:
+            return await provider.desktop_access(
+                dict(target.recipe),
+                environment_id=target.environment_id,
+                state=target.state,
+                operation_id=operation_id,
+                request=request,
+            )
+        finally:
+            await close(provider)
+
+
+@asynccontextmanager
+async def access_dispatch(
+    runtime: Runtime, target: Target, *, operation_id: str
+) -> AsyncIterator[Callable[[wire.Request], Awaitable[wire.Reply]]]:
+    if target.state is None or target.state.provider_key != "modal":
+        yield partial(dispatch, runtime, target, operation_id=operation_id)
+        return
     provider = await open_provider(runtime, target)
     try:
-        return await provider.desktop_access(
-            dict(target.recipe),
-            environment_id=target.environment_id,
-            state=target.state,
-            operation_id=operation_id,
-            request=request,
-        )
+        if not isinstance(provider, DesktopSessionProvider):
+            raise ValueError("Modal desktop access requires its scoped provider")
+        async with provider.desktop_session(
+            dict(target.recipe), environment_id=target.environment_id, state=target.state, operation_id=operation_id
+        ) as management:
+
+            async def send(request: wire.Request) -> wire.Reply:
+                with desktop_operation(operation_id, request.operation):
+                    return await management.desktop_access(request)
+
+            yield send
     finally:
         await close(provider)
 
@@ -103,10 +144,19 @@ async def verify_continuation(runtime: Runtime, lease: Lease, selected: Target) 
         if row is None or row.state != "consumed" or row.successor_id != lease.run_id:
             return
         generation = row.generation
-    description = await dispatch(runtime, selected, wire.Describe(), operation_id=new_object_id("dtop"))
-    if generation is None or not isinstance(description, wire.Description) or description.generation != generation:
+    async with access_dispatch(runtime, selected, operation_id=new_object_id("dtop")) as send:
+        description = await send(wire.Describe())
+        valid_generation = False
+        if (
+            generation is not None
+            and isinstance(description, wire.Description)
+            and description.generation == generation
+        ):
+            valid_generation = True
+            await send(wire.Settle(generation=generation))
+    # Raise outside the provider scope to preserve the service conflict after cleanup.
+    if not valid_generation:
         raise conflict("environment", selected.environment_id, "desktop_generation_changed")
-    await dispatch(runtime, selected, wire.Settle(generation=generation), operation_id=new_object_id("dtop"))
 
 
 async def require_no_agent_request(session: AsyncSession, run_id: str) -> None:
@@ -359,7 +409,20 @@ def available(row: DesktopAssistanceRow, current) -> None:
         raise conflict("desktop_assistance", row.id, "desktop_assistance_not_ready")
 
 
-async def access(
+@dataclass(frozen=True)
+class AccessClaim:
+    identity: str
+    operation_id: str
+    selected: Target
+    generation: str
+    grant_id: str
+    epoch: int
+    ttl: int
+    mode: Literal["view", "control"]
+    renew: bool
+
+
+async def claim_access(
     runtime: Runtime,
     actor: Principal,
     workspace_id: str,
@@ -367,9 +430,9 @@ async def access(
     body: Control,
     *,
     mode: Literal["view", "control"],
-    renew: bool = False,
-) -> Access:
-    operation_id = new_object_id("dtop")
+    renew: bool,
+    operation_id: str,
+) -> AccessClaim:
     async with transaction(runtime.storage) as session:
         row, control, selected = await authorized(session, runtime, actor, workspace_id, identity)
         current = await now(session)
@@ -433,54 +496,99 @@ async def access(
                 session.add(viewer)
             grant_id, epoch = viewer.id, viewer.epoch
         assert grant_id is not None
-        row.operation_id, row.operation_expires_at = operation_id, current + timedelta(seconds=45)
-    try:
-        description = await dispatch(runtime, selected, wire.Describe(), operation_id=operation_id)
-        if not isinstance(description, wire.Description) or description.generation != generation:
-            raise ValueError("Desktop generation changed")
-        route = viewer_url(description.websocket_url)
-        if renew:
-            await dispatch(
-                runtime,
-                selected,
-                wire.Renew(generation=generation, id=grant_id, epoch=epoch, ttl_seconds=ttl),
-                operation_id=operation_id,
-            )
-        result = await dispatch(
-            runtime,
-            selected,
-            wire.Grant(generation=generation, id=grant_id, mode=mode, epoch=epoch, ttl_seconds=ttl),
-            operation_id=operation_id,
+        row.operation_id, row.operation_expires_at = (
+            operation_id,
+            current + timedelta(seconds=_ACCESS_TIMEOUT_SECONDS + _ACCESS_CLEANUP_SECONDS),
         )
+    return AccessClaim(identity, operation_id, selected, generation, grant_id, epoch, ttl, mode, renew)
+
+
+async def grant_access(
+    claim: AccessClaim,
+    description: wire.Reply,
+    send: Callable[[wire.Request], Awaitable[wire.Reply]],
+) -> tuple[wire.AccessGrant, str]:
+    if not isinstance(description, wire.Description) or description.generation != claim.generation:
+        raise ValueError("Desktop generation changed")
+    route = viewer_url(description.websocket_url)
+    if claim.renew:
+        await send(wire.Renew(generation=claim.generation, id=claim.grant_id, epoch=claim.epoch, ttl_seconds=claim.ttl))
+    result = await send(
+        wire.Grant(
+            generation=claim.generation,
+            id=claim.grant_id,
+            mode=claim.mode,
+            epoch=claim.epoch,
+            ttl_seconds=claim.ttl,
+        )
+    )
+    if (
+        not isinstance(result, wire.AccessGrant)
+        or result.state != "active"
+        or result.token is None
+        or result.password is None
+    ):
+        raise ValueError("Desktop grant is no longer active")
+    return result, route
+
+
+async def publish_access(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    claim: AccessClaim,
+    result: wire.AccessGrant,
+    route: str,
+) -> Access:
+    assert result.token is not None and result.password is not None
+    async with transaction(runtime.storage) as session:
+        row, _, _ = await authorized(session, runtime, actor, workspace_id, claim.identity)
+        current = await now(session)
         if (
-            not isinstance(result, wire.AccessGrant)
-            or result.state != "active"
-            or result.token is None
-            or result.password is None
+            row.operation_id != claim.operation_id
+            or row.operation_expires_at is None
+            or row.operation_expires_at <= current
+            or row.deadline <= current
         ):
-            raise ValueError("Desktop grant is no longer active")
-        async with transaction(runtime.storage) as session:
-            row, _, _ = await authorized(session, runtime, actor, workspace_id, identity)
-            current = await now(session)
-            if row.operation_id != operation_id or row.deadline <= current:
-                raise conflict("desktop_assistance", identity, "desktop_transition_superseded")
-            if mode == "control":
-                row.state = "human_control"
-                row.lease_expires_at = current + timedelta(seconds=result.remaining_seconds)
-            else:
-                viewer = await session.get(DesktopViewerRow, grant_id)
-                assert viewer is not None
-                viewer.expires_at = current + timedelta(seconds=result.remaining_seconds)
-            row.operation_id, row.operation_expires_at = None, None
-            if not renew:
-                await audit_transition(session, actor, row, mode)
-            return Access(
-                assistance=View.model_validate(row),
-                mode=mode,
-                websocket_url=route + "?token=" + quote(result.token.get_secret_value(), safe=""),
-                password=result.password.get_secret_value(),
-                expires_in_seconds=result.remaining_seconds,
-            )
+            raise conflict("desktop_assistance", claim.identity, "desktop_transition_superseded")
+        if claim.mode == "control":
+            row.state = "human_control"
+            row.lease_expires_at = current + timedelta(seconds=result.remaining_seconds)
+        else:
+            viewer = await session.get(DesktopViewerRow, claim.grant_id)
+            assert viewer is not None
+            viewer.expires_at = current + timedelta(seconds=result.remaining_seconds)
+        row.operation_id, row.operation_expires_at = None, None
+        if not claim.renew:
+            await audit_transition(session, actor, row, claim.mode)
+        return Access(
+            assistance=View.model_validate(row),
+            mode=claim.mode,
+            websocket_url=route + "?token=" + quote(result.token.get_secret_value(), safe=""),
+            password=result.password.get_secret_value(),
+            expires_in_seconds=result.remaining_seconds,
+        )
+
+
+async def access(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    identity: str,
+    body: Control,
+    *,
+    mode: Literal["view", "control"],
+    renew: bool = False,
+) -> Access:
+    operation_id = new_object_id("dtop")
+    claim = await claim_access(
+        runtime, actor, workspace_id, identity, body, mode=mode, renew=renew, operation_id=operation_id
+    )
+    try:
+        with anyio.fail_after(_ACCESS_TIMEOUT_SECONDS):
+            async with access_dispatch(runtime, claim.selected, operation_id=operation_id) as send:
+                result, route = await grant_access(claim, await send(wire.Describe()), send)
+            return await publish_access(runtime, actor, workspace_id, claim, result, route)
     except BaseException as error:
         # Never claim rollback of a dispatched grant. Its bounded lease remains the fallback.
         await blocked(runtime, identity, operation_id)
@@ -537,14 +645,10 @@ async def complete(runtime: Runtime, actor: Principal, workspace_id: str, identi
         row.state = "revoking"
         row.operation_id, row.operation_expires_at = operation_id, current + timedelta(seconds=45)
     try:
-        for grant_id, epoch in grants:
-            await dispatch(
-                runtime,
-                selected,
-                wire.Inspect(operation="revoke", generation=generation, id=grant_id, epoch=epoch),
-                operation_id=operation_id,
-            )
-        await dispatch(runtime, selected, wire.Settle(generation=generation), operation_id=operation_id)
+        async with access_dispatch(runtime, selected, operation_id=operation_id) as send:
+            for grant_id, epoch in grants:
+                await send(wire.Inspect(operation="revoke", generation=generation, id=grant_id, epoch=epoch))
+            await send(wire.Settle(generation=generation))
         async with transaction(runtime.storage) as session:
             row, _, _ = await authorized(session, runtime, actor, workspace_id, identity)
             if row.operation_id != operation_id:

@@ -43,7 +43,7 @@ export function ProviderConfiguration({
   error?: string;
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
-  variant?: "default" | "docker" | "e2b" | "daytona";
+  variant?: "default" | "docker" | "e2b" | "daytona" | "modal";
   /** Template settings that close the group, such as its lifecycle. */
   children?: ReactNode;
 }) {
@@ -117,7 +117,7 @@ export function ProviderConfiguration({
       continue;
     if (variant === "e2b" && key === "template") continue;
     if (
-      (variant === "e2b" || variant === "daytona") &&
+      (variant === "e2b" || variant === "daytona" || variant === "modal") &&
       key.startsWith("desktop_") &&
       value?.desktop !== true
     )
@@ -158,7 +158,7 @@ export function ProviderConfiguration({
   const change = (next: Record<string, unknown>) =>
     onChange(
       JSON.stringify(
-        variant === "daytona" && next.desktop !== true
+        (variant === "daytona" || variant === "modal") && next.desktop !== true
           ? { ...next, desktop_assistance: false }
           : next,
         null,

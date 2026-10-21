@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
 
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.providers.environment.native.configuration import CommandConfiguration, TargetState
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.modal.diagnostics import measure
+from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 
@@ -23,6 +26,7 @@ if TYPE_CHECKING:
 
 class ModalConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
+    _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
     workspace: str = Field(min_length=1, max_length=128, description="Modal workspace owning the credentials and App.")
     app_name: str = Field(min_length=1, max_length=128, description="Existing deployed Modal App for named sandboxes.")
     environment_name: str = Field(default="main", min_length=1, max_length=128)
@@ -34,17 +38,26 @@ class ModalCredential(BaseModel):
     token_secret: SecretStr = Field(min_length=1)
 
 
-class ModalEnvironmentConfiguration(CommandConfiguration):
+class ModalEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
-        json_schema_extra={"x-primary-fields": ["image", "timeout_seconds", "cpu", "memory"]},
+        json_schema_extra={"x-primary-fields": ["image", "desktop", "timeout_seconds", "cpu", "memory"]},
     )
-    image: str = Field(default="python:3.13-slim", min_length=1, max_length=256)
-    python: str = "/usr/local/bin/python3"
+    image: str = Field(
+        min_length=1,
+        max_length=256,
+        description="Operator-built registry image or Modal image ID (im-...) containing compatible a13n-envd and sandbox launchers. Agent operations use EIP.",
+    )
+    desktop: bool = Field(default=False, description="Require an observable, input-ready X11 desktop from the image.")
+    request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     timeout_seconds: int = Field(default=86400, ge=300, le=86400)
     cpu: float = Field(default=1, gt=0, le=64, allow_inf_nan=False)
     memory: int = Field(default=1024, ge=128, le=262144, description="Memory in MiB")
+
+    @property
+    def fingerprint(self) -> str:
+        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
 
 
 class SnapshotReference(BaseModel):
@@ -87,9 +100,12 @@ def sdk_errors(*, mutation: bool = False) -> Iterator[None]:
 async def execute_command(sandbox: modal.Sandbox, argv: list[str], timeout: float) -> str:
     with sdk_errors(mutation=True):
         async with asyncio.timeout(timeout + 5):
-            process = await sandbox.exec.aio(*argv, timeout=int(timeout))
-            stdout = await process.stdout.read.aio()
-            await process.wait.aio()
+            with measure("command_start"):
+                process = await sandbox.exec.aio(*argv, timeout=int(timeout))
+            with measure("command_stdout"):
+                stdout = await process.stdout.read.aio()
+            with measure("command_wait"):
+                await process.wait.aio()
             if process.returncode != 0:
                 raise failure(
                     "modal",
@@ -131,9 +147,13 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
             sandbox = None
             if self.target:
                 try:
-                    candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
-                    self.validate_labels(await candidate.get_tags.aio())
-                    if await candidate.poll.aio() is None:
+                    with measure("sandbox_from_id"):
+                        candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
+                    with measure("sandbox_get_tags"):
+                        self.validate_labels(await candidate.get_tags.aio())
+                    with measure("sandbox_poll"):
+                        status = await candidate.poll.aio()
+                    if status is None:
                         sandbox = candidate
                 except modal.exception.NotFoundError:
                     pass
@@ -165,7 +185,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
         from modal_proto import api_pb2
 
         if self.client is None:
-            with sdk_errors():
+            with measure("client_open"), sdk_errors():
                 # from_credentials registers a process-lifetime shutdown task that retains each short-lived client.
                 # This reference owns the client and releases it in close_transport.
                 self.client = modal.Client(
@@ -185,7 +205,9 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
     async def close_transport(self) -> None:
         try:
             if self.sandbox:
-                await self.sandbox.detach.aio()
+                with measure("sandbox_detach"):
+                    await self.sandbox.detach.aio()
         finally:
             if self.client:
-                await self.client.__aexit__(None, None, None)
+                with measure("client_close"):
+                    await self.client.__aexit__(None, None, None)

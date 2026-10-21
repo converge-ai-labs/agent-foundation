@@ -97,7 +97,7 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 `RunloopEnvironmentConfiguration` 选择 blueprint、资源规格和空闲挂起间隔，根目录为 `/home/user`。`RunloopConnectionConfiguration` 指定组织；`TokenCredential` 提供 API key。
 
-Daytona、Sprites 和 Runloop 使用客体 PATH 上的 `python3`。Modal 使用 `/usr/local/bin/python3`，Vercel 使用其运行时 Python 路径。自定义客体镜像必须提供配置的根目录、Python 和 shell；这些路径不指向 Host 文件系统。共享命令/文件限制列于各自生成的目标配置 schema。
+Daytona、Sprites 和 Runloop 使用客体 PATH 上的 `python3`。Modal 要求 Envd 镜像，仅在管理 helper 中使用客体 PATH 上的 `python3`；Vercel 使用其运行时 Python 路径。自定义客体镜像必须提供配置的根目录、Python 和 shell；这些路径不指向 Host 文件系统。共享命令/文件限制列于各自生成的目标配置 schema。
 
 ## 远程 HTTP / WebSocket Envd
 

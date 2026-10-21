@@ -469,6 +469,7 @@
   "Control Desktop": "获取桌面控制权",
   "Disconnect Desktop": "断开桌面连接",
   "Get Assistance": "查看桌面协助状态",
+  "Open View": "打开并只读查看桌面",
   "View Desktop": "只读查看桌面",
   "A fragment of a versioned value, not a complete JSON object or writable configuration.": "带版本标识的内容片段，不是完整的 JSON 对象，也不能作为配置写回。",
   "A matching span's selected content, or a continuation to keep locating that span.": "匹配 Span 的所选内容，或用于继续查找该 Span 的游标。",

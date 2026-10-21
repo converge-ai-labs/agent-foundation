@@ -14,7 +14,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("winner", ["user_before_dispatch", "user_during_discovery", "agent"])
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
 async def test_simultaneous_assistance_and_takeover_keep_one_resumable_wait(
     service, scripted_model, runs_kit, monkeypatch, winner, provider_key
 ):
@@ -128,7 +128,7 @@ async def open_desktop(service, run):
     return result.json()
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
 async def test_takeover_during_generation_skips_stale_tool_then_resumes(
     service, scripted_model, runs_kit, monkeypatch, provider_key
 ):
@@ -199,7 +199,7 @@ async def test_takeover_during_generation_skips_stale_tool_then_resumes(
         assert row.state == "consumed" and row.outcome == outcome
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
 async def test_unknown_tool_work_prevents_takeover(service, scripted_model, runs_kit, monkeypatch, provider_key):
     first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key)
     gate = asyncio.Event()
@@ -419,3 +419,120 @@ async def test_expired_user_control_requires_cleanup_and_explicit_resume(
     scripted_model.say("Observe the changed desktop before further operations.")
     await (await runs_kit.attempt(service))
     assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
+
+
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
+async def test_initial_view_discovers_once_and_does_not_pause(
+    service, scripted_model, runs_kit, monkeypatch, provider_key
+):
+    from a13n_service.providers.environment import desktop_access as wire
+
+    first, endpoint = await waiting(
+        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
+    )
+    path = f"{service.api}/runs/{first['run']['id']}/desktop-control/view"
+    body = {"mount": "workspace", "reason": "View only", "session_id": "browser_session_000001"}
+    for _ in range(2):
+        endpoint.calls.clear()
+        response = await service.client.post(path, json=body)
+        assert response.status_code == 200, response.text
+        assert response.headers["cache-control"] == "no-store"
+        access = response.json()
+        assert access["mode"] == "view" and access["assistance"]["state"] == "viewing"
+        assert [call.operation for call in endpoint.calls] == ["describe", "grant"]
+        assert isinstance(endpoint.calls[-1], wire.Grant) and endpoint.calls[-1].mode == "view"
+        assert (await runs_kit.get_run(service, first["run"]["id"]))["status"] == "accepted"
+    assert len(endpoint.grants) == 1
+    assert (
+        await post(
+            service, access["assistance"], "disconnect", control(access["assistance"], session_id=body["session_id"])
+        )
+    ).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "failure", ["readonly", "revocation", "route", "target", "generation", "grant", "cleanup", "superseded", "timeout"]
+)
+async def test_initial_view_fails_closed_and_releases_scope(service, scripted_model, runs_kit, monkeypatch, failure):
+    from contextlib import asynccontextmanager
+
+    from a13n_service.providers.environment import desktop_access as wire
+    from a13n_service.runs.desktop_assistance import service as assistance
+    from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow
+    from a13n_service.runs.environments.tables import EnvironmentRow
+    from sqlalchemy import select
+
+    first, endpoint = await waiting(
+        service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key="modal"
+    )
+    closed = False
+
+    @asynccontextmanager
+    async def scoped(runtime, selected, *, operation_id):
+        async def send(request):
+            if isinstance(request, wire.Grant) and failure == "grant":
+                raise RuntimeError("Grant outcome unknown")
+            reply = await endpoint.dispatch(runtime, selected, request, operation_id=operation_id)
+            if isinstance(request, wire.Grant) and failure == "timeout":
+                await asyncio.Event().wait()
+            if isinstance(request, wire.Describe):
+                if failure in {"readonly", "revocation", "route"}:
+                    field, value = {
+                        "readonly": ("read_only_enforced", False),
+                        "revocation": ("revocation_fences_grants", False),
+                        "route": ("websocket_url", "ws://external.example/"),
+                    }[failure]
+                    return reply.model_copy(update={field: value})
+                if failure == "target":
+                    async with transaction(runtime.storage) as session:
+                        env = await session.get(EnvironmentRow, selected.environment_id)
+                        handle = dict(env.handle)
+                        handle["state"] = {
+                            **handle["state"],
+                            "state": {**handle["state"]["state"], "target_id": "replacement"},
+                        }
+                        env.handle = handle
+                if failure == "generation":
+                    # A previously opened context must not adopt a new generation.
+                    async with transaction(runtime.storage) as session:
+                        row = await session.scalar(
+                            select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == first["run"]["id"])
+                        )
+                        row.generation = "b" * 32
+            if isinstance(request, wire.Grant) and failure == "superseded":
+                async with transaction(runtime.storage) as session:
+                    row = await session.scalar(
+                        select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == first["run"]["id"])
+                    )
+                    row.operation_id = "different-operation"
+            return reply
+
+        try:
+            yield send
+        finally:
+            nonlocal closed
+            closed = True
+            if failure == "cleanup":
+                raise RuntimeError("Cleanup unconfirmed")
+
+    if failure == "generation":
+        await open_desktop(service, first["run"])
+        endpoint.calls.clear()
+    monkeypatch.setattr(assistance, "access_dispatch", scoped)
+    if failure == "timeout":
+        monkeypatch.setattr(assistance, "_ACCESS_TIMEOUT_SECONDS", 1)
+    response = await service.client.post(
+        f"{service.api}/runs/{first['run']['id']}/desktop-control/view",
+        json={"mount": "workspace", "reason": "View only", "session_id": "browser_session_000001"},
+    )
+    assert response.status_code >= 400, response.text
+    assert closed
+    assert "websocket_url" not in response.text and "test-pass" not in response.text
+    if failure in {"readonly", "revocation", "route", "target", "generation"}:
+        assert not endpoint.grants
+    async with transaction(service.runtime.storage) as session:
+        row = await session.scalar(
+            select(DesktopAssistanceRow).where(DesktopAssistanceRow.run_id == first["run"]["id"])
+        )
+        if failure in {"generation", "grant", "cleanup", "timeout"}:
+            assert row.state == "blocked" and row.outcome is None

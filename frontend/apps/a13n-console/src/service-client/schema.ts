@@ -2361,6 +2361,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/desktop-control/view": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Open View */
+    post: operations["open_view"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/fork": {
     parameters: {
       query?: never;
@@ -8653,6 +8670,15 @@ export interface components {
        * @constant
        */
       type: "once";
+    };
+    /** OpenView */
+    OpenView: {
+      /** Mount */
+      mount: string;
+      /** Reason */
+      reason: string;
+      /** Session Id */
+      session_id: string;
     };
     /**
      * OperatingSystem
@@ -17320,6 +17346,37 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["View"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  open_view: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["OpenView"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Access"];
         };
       };
       400: components["responses"]["Error"];

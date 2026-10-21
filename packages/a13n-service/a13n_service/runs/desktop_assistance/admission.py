@@ -19,7 +19,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 
-TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id"}
+TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id", "modal": "target_id"}
 
 
 def target_key(state: EnvironmentState | None) -> str | None:

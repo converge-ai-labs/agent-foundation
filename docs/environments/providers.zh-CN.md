@@ -133,14 +133,14 @@ Native Docker 提供 Files & Shell，包括进程控制和输出观察。端口�
 
 E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。E2B 提供 Native Files & Shell；其余五种使用通用 Envd 执行路径。E2B 目标需要进阶能力时，也通过兼容的 Envd 连接使用这些能力。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
 
-| Provider       | 后端设置                                                              | 凭据字段                         | 常用目标配置设置                                                              |
-| -------------- | --------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| E2B            | `domain`、可选 `api_url`                                              | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`        |
-| Daytona        | `organization_id`、`target`（默认 `us`）                              | `api_key`                        | `snapshot`，决定沙箱资源                                                      |
-| Modal          | `workspace`、已有已部署 `app_name`、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | `image`（默认 `python:3.13-slim`）、`cpu`、`memory`（MiB）、`timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                               | `api_key`（Vercel access token） | `runtime`（默认 `python3.13`）、`vcpus`、`timeout_seconds`                    |
-| Fly.io Sprites | `organization`                                                        | `api_key`（Sprites token）       | `region`                                                                      |
-| Runloop        | `organization`                                                        | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                       |
+| Provider       | 后端设置                                                              | 凭据字段                         | 常用目标配置设置                                                               |
+| -------------- | --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| E2B            | `domain`、可选 `api_url`                                              | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`         |
+| Daytona        | `organization_id`、`target`（默认 `us`）                              | `api_key`                        | `snapshot`，决定沙箱资源                                                       |
+| Modal          | `workspace`、已有已部署 `app_name`、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | 兼容 Envd 的必填 `image`、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                               | `api_key`（Vercel access token） | `runtime`（默认 `python3.13`）、`vcpus`、`timeout_seconds`                     |
+| Fly.io Sprites | `organization`                                                        | `api_key`（Sprites token）       | `region`                                                                       |
+| Runloop        | `organization`                                                        | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                        |
 
 使用拥有所提供凭据的组织、团队或 Modal `workspace`；这些字段描述后端命名空间，不授予权限。凭据绝不属于目标配置或重连状态。
 
@@ -257,7 +257,26 @@ Agent 的 EIP 操作通过私有 HTTP 端口 8888。Daytona 代理认证与客�
 
 ### Modal
 
-默认镜像：`python:3.13-slim`，包含 `/usr/local/bin/python3`；根目录 `/` 对镜像 root 用户可写。使用已部署的现有 App。托管停止在终止前对文件创建快照；恢复替换原生沙箱，就绪成功后允许清理快照。运行沙箱 TTL 不能延长到已知期限之外。
+必须显式提供兼容 Envd 的 `image`，可以是镜像仓库地址或同一账号的 Modal 镜像 ID（`im-...`）。使用已部署的现有 App。Agent 文件、Shell、进程和 Computer 操作通过 Envd/EIP 执行，默认工作目录为 `/workspace`，执行用户 UID/GID 为 1000。旧的纯 Python 镜像和 `root`、`python` 等原生配置需要迁移并创建新环境。
+
+运行以下构建脚本前，使用 `modal token new` 登录，并准备兼容的 Linux amd64 Envd 二进制。脚本只构建镜像，不写入运行时凭据：
+
+```sh
+uv run --locked python examples/environment-provider/modal_desktop_image.py \
+  --app a13n-sandbox-dev --binary /path/to/linux-amd64/a13n-envd
+```
+
+配方使用输出的镜像 ID：
+
+```json
+{"image": "im-yourImageId", "desktop": true, "desktop_assistance": true, "cpu": 2, "memory": 4096}
+```
+
+`desktop` 要求创建和恢复时验证桌面可观察且可输入。`desktop_assistance` 是 Service 的额外开关，要求桌面访问 supervisor；它通过独立的 6081 TLS 通道提供只读查看、独占控制、撤销和归还。8888 TLS 通道承载 Envd，使用独立的客体令牌；浏览器不接收 Modal 或 Envd 凭据。Agent Computer 工具和挂载权限仍需单独开启。
+
+停止先保存文件系统快照再终止沙箱；显式启动从快照创建新沙箱并重新启动桌面进程。成功就绪后才清理快照。文件保留，旧截图引用和人工授权失效。运行沙箱 TTL 不能超过已知期限，最多 24 小时；执行连接不恢复沙箱或续期。
+
+`test_modal_desktop_live.py` 与 `test_modal_access_live.py` 分别验证 EIP／桌面／恢复和人工端点权限／撤销／过期。`test_modal_takeover_live.py` 使用脚本模型和预置的就绪生命周期记录，验证 Service HTTP 准入、安全暂停、真实 RFB 控制、撤销及后续运行重新观察，不覆盖 Console 浏览器界面。设置 `A13N_TEST_MODAL_DESKTOP=1`、`A13N_TEST_MODAL_IMAGE`、`A13N_TEST_MODAL_BACKEND_JSON` 与 `A13N_TEST_MODAL_CREDENTIAL_JSON` 后运行。这些测试会创建付费沙箱并尝试清理。
 
 ### Vercel Sandbox
 

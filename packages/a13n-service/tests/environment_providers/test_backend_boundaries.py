@@ -8,7 +8,6 @@ from a13n_harness.providers.environment.direct_local.execution import DirectLoca
 from a13n_harness.providers.environment.docker.execution import DockerExecution
 from a13n_harness.providers.environment.e2b.execution import E2BExecution
 from a13n_harness.providers.environment.local_envd.provider import LocalEnvdExecution
-from a13n_harness.providers.environment.modal.execution import ModalExecution
 from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
 from a13n_harness.providers.environment.runloop.execution import RunloopExecution
 from a13n_harness.providers.environment.sprites.execution import SpritesExecution
@@ -30,7 +29,6 @@ from a13n_service.providers.environments.vercel.management import VercelManageme
         DockerExecution,
         E2BExecution,
         LocalEnvdExecution,
-        ModalExecution,
         RemoteEnvdExecution,
         RunloopExecution,
         SpritesExecution,

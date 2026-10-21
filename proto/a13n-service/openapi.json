@@ -13625,6 +13625,35 @@
         "title": "OnceSchedule",
         "type": "object"
       },
+      "OpenView": {
+        "additionalProperties": false,
+        "properties": {
+          "mount": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Mount",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^[a-zA-Z0-9_-]{20,72}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mount",
+          "reason",
+          "session_id"
+        ],
+        "title": "OpenView",
+        "type": "object"
+      },
       "OperatingSystem": {
         "enum": [
           "linux",
@@ -38614,6 +38643,83 @@
           }
         ],
         "summary": "Open Control",
+        "tags": [
+          "desktop-assistance"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/desktop-control/view": {
+      "post": {
+        "operationId": "open_view",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenView"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Open View",
         "tags": [
           "desktop-assistance"
         ]
