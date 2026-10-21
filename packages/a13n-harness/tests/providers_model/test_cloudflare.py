@@ -11,16 +11,9 @@ from pydantic_ai.tools import ToolDefinition
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("api", "name", "path"),
-    [
-        ("openai.chat_completions", "openai/gpt-5.4", "chat/completions"),
-        ("openai.responses", "openai/gpt-5.4", "responses"),
-        ("anthropic.messages", "anthropic/claude-sonnet-4.6", "messages"),
-    ],
-)
+@pytest.mark.parametrize("name", ["openai/gpt-5.4", "anthropic/claude-sonnet-4.6", "google/gemini-3-flash"])
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_unified_requests(api, name, path, streaming, monkeypatch):
+async def test_unified_requests(name, streaming, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ambient-key")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "ambient-token")
     calls = []
@@ -29,12 +22,11 @@ async def test_unified_requests(api, name, path, streaming, monkeypatch):
         calls.append(request)
         assert (
             str(request.url).partition("?")[0]
-            == f"https://api.cloudflare.com/client/v4/accounts/{'a' * 32}/ai/v1/{path}"
+            == f"https://api.cloudflare.com/client/v4/accounts/{'a' * 32}/ai/v1/chat/completions"
         )
         assert request.headers["authorization"] == "Bearer cf-token"
         assert "ambient" not in str(request.headers)
-        if api == "anthropic.messages":
-            assert "x-api-key" not in request.headers
+        assert "x-api-key" not in request.headers
         assert request.headers["cf-aig-gateway-id"] == "agent-tests"
         assert request.headers["x-team"] == "test"
         body = json.loads(request.content)
@@ -50,16 +42,13 @@ async def test_unified_requests(api, name, path, streaming, monkeypatch):
             name,
             configuration={"account_id": "a" * 32, "gateway_id": "agent-tests"},
             credential={"api_key": "cf-token"},
-            model_api=api,
             http_client=client,
             extra_headers={"x-team": "test"},
         )
         assert model.model_name == name
         assert not model.profile["supported_native_tools"]
-        if api.startswith("openai"):
+        if name.startswith("openai/"):
             assert model.profile["openai_supports_reasoning"]
-        else:
-            assert model.profile["anthropic_supports_adaptive_thinking"]
         parameters = ModelRequestParameters(
             function_tools=[ToolDefinition(name="lookup", parameters_json_schema={"type": "object", "properties": {}})]
         )
@@ -92,7 +81,8 @@ def test_reserved_headers(header):
 
 
 @pytest.mark.anyio
-async def test_streamed_tool_call_and_followup_keep_gateway_identity():
+@pytest.mark.parametrize("name", ["openai/gpt-5.4", "anthropic/claude-sonnet-4.6", "google/gemini-3-flash"])
+async def test_streamed_tool_call_and_followup_keep_gateway_identity(name):
     from pydantic_ai import Agent
     from pydantic_ai.run import AgentRunResultEvent
 
@@ -101,7 +91,7 @@ async def test_streamed_tool_call_and_followup_keep_gateway_identity():
     async def handler(request):
         body = json.loads(request.content)
         bodies.append(body)
-        assert body["model"] == "openai/gpt-5.4"
+        assert body["model"] == name
         assert body["stream"] is True
         assert "cf-aig-gateway-id" not in request.headers
         first = len(bodies) == 1
@@ -144,7 +134,7 @@ async def test_streamed_tool_call_and_followup_keep_gateway_identity():
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         model = await DEFINITION.build(
-            "openai/gpt-5.4",
+            name,
             configuration={"base_url": "https://gateway.example/ai/"},
             credential={"api_key": "cf-token"},
             http_client=client,

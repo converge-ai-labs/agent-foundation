@@ -35,14 +35,11 @@ def _endpoint(configuration: Mapping[str, object]) -> str:
 def _build_provider(
     connection: ModelConnection[CloudflareConfiguration, ApiKeyCredential],
     http_client: httpx2.AsyncClient,
-    model_api: str,
+    _model_api: str,
 ) -> Provider:
-    from anthropic import AsyncAnthropic
     from openai import AsyncOpenAI
     from pydantic_ai.profiles import ModelProfile, merge_profile
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
     from pydantic_ai.profiles.openai import OpenAIJsonSchemaTransformer, OpenAIModelProfile, openai_model_profile
-    from pydantic_ai.providers.anthropic import AnthropicProvider
     from pydantic_ai.providers.openai import OpenAIProvider
 
     class CloudflareOpenAIProvider(OpenAIProvider):
@@ -59,34 +56,11 @@ def _build_provider(
                 ModelProfile(supported_native_tools=frozenset()),
             )
 
-    class CloudflareAnthropicProvider(AnthropicProvider):
-        @property
-        def name(self) -> str:
-            return "cloudflare_ai_gateway"
-
-        @staticmethod
-        def model_profile(model_name: str) -> ModelProfile:
-            return merge_profile(
-                anthropic_model_profile(model_name.removeprefix("anthropic/").replace(".", "-")),
-                ModelProfile(supported_native_tools=frozenset()),
-            )
-
     headers = dict(connection.extra_headers)
     if connection.configuration.gateway_id is not None:
         headers["cf-aig-gateway-id"] = connection.configuration.gateway_id
     endpoint = require_endpoint(connection).rstrip("/")
     token = require_credential(connection)
-    if model_api == "anthropic.messages":
-        return CloudflareAnthropicProvider(
-            anthropic_client=AsyncAnthropic(
-                api_key=None,
-                auth_token=token,
-                base_url=endpoint,
-                http_client=http_client,
-                max_retries=0,
-                default_headers=headers,
-            )
-        )
     return CloudflareOpenAIProvider(
         openai_client=AsyncOpenAI(
             api_key=token,
@@ -105,10 +79,10 @@ DEFINITION = ModelProviderDefinition(
     catalog_providers=("cloudflare-ai-gateway",),
     configuration_model=CloudflareConfiguration,
     credential_model=ApiKeyCredential,
-    supported_model_apis=("openai.chat_completions", "openai.responses", "anthropic.messages"),
+    supported_model_apis=("openai.chat_completions",),
     build_provider=_build_provider,
     endpoint=_endpoint,
-    reserved_headers=("authorization", "x-api-key", "cf-aig-gateway-id", "anthropic-version", "anthropic-beta"),
+    reserved_headers=("authorization", "x-api-key", "cf-aig-gateway-id"),
 )
 
 if TYPE_CHECKING:
