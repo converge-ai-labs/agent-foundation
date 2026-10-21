@@ -106,13 +106,8 @@ def test_explicit_update_runs_without_terminal_setup_or_cached_detection(
     assert f"Tool directory: {prefix.parent}" in result.output
     assert ("Update complete" in result.output) == (exit_code == 0)
     assert ("Update failed" in result.output) == (exit_code != 0)
-    show_permissions = platform == "darwin" and exit_code == 0
-    assert ("macOS computer use:" in result.output) == show_permissions
-    assert ("#restore-macos-permissions-after-an-upgrade" in result.output) == show_permissions
-    if show_permissions:
-        assert "Screen Recording and Accessibility" in result.output
-        assert "remove and re-add the affected entry" in result.output
-        assert "restart Envd" in result.output
+    assert "macOS computer use:" not in result.output
+    assert "#restore-macos-permissions-after-an-upgrade" not in result.output
 
 
 @pytest.mark.parametrize("recognized", [False, True])

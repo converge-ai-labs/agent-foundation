@@ -45,6 +45,17 @@ Run one foreground WebUI server with bundled browser assets.
 | `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`        | Disable Web authentication only; does not change Agent permissions.                                                   |
 | `--share-computer` / `--no-share-computer`                      | boolean          | `true`         | Share native Host Files, Git Changes, and Terminal panels as the server OS account, independent of Agent permissions. |
 
+### `envd update`
+
+Update Envd without starting the App. Stop daemons using the installation first. With no executable override, prepare the client-selected managed version. See [Envd maintenance](automation-and-troubleshooting.md).
+
+| Parameter      | Type / choices | Parser default | Meaning                                                                          |
+| -------------- | -------------- | -------------- | -------------------------------------------------------------------------------- |
+| `--executable` | path           | not set        | Override the configured runtime with a standalone executable.                    |
+| `--version`    | text           | not set        | Exact native version; managed installations remain pinned to the client version. |
+| `--check`      | boolean        | `false`        | Inspect the selected update without installing.                                  |
+| `--force`      | boolean        | `false`        | Reinstall the selected version; mutually exclusive with `--check`.               |
+
 ### `update`
 
 Update this uv-tool installation now, without starting the TUI or setup.
@@ -326,7 +337,7 @@ Type these in the TUI composer, not your shell. Tab completes supported syntax; 
 
 - `auth key delete REFERENCE --yes` skips the delete confirmation explicitly; it does not make deletion reversible.
 - `plugin uninstall ID` removes installed files and edits immediately. It is not merely disabling a source.
-- `update` requests installation without a second confirmation. A startup update check still requires confirmation before installation.
+- `update` and `envd update` request installation without a second confirmation. Startup update detection only displays a notice; it never installs.
 - `import subagents` previews unless `--apply` is supplied; imported files are not automatically enrolled in every Agent.
 - One-shot `run` does not open interactive approval selectors; suspended/failed operations exit nonzero. Resume interactively for decisions.
 - `webui --dangerous-skip-permissions` changes HTTP authentication only, not Agent execution permissions. Read [WebUI](webui.md) before exposing a listener.

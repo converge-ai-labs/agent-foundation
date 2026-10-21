@@ -119,6 +119,7 @@ pub fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
             ]
     {
         println!("{}", connect::HELP);
+        println!("\nUpdate the native installation: a13n-envd update --help");
         return Ok(());
     }
     let config = if arguments

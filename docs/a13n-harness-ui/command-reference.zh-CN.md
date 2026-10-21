@@ -45,6 +45,17 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `--dangerous-skip-permissions, --dangerously-bypass-permission` | 布尔值        | `false`       | 只关闭 Web 身份验证，不改变 Agent 权限。                                               |
 | `--share-computer` / `--no-share-computer`                      | 布尔值        | `true`        | 以服务器 OS 账户共享原生 Host Files、Git Changes 和 Terminal 面板，与 Agent 权限独立。 |
 
+### `envd update`
+
+更新 Envd，不启动 App。先停止使用该安装的守护进程。未指定可执行文件覆盖时，准备客户端选定的托管版本。参见 [Envd 维护](automation-and-troubleshooting.md)。
+
+| 参数           | 类型 / 选项 | 解析器默认值 | 含义                                       |
+| -------------- | ----------- | ------------ | ------------------------------------------ |
+| `--executable` | 路径        | 未设置       | 使用独立可执行文件覆盖配置的运行时。       |
+| `--version`    | 文本        | 未设置       | 精确原生版本；托管安装仍固定为客户端版本。 |
+| `--check`      | 布尔值      | `false`      | 查看所选更新，不执行安装。                 |
+| `--force`      | 布尔值      | `false`      | 重新安装所选版本；与 `--check` 互斥。      |
+
 ### `update`
 
 立即更新当前 uv tool 安装，不启动 TUI 或设置。
@@ -326,7 +337,7 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 
 - `auth key delete REFERENCE --yes` 显式跳过删除确认，不使删除变得可逆。
 - `plugin uninstall ID` 立即删除安装文件和修改，不只是关闭来源。
-- `update` 请求安装，不再次确认。启动更新检查仍需在安装前确认。
+- `update` 和 `envd update` 请求安装，不再次确认。启动更新检测只显示提示，从不安装。
 - `import subagents` 未提供 `--apply` 时只预览；导入文件不会自动加入每个 Agent。
 - 单次 `run` 不打开交互审批选择器；挂起/失败操作以非零状态退出。需要决策时以交互方式恢复。
 - `webui --dangerous-skip-permissions` 只改变 HTTP 身份验证，不改变 Agent 执行权限。暴露监听器前阅读 [WebUI](webui.md)。
