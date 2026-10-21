@@ -722,7 +722,7 @@
   "Use the method provisioned for your OAuth client.": "使用为此 OAuth client 注册的身份认证方式。",
   "Stored encrypted; used only for server-side OAuth token requests.": "加密保存，仅用于服务端 OAuth token 请求。",
   "Save configuration changes before starting or completing sign-in.": "先保存配置修改，再发起或完成登录。",
-  "ChatGPT subscription": "ChatGPT 订阅",
+  "Subscription": "订阅",
   "Shared by this workspace, not a personal connection.": "由此工作区共享，不是个人连接。",
   "Start authorization first.": "请先发起授权。",
   "Complete callback URL": "完整回调 URL",

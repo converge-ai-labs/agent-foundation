@@ -136,7 +136,7 @@ it.each(["default", "public", "confidential"])(
     await screen.findByText("No model providers yet");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     await user.click(
-      await screen.findByRole("button", { name: /ChatGPT.*subscription/ }),
+      await screen.findByRole("button", { name: /ChatGPT.*Subscription/ }),
     );
     expect(screen.queryByLabelText(/OAuth client ID/i)).toBeNull();
     expect(screen.queryByLabelText(/Callback URL/i)).toBeNull();
