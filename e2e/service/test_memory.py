@@ -280,17 +280,18 @@ async def test_deleting_a_record_memory_purges_its_namespace_through_the_outbox(
     path = f"/api/v1/memories/{memory['id']}"
     expect(await api.client.delete(path, headers={"if-match": (await api.client.get(path)).headers["etag"]}), 204)
 
-    async def purged() -> bool:
-        return not await namespace(mem0, memory)
+    async def delivered() -> bool:
+        rows = read_rows(
+            stack.database,
+            "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge' AND workspace_id = :workspace_id",
+            workspace_id=api.tenant["workspace_id"],
+        )
+        return rows == [{"dedupe_key": memory["id"], "status": "delivered"}]
 
-    await eventually(purged)
+    # The outbox records delivery only after the purge returns.
+    await eventually(delivered)
+    assert not await namespace(mem0, memory)
     assert await namespace(mem0, kept) == ["never purged"]
-    rows = read_rows(
-        stack.database,
-        "SELECT dedupe_key, status FROM outbox WHERE kind = 'memory_purge' AND workspace_id = :workspace_id",
-        workspace_id=api.tenant["workspace_id"],
-    )
-    assert rows == [{"dedupe_key": memory["id"], "status": "delivered"}]
 
 
 async def test_memory_space_organization_runs_through_control_and_workers(stack) -> None:  # type: ignore[no-untyped-def]
