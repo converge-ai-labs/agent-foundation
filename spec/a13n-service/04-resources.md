@@ -81,6 +81,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `media_understanding`: image, video and audio model keys.
 - `plugins`: `{instance_name, plugin_key, config}` selections of installed Harness plugins ([08](08-providers.md#installed-harness-plugins)).
 - `output_spec` and `retries`.
+- `execution`: sparse defaults for tool execution mode, foreground wait and steering, resolved per leaf with Thread and Run choices at acceptance ([05](05-runs.md#execution-policy)).
 - `default_environment_template_id`: referenced, not pinned; it is read when an environment is created from it, never during execution.
 - `lazy_environment`: defaults to `true`; `false` creates or starts all frozen mounted instances before entering Harness, while execution connections still open on first use ([06](06-environments.md#execution)). A Run may override it through `options.overrides`.
 - `memory`: defaults for new sessions' memory settings, snapshotted at first business acceptance unless explicitly configured ([11](11-memory.md#session-selection-and-run-views)). A run override cannot change these defaults.

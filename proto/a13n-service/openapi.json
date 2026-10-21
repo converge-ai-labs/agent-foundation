@@ -237,6 +237,16 @@
             ],
             "title": "Default Environment Template Id"
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "instructions": {
             "default": "",
             "maxLength": 262144,
@@ -438,6 +448,16 @@
               }
             ],
             "title": "Default Environment Template Id"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "instructions": {
             "default": "",
@@ -6986,6 +7006,34 @@
         "title": "Evidence",
         "type": "object"
       },
+      "ExecutionOverride": {
+        "additionalProperties": false,
+        "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
+        "properties": {
+          "steering": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Steering"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ExecutionOverride",
+        "type": "object"
+      },
       "ExecutionPage": {
         "properties": {
           "items": {
@@ -12987,6 +13035,16 @@
             "$ref": "#/components/schemas/InitialMounts",
             "default": []
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "const": "message",
             "default": "message",
@@ -16373,6 +16431,16 @@
               }
             ]
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,
@@ -16418,6 +16486,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RunConfiguration-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
               },
               {
                 "type": "null"
@@ -19597,6 +19675,13 @@
         ],
         "type": "string"
       },
+      "Steering": {
+        "enum": [
+          "boundary",
+          "immediate"
+        ],
+        "type": "string"
+      },
       "SubagentOverride-Input": {
         "additionalProperties": false,
         "description": "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.",
@@ -20920,6 +21005,16 @@
       "ThreadUpdate": {
         "additionalProperties": false,
         "properties": {
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "anyOf": [
               {
@@ -20983,6 +21078,16 @@
               }
             ],
             "title": "Current Run Id"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -21214,6 +21319,41 @@
           "deployment_supported"
         ],
         "title": "ToolDefinition",
+        "type": "object"
+      },
+      "ToolExecutionOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "foreground_wait_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Foreground Wait Seconds"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inline",
+                  "auto"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "title": "ToolExecutionOverride",
         "type": "object"
       },
       "ToolInfo": {

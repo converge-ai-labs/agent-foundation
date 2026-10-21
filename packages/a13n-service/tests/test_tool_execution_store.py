@@ -301,7 +301,10 @@ def test_native_payload_preserves_media_order_and_spill_bytes():
 
 
 @pytest.mark.parametrize("handoff", ["timeout", "steer"])
-async def test_service_retains_real_mcp_call_after_run_seals(service, scripted_model, runs_kit, handoff, monkeypatch):
+@pytest.mark.parametrize("continuation", ["automatic", "inline"])
+async def test_service_retains_real_mcp_call_after_run_seals(
+    service, scripted_model, runs_kit, handoff, continuation, monkeypatch
+):
     import a13n_service.resources.connections.runtime as connections
     from fastmcp import FastMCP
 
@@ -342,7 +345,20 @@ async def test_service_retains_real_mcp_call_after_run_seals(service, scripted_m
                 {"connection_id": connection["id"], "permission": "allow"},
             ],
         )
-        started = await runs_kit.start_thread(service, agent, "start slow work")
+        started = await runs_kit.start_thread(
+            service,
+            agent,
+            "start slow work",
+            options={
+                "execution": {
+                    "tools": {
+                        "mode": "auto" if handoff == "timeout" else "inline",
+                        "foreground_wait_seconds": policy.foreground_wait_seconds,
+                    },
+                    "steering": "immediate",
+                }
+            },
+        )
         scripted_model.call("slow", {}, call_id="call-retained")
         scripted_model.say("Working in the background")
         (lease,) = await claim(runtime, worker_id="worker-a", worker_build="test", limit=1)
@@ -371,8 +387,26 @@ async def test_service_retains_real_mcp_call_after_run_seals(service, scripted_m
             result = await second.executions.result(lease.thread_id, record.execution_id)
             assert result.record.status == "succeeded"
             assert "retained answer" in str(result.result)
+            thread = await runs_kit.get_thread(service, lease.thread_id)
+            changed = await service.client.patch(
+                f"{service.api}/threads/{lease.thread_id}",
+                json={"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}},
+                headers=runs_kit.if_match(thread),
+            )
+            assert changed.status_code == 200, changed.text
+            if continuation == "inline":
+                submitted = await runs_kit.submit(
+                    service, lease.thread_id, runs_kit.message(agent, "read previous result")
+                )
+                assert submitted.status_code == 201, submitted.text
             assert len(await _deliver(runtime)) == 1
             (successor,) = await claim(second, worker_id="worker-b", worker_build="test", limit=1)
+            accepted = await runs_kit.get_run(service, successor.run_id)
+            if continuation == "automatic":
+                assert accepted["options"]["execution"] == started["run"]["options"]["execution"]
+            else:
+                assert accepted["options"]["execution"]["tools"]["mode"] == "inline"
+                assert accepted["options"]["execution"]["steering"] == "boundary"
             scripted_model.call("tool_execution_result", {"execution_id": record.execution_id}, call_id="read-result")
             scripted_model.say("Read the retained result")
             await execute(second, successor, AttemptControl())
@@ -453,7 +487,13 @@ async def test_whole_codeact_continues_nested_dispatch_after_origin_seals(
             connection_tools=[{"connection_id": connection["id"], "permission": "allow"}],
             toolsets={"memory": {"enabled": True}, "agents": {"enabled": True}},
         )
-        started = await runs_kit.start_thread(service, agent, "run the program", memories=[mount(memory)])
+        started = await runs_kit.start_thread(
+            service,
+            agent,
+            "run the program",
+            memories=[mount(memory)],
+            options={"execution": {"tools": {"foreground_wait_seconds": 0.05}}},
+        )
         code = (
             "first = await slow()\n"
             "saved = await memory_file_create(memory='team', path='late.md', content='After the Run')\n"

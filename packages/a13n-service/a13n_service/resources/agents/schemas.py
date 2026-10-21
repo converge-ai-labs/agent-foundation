@@ -14,6 +14,7 @@ from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_gro
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
@@ -191,6 +192,7 @@ class ToolSearch(ToolSearchConfiguration):
 
 
 class AgentConfig(_Frozen):
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     model: Key
     # Native settings layered over the model's own defaults.
     model_settings: ModelSettings = Field(default_factory=dict)

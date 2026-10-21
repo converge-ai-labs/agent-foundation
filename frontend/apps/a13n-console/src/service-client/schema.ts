@@ -4222,6 +4222,7 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
        * @default
@@ -4303,6 +4304,7 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
        * @default
@@ -6511,6 +6513,14 @@ export interface components {
       /** Trace Id */
       trace_id: string;
     };
+    /**
+     * ExecutionOverride
+     * @description Sparse choices: null inherits; Thread PATCH distinguishes omission from null.
+     */
+    ExecutionOverride: {
+      steering?: components["schemas"]["Steering"] | null;
+      tools?: components["schemas"]["ToolExecutionOverride"] | null;
+    };
     /** ExecutionPage */
     ExecutionPage: {
       /** Items */
@@ -8550,6 +8560,7 @@ export interface components {
       delivery?: components["schemas"]["Delivery"];
       /** @default [] */
       environments?: components["schemas"]["InitialMounts"];
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Kind
        * @default message
@@ -9738,6 +9749,7 @@ export interface components {
      */
     "RunOptions-Input": {
       configuration?: components["schemas"]["RunConfiguration-Input"] | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -9751,6 +9763,7 @@ export interface components {
      */
     "RunOptions-Output": {
       configuration?: components["schemas"]["RunConfiguration-Output"] | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -10801,6 +10814,8 @@ export interface components {
       | "unsupported"
       | "not_ready"
       | "capacity";
+    /** @enum {string} */
+    Steering: "boundary" | "immediate";
     /**
      * SubagentOverride
      * @description Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.
@@ -11154,6 +11169,7 @@ export interface components {
     };
     /** ThreadUpdate */
     ThreadUpdate: {
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -11171,6 +11187,7 @@ export interface components {
       created_at: string;
       /** Current Run Id */
       current_run_id: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Id */
       id: string;
       /** Labels */
@@ -11248,6 +11265,13 @@ export interface components {
       supported_permissions: (
         "inherit" | "allow" | "ask" | "deny" | "review"
       )[];
+    };
+    /** ToolExecutionOverride */
+    ToolExecutionOverride: {
+      /** Foreground Wait Seconds */
+      foreground_wait_seconds?: number | null;
+      /** Mode */
+      mode?: ("inline" | "auto") | null;
     };
     /** ToolInfo */
     ToolInfo: {

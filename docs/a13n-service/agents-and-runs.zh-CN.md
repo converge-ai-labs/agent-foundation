@@ -394,9 +394,50 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 每个已结束运行都是其线程继续的历史，与结果无关。失败或取消运行之后，下一个运行从它的最后一个检查点继续；若它在首个检查点前失败，则从它开始时的状态继续。它未完成的工具调用显示为已中断，不会再次执行。如果失败由历史本身导致，例如模型服务拒绝该历史，请改为分叉更早的运行。
 
+## 执行策略
+
+工具交还与引导时机可独立配置。`inline` 等待工具完成；`auto` 在前台等待结束后返回回执。`boundary` 在下一个模型边界应用引导；`immediate` 允许引导抢占当前前台等待。Service 默认使用 `auto`、5 秒和 `immediate`。
+
+各字段的优先级为：**单次运行 → 线程 → 所选智能体版本 → 部署默认值**。省略或 null 表示继承。创建智能体或发布版本时，在 `config.execution` 中设置默认值：
+
+```json
+{
+  "execution": {
+    "tools": {"mode": "auto", "foreground_wait_seconds": 5},
+    "steering": "immediate"
+  }
+}
+```
+
+持久线程覆盖可通过 `POST /threads` 的 `execution` 设置，也可携带线程的 `If-Match` 向 `PATCH /threads/{thread_id}` 发送：
+
+```json
+{"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
+```
+
+PATCH 保留省略的字段。使用 `{"execution":{"tools":{"mode":null}}}` 仅恢复工具模式的继承，或使用 `{"execution":null}` 清空全部线程覆盖。继承项跟随每次新运行所选的智能体。
+
+仅覆盖一次运行时，在消息的 `options.execution` 中设置：
+
+```json
+{
+  "kind": "message",
+  "delivery": "next_run",
+  "agent_id": "agt_example",
+  "payload": {"content": [{"type": "text", "text": "Review this change"}]},
+  "options": {"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 2}}}
+}
+```
+
+覆盖只影响该次运行。排队消息被接受为运行时，Service 冻结最终策略。恢复、交接、resume 与自动续接保留该策略。steer 可省略策略或重述相同字段；改变策略会返回 `execution_policy_immutable`。不同策略应使用 `next_run`。新运行使用 `inline` 时，仍可访问此前保留的调用。完成通知始终在边界处理。
+
+在 Console 中，智能体配置的 **执行策略** 设置默认值，**会话操作 → 执行策略** 设置当前线程。新会话 **选项** 对话框和空闲消息输入框的 **执行策略** 只影响一次运行。**详情 → 执行策略** 显示运行冻结的值。
+
+前台等待范围为 0–300 秒，不是执行截止时间。部署回退值为 `tool_executions.foreground_wait_seconds`；并发、保留期与关闭参数仍由部署统一设置。
+
 ## 保留的工具执行
 
-支持保留的工具调用会自动交还前台：超过等待时间（默认 5 秒）后，模型收到 `exec-*` 回执并可继续处理，而同一次调用仍在原 worker 上运行。回执是引用，不是结果。整个 CodeAct 调用及其嵌套调用保持在一起；后续 Run 可由其他 worker 执行。所有者丢失时，未完成的执行标记为 `lost`，Service 不会自动重放调用。
+默认 `auto` 工具模式下，支持保留的工具调用会自动交还前台：超过等待时间（默认 5 秒）后，模型收到 `exec-*` 回执并可继续处理，而同一次调用仍在原 worker 上运行。回执是引用，不是结果。整个 CodeAct 调用及其嵌套调用保持在一起；后续 Run 可由其他 worker 执行。所有者丢失时，未完成的执行标记为 `lost`，Service 不会自动重放调用。
 
 在现有 Console 会话菜单的 **工具执行** 或 Run 详情中查看这些调用。刷新可更新状态；**检查** 打开元数据，**读取结果** 按需加载有界片段。关闭检查器会释放本地结果文本。
 

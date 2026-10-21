@@ -17,6 +17,7 @@ import {
   MonitorIcon,
   PencilSimpleIcon,
   TerminalIcon,
+  SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -33,6 +34,7 @@ import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
+import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
 import { originLink, sessionTitle } from "./session-identity";
@@ -69,6 +71,7 @@ export function SessionHeader({
   const title = session.data && sessionTitle(session.data);
   const source = originLink(session.data?.origin);
   const [tools, setTools] = useState(false);
+  const [execution, setExecution] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
@@ -222,6 +225,12 @@ export function SessionHeader({
               {t("Environments and memory")}
             </MenuItem>
           )}
+          {thread && can("run") && !thread.archived_at && (
+            <MenuItem onClick={() => setExecution(true)}>
+              <SlidersHorizontalIcon size={14} aria-hidden="true" />
+              {t("Execution policy")}
+            </MenuItem>
+          )}
           {thread && can("read") && (
             <MenuItem onClick={() => setTools(true)}>
               <TerminalIcon size={14} aria-hidden="true" />
@@ -259,6 +268,13 @@ export function SessionHeader({
           thread={thread}
           open={mounts}
           onOpenChange={setMounts}
+        />
+      )}
+      {execution && thread && (
+        <ThreadExecutionDialog
+          key={thread.id}
+          thread={thread}
+          onClose={() => setExecution(false)}
         />
       )}
       {editing && session.data && (

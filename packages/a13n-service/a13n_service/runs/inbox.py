@@ -15,6 +15,7 @@ from pydantic import BaseModel, JsonValue
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import matches
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, not_found, rate_limited
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.schemas import EntryUpdate, Failure, Message, RunOptions, canonical_json
@@ -328,14 +329,17 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
         # child could exist, so it is in the origin's last checkpoint.
         return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
     options = RunOptions.model_validate(entry.options)
-    configuration = RunOptions.model_validate(run.options).configuration
+    accepted = RunOptions.model_validate(run.options)
+    configuration = accepted.configuration
     return (
         entry.delivery == "steer"
         and entry.agent_id == run.agent_id
         and entry.agent_revision_id in {None, run.agent_revision_id}
         and (options.configuration is None or options.configuration == configuration)
+        and matches(accepted.execution, options.execution)
         and (
-            options.model_copy(update={"configuration": None}) == RunOptions() or options.digest() == run.options_digest
+            options.model_copy(update={"configuration": None, "execution": None}) == RunOptions()
+            or options.digest() == run.options_digest
         )
     )
 

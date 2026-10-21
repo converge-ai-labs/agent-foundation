@@ -76,6 +76,16 @@ Acceptance normalizes and freezes the configuration in `Run.options` alongside t
 
 A `steer` submission or pending-entry edit against an active Run may omit configuration or explicitly match the frozen value. An explicit different value fails with conflict reason `run_configuration_immutable`; it never silently becomes a later Run. `next_run` selects a new snapshot without modifying the active one. Canonical request idempotency includes normalized configuration; the other-options steering digest excludes it and steering compares configuration separately.
 
+### Execution policy
+
+Agent `config.execution`, Thread `execution`, and message `options.execution` share three independently optional leaves: `tools.mode` (`inline` or `auto`), `tools.foreground_wait_seconds` (0–300 seconds), and `steering` (`boundary` or `immediate`). Each leaf resolves at acceptance in order: message override, Thread override, selected Agent revision, Host default. Service defaults are `auto`, the deployment's `tool_executions.foreground_wait_seconds` (5 seconds by default), and `immediate`.
+
+Thread choices are sparse persistent overrides, including on `POST /threads`. They dynamically inherit the Agent selected by each new message. `PATCH /threads/{thread}` uses the ordinary `run` permission, Thread lock and `If-Match`: omitted leaves stay unchanged; null clears that leaf to inheritance; null `tools` clears both tool choices; null `execution` clears every override. Explicit `inline` and `boundary` disable their respective behaviors. A Run override never writes back to the Thread.
+
+Acceptance freezes the complete effective policy in `Run.options.execution`. Queued messages resolve when accepted, not when submitted. Recovery, handoff, resume, child-result and tool-result continuations keep the frozen policy. Ordinary new messages resolve afresh. Forks and separately spawned child Threads start with their selected Agent defaults and their own explicit choices; inline children retain their existing inline execution boundary.
+
+A steer may omit execution choices or restate matching leaves. A differing leaf fails with `execution_policy_immutable`; pending-entry edits use the same rule. `delivery: next_run` can choose a new policy. Delivery selects which Run receives an input; steering policy selects whether a user message preempts or waits for a model boundary. Internal completion notifications always use boundary delivery. Tool mode and steering are independent, and an inline Run retains access to earlier retained executions and their controls. Host concurrency, retention and shutdown limits remain deployment settings.
+
 ## Tables
 
 The tenant foreign-key rules in [03](03-tenancy.md#tenant-integrity) apply throughout. Payloads, outputs and options are bounded inline JSON; files a message refers to are assets ([04](04-resources.md)).
@@ -90,7 +100,7 @@ threads
   id  organization_id  workspace_id  session_id  origin  origin_thread_id NULL
   origin_run_id NULL  origin_tool_call_id NULL  subagent NULL
   current_run_id NULL  last_run_id NULL
-  message_history  mcp_headers  labels  archived_at NULL  version  created_at  updated_at
+  message_history  mcp_headers  execution NULL  labels  archived_at NULL  version  created_at  updated_at
   origin IN ('new', 'fork', 'child')
   CHECK (origin = 'new'   AND origin_thread_id, origin_run_id, origin_tool_call_id all NULL
       OR origin = 'fork'  AND origin_thread_id, origin_run_id set, origin_tool_call_id NULL

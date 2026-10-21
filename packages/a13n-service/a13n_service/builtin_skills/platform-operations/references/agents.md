@@ -30,6 +30,10 @@ Grouped connections use the group's discovery mode while retaining their saved `
 
 The Computer toolset requires explicit enablement and an authorized desktop Environment. `toolsets.computer.config.coordinate_space` defaults to `pixels`. Select `normalized_1000` only when the chosen model supplies relative positions on a 0–1000 scale for each axis. The tool converts pointer positions using the referenced screenshot; model instructions must not ask the model to multiply by image dimensions. Scroll distances retain their declared units. Do not infer or change this setting from the Environment Provider or template. Check the deployed toolset catalog for supported configuration before creating a Revision.
 
+## Execution policy
+
+`execution` sets sparse defaults for new Runs: `tools.mode` is `inline` or `auto`, `tools.foreground_wait_seconds` is 0–300, and `steering` is `boundary` or `immediate`. Omitted/null leaves inherit the deployment defaults (`auto`, 5 seconds unless configured otherwise, `immediate`). Thread and single-Run choices override each leaf independently. Publishing a Revision affects future ordinary Runs; accepted Runs and their automatic continuations keep their frozen policy. Runtime capacity, result retention and shutdown limits remain deployment settings.
+
 ## Read only the needed configuration
 
 Revision lists support `view=compact`; selected revision reads accept `section=all` or a named configuration field. Fragment reads preserve the revision's content version. `/agents/{agent_id}/revisions/{revision_id}/compare` compares against `base_revision_id`, optionally for one section. Before publishing, obtain and preserve the complete base config; a diff or section alone is insufficient.

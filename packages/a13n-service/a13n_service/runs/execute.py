@@ -763,7 +763,11 @@ class _Attempt:
                 if not self.boundaries.accepting_steers:
                     return  # Keep the unconsumed entry for continuation after native completion.
                 try:
-                    await stream.steer(content, input_id=entry.id, immediate=entry.kind == "message")
+                    await stream.steer(
+                        content,
+                        input_id=entry.id,
+                        immediate=entry.kind == "message" and self.plan.host.execution.steering == "immediate",
+                    )
                 except RunError as error:
                     if error.code != "run_not_active":
                         raise

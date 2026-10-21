@@ -394,9 +394,50 @@ The accompanying input does not replace any required result. Ordinary inbox mess
 
 Every ended run is the history its thread continues, whatever its outcome. After a failed or cancelled run, the next run starts from its last checkpoint, or from where the run started if it failed before one, and tool calls it left unfinished read as interrupted rather than running again. When the history itself caused the failure, for example a model provider rejecting it, fork an earlier run instead.
 
+## Execution policy
+
+Configure tool handoff and steering independently. `inline` waits for tools to finish; `auto` returns a receipt after the foreground wait. `boundary` applies guidance at the next model boundary; `immediate` lets guidance preempt the current foreground wait. Service defaults to `auto`, 5 seconds, and `immediate`.
+
+Each field follows this precedence: **single run → thread → selected agent revision → deployment default**. Omitted or null values inherit. Set agent defaults in `config.execution` when creating an agent or publishing a revision:
+
+```json
+{
+  "execution": {
+    "tools": {"mode": "auto", "foreground_wait_seconds": 5},
+    "steering": "immediate"
+  }
+}
+```
+
+For persistent thread overrides, set `execution` in `POST /threads`, or send this body to `PATCH /threads/{thread_id}` with the thread's `If-Match`:
+
+```json
+{"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
+```
+
+PATCH preserves omitted fields. Use `{"execution":{"tools":{"mode":null}}}` to return only tool mode to inheritance, or `{"execution":null}` to clear all thread overrides. Inherited fields follow the agent selected for each new run.
+
+For one run, submit a message with `options.execution`:
+
+```json
+{
+  "kind": "message",
+  "delivery": "next_run",
+  "agent_id": "agt_example",
+  "payload": {"content": [{"type": "text", "text": "Review this change"}]},
+  "options": {"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 2}}}
+}
+```
+
+The override affects that run only. Service freezes the effective policy when the queued message becomes a run. Recovery, handoff, resume and automatic continuations keep it. A steer may omit the policy or repeat matching fields; changing it returns `execution_policy_immutable`. Use `next_run` for a different policy. Earlier retained calls remain accessible even when a new run uses `inline`. Completion notifications always wait for a boundary.
+
+In Console, open **Execution policy** in the agent configuration for defaults, or in **Session actions** for the current thread. The new-session **Options** dialog and the idle message composer's **Execution policy** control apply to one run. **Details → Execution policy** shows a run's frozen values.
+
+The foreground wait accepts 0–300 seconds and is not an execution deadline. Its deployment fallback is `tool_executions.foreground_wait_seconds`; concurrency, retention and shutdown settings remain deployment-wide.
+
 ## Retained tool executions
 
-Supported tool calls use automatic handoff: after the foreground wait (5 seconds by default), the model receives an `exec-*` receipt and can continue while the same invocation runs on its original worker. A receipt is a reference, not a result. A whole CodeAct invocation and its nested calls stay together; later runs may execute on another worker. Owner loss marks unfinished work `lost`; Service never replays the invocation automatically.
+With the default `auto` tool mode, supported tool calls use automatic handoff: after the foreground wait (5 seconds by default), the model receives an `exec-*` receipt and can continue while the same invocation runs on its original worker. A receipt is a reference, not a result. A whole CodeAct invocation and its nested calls stay together; later runs may execute on another worker. Owner loss marks unfinished work `lost`; Service never replays the invocation automatically.
 
 Inspect these calls from **Tool executions** in the existing Console session menu or a run's details. Refresh updates status; **Inspect** opens metadata and **Read result** fetches a bounded fragment. Closing the inspector releases its local result text.
 

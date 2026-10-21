@@ -194,6 +194,7 @@ class ThreadRow(Stamped, Base):
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     last_run_id: Mapped[str | None] = mapped_column(String(72))
     mcp_headers: Mapped[dict] = mapped_column(JSONB)
+    execution: Mapped[dict | None] = mapped_column(JSONB)
     labels: Mapped[dict] = mapped_column(JSONB)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

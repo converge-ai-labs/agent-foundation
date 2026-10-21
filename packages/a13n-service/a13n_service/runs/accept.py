@@ -14,6 +14,7 @@ from a13n_logging import exception_details, get_logger
 from sqlalchemy import and_, case, exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, ToolExecutionOverride
 from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
@@ -260,6 +261,18 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
     await require_active_workspace(session, thread.workspace_id)
     principal, revision, options = source.principal, source.revision, source.options
+    if source.revision_selection != "inherited":
+        policy = ExecutionPolicy().overlay(
+            ExecutionOverride(
+                tools=ToolExecutionOverride(
+                    foreground_wait_seconds=runtime.settings.tool_executions.foreground_wait_seconds
+                )
+            ),
+            revision.config.execution,
+            ExecutionOverride.model_validate(thread.execution or {}),
+            options.execution,
+        )
+        options = options.model_copy(update={"execution": policy.override()})
     parent, lineage = await parent_of(session, thread)
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
     if not await thread_has_primary(session, thread):

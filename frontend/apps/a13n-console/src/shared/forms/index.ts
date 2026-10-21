@@ -1,5 +1,11 @@
 export { CodeBlock } from "./code-block";
 export { DateTimeField } from "./date-time-field";
+export {
+  ExecutionFields,
+  executionOverride,
+  executionPatch,
+  type ExecutionOverride,
+} from "./execution-fields";
 export { FileUpload } from "./file-upload";
 export { FormActions, JsonView, TextAreaField } from "./form";
 export { FormSection, formSectionStyles } from "./form-section";

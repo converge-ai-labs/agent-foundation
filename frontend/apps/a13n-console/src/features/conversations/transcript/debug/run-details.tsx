@@ -19,7 +19,7 @@ import {
   Timestamp,
 } from "../../../../shared/feedback";
 import { CopyableId } from "../../../../shared/identity";
-import { JsonView } from "../../../../shared/forms";
+import { ExecutionFields, JsonView } from "../../../../shared/forms";
 import { UNKNOWN } from "../../../../shared/unknown";
 import { AgentLink } from "../../../agents/link";
 import { useAgent } from "../../../agents/queries";
@@ -166,6 +166,11 @@ function RunDetails({ selected }: { selected: Run }) {
           )}
         </dl>
       </Section>
+      {run.options.execution && (
+        <Section title={t("Execution policy")}>
+          <ExecutionFields value={run.options.execution} readOnly />
+        </Section>
+      )}
       <Section title={t("Environments and memory")}>
         {/* What this Run started with; later Runs follow the conversation's mounts. */}
         {!run.environment_mounts.length && !run.memory_mounts.length ? (

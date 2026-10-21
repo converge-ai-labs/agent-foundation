@@ -348,3 +348,33 @@ it("reports invalid group names in the discovery section", () => {
   expect(built.ok).toBe(false);
   expect(!built.ok && built.stage).toBe("toolSearch");
 });
+
+it("publishes sparse execution defaults and removes them when reset to inherit", () => {
+  const draft = draftFor({
+    execution: {
+      tools: { mode: "auto", foreground_wait_seconds: 5 },
+      steering: "immediate",
+    },
+  });
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.setExecution({
+      tools: { mode: "inline", foreground_wait_seconds: 0 },
+      steering: "boundary",
+    }),
+  );
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.execution).toEqual({
+    tools: { mode: "inline", foreground_wait_seconds: 0 },
+    steering: "boundary",
+  });
+  expect(draft.current.dirty).toBe(true);
+  act(() =>
+    draft.current.setExecution({
+      tools: { mode: null, foreground_wait_seconds: null },
+      steering: null,
+    }),
+  );
+  const inherited = buildDraftConfig(draft.current, undefined, asIs);
+  expect(inherited.ok && inherited.config.execution).toBeUndefined();
+});
