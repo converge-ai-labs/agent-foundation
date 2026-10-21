@@ -21,9 +21,9 @@ from a13n_service.runs.environments.adapters import provider_identity
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 
-from .environment_providers.desktop_access_rfb import RFB
-from .test_desktop_assistance import control, post
-from .test_desktop_takeover import open_desktop
+from ..test_desktop_assistance import control, post
+from ..test_desktop_takeover import open_desktop
+from .desktop_access_rfb import RFB
 
 pytestmark = [
     pytest.mark.anyio,
