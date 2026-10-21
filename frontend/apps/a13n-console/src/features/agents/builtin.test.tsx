@@ -25,6 +25,7 @@ vi.mock("./choices", () => ({
         name: key,
         config: { model_name: key, model_api: "openai.chat_completions" },
       })),
+      providers: [],
       skills: [],
       mcp: [],
       connectors: [],

@@ -202,8 +202,8 @@ it("identifies the session and switches the level in the URL", async () => {
   expect(screen.getByRole("link", { name: /Release Bot/ })).toBeTruthy();
   // The identifier stays one action away instead of leading the header.
   expect(screen.queryByText("ses_1")).toBeNull();
-  expect(await screen.findByText("Thread")).toBeTruthy();
-  expect(screen.queryByText("Debug session · 2 runs")).toBeNull();
+  // How the session started reads the same at both levels.
+  expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   // The header reports the followed run's state; stopping belongs to the dock.
   expect(await screen.findByText("state.running")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -328,7 +328,7 @@ it("shows the session's spend and breaks it down by model and by run", async () 
 
 it("keeps usage out of Chat", async () => {
   show([fixtureThread()], "/sessions/ses_1/threads/thr_1/runs/run_2?view=chat");
-  expect(await screen.findByText("Thread")).toBeTruthy();
+  expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Session usage/ })).toBeNull();
 });
 

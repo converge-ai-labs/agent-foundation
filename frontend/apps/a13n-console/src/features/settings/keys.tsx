@@ -195,9 +195,11 @@ export function ApiKeys({
                             name={item.principal.name}
                             id={item.principal.id}
                             url={item.principal.image_url}
-                            className="size-5 rounded-full"
+                            className="size-5 rounded-md text-[10px]"
                           />
-                          {item.principal.name}
+                          <span title={item.principal.name}>
+                            {item.principal.name}
+                          </span>
                         </span>
                       ),
                     },
@@ -215,7 +217,7 @@ export function ApiKeys({
                 tone: "muted",
                 render: (item) =>
                   item.expires_at ? (
-                    <Timestamp value={item.expires_at} />
+                    <Timestamp value={item.expires_at} relative />
                   ) : (
                     t("No expiration")
                   ),
@@ -227,7 +229,11 @@ export function ApiKeys({
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} keys", { count: items.length })}
+            count={
+              page.previous || query.data.next_cursor
+                ? t("{{count}} keys on this page", { count: items.length })
+                : t("{{count}} keys", { count: items.length })
+            }
           >
             <Pagination page={page} next={query.data.next_cursor} />
           </CollectionFooter>

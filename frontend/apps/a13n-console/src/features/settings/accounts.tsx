@@ -57,6 +57,7 @@ export function ServiceAccounts() {
     { t } = useTranslation(),
     { workspace, basePath } = useWorkspace(),
     cache = useQueryClient(),
+    navigate = useNavigate(),
     page = useCursor();
   const query = useQuery({
     queryKey: ["service-accounts", workspace.id, page.cursor],
@@ -85,6 +86,9 @@ export function ServiceAccounts() {
           <ResourceTable
             items={items}
             caption={t("Service accounts")}
+            onRowActivate={(item) =>
+              navigate(`${accountsPath(basePath)}/${item.id}`)
+            }
             rowMenuLabel={t("Account actions")}
             rowMenu={(item) => (
               <>
@@ -167,7 +171,13 @@ export function ServiceAccounts() {
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} service accounts", { count: items.length })}
+            count={
+              page.previous || query.data.next_cursor
+                ? t("{{count}} service accounts on this page", {
+                    count: items.length,
+                  })
+                : t("{{count}} service accounts", { count: items.length })
+            }
           >
             <Pagination page={page} next={query.data.next_cursor} />
           </CollectionFooter>
@@ -239,7 +249,6 @@ export function ServiceAccountDetail({ accountId }: { accountId: string }) {
                     size="icon-sm"
                     type="button"
                     aria-label={t("Account actions")}
-                    title={t("Account actions")}
                   />
                 }
               >
@@ -408,7 +417,7 @@ function AccountEditor({
             size={account ? "sm" : undefined}
           >
             {!account && <PlusIcon size={14} />}
-            {account ? t("Edit") : t("Create account")}
+            {account ? t("Edit") : t("Create service account")}
           </Button>
         )
       }

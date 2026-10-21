@@ -6,7 +6,7 @@ import {
   KeyIcon,
   StackIcon,
   EyeIcon,
-  MonitorIcon,
+  DevicesIcon,
   GearSixIcon,
   SlidersIcon,
   ShieldCheckIcon,
@@ -67,7 +67,7 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       value: "sessions",
       label: "Login sessions",
       description: "Manage browsers signed in to your account.",
-      icon: MonitorIcon,
+      icon: DevicesIcon,
     },
     {
       value: "activity",

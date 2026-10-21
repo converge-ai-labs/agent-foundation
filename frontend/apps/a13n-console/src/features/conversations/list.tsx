@@ -26,6 +26,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
+import { ResourceReference } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
 import { conversationQueries, type SessionFilters } from "./api";
@@ -235,7 +236,7 @@ function SessionResults({
           title={t(filtered ? "No matching sessions" : "No sessions yet")}
           description={t(
             filtered
-              ? "Try a title, source link, external ID, or words from the conversation."
+              ? "Try a title, source, external ID, or words from the conversation."
               : "Start a session to talk with an agent in this workspace.",
           )}
           action={!filtered && create}
@@ -306,7 +307,6 @@ function SessionIdentity({
           {title ?? t("Untitled session")}
         </Link>
         <div className={styles.metadata}>
-          {!title && <span className={styles.sessionId}>{session.id}</span>}
           {agent && (
             <span className={styles.agent} title={agent.agent_name}>
               {agent.agent_name}
@@ -348,6 +348,12 @@ function SessionIdentity({
           )}
         </div>
       </div>
+      {/* The identifier stays one hover away, as in every other collection. */}
+      <ResourceReference
+        id={session.id}
+        idLabel={t("Session ID")}
+        idCopyLabel={t("Copy session ID")}
+      />
     </div>
   );
 }

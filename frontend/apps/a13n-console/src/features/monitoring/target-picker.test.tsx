@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import {
@@ -8,7 +8,13 @@ import {
 } from "./target-picker";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, unknown>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+        String(values?.[name]),
+      ),
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const west: TargetOption = {
   value: "environment:env_west",
@@ -70,8 +76,12 @@ it("searches, clears empty results and selects a target without changing a hidde
   expect(change).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Clear filters" }));
   await user.type(search, "host-east");
-  expect(screen.queryByRole("button", { name: /West worker/ })).toBeNull();
-  await user.click(screen.getByRole("button", { name: /East laptop/ }));
+  const popup = screen.getByRole("dialog", { name: "Select target" });
+  expect(
+    within(popup).queryByRole("button", { name: /West worker/ }),
+  ).toBeNull();
+  expect(within(popup).getByText("1 of 2 targets")).toBeTruthy();
+  await user.click(within(popup).getByRole("button", { name: /East laptop/ }));
   expect(change).toHaveBeenCalledWith(device.value);
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

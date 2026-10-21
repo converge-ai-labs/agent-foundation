@@ -22,7 +22,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
 }
 .eventGroup {
   border: 0;
@@ -113,7 +113,7 @@
 }
 @media (max-width: 560px) {
   .presets {
-    max-width: 220px;
+    justify-content: flex-start;
   }
   .eventGroups,
   .filterFields {

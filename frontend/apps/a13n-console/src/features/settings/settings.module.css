@@ -160,9 +160,15 @@
   font-size: var(--a13n-text-xs);
   margin: 0;
 }
-.nameControl {
+/* Text and choice controls in a settings row share one width; a stacked row fills it. */
+.control {
   width: 260px;
   max-width: 100%;
+}
+@container (max-width: 420px) {
+  .control {
+    width: 100%;
+  }
 }
 
 /* Detail pane inside a settings section (a service account and its keys). */
@@ -268,7 +274,7 @@
 
 /* Name and avatar on one line inside a table cell. */
 .inlineIdentity {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -277,6 +283,12 @@
 .inlineIdentity > span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A narrow table gives its identity column the room; long owners truncate. */
+@container (width < 760px) {
+  .inlineIdentity > span:last-child {
+    max-width: 6rem;
+  }
 }
 
 /* An action the content places itself, aligned like a page action. */
@@ -327,4 +339,36 @@
 .stacked > span + * {
   font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
+}
+
+/* An audit event: what happened, then the resource it happened to. */
+.event {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+/* Beside the actor it keeps its width, so a long ID truncates instead of the event squeezing. */
+.event[data-beside-actor] {
+  width: 300px;
+  max-width: 100%;
+}
+.eventTarget {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  white-space: nowrap;
+}
+.eventTarget > :last-child {
+  min-width: 0;
+}
+
+/* A note under a collection, inset like its footer count. */
+.footnote {
+  margin: 0;
+  padding: 0 16px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
 }

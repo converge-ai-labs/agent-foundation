@@ -16,7 +16,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 
 beforeEach(() => {
@@ -76,4 +79,61 @@ it("does not offer creation to a reader", async () => {
   setup();
   await screen.findByText("No models yet");
   expect(screen.queryByRole("button", { name: "Add model" })).toBeNull();
+});
+
+it("marks declared inputs and names a model its provider can't serve", async () => {
+  state.GET.mockImplementation(async (path: string) => ({
+    data:
+      path === "/api/v1/media-understanding-defaults"
+        ? { image: "team-vision" }
+        : path === "/api/v1/model-providers"
+          ? {
+              items: [
+                {
+                  id: "prov_off",
+                  name: "Retired",
+                  type: "ollama",
+                  config: {},
+                  enabled: false,
+                },
+              ],
+              next_cursor: null,
+            }
+          : {
+              items: [
+                {
+                  key: "team-vision",
+                  name: "Team vision",
+                  enabled: true,
+                  provider_id: "prov_off",
+                  catalog_ref: null,
+                  updated_at: "2026-10-01T00:00:00Z",
+                  config: {
+                    model_name: "vision-upstream",
+                    characteristics: {
+                      capabilities: [
+                        "image_understanding",
+                        "document_understanding",
+                      ],
+                    },
+                  },
+                },
+              ],
+              next_cursor: null,
+            },
+    response: new Response(),
+  }));
+  setup();
+  expect(
+    await screen.findByRole("img", { name: "Images · Image default" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("img", { name: "PDF documents" })).toBeTruthy();
+  // One state on one line; the reason is on hover, not a second line.
+  const status = screen
+    .getByText("Provider disabled")
+    .closest('[data-slot="status-pill"]');
+  expect(status?.getAttribute("title")).toBe(
+    "Agents can't use this model until {{provider}} is enabled.",
+  );
+  expect(screen.queryByText("state.enabled")).toBeNull();
 });

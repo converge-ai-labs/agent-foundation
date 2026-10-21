@@ -10,6 +10,7 @@ import {
   SettingsSection,
   Switch,
 } from "a13n-ui";
+import { MonitorIcon, StackIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -94,7 +95,37 @@ export function useRunOptions() {
     media?: Partial<Record<MediaKind, string>>;
   }>({});
   const [advanced, setAdvanced] = useState("{}");
+  const values = {
+    agent,
+    revision,
+    model,
+    mediaUnderstanding,
+    settings,
+    instructions,
+    overrideInstructions,
+    environment,
+    workingDirectory,
+    memories,
+    labels,
+    advanced,
+  };
   return {
+    /** Every choice at once, so a dialog dismissed without applying can put them back. */
+    values,
+    restore: (saved: typeof values) => {
+      setAgent(saved.agent);
+      setRevision(saved.revision);
+      setModel(saved.model);
+      setMediaUnderstanding(saved.mediaUnderstanding);
+      setSettings(saved.settings);
+      setInstructions(saved.instructions);
+      setOverrideInstructions(saved.overrideInstructions);
+      setEnvironment(saved.environment);
+      setWorkingDirectory(saved.workingDirectory);
+      setMemories(saved.memories);
+      setLabels(saved.labels);
+      setAdvanced(saved.advanced);
+    },
     mediaUnderstanding,
     setMediaUnderstanding,
     overrideInstructions,
@@ -163,18 +194,22 @@ export function useRunOptions() {
 }
 
 export type RunOptionsState = ReturnType<typeof useRunOptions>;
+export type RunOptionValues = RunOptionsState["values"];
 
 export function RunOptionsDialog({
   options,
   showAgent = true,
   open,
   onOpenChange,
+  onCancel,
   focus,
 }: {
   options: RunOptionsState;
   showAgent?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Closes the dialog and puts back the choices it opened with. */
+  onCancel: () => void;
   focus?: OptionField;
 }) {
   const { t } = useTranslation(),
@@ -225,24 +260,31 @@ export function RunOptionsDialog({
     );
     return () => clearTimeout(timer);
   }, [open, focus]);
+  // Each choice is its name, with what choosing it does on a quieter line.
   const environmentOptions = [
-    { value: "inherit", label: t("Inherit") },
+    { value: "inherit", label: t("Inherit"), icon: <InheritIcon /> },
     ...(choices.data?.templates ?? []).map((template) => ({
       value: `template:${template.id}`,
-      label: `${t("Create from template")}: ${template.name}`,
+      label: template.name,
+      description: t("Create from template"),
+      icon: <StackIcon size={20} className={styles.optionGlyph} />,
     })),
     // A deleted environment is never mounted again.
     ...(choices.data?.environments ?? [])
       .filter((item) => item.status !== "deleting" && item.status !== "deleted")
       .map((item) => ({
         value: `instance:${item.id}`,
-        label: `${t("Reuse existing")}: ${item.name} (${item.id})`,
+        label: item.name,
+        description: `${t("Reuse existing")} · ${item.id}`,
+        keywords: [item.id],
+        icon: <MonitorIcon size={20} className={styles.optionGlyph} />,
       })),
   ];
   return (
     <ModalFrame
       open={open}
-      onOpenChange={onOpenChange}
+      // Dismissing is cancelling; only Apply keeps the changes.
+      onOpenChange={(next) => (next ? onOpenChange(true) : onCancel())}
       size="md"
       title={t("Run options")}
       description={t(
@@ -250,9 +292,14 @@ export function RunOptionsDialog({
       )}
       closeLabel={t("Close")}
       footer={
-        <Button type="button" onClick={() => onOpenChange(false)}>
-          {t("Apply")}
-        </Button>
+        <>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            {t("Cancel")}
+          </Button>
+          <Button type="button" onClick={() => onOpenChange(false)}>
+            {t("Apply")}
+          </Button>
+        </>
       }
     >
       <div className={styles.optionFields}>
@@ -286,25 +333,30 @@ export function RunOptionsDialog({
           models={choices.data?.models}
           focus={focus}
         />
-        <ChoiceField
-          id="run-option-environment"
-          placeholder={t("Inherit")}
-          value={options.environment}
-          onValueChange={(value) => {
-            options.setEnvironment(value);
-            options.setLabels((previous) => ({
-              ...previous,
-              environment: environmentOptions.find(
-                (option) => option.value === value,
-              )?.label,
-            }));
-          }}
+        <FormField
           label={t("Environment")}
           description={t(
             "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped environment starts again when the run needs it.",
           )}
-          options={environmentOptions}
-        />
+        >
+          <SearchPicker
+            id="run-option-environment"
+            label={t("Environment")}
+            placeholder={t("Search environments")}
+            emptyMessage={t("No matching environments")}
+            value={options.environment}
+            groups={[{ label: t("Environment"), options: environmentOptions }]}
+            onValueChange={(value) => {
+              options.setEnvironment(value);
+              options.setLabels((previous) => ({
+                ...previous,
+                environment: environmentOptions.find(
+                  (option) => option.value === value,
+                )?.label,
+              }));
+            }}
+          />
+        </FormField>
         {selectedEnvironment && open && (
           <WorkingDirectory
             key={selectedEnvironment.id}
@@ -396,7 +448,7 @@ function ModelOptions({
         <SearchPicker
           id="run-option-model"
           label={t("Model")}
-          placeholder={t("Inherit")}
+          placeholder={t("Search models…")}
           emptyMessage={t(
             "No models available. Configure a provider and model first.",
           )}

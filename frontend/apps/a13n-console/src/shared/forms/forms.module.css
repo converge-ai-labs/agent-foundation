@@ -8,21 +8,29 @@
 }
 /* A form whose footer also carries an action that is not its outcome. The
    leading cell shrinks and wraps its own text so the outcome stays at the
-   right, on the same line, however long the note beside it runs. */
+   right, level with the leading cell's first line, however much it grows. */
 .formActions[data-leading] {
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 .formActionsLeading {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 180px;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
+.formActionsLeading > :first-child {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
 .formActionsPrimary {
+  margin-left: auto;
+  max-width: 100%;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   flex: none;
@@ -62,28 +70,97 @@
   max-height: none;
   border-radius: var(--a13n-radius-group);
 }
+/* A field takes the whole row; short values (numbers and choices) pair up,
+   so a URL or key is never squeezed beside its neighbour. */
 .schemaFields {
+  container-type: inline-size;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
 }
-.schemaFields > :has(textarea) {
+.schemaFields > * {
   grid-column: 1 / -1;
+}
+.schemaFields > .short {
+  grid-column: auto;
+}
+@container (width < 420px) {
+  .schemaFields > .short {
+    grid-column: 1 / -1;
+  }
 }
 .schemaFields:empty {
   display: none;
+}
+.switchField {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+.switchField label {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.switchField p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
 }
 /* A nested object group: its name sits above the fields it contains. */
 .schemaGroup {
   display: grid;
   gap: 12px;
   min-width: 0;
-  grid-column: 1 / -1;
 }
 .schemaGroup > legend {
   margin-bottom: 8px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
+}
+/* File drop: the one dashed outline in the product. */
+.dropZone {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 24px 20px;
+  border: 1px dashed var(--a13n-input-border);
+  border-radius: var(--a13n-radius-group);
+  text-align: center;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+.dropZone[data-dragging="true"] {
+  border-color: var(--a13n-focus);
+  background: var(--a13n-hover);
+}
+.dropZone > p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.dropZoneFile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.dropZoneActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dropZone {
+    transition: none;
+  }
 }

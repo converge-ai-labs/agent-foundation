@@ -315,6 +315,25 @@
 .inlineDisclosure {
   min-width: 0;
 }
+.failureFacts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+  font-size: var(--a13n-text-xs);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.failureFacts dt {
+  color: var(--a13n-secondary);
+}
+.failureFacts dd {
+  margin: 0;
+  color: var(--a13n-text);
+}
+.failureFacts code {
+  font-family: var(--a13n-mono);
+}
 /* Inside the notice the error fold is part of it, not a second block: its
    caret takes the text line and its surface reaches into the padding. */
 .failure [data-slot="disclosure-surface"] {

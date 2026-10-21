@@ -7,15 +7,16 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { isFailed, observationKind, ObservationIcon } from "./identity";
+import {
+  isFailed,
+  kindLabel,
+  observationKind,
+  ObservationIcon,
+} from "./identity";
 import { visibleRows, type TimelineRow } from "./timeline";
+import { formatDuration } from "../../shared/time-range";
 import { Duration, durationMs } from "./values";
 import styles from "./traces.module.css";
-
-/** Seconds label for the timeline scale; every displayed duration uses seconds. */
-function seconds(value: number) {
-  return `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} s`;
-}
 
 /**
  * The observation timeline: one row per loaded observation, a waterfall track
@@ -40,7 +41,7 @@ export function ObservationTree({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -117,8 +118,8 @@ export function ObservationTree({
       <div className={styles.timelineHeader}>
         <span>{t("Observations")}</span>
         <div className={styles.timelineScale} aria-hidden="true">
-          <span>0 s</span>
-          <span>{seconds(duration)}</span>
+          <span>0</span>
+          <span>{formatDuration(duration, i18n.resolvedLanguage)}</span>
         </div>
         <span className={styles.timelineDurationLabel}>{t("Duration")}</span>
       </div>
@@ -205,7 +206,7 @@ function ObservationRow({
   const orphan =
     observation.parent_id !== null && !loaded.has(observation.parent_id);
   const meta = [
-    observation.kind,
+    kindLabel(t, observation.kind),
     observation.model,
     orphan && t("Parent not loaded"),
   ]

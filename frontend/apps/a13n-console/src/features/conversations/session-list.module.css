@@ -17,10 +17,6 @@
   width: 120px;
   padding-left: 28px;
 }
-/* The header names the title, not the avatar beside it. */
-.table thead [data-column="identity"] {
-  padding-left: 60px;
-}
 .table tbody td {
   height: 60px;
   padding-top: 10px;
@@ -46,11 +42,12 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
 }
+/* Sized to its text, so the reference marker follows it as in other collections. */
 .identityText {
   display: grid;
   gap: 2px;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 .title {
   overflow: hidden;
@@ -83,17 +80,11 @@
   font-size: var(--a13n-text-xs);
   line-height: 18px;
 }
-.sessionId,
 .agent {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.sessionId + .agent::before {
-  content: "·";
-  margin-right: 6px;
-  color: var(--a13n-tertiary);
 }
 /* Chips that do not fit wrap onto the clipped second line instead of being cut. */
 .tags {
@@ -263,6 +254,10 @@ button.tag:hover .tagKey {
     width: auto;
     padding: 0;
     min-width: 0;
+  }
+  /* Each line names itself, so the shared column captions stay off. */
+  .table tbody td::before {
+    content: none;
   }
   .table [data-column="identity"] {
     grid-column: 1 / 3;

@@ -23,7 +23,7 @@ import type {
 } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { readQuestions } from "../questions";
-import { workState } from "../entry-language";
+import { entryWait, waitingLabel, workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
 import type { RunScope } from "./scope";
 import {
@@ -180,14 +180,15 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
         facts={[
           entry.durationMs !== null ? formatDuration(entry.durationMs) : null,
           entry.outcome ??
-            t(`state.${entry.state}`, { defaultValue: entry.state }),
+            (entry.waitingReason
+              ? waitingLabel(entryWait(entry), t)
+              : t(`state.${entry.state}`, { defaultValue: entry.state })),
           entry.callCount !== null
             ? t("{{count}} inner calls", { count: entry.callCount })
             : null,
           entry.providerUsage?.costUsd
             ? formatCost(entry.providerUsage.costUsd)
             : null,
-          entry.waitingReason,
         ]}
         action={<RawDialog title={entry.name ?? t("Entry")} value={entry} />}
       />

@@ -25,16 +25,16 @@
 .listTable tbody tr:focus-within {
   background: var(--a13n-hover);
 }
-.modelMeta {
-  display: inline-flex;
-  align-items: center;
+/* The filters flow: side by side when they fit, otherwise each takes a full row. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  width: 100%;
   min-width: 0;
 }
-.modelMeta > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.filters > * {
+  flex: 1 1 auto;
 }
 .providerCell {
   display: flex;
@@ -52,14 +52,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chips {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* A chip narrows with an ellipsis rather than being cut at the cell edge. */
+.chip {
   min-width: 0;
   overflow: hidden;
-}
-.chip {
+  text-overflow: ellipsis;
   padding: 2px 8px;
   border-radius: var(--a13n-radius-chip);
   background: var(--a13n-surface);
@@ -68,17 +65,24 @@
   line-height: 16px;
   white-space: nowrap;
 }
-/* A workspace media understanding default is a role this model plays, not a declaration. */
-.chip[data-role] {
-  background: var(--a13n-selected);
-  color: var(--a13n-text);
-  font-weight: 500;
-}
-.statusCell {
+.capabilityMarks {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 2px;
+}
+.capabilityMark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--a13n-radius-chip);
+  color: var(--a13n-secondary);
+}
+/* A workspace media understanding default is a role this model plays, not a declaration. */
+.capabilityMark[data-role] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
 }
 /* Below the wide breakpoint the declared capabilities give way to identity. */
 @media (max-width: 1180px) {
@@ -109,13 +113,6 @@
   gap: 10px;
   min-width: 0;
 }
-/* Reads as the section description the grouped card cannot carry itself. */
-.mediaRule {
-  margin: 0;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  line-height: 20px;
-}
 /* The control cell holds the picker and, while a row saves, its status beside it. */
 .mediaControl {
   display: flex;
@@ -125,8 +122,9 @@
   min-width: 0;
   width: 100%;
 }
+/* Wide enough that the Model list opens flush with it rather than past the card. */
 .mediaPicker {
-  width: 260px;
+  width: 320px;
   max-width: 100%;
   min-width: 0;
 }
@@ -154,7 +152,7 @@
 .mediaLink:hover {
   text-decoration: underline;
 }
-/* An inherited row is identified by its kind, not by a model. */
+/* An inherited choice is quieter than the Models beside it. */
 .mediaGlyph {
   color: var(--a13n-muted);
 }
@@ -225,6 +223,7 @@
 }
 .chosenRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
@@ -235,8 +234,14 @@
 .chosenCopy {
   display: grid;
   gap: 2px;
-  flex: 1;
+  /* Keeps the name readable; narrow dialogs move the actions to their own line. */
+  flex: 1 1 8rem;
   min-width: 0;
+}
+.chosenActions {
+  display: flex;
+  gap: 4px;
+  margin-inline-start: auto;
 }
 .chosenCopy strong {
   font-size: var(--a13n-text-sm);
@@ -251,6 +256,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.address {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.addressHint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.625;
 }
 
 /* Detailed controls use whitespace inside the disclosure, not nested panels. */

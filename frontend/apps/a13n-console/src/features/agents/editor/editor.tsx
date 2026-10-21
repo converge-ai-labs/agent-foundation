@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
 import { ErrorToast } from "../../../shared/feedback";
 import { DetailLayout, SaveBar } from "../../../shared/page";
-import { ModelIcon } from "../../models/model-icon";
+import { ModelIcon, providerBrand } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
 import { useAgentChoices } from "../choices";
 import {
@@ -51,7 +51,7 @@ export function AgentEditor({
   rail,
   identity,
   saveLabel,
-  saveDisabled = false,
+  unnamed = false,
   overridden,
 }: {
   /** The agent a save publishes a version of; none while creating. */
@@ -69,7 +69,8 @@ export function AgentEditor({
   /** Name and description fields shown while creating. */
   identity?: ReactNode;
   saveLabel?: string;
-  saveDisabled?: boolean;
+  /** Creation waits for the name the identity fields hold. */
+  unnamed?: boolean;
   /** Fields a read-only view's configuration changes from its version. */
   overridden?: Iterable<string>;
 }) {
@@ -90,6 +91,9 @@ export function AgentEditor({
   const definitions = useModelProviderDefinitions();
   const selectedModel = choices.data?.models.find(
     (item) => item.key === draft.model,
+  );
+  const selectedProvider = choices.data?.providers.find(
+    (item) => item.id === selectedModel?.provider_id,
   );
   const modelApi = selectedModel?.config.model_api;
   const settingsSchema = modelApi
@@ -115,6 +119,15 @@ export function AgentEditor({
   const invalidResponse =
     error instanceof ApiError && [400, 422].includes(error.status);
   const dirty = creating || draft.dirty;
+  // Saving stays off until these are filled, and the save bar says which.
+  const blocker =
+    unnamed && !draft.model
+      ? t("Name the agent and choose a model to create it.")
+      : unnamed
+        ? t("Name the agent to create it.")
+        : !draft.model
+          ? t("Choose a model to save.")
+          : undefined;
   const nextVersion = (version ?? 0) + 1;
   const marked = sectionsOf(overridden ?? []);
   const mark = (section: EditorSection) =>
@@ -154,7 +167,12 @@ export function AgentEditor({
         rail={rail?.({
           modelName: selectedModel?.name ?? draft.model,
           modelIcon: selectedModel && (
-            <ModelIcon upstream={selectedModel.config.model_name} size={16} />
+            <ModelIcon
+              upstream={selectedModel.config.model_name}
+              catalogRef={selectedModel.catalog_ref}
+              provider={providerBrand(selectedProvider)}
+              size={16}
+            />
           ),
           environmentId: draft.environmentTemplateId,
           skillCount: draft.skills.length,
@@ -242,14 +260,15 @@ export function AgentEditor({
         <SaveBar
           title={creating ? t("New agent") : t("Unsaved changes")}
           consequence={
-            creating
+            blocker ??
+            (creating
               ? t("Saving creates the agent, ready for a conversation.")
               : t(
                   "New work uses v{{version}} by default. Active work and approval continuations keep their original version.",
                   {
                     version: nextVersion,
                   },
-                )
+                ))
           }
           note={creating ? undefined : note}
           onNoteChange={creating ? undefined : setNote}
@@ -259,7 +278,7 @@ export function AgentEditor({
           discardLabel={creating ? t("Cancel") : undefined}
           saveLabel={saveLabel ?? t("Save changes")}
           pending={pending}
-          disabled={saveDisabled || !draft.model}
+          disabled={!!blocker}
         />
       )}
       {reviewPanel && (

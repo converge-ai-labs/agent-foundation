@@ -1,5 +1,6 @@
 .form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   min-width: 0;
 }
@@ -8,6 +9,7 @@
 }
 .section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding-block: 20px;
   min-width: 0;
@@ -21,19 +23,25 @@
 .section[data-divider="none"] {
   border-top: 0;
 }
+/* Actions sit beside the heading and drop below it, left-aligned, when the
+   two no longer fit on one line. */
 .heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
 }
+.heading > :first-child {
+  flex: 1 1 240px;
+  min-width: 0;
+}
 .headingActions {
   display: flex;
   align-items: center;
-  flex: none;
+  flex: 0 1 auto;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 8px;
 }
 .heading h3 {
@@ -49,6 +57,7 @@
 }
 .fields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }

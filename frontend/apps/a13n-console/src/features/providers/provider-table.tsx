@@ -163,12 +163,15 @@ export function ProviderTable<T extends { id: string }>({
         ]}
       />
       <CollectionFooter
-        count={t(
-          category === "environments"
-            ? "{{count}} connections"
-            : "{{count}} providers",
-          { count: items.length },
-        )}
+        count={
+          page?.previous || nextCursor
+            ? category === "environments"
+              ? t("{{count}} connections on this page", { count: items.length })
+              : t("{{count}} providers on this page", { count: items.length })
+            : category === "environments"
+              ? t("{{count}} connections", { count: items.length })
+              : t("{{count}} providers", { count: items.length })
+        }
       >
         {page && <Pagination page={page} next={nextCursor} />}
       </CollectionFooter>

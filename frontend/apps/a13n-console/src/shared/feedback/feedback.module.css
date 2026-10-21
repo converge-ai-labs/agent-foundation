@@ -18,7 +18,7 @@
   min-height: 100svh;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 28px 40px 56px;
+  padding: 32px 48px 64px;
 }
 .inlineSkeleton {
   display: inline-flex;
@@ -301,13 +301,17 @@
   background: color-mix(in srgb, var(--destructive) 8%, transparent);
   color: var(--destructive);
 }
+.errorMark[data-tone="neutral"] {
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+}
 .errorMark svg {
   width: 19px;
   height: 19px;
 }
-@media (max-width: 760px) {
+@media (width < 768px) {
   .pageSkeleton {
-    padding: 24px 18px 40px;
+    padding: 24px var(--a13n-page-gutter-mobile) 40px;
   }
   .skeletonCards {
     grid-template-columns: minmax(0, 1fr);

@@ -333,7 +333,7 @@ it.each(["inherit", "off", "on"])(
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(
       await screen.findByRole("option", {
-        name: "Create from template: Research",
+        name: /^Research.*Create from template$/,
       }),
     );
     await user.click(screen.getByRole("button", { name: "Apply" }));
@@ -343,7 +343,7 @@ it.each(["inherit", "off", "on"])(
       );
       if (memoryChoice === "on")
         await user.click(
-          screen.getByRole("switch", { name: "Use Memory Spaces" }),
+          screen.getByRole("switch", { name: "Use memory spaces" }),
         );
     }
     await user.type(

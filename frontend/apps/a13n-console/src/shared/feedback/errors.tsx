@@ -6,7 +6,7 @@ import {
   Button,
   useToast,
 } from "a13n-ui";
-import { WarningCircleIcon } from "@phosphor-icons/react";
+import { CompassIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -156,6 +156,28 @@ export function ErrorPage({
           {t("Request ID")}: {details.requestId}
         </small>
       )}
+      {actions && <div className={styles.errorPageActions}>{actions}</div>}
+    </div>
+  );
+}
+
+/** A missing page or resource is not a failure: a calm notice with the way back. */
+export function NotFoundPage({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className={styles.errorPage}>
+      <div className={styles.errorMark} data-tone="neutral">
+        <CompassIcon aria-hidden="true" />
+      </div>
+      <h1>{title}</h1>
+      <p>{description}</p>
       {actions && <div className={styles.errorPageActions}>{actions}</div>}
     </div>
   );

@@ -23,20 +23,22 @@ export function Preferences() {
     <div className={styles.sections}>
       <SettingsSection title={t("Appearance")}>
         <SettingsRow label={t("Color theme")}>
-          <ChoiceField
-            label={t("Color theme")}
-            hideLabel
-            value={theme}
-            onValueChange={(value) => {
-              if (value === "light" || value === "dark" || value === "system")
-                setTheme(value);
-            }}
-            options={[
-              { value: "light", label: t("Light") },
-              { value: "dark", label: t("Dark") },
-              { value: "system", label: t("System") },
-            ]}
-          />
+          <div className={styles.control}>
+            <ChoiceField
+              label={t("Color theme")}
+              hideLabel
+              value={theme}
+              onValueChange={(value) => {
+                if (value === "light" || value === "dark" || value === "system")
+                  setTheme(value);
+              }}
+              options={[
+                { value: "light", label: t("Light") },
+                { value: "dark", label: t("Dark") },
+                { value: "system", label: t("System") },
+              ]}
+            />
+          </div>
         </SettingsRow>
       </SettingsSection>
       <SettingsSection title={t("Language and region")}>
@@ -44,25 +46,27 @@ export function Preferences() {
           label={t("Display language")}
           description={t("Used for navigation, dates, and controls.")}
         >
-          <ChoiceField
-            placeholder={t("Language")}
-            value={languagePreference}
-            onValueChange={(value) => {
-              if (value !== "system" && value !== "en" && value !== "zh-CN")
-                return;
-              const preference: LanguagePreference = value;
-              setLanguagePreference(preference);
-              saveLanguage(preference);
-              void i18n.changeLanguage(resolveLanguage(preference));
-            }}
-            label={t("Display language")}
-            hideLabel
-            options={[
-              { value: "system", label: t("System") },
-              { value: "en", label: "English" },
-              { value: "zh-CN", label: "简体中文" },
-            ]}
-          />
+          <div className={styles.control}>
+            <ChoiceField
+              placeholder={t("Language")}
+              value={languagePreference}
+              onValueChange={(value) => {
+                if (value !== "system" && value !== "en" && value !== "zh-CN")
+                  return;
+                const preference: LanguagePreference = value;
+                setLanguagePreference(preference);
+                saveLanguage(preference);
+                void i18n.changeLanguage(resolveLanguage(preference));
+              }}
+              label={t("Display language")}
+              hideLabel
+              options={[
+                { value: "system", label: t("System") },
+                { value: "en", label: "English" },
+                { value: "zh-CN", label: "简体中文" },
+              ]}
+            />
+          </div>
         </SettingsRow>
       </SettingsSection>
       <p className={styles.note}>

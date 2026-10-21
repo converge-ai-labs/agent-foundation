@@ -88,13 +88,13 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   expect(screen.queryByRole("option", { name: "No environment" })).toBeNull();
   await user.click(
     await screen.findByRole("option", {
-      name: "Create from template: Research",
+      name: /^Research.*Create from template$/,
     }),
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
   expect(
     screen.getByRole("button", {
-      name: "Environment: Create from template: Research",
+      name: "Environment: Research",
     }),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Submit" }));
@@ -105,18 +105,18 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
   expect(
     await screen.findByRole("option", {
-      name: "Reuse existing: Research (env_first)",
+      name: /^Research.*Reuse existing · env_first$/,
     }),
   ).toBeTruthy();
   // A deleted environment is never mounted again.
   expect(
     screen.queryByRole("option", {
-      name: "Reuse existing: Research (env_gone)",
+      name: /^Research.*Reuse existing · env_gone$/,
     }),
   ).toBeNull();
   await user.click(
     screen.getByRole("option", {
-      name: "Reuse existing: Research (env_second)",
+      name: /^Research.*Reuse existing · env_second$/,
     }),
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
@@ -153,7 +153,7 @@ it.each([null, "envt_managed"])(
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(
       await screen.findByRole("option", {
-        name: "Reuse existing: Device (env_device)",
+        name: /^Device.*Reuse existing · env_device$/,
       }),
     );
     await user.type(

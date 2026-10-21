@@ -3,6 +3,8 @@ import {
   Menu,
   MenuCheckboxItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuTrigger,
   Popover,
   PopoverPopup,
@@ -11,7 +13,7 @@ import {
 } from "a13n-ui";
 import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SetURLSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -25,6 +27,7 @@ import {
   parseLocalDateTime,
 } from "../../shared/local-date-time";
 import type { SessionFilters } from "./api";
+import { zoneOffset } from "./format";
 import styles from "./conversations.module.css";
 
 const statuses: Schema["RunStatus"][] = [
@@ -153,8 +156,10 @@ export function SessionFilterBar({
             <div className={styles.agentFilter}>
               <SearchPicker
                 label={t("Agent")}
-                placeholder={t("All agents")}
+                placeholder={t("Search agents")}
                 emptyMessage={t("No matching agents")}
+                // Names read in full, however narrow the trigger is.
+                popupClassName={styles.agentFilterPopup}
                 groups={[
                   {
                     label: t("Agents"),
@@ -197,8 +202,8 @@ export function SessionFilterBar({
             />
             {active && (
               <Button
-                size="sm"
                 variant="ghost"
+                className={styles.clearFilters}
                 onClick={() => {
                   setQuery("");
                   clearTimeout(debounce.current);
@@ -266,7 +271,30 @@ function FilterChip({
   );
 }
 
-function MultiFilter({
+interface FilterOption {
+  value: string;
+  label: string;
+}
+
+/** A toolbar filter's face: what it filters, then what is chosen. */
+function FilterTrigger({
+  label,
+  chosen,
+}: {
+  label: string;
+  chosen?: ReactNode;
+}) {
+  return (
+    <>
+      <span className={styles.filterLabel}>{label}</span>
+      {chosen}
+      <CaretDownIcon size={12} aria-hidden="true" />
+    </>
+  );
+}
+
+/** Any number of values, chosen from a toolbar menu. */
+export function MultiFilter({
   label,
   values,
   options,
@@ -274,17 +302,20 @@ function MultiFilter({
 }: {
   label: string;
   values: string[];
-  options: { value: string; label: string }[];
+  options: FilterOption[];
   onChange: (values: string[]) => void;
 }) {
   return (
     <Menu>
       <MenuTrigger render={<Button variant="outline" />}>
-        <span className={styles.filterLabel}>{label}</span>
-        {values.length > 0 && (
-          <span className={styles.filterCount}>{values.length}</span>
-        )}
-        <CaretDownIcon size={12} aria-hidden="true" />
+        <FilterTrigger
+          label={label}
+          chosen={
+            values.length > 0 && (
+              <span className={styles.filterCount}>{values.length}</span>
+            )
+          }
+        />
       </MenuTrigger>
       <MenuPopup align="start" aria-label={label}>
         {options.map((option) => (
@@ -308,6 +339,48 @@ function MultiFilter({
   );
 }
 
+/** One value or all of them, for a filter the Service applies one value at a time. */
+export function ChoiceFilter({
+  label,
+  allLabel,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  allLabel: string;
+  value?: string;
+  options: FilterOption[];
+  onChange: (value: string | undefined) => void;
+}) {
+  const chosen = options.find((option) => option.value === value);
+  return (
+    <Menu>
+      <MenuTrigger render={<Button variant="outline" />}>
+        <FilterTrigger
+          label={label}
+          chosen={chosen && <span>{chosen.label}</span>}
+        />
+      </MenuTrigger>
+      <MenuPopup align="start" aria-label={label}>
+        <MenuRadioGroup
+          value={chosen?.value ?? ""}
+          onValueChange={(next: string) => onChange(next || undefined)}
+        >
+          <MenuRadioItem value="" closeOnClick>
+            {allLabel}
+          </MenuRadioItem>
+          {options.map((option) => (
+            <MenuRadioItem key={option.value} value={option.value} closeOnClick>
+              {option.label}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 function UpdatedFilter({
   after,
   before,
@@ -317,7 +390,7 @@ function UpdatedFilter({
   before: string | null;
   onChange: (after: string, before: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -344,11 +417,17 @@ function UpdatedFilter({
       }}
     >
       <PopoverTrigger render={<Button variant="outline" />}>
-        <span className={styles.filterLabel}>{t("Updated")}</span>
-        {(after || before) && (
-          <span className={styles.filterDot} aria-label={t("Filter active")} />
-        )}
-        <CaretDownIcon size={12} aria-hidden="true" />
+        <FilterTrigger
+          label={t("Updated")}
+          chosen={
+            (after || before) && (
+              <span
+                className={styles.filterDot}
+                aria-label={t("Filter active")}
+              />
+            )
+          }
+        />
       </PopoverTrigger>
       <PopoverPopup
         aria-label={t("Updated")}
@@ -395,7 +474,10 @@ function UpdatedFilter({
             </p>
           )}
           <div className={styles.updatedFooter}>
-            <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+            {/* The fields read in the browser's zone; its full name is a hover away. */}
+            <span title={Intl.DateTimeFormat().resolvedOptions().timeZone}>
+              {zoneOffset(undefined, i18n.resolvedLanguage)}
+            </span>
             <div className={styles.updatedActions}>
               <Button
                 variant="ghost"

@@ -146,7 +146,7 @@ function RunDetails({ selected }: { selected: Run }) {
               UNKNOWN
             )}
           </Fact>
-          <Fact term={t("Completed")}>
+          <Fact term={t("Ended")}>
             {run.sealed_at ? (
               <Timestamp value={run.sealed_at} precise />
             ) : (

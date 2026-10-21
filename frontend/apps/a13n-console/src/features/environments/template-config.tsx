@@ -15,6 +15,7 @@ import {
 import { CatalogStep, CatalogTile, CatalogTiles } from "../../shared/dialogs";
 import { ErrorNotice, InlineLoading } from "../../shared/feedback";
 import {
+  FormActions,
   FormSection,
   formSectionStyles,
   jsonObject,
@@ -75,12 +76,11 @@ export function TemplateConfig({
     [runtimeType, setRuntimeType] = useState(""),
     [choosing, setChoosing] = useState(!saved?.provider_id);
   const [connections, setConnections] = useState<Record<string, string>>({});
+  const [savedConfiguration] = useState(() =>
+    JSON.stringify(saved?.config.recipe ?? {}, null, 2),
+  );
   const [configurations, setConfigurations] = useState<Record<string, string>>({
-    [saved?.provider_id ?? ""]: JSON.stringify(
-      saved?.config.recipe ?? {},
-      null,
-      2,
-    ),
+    [saved?.provider_id ?? ""]: savedConfiguration,
   });
   const [configurationError, setConfigurationError] = useState<string>();
   // Connections of the same runtime share a recipe schema. Keep the draft
@@ -91,12 +91,10 @@ export function TemplateConfig({
     setConfigurations((current) => ({ ...current, [configurationKey]: value }));
     setConfigurationError(undefined);
   }
-  const [stop, setStop] = useState(
-      saved?.config.stop_after_seconds?.toString() ?? "",
-    ),
-    [destroy, setDestroy] = useState(
-      saved?.config.delete_after_seconds?.toString() ?? "",
-    );
+  const savedStop = saved?.config.stop_after_seconds?.toString() ?? "",
+    savedDestroy = saved?.config.delete_after_seconds?.toString() ?? "";
+  const [stop, setStop] = useState(savedStop),
+    [destroy, setDestroy] = useState(savedDestroy);
   const provider = providers.data?.find((item) => item.id === providerId);
   const definition = types.data?.items.find(
     (item) => item.type === (standalone ? runtimeType : provider?.type),
@@ -194,6 +192,13 @@ export function TemplateConfig({
     !loadError &&
     !providers.isPending &&
     !types.isPending;
+  // An edit saves only once something differs from the saved template.
+  const changed =
+    !basis ||
+    providerId !== saved?.provider_id ||
+    stop !== savedStop ||
+    destroy !== savedDestroy ||
+    !sameConfiguration(configuration, savedConfiguration);
   if (choosing && !standalone)
     return (
       <div className={styles.stack}>
@@ -202,18 +207,16 @@ export function TemplateConfig({
           providers={providers.data}
           definitions={types.data?.items}
           loading={providers.isPending || types.isPending}
+          current={providerId}
           onChoose={chooseProvider}
         />
         {providerId && (
-          <div className={editorStyles.editorFooter}>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setChoosing(false)}
-            >
-              {t("Cancel")}
-            </Button>
-          </div>
+          <FormActions
+            pending={false}
+            dismiss
+            cancelLabel={t("Cancel")}
+            onCancel={() => setChoosing(false)}
+          />
         )}
       </div>
     );
@@ -326,14 +329,11 @@ export function TemplateConfig({
                       ? "daytona"
                       : "default"
               }
-            />
-          )}
-          <div className={editorStyles.lifecycleSection}>
-            <DisclosureSection
-              className={editorStyles.advanced}
-              title={t("Lifecycle")}
             >
-              <div className={editorStyles.advancedBody}>
+              <DisclosureSection
+                className={editorStyles.advanced}
+                title={t("Lifecycle")}
+              >
                 <div className={styles.twoColumns}>
                   <FormField
                     className="min-w-0 w-full"
@@ -370,9 +370,9 @@ export function TemplateConfig({
                     />
                   </FormField>
                 </div>
-              </div>
-            </DisclosureSection>
-          </div>
+              </DisclosureSection>
+            </ProviderConfiguration>
+          )}
         </fieldset>
         {standalone && (
           <p className={editorStyles.creationNote}>
@@ -386,24 +386,12 @@ export function TemplateConfig({
           retry={reload ? () => void reload() : undefined}
         />
         {!readOnly && (
-          <div data-a13n-form-actions className={editorStyles.editorFooter}>
-            <Button
-              variant="outline"
-              disabled={save.isPending}
-              onClick={close}
-              type="button"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button
-              type="submit"
-              variant="default"
-              loading={save.isPending}
-              disabled={standalone && !readyToCreate}
-            >
-              {t(basis ? "Save changes" : "Create template")}
-            </Button>
-          </div>
+          <FormActions
+            pending={save.isPending}
+            onCancel={close}
+            disabled={(standalone && !readyToCreate) || !changed}
+            label={t(basis ? "Save changes" : "Create template")}
+          />
         )}
       </form>
     </>
@@ -420,16 +408,30 @@ export function TemplateConfig({
   );
 }
 
+/** Two recipe drafts that parse to the same configuration. */
+function sameConfiguration(text: string, saved: string) {
+  try {
+    return (
+      JSON.stringify(jsonObject(text)) === JSON.stringify(jsonObject(saved))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Enabled providers of a type this deployment offers, as brand tiles. */
 function ProviderCatalog({
   providers,
   definitions,
   loading,
+  current,
   onChoose,
 }: {
   providers?: Schema["Provider"][];
   definitions?: Schema["ProviderType"][];
   loading: boolean;
+  /** The provider the template runs on now, marked among the choices. */
+  current?: string;
   onChoose: (id: string) => void;
 }) {
   const { t } = useTranslation();
@@ -454,12 +456,16 @@ function ProviderCatalog({
             const kind = definitions?.find(
               (definition) => definition.type === provider.type,
             )?.display_name;
+            const detail = [
+              kind === provider.name ? undefined : kind,
+              provider.id === current ? t("Current") : undefined,
+            ].filter(Boolean);
             return (
               <CatalogTile
                 key={provider.id}
                 icon={<ProviderIcon type={provider.type} />}
                 name={provider.name}
-                detail={kind === provider.name ? undefined : kind}
+                detail={detail.length ? detail.join(" · ") : undefined}
                 onClick={() => onChoose(provider.id)}
               />
             );

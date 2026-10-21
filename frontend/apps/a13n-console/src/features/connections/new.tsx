@@ -5,7 +5,7 @@ import {
   Input,
   ModalFrame,
 } from "a13n-ui";
-import { PlusIcon } from "@phosphor-icons/react";
+import { PlusIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -20,7 +20,7 @@ import {
   DirectoryList,
   DirectoryRow,
 } from "../../shared/dialogs";
-import { ErrorToast, Loading } from "../../shared/feedback";
+import { ErrorNotice, ErrorToast, Loading } from "../../shared/feedback";
 import { ConnectionSetup } from "../connectors/setup";
 import { ConnectorToolPreview } from "../connectors/tools";
 import { CreateMCP } from "../mcp/create";
@@ -39,7 +39,7 @@ export type Selection =
 export function sourceName(selected: Selection, t: TFunction) {
   return selected.kind === "connector"
     ? selected.connector.name
-    : (selected.preset?.name ?? t("Custom Remote MCP"));
+    : (selected.preset?.name ?? t("Custom remote MCP"));
 }
 
 export function sourceOrigin(selected: Selection, t: TFunction) {
@@ -284,6 +284,16 @@ function SourceDirectory({
         .map((entry) => entry.preset)
     : [];
   const empty = !applications.length && !servers.length;
+  // Custom MCP leads the directory, and follows the results while searching.
+  const custom = manage && (
+    <DirectoryRow
+      icon={<BrandIcon identity="mcp" />}
+      name={t("Custom remote MCP")}
+      detail={t("Connect any compatible remote MCP server.")}
+      tone="elevated"
+      onClick={() => onSelect({ kind: "mcp" })}
+    />
+  );
   return (
     <>
       <DirectoryList
@@ -316,73 +326,85 @@ function SourceDirectory({
           </>
         }
       >
-        {manage && !term && (
-          <DirectoryRow
-            icon={<BrandIcon identity="mcp" />}
-            name={t("Custom Remote MCP")}
-            detail={t("Connect any compatible remote MCP server.")}
-            tone="elevated"
-            onClick={() => onSelect({ kind: "mcp" })}
-          />
-        )}
-        {!!applications.length && (
-          <DirectoryGroup label={t("Applications")}>
-            {applications.map(({ connector, provider }) => (
-              <DirectoryRow
-                key={`${provider.id}:${connector.key}`}
-                icon={
-                  <BrandIcon alias={connector.key} logo={connector.logo_url} />
-                }
-                name={connector.name}
-                detail={connector.description}
-                meta={provider.name}
-                onClick={() =>
-                  onSelect({ kind: "connector", connector, provider })
-                }
-              />
-            ))}
-          </DirectoryGroup>
-        )}
-        {!!servers.length && (
-          <DirectoryGroup label={t("Remote MCP servers")}>
-            {servers.map((preset) => (
-              <DirectoryRow
-                key={preset.key}
-                icon={
-                  <BrandIcon
-                    identity={preset.key}
-                    endpoint={preset.url}
-                    logo={preset.logo_url}
-                    fallbackIdentity="mcp"
-                  />
-                }
-                name={preset.name}
-                detail={preset.description}
-                onClick={() => onSelect({ kind: "mcp", preset })}
-              />
-            ))}
-          </DirectoryGroup>
-        )}
-        {empty &&
-          (directory.pending ? (
-            <Loading variant="list" rows={4} />
-          ) : (
-            <DirectoryEmpty>{t("No matching sources")}</DirectoryEmpty>
+        <div className={styles.directoryBody}>
+          {!term && custom}
+          {directory.failures.map(({ provider, retry }) => (
+            <p key={provider.id} className={styles.directoryNotice}>
+              <WarningCircleIcon aria-hidden="true" size={14} />
+              <span>
+                {t("Applications from {{provider}} could not be loaded.", {
+                  provider: provider.name,
+                })}
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={retry}>
+                {t("Retry")}
+              </Button>
+            </p>
           ))}
-        {directory.hasMore && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={styles.loadMore}
-            loading={directory.loadingMore}
-            onClick={directory.loadMore}
-          >
-            {t("Load more applications")}
-          </Button>
-        )}
+          {!!applications.length && (
+            <DirectoryGroup label={t("Applications")}>
+              {applications.map(({ connector, provider }) => (
+                <DirectoryRow
+                  key={`${provider.id}:${connector.key}`}
+                  icon={
+                    <BrandIcon
+                      alias={connector.key}
+                      logo={connector.logo_url}
+                    />
+                  }
+                  name={connector.name}
+                  detail={connector.description}
+                  meta={provider.name}
+                  onClick={() =>
+                    onSelect({ kind: "connector", connector, provider })
+                  }
+                />
+              ))}
+            </DirectoryGroup>
+          )}
+          {!!servers.length && (
+            <DirectoryGroup label={t("Remote MCP servers")}>
+              {servers.map((preset) => (
+                <DirectoryRow
+                  key={preset.key}
+                  icon={
+                    <BrandIcon
+                      identity={preset.key}
+                      endpoint={preset.url}
+                      logo={preset.logo_url}
+                      fallbackIdentity="mcp"
+                    />
+                  }
+                  name={preset.name}
+                  detail={preset.description}
+                  onClick={() => onSelect({ kind: "mcp", preset })}
+                />
+              ))}
+            </DirectoryGroup>
+          )}
+          {empty &&
+            (directory.pending ? (
+              <Loading variant="list" rows={4} />
+            ) : (
+              <DirectoryEmpty>{t("No matching sources")}</DirectoryEmpty>
+            ))}
+          {term && custom}
+          {directory.hasMore && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={styles.loadMore}
+              loading={directory.loadingMore}
+              onClick={directory.loadMore}
+            >
+              {t("Load more applications")}
+            </Button>
+          )}
+        </div>
       </DirectoryList>
-      <ErrorToast error={directory.error} />
+      <ErrorNotice error={directory.error} retry={directory.retry} />
+      <ErrorToast error={directory.loadError} />
     </>
   );
 }

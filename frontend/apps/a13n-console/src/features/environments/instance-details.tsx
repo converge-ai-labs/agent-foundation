@@ -1,7 +1,19 @@
-import { DotsThreeOutlineVerticalIcon } from "@phosphor-icons/react";
+import {
+  DotsThreeOutlineVerticalIcon,
+  StopIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
-import { useState, type ReactNode } from "react";
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "a13n-ui";
+import type { TFunction } from "i18next";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -17,6 +29,7 @@ import { CopyableId, ProviderIcon } from "../../shared/identity";
 import { Panel } from "../../shared/page";
 import { environmentQuery } from "./api";
 import styles from "./environments.module.css";
+import { Fact } from "./fact";
 import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
 import { EnvironmentStatus } from "./instance-status";
@@ -141,10 +154,17 @@ export function EnvironmentPanel({
   // External targets are connect-only: the Service never stops them, and
   // deleting one only retires it, so no provider type decides anything.
   const managed = !!value?.template_id;
-  const supportsStop = managed && !!capabilities?.supports_stop;
-  const supportsDestroy = !managed || !!capabilities?.supports_destroy;
-  const lifecycle =
-    can("write") && !!value && (supportsStop || supportsDestroy);
+  const status = value?.status ?? environment.status;
+  const name = value?.name ?? environment.name;
+  // Stop is offered only while a target can still be stopped.
+  const canStop =
+    managed &&
+    !!capabilities?.supports_stop &&
+    !["stopping", "stopped", "deleting", "deleted"].includes(status);
+  const canDelete =
+    (!managed || !!capabilities?.supports_destroy) &&
+    !["deleting", "deleted"].includes(status);
+  const lifecycle = can("write") && !!value && (canStop || canDelete);
   return (
     <Panel
       open={open}
@@ -153,9 +173,7 @@ export function EnvironmentPanel({
       defaultWidth={420}
       title={
         <span className={styles.panelTitle}>
-          <strong title={value?.name ?? environment.name}>
-            {value?.name ?? environment.name}
-          </strong>
+          <strong title={name}>{name}</strong>
           {value && <EnvironmentStatus environment={value} />}
         </span>
       }
@@ -176,35 +194,38 @@ export function EnvironmentPanel({
               <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
             </MenuTrigger>
             <MenuPopup align="end">
-              {supportsStop && (
+              {canStop && (
                 <Confirm
-                  subject={environment.id}
-                  title={t("Stop environment target")}
+                  subject={name}
+                  title={t("Stop environment")}
                   description={t(
-                    "This stops the target when it has no active users. A later run can resume it.",
+                    "This stops the environment when no run is using it. A later run can resume it.",
                   )}
                   triggerElement={
                     <MenuItem
                       closeOnClick={false}
                       disabled={!!value?.failure?.permanent}
                     >
-                      {t("Stop target")}
+                      <StopIcon aria-hidden="true" />
+                      {t("Stop")}
                     </MenuItem>
                   }
                   action={() => act("stop")}
                 />
               )}
-              {supportsDestroy && (
+              {canStop && canDelete && <MenuSeparator />}
+              {canDelete && (
                 <Confirm
-                  subject={environment.id}
-                  title={t("Delete environment target")}
+                  subject={name}
+                  title={t("Delete environment")}
                   description={t(
-                    "The environment is retired and cannot be used again. A managed target is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
+                    "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
                   )}
                   danger
                   triggerElement={
                     <MenuItem closeOnClick={false} variant="destructive">
-                      {t("Delete target")}
+                      <TrashIcon aria-hidden="true" />
+                      {t("Delete")}
                     </MenuItem>
                   }
                   action={() => act("delete")}
@@ -254,7 +275,11 @@ export function EnvironmentPanel({
                     </Fact>
                   )}
                   <Fact label={t("Activity")}>
-                    <Timestamp value={value.last_used_at} />
+                    {value.last_used_at ? (
+                      <Timestamp value={value.last_used_at} />
+                    ) : (
+                      t("Not used yet")
+                    )}
                   </Fact>
                   <Fact label={t("Updated")}>
                     <Timestamp value={value.updated_at} />
@@ -316,7 +341,11 @@ export function EnvironmentPanel({
                   )}
                   {value.template_id && (
                     <Fact label={t("Template")}>
-                      <CopyableId value={value.template_id} />
+                      {template.data ? (
+                        <span>{template.data.name}</span>
+                      ) : (
+                        <CopyableId value={value.template_id} />
+                      )}
                     </Fact>
                   )}
                 </dl>
@@ -364,13 +393,15 @@ export function EnvironmentPanel({
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className={styles.fact}>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
+/** An idle limit in the largest whole unit: 1800 seconds reads as 30 minutes. */
+function idleLimit(seconds: number, t: TFunction) {
+  if (seconds % 86400 === 0)
+    return t("{{count}} days", { count: seconds / 86400 });
+  if (seconds % 3600 === 0)
+    return t("{{count}} hours", { count: seconds / 3600 });
+  if (seconds % 60 === 0)
+    return t("{{count}} minutes", { count: seconds / 60 });
+  return t("{{count}} seconds", { count: seconds });
 }
 
 /** The template's current idle policy; an external target has none. */
@@ -379,14 +410,14 @@ function RetentionDetails({
 }: {
   policy: Schema["TemplateConfig"] | null;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   return (
     <section className={styles.factGroup}>
       <h3>{t("Effective retention policy")}</h3>
       {policy === null ? (
         <p className={styles.panelNote}>
           {t(
-            "Externally owned: Service does not automatically stop or delete this target.",
+            "Externally owned: the Service never stops or deletes this environment automatically.",
           )}
         </p>
       ) : (
@@ -399,13 +430,7 @@ function RetentionDetails({
               ] as const
             ).map(([label, seconds]) => (
               <Fact key={label} label={label}>
-                {seconds === null
-                  ? t("Disabled")
-                  : t("{{seconds}} seconds", {
-                      seconds: new Intl.NumberFormat(
-                        i18n.resolvedLanguage,
-                      ).format(seconds),
-                    })}
+                {seconds === null ? t("Disabled") : idleLimit(seconds, t)}
               </Fact>
             ))}
           </dl>

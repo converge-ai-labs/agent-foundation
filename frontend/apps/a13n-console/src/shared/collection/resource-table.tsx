@@ -51,89 +51,97 @@ export function ResourceTable<T extends { id: string } | { key: string }>({
   const activates = (item: T) =>
     !!onRowActivate && (canActivateRow?.(item) ?? true);
   return (
-    <Table className={`${styles.table} ${className ?? ""}`}>
-      <TableCaption className="sr-only">
-        {caption ?? t("Resources")}
-      </TableCaption>
-      <TableHeader>
-        <TableRow>
-          {columns.map((column) => (
-            <TableHead
-              key={column.label}
-              scope="col"
-              className={column.align === "right" ? "text-right" : undefined}
-              aria-sort={column.ariaSort}
-              data-column={column.dataColumn}
-            >
-              {column.header ?? column.label}
-            </TableHead>
-          ))}
-          {rowMenu && (
-            <TableHead className={styles.menuCell} scope="col">
-              <span className="sr-only">{rowMenuLabel ?? t("Actions")}</span>
-            </TableHead>
-          )}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {items.map((item) => (
-          <TableRow
-            key={"id" in item ? item.id : item.key}
-            tabIndex={activates(item) ? 0 : undefined}
-            className={
-              activates(item)
-                ? "cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-                : undefined
-            }
-            onClick={(event) => {
-              if (
-                event.target instanceof Element &&
-                event.target.closest(
-                  "button, a, input, select, textarea, [role='button'], [role='menuitem']",
-                )
-              )
-                return;
-              if (activates(item)) onRowActivate?.(item, event.currentTarget);
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.target === event.currentTarget &&
-                (event.key === "Enter" || event.key === " ") &&
-                activates(item)
-              ) {
-                event.preventDefault();
-                onRowActivate?.(item, event.currentTarget);
-              }
-            }}
-          >
+    <div className={styles.frame}>
+      <Table
+        className={`${styles.table} ${className ?? ""}`}
+        // Lists that size their own columns pass a className; the rest give the
+        // identity column the width the supporting columns leave.
+        data-fit={className ? undefined : ""}
+      >
+        <TableCaption className="sr-only">
+          {caption ?? t("Resources")}
+        </TableCaption>
+        <TableHeader>
+          <TableRow>
             {columns.map((column) => (
-              <TableCell
+              <TableHead
                 key={column.label}
-                className={styles.cell}
-                data-tone={column.tone ?? "secondary"}
-                data-align={column.align}
+                scope="col"
+                className={column.align === "right" ? "text-right" : undefined}
+                aria-sort={column.ariaSort}
                 data-column={column.dataColumn}
               >
-                <div
-                  className={
-                    column.align === "right" ? "flex justify-end" : undefined
-                  }
-                >
-                  {column.render(item)}
-                </div>
-              </TableCell>
+                {column.header ?? column.label}
+              </TableHead>
             ))}
             {rowMenu && (
-              <TableCell className={`${styles.cell} ${styles.menuCell}`}>
-                <RowMenu label={rowMenuLabel ?? t("Actions")}>
-                  {rowMenu(item)}
-                </RowMenu>
-              </TableCell>
+              <TableHead className={styles.menuCell} scope="col">
+                <span className="sr-only">{rowMenuLabel ?? t("Actions")}</span>
+              </TableHead>
             )}
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => (
+            <TableRow
+              key={"id" in item ? item.id : item.key}
+              tabIndex={activates(item) ? 0 : undefined}
+              className={
+                activates(item)
+                  ? "cursor-pointer focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+                  : undefined
+              }
+              onClick={(event) => {
+                if (
+                  event.target instanceof Element &&
+                  event.target.closest(
+                    "button, a, input, select, textarea, [role='button'], [role='menuitem']",
+                  )
+                )
+                  return;
+                if (activates(item)) onRowActivate?.(item, event.currentTarget);
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === "Enter" || event.key === " ") &&
+                  activates(item)
+                ) {
+                  event.preventDefault();
+                  onRowActivate?.(item, event.currentTarget);
+                }
+              }}
+            >
+              {columns.map((column) => (
+                <TableCell
+                  key={column.label}
+                  className={styles.cell}
+                  data-tone={column.tone ?? "secondary"}
+                  data-align={column.align}
+                  data-column={column.dataColumn}
+                  data-label={column.label}
+                >
+                  <div
+                    className={
+                      column.align === "right" ? "flex justify-end" : undefined
+                    }
+                  >
+                    {column.render(item)}
+                  </div>
+                </TableCell>
+              ))}
+              {rowMenu && (
+                <TableCell className={`${styles.cell} ${styles.menuCell}`}>
+                  <RowMenu label={rowMenuLabel ?? t("Actions")}>
+                    {rowMenu(item)}
+                  </RowMenu>
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -149,7 +157,6 @@ function RowMenu({ label, children }: { label: string; children: ReactNode }) {
               size="icon-sm"
               type="button"
               aria-label={label}
-              title={label}
             />
           }
         >

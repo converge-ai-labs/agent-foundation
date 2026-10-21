@@ -4,99 +4,134 @@
 }
 .hint {
   display: block;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
   line-height: 1.6;
   font-weight: 400;
 }
 .severity {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
+  gap: 6px;
+  font-size: var(--a13n-text-xs);
   font-weight: 500;
   white-space: nowrap;
 }
 .severity::before {
   content: "";
-  width: 0.375rem;
-  height: 0.375rem;
+  flex: none;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--muted-foreground);
+  background: var(--a13n-tertiary);
 }
 .severity[data-severity="critical"]::before {
-  background: var(--destructive);
+  background: var(--a13n-danger);
 }
 .severity[data-severity="warning"]::before {
-  background: var(--warning);
+  background: var(--a13n-warning);
 }
 .form,
 .rules {
   display: grid;
-  gap: 1rem;
+  gap: 16px;
 }
 .scope {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1rem;
+  gap: 16px;
 }
 .rules {
   border: 0;
   padding: 0;
 }
 .rules legend {
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+  margin-bottom: 12px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .rule {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 12px;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: var(--a13n-text-sm);
 }
 .rule > :first-child {
-  margin-top: 0.125rem;
+  margin-top: 2px;
   flex-shrink: 0;
 }
 .actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
   justify-content: flex-end;
   flex-wrap: wrap;
 }
-.links {
-  overflow-wrap: anywhere;
-  display: flex;
-  gap: 0.5rem 1rem;
-  flex-wrap: wrap;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-}
-.link,
-.links a {
+.link {
   text-decoration: underline;
+  text-decoration-color: var(--a13n-border);
   text-underline-offset: 3px;
 }
-.metadata {
-  margin-bottom: 28px;
+.link:hover {
+  text-decoration-color: currentColor;
+}
+/* Facts read label above value, as on trace detail. */
+.facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  overflow-wrap: anywhere;
+  gap: 14px 36px;
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
 }
-
-.detail {
+.facts > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 820px;
-  gap: 36px;
-  align-items: start;
+  gap: 3px;
   min-width: 0;
 }
+.facts dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 500;
+  line-height: 15px;
+}
+.facts dd {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+/* One selected trace per line: its ID links to the trace, the copy sits beside. */
+.traceList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.traceList li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.traceList a:hover span {
+  color: var(--a13n-text);
+  text-decoration: underline;
+}
+.selectedTrace {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+
 .tabs {
   gap: 24px;
   min-width: 0;
@@ -164,23 +199,13 @@
 .findingsTable .severity {
   white-space: normal;
 }
-.detailPage h1 {
-  max-width: 72ch;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-}
-.narrative {
-  display: grid;
-  gap: 28px;
-  min-width: 0;
-}
 .reviewSummary {
   display: grid;
   gap: 12px;
   min-width: 0;
 }
 .reviewSummary strong {
-  font-size: 0.875rem;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .reviewSummary > button {
@@ -191,54 +216,57 @@
   gap: 12px;
 }
 .evidenceCard {
+  display: grid;
+  gap: 10px;
   padding: 14px 16px;
   background: var(--a13n-surface);
-  border-radius: 12px;
+  border-radius: var(--a13n-radius-group);
   min-width: 0;
 }
-.evidenceActions {
+.evidenceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  min-height: 24px;
+  font-size: var(--a13n-text-sm);
+}
+.evidenceTitle {
+  font-weight: 500;
+}
+.evidenceTitle:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.evidenceIds {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  font-size: 0.875rem;
-}
-.references {
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  min-width: 0;
-}
-.references summary {
-  cursor: pointer;
-}
-.evidenceCard .references {
-  margin-top: 12px;
-}
-.referenceList {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px 16px;
-  margin: 12px 0;
-}
-.referenceList dd {
-  overflow-wrap: anywhere;
+  gap: 4px 24px;
   margin: 0;
 }
-@media (max-width: 1100px) {
-  .detail {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
-  }
+.evidenceIds > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
-
-.detailPage > header {
+.evidenceIds dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.evidenceIds dd {
+  display: flex;
   flex-wrap: wrap;
+  gap: 0 8px;
+  min-width: 0;
+  margin: 0;
 }
-.detailPage > header > :first-child {
-  flex: 1 1 auto;
-  width: min(600px, 100%);
-}
-.detailPage > header > :last-child,
-.detailPage > header > :last-child > div {
-  max-width: 100%;
-  justify-content: flex-start;
+/* A cited run that cannot be read stays a quiet note, never an alert. */
+.unavailable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
 }

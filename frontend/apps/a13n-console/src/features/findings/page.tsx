@@ -33,7 +33,9 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { CopyButton, CopyableId, Identifier } from "../../shared/identity";
 import { Page, Section, useTabParam } from "../../shared/page";
+import { RefreshButton } from "../../shared/time-range";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
 
@@ -264,9 +266,10 @@ export function FindingsPage() {
                   </>
                 }
                 trailing={
-                  <Button variant="ghost" onClick={() => void query.refetch()}>
-                    {t("Refresh")}
-                  </Button>
+                  <RefreshButton
+                    pending={query.isFetching}
+                    onRefresh={() => void query.refetch()}
+                  />
                 }
               />
               <ErrorNotice
@@ -414,9 +417,10 @@ function AnalysisHistory({
     <>
       <Toolbar
         trailing={
-          <Button variant="ghost" onClick={() => void query.refetch()}>
-            {t("Refresh")}
-          </Button>
+          <RefreshButton
+            pending={query.isFetching}
+            onRefresh={() => void query.refetch()}
+          />
         }
       />
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -456,7 +460,9 @@ function AnalysisHistory({
               },
               {
                 label: t("Created"),
-                render: (item) => <Timestamp value={item.created_at} />,
+                render: (item) => (
+                  <Timestamp value={item.created_at} relative />
+                ),
               },
             ]}
           />
@@ -480,38 +486,67 @@ function AnalysisHistory({
             if (!open) setSelectedId(null);
           }}
           title={t("Analysis details")}
-          description={agentName(selected.agent_id)}
           closeLabel={t("Close")}
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setSelectedId(null)}>
+                {t("Close")}
+              </Button>
+              <Button render={<Link to={runPath(selected)} />}>
+                {t("Open analysis run")}
+              </Button>
+            </>
+          }
         >
           <div className={styles.analysisDetail}>
-            <div className={styles.metadata}>
-              <StatePill
-                state={selected.run_status}
-                label={t(
-                  runStatusLabels[selected.run_status] ?? selected.run_status,
-                )}
-              />
-              <Timestamp value={selected.created_at} />
-              {selected.agent_id && (
-                <Link to={`${basePath}/agents/${selected.agent_id}`}>
-                  {t("Agent")}
-                </Link>
-              )}
-            </div>
             <Section title={t("Analysis summary")}>
-              <p>
-                {t("Selected traces: {{count}}", {
-                  count: selected.selected_traces.length,
-                })}
-              </p>
-              <p>
-                {t("Findings: {{count}}", { count: selected.finding_count })}
-              </p>
-              <p>
-                {t("Evidence-cited traces: {{count}}", {
-                  count: selected.cited_trace_count,
-                })}
-              </p>
+              <dl className={styles.facts}>
+                <div>
+                  <dt>{t("Status")}</dt>
+                  <dd>
+                    <StatePill
+                      state={selected.run_status}
+                      label={t(
+                        runStatusLabels[selected.run_status] ??
+                          selected.run_status,
+                      )}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Created")}</dt>
+                  <dd>
+                    <Timestamp value={selected.created_at} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Scope")}</dt>
+                  <dd>
+                    {selected.agent_id ? (
+                      <Link
+                        className={styles.link}
+                        to={`${basePath}/agents/${selected.agent_id}`}
+                      >
+                        {agentName(selected.agent_id)}
+                      </Link>
+                    ) : (
+                      agentName(null)
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Selected traces")}</dt>
+                  <dd>{selected.selected_traces.length}</dd>
+                </div>
+                <div>
+                  <dt>{t("Findings")}</dt>
+                  <dd>{selected.finding_count}</dd>
+                </div>
+                <div>
+                  <dt>{t("Evidence-cited traces")}</dt>
+                  <dd>{selected.cited_trace_count}</dd>
+                </div>
+              </dl>
               <p className={styles.hint}>
                 {t(
                   "Evidence citations do not show how many traces were fully analyzed. See the analysis run's final reply for results and limitations.",
@@ -524,22 +559,21 @@ function AnalysisHistory({
               )}
             </Section>
             <Section title={t("Traces")}>
-              <div className={styles.links}>
+              <ul className={styles.traceList}>
                 {selected.selected_traces.map(({ trace_id: trace }) => (
-                  <Link key={trace} to={`${basePath}/traces/${trace}`}>
-                    {trace}
-                  </Link>
+                  <li key={trace}>
+                    <Link to={`${basePath}/traces/${trace}`}>
+                      <Identifier value={trace} />
+                    </Link>
+                    <CopyButton
+                      value={trace}
+                      iconOnly
+                      copyLabel={t("Copy trace ID")}
+                    />
+                  </li>
                 ))}
-              </div>
+              </ul>
             </Section>
-            <div className={styles.actions}>
-              <Button variant="outline" onClick={() => setSelectedId(null)}>
-                {t("Close")}
-              </Button>
-              <Button render={<Link to={runPath(selected)} />}>
-                {t("Open analysis run")}
-              </Button>
-            </div>
           </div>
         </ModalFrame>
       )}
@@ -642,9 +676,10 @@ function AnalyzeDialog({
           </p>
         )}
         {traceId ? (
-          <p className={styles.hint}>
-            {t("Selected trace")}: {traceId}
-          </p>
+          <div className={styles.selectedTrace}>
+            {t("Selected trace")}
+            <CopyableId value={traceId} />
+          </div>
         ) : (
           <div className={styles.scope}>
             <ChoiceField

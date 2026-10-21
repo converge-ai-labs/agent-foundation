@@ -8,8 +8,7 @@ import {
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactElement } from "react";
-import { PageActions } from "../../shared/page";
+import { useState, type ReactElement, type ReactNode } from "react";
 
 import {
   EnvelopeIcon,
@@ -46,7 +45,14 @@ function invitationState(item: Schema["Invitation"]) {
   return "pending";
 }
 
-export function Invitations({ scope }: { scope: MembershipScope }) {
+export function Invitations({
+  scope,
+  actions,
+}: {
+  scope: MembershipScope;
+  /** The page's member actions, offered again when there is nothing to list. */
+  actions: ReactNode;
+}) {
   const client = useClient(),
     { t } = useTranslation(),
     page = useCursor();
@@ -74,10 +80,8 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
             .then(data),
   });
   const items = query.data?.items ?? [];
-  const invite = <InvitationEditor scope={scope} />;
   return (
     <div className={styles.stack}>
-      <PageActions>{invite}</PageActions>
       {query.isPending ? (
         <Loading variant="table" columns={5} rows={5} />
       ) : query.error ? (
@@ -177,12 +181,24 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
               {
                 label: t("Expires"),
                 tone: "muted",
-                render: (item) => <Timestamp value={item.expires_at} />,
+                // A settled invitation no longer expires.
+                render: (item) =>
+                  item.accepted_at || item.revoked_at ? (
+                    "—"
+                  ) : (
+                    <Timestamp value={item.expires_at} relative />
+                  ),
               },
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} invitations", { count: items.length })}
+            count={
+              page.previous || query.data.next_cursor
+                ? t("{{count}} invitations on this page", {
+                    count: items.length,
+                  })
+                : t("{{count}} invitations", { count: items.length })
+            }
           >
             <Pagination page={page} next={query.data.next_cursor} />
           </CollectionFooter>
@@ -192,7 +208,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
           icon={<EnvelopeIcon aria-hidden="true" />}
           title={t("No invitations")}
           description={t("Invite a teammate to start collaborating.")}
-          action={invite}
+          action={actions}
         />
       )}
     </div>

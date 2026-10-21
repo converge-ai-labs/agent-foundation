@@ -1,5 +1,6 @@
 import { ClockIcon, PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import {
   Button,
   Checkbox,
@@ -40,6 +41,16 @@ import styles from "./schedules.module.css";
 import { JsonDraftSyntaxError } from "./json-draft";
 import { invocationFields, type InvocationDraft } from "./invocation-draft";
 import { ScheduleRevisionField } from "./revision-field";
+import { TimeZonePicker, ZonedTime, describeCron } from "./timing";
+
+/** A whole number of the largest unit that divides the seconds exactly. */
+function duration(seconds: number, t: TFunction) {
+  if (seconds % 3600 === 0)
+    return t("{{count}} hours", { count: seconds / 3600 });
+  if (seconds % 60 === 0)
+    return t("{{count}} minutes", { count: seconds / 60 });
+  return t("{{count}} seconds", { count: seconds });
+}
 
 export function ScheduleEditor({
   schedule,
@@ -96,7 +107,7 @@ function ScheduleForm({
   const client = useClient(),
     { workspace } = useWorkspace(),
     cache = useQueryClient(),
-    { t } = useTranslation();
+    { t, i18n } = useTranslation();
   // The draft keeps the version it was opened against; live updates cannot silently replace its ETag.
   const [schedule] = useState(initial);
   const [invocationBase, setInvocationBase] = useState<
@@ -246,7 +257,7 @@ function ScheduleForm({
         />
       </FormField>
       <TextAreaField
-        label={t("Description")}
+        label={t("Description (optional)")}
         rows={2}
         value={description}
         onChange={setDescription}
@@ -283,7 +294,10 @@ function ScheduleForm({
         <div className={styles.timing}>
           <FormField
             label={t("Cron expression")}
-            description={t("Minute, hour, day, month and weekday.")}
+            description={
+              describeCron(expression, t, i18n.resolvedLanguage) ??
+              t("Minute, hour, day, month and weekday.")
+            }
           >
             <Input
               required
@@ -296,13 +310,12 @@ function ScheduleForm({
           </FormField>
           <FormField
             label={t("Time zone")}
-            description={t("Use an IANA zone, for example Asia/Shanghai.")}
+            description={t("Times in the expression follow this zone.")}
           >
-            <Input
-              required
+            <TimeZonePicker
               value={timezone}
-              onChange={(event) => {
-                setTimezone(event.target.value);
+              onValueChange={(value) => {
+                setTimezone(value);
                 preview.reset();
               }}
             />
@@ -334,19 +347,26 @@ function ScheduleForm({
         <ol className={styles.preview} aria-label={t("Next scheduled times")}>
           {preview.data.items.map((time) => (
             <li key={time.utc}>
-              {timingType === "once"
-                ? new Date(time.utc).toLocaleString()
-                : time.local}{" "}
-              <span className={styles.notice}>· {time.utc}</span>
+              <ZonedTime
+                value={time.utc}
+                timeZone={timingType === "once" ? undefined : timezone}
+              />
             </li>
           ))}
         </ol>
       )}
       <FormField
         label={t("Maximum delay (seconds)")}
-        description={t(
-          "Skip a trigger when it cannot be submitted within this time.",
-        )}
+        description={
+          Number.isInteger(lateness) && lateness > 0
+            ? t(
+                "Skip a trigger that cannot be submitted within {{duration}}.",
+                {
+                  duration: duration(lateness, t),
+                },
+              )
+            : t("Skip a trigger when it cannot be submitted within this time.")
+        }
       >
         <Input
           type="number"

@@ -15,6 +15,7 @@ import {
 } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { ListRowsEmpty } from "../../../shared/collection";
 import { ErrorNotice } from "../../../shared/feedback";
 import {
   jsonObject,
@@ -76,13 +77,9 @@ export function ReviewerSection({
         </>
       }
     >
-      <div className={styles.reviewSummary}>
-        <strong>
-          {reviewer?.model
-            ? (model?.name ?? reviewer.model)
-            : t("No review model configured")}
-        </strong>
-        {reviewer && (
+      {reviewer?.model ? (
+        <div className={styles.reviewSummary}>
+          <strong>{model?.name ?? reviewer.model}</strong>
           <span>
             {t("{{risk}} and above → {{action}}", {
               risk: t(
@@ -98,15 +95,18 @@ export function ReviewerSection({
               ),
             })}
           </span>
-        )}
-        {!!Object.keys(reviewer?.rules ?? {}).length && (
-          <span>
-            {t("{{count}} tool review rules", {
-              count: Object.keys(reviewer?.rules ?? {}).length,
-            })}
-          </span>
-        )}
-      </div>
+          {!!Object.keys(reviewer.rules ?? {}).length && (
+            <span>
+              {t("{{count}} tool review rules", {
+                count: Object.keys(reviewer.rules ?? {}).length,
+              })}
+            </span>
+          )}
+        </div>
+      ) : (
+        // Without a model nothing is reviewed, so the policy has nothing to say.
+        <ListRowsEmpty>{t("No review model configured")}</ListRowsEmpty>
+      )}
     </Section>
   );
 }
@@ -224,25 +224,27 @@ export function ReviewerSettings({
         <SheetPanel>
           <ErrorNotice error={error} />
           <div className="grid gap-5">
-            <SearchPicker
-              disabled={readOnly}
-              label={t("Review model")}
-              placeholder={t("Choose a model…")}
-              emptyMessage={t(
-                "No models available. Configure a provider and model first.",
-              )}
-              value={value.model}
-              onValueChange={(model) => patch({ model })}
-              groups={[
-                {
-                  label: t("Available models"),
-                  options: models.map((model) => ({
-                    value: model.key,
-                    label: model.name,
-                  })),
-                },
-              ]}
-            />
+            <FormField label={t("Review model")}>
+              <SearchPicker
+                disabled={readOnly}
+                label={t("Review model")}
+                placeholder={t("Choose a model…")}
+                emptyMessage={t(
+                  "No models available. Configure a provider and model first.",
+                )}
+                value={value.model}
+                onValueChange={(model) => patch({ model })}
+                groups={[
+                  {
+                    label: t("Available models"),
+                    options: models.map((model) => ({
+                      value: model.key,
+                      label: model.name,
+                    })),
+                  },
+                ]}
+              />
+            </FormField>
             {value.model &&
               !models.some((model) => model.key === value.model) && (
                 <p className="text-muted-foreground text-sm">

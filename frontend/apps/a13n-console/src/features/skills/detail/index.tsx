@@ -1,16 +1,19 @@
-import { StatusPill } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearchParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { representation } from "../../../shared/api";
-import { ErrorNotice, Loading, Timestamp } from "../../../shared/feedback";
-import { IconTile } from "../../../shared/identity";
+import {
+  ErrorNotice,
+  Loading,
+  StatePill,
+  Timestamp,
+} from "../../../shared/feedback";
 import { DetailHeader, DetailPage, useTabParam } from "../../../shared/page";
 import { ImportSkill } from "../import-dialog";
 import { revisionQuery, revisionsQuery } from "../revisions";
-import { SkillIcon, skillSource } from "../source";
+import { SkillAvatar, skillSource } from "../source";
 import styles from "../skills.module.css";
 import { SkillMenu } from "./actions";
 import { SkillFiles } from "./files";
@@ -76,27 +79,21 @@ export function SkillDetail() {
       header={
         <DetailHeader
           avatar={
-            <IconTile size={44}>
-              <SkillIcon size={20} />
-            </IconTile>
+            <SkillAvatar
+              name={skill.name}
+              id={skill.id}
+              className={styles.detailAvatar}
+            />
           }
           name={skill.name}
-          status={
-            skill.archived_at ? (
-              <StatusPill variant="neutral">{t("Archived")}</StatusPill>
-            ) : undefined
-          }
+          status={skill.archived_at && <StatePill state="archived" />}
           description={revision.data?.config.description}
           actions={
             <>
               {can("write") && !skill.archived_at && (
                 <ImportSkill skill={skill} />
               )}
-              <SkillMenu
-                resource={query.data}
-                revisionId={revisionId}
-                revision={revision.data}
-              />
+              <SkillMenu resource={query.data} revision={revision.data} />
             </>
           }
         />
@@ -114,9 +111,7 @@ export function SkillDetail() {
           <>
             {!current && (
               <p className={styles.retained}>
-                <StatusPill variant="warning">
-                  {t("Retained version")}
-                </StatusPill>
+                <StatePill state="retained" label={t("Retained version")} />
                 <span>v{revision.data.number}</span>
                 <Timestamp value={revision.data.created_at} relative />
                 <span>

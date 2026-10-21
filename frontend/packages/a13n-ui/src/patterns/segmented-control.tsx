@@ -37,7 +37,7 @@ export function SegmentedControl({
       aria-label={label}
       data-slot="segmented-control"
       className={cn(
-        "w-fit shrink-0 items-center gap-0.5 rounded-[8px] bg-muted p-0.5",
+        "w-fit shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5",
         className,
       )}
       value={[value]}
@@ -52,7 +52,7 @@ export function SegmentedControl({
           value={option.value}
           disabled={option.disabled}
           className={cn(
-            "min-w-0 rounded-[6px] border-transparent bg-transparent font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground data-pressed:bg-card data-pressed:text-foreground data-pressed:shadow-xs/10 dark:data-pressed:bg-card",
+            "min-w-0 rounded-md border-transparent bg-transparent font-medium text-muted-foreground shadow-none transition-[color,background-color,box-shadow] duration-150 hover:bg-transparent hover:text-foreground data-pressed:bg-background data-pressed:text-foreground data-pressed:shadow-sm/5 dark:data-pressed:bg-input",
             // The toggle's responsive sizes must be overridden at every breakpoint.
             size === "sm"
               ? "h-6 min-w-0 px-2.5 text-xs sm:h-6 sm:min-w-0 sm:text-xs"

@@ -14,7 +14,7 @@ export function ProviderKeyLink({
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex shrink-0 items-center gap-1 rounded-sm text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm text-xs leading-4 font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       {t(label)}
       <ArrowUpRightIcon aria-hidden className="size-3" />

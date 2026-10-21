@@ -6,14 +6,9 @@ import {
   ModalFrame,
   SegmentedControl,
 } from "a13n-ui";
-import {
-  CheckCircleIcon,
-  FileZipIcon,
-  UploadSimpleIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -25,7 +20,7 @@ import {
   type Schema,
 } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, JsonView } from "../../shared/forms";
+import { FileDrop, FormActions, JsonView } from "../../shared/forms";
 import { IconTile, ResourceEditorButton } from "../../shared/identity";
 import shared from "../../shared/shared.module.css";
 import { revisionsQuery } from "./revisions";
@@ -221,8 +216,10 @@ function ImportForm({
       </div>
       {kind === "zip_upload" ? (
         <div className={shared.stack}>
-          <PackageDropZone
+          <FileDrop
             label={t("Skill package")}
+            hint={t("Drop a skill ZIP here, or choose a file.")}
+            accept={[".zip", "application/zip"]}
             file={upload?.file}
             disabled={busy}
             onSelect={(file) => {
@@ -351,107 +348,4 @@ function githubRepository(url: string) {
   );
   // Anything else goes to the Service as typed, which reports the invalid field.
   return match?.[1] ?? url;
-}
-
-/**
- * The one dashed outline in the product: it says "drop a file here" and
- * nothing else does.
- */
-function PackageDropZone({
-  label,
-  file,
-  disabled,
-  onSelect,
-}: {
-  label: string;
-  file?: File;
-  disabled?: boolean;
-  onSelect: (file: File | undefined) => void;
-}) {
-  const { t } = useTranslation();
-  const input = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  return (
-    <div
-      className={styles.dropZone}
-      data-dragging={dragging}
-      role="group"
-      aria-label={label}
-      onDragOver={(event) => {
-        if (disabled) return;
-        event.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => {
-        if (disabled) return;
-        event.preventDefault();
-        setDragging(false);
-        const dropped = event.dataTransfer.files[0];
-        if (dropped) onSelect(dropped);
-      }}
-    >
-      <div className={styles.dropZoneInner}>
-        <input
-          ref={input}
-          type="file"
-          hidden
-          accept=".zip,application/zip"
-          disabled={disabled}
-          aria-label={label}
-          onChange={(event) => {
-            const selected = event.target.files?.[0];
-            if (selected) onSelect(selected);
-            event.target.value = "";
-          }}
-        />
-        {file ? (
-          <>
-            <span className={styles.dropZoneFile}>
-              <FileZipIcon size={16} aria-hidden="true" />
-              {file.name}
-            </span>
-            <div className={shared.actions}>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={disabled}
-                onClick={() => input.current?.click()}
-              >
-                {t("Replace file")}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                disabled={disabled}
-                aria-label={t("Remove file")}
-                title={t("Remove file")}
-                onClick={() => onSelect(undefined)}
-              >
-                <XIcon size={14} aria-hidden="true" />
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <IconTile size={36} tone="elevated">
-              <UploadSimpleIcon size={16} aria-hidden="true" />
-            </IconTile>
-            <p>{t("Drop a skill ZIP here, or choose a file.")}</p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={disabled}
-              onClick={() => input.current?.click()}
-            >
-              {t("Choose file")}
-            </Button>
-          </>
-        )}
-      </div>
-    </div>
-  );
 }

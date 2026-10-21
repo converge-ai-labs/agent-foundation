@@ -40,11 +40,9 @@ export type SkillResource = ReturnType<typeof representation<Schema["Skill"]>>;
  */
 export function SkillMenu({
   resource,
-  revisionId,
   revision,
 }: {
   resource: SkillResource;
-  revisionId: string;
   /** Unknown until the viewed revision loads; the download is named after it. */
   revision?: Schema["SkillRevision"];
 }) {
@@ -54,10 +52,7 @@ export function SkillMenu({
     { can } = useWorkspace();
   const skill = resource.value;
   const [renaming, setRenaming] = useState(false);
-  const download = useArchiveDownload(
-    { id: revisionId, skill_id: skill.id, workspace_id: skill.workspace_id },
-    `${revision?.config.name}-v${revision?.number}.zip`,
-  );
+  const download = useArchiveDownload();
   return (
     <>
       <Menu>
@@ -68,7 +63,6 @@ export function SkillMenu({
               size="icon"
               type="button"
               aria-label={t("More skill actions")}
-              title={t("More skill actions")}
             />
           }
         >
@@ -77,12 +71,15 @@ export function SkillMenu({
         <MenuPopup align="end">
           {can("write") && (
             <MenuItem closeOnClick={true} onClick={() => setRenaming(true)}>
-              <PencilSimpleIcon size={14} />
+              <PencilSimpleIcon />
               {t("Rename skill")}
             </MenuItem>
           )}
-          <MenuItem disabled={!revision} onClick={() => download.mutate()}>
-            <DownloadSimpleIcon size={14} />
+          <MenuItem
+            disabled={!revision}
+            onClick={() => revision && download.mutate(revision)}
+          >
+            <DownloadSimpleIcon />
             {t("Download ZIP")}
           </MenuItem>
           {can("write") && (
@@ -96,13 +93,10 @@ export function SkillMenu({
                 description={t(
                   "Archived skills keep their versions for agents that already use them, but cannot publish new versions or be added to agents.",
                 )}
-                danger={!skill.archived_at}
+                danger={false}
                 triggerElement={
-                  <MenuItem
-                    closeOnClick={false}
-                    variant={skill.archived_at ? "default" : "destructive"}
-                  >
-                    <ArchiveIcon size={14} />
+                  <MenuItem closeOnClick={false} variant="default">
+                    <ArchiveIcon />
                     {t(skill.archived_at ? "Unarchive skill" : "Archive skill")}
                   </MenuItem>
                 }

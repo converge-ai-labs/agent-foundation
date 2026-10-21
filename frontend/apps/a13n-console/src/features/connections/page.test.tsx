@@ -47,6 +47,6 @@ it("keeps provider navigation available beside empty-state connection setup", as
     await screen.findByRole("dialog", { name: "New connection" }),
   ).toBeTruthy();
   expect(
-    await screen.findByRole("button", { name: /Custom Remote MCP/ }),
+    await screen.findByRole("button", { name: /Custom remote MCP/ }),
   ).toBeTruthy();
 });

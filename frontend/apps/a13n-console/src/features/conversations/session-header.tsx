@@ -68,6 +68,23 @@ export function SessionHeader({
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
+  // How this session started reads the same at both levels.
+  const note = debugSession
+    ? [
+        t("Debug session"),
+        runs.length ? t("{{count}} runs", { count: runs.length }) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : run.data?.schedule_origin
+      ? t("Scheduled execution")
+      : run.data
+        ? t("Started by {{trigger}}", {
+            trigger: t(`trigger.${run.data.trigger}`, {
+              defaultValue: run.data.trigger,
+            }),
+          })
+        : "";
   const active =
     valid &&
     !!run.data &&
@@ -88,8 +105,8 @@ export function SessionHeader({
       <span className={styles.headerRule} aria-hidden="true" />
       <div className={styles.sessionIdentity}>
         {title ? (
-          <span className={styles.agentLink} title={title}>
-            <span className={styles.agentName}>{title}</span>
+          <span className={styles.sessionTitle} title={title}>
+            {title}
           </span>
         ) : agent.data ? (
           <Link
@@ -107,28 +124,11 @@ export function SessionHeader({
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
-        <span className={styles.subNote}>
-          {level === "chat"
-            ? t("Thread")
-            : debugSession
-              ? [
-                  t("Debug session"),
-                  runs.length
-                    ? t("{{count}} runs", { count: runs.length })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : run.data?.schedule_origin
-                ? t("Scheduled execution")
-                : run.data
-                  ? t("Started by {{trigger}}", {
-                      trigger: t(`trigger.${run.data.trigger}`, {
-                        defaultValue: run.data.trigger,
-                      }),
-                    })
-                  : ""}
-        </span>
+        {note && (
+          <span className={styles.subNote} title={note}>
+            {note}
+          </span>
+        )}
       </div>
       <div className={styles.sessionControls}>
         {active && run.data && (

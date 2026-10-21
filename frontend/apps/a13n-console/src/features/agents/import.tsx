@@ -24,8 +24,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { ErrorNotice, ErrorToast } from "../../shared/feedback";
-import { FileUpload } from "../../shared/forms";
-import { FormActions, TextAreaField } from "../../shared/forms";
+import { FileDrop, FormActions, TextAreaField } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import styles from "./agents.module.css";
 import { useAgentComposer } from "./composer";
@@ -58,13 +57,13 @@ export function AgentCreationMenu() {
             loading={composer.pending}
             onClick={() => composer.start()}
           >
-            <RocketLaunchIcon size={16} aria-hidden="true" />
+            <RocketLaunchIcon aria-hidden="true" />
             {t("Create with AI")}
           </Button>
         )}
         <div className={styles.splitButton}>
           <Button variant="outline" onClick={() => navigate("new")}>
-            <PlusIcon size={15} aria-hidden="true" />
+            <PlusIcon aria-hidden="true" />
             {t("Create manually")}
           </Button>
           <Menu>
@@ -75,15 +74,14 @@ export function AgentCreationMenu() {
                   variant="outline"
                   size="icon"
                   aria-label={t("More ways to create an agent")}
-                  title={t("More ways to create an agent")}
                 />
               }
             >
-              <CaretDownIcon size={14} aria-hidden="true" />
+              <CaretDownIcon aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end" className="min-w-48">
               <MenuItem onClick={() => setOpen(true)}>
-                <FileArrowUpIcon size={16} aria-hidden="true" />
+                <FileArrowUpIcon aria-hidden="true" />
                 {t("Import YAML")}
               </MenuItem>
             </MenuPopup>
@@ -254,15 +252,11 @@ export function ImportAgentForm({
     >
       {!draft ? (
         <>
-          <FileUpload
+          <FileDrop
             label={t("Agent YAML file")}
+            hint={t("Drop an Agent YAML file here, or choose a file.")}
+            accept={[".yaml", ".yml", "application/yaml", "text/yaml"]}
             file={file}
-            acceptedFileTypes={[
-              ".yaml",
-              ".yml",
-              "application/yaml",
-              "text/yaml",
-            ]}
             onSelect={(selected) => void selectFile(selected)}
           />
           <TextAreaField

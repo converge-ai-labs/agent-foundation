@@ -59,7 +59,20 @@
     "The theme uses cool neutrals, an indigo signal color for focus rings and the first chart series, and raised, overlay, and floating elevation tokens; popups use the overlay elevation and dialogs the floating one.",
     "Primary and outline buttons use lighter resting shadows, and outline buttons sit on the canvas color.",
     "Table header cells are 40px with 12px labels; cells use 10px vertical padding.",
-    "Underline tabs use 14px labels."
+    "Underline tabs use 14px labels.",
+    "Unchecked switch thumbs use the muted foreground in dark mode, so an off switch does not read as disabled.",
+    "A menu hides while a dialog opened from one of its items is open, so the menu does not show through the dialog backdrop.",
+    "Buttons ease their fills over 150ms and darken while pressed; outline buttons share the input fill in dark mode.",
+    "Select triggers take the outline button's hover fill; inputs, textareas, combobox chips and checkboxes strengthen their border on hover; unchecked switch tracks use a stronger neutral that deepens on hover.",
+    "Soft inputs and textareas use the 8px control radius.",
+    "Segmented controls and pill tabs use 28px items in a 32px track (24px in 28px when small), raise the active segment onto the background with the input fill in dark mode, and brighten inactive labels on hover.",
+    "Underline tab focus rings sit 4px out from the label; tab panels show a focus ring.",
+    "Badges use the 6px chip radius and never go below 11px text.",
+    "Calendar cells are 32px from the sm breakpoint, without extra row padding, and weekday labels use the full muted foreground.",
+    "Dialog close buttons centre on the title line.",
+    "A dialog that holds a form ignores clicks outside it, so a stray click never discards input.",
+    "Spinners keep turning under reduced motion.",
+    "Icon-only buttons show their accessible label in a tooltip; Escape propagates from the tooltip so an enclosing dialog can close."
   ],
   "themeSource": "apps/ui/registry/registry-styles.ts"
 }

@@ -98,6 +98,13 @@
   background: var(--a13n-hover);
   color: var(--a13n-text);
 }
+/* A chip inside the disabled fieldset reads like a disabled button. */
+.chip:disabled,
+fieldset:disabled .chip {
+  cursor: default;
+  opacity: 0.64;
+  pointer-events: none;
+}
 .chip:focus-visible {
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
@@ -128,6 +135,10 @@
   align-items: end;
   gap: 8px;
   flex-wrap: wrap;
+}
+.optionGlyph {
+  flex: none;
+  color: var(--a13n-muted);
 }
 .optionSwitch {
   display: flex;

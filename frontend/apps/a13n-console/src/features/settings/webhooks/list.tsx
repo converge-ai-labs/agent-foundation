@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import {
@@ -17,13 +18,14 @@ import { ErrorNotice, Loading, StatePill } from "../../../shared/feedback";
 import { PageActions } from "../../../shared/page";
 import shared from "../../../shared/shared.module.css";
 import { webhookQueries } from "./api";
+import settings from "../settings.module.css";
 import { WebhookEditor } from "./editor";
-import styles from "./webhooks.module.css";
 
 export function Webhooks() {
   const client = useClient(),
     { workspace, can, basePath } = useWorkspace(),
-    { t } = useTranslation();
+    { t } = useTranslation(),
+    navigate = useNavigate();
   const page = useCursor();
   const [creating, setCreating] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
@@ -72,6 +74,9 @@ export function Webhooks() {
           <ResourceTable
             items={query.data.items}
             caption={t("Webhooks")}
+            onRowActivate={(item) =>
+              navigate(`${basePath}/settings/webhooks/${item.id}`)
+            }
             columns={[
               {
                 label: t("Name / endpoint"),
@@ -112,11 +117,17 @@ export function Webhooks() {
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} Webhooks", { count: query.data.items.length })}
+            count={
+              page.previous || query.data.next_cursor
+                ? t("{{count}} Webhooks on this page", {
+                    count: query.data.items.length,
+                  })
+                : t("{{count}} Webhooks", { count: query.data.items.length })
+            }
           >
             <Pagination page={page} next={query.data.next_cursor} />
           </CollectionFooter>
-          <p className={styles.note}>
+          <p className={settings.footnote}>
             {t(
               "Disabling stops new notifications. Queued deliveries continue.",
             )}

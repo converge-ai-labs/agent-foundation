@@ -53,6 +53,8 @@ export function Panel({
   const [ownWidth, setOwnWidth] = useState(defaultWidth);
   const current = width ?? ownWidth;
   const dragging = useRef(false);
+  const panel = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLDivElement>(null);
   const resize = useCallback(
     (next: number) => {
       const bounded = Math.round(
@@ -85,8 +87,39 @@ export function Panel({
   }, [resizable, resize]);
   useEffect(() => {
     if (!open) return;
+    const previous = document.activeElement;
+    heading.current?.focus({ preventScroll: true });
+    const element = panel.current;
+    return () => {
+      if (
+        previous instanceof HTMLElement &&
+        previous.isConnected &&
+        (document.activeElement === document.body ||
+          element?.contains(document.activeElement))
+      )
+        previous.focus({ preventScroll: true });
+    };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Editing and nested overlays own their Escape key first.
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+        )
+      )
+        return;
+      if (
+        document.querySelector(
+          '[data-popup-open], [role="dialog"], [role="alertdialog"]',
+        )
+      )
+        return;
+      event.preventDefault();
+      onClose();
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
@@ -94,6 +127,7 @@ export function Panel({
   if (!open) return null;
   return (
     <aside
+      ref={panel}
       className={`${styles.panel} ${inline ? styles.panelInline : ""}`}
       style={inline ? undefined : { width: current }}
       aria-label={label ?? (typeof title === "string" ? title : t("Details"))}
@@ -118,7 +152,9 @@ export function Panel({
         />
       )}
       <header className={styles.panelHeader}>
-        <div className={styles.panelTitle}>{title}</div>
+        <div ref={heading} tabIndex={-1} className={styles.panelTitle}>
+          {title}
+        </div>
         <div className={styles.panelActions}>
           {actions}
           <Button
@@ -126,7 +162,6 @@ export function Panel({
             variant="ghost"
             size="icon-sm"
             aria-label={t("Close")}
-            title={t("Close")}
             onClick={onClose}
           >
             <XIcon size={14} />

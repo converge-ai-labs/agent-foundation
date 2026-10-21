@@ -1,13 +1,17 @@
 import {
-  ArrowClockwiseIcon,
-  ClockIcon,
   DatabaseIcon,
   DesktopIcon,
   DotsThreeIcon,
+  MagnifyingGlassMinusIcon,
   PencilSimpleIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useIsFetching,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Button,
   ChoiceField,
@@ -28,6 +32,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 import GridLayout, { useContainerWidth, type Layout } from "react-grid-layout";
@@ -41,6 +46,7 @@ import { Confirm, ConflictNotice } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { Page, PageActions, SaveBar } from "../../shared/page";
+import { RefreshButton, TimeRangePicker } from "../../shared/time-range";
 import {
   monitoringApi,
   type Dashboard,
@@ -49,6 +55,7 @@ import {
   type Target,
   type TimeRange,
 } from "./api";
+import { builtinName } from "./labels";
 import { MetricsPanel } from "./panel";
 import { newPanel, PanelEditor } from "./panel-editor";
 import { targetInventory, TargetPicker } from "./target-picker";
@@ -148,6 +155,15 @@ function DashboardWorkspace() {
       ),
   });
   const targets = targetInventory(environments.data ?? [], devices.data ?? []);
+  const targetOption = targets.find((item) => item.value === targetKey);
+  const metricPanels =
+    panels.length > 0 &&
+    panels.every((panel) =>
+      panel.queries.every((query) => query.kind === "metric"),
+    );
+  const fetching = useIsFetching({
+    queryKey: ["metric-series", workspace.id],
+  });
   function updateParam(key: string, value: string) {
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -261,6 +277,9 @@ function DashboardWorkspace() {
         <div key={panel.id}>
           <MetricsPanel
             panel={panel}
+            title={
+              selected?.builtin ? builtinName(t, panel.title) : panel.title
+            }
             target={target}
             range={range}
             revision={revision}
@@ -275,7 +294,17 @@ function DashboardWorkspace() {
           />
         </div>
       )),
-    [panels, targetKey, range, revision, !!draft, busy, workspace.id],
+    [
+      panels,
+      targetKey,
+      range,
+      revision,
+      !!draft,
+      busy,
+      workspace.id,
+      selected?.builtin,
+      t,
+    ],
   );
   return (
     <Page title={t("Metrics dashboards")} className={styles.dashboardPage}>
@@ -356,7 +385,7 @@ function DashboardWorkspace() {
               disabled={!!draft}
               options={(dashboards.data ?? []).map((item) => ({
                 value: item.id,
-                label: item.name,
+                label: item.builtin ? builtinName(t, item.name) : item.name,
               }))}
               onValueChange={(id) => {
                 updateParam("dashboard", id);
@@ -372,45 +401,43 @@ function DashboardWorkspace() {
               onChange={(key) => updateParam("target", key)}
             />
             <div className={styles.time}>
-              <TimeControls
-                range={range}
-                duration={duration}
-                interval={interval}
-                pinned={!!pinned}
+              <TimeRangePicker
+                value={
+                  pinned
+                    ? {
+                        start: new Date(pinned.start * 1000),
+                        end: new Date(pinned.end * 1000),
+                      }
+                    : { preset: duration }
+                }
+                presets={timePresets}
+                maxDays={90}
                 disabled={busy}
-                onRange={(value) => setPinned(value)}
-                onDuration={(value) => {
-                  setSeconds(value);
+                onChange={(value) => {
+                  if ("start" in value) {
+                    setPinned({
+                      start: Math.floor(value.start.getTime() / 1000),
+                      end: Math.floor(value.end.getTime() / 1000),
+                    });
+                    return;
+                  }
+                  setSeconds(value.preset);
                   if (draft)
                     setDraft({
                       ...draft,
-                      config: { ...draft.config, range_seconds: value },
+                      config: { ...draft.config, range_seconds: value.preset },
                     });
                   setPinned(undefined);
                   refreshNow();
                 }}
-                onInterval={(value) => {
-                  setRefresh(value);
-                  if (draft)
-                    setDraft({
-                      ...draft,
-                      config: { ...draft.config, refresh_seconds: value },
-                    });
-                }}
               />
-              <Button
-                variant="outline"
-                onClick={refreshNow}
-                aria-label={t("Refresh")}
-                title={t("Refresh")}
-              >
-                <ArrowClockwiseIcon size={16} />
-              </Button>
               {pinned && (
                 <>
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    variant="outline"
+                    size="icon"
+                    aria-label={t("Zoom out")}
+                    title={t("Zoom out")}
                     onClick={() => {
                       const midpoint = (range.start + range.end) / 2;
                       const half = Math.min(
@@ -423,11 +450,10 @@ function DashboardWorkspace() {
                       });
                     }}
                   >
-                    {t("Zoom out")}
+                    <MagnifyingGlassMinusIcon aria-hidden="true" />
                   </Button>
                   <Button
-                    size="sm"
-                    variant="ghost"
+                    variant="outline"
                     onClick={() => {
                       setPinned(undefined);
                       refreshNow();
@@ -437,34 +463,58 @@ function DashboardWorkspace() {
                   </Button>
                 </>
               )}
+              <ChoiceField
+                label={t("Auto refresh")}
+                variant="filter"
+                value={String(interval)}
+                disabled={busy}
+                options={refreshOptions(t)}
+                onValueChange={(value) => {
+                  const seconds = Number(
+                    value,
+                  ) as DashboardConfig["refresh_seconds"];
+                  setRefresh(seconds);
+                  if (draft)
+                    setDraft({
+                      ...draft,
+                      config: { ...draft.config, refresh_seconds: seconds },
+                    });
+                }}
+              />
+              <RefreshButton pending={fetching > 0} onRefresh={refreshNow} />
             </div>
           </div>
           {draft && (
-            <div className={styles.toolbar}>
-              <Input
-                aria-label={t("Dashboard name")}
-                disabled={busy}
-                maxLength={128}
-                value={draft.name}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              />
-              <Button
-                variant="outline"
-                disabled={busy || panels.length >= 24}
-                onClick={() => setEditing(newPanel(panels, t("New panel")))}
-              >
-                {t("Add panel")}
-              </Button>
-              {draft.basis.builtin && (
-                <Button
-                  variant="ghost"
-                  loading={reset.isPending}
+            <div className={styles.editBar}>
+              <label className={styles.nameField}>
+                <span>{t("Dashboard name")}</span>
+                <Input
                   disabled={busy}
-                  onClick={() => reset.mutate()}
+                  maxLength={128}
+                  value={draft.name}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                />
+              </label>
+              <div className={styles.editActions}>
+                {draft.basis.builtin && (
+                  <Button
+                    variant="outline"
+                    loading={reset.isPending}
+                    disabled={busy}
+                    onClick={() => reset.mutate()}
+                  >
+                    {t("Restore defaults")}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  disabled={busy || panels.length >= 24}
+                  onClick={() => setEditing(newPanel(panels, t("New panel")))}
                 >
-                  {t("Restore defaults")}
+                  <PlusIcon aria-hidden="true" />
+                  {t("Add panel")}
                 </Button>
-              )}
+              </div>
             </div>
           )}
           <ErrorNotice error={reset.error} />
@@ -490,15 +540,42 @@ function DashboardWorkspace() {
               title={t("Dashboard not found")}
               description={t("Choose another dashboard from the list.")}
             />
-          ) : !target &&
-            !draft &&
-            panels.length > 0 &&
-            panels.every((panel) =>
-              panel.queries.every((query) => query.kind === "metric"),
-            ) ? (
+          ) : !target && !draft && metricPanels ? (
             <Empty
               title={t("Select a target to explore metrics")}
               description={t("Choose an Environment or Device above.")}
+            />
+          ) : targetOption && !targetOption.source && !draft && metricPanels ? (
+            <Empty
+              icon={<DatabaseIcon aria-hidden="true" />}
+              title={t("No metrics data source")}
+              description={
+                targetOption.kind === "device"
+                  ? t(
+                      "Choose a metrics data source for this Device to chart its metrics.",
+                    )
+                  : t(
+                      "Choose a metrics data source in the Environment's details to chart its metrics.",
+                    )
+              }
+              action={
+                <Button
+                  variant="outline"
+                  render={
+                    <Link
+                      to={
+                        targetOption.kind === "device"
+                          ? `${basePath}/monitoring/devices`
+                          : `${basePath}/environments/instances`
+                      }
+                    />
+                  }
+                >
+                  {targetOption.kind === "device"
+                    ? t("Go to devices")
+                    : t("Go to environments")}
+                </Button>
+              }
             />
           ) : (
             <div className={styles.grid}>
@@ -560,6 +637,7 @@ function DashboardWorkspace() {
       {editing && (
         <PanelEditor
           panel={editing}
+          adding={!panels.some((item) => item.id === editing.id)}
           target={target}
           range={range}
           onClose={() => setEditing(undefined)}
@@ -683,148 +761,11 @@ function CreateDashboard({
     </ModalFrame>
   );
 }
-const timePresets = [
-  [900, "15m"],
-  [3600, "1h"],
-  [21600, "6h"],
-  [86400, "24h"],
-  [604800, "7d"],
-  [2592000, "30d"],
-] as const;
-function TimeControls({
-  range,
-  duration,
-  interval,
-  pinned,
-  disabled,
-  onRange,
-  onDuration,
-  onInterval,
-}: {
-  range: TimeRange;
-  duration: number;
-  interval: number;
-  pinned: boolean;
-  disabled: boolean;
-  onRange: (range: TimeRange) => void;
-  onDuration: (seconds: number) => void;
-  onInterval: (seconds: DashboardConfig["refresh_seconds"]) => void;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const [start, setStart] = useState(""),
-    [end, setEnd] = useState("");
-  const local = (time: number) => {
-    const date = new Date(time * 1000);
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-  };
-  const value = {
-    start: Date.parse(start) / 1000,
-    end: Date.parse(end) / 1000,
-  };
-  const valid =
-    Number.isFinite(value.start) &&
-    Number.isFinite(value.end) &&
-    value.end - value.start >= 60 &&
-    value.end - value.start <= 7776000;
-  const label = pinned
-    ? `${new Date(range.start * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${new Date(range.end * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-    : t("Last {{range}}", {
-        range:
-          timePresets.find(([seconds]) => seconds === duration)?.[1] ??
-          `${Math.round(duration / 60)}m`,
-      });
-  return (
-    <ModalFrame
-      open={open}
-      onOpenChange={(value) => {
-        if (value) {
-          setStart(local(range.start));
-          setEnd(local(range.end));
-        }
-        setOpen(value);
-      }}
-      title={t("Time range")}
-      closeLabel={t("Close")}
-      trigger={
-        <Button
-          variant="outline"
-          disabled={disabled}
-          aria-label={`${t("Time range")}: ${label}`}
-          title={`${new Date(range.start * 1000).toLocaleString()} – ${new Date(range.end * 1000).toLocaleString()}`}
-        >
-          <ClockIcon size={16} />
-          {label}
-          <span className={styles.liveState} data-live={!pinned && !!interval}>
-            {t(pinned || !interval ? "Paused" : "Live")}
-          </span>
-        </Button>
-      }
-    >
-      <div className={styles.fields}>
-        <div className={styles.presets}>
-          {timePresets.map(([seconds, label]) => (
-            <Button
-              key={seconds}
-              variant={!pinned && duration === seconds ? "secondary" : "ghost"}
-              onClick={() => {
-                onDuration(seconds);
-                setOpen(false);
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        <ChoiceField
-          label={t("Auto refresh")}
-          value={String(interval)}
-          options={[0, 10, 30, 60, 300].map((value) => ({
-            value: String(value),
-            label: value ? `${value}s` : t("Off"),
-          }))}
-          onValueChange={(value) =>
-            onInterval(Number(value) as DashboardConfig["refresh_seconds"])
-          }
-        />
-        <form
-          className={styles.fields}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (valid) {
-              onRange(value);
-              setOpen(false);
-            }
-          }}
-        >
-          <div className={styles.row}>
-            <FormField label={t("From")}>
-              <Input
-                type="datetime-local"
-                required
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-              />
-            </FormField>
-            <FormField label={t("To")}>
-              <Input
-                type="datetime-local"
-                required
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-              />
-            </FormField>
-          </div>
-          <FormActions
-            pending={false}
-            label={t("Apply range")}
-            disabled={!valid}
-            onCancel={() => setOpen(false)}
-          />
-        </form>
-      </div>
-    </ModalFrame>
-  );
-}
+const timePresets = [900, 3600, 21600, 86400, 604800, 2592000];
+const refreshOptions = (t: TFunction) => [
+  { value: "0", label: t("Off") },
+  { value: "10", label: t("10 seconds") },
+  { value: "30", label: t("30 seconds") },
+  { value: "60", label: t("1 minute") },
+  { value: "300", label: t("5 minutes") },
+];

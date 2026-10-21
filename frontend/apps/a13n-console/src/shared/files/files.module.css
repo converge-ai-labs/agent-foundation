@@ -2,11 +2,15 @@
  * File browser: the one two-column anatomy for a tree of text files and the
  * chosen file, used by skill packages and memories.
  */
+/* One surface sized to its content, from a short file up to the viewport;
+   the tree and the document scroll inside it. */
 .browser {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
-  height: max(480px, calc(100dvh - 260px));
+  min-height: 320px;
+  max-height: max(480px, calc(100dvh - 260px));
   overflow: hidden;
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
@@ -17,7 +21,6 @@
 }
 .browser[data-embedded] .tree {
   padding-left: 0;
-  background: transparent;
 }
 .browser[data-embedded] .treeHeading {
   margin-left: 0;
@@ -32,7 +35,6 @@
   min-width: 0;
   min-height: 0;
   padding: 0 8px 12px;
-  background: var(--a13n-surface);
 }
 .treeBody {
   min-height: 0;
@@ -139,6 +141,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border-left: 1px solid var(--a13n-border-soft);
 }
 .documentBody {
   flex: 1;
@@ -205,12 +208,16 @@
 @media (max-width: 900px) {
   .browser {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(420px, 1fr);
-    height: auto;
-    min-height: calc(100dvh - 240px);
+    grid-template-rows: auto auto;
+    min-height: 0;
+    max-height: none;
   }
   .tree {
-    max-height: 200px;
+    max-height: min(360px, 45dvh);
+  }
+  .document {
+    border-top: 1px solid var(--a13n-border-soft);
+    border-left: 0;
   }
   .documentBody {
     max-height: 65dvh;

@@ -29,9 +29,36 @@ export type LifecycleNotice =
       status: "failed" | "cancelled" | "waiting";
       reason: string | null;
       message: string | null;
+      /** What a waiting Run asks of the reader; null when its calls differ. */
+      wait: WaitKind | null;
     };
 
 type Tone = "neutral" | "warning" | "danger";
+
+/**
+ * What a wait asks of the reader: to approve a call, to answer a question, or
+ * to return a tool's result. Every surface names a wait by its kind, so one
+ * pending call never reads three different ways.
+ */
+export type WaitKind = "approval" | "question" | "result";
+
+/** The one tool whose call asks the reader a question. */
+export const QUESTION_TOOL = "ask_user_question";
+
+/** A pending call returns an answer to a question or a tool's result. */
+export function callWait(toolName: string | null | undefined): WaitKind {
+  return toolName === QUESTION_TOOL ? "question" : "result";
+}
+
+/** One kind when every call the Run waits on asks the same thing. */
+function runWait(run: Schema["RunView"]): WaitKind | null {
+  const kinds = new Set<WaitKind>([
+    ...(run.pending?.approvals ?? []).map(() => "approval" as const),
+    ...(run.pending?.calls ?? []).map((call) => callWait(call.tool_name)),
+  ]);
+  if (kinds.size === 1) return [...kinds][0]!;
+  return !kinds.size && run.wait_reason === "approval" ? "approval" : null;
+}
 
 function eventEntry(
   id: string,
@@ -113,7 +140,14 @@ export function runOutcome(run: Schema["RunView"]): EventEntry | null {
           : null;
   return eventEntry(
     `${run.id}:outcome`,
-    { kind: "outcome", tone, status, reason, message },
+    {
+      kind: "outcome",
+      tone,
+      status,
+      reason,
+      message,
+      wait: status === "waiting" ? runWait(run) : null,
+    },
     run.sealed_at ?? run.updated_at,
   );
 }

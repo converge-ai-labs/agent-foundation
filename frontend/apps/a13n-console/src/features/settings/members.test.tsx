@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
 import { MemoryRouter } from "react-router";
-import { Members, MemberSettings } from "./members";
+import { MemberSettings } from "./members";
 
 const access = vi.hoisted(() => ({ organizationAdmin: true }));
 const http = vi.hoisted(() => ({
@@ -67,7 +67,9 @@ function setup(items: () => ReturnType<typeof grant>[]) {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <Members scope={scope} />
+      <MemoryRouter>
+        <MemberSettings scope={scope} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return userEvent.setup();

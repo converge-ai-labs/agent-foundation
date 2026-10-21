@@ -268,7 +268,7 @@ function ProfileForm({
           label={nameLabel}
           controlId={editable ? nameId : undefined}
         >
-          <div className={styles.nameControl}>
+          <div className={styles.control}>
             {editable ? (
               <Input
                 required

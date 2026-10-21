@@ -115,12 +115,19 @@ export function useConnectionDirectory(search: string) {
       definitions.isLoading ||
       mcpServers.isLoading ||
       queries.some((query) => query.isLoading),
-    error:
-      providers.error ??
-      definitions.error ??
-      mcpServers.error ??
-      queries.find((query) => query.error)?.error ??
-      load.error,
+    // One provider failing leaves the others' applications usable.
+    failures: active.flatMap((provider, index) =>
+      queries[index].error
+        ? [{ provider, retry: () => void queries[index].refetch() }]
+        : [],
+    ),
+    error: providers.error ?? definitions.error ?? mcpServers.error,
+    retry: () => {
+      void providers.refetch();
+      void definitions.refetch();
+      void mcpServers.refetch();
+    },
+    loadError: load.error,
     hasMore: queries.some((query) => !!query.data?.next_cursor),
     loadingMore: load.isPending,
     loadMore: () => load.mutate(false),

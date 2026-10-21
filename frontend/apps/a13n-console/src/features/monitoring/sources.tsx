@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+  ReadOnlyField,
+} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -145,7 +153,9 @@ export function DataSourcesPage() {
               },
             ]}
           />
-          <CollectionFooter count={items.length} />
+          <CollectionFooter
+            count={t("{{count}} data sources", { count: items.length })}
+          />
         </>
       )}
       {editing === "new" ? (
@@ -453,7 +463,7 @@ function SourceEditor({
             />
           </FormField>
           <ChoiceField
-            label={t("Enabled")}
+            label={t("Status")}
             readOnly={readonly}
             value={enabled ? "yes" : "no"}
             options={[
@@ -509,11 +519,15 @@ function SourceEditor({
             <>
               <FormField
                 label={t("OTLP endpoint")}
-                description={t(
-                  protocol === "grpc"
-                    ? "Receiver origin, for example https://otel.example.com:4317"
-                    : "Full metrics URL, for example https://otel.example.com/v1/metrics",
-                )}
+                description={
+                  readonly
+                    ? undefined
+                    : t(
+                        protocol === "grpc"
+                          ? "Receiver origin, for example https://otel.example.com:4317"
+                          : "Full metrics URL, for example https://otel.example.com/v1/metrics",
+                      )
+                }
               >
                 <Input
                   type="url"
@@ -559,7 +573,9 @@ function SourceEditor({
           )}
           <FormField
             label={t("Prometheus query endpoint")}
-            description={t("Base URL before /api/v1/query.")}
+            description={
+              readonly ? undefined : t("Base URL before /api/v1/query.")
+            }
           >
             <Input
               type="url"
@@ -574,8 +590,7 @@ function SourceEditor({
           </FormField>
           {queryUrl && (
             <>
-              <details>
-                <summary>{t("Scope labels")}</summary>
+              <DisclosureSection title={t("Scope labels")}>
                 <TextAreaField
                   label={t("Scope labels JSON")}
                   readOnly={readonly}
@@ -583,7 +598,7 @@ function SourceEditor({
                   onChange={setLabels}
                   code
                 />
-              </details>
+              </DisclosureSection>
               {!readonly && preset?.has_query_credentials && (
                 <ChoiceField
                   label={t("Use deployment query credentials")}
@@ -619,12 +634,14 @@ function SourceEditor({
             </>
           )}
           {readonly && !source?.builtin && (
-            <p>
-              {t("Export credentials")}:{" "}
-              {t(source?.has_export_credentials ? "Saved" : "Not configured")} ·{" "}
-              {t("Query credentials")}:{" "}
-              {t(source?.has_query_credentials ? "Saved" : "Not configured")}
-            </p>
+            <div className={styles.row}>
+              <ReadOnlyField label={t("Export credentials")}>
+                {t(source?.has_export_credentials ? "Saved" : "Not configured")}
+              </ReadOnlyField>
+              <ReadOnlyField label={t("Query credentials")}>
+                {t(source?.has_query_credentials ? "Saved" : "Not configured")}
+              </ReadOnlyField>
+            </div>
           )}
           {collection === "native" && basis && !readonly && (
             <small>{t("Changes apply to newly provisioned targets.")}</small>
@@ -639,6 +656,7 @@ function SourceEditor({
             pending={save.isPending}
             label={t("Save data source")}
             dismiss={readonly}
+            cancelLabel={readonly ? t("Close") : undefined}
             onCancel={onClose}
             leading={
               basis?.config.query &&

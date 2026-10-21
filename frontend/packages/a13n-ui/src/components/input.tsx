@@ -44,10 +44,10 @@ export function Input({
         cn(
           !unstyled &&
             variant === "default" &&
-            "relative inline-flex w-full rounded-lg border border-input bg-background not-dark:bg-clip-padding text-base ring-ring/16 transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive/16 has-aria-invalid:border-destructive/36 has-focus-visible:border-ring has-autofill:bg-foreground/4 has-disabled:opacity-64 has-[:disabled,:focus-visible,[aria-invalid]]:shadow-none has-focus-visible:ring-1 sm:text-sm dark:bg-input/32 dark:has-autofill:bg-foreground/8 dark:has-aria-invalid:ring-destructive/24",
+            "relative inline-flex w-full rounded-lg border border-input bg-background not-dark:bg-clip-padding text-base ring-ring/16 transition-[border-color,box-shadow] duration-150 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] hover:not-has-[:focus-visible,:disabled,[aria-invalid]]:border-foreground/20 has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive/16 has-aria-invalid:border-destructive/36 has-focus-visible:border-ring has-autofill:bg-foreground/4 has-disabled:opacity-64 has-[:disabled,:focus-visible,[aria-invalid]]:shadow-none has-focus-visible:ring-1 sm:text-sm dark:bg-input/32 dark:has-autofill:bg-foreground/8 dark:has-aria-invalid:ring-destructive/24",
           !unstyled &&
             variant === "soft" &&
-            "relative inline-flex w-full rounded-[10px] border border-transparent bg-muted text-base transition-colors has-aria-invalid:border-destructive/36 has-focus-visible:border-input has-focus-visible:bg-card has-disabled:opacity-64 sm:text-sm",
+            "relative inline-flex w-full rounded-lg border border-transparent bg-muted text-base transition-colors has-aria-invalid:border-destructive/36 has-focus-visible:border-input has-focus-visible:bg-card has-disabled:opacity-64 sm:text-sm",
           className,
         ) || undefined
       }

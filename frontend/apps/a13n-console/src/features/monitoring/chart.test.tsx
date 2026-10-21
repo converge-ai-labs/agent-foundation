@@ -26,7 +26,7 @@ vi.mock("uplot", () => ({
   ),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: state.t }),
+  useTranslation: () => ({ t: state.t, i18n: { resolvedLanguage: "en" } }),
 }));
 
 it("retains Canvas and skips sample work for retained responses and legend changes", async () => {

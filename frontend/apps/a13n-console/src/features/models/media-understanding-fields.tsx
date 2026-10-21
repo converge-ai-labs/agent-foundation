@@ -1,20 +1,19 @@
-import {
-  CircleDashedIcon,
-  FilmStripIcon,
-  ImageIcon,
-  WaveformIcon,
-  type Icon,
-} from "@phosphor-icons/react";
+import { ArrowBendUpLeftIcon } from "@phosphor-icons/react";
 import { SearchPicker, SettingsRow } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
+import { type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, type Schema } from "../../shared/api";
+import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { mediaDefaultsQuery, modelApi, workspaceModelsQuery } from "./api";
-import { ModelIcon } from "./model-icon";
+import {
+  mediaDefaultsQuery,
+  workspaceModelsQuery,
+  workspaceProvidersQuery,
+} from "./api";
+import { ModelIcon, providerBrand } from "./model-icon";
 import styles from "./models.module.css";
 
 export type MediaKind = "image" | "video" | "audio";
@@ -29,16 +28,14 @@ export type ModelIdentity = Pick<
 
 /**
  * One row per media kind: its label and the content it covers, the accessible
- * name of its picker, the glyph an inherited row carries, the hint when no
- * Model qualifies, the warning when the saved one no longer does, and the
- * badge the Models list shows.
+ * name of its picker, the hint when no Model qualifies, the warning when the
+ * saved one no longer does, and the badge the Models list shows.
  */
 export const mediaKinds: {
   kind: MediaKind;
   label: string;
   description: string;
   field: string;
-  glyph: Icon;
   empty: string;
   unavailable: string;
   badge: string;
@@ -48,7 +45,6 @@ export const mediaKinds: {
     label: "Image",
     description: "Screenshots, photos, and diagrams the agent opens",
     field: "Image understanding",
-    glyph: ImageIcon,
     empty: "No enabled model declares image understanding.",
     unavailable:
       "Saved model {{key}} is disabled or no longer declares image understanding. Choose another.",
@@ -59,7 +55,6 @@ export const mediaKinds: {
     label: "Video",
     description: "Screen recordings and clips the agent opens",
     field: "Video understanding",
-    glyph: FilmStripIcon,
     empty: "No enabled model declares video understanding.",
     unavailable:
       "Saved model {{key}} is disabled or no longer declares video understanding. Choose another.",
@@ -70,7 +65,6 @@ export const mediaKinds: {
     label: "Audio",
     description: "Voice notes and recordings the agent opens",
     field: "Audio understanding",
-    glyph: WaveformIcon,
     empty: "No enabled model declares audio understanding.",
     unavailable:
       "Saved model {{key}} is disabled or no longer declares audio understanding. Choose another.",
@@ -99,34 +93,38 @@ export function mediaSelected(value: MediaSelection = {}) {
     .map(({ kind }) => kind);
 }
 
-/** Untranslated badges for the kinds a Model is the current Workspace default for. */
-export function mediaDefaultBadges(key: string, defaults?: MediaSelection) {
-  return mediaKinds
-    .filter((entry) => defaults?.[entry.kind] === key)
-    .map((entry) => entry.badge);
-}
-
 /**
  * A Model is read by its name and key, so a picker's popup keeps a comfortable
  * width of its own instead of wrapping inside a narrow trigger.
  */
 export const modelPopupWidth = "min-w-80";
 
+type ModelProvider = Pick<Schema["Provider"], "name" | "type" | "config">;
+
 /**
  * One Model as itself: the family logo, the name people recognize it by, and
  * the key and connection that tell two similar Models apart. Every Model
  * picker in Console builds its options here, so a Model reads the same
- * wherever it is chosen.
+ * wherever it is chosen. Given the Provider, a Model with no family of its
+ * own carries the Provider's brand; given only its name, it has none.
  */
-export function modelOption(model: ModelIdentity, provider?: string) {
+export function modelOption(
+  model: ModelIdentity,
+  provider?: ModelProvider | string,
+) {
+  const { name, brand } =
+    typeof provider === "string"
+      ? { name: provider, brand: undefined }
+      : { name: provider?.name, brand: providerBrand(provider) };
   return {
     value: model.key,
     label: model.name,
-    description: [model.key, provider].filter(Boolean).join(" · "),
+    description: [model.key, name].filter(Boolean).join(" · "),
     icon: (
       <ModelIcon
         upstream={model.config.model_name}
         catalogRef={model.catalog_ref}
+        provider={brand}
         size={20}
       />
     ),
@@ -134,16 +132,15 @@ export function modelOption(model: ModelIdentity, provider?: string) {
   };
 }
 
-/**
- * What an inherited choice carries where the Models beside it carry a logo:
- * the kind it stands for, or a neutral glyph when it stands for no kind.
- */
-export function InheritIcon({
-  glyph: Glyph = CircleDashedIcon,
-}: {
-  glyph?: Icon;
-}) {
-  return <Glyph size={20} className={styles.mediaGlyph} aria-hidden="true" />;
+/** What an inherited choice carries where the Models beside it carry a logo. */
+export function InheritIcon() {
+  return (
+    <ArrowBendUpLeftIcon
+      size={20}
+      className={styles.mediaGlyph}
+      aria-hidden="true"
+    />
+  );
 }
 
 /**
@@ -154,13 +151,8 @@ export function InheritIcon({
 export function useMediaUnderstandingChoices() {
   const { workspace } = useWorkspace(),
     client = useClient();
-  const api = modelApi(client, workspace.id);
   const models = useQuery(workspaceModelsQuery(client, workspace.id));
-  const providers = useQuery({
-    queryKey: ["model-providers", "media-understanding", workspace.id],
-    queryFn: ({ signal }) =>
-      allPages((cursor) => api.providers(signal, cursor)),
-  });
+  const providers = useQuery(workspaceProvidersQuery(client, workspace.id));
   const enabledProviders = new Set(
     providers.data
       ?.filter((provider) => provider.enabled)
@@ -169,6 +161,8 @@ export function useMediaUnderstandingChoices() {
   const usable = (models.data ?? []).filter(
     (model) => model.enabled && enabledProviders.has(model.provider_id),
   );
+  const provider = (id: string) =>
+    providers.data?.find((entry) => entry.id === id);
   return {
     error: models.error ?? providers.error,
     isPending: models.isPending || providers.isPending,
@@ -181,8 +175,8 @@ export function useMediaUnderstandingChoices() {
     /** Any known Model, including one a selection kept after it stopped qualifying. */
     find: (key: string) =>
       (models.data ?? []).find((model) => model.key === key),
-    providerName: (id: string) =>
-      providers.data?.find((provider) => provider.id === id)?.name,
+    provider,
+    providerName: (id: string) => provider(id)?.name,
   };
 }
 
@@ -240,6 +234,8 @@ export function MediaUnderstandingFields({
   inherit: {
     label: string;
     describe?: (kind: MediaKind) => string | undefined;
+    /** The choice's mark: the inherit mark unless set, `null` where nothing is inherited. */
+    icon?: ReactNode;
   };
   /**
    * Whether a kind no enabled Model declares says so in its row. The Workspace
@@ -257,7 +253,7 @@ export function MediaUnderstandingFields({
     <>
       <ErrorNotice error={choices.error} />
       {mediaKinds.map((entry) => {
-        const { kind, field, glyph: Glyph } = entry;
+        const { kind, field } = entry;
         const eligible = choices.eligible(kind);
         const selected = value[kind] ?? "";
         const unavailable =
@@ -316,7 +312,12 @@ export function MediaUnderstandingFields({
                           value: "",
                           label: inherit.label,
                           description: inherit.describe?.(kind),
-                          icon: <InheritIcon glyph={Glyph} />,
+                          icon:
+                            inherit.icon === undefined ? (
+                              <InheritIcon />
+                            ) : (
+                              inherit.icon
+                            ),
                         },
                         ...(unavailable
                           ? [
@@ -325,14 +326,16 @@ export function MediaUnderstandingFields({
                                 label: stale?.name ?? selected,
                                 description: `${selected} · ${t("Unavailable")}`,
                                 disabled: true,
-                                icon: stale ? (
+                                icon: (
                                   <ModelIcon
-                                    upstream={stale.config.model_name}
-                                    catalogRef={stale.catalog_ref}
+                                    upstream={stale?.config.model_name ?? ""}
+                                    catalogRef={stale?.catalog_ref}
+                                    provider={providerBrand(
+                                      stale &&
+                                        choices.provider(stale.provider_id),
+                                    )}
                                     size={20}
                                   />
-                                ) : (
-                                  <InheritIcon />
                                 ),
                               },
                             ]
@@ -340,7 +343,7 @@ export function MediaUnderstandingFields({
                         ...eligible.map((model) =>
                           modelOption(
                             model,
-                            choices.providerName(model.provider_id),
+                            choices.provider(model.provider_id),
                           ),
                         ),
                       ],

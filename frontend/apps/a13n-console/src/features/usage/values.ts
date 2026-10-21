@@ -1,7 +1,4 @@
-import {
-  formatLocalDateTime,
-  parseLocalDateTime,
-} from "../../shared/local-date-time";
+import { formatDuration } from "../../shared/time-range";
 import { UNKNOWN } from "../../shared/unknown";
 
 export function presetWindow(days: number, now = new Date()) {
@@ -11,31 +8,9 @@ export function presetWindow(days: number, now = new Date()) {
   return { start: start.toISOString(), end: now.toISOString() };
 }
 
-export function customWindow(start: string, end: string) {
-  const from = parseLocalDateTime(start),
-    to = parseLocalDateTime(end);
-  if (
-    !from ||
-    !to ||
-    to <= from ||
-    to.getTime() - from.getTime() > 366 * 86_400_000
-  )
-    return null;
-  return { start: from.toISOString(), end: to.toISOString() };
-}
-
-export function localWindow(window: { start: string; end: string }) {
-  return {
-    start: formatLocalDateTime(new Date(window.start)),
-    end: formatLocalDateTime(new Date(window.end)),
-  };
-}
-
-export function duration(value: number | null) {
-  if (value === null) return UNKNOWN;
-  return value >= 60
-    ? `${(value / 60).toFixed(1)} min`
-    : `${value.toFixed(1)} s`;
+/** Seconds in the Console's one duration format. */
+export function duration(seconds: number | null, language?: string) {
+  return seconds === null ? UNKNOWN : formatDuration(seconds * 1000, language);
 }
 
 export function percent(value: number | null) {

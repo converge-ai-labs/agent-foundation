@@ -82,6 +82,7 @@ export function CatalogPicker({
     [groups, search],
   );
   const visible = matches.slice(0, MAX_VISIBLE_MODELS);
+  const truncated = matches.length > MAX_VISIBLE_MODELS;
   const servedHere = (group: Entry[]) =>
     group.some((entry) => channels.includes(entry.ref.provider));
   const provided = visible.filter(servedHere);
@@ -155,27 +156,28 @@ export function CatalogPicker({
           />
         }
         footer={
-          <div className={styles.catalogFooter}>
-            <span>
-              {matches.length > MAX_VISIBLE_MODELS
-                ? t("Showing first 100 models. Search to narrow the list.")
-                : ""}
-            </span>
-            {allowCompatible && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setExpanded(!compatible)}
-              >
-                {t(
-                  compatible
-                    ? "Show provider models"
-                    : "Other models (compatible)…",
-                )}
-              </Button>
-            )}
-          </div>
+          (truncated || allowCompatible) && (
+            <div className={styles.catalogFooter}>
+              <span>
+                {truncated &&
+                  t("Showing first 100 models. Search to narrow the list.")}
+              </span>
+              {allowCompatible && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setExpanded(!compatible)}
+                >
+                  {t(
+                    compatible
+                      ? "Show provider models"
+                      : "Other models (compatible)…",
+                  )}
+                </Button>
+              )}
+            </div>
+          )
         }
       >
         {provided.length > 0 && (

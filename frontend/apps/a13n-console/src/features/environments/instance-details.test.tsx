@@ -166,13 +166,10 @@ it.each([
     );
     await user.click(screen.getByRole("button", { name: "Details" }));
     await screen.findByText("ready");
-    await lifecycle(user, action === "stop" ? "Stop target" : "Delete target");
+    await lifecycle(user, action === "stop" ? "Stop" : "Delete");
     await user.click(
       screen.getByRole("button", {
-        name:
-          action === "stop"
-            ? "Stop environment target"
-            : "Delete environment target",
+        name: action === "stop" ? "Stop environment" : "Delete environment",
       }),
     );
     const request = {
@@ -223,7 +220,7 @@ it.each([
     } else {
       expect(
         screen.getByText(
-          "Externally owned: Service does not automatically stop or delete this target.",
+          "Externally owned: the Service never stops or deletes this environment automatically.",
         ),
       ).toBeTruthy();
       expect(templateRead).toBe(false);
@@ -259,10 +256,10 @@ it.each([
       expect(
         screen.queryByRole("button", { name: "Environment actions" }),
       ).toBeNull();
-    expect(!!screen.queryByRole("menuitem", { name: "Stop target" })).toBe(
+    expect(!!screen.queryByRole("menuitem", { name: "Stop" })).toBe(
       supports_stop,
     );
-    expect(!!screen.queryByRole("menuitem", { name: "Delete target" })).toBe(
+    expect(!!screen.queryByRole("menuitem", { name: "Delete" })).toBe(
       supports_destroy,
     );
     cache.clear();
@@ -288,8 +285,8 @@ it("shows an external target's endpoint and device, and retires it without stop"
     await screen.findByRole("button", { name: "Environment actions" }),
   );
   await screen.findByRole("menu");
-  expect(screen.queryByRole("menuitem", { name: "Stop target" })).toBeNull();
-  expect(screen.getByRole("menuitem", { name: "Delete target" })).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Stop" })).toBeNull();
+  expect(screen.getByRole("menuitem", { name: "Delete" })).toBeTruthy();
   cache.clear();
 });
 
@@ -368,19 +365,17 @@ it("shows why a lost sandbox cannot be used, and that deleting it is allowed whi
     ),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Environment actions" }));
-  const stop = await screen.findByRole("menuitem", { name: "Stop target" });
+  const stop = await screen.findByRole("menuitem", { name: "Stop" });
   expect(stop.getAttribute("aria-disabled")).toBe("true");
   await user.click(stop);
-  expect(
-    screen.queryByRole("dialog", { name: "Stop environment target" }),
-  ).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Stop environment" })).toBeNull();
   expect(http.POST).not.toHaveBeenCalled();
   expect(screen.getByText("Lifecycle command")).toBeTruthy();
   expect(screen.queryByText("Command")).toBeNull();
-  await lifecycle(user, "Delete target");
+  await lifecycle(user, "Delete");
   expect(
     await screen.findByText(
-      "The environment is retired and cannot be used again. A managed target is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
+      "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
     ),
   ).toBeTruthy();
   cache.clear();

@@ -154,8 +154,9 @@ it("says what it is waiting for instead of opening the rows", () => {
       )}
     />,
   );
-  // The approval card below names the call; the line says whose turn it is.
-  expect(markup).toContain("Waiting for your approval");
+  // Retained messages alone do not say what the call waits for, so the line
+  // claims no more than that it is the reader's turn.
+  expect(markup).toContain("Waiting for your response");
   expect(markup).toContain('aria-expanded="false"');
 });
 

@@ -79,7 +79,7 @@ export function UsedByAgents({ skill }: { skill: Schema["Skill"] }) {
             name={
               <Link to={`${basePath}/agents/${agent.id}`}>{agent.name}</Link>
             }
-            secondary={agent.id}
+            secondary={agent.description}
           />
         ))}
       </ListRows>

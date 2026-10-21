@@ -74,7 +74,7 @@ export function CredentialRow({
       </div>
     );
   return (
-    <SettingsRow label={label} stackOnNarrow={false}>
+    <SettingsRow label={label}>
       <div className={styles.credentialState} data-state={state}>
         <span
           className={
@@ -94,7 +94,7 @@ export function CredentialRow({
         {state === "removing" ? (
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => onRemovingChange?.(false)}
           >
@@ -102,13 +102,13 @@ export function CredentialRow({
           </Button>
         ) : (
           <>
-            <Button type="button" variant="ghost" size="sm" onClick={open}>
+            <Button type="button" variant="outline" size="sm" onClick={open}>
               {t(state === "configured" ? "Replace" : "Add")}
             </Button>
             {state === "configured" && onRemovingChange && (
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => {
                   onDiscard();

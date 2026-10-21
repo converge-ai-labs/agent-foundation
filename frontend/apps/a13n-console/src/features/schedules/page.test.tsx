@@ -730,7 +730,10 @@ it.each([false, true])(
     await user.click(
       within(dialog).getByRole("button", { name: "Preview next times" }),
     );
-    expect(await screen.findByText(/2026-10-20T08:00:00/)).toBeTruthy();
+    // Trigger times read as dates on the schedule's clock, not as ISO strings.
+    const times = await screen.findByLabelText("Next scheduled times");
+    expect(times.querySelector("time")?.getAttribute("datetime")).toBe(at);
+    expect(times.textContent).not.toContain("2026-10-20T");
     expect(previews[0]).toMatchObject({
       schedule: { expression: "0 9 * * *" },
       count: 5,

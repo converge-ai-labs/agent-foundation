@@ -26,6 +26,7 @@ export function BrandIcon({
     ? resolveBrand({ identity: fallbackIdentity })
     : undefined;
   const [failed, setFailed] = useState<readonly string[]>([]);
+  const [loaded, setLoaded] = useState<readonly string[]>([]);
   const providerLogo = safeLogo(logo);
   const sources: (IconSource | undefined)[] = [
     brand && { url: brand.icon, brand },
@@ -43,29 +44,38 @@ export function BrandIcon({
     );
   const { url: src, brand: activeBrand } = source;
   const darkIcon = activeBrand?.darkIcon;
+  // Remote marks can take a moment; a quiet placeholder holds their place.
+  const pending = !loaded.includes(src);
   const props = {
     alt: "",
     width: size,
     height: size,
     decoding: "async" as const,
     referrerPolicy: "no-referrer" as const,
+    onLoad: () => setLoaded((previous) => [...previous, src]),
     onError: () => setFailed((previous) => [...previous, src]),
   };
   return (
     <span
-      className="inline-flex shrink-0"
+      className="relative inline-flex shrink-0"
       style={{ width: size, height: size }}
     >
+      {pending && (
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-[30%] bg-muted-foreground/12 motion-safe:animate-pulse"
+        />
+      )}
       <img
         {...props}
         src={src}
-        className={`size-full object-contain ${darkIcon ? "dark:hidden" : activeBrand?.invertInDark ? "dark:invert" : ""}`}
+        className={`size-full object-contain transition-opacity duration-150 ${pending ? "opacity-0" : ""} ${darkIcon ? "dark:hidden" : activeBrand?.invertInDark ? "dark:invert" : ""}`}
       />
       {darkIcon && (
         <img
           {...props}
           src={darkIcon}
-          className="hidden size-full object-contain dark:block"
+          className={`hidden size-full object-contain transition-opacity duration-150 dark:block ${pending ? "opacity-0" : ""}`}
         />
       )}
     </span>

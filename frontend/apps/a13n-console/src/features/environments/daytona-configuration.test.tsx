@@ -43,9 +43,7 @@ function Editor() {
 it("keeps the Envd snapshot while disabling desktop and human access", async () => {
   const user = userEvent.setup();
   render(<Editor />);
-  await user.click(
-    screen.getByRole("checkbox", { name: "Desktop environment" }),
-  );
+  await user.click(screen.getByRole("switch", { name: "Desktop environment" }));
   expect(JSON.parse(screen.getByTestId("config").textContent ?? "{}")).toEqual({
     snapshot: "my-envd",
     desktop: false,

@@ -1,3 +1,4 @@
+import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
@@ -191,7 +192,10 @@ function AddKindProvider({
       title={kind === "environment" ? t("Add connection") : undefined}
       trigger={
         kind === "environment" ? (
-          <Button type="button">{t("Add connection")}</Button>
+          <Button type="button">
+            <PlusIcon aria-hidden="true" />
+            {t("Add connection")}
+          </Button>
         ) : undefined
       }
       definitions={definitions}

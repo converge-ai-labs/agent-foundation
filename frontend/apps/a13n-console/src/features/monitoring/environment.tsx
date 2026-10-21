@@ -1,5 +1,6 @@
+import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField } from "a13n-ui";
+import { Button, ChoiceField, DisclosureSection, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -7,10 +8,10 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/forms";
+import styles from "../environments/environments.module.css";
+import { Fact } from "../environments/fact";
 import { monitoringApi } from "./api";
 import { statusLabels } from "./labels";
-import styles from "./monitoring.module.css";
 
 export function MetricsSourcePicker({
   value,
@@ -103,23 +104,36 @@ export function EnvironmentMonitoring({
     application.source_version === source.version &&
     !!application.applied_at;
   return (
-    <section className={styles.fields}>
+    <section className={styles.factGroup}>
       <h3>{t("Monitoring")}</h3>
-      <div className={styles.queryHeading}>
-        <span>
-          {source?.name ??
-            environment.metrics_data_source_id ??
-            t("No monitoring")}
-        </span>
-        {can("write") && !editing && (
-          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-            {t("Configure")}
-          </Button>
+      <dl className={styles.facts}>
+        <Fact label={t("Data source")}>
+          <span>
+            {source?.name ??
+              environment.metrics_data_source_id ??
+              t("No monitoring")}
+          </span>
+          {can("write") && !editing && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setEditing(true)}
+            >
+              {t("Configure")}
+            </Button>
+          )}
+        </Fact>
+        {source?.config.collection === "pull" && (
+          <Fact label={t("Collector")}>
+            {statusLabels(t)[collector.data?.state ?? "pending"] ??
+              collector.data?.state}
+          </Fact>
         )}
-      </div>
+      </dl>
       <ErrorNotice error={sources.error ?? collector.error} />
       {source?.config.collection === "native" && (
-        <p>
+        <p className={styles.panelNote}>
           {t(
             applied
               ? "Native exporter configured. Check delivery at the receiver."
@@ -130,21 +144,18 @@ export function EnvironmentMonitoring({
         </p>
       )}
       {source?.config.collection === "pull" && (
-        <p>
-          {t("Collector")}:{" "}
-          {statusLabels(t)[collector.data?.state ?? "pending"] ??
-            collector.data?.state}
-          .{" "}
-          <span
-            title={t(
-              "Reload acceptance does not confirm scrape or export health.",
-            )}
-          >
-            {t("Check delivery at the receiver.")}
-          </span>
+        <p
+          className={styles.panelNote}
+          title={t(
+            "Reload acceptance does not confirm scrape or export health.",
+          )}
+        >
+          {t("Check delivery at the receiver.")}
         </p>
       )}
-      {source?.config.collection === "proxy" && <p>{t("Temporary history")}</p>}
+      {source?.config.collection === "proxy" && (
+        <p className={styles.panelNote}>{t("Temporary history")}</p>
+      )}
       {editing && (
         <BindingEditor
           environment={environment}
@@ -152,20 +163,34 @@ export function EnvironmentMonitoring({
           onClose={() => setEditing(false)}
         />
       )}
-      <Button
-        variant="outline"
-        size="sm"
-        render={
-          <Link
-            to={`${basePath}/monitoring?target=environment:${environment.id}`}
-          />
-        }
-      >
-        {t("Open dashboard")}
-      </Button>
+      {environment.metrics_data_source_id && !editing && (
+        <Button
+          variant="outline"
+          size="sm"
+          className={styles.groupAction}
+          render={
+            <Link
+              to={`${basePath}/monitoring?target=environment:${environment.id}`}
+            />
+          }
+        >
+          {t("Open dashboard")}
+        </Button>
+      )}
     </section>
   );
 }
+
+type LabelRow = { id: string; key: string; value: string };
+
+function labelRows(labels: Record<string, string> = {}): LabelRow[] {
+  return Object.entries(labels).map(([key, value]) => ({
+    id: crypto.randomUUID(),
+    key,
+    value,
+  }));
+}
+
 function BindingEditor({
   environment,
   etag,
@@ -181,25 +206,21 @@ function BindingEditor({
     { t } = useTranslation();
   const [basis] = useState({ environment, etag }),
     [source, setSource] = useState(environment.metrics_data_source_id ?? ""),
-    [labels, setLabels] = useState(
-      JSON.stringify(environment.metrics_labels ?? {}, null, 2),
-    );
+    [labels, setLabels] = useState(() => labelRows(environment.metrics_labels));
+  const entered = labels.filter((row) => row.key.trim() || row.value);
   const save = useMutation({
     mutationFn: async () => {
       if (!basis.etag)
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      const parsed: unknown = JSON.parse(labels);
-      if (
-        !parsed ||
-        typeof parsed !== "object" ||
-        Array.isArray(parsed) ||
-        Object.values(parsed).some((value) => typeof value !== "string")
-      )
-        throw new Error(
-          t("Scope labels must be a JSON object with string values."),
-        );
+      if (entered.some((row) => !row.key.trim()))
+        throw new Error(t("Each label needs a name."));
+      const named = Object.fromEntries(
+        entered.map((row) => [row.key.trim(), row.value]),
+      );
+      if (Object.keys(named).length < entered.length)
+        throw new Error(t("Label names must be unique."));
       return client
         .workspace(environment.workspace_id)
         .PUT("/api/v1/environments/{environment_id}/metrics-binding", {
@@ -207,7 +228,7 @@ function BindingEditor({
           headers: ifMatch(basis.etag),
           body: {
             metrics_data_source_id: source || null,
-            metrics_labels: source ? (parsed as Record<string, string>) : {},
+            metrics_labels: source ? named : {},
           },
         })
         .then(data);
@@ -222,7 +243,7 @@ function BindingEditor({
   });
   return (
     <form
-      className={styles.fields}
+      className={styles.inlineEditor}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -234,22 +255,121 @@ function BindingEditor({
         external={!environment.template_id}
         disabled={save.isPending}
       />
-      <details>
-        <summary>{t("Metric identity labels")}</summary>
-        <TextAreaField
-          label={t("Scope labels JSON")}
-          value={labels}
-          onChange={setLabels}
-          readOnly={!can("admin") || save.isPending}
-          code
-        />
-      </details>
+      {source && (
+        <DisclosureSection
+          title={t("Metric identity labels")}
+          summary={
+            entered.length
+              ? t("{{count}} labels", { count: entered.length })
+              : undefined
+          }
+        >
+          <LabelFields
+            rows={labels}
+            onChange={setLabels}
+            readOnly={!can("admin")}
+            disabled={save.isPending}
+          />
+        </DisclosureSection>
+      )}
       <ErrorNotice error={save.error} />
-      <FormActions
-        label={t("Save selection")}
-        pending={save.isPending}
-        onCancel={onClose}
-      />
+      <div className={styles.inlineEditorActions}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onClose}
+          disabled={save.isPending}
+        >
+          {t("Cancel")}
+        </Button>
+        <Button
+          type="submit"
+          size="sm"
+          variant="outline"
+          loading={save.isPending}
+        >
+          {t("Save selection")}
+        </Button>
+      </div>
     </form>
+  );
+}
+
+/** Name and value rows for the labels every reported series carries. */
+function LabelFields({
+  rows,
+  onChange,
+  readOnly,
+  disabled,
+}: {
+  rows: LabelRow[];
+  onChange: (rows: LabelRow[]) => void;
+  readOnly: boolean;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const update = (id: string, patch: Partial<LabelRow>) =>
+    onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  return (
+    <div className={styles.labelFields}>
+      <p className={styles.panelNote}>
+        {t("Labels added to every series this environment reports.")}
+      </p>
+      {rows.map((row, index) => (
+        <div key={row.id} className={styles.labelRow}>
+          <Input
+            size="sm"
+            aria-label={t("Label name {{index}}", { index: index + 1 })}
+            placeholder={t("Name")}
+            value={row.key}
+            readOnly={readOnly}
+            disabled={disabled}
+            autoComplete="off"
+            onChange={(event) => update(row.id, { key: event.target.value })}
+          />
+          <Input
+            size="sm"
+            aria-label={t("Label value {{index}}", { index: index + 1 })}
+            placeholder={t("Value")}
+            value={row.value}
+            readOnly={readOnly}
+            disabled={disabled}
+            autoComplete="off"
+            onChange={(event) => update(row.id, { value: event.target.value })}
+          />
+          {!readOnly && (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label={t("Remove label {{index}}", { index: index + 1 })}
+              title={t("Remove")}
+              disabled={disabled}
+              onClick={() =>
+                onChange(rows.filter((item) => item.id !== row.id))
+              }
+            >
+              <XIcon />
+            </Button>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className={styles.groupAction}
+          disabled={disabled}
+          onClick={() =>
+            onChange([...rows, { id: crypto.randomUUID(), key: "", value: "" }])
+          }
+        >
+          <PlusIcon aria-hidden="true" />
+          {t("Add label")}
+        </Button>
+      )}
+    </div>
   );
 }

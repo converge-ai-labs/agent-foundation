@@ -5,13 +5,13 @@ import { Timestamp } from "../../shared/feedback";
 import { CopyableId, CopyButton } from "../../shared/identity";
 import { TraceContent, TraceJson } from "./content";
 import { formatCost } from "../../shared/cost";
-import { ObservationGlyph } from "./identity";
+import { kindLabel, ObservationGlyph } from "./identity";
 import { AttributeValues, MetadataChips } from "./metadata";
 import {
   Duration,
   durationMs,
   Fact,
-  TracePill,
+  LevelPill,
   TelemetryStatus,
 } from "./values";
 import styles from "./traces.module.css";
@@ -22,7 +22,9 @@ export function ObservationTitle({
 }: {
   observation: Schema["Span"];
 }) {
+  const { t } = useTranslation();
   const model = observation.model;
+  const kind = kindLabel(t, observation.kind);
   const cost =
     observation.cost_usd === null ? null : formatCost(observation.cost_usd);
   return (
@@ -33,7 +35,7 @@ export function ObservationTitle({
       <span className={styles.panelIdentityCopy}>
         <strong title={observation.name}>{observation.name}</strong>
         <span className={styles.panelIdentityMeta}>
-          <span title={observation.kind}>{observation.kind}</span>
+          <span title={kind}>{kind}</span>
           {model && <span title={model}>· {model}</span>}
           {durationMs(observation) !== null && (
             <span className={styles.panelIdentityNumber}>
@@ -72,11 +74,17 @@ export function ObservationPanelBody({
   );
 }
 
-/** Reported telemetry state, timing, identity and metadata of one observation. */
+/**
+ * Reported telemetry state, timing, identity and metadata of one observation.
+ * Where the page summary already states the level, duration, cost, start and
+ * metadata, `summarized` leaves them out.
+ */
 export function ObservationDiagnostics({
   observation,
+  summarized = false,
 }: {
   observation: Schema["Span"];
+  summarized?: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -86,13 +94,26 @@ export function ObservationDiagnostics({
         <Fact label={t("Telemetry status")}>
           <TelemetryStatus observation={observation} />
         </Fact>
-        <Fact label={t("Level")}>
-          <TracePill level={observation.level} />
+        {!summarized && (
+          <>
+            <Fact label={t("Level")}>
+              <LevelPill level={observation.level} />
+            </Fact>
+            <Fact label={t("Duration")}>
+              <Duration observation={observation} />
+            </Fact>
+            <Fact label={t("Cost")}>{formatCost(observation.cost_usd)}</Fact>
+            <Fact label={t("Started")}>
+              <Timestamp value={observation.started_at} />
+            </Fact>
+          </>
+        )}
+        <Fact label={t("Ended")}>
+          <Timestamp value={observation.ended_at} />
         </Fact>
-        <Fact label={t("Duration")}>
-          <Duration observation={observation} />
-        </Fact>
-        <Fact label={t("Cost")}>{formatCost(observation.cost_usd)}</Fact>
+        {observation.model && (
+          <Fact label={t("Model")}>{observation.model}</Fact>
+        )}
       </dl>
       {observation.status_message !== null && (
         <pre className={styles.statusMessage}>{observation.status_message}</pre>
@@ -102,28 +123,19 @@ export function ObservationDiagnostics({
           "Telemetry status is the span's reported OpenTelemetry status, not the Run outcome. Unset and unavailable do not mean success.",
         )}
       </p>
-      {observation.model && (
-        <dl className={styles.modelIdentity}>
-          <Fact label={t("Model")}>{observation.model}</Fact>
-        </dl>
-      )}
-      <dl className={styles.diagnosticValues}>
-        <Fact label={t("Started")}>
-          <Timestamp value={observation.started_at} />
-        </Fact>
-        <Fact label={t("Ended")}>
-          <Timestamp value={observation.ended_at} />
-        </Fact>
-      </dl>
       <div className={styles.identifier}>
-        <CopyableId value={observation.id} />
+        <span>
+          {t("Observation ID")}
+          <CopyableId value={observation.id} />
+        </span>
         {observation.parent_id && (
           <span>
-            {t("Parent ID")}: <CopyableId value={observation.parent_id} />
+            {t("Parent ID")}
+            <CopyableId value={observation.parent_id} />
           </span>
         )}
       </div>
-      <MetadataChips observation={observation} />
+      {!summarized && <MetadataChips observation={observation} />}
     </section>
   );
 }

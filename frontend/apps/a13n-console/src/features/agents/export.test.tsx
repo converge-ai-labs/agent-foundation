@@ -8,6 +8,12 @@ import { initialConfig } from "./configuration";
 import { parseAgentFile } from "./transfer";
 
 vi.mock("../../shared/download", () => ({ downloadBlob: vi.fn() }));
+// The model name resolves against the workspace's models, which this test omits.
+vi.mock("../models/model-icon", () => ({
+  ModelKeyLabel: ({ modelKey }: { modelKey: string }) => (
+    <span>{modelKey}</span>
+  ),
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>

@@ -2,7 +2,9 @@ import { MenuItem } from "a13n-ui";
 import { ArchiveIcon, StackIcon } from "@phosphor-icons/react";
 import type { ReactElement } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
+import { UserAvatar } from "../../layout/avatar";
 import { useAccess } from "../../layout/workspace";
 import { workspacePath } from "../../shared/paths";
 import { representation, type Schema } from "../../shared/api";
@@ -20,7 +22,8 @@ import { CreateWorkspace } from "./create-workspace";
 
 export function Workspaces() {
   const { organization, workspaces } = useAccess(),
-    { t } = useTranslation();
+    { t } = useTranslation(),
+    navigate = useNavigate();
   const create = <CreateWorkspace organizationId={organization.id} />;
   return (
     <div className={styles.stack}>
@@ -30,6 +33,9 @@ export function Workspaces() {
           <ResourceTable
             items={workspaces}
             caption={t("Workspaces")}
+            onRowActivate={(item) =>
+              navigate(`${workspacePath(item)}/settings/general`)
+            }
             rowMenuLabel={t("Workspace actions")}
             rowMenu={(item) =>
               item.archived_at ? null : (
@@ -50,7 +56,14 @@ export function Workspaces() {
                 tone: "primary",
                 render: (item) => (
                   <ResourceIdentity
-                    icon={<StackIcon size={15} aria-hidden="true" />}
+                    icon={
+                      <UserAvatar
+                        id={item.id}
+                        name={item.name}
+                        url={item.image_url}
+                        className="size-8 rounded-[8px]"
+                      />
+                    }
                     name={item.name}
                     description={item.archived_at ? t("Archived") : undefined}
                     to={`${workspacePath(item)}/settings/general`}

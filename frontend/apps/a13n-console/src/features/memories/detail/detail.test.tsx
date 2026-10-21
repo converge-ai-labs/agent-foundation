@@ -8,7 +8,10 @@ import { createClient } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import { MemoryDetail } from "../page";
 
-vi.mock("../../../auth/context", () => ({ useClient: () => client }));
+vi.mock("../../../auth/context", () => ({
+  useClient: () => client,
+  useAuth: () => ({ data: { user: { value: { id: "usr_1", name: "Ada" } } } }),
+}));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/ws_design",

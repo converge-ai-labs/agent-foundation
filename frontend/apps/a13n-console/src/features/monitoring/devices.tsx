@@ -136,14 +136,16 @@ export function DevicesPage() {
               },
             ]}
           />
-          <CollectionFooter count={items.length} />
+          <CollectionFooter
+            count={t("{{count}} devices", { count: items.length })}
+          />
         </>
       ) : (
         <Empty
-          title={t(search || status ? "No matching targets" : "No devices")}
+          title={t(search || status ? "No matching devices" : "No devices")}
           description={
             search || status
-              ? t("Clear filters")
+              ? t("Change or clear the search and filters.")
               : t(
                   "Register a device to receive metrics through its reverse carrier.",
                 )
@@ -256,9 +258,11 @@ function DeviceEditor({
               </FormField>
               <FormField
                 label={t("Native device identity")}
-                description={t(
-                  "Must match the Device identity reported by Envd.",
-                )}
+                description={
+                  readonly
+                    ? undefined
+                    : t("Must match the Device identity reported by Envd.")
+                }
               >
                 <Input
                   readOnly={!!basis || readonly}
@@ -314,6 +318,7 @@ function DeviceEditor({
                 pending={save.isPending}
                 label={t(basis ? "Save device" : "Register device")}
                 dismiss={readonly}
+                cancelLabel={readonly ? t("Close") : undefined}
                 onCancel={onClose}
               />
             </fieldset>

@@ -211,12 +211,12 @@ it("opens an associated session directly in chat", async () => {
 it("creates a Space, edits its configuration with an ETag, and requests organization", async () => {
   const { writes, cache, user } = show("/w/memory-spaces");
   await screen.findByText("Team knowledge");
-  await user.click(screen.getByRole("button", { name: "Create Space" }));
+  await user.click(screen.getByRole("button", { name: "Create space" }));
   await user.type(
     screen.getByRole("textbox", { name: "Name" }),
     "Team knowledge",
   );
-  await user.click(screen.getByRole("button", { name: "Create Space" }));
+  await user.click(screen.getByRole("button", { name: "Create space" }));
   await screen.findByRole("tab", { name: "Configuration" });
   expect(writes[0]).toMatchObject({
     method: "POST",
@@ -253,7 +253,7 @@ it("preserves a configuration draft on conflict and reloads before retry", async
   await user.type(name, "My draft");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(writes).toHaveLength(1));
-  await screen.findByText("This Space changed");
+  await screen.findByText("This space changed");
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveProperty(
     "value",
     "My draft",
@@ -284,7 +284,7 @@ it("saves count and timing policy, retains it across unrelated edits, and switch
     await screen.findByRole("combobox", { name: "Automatic trigger" }),
   );
   await user.click(
-    screen.getByRole("option", { name: "After a number of changes" }),
+    await screen.findByRole("option", { name: "After a number of changes" }),
   );
   for (const [label, value] of [
     ["Changes per round", "12"],

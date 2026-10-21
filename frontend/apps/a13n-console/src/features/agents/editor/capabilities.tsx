@@ -1,5 +1,5 @@
 import { Button } from "a13n-ui";
-import { PuzzlePieceIcon, XIcon } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import { useQueries } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,10 +15,11 @@ import {
 import { Section } from "../../../shared/page";
 import { connectionState } from "../../connections/api";
 import { revisionsQuery } from "../../skills/revisions";
+import { SkillAvatar } from "../../skills/source";
 import type { useAgentChoices } from "../choices";
 import {
-  ConnectionBrandIcon,
   ConnectionGroup,
+  connectionEndpoint,
   displayName,
 } from "../connections";
 import agentStyles from "../agents.module.css";
@@ -92,7 +93,13 @@ export function SkillsSection({
             return (
               <ListRow
                 key={selection.skill_id}
-                icon={<PuzzlePieceIcon size={16} />}
+                icon={
+                  <SkillAvatar
+                    name={skill?.name ?? selection.skill_id}
+                    id={selection.skill_id}
+                    className="size-8 rounded-[inherit]"
+                  />
+                }
                 name={skill?.name ?? selection.skill_id}
                 secondary={
                   skill ? skill.description : t("Not in this workspace")
@@ -205,17 +212,20 @@ export function ConnectionsSection({
             loading={choices.isPending}
             manageHref={`${basePath}/connections`}
             manageLabel={t("Manage connections")}
-            items={available.map((connection) => ({
-              id: connection.id,
-              name: displayName(connection),
-              detail:
-                "url" in connection.config
-                  ? connection.config.url
-                  : connection.config.app,
-              icon: <ConnectionBrandIcon connection={connection} />,
-              disabled: connectionState(connection) !== "ready",
-              disabledReason: t(connectionState(connection)),
-            }))}
+            items={available.map((connection) => {
+              const state = connectionState(connection);
+              // A connection that cannot be chosen says why in its own line.
+              return {
+                id: connection.id,
+                name: displayName(connection),
+                detail:
+                  state === "ready"
+                    ? connectionEndpoint(connection)
+                    : `${t(state)} · ${connectionEndpoint(connection)}`,
+                disabled: state !== "ready",
+                disabledReason: t(state),
+              };
+            })}
             selected={selected}
             onToggle={(id, checked) =>
               draft.setConnections((previous) =>

@@ -296,7 +296,7 @@ it("pauses an unresolved call while the run waits for a person", () => {
   // The call is paused, not interrupted, and the run says what it waits for.
   expect(screen.getAllByLabelText("Waiting").length).toBeGreaterThan(0);
   expect(screen.queryByLabelText("Failed")).toBeNull();
-  expect(screen.getByText("Waiting for approval")).toBeTruthy();
+  expect(screen.getByText("Waiting for your approval")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
 
@@ -307,7 +307,7 @@ it("summarizes a call wait without assuming who supplies the result", () => {
     wait_reason: "call",
   });
   show({ run, timeline: fixtureTimeline({ run }) });
-  expect(screen.getByText("Waiting for call results")).toBeTruthy();
+  expect(screen.getByText("Waiting for your response")).toBeTruthy();
 });
 
 it("leaves a model request without reported tokens unstated, never zeroed", async () => {

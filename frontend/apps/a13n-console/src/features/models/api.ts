@@ -33,6 +33,17 @@ export function workspaceModelsQuery(client: Client, workspaceId: string) {
   };
 }
 
+/** Every model provider of a workspace, for the surfaces that name or brand a model's provider. */
+export function workspaceProvidersQuery(client: Client, workspaceId: string) {
+  return {
+    queryKey: ["model-providers", "all", workspaceId],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      allPages((cursor) =>
+        modelApi(client, workspaceId).providers(signal, cursor),
+      ),
+  };
+}
+
 /** A workspace's models, identified by key, and the providers that serve them. */
 export function modelApi(client: Client, workspaceId: string) {
   const http = client.workspace(workspaceId);
