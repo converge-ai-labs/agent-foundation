@@ -655,7 +655,7 @@ async def test_native_shell_default_wait_works_without_tool_execution_binding(tm
 
 
 @requires_posix_process_groups
-async def test_immediate_shell_steer_keeps_admitted_process_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_immediate_shell_steer_keeps_runtime_owned_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import asyncio
 
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
@@ -708,14 +708,15 @@ async def test_immediate_shell_steer_keeps_admitted_process_reference(tmp_path: 
             return [event async for event in stream]
 
         consumer = asyncio.create_task(consume())
-        await admitted.wait()
+        await asyncio.wait_for(admitted.wait(), 10)
         await stream.steer("continue now", immediate=True)
-        await consumer
+        await asyncio.wait_for(consumer, 10)
         assert stream.result.output_or_raise() == "continued"
-        assert await runtime.summarize(stream.thread_id) == ()
+        records = await runtime.summarize(stream.thread_id)
+        assert len(records) == 1
     assert len(references) == 1
-    assert returns[0].content["process_id"] == references[0]
-    assert "execution_id" not in returns[0].content
+    assert returns[0].content["execution_id"] == records[0].execution_id
+    assert returns[0].content["type"] == "tool_execution_receipt"
     await runtime.close()
 
 
@@ -792,7 +793,9 @@ async def test_process_shell_waits_for_detached_sequential_execution(tmp_path: P
         await consumer
         assert stream.result.output_or_raise() == "done"
         records = await runtime.summarize(stream.thread_id)
-        assert len(records) == 1 and records[0].tool_name == "serial"
+        assert {record.tool_name for record in records} == {"serial", "shell_exec"}
+        shell_record = next(record for record in records if record.tool_name == "shell_exec")
+        await runtime.wait(stream.thread_id, shell_record.execution_id)
     assert starts == ["serial-finished", "shell"]
     await runtime.close()
 
@@ -3154,8 +3157,9 @@ async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alia
         ctx.deps._tool_executions = RunToolExecutions()
         ctx.deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)
         ctx.tool_call_id = None
-        assert toolset._execution_mode({"command": "echo value", "cwd": "/workspace"}) == "owned"
-        assert toolset._execution_mode({"command": "echo value", "cwd": "/environment/shared"}) == "process"
+        from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
+
+        assert toolset.get_toolset().tools["shell_exec"].metadata[TOOL_EXECUTION_METADATA_KEY] == "owned"
         foreground = await toolset.shell_exec(
             ctx,
             "printf foreground",

@@ -279,8 +279,16 @@ class _ShellFacade:
 
 
 class _ProcessFacade:
-    def __init__(self, environment: CompositeBoundEnvironment) -> None:
+    def __init__(
+        self,
+        environment: CompositeBoundEnvironment,
+        *,
+        retained_handle: BoundProcessHandle | None = None,
+        authorized_actions: frozenset[EnvironmentAction] = frozenset(),
+    ) -> None:
         self._environment = environment
+        self._retained_handle = retained_handle
+        self._authorized_actions = authorized_actions
 
     async def list(self, *, alias: str | None = None, limit: int = 50) -> ProcessDiscovery:
         entered = self._environment._select_entered(alias)
@@ -375,9 +383,12 @@ class _ProcessFacade:
 
     async def write_stdin(self, handle: BoundProcessHandle, data: bytes, **kwargs: Any) -> ProcessWriteStdinResult:
         if kwargs.get("close_after_write") is True:
-            self._environment.require_action(
-                self._environment._entered_for_handle(handle).mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN
-            )
+            if self._retained_handle is not None:
+                self._require_retained_action(handle, EnvironmentAction.PROCESS_CLOSE_STDIN)
+            else:
+                self._environment.require_action(
+                    self._environment._entered_for_handle(handle).mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN
+                )
         return await self._call(handle, EnvironmentAction.PROCESS_WRITE_STDIN, "write_stdin", data, **kwargs)
 
     async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
@@ -415,6 +426,9 @@ class _ProcessFacade:
         **kwargs: Any,
     ) -> Any:
         entered = self._environment._entered_for_handle(handle)
+        if self._retained_handle is not None:
+            self._require_retained_action(handle, action)
+            return await self._dispatch(entered, handle, method, args, semantic_kwargs or kwargs)
         async with self._environment._operation_lease(
             entered,
             action,
@@ -422,19 +436,33 @@ class _ProcessFacade:
             timeout_seconds=timeout_seconds,
             allow_retired=True,
         ) as entered:
-            processes = entered.operations.processes
-            if processes is None:
-                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
-            call = getattr(processes, method)
-            try:
-                result = await call(handle, *args, **dict(semantic_kwargs or kwargs))
-            except EnvironmentError as exc:
-                if exc.code == "environment_not_found":
-                    self._environment._track_process_handle(handle, added=False)
-                raise
-            _validate_provider_artifacts(entered, result)
-            _validate_process_result_identity(handle, result)
-            return result
+            return await self._dispatch(entered, handle, method, args, semantic_kwargs or kwargs)
+
+    def _require_retained_action(self, handle: BoundProcessHandle, action: EnvironmentAction) -> None:
+        if handle != self._retained_handle or action not in self._authorized_actions:
+            raise EnvironmentError("Process control is outside its active lease.", code="environment_denied")
+
+    async def _dispatch(
+        self,
+        entered: _EnteredMount,
+        handle: BoundProcessHandle,
+        method: str,
+        args: tuple[Any, ...],
+        kwargs: Mapping[str, Any],
+    ) -> Any:
+        processes = entered.operations.processes
+        if processes is None:
+            raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
+        call = getattr(processes, method)
+        try:
+            result = await call(handle, *args, **dict(kwargs))
+        except EnvironmentError as exc:
+            if exc.code == "environment_not_found":
+                self._environment._track_process_handle(handle, added=False)
+            raise
+        _validate_provider_artifacts(entered, result)
+        _validate_process_result_identity(handle, result)
+        return result
 
 
 class _PortFacade:

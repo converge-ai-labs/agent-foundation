@@ -174,23 +174,27 @@ capabilities = (
 
 | 工具           | 行为                                                             |
 | -------------- | ---------------------------------------------------------------- |
-| `shell_exec`   | 启动命令，最多等待配置的前台等待时长；未完成时返回执行内引用     |
+| `shell_exec`   | 启动命令；按下文的执行作用域返回结果、runtime 回执或本地进程引用 |
 | `shell_info`   | 不带 ID 时列出可发现原生命令；带 ID 时只检查当前状态             |
 | `shell_wait`   | 有界等待，或设置零进行轮询，再按显式偏移量读取可用 stdout/stderr |
 | `shell_input`  | 写入 UTF-8 stdin，按需关闭 stdin，不读取输出                     |
 | `shell_signal` | 请求支持的 `interrupt`、`terminate` 或 `kill` 控制，不读取输出   |
 
-在支持进程的 Environment 中，`shell_exec` 按 `ToolExecutionConfig.foreground_wait_seconds` 等待，默认五秒。命令已完成时返回结果；仍在运行时返回当前输出和 `process_id`，供后续查询、等待和控制。这项原生进程能力适用于两种工具执行模式，也可在未绑定 `ToolExecutionRuntime` 时使用。即时 steering 可以提前释放等待，并返回同一个进程引用。
+绑定 Host 持有的 `ToolExecutionRuntime` 后，顶层 `shell_exec` 遵循配置的执行模式。`inline` 等待最终结果；`auto` 在 `ToolExecutionConfig.foreground_wait_seconds` 到期后返回 `exec-*` 回执，默认等待五秒。即时 steering 可以提前返回该回执。原命令和输出捕获可在同一 Host、同一 Thread 的多个 Run 之间保留。在支持进程的挂载上，将存活执行的 `execution_id` 作为 `process_id` 传给 Shell 控制工具。执行结束后，通过 `tool_execution_result` 获取最终状态和有界输出。
+
+未由 runtime 持有时，包括 CodeAct 内的 Shell 回调，支持进程的挂载会返回原生输出；命令在配置的等待时间后仍存活时，还会返回 Run 内的 `process-*` 引用。嵌套调用不创建独立执行回执，只有外层 CodeAct runner 可以移交。
 
 后续等待时长由 `shell_wait.timeout_seconds` 指定。需要硬执行期限时，向 `shell_exec` 传入 `execution_timeout_seconds`，由选定的 Provider 实施。原生 E2B 等不支持该期限的 Provider 会在启动命令前拒绝请求。
 
-只有所选挂载支持进程列表时，才使用 `shell_info(alias="workspace", limit=50)` 发现可恢复的运行命令。Direct Local 支持检查，不支持发现：其 `shell_info` schema 要求本次执行 `shell_exec` 返回的 `process_id`，不提供 `limit`。`shell_info(process_id=...)` 只检查，不附加、读取、刷新或重置输出。列表和检查分别授权。`alias` 是环境上下文中的已有挂载名，不是命令/进程标签；省略时选择默认挂载。未知或冲突别名会失败，不会重新指定命令或引用的目标。列表绝不公开原生 PID、任意参数或环境变量。
+只有所选挂载支持进程列表时，才使用 `shell_info(alias="workspace", limit=50)` 发现可恢复的运行命令。Direct Local 支持检查，不支持发现：其 `shell_info` schema 要求当前 Run 的 `process-*` 引用或仍存活的 Shell `exec-*` 标识，不提供 `limit`。`shell_info(process_id=...)` 只检查，不附加、读取、刷新或重置输出。列表和检查分别授权。`alias` 是环境上下文中的已有挂载名，不是命令/进程标签；省略时选择默认挂载。未知或冲突别名会失败，不会重新指定命令或引用的目标。列表绝不公开原生 PID、任意参数或环境变量。
 
 输出页标识 `origin`（`native_bytes` 或 `sdk_text`）、覆盖范围、观测是否关闭，以及覆盖不完整的原因。SDK 文本偏移量描述 SDK 交付文本的 UTF-8 编码，不是原始进程字节。生产方计数和完成状态未知时为 null。`next_offset` 只按返回字节推进；重复相同偏移量可重读，使用最后返回偏移量可读取下一页。Harness 不维护未读游标。
 
-引用只属于一次执行。执行内重连保留引用和累计日志偏移量，但报告缺口。后续执行创建新引用和观测；消息中的旧引用不授予权限。完成提示表示原生进程退出，不表示全部输出已捕获或所有后代已清理。反过来，输出达到上限或关闭不表示进程退出。E2B 在输出达到上限后，仍在等待预算内检查原生状态；最终退出证据丢失时报告缺失/未知，不报告成功。工具结果 `ok=true` 仅表示调用正常返回；检查进程状态和退出码才能判断命令成功。
+独立的 `process-*` 引用只属于一个 Run。只要同一 runtime 保留原生句柄，且当前挂载授权原目标和全部请求动作，`exec-*` 控制就能跨 Run 使用。重连保留累计偏移量，但报告缺口。后续 Run 的原生发现会创建新引用和观测；消息中的旧引用本身不授予权限。独立进程的退出提示不表示完整捕获或后代清理。runtime 持有的 Shell 执行需要原生终结证据和两路输出观测关闭后才结束。反过来，输出达到上限或关闭不表示进程退出。E2B 在输出达到上限后，仍在等待预算内检查原生状态；最终退出证据丢失时报告缺失/未知，不报告成功。工具结果 `ok=true` 仅表示调用正常返回；检查进程状态和退出码才能判断命令成功。
 
-适配器关闭前，执行清理取消 watcher 并释放本地观测，不统一终止所有命令。实际存活和恢复取决于 provider 和 Host 目标生命周期。E2B 可发现恢复沙箱中仍运行的命令。Direct Local 和 Envd provider 保留各自资源范围的清理语义。Harness 没有进程数据库或执行后通知服务。
+Run 清理释放独立观测，不统一终止所有命令。runtime 持有的操作保留原资源范围直到执行结束；取消执行会尝试原生终止，Host 关闭时等待其清理。Host 或资源范围丢失后的实际存活和恢复取决于 Provider。E2B 可发现恢复沙箱中仍运行的命令；Direct Local 和 Envd Provider 保留各自的资源清理语义。
+
+未由 runtime 持有或在 CodeAct 内调用时，独立进程路径如下：
 
 ```mermaid
 sequenceDiagram

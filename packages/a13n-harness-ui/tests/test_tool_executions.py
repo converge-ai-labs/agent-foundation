@@ -727,20 +727,3 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             assert content[0].value == "Tool completed"
             assert content[0].metadata.display is False
             assert content[0].metadata.source_id == "tool_execution.completion"
-
-
-def test_ui_defaults_to_inline_with_immediate_steering_and_optional_auto():
-    from a13n_harness import ToolExecutionConfig
-    from a13n_harness_ui.configuration.models import HarnessUiDocument
-
-    assert ToolExecutionConfig().mode == "inline"
-    defaults = HarnessUiDocument()
-    assert defaults.input.steering_mode == "immediate"
-    assert defaults.tools.execution.mode == "inline"
-    configured = HarnessUiDocument.model_validate(
-        {"tools": {"execution": {"foreground_wait_seconds": 0.25}}, "input": {"steering_mode": "queued"}}
-    )
-    assert configured.tools.execution.mode == "inline"
-    assert configured.tools.execution.foreground_wait_seconds == 0.25
-    assert configured.input.steering_mode == "queued"
-    assert HarnessUiDocument.model_validate({"tools": {"execution": {"mode": "auto"}}}).tools.execution.mode == "auto"

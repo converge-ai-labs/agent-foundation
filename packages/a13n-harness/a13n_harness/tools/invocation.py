@@ -604,7 +604,15 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         sequential = tool.tool_def.sequential or (
             ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
         )
-        if _OWNED_TOOL_EXECUTION.get() or runtime is None or not state.enabled or mode == "control":
+        from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
+
+        if (
+            _NESTED_TOOL_EXECUTION.get()
+            or _OWNED_TOOL_EXECUTION.get()
+            or runtime is None
+            or not state.enabled
+            or mode == "control"
+        ):
             return await operation()
         if self._scope is None or mode != "owned":
             return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)

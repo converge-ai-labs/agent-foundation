@@ -107,9 +107,9 @@ A suspended Run is closed. Store its pending request and checkpoint, authenticat
 
 Supply a Host-owned `EnvironmentSource` for each target through `environment=` or a named `environments=` mapping. Harness prepares each target on first use, opens a fresh execution, and closes it without destroying the target; the Host owns Provider configuration, authoritative `EnvironmentState`, retention, and explicit `destroy()`. For multiple mounts, choose `default_environment` explicitly when a default route is needed. [Environments](environments.md) has runnable examples.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
-Harness issues process references only within the current Run and releases the Run's process observations when the Run closes; it does **not** kill every backend command. A later Run constructs a new adapter and uses Provider state/native discovery if the backend retained the process. Do not persist `process-*` references as a recovery mechanism.
+Standalone `process-*` references belong to one Run and are released with its observations at Run close, without blanket command termination. Top-level Shell calls bound to the Host-held tool runtime instead retain their original scope until execution settlement, and live `exec-*` controls use current-Run authorization. After Host or scope loss, use Provider state/native discovery if the backend retained the command. Persisted references alone do not restore execution authority.
 
 ## Minimal vs. Production Host
 

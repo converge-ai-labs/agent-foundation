@@ -156,6 +156,11 @@ class _ExecutionSlot:
             await asyncio.wait(self.predecessors)
 
 
+_CURRENT_TOOL_EXECUTION: contextvars.ContextVar[ToolExecutionRecord | None] = contextvars.ContextVar(
+    "a13n_current_tool_execution", default=None
+)
+
+
 @dataclass
 class _LiveExecution:
     record: ToolExecutionRecord
@@ -163,6 +168,7 @@ class _LiveExecution:
     started: bool = False
     cancel_requested: bool = False
     releasing: bool = False
+    resource: object | None = None
 
 
 class ToolExecutionRuntime:
@@ -261,6 +267,7 @@ class ToolExecutionRuntime:
         slot: _ExecutionSlot,
     ) -> None:
         _OWNED_TOOL_EXECUTION.set(True)
+        _CURRENT_TOOL_EXECUTION.set(live.record)
         artifacts: list[ToolExecutionArtifact] = []
         _TOOL_EXECUTION_ARTIFACTS.set(artifacts)
         live.started = True
@@ -289,6 +296,7 @@ class ToolExecutionRuntime:
             # Cancellation targets execution, not teardown. Keep the operation
             # live until its resource owner has actually finished draining.
             live.releasing = True
+            live.resource = None
             if release is not None:
                 try:
                     await release()
@@ -342,6 +350,24 @@ class ToolExecutionRuntime:
                     get_logger(__name__).error(
                         "Tool execution completion observer failed: %s", live.record.execution_id
                     )
+
+    def attach_resource(self, resource: object) -> None:
+        """Attach a live control surface to the currently owned operation.
+
+        The operation owns synchronization and closes the surface before returning.
+        Resources never enter the store or outlive operation teardown.
+        """
+        record = _CURRENT_TOOL_EXECUTION.get()
+        if record is None or (live := self._live.get(record.execution_id)) is None or live.releasing:
+            raise RuntimeError("No active execution owns this resource")
+        live.resource = resource
+
+    def resource(self, thread_id: str, execution_id: str) -> object | None:
+        """Resolve a live resource only inside its exact owning Thread."""
+        live = self._live.get(execution_id)
+        if live is None or live.record.thread_id != thread_id or live.releasing:
+            return None
+        return live.resource
 
     def release_foreground(self, thread_id: str, execution_id: str) -> None:
         """Mark a pending original call whose foreground now returns a receipt.

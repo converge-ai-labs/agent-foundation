@@ -126,7 +126,7 @@ The executable-owned `SubagentCollection` is process-local topology and grants n
 
 Harness supplies no default async manager, execution-store protocol, parent-state mirror, completion observer, or shutdown operation. A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run queries the Host operator using the public execution reference. Parent Run closure neither cancels accepted child work nor closes the operator.
 
-Shell observations follow the separate [Environment contract](08-environment-integration.md#run-local-shell-observations). Harness supplies Run-local references, optional native discovery, explicit-offset observations and best-effort exit hints without a Host process operator. Run close releases observations without blanket termination. Provider state owns recovery of whatever the backend actually retained; a later Run uses fresh references and cannot assume historical output survives.
+Shell controls follow the [Environment contract](08-environment-integration.md#shell-executions-and-observations). The Host-held tool runtime retains top-level Shell operations and their original scopes across Runs, with explicit-offset observation and current-Run control authorization. Standalone `process-*` references remain Run-local. Provider state owns recovery after scope or Host loss; native discovery uses fresh references and cannot assume historical output survives.
 
 a13n Service and Harness UI use this ordinary Environment integration. Async subagents retain their independent Host operator.
 

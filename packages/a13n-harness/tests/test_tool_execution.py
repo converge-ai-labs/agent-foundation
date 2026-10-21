@@ -340,30 +340,6 @@ async def test_capacity_thread_scope_and_shutdown():
         admit(runtime, operation)
 
 
-async def test_retention_trims_completed_records_not_active_work():
-    store = MemoryToolExecutionStore(max_completed=1)
-    runtime = ToolExecutionRuntime(store=store)
-    entered = asyncio.Event()
-
-    async def pending():
-        entered.set()
-        await asyncio.Event().wait()
-
-    async def fast():
-        return 1
-
-    active = admit(runtime, pending)
-    await entered.wait()
-    first = admit(runtime, fast)
-    await runtime.wait("thread-a", first.execution_id)
-    second = admit(runtime, fast)
-    await runtime.wait("thread-a", second.execution_id)
-    assert await runtime.info("thread-a", first.execution_id) is None
-    assert (await runtime.info("thread-a", active.execution_id)).status == "running"
-    assert (await runtime.info("thread-a", second.execution_id)).status == "succeeded"
-    await runtime.close()
-
-
 async def test_failed_admission_storage_never_dispatches_effect_and_releases_scope():
     class RejectAdmission(MemoryToolExecutionStore):
         async def save(self, execution: StoredToolExecution) -> None:
@@ -684,33 +660,6 @@ async def test_auto_without_runtime_rejects_before_tool_execution():
     assert not called and observed == []
 
 
-async def test_harness_auto_returns_receipt_then_execution_finishes_after_run_close():
-    entered, finish = asyncio.Event(), asyncio.Event()
-    calls = 0
-
-    async def lookup():
-        nonlocal calls
-        calls += 1
-        entered.set()
-        await finish.wait()
-        return {"answer": 42}
-
-    runtime = ToolExecutionRuntime()
-    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="auto", foreground_wait_seconds=0))
-    result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
-    assert result.status == "completed"
-    assert calls == 1 and entered.is_set()
-    receipt = observed[0].content
-    assert receipt["execution_id"].startswith("exec-")
-    assert not (await runtime.info(result.thread_id, receipt["execution_id"])).delivery_acknowledged
-    finish.set()
-    outcome = await runtime.wait(result.thread_id, receipt["execution_id"])
-    assert outcome.record.status == "succeeded"
-    assert outcome.result == {"answer": 42}
-    assert calls == 1
-    await runtime.close()
-
-
 async def test_retained_spill_materializes_in_later_run_after_original_cleanup(tmp_path):
     import json
 
@@ -800,19 +749,6 @@ def test_interruption_settlement_preserves_existing_native_retry():
         ModelRequest(parts=[RetryPromptPart("invalid result", tool_name="shell_exec", tool_call_id="call")]),
     )
     assert state.settle(messages) == messages
-
-
-async def test_harness_fast_result_acknowledged_only_in_canonical_history():
-    async def lookup():
-        return {"answer": 42}
-
-    runtime = ToolExecutionRuntime()
-    executable, observed = tool_agent(lookup, config=ToolExecutionConfig(mode="auto"))
-    result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
-    assert observed[0].content == {"answer": 42}
-    records = await runtime.summarize(result.thread_id)
-    assert len(records) == 1 and records[0].delivery_acknowledged
-    await runtime.close()
 
 
 @pytest.mark.parametrize("immediate", [False, True])

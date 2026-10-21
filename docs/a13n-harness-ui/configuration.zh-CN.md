@@ -305,7 +305,7 @@ defaults:
 | `tools.interaction_timeout_seconds`       | `120`    | 每次 TUI 交互或完整 WebUI 根决策批次的正有限秒数；不限制模型执行 |
 | `tools.enable_codeact`                    | `true`   | 包含原生 CodeAct runner 和显式 `store`/`load`/`forget` 状态工具  |
 | `tools.execution.mode`                    | `inline` | 等待完成；显式选择 `auto` 后，支持的工具超过前台等待时间就交接   |
-| `tools.execution.foreground_wait_seconds` | `5.0`    | 自动工具交接和原生 shell 调用的非负有限等待秒数                  |
+| `tools.execution.foreground_wait_seconds` | `5.0`    | 自动工具交接和独立 Shell 等待的非负有限秒数                      |
 | `subagents.include`                       | `[]`     | 有序的内置名称：`code-reviewer`、`executor`、`explorer`          |
 
 设置向导将工具开关和交互超时显式写入所选根 YAML（默认 `~/.a13n-harness-ui/a13n-harness-ui.yaml`），用上述默认值补齐省略字段，保留现有值。
@@ -327,7 +327,9 @@ tools:
 
 每次 Run 捕获自己的工具执行策略。`inline` 模式等待通用工具调用的结果；`auto` 模式在前台等待到期后，为支持的调用返回执行回执。即时 steering 可以提前释放两种模式的等待。原始调用按捕获的配置继续执行，CodeAct 以整个程序为单位保留执行。
 
-原生进程 shell 在两种模式下使用相同的等待时长：默认五秒后，仍在运行的命令返回 `process_id`。这项能力也可在未绑定通用执行 runtime 时使用。观察和控制操作见 [shell 执行](../a13n-harness/environments.md)。
+顶层 Shell 调用与其他受支持工具使用相同的 runtime 策略：`inline` 等待完成，`auto` 在配置的等待时间后返回执行回执。同一 App 内，存活的 Shell 执行可通过 `exec-*` 标识跨 Run 控制。CodeAct 内的 Shell 回调返回原生结果和 Run 内进程引用，只有外层 runner 可以移交。观察和控制操作见 [shell 执行](../a13n-harness/environments.md)。
+
+支持小数秒：`foreground_wait_seconds: 0.05` 表示自动模式下前台等待 50 ms。该值只限制等待时间，不限制命令执行时间。
 
 `input.steering_mode` 为后续用户输入选择即时交接或排队送达。App 在内存中保留工具记录和结果，并限制已完成历史的数量。状态与取消操作见 [WebUI](webui.md#tool-executions-and-immediate-steering)。
 

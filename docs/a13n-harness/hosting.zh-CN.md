@@ -107,9 +107,9 @@ Host 可以通过 `RunBindings.model_call_check` 提供实现了 `ModelCallCheck
 
 Host 为每个目标提供 `EnvironmentSource`，通过 `environment=` 或具名的 `environments=` 映射传入。Harness 在首次使用时准备目标、打开独立 execution，并在结束时关闭 execution，不销毁目标。Provider 配置、权威 `EnvironmentState`、保留策略和显式 `destroy()` 都由 Host 管理。挂载多个环境时，如果需要默认路由，请显式选择 `default_environment`。[环境](environments.md)中有可运行的示例。
 
-## 当前 Run 中的 Shell 观测
+## Shell 执行与观测
 
-Harness 发出的进程引用只在当前 Run 内有效，Run 关闭时会释放该 Run 的进程观测资源；这并**不** 意味着它会终止所有后端命令。如果后端仍保留进程，之后的 Run 应创建新的适配器，并通过 Provider 状态或后端原生发现机制找到它。不要持久化 `process-*` 引用来实现恢复。
+独立的 `process-*` 引用只属于一个 Run，在 Run 关闭时随观测一起释放，不统一终止所有命令。绑定 Host 工具 runtime 的顶层 Shell 调用则保留原资源范围直到执行结束，存活的 `exec-*` 控制使用当前 Run 的授权。Host 或资源范围丢失后，如果后端仍保留命令，通过 Provider 状态或原生发现恢复。只持久化引用不能恢复执行权限。
 
 ## 从简单应用到生产 Host
 

@@ -140,7 +140,7 @@ Both `run_code` and `run_program` use this path and the same bounded value, canc
 
 ## Retained Runner Execution
 
-Both runners participate as whole invocations in [Host-held tool execution](07-tool-execution.md#host-held-tool-executions). Foreground expiry or immediate steering returns one outer receipt; nested calls continue awaiting real values on the original prepared ToolManager. The retained scope keeps Monty, callbacks, policy/credential hooks, dynamic Environment generations and output resources alive until the actual runner settles. Task-affine cleanup remains with the task that entered each resource.
+Both runners participate as whole invocations in [Host-held tool execution](07-tool-execution.md#host-held-tool-executions). Foreground expiry or immediate steering returns one outer receipt; nested calls continue awaiting real values on the original prepared ToolManager without independent runtime admission. A nested process-backed Shell call returns its native result or original-scope `process-*` reference, so subsequent callbacks can read output or send input within that runner. The retained scope keeps Monty, callbacks, policy/credential hooks, dynamic Environment generations and output resources alive until the actual runner settles. Task-affine cleanup remains with the task that entered each resource.
 
 Sequential barriers and inline-session exclusivity last until actual completion, rather than ending at receipt delivery. A busy or rejected `restart=True` call cannot reset an active feed. Successful bindings remain usable only within their original logical Run. Native successful-call accounting and shared usage admission continue to cover outer and nested work without counting receipt delivery as a second invocation.
 
