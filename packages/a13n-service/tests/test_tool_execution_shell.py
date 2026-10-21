@@ -19,8 +19,9 @@ from a13n_service.settings import LocalProvisioning, Provisioning
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("cancel_owner", [False, True])
 async def test_successor_worker_controls_original_shell(
-    serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch
+    serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cancel_owner
 ):
     settings = settings.model_copy(
         update={
@@ -159,15 +160,17 @@ async def test_successor_worker_controls_original_shell(
                 )
                 is None
             )
-            async with transaction(service.runtime.storage) as session:
-                execution = await session.get(ToolExecutionRow, record.execution_id)
-                execution.cancel_requested_at = datetime.now(UTC)
-            with pytest.raises(EnvironmentError) as denied:
-                await successor_runtime.executions.routing.call("worker-a", control)
-            assert denied.value.details["dispatch_stage"] == "pre_dispatch"
-            async with transaction(service.runtime.storage) as session:
-                execution = await session.get(ToolExecutionRow, record.execution_id)
-                execution.cancel_requested_at = None
+            if cancel_owner:
+                async with transaction(service.runtime.storage) as session:
+                    execution = await session.get(ToolExecutionRow, record.execution_id)
+                    execution.cancel_requested_at = datetime.now(UTC)
+                # The original shell also observes cancellation while polling. Never clear a cancellation
+                # and expect that same invocation to succeed: its cleanup may already have started.
+                await asyncio.wait_for(cleanup_started.wait(), 5)
+                with pytest.raises(EnvironmentError) as denied:
+                    await successor_runtime.executions.routing.call("worker-a", control)
+                assert denied.value.details["dispatch_stage"] == "pre_dispatch"
+                return
             assert (await owner.result(origin.thread_id, record.execution_id)).record.status == "running"
             scripted_model.call("shell_info", {"process_id": record.execution_id}, call_id="inspect")
             scripted_model.call("shell_wait", {"process_id": record.execution_id, "timeout_seconds": 0}, call_id="poll")

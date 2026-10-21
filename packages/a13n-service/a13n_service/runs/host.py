@@ -129,11 +129,13 @@ class Host:
     memory: tuple[AbstractCapability[AgentContext], ...]
     environment: EnvironmentRuntime
 
-    def capabilities(self, agent: ResolvedAgent, *, root: bool = False) -> list[AbstractCapability[AgentContext]]:
+    def capabilities(
+        self, agent: ResolvedAgent, *, retain_tools: bool = False
+    ) -> list[AbstractCapability[AgentContext]]:
         """The agent's own host tools: its connections, platform tools, pinned skills and asset publishing."""
         features = list(self.sources(agent).values())
-        if root:
-            # Inline children are part of the delegating call, not independent Service executions.
+        if retain_tools:
+            # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(
                 ToolExecutionCapability(
                     ToolExecutionConfig(

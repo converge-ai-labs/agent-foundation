@@ -114,6 +114,7 @@ class _Plan:
     """What an attempt runs and where it continues from, read and restored before anything is delivered."""
 
     session_id: str
+    retain_tools: bool
     configuration: RunConfiguration
     source_entry_id: str | None
     mounts: tuple[EnvironmentMount, ...]
@@ -283,6 +284,8 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         )
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
+        # Space organization keeps its memory-only surface and completes calls within the round.
+        retain_tools = thread.purpose == "conversation"
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
@@ -311,6 +314,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         resume = resume.remaining(state.message_history)
     return _Plan(
         session_id=session_id,
+        retain_tools=retain_tools,
         configuration=options.configuration or RunConfiguration(),
         source_entry_id=source_entry_id,
         mounts=mounts,
@@ -507,7 +511,7 @@ class _Attempt:
                     [
                         self.boundaries,
                         *([ExecutionFence(runtime, lease)] if self.desktop_enabled else []),
-                        *host.capabilities(node, root=True),
+                        *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *host.memory,
                         *(
                             [DesktopAssistanceCapability(runtime, lease, self.plan.principal)]
@@ -980,7 +984,7 @@ class _Attempt:
     def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease
         return RunBindings(
-            tool_execution=self.runtime.executions,
+            tool_execution=self.runtime.executions if self.plan.retain_tools else None,
             codeact_state=SharedCodeActState(self.runtime.storage, lease.thread_id),
             configuration=self.plan.configuration,
             instance=AgentInstanceContext(
