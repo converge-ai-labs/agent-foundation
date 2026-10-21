@@ -525,5 +525,7 @@
   "Update Schedule": "更新定时任务",
   "Create Schedule": "创建定时任务",
   "Current execution observations alongside the durable occurrence completion facts.": "当前执行观测及持久保存的触发记录完成信息。",
-  "Absent fields match every event; a specified identity must exist and match.": "省略字段匹配全部事件；指定的标识必须存在且匹配。"
+  "Absent fields match every event; a specified identity must exist and match.": "省略字段匹配全部事件；指定的标识必须存在且匹配。",
+  "Caller-supplied display context, not execution provenance or an authorization boundary.": "由调用方提供的展示信息，不代表经过验证的执行来源，也不作为授权依据。",
+  "Session/thread ID, title, origin, label value or retained conversation text": "会话或线程 ID、标题、来源、标签值，或保留的对话文本"
 }
