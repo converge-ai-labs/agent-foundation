@@ -7,6 +7,9 @@ use std::{io, time::Duration};
 const GUIDANCE: &str = "Open System Settings > Privacy & Security and enable Screen Recording and Accessibility for the process or launcher macOS identifies for envd. Restart that launcher and envd if macOS requires it, then run the same command again. No EIP transport has started.";
 
 #[cfg(any(target_os = "macos", test))]
+const RECOVERY: &str = "If permissions already appear enabled, remove and re-add the affected entry, then restart Envd and its launcher. Recovery: https://a13n.dev/docs/a13n-envd/computer-use#restore-macos-permissions-after-an-upgrade";
+
+#[cfg(any(target_os = "macos", test))]
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct Permissions {
     pub(super) capture: bool,
@@ -129,7 +132,7 @@ where
         Err(_) => Err(io::Error::new(
             io::ErrorKind::TimedOut,
             format!(
-                "computer-use authorization timed out after {} ms; missing or unconfirmed: {}. {GUIDANCE} Increase computer_use_permission_timeout_ms or A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS for a longer wait.",
+                "computer-use authorization timed out after {} ms; missing or unconfirmed: {}. {GUIDANCE} {RECOVERY} Increase computer_use_permission_timeout_ms or A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS for a longer wait.",
                 timeout.as_millis(),
                 last.missing(),
             ),
@@ -203,6 +206,12 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(error.to_string().contains("Accessibility"));
         assert!(error.to_string().contains("No EIP transport has started"));
+        assert!(error.to_string().contains("remove and re-add"));
+        assert!(
+            error
+                .to_string()
+                .contains("#restore-macos-permissions-after-an-upgrade")
+        );
     }
 
     #[tokio::test]

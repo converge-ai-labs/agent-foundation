@@ -72,7 +72,29 @@ PATH opt-in updates only the current user's configuration: Bash `.bashrc` (`.bas
 
 The installers support x86_64 and ARM64 on Linux, macOS, and Windows. They verify the selected archive against the release's `SHA256SUMS` **before extraction**, stage the executable on the destination filesystem, and atomically install or replace it. Download, checksum, archive, or replacement failures leave an existing executable unchanged. SHA256 verifies the archive against the manifest delivered by GitHub; it is not a separate signature or trust source.
 
-Re-run the script with another exact version to replace the binary, then restart Envd through the same command or service. The installer does not restart running daemons. On macOS, computer use may require renewed Screen Recording and Accessibility authorization after replacement, even if the existing entries still appear enabled. Follow [Restore macOS permissions after an upgrade](computer-use.md#restore-macos-permissions-after-an-upgrade) if Envd reports missing permissions.
+## Update an existing installation
+
+Stop daemons using the installation before replacing it. Envd starts workers from its executable path, so replacing that path while a daemon is running can mix versions or prevent worker startup. The updater does not stop or restart services automatically.
+
+```console
+a13n-envd update --check
+a13n-envd update
+```
+
+The default selects the newest stable **Envd** release, skipping other repository components and prereleases. To match a client, install an RC, or explicitly downgrade, select an exact published version:
+
+```console
+a13n-envd update --version 1.2.3
+a13n-envd update --version 1.2.3 --force
+```
+
+`--check` reports the current version, selected version and destination without installing. `--force` reinstalls the selected version; it cannot be combined with `--check`. The command updates the actual executable you invoked, including when invoked through a symlink. It does not change PATH or configuration or elevate privileges. Use the installation owner's account. Restart Envd with its usual command or service after success.
+
+Envd downloads the matching release archive, verifies `SHA256SUMS`, checks the extracted binary's `--version`, then replaces the executable. Download and validation failures preserve the existing binary. If interrupted during replacement, inspect the executable with `--version` before retrying. A forcibly terminated standalone updater can leave a `.a13n-envd-update-*` scratch directory beside the executable; remove that specific directory only after confirming the updater has exited.
+
+Hosts can install another exact version into a separate absolute directory with `--version ... --install-dir ...`, retaining the source installation. `--staging-dir` accepts an existing caller-owned scratch directory for cleanup after an interrupted child process exits. Harness UI uses these options for its version-selected cache. A `.a13n-envd-version` marker pins a managed destination; update it through Harness UI rather than changing the cache entry to another version.
+
+For binaries without `update` support, use the standalone installer above once to install a release with this command. Stop the daemon before that replacement as well. On macOS, follow [Restore macOS permissions after an upgrade](computer-use.md#restore-macos-permissions-after-an-upgrade) only if Envd reports missing permissions; its permission-timeout error includes recovery guidance.
 
 ## Run the sandbox image
 

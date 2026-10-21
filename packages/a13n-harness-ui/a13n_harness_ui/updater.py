@@ -52,15 +52,6 @@ def run_update(command: UpdateCommand) -> None:
         click.echo("Update failed. No automatic retry was attempted.", err=True)
         raise click.exceptions.Exit(result.returncode if result.returncode > 0 else 1)
     click.echo("Update complete. Restart a13n-harness-ui to use the new version.")
-    if sys.platform == "darwin":
-        click.echo(
-            "macOS computer use: Screen Recording and Accessibility permissions may need to be granted again. "
-            "If permissions appear enabled but Envd still reports them missing, remove and re-add the affected "
-            "entry in System Settings > Privacy & Security, then restart Envd and its launcher as needed."
-        )
-        click.echo(
-            "Permission recovery: https://a13n.dev/docs/a13n-envd/computer-use#restore-macos-permissions-after-an-upgrade"
-        )
 
 
 def update() -> None:
