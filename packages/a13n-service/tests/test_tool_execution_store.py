@@ -425,8 +425,10 @@ async def test_whole_codeact_continues_nested_dispatch_after_origin_seals(
                 ),
             )
 
-    def with_codeact(self, agent, *, root=False):
-        return capabilities(self, agent, root=root) + ([ProgramTools(), CodeActCapability()] if root else [])
+    def with_codeact(self, agent, *, retain_tools=False):
+        return capabilities(self, agent, retain_tools=retain_tools) + (
+            [ProgramTools(), CodeActCapability()] if retain_tools else []
+        )
 
     monkeypatch.setattr(Host, "capabilities", with_codeact)
     await runs_kit.pause_sweeps(service)
