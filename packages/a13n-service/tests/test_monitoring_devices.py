@@ -427,11 +427,11 @@ async def test_reverse_initialization_deadline_releases_slot_and_lease(service, 
             request = json.loads(await socket.recv())
             assert request["method"] == "initialize" and "eip_session" not in request
             await asyncio.wait_for(socket.wait_closed(), timeout=3)
+        # Dropping removes the entry before it awaits the lease release.
         async with asyncio.timeout(3):
-            while identity in proxy.entries:
+            while identity in proxy.entries or await service.runtime.redis.get(lease_key(identity)) is not None:
                 await asyncio.sleep(0.01)
         assert not proxy.reverse
-        assert await service.runtime.redis.get(lease_key(identity)) is None
 
 
 async def test_device_history_is_workspace_scoped_and_independent_of_proxy_capacity(service):
