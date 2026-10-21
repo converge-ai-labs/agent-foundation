@@ -54,6 +54,10 @@ from testcontainers.redis import RedisContainer
 
 from .http_support import serve_http
 
+# Real collector interoperability owns explicit native/container prerequisites.
+# Opt in before collection so the ordinary Service suite retains its no-skips contract.
+collect_ignore = [] if os.environ.get("A13N_COLLECTOR_TEST") == "1" else ["test_monitoring_collectors_live.py"]
+
 TEMPLATE = "a13n_template"
 EMAIL = "admin@example.com"
 PASSWORD = "test-password-1234"

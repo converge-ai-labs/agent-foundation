@@ -14,6 +14,8 @@ Service 产生三类观测信号（日志、指标和 trace），并在 PostgreS
 
 日志和指标永不包含凭据、请求或响应体、URL、查询字符串。指标不会标记组织、工作空间或对象；工作空间级数据来自 PostgreSQL。
 
+目标的 CPU、内存、网络和磁盘指标参见[环境监控](environment-monitoring.md)。其数据源和采集链路独立于 Service 自身的遥测。
+
 ## 日志
 
 每个进程默认向 stdout 输出 JSON 日志；设置 `telemetry.log_format = "pretty"` 可输出可读文本。`a13n-service run` 还可写入按大小轮转的 JSON 文件：

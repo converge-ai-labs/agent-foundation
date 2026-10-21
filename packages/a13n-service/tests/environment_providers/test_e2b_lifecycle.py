@@ -359,6 +359,43 @@ async def test_independent_opens_never_resume_or_renew(api):
     assert api.calls == ["attach", "inspect", "attach", "inspect"]
 
 
+@pytest.mark.parametrize("exporter", [True, False])
+async def test_metrics_launch_reaches_only_envd_bootstrap(api, monkeypatch, exporter):
+    import json
+
+    from a13n_service.providers.environment.metrics import MetricsLaunch
+
+    run = AsyncMock()
+    original = api.sandbox
+
+    def sandbox(identifier):
+        result = original(identifier)
+        result.commands = SimpleNamespace(run=run)
+        return result
+
+    monkeypatch.setattr(api, "sandbox", sandbox)
+    monkeypatch.setattr(E2BManagement, "_check_envd", AsyncMock())
+    config = E2BRecipe(execution="envd_http", template="team-envd")
+    values = {"OTEL_EXPORTER_OTLP_METRICS_HEADERS": "authorization=private-write-token"} if exporter else {}
+    metrics = MetricsLaunch(values)
+    async with await E2B.open_provider(credential={"api_key": "test-key"}) as provider:
+        state = await provider.create(config, environment_id="env_metrics", operation_id="create", metrics=metrics)
+        options = run.call_args_list[0].kwargs
+        assert options["envs"].get("OTEL_EXPORTER_OTLP_METRICS_HEADERS") == values.get(
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS"
+        )
+        assert json.loads(options["envs"]["A13N_ENVD_CONFIG_JSON"])["monitoring"] == {"sample_interval_ms": 10_000}
+        if not exporter:
+            assert not any(key.startswith("OTEL_") for key in options["envs"])
+        assert options["envs"]["A13N_ENVD_DEVICE_ID"] == "env_metrics"
+        assert state.state["configuration_fingerprint"] == config.fingerprint
+        assert "private-write-token" not in config.model_dump_json() + state.model_dump_json() + str(api.options)
+        await provider.create(config, environment_id="env_metrics", operation_id="create", state=state, metrics=metrics)
+        await provider.start(config, environment_id="env_metrics", operation_id="start", state=state)
+        assert run.await_count == 2  # One bootstrap and its bounded TCP readiness probe.
+        assert api.calls.count("create") == 1
+
+
 async def test_envd_creation_records_identity_before_bootstrap_failure(api, monkeypatch):
     env = environment(configuration=E2BRecipe(execution="envd_http", desktop=True, template="team-envd"))
     bootstrap = AsyncMock(side_effect=EnvironmentError("Envd unavailable", code="environment_unavailable"))

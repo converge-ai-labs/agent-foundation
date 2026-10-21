@@ -42,6 +42,7 @@ function mount(entry: string) {
                   preferences: <p>Preferences content</p>,
                   members: <p>Workspace members</p>,
                   providers: <p>Workspace providers</p>,
+                  webhooks: <p>Workspace webhooks</p>,
                 }}
               />
             }
@@ -74,6 +75,11 @@ it("lists every scope the reader can reach without a disclosure", () => {
   expect(
     screen.getByRole("link", { name: "Preferences" }).getAttribute("href"),
   ).toBe("/settings/preferences");
+  expect(
+    within(scopes[1] as HTMLElement)
+      .getByRole("link", { name: "Webhooks" })
+      .getAttribute("href"),
+  ).toBe("/workspace/ws_design/settings/webhooks");
 });
 
 it("keeps scope positions fixed when navigating between settings", async () => {

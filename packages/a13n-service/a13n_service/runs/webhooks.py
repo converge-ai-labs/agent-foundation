@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.resources.subscriptions.delivery import RunFacts, Transition, stage_webhooks
+from a13n_service.resources.subscriptions.delivery import Subject, Transition, stage_webhooks
 from a13n_service.resources.subscriptions.schemas import LifecycleKind
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.origin import origins
@@ -55,7 +55,7 @@ async def notify_subscribers(
     await stage_webhooks(
         session,
         runtime.keys,
-        transition.run,
+        transition.subject,
         transition.kinds,
         transition.payload,
         limit=runtime.settings.control.subscriptions,
@@ -72,7 +72,13 @@ def lifecycle_transition(
 ) -> Transition:
     """Capture the lifecycle payload after applying the transition."""
     return Transition(
-        RunFacts(run.workspace_id, run.agent_id, run.session_id, run.thread_id),
+        Subject(
+            run.workspace_id,
+            run.agent_id,
+            run.session_id,
+            run.thread_id,
+            schedule_origin.schedule_id if schedule_origin is not None else None,
+        ),
         kinds,
         {
             "occurred_at": at.isoformat(),

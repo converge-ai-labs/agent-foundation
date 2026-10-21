@@ -9,6 +9,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 
+from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
 from PIL import Image, ImageGrab
 
 from a13n_harness_ui.input_images import MAX_IMAGE_BYTES, image_bytes
@@ -18,6 +19,7 @@ from a13n_harness_ui.thread_files import MAX_ATTACHMENTS, MAX_INPUT_BYTES, Attac
 def read_image(path: Path) -> AttachmentUpload:
     if not path.is_file():
         raise ValueError("Attach a regular image file.")
+    check_local_file_read(path)
     with path.open("rb") as stream:
         data = stream.read(MAX_IMAGE_BYTES + 1)
     return image_bytes(path.name, data)
@@ -26,6 +28,7 @@ def read_image(path: Path) -> AttachmentUpload:
 def read_attachment(path: Path) -> AttachmentUpload:
     if not path.is_file():
         raise ValueError("Attach a regular file.")
+    check_local_file_read(path)
     with path.open("rb") as stream:
         data = stream.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:

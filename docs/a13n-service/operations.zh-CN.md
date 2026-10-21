@@ -22,6 +22,18 @@ a13n-service --config service.toml run --role worker
 
 每个 worker 最多执行 `worker.slots` 个尝试。Worker 崩溃后，租约过期时另一 worker 在新尝试中从最后检查点继续运行；消耗 `worker.max_attempts` 次计费尝试后运行失败。关闭时，worker 停止领取任务，并最多等待 `worker.drain_seconds` 以便通过检查点交接。外部副作用不会自动回滚，也不保证可安全重复。
 
+## 环境监控采集器
+
+可选的 vmagent 和 Grafana Alloy 集成运行于 `all` 或 `control`，每个采集器只配置一个写入进程。Worker 不同步采集器配置。启用 `writer = true` 前先完成[采集器初始化](environment-monitoring.md#bootstrap-an-optional-collector)；其他 API 副本以 `writer = false` 公布该采集器。
+
+替换写入进程时，采集器和新旧写入进程必须共享受保护的配置目录。备份运维管理的转发配置及凭据，保护级别与其他部署密钥相同。Service 根据当前环境绑定重新生成自己的片段。
+
+修改后检查环境的采集器状态、采集器的活动目标，以及查询后端的新鲜样本。`reload_requested` 只确认重载请求已被接受。外部模式下，在停止写入进程或禁用监控之前移除托管片段并重载采集器；停止 Service 不会停用已加载的抓取任务。
+
+可选的 Helm 托管 vmagent 将专用写入进程和采集器放在同一个 Recreate Pod 中，使用回环监听器和保留的队列 PVC。普通 control 副本可独立扩缩容。先解除绑定或禁用数据源并确认目标移除，再排空待写入数据，最后关闭托管部署。替换 Pod 时清除过期采集任务并保留队列。强制替换前先隔离失联节点；RWO 和文件锁不能替代分布式节点隔离。监控队列容量，在数据交付或明确决定丢弃之前保留 PVC。详见 [Helm 生命周期指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors)。
+
+预设设置和令牌在进程启动时加载。轮换部署令牌后，重启普通 control Pod，并明确替换已保存数据源的凭据。移除预设或允许列表项只影响后续确认操作，不会在后端撤销已保存的凭据。
+
 ## Schema 迁移
 
 ```sh

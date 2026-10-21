@@ -5,11 +5,15 @@ from typing import Protocol
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
+from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.tenancy import runtime
 
 
 class Runtime(runtime.Runtime, Protocol):
+    @property
+    def metrics_queries(self) -> Queries: ...
+
     @property
     def registry(self) -> Registry: ...
 

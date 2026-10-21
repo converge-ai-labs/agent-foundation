@@ -22,6 +22,7 @@ from a13n_service.runs.accept import advance
 from a13n_service.runs.attempts import Lease, lock_thread_lease
 from a13n_service.runs.desktop_assistance import service as desktop_assistance
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schedules.completion import complete as complete_occurrence
 from a13n_service.runs.schemas import Failure, Outcome, Sealed
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
 from a13n_service.runs.usage import totals
@@ -142,6 +143,7 @@ async def seal(
             target={"thread_id": thread.origin_thread_id, "origin_run_id": thread.origin_run_id},
             payload={"child_run_id": run.id},
         )
+    await complete_occurrence(session, runtime, thread, run, at)
     await notify_subscribers(session, runtime, run, kinds, at=at, attempt=attempt)
     await checkpoints.reclaim(session, run)
 

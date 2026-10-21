@@ -161,6 +161,7 @@ name = "a13n-service"
 version = "0.0.0"
 source = { editable = "../../packages/a13n-service" }
 dependencies = [
+    { name = "a13n-envd-client" },
     { name = "a13n-harness", extra = ["e2b"] },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
@@ -184,8 +185,10 @@ dependencies = [
     { name = "mcp" },
     { name = "modal" },
     { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-common" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-exporter-prometheus" },
+    { name = "opentelemetry-proto" },
     { name = "opentelemetry-sdk" },
     { name = "packaging" },
     { name = "prometheus-client" },
@@ -206,6 +209,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a13n-envd-client", editable = "../../packages/a13n-envd-client" },
     { name = "a13n-harness", extras = ["e2b"], editable = "../../packages/a13n-harness" },
     { name = "a13n-logging", editable = "../../packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "../../packages/a13n-stream-protocol" },
@@ -229,8 +233,10 @@ requires-dist = [
     { name = "mcp", specifier = ">=2.2,<3" },
     { name = "modal", specifier = ">=1.5.5,<2" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
+    { name = "opentelemetry-exporter-otlp-proto-common", specifier = ">=1.39,<2" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39,<2" },
     { name = "opentelemetry-exporter-prometheus", specifier = ">=0.60b0,<1" },
+    { name = "opentelemetry-proto", specifier = ">=1.39,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "packaging", specifier = ">=24,<27" },
     { name = "prometheus-client", specifier = ">=0.21,<1" },

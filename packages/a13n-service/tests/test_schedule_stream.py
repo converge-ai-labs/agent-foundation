@@ -38,6 +38,7 @@ async def history_item(service, schedule, *, status="skipped", key="history"):  
         row = await session.get_one(ScheduleRow, schedule["id"], with_for_update=True)
         item = await lifecycle.occurrence(
             session,
+            service.runtime,
             row,
             await now(session),
             trigger="manual",
@@ -116,7 +117,7 @@ async def test_occurrences_are_not_limited_to_recent_history_and_reconnect_keeps
             }
             async with transaction(service.runtime.storage) as session:
                 row = await session.get_one(ScheduleRow, schedule["id"], with_for_update=True)
-                await lifecycle.cancel_pending(session, row, await now(session), "schedule_paused")
+                await lifecycle.cancel_pending(session, service.runtime, row, await now(session), "schedule_paused")
             frames = await runs_kit.until(
                 stream, lambda frame: frame[0] == "occurrence" and frame[2]["occurrence"]["id"] == pending_id
             )

@@ -11,6 +11,7 @@ dependencies = [
     "e2b>=2.46.4,<3",
     "modal>=1.5.5,<2",
     "a13n-logging",
+    "a13n-envd-client",
     "a13n-harness[e2b]",
     "a13n-stream-protocol",
     "ag-ui-protocol>=1.0.0,<2",
@@ -29,7 +30,9 @@ dependencies = [
     "jsonschema-path>=0.5,<0.6",
     "mcp>=2.2,<3",
     "opentelemetry-api>=1.39,<2",
+    "opentelemetry-exporter-otlp-proto-common>=1.39,<2",
     "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
+    "opentelemetry-proto>=1.39,<2",
     "opentelemetry-exporter-prometheus>=0.60b0,<1",
     "opentelemetry-sdk>=1.39,<2",
     "packaging>=24,<27",
@@ -92,6 +95,7 @@ known_first_party = ["a13n_service"]
 package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "fastmcp-slim" = "fastmcp", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
+a13n-envd-client = ">=0.4.1,<0.5.0"
 a13n-logging = ">=0.2.0,<0.3.0"
 a13n-harness = ">=0.13.0,<0.14.0"
 a13n-stream-protocol = ">=0.13.0,<0.14.0"

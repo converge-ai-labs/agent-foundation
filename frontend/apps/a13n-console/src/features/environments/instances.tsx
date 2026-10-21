@@ -47,6 +47,7 @@ import {
 import instanceStyles from "./environments.module.css";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
+import { MetricsSourcePicker } from "../monitoring/environment";
 
 const STATUSES = [
   "reserved",
@@ -292,6 +293,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
         environmentTemplates(client, workspace.id, signal, cursor),
       ),
   });
+  const [metricsSource, setMetricsSource] = useState("");
   const [kind, setKind] = useState("managed"),
     [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
@@ -304,11 +306,13 @@ function EnvironmentForm({ close }: { close: () => void }) {
         if (!templateId) throw new Error(t("Select an environment template."));
         return createManagedEnvironment(client, workspace.id, {
           template_id: templateId,
+          metrics_data_source_id: metricsSource || null,
           ...named,
         });
       }
       const body: Schema["ExternalTargetCreate"] = {
         endpoint: endpoint.trim(),
+        metrics_data_source_id: metricsSource || null,
         token,
         ...named,
       };
@@ -424,6 +428,11 @@ function EnvironmentForm({ close }: { close: () => void }) {
           </FormField>
         </>
       )}
+      <MetricsSourcePicker
+        value={metricsSource}
+        onChange={setMetricsSource}
+        external={kind === "external"}
+      />
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

@@ -208,6 +208,26 @@ The Service exports the Harness spans of every attempt to one trace backend and 
 
 `telemetry.trace_content` (`none`, `standard` or `full`) chooses how much prompt, output and tool content leaves the deployment with the spans; see [Harness observation](../a13n-harness/observation.md). `trace_query_timeout` bounds one backend query.
 
+## Environment monitoring
+
+`monitoring.enabled` defaults to `true`; each environment still needs an explicit metrics data source. For temporary history without a separate collector, select **Local Cache**. For pull collection, configure `monitoring.collectors.vmagent` or `monitoring.collectors.alloy`, then create and select a pull data source in Console. The collector map is empty by default.
+
+Each collector entry requires an absolute shared `directory` and an HTTP(S) reload `endpoint`. Set `writer = true` on exactly one `all` or `control` process per collector; the default is `false`. Optional `headers` authenticate reload requests. For a trusted plaintext reload endpoint, `allow_http_reload = true` permits only that collector's origin without changing target/query endpoint policy; managed Helm mode sets it for Pod loopback. Alloy also requires `receiver`, naming an existing receiver expression. Protect settings containing credentials. The environment-variable equivalent is the JSON map `A13N_MONITORING__COLLECTORS`.
+
+Follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector) for directory mounts, permissions, collector configuration and verification. The Helm chart can supply a managed vmagent and singleton writer through `monitoring.vmagent.enabled`; external vmagent and Alloy remain operator-installed. Storage and retention stay external. Configure a data source's Prometheus HTTP query endpoint separately for historical dashboards.
+
+To offer an explicit administrator-confirmed preset, configure:
+
+```toml
+[monitoring.deployment_preset]
+name = "Deployment metrics"
+collector = "vmagent"
+query_endpoint = "https://metrics.example.com"
+workspace_ids = ["ws_example"]
+```
+
+The selected collector must already be configured. An empty workspace list exposes no preset. `A13N_MONITORING__DEPLOYMENT_PRESET` accepts this whole object as JSON. Supply an optional read token separately through the protected `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` setting. The token must be nonempty printable ASCII without whitespace. Restart control processes to load settings changes. Confirmation creates a workspace data source and optionally snapshots the credential; later configuration changes never rewrite existing sources or environment bindings. See [preset confirmation](environment-monitoring.md#confirm-a-deployment-preset) for destination checks and rotation.
+
 ## Nested bounds
 
 Startup also validates related limits together: leases must cover authority and object-store calls; shutdown must cover worker drain; request and inbox budgets must fit uploads and child output; environment scans must renew hosted sandboxes in time. If you change these limits, check the startup validation error before widening individual timeouts.

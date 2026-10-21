@@ -48,6 +48,47 @@ With `objects.backend: local`, every Service Pod mounts the claim `a13n-a13n-obj
 
 Control and Worker Pods serve Prometheus metrics at `/metrics` on the container port `metrics` (`metrics.port`, 9464 by default), set as `A13N_TELEMETRY__METRICS_PORT` so a `[telemetry]` section in `extraConfig` still applies. No Service or Ingress exposes that port. The Pods carry `prometheus.io` scrape annotations, and `metrics.podMonitor.enabled` adds a PodMonitor for the Prometheus or VictoriaMetrics operator, carrying `metrics.podMonitor.labels`. `metrics.enabled: false` turns metrics off. The [monitoring bundle](../monitoring/README.md) holds alert rules and dashboards for these metrics.
 
+### Environment monitoring collectors
+
+The PodMonitor above observes ordinary Service processes. Environment monitoring has an optional **vmagent** deployment, disabled by default. It collects and forwards samples to your existing backend; storage, retention and PromQL remain backend responsibilities.
+
+For a Prometheus server started with `--web.enable-remote-write-receiver`, add:
+
+```yaml
+monitoring:
+  vmagent:
+    enabled: true
+    prometheusUrl: https://prometheus.example.com
+  deploymentPreset:
+    enabled: true
+    workspaceIds: [ws_example]
+```
+
+`prometheusUrl` derives the write URL by appending `/api/v1/write` and supplies the preset's query base. For other backends or separate write/query gateways, set `monitoring.vmagent.remoteWriteUrl` to the complete ingestion URL and `monitoring.deploymentPreset.queryEndpoint` to the base before `/api/v1/query`. An explicit write URL takes precedence. The chart never derives ingestion from `queryEndpoint`.
+
+Keep secrets in existing Kubernetes Secrets, not values files:
+
+```yaml
+monitoring:
+  vmagent:
+    remoteWriteBearerTokenSecret: {name: metrics-write, key: token}
+    remoteWriteCASecret: {name: metrics-write-ca, key: ca.crt}
+  deploymentPreset:
+    queryBearerTokenSecret: {name: metrics-read, key: token}
+```
+
+The write token and optional CA are mounted only into vmagent. The read token is an environment variable only on ordinary control Pods. Use backend-scoped read credentials: workspace allowlisting controls who can confirm the preset, while query labels do not restrict arbitrary PromQL. Secret value changes do not change Pod templates. Restart control Pods after rotating the preset token; saved sources retain their encrypted credential snapshots and need explicit replacement. vmagent rereads its token file; roll the monitoring Pod after CA changes and verify delivery.
+
+In Console, an administrator in an allowed workspace opens **Add data source**, reviews the prefilled collection/query settings, and saves explicitly. Inheriting the deployment read credential requires a separate opt-in, initially **No**. Editing the query destination clears that consent. No data source or environment binding is created by deployment; obtain workspace IDs after bootstrapping and update the allowlist if needed. See [deployment presets](../../docs/a13n-service/environment-monitoring.md#confirm-a-deployment-preset).
+
+Managed mode creates one `<release>-a13n-monitoring` Deployment using `Recreate`: a full Service control process writes mode-0600 fragments and vmagent reads them under UID 10001. Both HTTP listeners bind to Pod loopback; the Pod has no public Service, ingress or autoscaler. Ordinary control/worker Pods use `writer=false`. The dedicated process still needs the deployment's database, Redis, object storage and provider settings. Configure its budget with `monitoring.vmagent.writerResources`; vmagent has separate `resources` and image tag/digest values.
+
+A retained ReadWriteOnce PVC holds fragments and the remote-write queue. Set `monitoring.vmagent.persistence.existingClaim` to reuse a claim, or configure its storage class and size. The default is 10 GiB with an 8 GiB per-destination queue cap. Leave room for queue chunks and filesystem overhead; monitor pending data and disk use. A full queue can drop old data. Replacement Pods clear stale scrape jobs before discovery but preserve queued samples and the lock inode. The storage must support POSIX locks and atomic rename. Recreate and RWO are not node fencing: fence a lost node before forcing replacement to avoid duplicate writers/scrapers.
+
+To retire collection, disable or unbind the source while the writer runs, verify its targets disappear, and let pending remote-write data drain before disabling `monitoring.vmagent.enabled`. Disabling or uninstalling stops both containers and retains the PVC, including pending data. Re-enabling with the same claim and write destination resumes that queue. A changed destination has its own queue; drain the old destination before changing it. Delete the retained claim only after deciding queued data is no longer needed.
+
+With managed mode disabled, external **vmagent** and **Grafana Alloy** integrations remain available through [operator bootstrap](../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector). Supply shared directory mounts through deployment-owned manifests, exactly one writer and non-writing API replicas. Managed mode owns the entire `A13N_MONITORING__COLLECTORS` map and enables monitoring; it does not merge an external Alloy map from `extraConfig` or `existingSecret`. Use external mode for custom combined pipelines. Native OTLP export and Local Cache remain available independently.
+
 ## Configuration and secrets
 
 The Chart renders `service.toml` from values: `[server]` (including `publicUrl` and `trustedProxies`), `[database]`, `[objects]` and, with bundled Redis, `[redis]`. `extraConfig` appends other non-secret sections such as `[providers]` or `[telemetry]`. The Secret named by `existingSecret` supplies credentials as Service settings, `A13N_<SECTION>__<FIELD>`, which override the file. Unknown `A13N_` variables stop the Service, so Pods disable Kubernetes service-link variables. See the [configuration reference](../../docs/a13n-service/configuration-reference.md).
@@ -183,4 +224,4 @@ helm template a13n deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm
 
 Rendering checks template output, not image availability, credentials, storage or rollout behavior.
 
-Uninstalling does not delete the retained objects claim, the PostgreSQL and Redis StatefulSet claims, or external resources. Record retained claim names before uninstalling; `persistence.existingClaim` reuses an objects claim in a later installation. Do not delete PVCs to resolve startup failures.
+Uninstalling does not delete the retained objects or monitoring claims, the PostgreSQL and Redis StatefulSet claims, or external resources. Record retained claim names before uninstalling; `persistence.existingClaim` reuses an objects claim in a later installation. Do not delete PVCs to resolve startup failures.

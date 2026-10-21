@@ -13,6 +13,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, Se
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.providers import envd
+from a13n_service.resources.metrics_data_sources.schemas import Labels
 
 # Desired mounts one thread holds at most; a run freezes them, plus a primary sandbox its agent reserves.
 MAX_MOUNTS = 32
@@ -71,6 +72,17 @@ class EnvironmentFailure(BaseModel):
     at: datetime
 
 
+class MetricsApplication(BaseModel):
+    """The frozen sampler/exporter selection; applied_at confirms creation, not delivery."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    source_id: str
+    source_version: int
+    collection: Literal["native", "proxy", "pull"]
+    sample_interval_ms: int
+    applied_at: datetime | None = None
+
+
 class EnvironmentView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -84,6 +96,9 @@ class EnvironmentView(BaseModel):
     endpoint: str | None
     owner_principal_id: str | None
     name: str
+    metrics_data_source_id: str | None = None
+    metrics_labels: Labels = Field(default_factory=dict)
+    metrics_application: MetricsApplication | None = None
     status: str
     operation_id: str | None
     operation_started_at: datetime | None
@@ -105,6 +120,8 @@ class ManagedEnvironmentCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     template_id: ObjectId
+    metrics_data_source_id: ObjectId | None = None
+    metrics_labels: Labels = Field(default_factory=dict)
     # Defaults to the template's name.
     name: EnvironmentName | None = None
 
@@ -115,6 +132,8 @@ class ExternalTargetCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     endpoint: EnvdEndpoint
     token: EnvdToken
+    metrics_data_source_id: ObjectId | None = None
+    metrics_labels: Labels = Field(default_factory=dict)
     # Defaults to the device ID the daemon states.
     name: EnvironmentName | None = None
 

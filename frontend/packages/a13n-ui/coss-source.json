@@ -39,6 +39,7 @@
     "ui/tooltip.tsx"
   ],
   "localChanges": [
+    "Calendar navigation buttons stay beside the caption when using the accessible around layout.",
     "Named media queries match Tailwind's breakpoints; exclusive upper bounds keep mobile and desktop queries complementary at fractional viewport widths.",
     "Select and Combobox selection checks sit at the trailing edge, with rounded 32px option rows; downward chevrons and below-trigger positioning clarify selection.",
     "Fieldset legends and sheet and popover titles use medium font weight; dialog and empty-state titles use semibold.",

@@ -23,10 +23,12 @@ from a13n_envd_client.eip.v1 import (
 )
 from a13n_envd_client.eip.v1.models import (
     CommandEnvironment,
+    ConnectionMetrics,
     ContentDigest,
     CpuTimeSeconds,
     DeviceMetricsParams,
     DeviceMetricsResult,
+    DiskMetrics,
     EIPCallContext,
     EIPError,
     EIPLimits,
@@ -41,7 +43,9 @@ from a13n_envd_client.eip.v1.models import (
     FileSearchResult,
     FileStatParams,
     FileStatResult,
+    FilesystemInventory,
     InitializeParams,
+    NetworkMetrics,
     OutputInfo,
     OutputReadParams,
     ProcessWriteStdinParams,
@@ -130,6 +134,31 @@ def test_monitoring_cpu_seconds_reject_invalid_floats(value: float) -> None:
 def test_monitoring_percentages_preserve_fractional_values(value: float) -> None:
     model = SystemMetrics(cpu_busy_percent=value)
     assert decode_model(encode_model(model), SystemMetrics).cpu_busy_percent == value
+
+
+@pytest.mark.parametrize(
+    "model,field,maximum,entry,other",
+    [
+        (NetworkMetrics, "interfaces", 64, {"identity": "if-1"}, {"truncated": False}),
+        (DiskMetrics, "devices", 64, {"identity": "disk-1"}, {"truncated": False}),
+        (FilesystemInventory, "filesystems", 16, {}, {"truncated": False}),
+        (ConnectionMetrics, "tcp_states", 16, 0, {}),
+    ],
+)
+def test_monitoring_inventory_bounds_apply_to_models_and_wire(model, field, maximum, entry, other):
+    for size in (0, maximum):
+        value = {**other, field: {str(i): entry for i in range(size)}}
+        parsed = decode_model(json.dumps(value), model)
+        assert decode_model(encode_model(parsed), model) == parsed
+    value[field]["overflow"] = entry
+    with pytest.raises(ValidationError):
+        decode_model(json.dumps(value), model)
+    with pytest.raises(ValidationError):
+        model.model_validate(value)
+    # Mutation bypasses Pydantic assignment validation, but the codec must revalidate.
+    parsed.__dict__[field]["overflow"] = next(iter(parsed.__dict__[field].values()))
+    with pytest.raises(ValidationError):
+        encode_model(parsed)
 
 
 def test_generated_surface_covers_eip_v1() -> None:

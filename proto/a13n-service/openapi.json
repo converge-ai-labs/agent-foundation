@@ -2836,6 +2836,27 @@
         "title": "CallbackOutcome",
         "type": "object"
       },
+      "Capabilities": {
+        "properties": {
+          "collectors": {
+            "items": {
+              "$ref": "#/components/schemas/CollectorCapability"
+            },
+            "title": "Collectors",
+            "type": "array"
+          },
+          "proxy": {
+            "title": "Proxy",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "proxy",
+          "collectors"
+        ],
+        "title": "Capabilities",
+        "type": "object"
+      },
       "CatalogIndex": {
         "properties": {
           "items": {
@@ -3036,6 +3057,181 @@
         ],
         "type": "string"
       },
+      "CgroupMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu_max": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CpuLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cpu_periods_total": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Periods Total"
+          },
+          "cpu_system_usec": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu System Usec"
+          },
+          "cpu_throttled_periods_total": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Throttled Periods Total"
+          },
+          "cpu_throttled_usec": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Throttled Usec"
+          },
+          "cpu_usage_usec": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Usage Usec"
+          },
+          "cpu_user_usec": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu User Usec"
+          },
+          "io": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory_current_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Current Bytes"
+          },
+          "memory_events": {
+            "$ref": "#/components/schemas/MemoryEvents"
+          },
+          "memory_max": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pids_current": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Current"
+          },
+          "pids_limit": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Limit"
+          },
+          "pids_unlimited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pids Unlimited"
+          },
+          "pressure": {
+            "$ref": "#/components/schemas/Pressures"
+          }
+        },
+        "required": [
+          "memory_events",
+          "pressure"
+        ],
+        "title": "CgroupMetrics",
+        "type": "object"
+      },
       "ChangeCountTrigger": {
         "additionalProperties": false,
         "properties": {
@@ -3158,6 +3354,103 @@
           "parameters_json_schema"
         ],
         "title": "ClientToolDefinition",
+        "type": "object"
+      },
+      "Collection": {
+        "enum": [
+          "native",
+          "pull",
+          "proxy",
+          "external"
+        ],
+        "type": "string"
+      },
+      "Collector": {
+        "enum": [
+          "vmagent",
+          "alloy"
+        ],
+        "type": "string"
+      },
+      "CollectorCapability": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Collector"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_configured",
+                  "monitoring_disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "kind",
+          "available"
+        ],
+        "title": "CollectorCapability",
+        "type": "object"
+      },
+      "CollectorStatus": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "collector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Collector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/State"
+              },
+              {
+                "enum": [
+                  "not_selected",
+                  "not_configured",
+                  "pending",
+                  "failed",
+                  "unavailable",
+                  "capacity"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "State"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CollectorStatus",
         "type": "object"
       },
       "Completion": {
@@ -3310,6 +3603,49 @@
           "subagent_count"
         ],
         "title": "ConfigSummary",
+        "type": "object"
+      },
+      "Configuration": {
+        "additionalProperties": false,
+        "properties": {
+          "collection": {
+            "$ref": "#/components/schemas/Collection"
+          },
+          "collector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Collector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Export"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "query": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Query"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "title": "Configuration",
         "type": "object"
       },
       "Connection": {
@@ -3566,6 +3902,49 @@
           "code"
         ],
         "title": "ConnectionFailure",
+        "type": "object"
+      },
+      "ConnectionMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "tcp_states": {
+            "additionalProperties": {
+              "maximum": 1.8446744073709552e+19,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxProperties": 16,
+            "title": "Tcp States",
+            "type": "object"
+          },
+          "tcp_total": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tcp Total"
+          },
+          "udp_sockets": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Udp Sockets"
+          }
+        },
+        "title": "ConnectionMetrics",
         "type": "object"
       },
       "ConnectionPage": {
@@ -4164,6 +4543,126 @@
         "title": "Control",
         "type": "object"
       },
+      "CpuLimit": {
+        "discriminator": {
+          "mapping": {
+            "limited": "#/components/schemas/LimitedCpuLimit",
+            "unlimited": "#/components/schemas/UnlimitedCpuLimit"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UnlimitedCpuLimit"
+          },
+          {
+            "$ref": "#/components/schemas/LimitedCpuLimit"
+          }
+        ]
+      },
+      "CpuTimeSeconds": {
+        "additionalProperties": false,
+        "properties": {
+          "idle": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idle"
+          },
+          "iowait": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iowait"
+          },
+          "irq": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irq"
+          },
+          "nice": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nice"
+          },
+          "softirq": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Softirq"
+          },
+          "steal": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steal"
+          },
+          "system": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User"
+          }
+        },
+        "title": "CpuTimeSeconds",
+        "type": "object"
+      },
       "CreatedSubscription": {
         "properties": {
           "created_at": {
@@ -4250,6 +4749,22 @@
         "title": "CredentialMode",
         "type": "string"
       },
+      "Credentials": {
+        "additionalProperties": false,
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            "title": "Headers",
+            "type": "object"
+          }
+        },
+        "title": "Credentials",
+        "type": "object"
+      },
       "CronSchedule": {
         "additionalProperties": false,
         "properties": {
@@ -4279,6 +4794,68 @@
         "title": "CronSchedule",
         "type": "object"
       },
+      "DaemonMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "connections": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Connections",
+            "type": "integer"
+          },
+          "processes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processes"
+          },
+          "retained_output_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retained Output Bytes"
+          },
+          "sessions": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "transfers": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfers"
+          }
+        },
+        "required": [
+          "sessions",
+          "connections"
+        ],
+        "title": "DaemonMetrics",
+        "type": "object"
+      },
       "DailyUsage": {
         "properties": {
           "date": {
@@ -4295,6 +4872,419 @@
           "usage"
         ],
         "title": "DailyUsage",
+        "type": "object"
+      },
+      "Dashboard": {
+        "properties": {
+          "builtin": {
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/DashboardConfig"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by_id": {
+            "title": "Updated By Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "name",
+          "config",
+          "builtin",
+          "version",
+          "created_by_id",
+          "updated_by_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Dashboard",
+        "type": "object"
+      },
+      "DashboardConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "panels": {
+            "items": {
+              "$ref": "#/components/schemas/Panel"
+            },
+            "maxItems": 24,
+            "title": "Panels",
+            "type": "array"
+          },
+          "range_seconds": {
+            "default": 3600,
+            "maximum": 7776000.0,
+            "minimum": 60.0,
+            "title": "Range Seconds",
+            "type": "integer"
+          },
+          "refresh_seconds": {
+            "default": 30,
+            "enum": [
+              0,
+              10,
+              30,
+              60,
+              300
+            ],
+            "title": "Refresh Seconds",
+            "type": "integer"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "title": "DashboardConfig",
+        "type": "object"
+      },
+      "DashboardCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/DashboardConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "config"
+        ],
+        "title": "DashboardCreate",
+        "type": "object"
+      },
+      "DashboardPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Dashboard"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "DashboardPage",
+        "type": "object"
+      },
+      "DashboardUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DashboardConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "DashboardUpdate",
+        "type": "object"
+      },
+      "DataSource": {
+        "properties": {
+          "builtin": {
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/Configuration"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "has_export_credentials": {
+            "title": "Has Export Credentials",
+            "type": "boolean"
+          },
+          "has_query_credentials": {
+            "title": "Has Query Credentials",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by_id": {
+            "title": "Updated By Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "name",
+          "config",
+          "enabled",
+          "builtin",
+          "has_export_credentials",
+          "has_query_credentials",
+          "version",
+          "created_by_id",
+          "updated_by_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DataSource",
+        "type": "object"
+      },
+      "DataSourceCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/Configuration"
+          },
+          "deployment_preset_revision": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Preset Revision"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "export_credentials": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Credentials"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "query_credentials": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Credentials"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "use_deployment_query_credentials": {
+            "default": false,
+            "title": "Use Deployment Query Credentials",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "config"
+        ],
+        "title": "DataSourceCreate",
+        "type": "object"
+      },
+      "DataSourcePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataSource"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "DataSourcePage",
+        "type": "object"
+      },
+      "DataSourceUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Configuration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "export_credentials": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Credentials"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "query_credentials": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Credentials"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "DataSourceUpdate",
         "type": "object"
       },
       "Definition": {
@@ -4464,6 +5454,378 @@
           "action"
         ],
         "title": "Deny",
+        "type": "object"
+      },
+      "DeploymentPreset": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/Configuration"
+          },
+          "has_query_credentials": {
+            "title": "Has Query Credentials",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "config",
+          "has_query_credentials",
+          "revision"
+        ],
+        "title": "DeploymentPreset",
+        "type": "object"
+      },
+      "Device": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "name",
+          "device_id",
+          "enabled",
+          "metrics_data_source_id",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Device",
+        "type": "object"
+      },
+      "DeviceCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "device_id": {
+            "minLength": 1,
+            "title": "Device Id",
+            "type": "string"
+          },
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "device_id"
+        ],
+        "title": "DeviceCreate",
+        "type": "object"
+      },
+      "DeviceCredential": {
+        "properties": {
+          "device": {
+            "$ref": "#/components/schemas/Device"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device",
+          "token"
+        ],
+        "title": "DeviceCredential",
+        "type": "object"
+      },
+      "DevicePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Device"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "DevicePage",
+        "type": "object"
+      },
+      "DeviceUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "DeviceUpdate",
+        "type": "object"
+      },
+      "DiskIoMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "busy_time_ms": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Busy Time Ms"
+          },
+          "identity": {
+            "maxLength": 128,
+            "title": "Identity",
+            "type": "string"
+          },
+          "in_progress": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Progress"
+          },
+          "read_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Bytes"
+          },
+          "read_operations": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Operations"
+          },
+          "read_time_ms": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Time Ms"
+          },
+          "weighted_time_ms": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weighted Time Ms"
+          },
+          "write_operations": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Operations"
+          },
+          "write_time_ms": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Write Time Ms"
+          },
+          "written_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Bytes"
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "title": "DiskIoMetrics",
+        "type": "object"
+      },
+      "DiskMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "devices": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DiskIoMetrics"
+            },
+            "maxProperties": 64,
+            "title": "Devices",
+            "type": "object"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "truncated"
+        ],
+        "title": "DiskMetrics",
         "type": "object"
       },
       "EmailChangeConfirm": {
@@ -5183,6 +6545,97 @@
         "title": "EnvironmentProviderReferences",
         "type": "object"
       },
+      "EnvironmentQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "minimum": 0.0,
+            "title": "End",
+            "type": "number"
+          },
+          "history": {
+            "default": "configured",
+            "enum": [
+              "configured",
+              "temporary"
+            ],
+            "title": "History",
+            "type": "string"
+          },
+          "include_snapshot": {
+            "default": false,
+            "title": "Include Snapshot",
+            "type": "boolean"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system_cpu_busy_ratio",
+                  "system_memory_used_bytes",
+                  "cgroup_memory_current_bytes",
+                  "system_memory_total_bytes",
+                  "system_memory_available_bytes",
+                  "system_memory_cache_bytes",
+                  "system_memory_wired_bytes",
+                  "system_memory_compressed_bytes",
+                  "system_swap_used_bytes",
+                  "system_swap_total_bytes",
+                  "system_commit_total_bytes",
+                  "system_commit_limit_bytes",
+                  "system_processes",
+                  "system_threads",
+                  "system_handles",
+                  "cgroup_pids_current",
+                  "tcp_connections",
+                  "udp_sockets",
+                  "daemon_sessions",
+                  "daemon_processes",
+                  "daemon_connections",
+                  "daemon_transfers",
+                  "daemon_retained_output_bytes"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "network_received_bytes_per_second",
+                  "network_transmitted_bytes_per_second",
+                  "disk_read_bytes_per_second",
+                  "disk_written_bytes_per_second",
+                  "disk_read_operations_per_second",
+                  "disk_write_operations_per_second",
+                  "cgroup_io_read_bytes_per_second",
+                  "cgroup_io_written_bytes_per_second",
+                  "cgroup_io_read_operations_per_second",
+                  "cgroup_io_write_operations_per_second"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Metric"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          },
+          "step": {
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Step",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "step",
+          "metric"
+        ],
+        "title": "EnvironmentQuery",
+        "type": "object"
+      },
       "EnvironmentUpdate": {
         "additionalProperties": false,
         "description": "Fields left out stay unchanged. Only an external target has an endpoint and token; a new endpoint comes with\nits token, so a stored token never reaches an endpoint it was not entered for.",
@@ -5290,6 +6743,41 @@
               }
             ],
             "title": "Last Used At"
+          },
+          "metrics_application": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricsApplication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "metrics_labels": {
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 128
+            },
+            "title": "Metrics Labels",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -5497,6 +6985,76 @@
         "title": "Evidence",
         "type": "object"
       },
+      "Export": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "interval_seconds": {
+            "default": 30,
+            "maximum": 300.0,
+            "minimum": 5.0,
+            "title": "Interval Seconds",
+            "type": "integer"
+          },
+          "protocol": {
+            "default": "http/protobuf",
+            "enum": [
+              "http/protobuf",
+              "grpc"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "title": "Export",
+        "type": "object"
+      },
+      "ExportHealth": {
+        "properties": {
+          "dropped": {
+            "default": 0,
+            "title": "Dropped",
+            "type": "integer"
+          },
+          "exported": {
+            "default": 0,
+            "title": "Exported",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "queued": {
+            "default": 0,
+            "title": "Queued",
+            "type": "integer"
+          }
+        },
+        "title": "ExportHealth",
+        "type": "object"
+      },
       "ExternalTargetCreate": {
         "additionalProperties": false,
         "description": "An envd daemon someone runs, registered by its endpoint and the token it accepts.",
@@ -5506,6 +7064,33 @@
             "minLength": 1,
             "title": "Endpoint",
             "type": "string"
+          },
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "metrics_labels": {
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 128
+            },
+            "title": "Metrics Labels",
+            "type": "object"
           },
           "name": {
             "anyOf": [
@@ -5597,6 +7182,114 @@
           "message"
         ],
         "title": "FailureSummary",
+        "type": "object"
+      },
+      "FilesystemInventory": {
+        "additionalProperties": false,
+        "properties": {
+          "filesystems": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FilesystemObservation"
+            },
+            "maxProperties": 16,
+            "title": "Filesystems",
+            "type": "object"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "truncated"
+        ],
+        "title": "FilesystemInventory",
+        "type": "object"
+      },
+      "FilesystemMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "available_bytes": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Available Bytes",
+            "type": "integer"
+          },
+          "available_inodes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Inodes"
+          },
+          "free_bytes": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Free Bytes",
+            "type": "integer"
+          },
+          "free_inodes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Inodes"
+          },
+          "total_bytes": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "total_inodes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Inodes"
+          }
+        },
+        "required": [
+          "total_bytes",
+          "available_bytes",
+          "free_bytes"
+        ],
+        "title": "FilesystemMetrics",
+        "type": "object"
+      },
+      "FilesystemObservation": {
+        "additionalProperties": false,
+        "properties": {
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilesystemMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "FilesystemObservation",
         "type": "object"
       },
       "Finding": {
@@ -6325,6 +8018,77 @@
         "title": "HeadersCredential",
         "type": "object"
       },
+      "History": {
+        "properties": {
+          "available_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available From"
+          },
+          "available_until": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Until"
+          },
+          "inventory_truncated": {
+            "default": false,
+            "title": "Inventory Truncated",
+            "type": "boolean"
+          },
+          "omitted_sources": {
+            "default": 0,
+            "title": "Omitted Sources",
+            "type": "integer"
+          },
+          "resolution_seconds": {
+            "title": "Resolution Seconds",
+            "type": "integer"
+          },
+          "retention_seconds": {
+            "title": "Retention Seconds",
+            "type": "integer"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/Series"
+            },
+            "title": "Series",
+            "type": "array"
+          },
+          "source": {
+            "const": "temporary",
+            "default": "temporary",
+            "title": "Source",
+            "type": "string"
+          },
+          "temporary": {
+            "default": true,
+            "title": "Temporary",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "retention_seconds",
+          "resolution_seconds",
+          "available_from",
+          "available_until",
+          "series"
+        ],
+        "title": "History",
+        "type": "object"
+      },
       "HistoryPurge": {
         "properties": {
           "purged": {
@@ -6441,6 +8205,40 @@
           "status"
         ],
         "title": "InitialRun",
+        "type": "object"
+      },
+      "InstantQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "expression": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Expression",
+            "type": "string"
+          },
+          "kind": {
+            "const": "instant",
+            "default": "instant",
+            "title": "Kind",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          }
+        },
+        "required": [
+          "expression"
+        ],
+        "title": "InstantQuery",
         "type": "object"
       },
       "InstrumentationScope": {
@@ -7050,9 +8848,69 @@
           "run_attempt.succeeded",
           "run_attempt.yielded",
           "run_attempt.failed",
-          "run_attempt.cancelled"
+          "run_attempt.cancelled",
+          "schedule.enabled",
+          "schedule.paused",
+          "schedule.completed",
+          "schedule.archived",
+          "schedule_occurrence.submitted",
+          "schedule_occurrence.skipped",
+          "schedule_occurrence.failed",
+          "schedule_occurrence.cancelled",
+          "schedule_occurrence.completed"
         ],
         "type": "string"
+      },
+      "LimitedCpuLimit": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "limited",
+            "title": "Kind",
+            "type": "string"
+          },
+          "period_usec": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Period Usec",
+            "type": "integer"
+          },
+          "quota_usec": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Quota Usec",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "quota_usec",
+          "period_usec"
+        ],
+        "title": "LimitedCpuLimit",
+        "type": "object"
+      },
+      "LimitedMemoryLimit": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "limited",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "bytes"
+        ],
+        "title": "LimitedMemoryLimit",
+        "type": "object"
       },
       "Lineage": {
         "enum": [
@@ -7061,6 +8919,38 @@
           "fork"
         ],
         "type": "string"
+      },
+      "LocalResult": {
+        "properties": {
+          "export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "$ref": "#/components/schemas/History"
+          },
+          "observation": {
+            "$ref": "#/components/schemas/Observation"
+          },
+          "source": {
+            "const": "temporary",
+            "default": "temporary",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation",
+          "history"
+        ],
+        "title": "LocalResult",
+        "type": "object"
       },
       "LoginInput": {
         "additionalProperties": false,
@@ -7166,6 +9056,33 @@
         "additionalProperties": false,
         "description": "A workspace-managed sandbox reserved from a template, for threads to mount; maintenance creates it.",
         "properties": {
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "metrics_labels": {
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 128
+            },
+            "title": "Metrics Labels",
+            "type": "object"
+          },
           "name": {
             "anyOf": [
               {
@@ -7783,6 +9700,91 @@
         "title": "MemoryCreate",
         "type": "object"
       },
+      "MemoryEvents": {
+        "additionalProperties": false,
+        "properties": {
+          "high": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High"
+          },
+          "low": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "oom": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oom"
+          },
+          "oom_group_kill": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oom Group Kill"
+          },
+          "oom_kill": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oom Kill"
+          }
+        },
+        "title": "MemoryEvents",
+        "type": "object"
+      },
       "MemoryFile": {
         "properties": {
           "content": {
@@ -8058,6 +10060,23 @@
           "record"
         ],
         "type": "string"
+      },
+      "MemoryLimit": {
+        "discriminator": {
+          "mapping": {
+            "limited": "#/components/schemas/LimitedMemoryLimit",
+            "unlimited": "#/components/schemas/UnlimitedMemoryLimit"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/UnlimitedMemoryLimit"
+          },
+          {
+            "$ref": "#/components/schemas/LimitedMemoryLimit"
+          }
+        ]
       },
       "MemoryMount": {
         "additionalProperties": false,
@@ -9162,6 +11181,160 @@
           "content"
         ],
         "title": "MessagePayload",
+        "type": "object"
+      },
+      "MetricsApplication": {
+        "additionalProperties": false,
+        "description": "The frozen sampler/exporter selection; applied_at confirms creation, not delivery.",
+        "properties": {
+          "applied_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied At"
+          },
+          "collection": {
+            "enum": [
+              "native",
+              "proxy",
+              "pull"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "sample_interval_ms": {
+            "title": "Sample Interval Ms",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_version": {
+            "title": "Source Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "source_version",
+          "collection",
+          "sample_interval_ms"
+        ],
+        "title": "MetricsApplication",
+        "type": "object"
+      },
+      "MetricsSample": {
+        "additionalProperties": false,
+        "properties": {
+          "cgroup_v2": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CgroupMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "collection_duration_ms": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Collection Duration Ms",
+            "type": "integer"
+          },
+          "connections": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "daemon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DaemonMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disks": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiskMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filesystems": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FilesystemObservation"
+            },
+            "title": "Filesystems",
+            "type": "object"
+          },
+          "local_filesystems": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FilesystemInventory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "network": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NetworkMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_age_ms": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Sample Age Ms",
+            "type": "integer"
+          },
+          "sampled_at": {
+            "format": "date-time",
+            "title": "Sampled At",
+            "type": "string"
+          },
+          "sequence": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "system": {
+            "$ref": "#/components/schemas/SystemMetrics"
+          }
+        },
+        "required": [
+          "sequence",
+          "sampled_at",
+          "sample_age_ms",
+          "collection_duration_ms",
+          "system"
+        ],
+        "title": "MetricsSample",
         "type": "object"
       },
       "Model": {
@@ -10475,6 +12648,147 @@
         "title": "NativeToolSearchConfig",
         "type": "object"
       },
+      "NetworkInterfaceMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "identity": {
+            "maxLength": 128,
+            "title": "Identity",
+            "type": "string"
+          },
+          "receive_drops": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receive Drops"
+          },
+          "receive_errors": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receive Errors"
+          },
+          "received_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Bytes"
+          },
+          "received_packets": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received Packets"
+          },
+          "transmit_drops": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmit Drops"
+          },
+          "transmit_errors": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmit Errors"
+          },
+          "transmitted_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmitted Bytes"
+          },
+          "transmitted_packets": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transmitted Packets"
+          }
+        },
+        "required": [
+          "identity"
+        ],
+        "title": "NetworkInterfaceMetrics",
+        "type": "object"
+      },
+      "NetworkMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "interfaces": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NetworkInterfaceMetrics"
+            },
+            "maxProperties": 64,
+            "title": "Interfaces",
+            "type": "object"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "truncated"
+        ],
+        "title": "NetworkMetrics",
+        "type": "object"
+      },
       "NewThread": {
         "additionalProperties": false,
         "properties": {
@@ -10611,9 +12925,126 @@
         "title": "OAuthSettings",
         "type": "object"
       },
+      "Observation": {
+        "properties": {
+          "age_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Ms"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
+          "last_sample_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sample At"
+          },
+          "received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Received At"
+          },
+          "sample": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricsSample"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sample_interval_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Interval Ms"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "system_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "device_id"
+        ],
+        "title": "Observation",
+        "type": "object"
+      },
       "Occurrence": {
         "additionalProperties": false,
         "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "completion_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Run Id"
+          },
           "covered_from_at": {
             "anyOf": [
               {
@@ -10660,6 +13091,22 @@
                 "type": "null"
               }
             ]
+          },
+          "execution_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "succeeded",
+                  "failed",
+                  "cancelled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Outcome"
           },
           "finished_at": {
             "anyOf": [
@@ -10809,7 +13256,7 @@
       },
       "OccurrenceExecution": {
         "additionalProperties": false,
-        "description": "Current execution facts, independent of the immutable submission result and its version.",
+        "description": "Current execution observations alongside the durable occurrence completion facts.",
         "properties": {
           "has_unfinished_work": {
             "title": "Has Unfinished Work",
@@ -10893,7 +13340,7 @@
             "type": "string"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           },
           "timezone_data_version": {
             "title": "Timezone Data Version",
@@ -10926,6 +13373,7 @@
         "enum": [
           "pending",
           "submitted",
+          "completed",
           "skipped",
           "failed",
           "cancelled"
@@ -10935,6 +13383,29 @@
       "OccurrenceSummary": {
         "additionalProperties": false,
         "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "completion_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Run Id"
+          },
           "covered_from_at": {
             "anyOf": [
               {
@@ -10981,6 +13452,22 @@
                 "type": "null"
               }
             ]
+          },
+          "execution_outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "succeeded",
+                  "failed",
+                  "cancelled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Outcome"
           },
           "finished_at": {
             "anyOf": [
@@ -11106,6 +13593,36 @@
         ],
         "title": "OccurrenceSummary",
         "type": "object"
+      },
+      "OnceSchedule": {
+        "additionalProperties": false,
+        "properties": {
+          "run_at": {
+            "format": "date-time",
+            "title": "Run At",
+            "type": "string"
+          },
+          "type": {
+            "const": "once",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "run_at"
+        ],
+        "title": "OnceSchedule",
+        "type": "object"
+      },
+      "OperatingSystem": {
+        "enum": [
+          "linux",
+          "macos",
+          "windows"
+        ],
+        "title": "OperatingSystem",
+        "type": "string"
       },
       "OperationKind": {
         "enum": [
@@ -11398,6 +13915,93 @@
         "title": "OutputVariant",
         "type": "object"
       },
+      "Panel": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "legend": {
+            "default": true,
+            "title": "Legend",
+            "type": "boolean"
+          },
+          "position": {
+            "$ref": "#/components/schemas/Position"
+          },
+          "queries": {
+            "items": {
+              "$ref": "#/components/schemas/PanelQuery"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Queries",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "unit": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "ratio",
+              "bytes",
+              "bytes_per_second",
+              "operations_per_second",
+              "count",
+              "seconds"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "visualization": {
+            "default": "timeseries",
+            "enum": [
+              "timeseries",
+              "stat"
+            ],
+            "title": "Visualization",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "position",
+          "queries"
+        ],
+        "title": "Panel",
+        "type": "object"
+      },
+      "PanelQuery": {
+        "discriminator": {
+          "mapping": {
+            "metric": "#/components/schemas/TypedQuery",
+            "promql": "#/components/schemas/PromQLQuery"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TypedQuery"
+          },
+          {
+            "$ref": "#/components/schemas/PromQLQuery"
+          }
+        ]
+      },
       "Part": {
         "discriminator": {
           "mapping": {
@@ -11608,6 +14212,43 @@
         "title": "PluginSelection",
         "type": "object"
       },
+      "Position": {
+        "additionalProperties": false,
+        "properties": {
+          "h": {
+            "maximum": 16.0,
+            "minimum": 3.0,
+            "title": "H",
+            "type": "integer"
+          },
+          "w": {
+            "maximum": 12.0,
+            "minimum": 3.0,
+            "title": "W",
+            "type": "integer"
+          },
+          "x": {
+            "maximum": 11.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "integer"
+          },
+          "y": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "Position",
+        "type": "object"
+      },
       "Preset": {
         "enum": [
           "execution",
@@ -11623,6 +14264,107 @@
           "memory_organizer"
         ],
         "type": "string"
+      },
+      "Pressure": {
+        "additionalProperties": false,
+        "properties": {
+          "full": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PressureLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "some": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PressureLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Pressure",
+        "type": "object"
+      },
+      "PressureLevel": {
+        "additionalProperties": false,
+        "properties": {
+          "avg10_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Avg10 Percent",
+            "type": "number"
+          },
+          "avg300_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Avg300 Percent",
+            "type": "number"
+          },
+          "avg60_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Avg60 Percent",
+            "type": "number"
+          },
+          "total_usec": {
+            "maximum": 1.8446744073709552e+19,
+            "minimum": 0.0,
+            "title": "Total Usec",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "avg10_percent",
+          "avg60_percent",
+          "avg300_percent",
+          "total_usec"
+        ],
+        "title": "PressureLevel",
+        "type": "object"
+      },
+      "Pressures": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "io": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Pressures",
+        "type": "object"
       },
       "Preview": {
         "properties": {
@@ -11997,6 +14739,35 @@
           }
         },
         "title": "ProfileUpdate",
+        "type": "object"
+      },
+      "PromQLQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "expression": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Expression",
+            "type": "string"
+          },
+          "kind": {
+            "const": "promql",
+            "default": "promql",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 72,
+            "pattern": "^mds_[a-zA-Z0-9_-]+$",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "expression"
+        ],
+        "title": "PromQLQuery",
         "type": "object"
       },
       "Provider": {
@@ -12647,6 +15418,136 @@
           "mode"
         ],
         "title": "ProxyToolSearchConfig",
+        "type": "object"
+      },
+      "Query": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "scope_labels": {
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 128
+            },
+            "title": "Scope Labels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "title": "Query",
+        "type": "object"
+      },
+      "QueryData": {
+        "properties": {
+          "result": {
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Result",
+            "type": "array"
+          },
+          "resultType": {
+            "enum": [
+              "matrix",
+              "vector",
+              "scalar",
+              "string"
+            ],
+            "title": "Resulttype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resultType",
+          "result"
+        ],
+        "title": "QueryData",
+        "type": "object"
+      },
+      "QueryResult": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/QueryData"
+          },
+          "infos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Infos",
+            "type": "array"
+          },
+          "status": {
+            "const": "success",
+            "title": "Status",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status",
+          "data"
+        ],
+        "title": "QueryResult",
+        "type": "object"
+      },
+      "RangeQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "minimum": 0.0,
+            "title": "End",
+            "type": "number"
+          },
+          "expression": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Expression",
+            "type": "string"
+          },
+          "kind": {
+            "const": "range",
+            "default": "range",
+            "title": "Kind",
+            "type": "string"
+          },
+          "start": {
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "number"
+          },
+          "step": {
+            "maximum": 86400.0,
+            "minimum": 1.0,
+            "title": "Step",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "step",
+          "expression"
+        ],
+        "title": "RangeQuery",
         "type": "object"
       },
       "ReadView": {
@@ -14112,7 +17013,7 @@
             "type": "string"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           },
           "session_id": {
             "title": "Session Id",
@@ -14216,7 +17117,7 @@
             "type": "string"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           },
           "state": {
             "default": "paused",
@@ -14407,7 +17308,7 @@
             "type": "integer"
           },
           "schedule": {
-            "$ref": "#/components/schemas/CronSchedule"
+            "$ref": "#/components/schemas/ScheduleRule"
           }
         },
         "required": [
@@ -14417,10 +17318,21 @@
         "title": "SchedulePreviewRequest",
         "type": "object"
       },
+      "ScheduleRule": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CronSchedule"
+          },
+          {
+            "$ref": "#/components/schemas/OnceSchedule"
+          }
+        ]
+      },
       "ScheduleState": {
         "enum": [
           "paused",
           "enabled",
+          "completed",
           "archived"
         ],
         "type": "string"
@@ -14598,7 +17510,7 @@
           "schedule": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CronSchedule"
+                "$ref": "#/components/schemas/ScheduleRule"
               },
               {
                 "type": "null"
@@ -14629,6 +17541,87 @@
           "run_id"
         ],
         "title": "SelectedTrace",
+        "type": "object"
+      },
+      "Selection": {
+        "additionalProperties": false,
+        "properties": {
+          "metrics_data_source_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Data Source Id"
+          },
+          "metrics_labels": {
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 128
+            },
+            "title": "Metrics Labels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "metrics_data_source_id"
+        ],
+        "title": "Selection",
+        "type": "object"
+      },
+      "Series": {
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "points": {
+            "items": {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Points",
+            "type": "array"
+          }
+        },
+        "required": [
+          "metric",
+          "points"
+        ],
+        "title": "Series",
         "type": "object"
       },
       "ServiceAccount": {
@@ -16278,6 +19271,30 @@
         "title": "SpanSummary",
         "type": "object"
       },
+      "State": {
+        "enum": [
+          "reload_requested",
+          "not_ready",
+          "unsupported",
+          "disabled",
+          "discovery_failed",
+          "changed"
+        ],
+        "type": "string"
+      },
+      "Status": {
+        "enum": [
+          "waiting",
+          "ready",
+          "stale",
+          "offline",
+          "disabled",
+          "unsupported",
+          "not_ready",
+          "capacity"
+        ],
+        "type": "string"
+      },
       "SubagentOverride-Input": {
         "additionalProperties": false,
         "description": "Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.",
@@ -16660,7 +19677,7 @@
             "items": {
               "$ref": "#/components/schemas/LifecycleKind"
             },
-            "maxItems": 12,
+            "maxItems": 21,
             "minItems": 1,
             "title": "Kinds",
             "type": "array"
@@ -16703,7 +19720,7 @@
       },
       "SubscriptionFilter": {
         "additionalProperties": false,
-        "description": "Absent fields match every run.",
+        "description": "Absent fields match every event; a specified identity must exist and match.",
         "properties": {
           "agent_id": {
             "anyOf": [
@@ -16717,6 +19734,19 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Id"
           },
           "session_id": {
             "anyOf": [
@@ -16807,7 +19837,7 @@
                 "items": {
                   "$ref": "#/components/schemas/LifecycleKind"
                 },
-                "maxItems": 12,
+                "maxItems": 21,
                 "minItems": 1,
                 "type": "array"
               },
@@ -16860,6 +19890,276 @@
           }
         },
         "title": "SubscriptionUpdate",
+        "type": "object"
+      },
+      "SystemInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "architecture": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Architecture"
+          },
+          "cpu_model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Model"
+          },
+          "kernel_version": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kernel Version"
+          },
+          "os": {
+            "$ref": "#/components/schemas/OperatingSystem"
+          },
+          "os_version": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Os Version"
+          }
+        },
+        "required": [
+          "os"
+        ],
+        "title": "SystemInfo",
+        "type": "object"
+      },
+      "SystemMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "commit_limit_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Limit Bytes"
+          },
+          "commit_total_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit Total Bytes"
+          },
+          "cpu_busy_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Busy Percent"
+          },
+          "cpu_time_seconds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CpuTimeSeconds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handle_count": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handle Count"
+          },
+          "logical_cpu_count": {
+            "anyOf": [
+              {
+                "maximum": 4294967295.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logical Cpu Count"
+          },
+          "memory_available_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Available Bytes"
+          },
+          "memory_cache_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Cache Bytes"
+          },
+          "memory_compressed_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Compressed Bytes"
+          },
+          "memory_total_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Total Bytes"
+          },
+          "memory_wired_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Wired Bytes"
+          },
+          "pressure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pressures"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "process_count": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Process Count"
+          },
+          "swap_total_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Total Bytes"
+          },
+          "swap_used_bytes": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swap Used Bytes"
+          },
+          "thread_count": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Count"
+          }
+        },
+        "title": "SystemMetrics",
         "type": "object"
       },
       "Template": {
@@ -18051,6 +21351,109 @@
           "spawned"
         ],
         "type": "string"
+      },
+      "TypedQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "history": {
+            "default": "configured",
+            "enum": [
+              "configured",
+              "temporary"
+            ],
+            "title": "History",
+            "type": "string"
+          },
+          "kind": {
+            "const": "metric",
+            "default": "metric",
+            "title": "Kind",
+            "type": "string"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "enum": [
+                  "system_cpu_busy_ratio",
+                  "system_memory_used_bytes",
+                  "cgroup_memory_current_bytes",
+                  "system_memory_total_bytes",
+                  "system_memory_available_bytes",
+                  "system_memory_cache_bytes",
+                  "system_memory_wired_bytes",
+                  "system_memory_compressed_bytes",
+                  "system_swap_used_bytes",
+                  "system_swap_total_bytes",
+                  "system_commit_total_bytes",
+                  "system_commit_limit_bytes",
+                  "system_processes",
+                  "system_threads",
+                  "system_handles",
+                  "cgroup_pids_current",
+                  "tcp_connections",
+                  "udp_sockets",
+                  "daemon_sessions",
+                  "daemon_processes",
+                  "daemon_connections",
+                  "daemon_transfers",
+                  "daemon_retained_output_bytes"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "network_received_bytes_per_second",
+                  "network_transmitted_bytes_per_second",
+                  "disk_read_bytes_per_second",
+                  "disk_written_bytes_per_second",
+                  "disk_read_operations_per_second",
+                  "disk_write_operations_per_second",
+                  "cgroup_io_read_bytes_per_second",
+                  "cgroup_io_written_bytes_per_second",
+                  "cgroup_io_read_operations_per_second",
+                  "cgroup_io_write_operations_per_second"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Metric"
+          }
+        },
+        "required": [
+          "metric"
+        ],
+        "title": "TypedQuery",
+        "type": "object"
+      },
+      "UnlimitedCpuLimit": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "unlimited",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "UnlimitedCpuLimit",
+        "type": "object"
+      },
+      "UnlimitedMemoryLimit": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "unlimited",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "UnlimitedMemoryLimit",
+        "type": "object"
       },
       "Upload": {
         "properties": {
@@ -23799,6 +27202,572 @@
         ]
       }
     },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "list_devices",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevicePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Devices",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      },
+      "post": {
+        "operationId": "create_device",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Device",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/devices/{device_id}": {
+      "delete": {
+        "operationId": "delete_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Delete Device",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      },
+      "get": {
+        "operationId": "get_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Device",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      },
+      "patch": {
+        "operationId": "update_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Device",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/devices/{device_id}/metrics/query": {
+      "post": {
+        "operationId": "query_device_metrics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/QueryResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocalResult"
+                    }
+                  ],
+                  "title": "Response Query Device Metrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Query Device Metrics",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/devices/{device_id}/rotate-credential": {
+      "post": {
+        "operationId": "rotate_device_credential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceCredential"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Rotate Device Credential",
+        "tags": [
+          "monitoring-devices"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
     "/api/v1/environment-providers": {
       "get": {
         "operationId": "list_environment_providers",
@@ -25183,6 +29152,256 @@
           "environments"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environments/{environment_id}/metrics-binding": {
+      "put": {
+        "operationId": "select_metrics_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Selection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Select Metrics Source",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/environments/{environment_id}/metrics/collector": {
+      "get": {
+        "operationId": "get_collector_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectorStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Collector Status",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/environments/{environment_id}/metrics/query": {
+      "post": {
+        "operationId": "query_environment_metrics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/QueryResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LocalResult"
+                    }
+                  ],
+                  "title": "Response Query Environment Metrics"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Query Environment Metrics",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": false
       }
     },
     "/api/v1/environments/{environment_id}/stop": {
@@ -29108,6 +33327,1067 @@
           "memory spaces"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/metrics-dashboards": {
+      "get": {
+        "operationId": "list_dashboards",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Dashboards",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      },
+      "post": {
+        "operationId": "create_dashboard",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-dashboards/preset": {
+      "get": {
+        "operationId": "get_dashboard_preset",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Dashboard Preset",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-dashboards/{dashboard_id}": {
+      "delete": {
+        "operationId": "delete_dashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Delete Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      },
+      "get": {
+        "operationId": "get_dashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      },
+      "patch": {
+        "operationId": "update_dashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Dashboard",
+        "tags": [
+          "metrics-dashboards"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-data-sources": {
+      "get": {
+        "operationId": "list_metrics_data_sources",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourcePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Metrics Data Sources",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      },
+      "post": {
+        "operationId": "create_metrics_data_source",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourceCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Create Metrics Data Source",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-data-sources/capabilities": {
+      "get": {
+        "operationId": "get_metrics_capabilities",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Metrics Capabilities",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-data-sources/deployment-preset": {
+      "get": {
+        "operationId": "get_metrics_deployment_preset",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DeploymentPreset"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Metrics Deployment Preset"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Metrics Deployment Preset",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-data-sources/{source_id}": {
+      "delete": {
+        "operationId": "delete_metrics_data_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Delete Metrics Data Source",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      },
+      "get": {
+        "operationId": "get_metrics_data_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Metrics Data Source",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      },
+      "patch": {
+        "operationId": "update_metrics_data_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSourceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Update Metrics Data Source",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/metrics-data-sources/{source_id}/query": {
+      "post": {
+        "operationId": "query_metrics_data_source",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "instant": "#/components/schemas/InstantQuery",
+                    "range": "#/components/schemas/RangeQuery"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/InstantQuery"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RangeQuery"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Query Metrics Data Source",
+        "tags": [
+          "metrics-data-sources"
+        ],
+        "x-a13n-mcp": false
       }
     },
     "/api/v1/model-catalog": {

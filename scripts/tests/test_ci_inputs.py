@@ -209,7 +209,7 @@ def test_service_ci_runs_service_tests_and_checks(tmp_path: Path) -> None:
         str(path.relative_to(ROOT))
         for path in root.rglob("*.py")
         if (path.name.startswith("test_") or path.name.endswith("_test.py"))
-        and path != root / "test_environments_envd.py"
+        and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
         and root / "environment_providers" not in path.parents
     }
     assert set(shards[0]) | set(shards[1]) == expected
@@ -238,7 +238,13 @@ def test_service_shards_include_new_nested_files_and_pass_paths_literally(tmp_pa
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     root = tmp_path / "packages/a13n-service/tests"
     included = ["test_first.py", "nested/test_second.py", "nested/third_test.py", "test_space $(false).py"]
-    excluded = ["conftest.py", "helper.py", "test_environments_envd.py", "environment_providers/test_native.py"]
+    excluded = [
+        "conftest.py",
+        "helper.py",
+        "test_environments_envd.py",
+        "test_monitoring_collectors_live.py",
+        "environment_providers/test_native.py",
+    ]
     for name in included + excluded:
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)

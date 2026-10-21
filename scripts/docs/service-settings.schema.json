@@ -72,6 +72,60 @@
       "title": "Composer",
       "type": "object"
     },
+    "Configuration": {
+      "additionalProperties": false,
+      "properties": {
+        "directory": {
+          "format": "path",
+          "title": "Directory",
+          "type": "string"
+        },
+        "endpoint": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "format": "password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "writer": {
+          "default": false,
+          "title": "Writer",
+          "type": "boolean"
+        },
+        "allow_http_reload": {
+          "default": false,
+          "title": "Allow Http Reload",
+          "type": "boolean"
+        },
+        "receiver": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receiver"
+        }
+      },
+      "required": [
+        "directory",
+        "endpoint"
+      ],
+      "title": "Configuration",
+      "type": "object"
+    },
     "Control": {
       "additionalProperties": false,
       "properties": {
@@ -386,6 +440,13 @@
       },
       "title": "Environments",
       "type": "object"
+    },
+    "Kind": {
+      "enum": [
+        "vmagent",
+        "alloy"
+      ],
+      "type": "string"
     },
     "LocalProvisioning": {
       "additionalProperties": false,
@@ -718,6 +779,151 @@
         }
       },
       "title": "MemorySettings",
+      "type": "object"
+    },
+    "Monitoring": {
+      "additionalProperties": false,
+      "description": "Small-deployment Device monitoring; external export and history query are independent.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "allow_loopback_ws": {
+          "default": false,
+          "title": "Allow Loopback Ws",
+          "type": "boolean"
+        },
+        "max_devices": {
+          "default": 64,
+          "maximum": 512,
+          "minimum": 1,
+          "title": "Max Devices",
+          "type": "integer"
+        },
+        "poll_seconds": {
+          "default": 10,
+          "maximum": 60,
+          "minimum": 5,
+          "title": "Poll Seconds",
+          "type": "number"
+        },
+        "request_seconds": {
+          "default": 5,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Request Seconds",
+          "type": "number"
+        },
+        "query_concurrency": {
+          "default": 8,
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Query Concurrency",
+          "type": "integer"
+        },
+        "query_seconds": {
+          "default": 5,
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Query Seconds",
+          "type": "number"
+        },
+        "query_bytes": {
+          "default": 4194304,
+          "maximum": 16777216,
+          "minimum": 65536,
+          "title": "Query Bytes",
+          "type": "integer"
+        },
+        "deployment_preset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MonitoringPreset"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deployment_query_bearer_token": {
+          "anyOf": [
+            {
+              "format": "password",
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deployment Query Bearer Token"
+        },
+        "collectors": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Configuration"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Kind"
+          },
+          "title": "Collectors",
+          "type": "object"
+        },
+        "collector_seconds": {
+          "default": 30,
+          "maximum": 300,
+          "minimum": 10,
+          "title": "Collector Seconds",
+          "type": "number"
+        },
+        "collector_targets": {
+          "default": 512,
+          "maximum": 4096,
+          "minimum": 1,
+          "title": "Collector Targets",
+          "type": "integer"
+        }
+      },
+      "title": "Monitoring",
+      "type": "object"
+    },
+    "MonitoringPreset": {
+      "additionalProperties": false,
+      "description": "Operator-offered pull source, explicitly confirmed by an allowlisted workspace admin.",
+      "properties": {
+        "name": {
+          "default": "Deployment metrics",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "collector": {
+          "$ref": "#/$defs/Kind",
+          "default": "vmagent"
+        },
+        "query_endpoint": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Query Endpoint",
+          "type": "string"
+        },
+        "workspace_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1024,
+          "title": "Workspace Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "query_endpoint"
+      ],
+      "title": "MonitoringPreset",
       "type": "object"
     },
     "Objects": {
@@ -1694,6 +1900,9 @@
     },
     "telemetry": {
       "$ref": "#/$defs/Telemetry"
+    },
+    "monitoring": {
+      "$ref": "#/$defs/Monitoring"
     },
     "extensions": {
       "additionalProperties": true,

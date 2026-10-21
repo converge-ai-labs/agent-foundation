@@ -30,6 +30,19 @@ curl -X POST "$A13N_URL/api/v1/uploads" \
 
 订阅将工作空间的运行生命周期事件发送到 HTTPS 端点。管理订阅和读取投递记录需要工作空间 `admin` 权限。
 
+### 在 Console 中管理
+
+1. 打开工作区的**设置 → Webhooks**，选择**添加 Webhook**。
+2. 填写名称和接收地址，选择运行或执行尝试事件。**常用结果事件**会选中 `run.waiting`、`run.completed`、`run.failed` 和 `run.cancelled`。
+3. 如有需要，将通知限定到某个 agent、会话或线程。所有已填写的条件都必须匹配。
+4. 选择**创建 Webhook**。关闭弹窗前，将签名密钥保存到接收通知的应用中。密钥仅显示一次。
+
+打开一个 Webhook，即可查看**投递记录**或**配置**。投递详情显示保存的地址、事件内容、尝试次数和最后一次错误。**重新投递**会使用原 ID、地址、内容和密钥，将符合条件的失败投递重新入队。刷新列表可以查看结果。加入重试队列不代表接收方已收到通知。
+
+通过**编辑**可以修改地址、事件、匹配条件或签名密钥。密钥留空时保留当前值。配置页还提供启用、停用和删除操作。这些修改影响之后的通知；已排队的投递继续使用原配置。如果另一位管理员在你编辑时修改了 Webhook，请加载最新版本，检查保留的修改后再保存。
+
+### 通过 API 创建
+
 ```sh
 curl -X POST "$A13N_URL/api/v1/subscriptions" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
@@ -43,6 +56,10 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 - `signing_secret` 可选：`whsec_` 加上 24 到 64 个字节的标准 base64，即 [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) 定义的格式。未提供时由 Service 用 32 个随机字节生成。其他取值会以 `invalid_argument` 拒绝。密钥仅在创建响应中返回。在此格式之前创建的订阅必须重新设置密钥：以管理员身份用新的 `whsec_…` 密钥执行 `PATCH`，或重新创建订阅。升级前已排队的投递无法恢复：它们会以 `signing_secret_unavailable` 失败，重新投递也会沿用旧密钥。
 - `PATCH` 修改名称、URL、kinds、filter、`enabled` 或 `signing_secret`；`DELETE` 移除订阅。两者都需要 `If-Match`。修改只影响之后排队的投递。
 - 一个工作空间最多 `control.subscriptions` 个订阅（默认 32）。保存时和每次投递时，URL 都必须符合[出站策略](configuration.md#outbound-requests)。
+
+计划事件包括 `schedule.enabled`、`schedule.paused`、`schedule.completed` 和 `schedule.archived`。触发记录事件包括 `schedule_occurrence.submitted`、`.skipped`、`.failed`、`.cancelled` 和 `.completed`。调度结束与执行结束含义不同，参见[计划执行结果](schedules.md#read-the-result)。暂停状态创建不发事件；启用状态创建发送 `schedule.enabled`。重试和无状态变化的命令不重复生成通知；历史完成记录不补齐，历史事件不补发。
+
+`filter.schedule_id` 可筛选指定计划的所有事件，也适用于关联的 Run 和 Attempt 事件。它与 Agent、Session、Thread 条件同时匹配；事件缺少指定字段时不会匹配。
 
 ### 载荷与签名
 
@@ -82,6 +99,8 @@ def handle(secret: str, headers, body: bytes) -> None:
         return  # 以 4xx 拒绝
     ...  # 若 headers["webhook-id"] 已处理过，则跳过该事件
 ```
+
+计划事件使用 `schedule` 字段，包含 `id`、`session_id`、`agent_id`、`name`、`state`、`pause_reason` 和 `version`；触发记录事件使用 `occurrence` 字段，包含紧凑历史记录、`schedule_id`、状态及原因，不包含输入快照。执行完成还带有 `execution_outcome`、`completion_run_id` 和 `completed_at`。所有事件共有 `id`、`type`、`occurred_at` 和 `workspace_id`。Run 事件包含可为空的 `schedule_origin: {schedule_id, occurrence_id}`。
 
 ### 投递与重试
 

@@ -1120,6 +1120,7 @@
             "minimum": 0,
             "type": "integer"
           },
+          "maxProperties": 16,
           "title": "Tcp States",
           "type": "object"
         },
@@ -1827,6 +1828,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/DiskIoMetrics"
           },
+          "maxProperties": 64,
           "title": "Devices",
           "type": "object"
         },
@@ -3938,6 +3940,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/FilesystemObservation"
           },
+          "maxProperties": 16,
           "title": "Filesystems",
           "type": "object"
         },
@@ -4514,6 +4517,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/NetworkInterfaceMetrics"
           },
+          "maxProperties": 64,
           "title": "Interfaces",
           "type": "object"
         },

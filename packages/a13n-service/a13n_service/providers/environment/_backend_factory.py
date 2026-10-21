@@ -15,12 +15,14 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as 
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._runtime import ClosableRuntime, RuntimeFactory, _release
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import BaseModel
 
 from ._backend import ManagementBackend
 from .desktop_access import Reply, Request
 from .errors import EnvironmentManagementCancelled, EnvironmentManagementError
 from .management import EnvironmentProvider, EnvironmentStatus
+from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 
 
 class ManagementFactory[E: BaseModel, R](Protocol):
@@ -122,9 +124,17 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
                     raise EnvironmentManagementError(failure, target.state, operation_id, environment_id) from error
 
     async def create(
-        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None = None
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        operation_id: str,
+        state: EnvironmentState | None = None,
+        metrics: MetricsLaunch | None = None,
     ) -> EnvironmentState | None:
         async with self._operation(environment, environment_id, state, operation_id) as target:
+            if metrics is not None:
+                target.configure_metrics(metrics)
             await target.create()
             return target.state
 
@@ -177,6 +187,33 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
         if self._close_task is None:
             self._close_task = asyncio.create_task(_release(None, self._owned), name="environment-provider-close")
         await asyncio.shield(self._close_task)
+
+    async def scrape_target(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> ScrapeTarget:
+        target = self._target(environment, environment_id, state, "op-" + uuid4().hex)
+        try:
+            target.validate_management()
+            return await target.scrape_target()
+        finally:
+            await _release(target, None)
+
+    async def observe_device(
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        credential_cache: ManagedCredentialCache | None = None,
+    ) -> DeviceObservation:
+        # Observation has no lifecycle operation or publication. Preserve its errors
+        # and cancellation rather than wrapping them as uncertain mutations.
+        target = self._target(environment, environment_id, state, "op-" + uuid4().hex)
+        try:
+            target.validate_management()
+            return await target.observe_device(credential_cache=credential_cache)
+        finally:
+            await _release(target, None)
 
     async def desktop_access(
         self,

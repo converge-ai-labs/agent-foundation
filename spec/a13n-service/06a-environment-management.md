@@ -34,6 +34,10 @@ class EnvironmentProvider:
     async def close(self): ...
 ```
 
+Creation additionally accepts optional private sampler and exporter launch settings on supported Docker/E2B Envd paths. Each management definition declares this capability for its validated recipe; lifecycle orchestration consults the registry before freezing launch inputs. These settings are independent of the recipe and its compatibility fingerprint; unsupported paths refuse them before allocation. The Host freezes and encrypts their retry input and records the application receipt under [Environment monitoring](13-environment-monitoring.md#managed-launch-and-applied-state). Start and resume retain the target's existing daemon settings.
+
+Supported Docker/E2B Envd providers additionally expose session-free `observe_device` for the existing target's cached descriptor and metrics. It reuses fixed-target HTTP connection preparation, preserves ownership and endpoint checks, and grants no lifecycle or Agent execution authority. [Environment monitoring](13-environment-monitoring.md#proxy-collection-and-temporary-history) owns polling, admission and temporary collection ownership.
+
 Management providers hold account-scoped clients and close them independently from execution clients. Connector construction uses the composed Harness execution definition with authoritative state and current credentials, allocating no live execution client and performing no target I/O. Management can perform initialization and readiness probes without constructing a Harness execution scope. No factory returns an object carrying both roles.
 
 ### Desktop Access Enforcement

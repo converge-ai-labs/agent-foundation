@@ -123,7 +123,7 @@ jobs:
               files = sorted(
                   str(path) for path in root.rglob("*.py")
                   if (path.match("test_*.py") or path.match("*_test.py"))
-                  and path != root / "test_environments_envd.py"
+                  and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
                   and not path.is_relative_to(root / "environment_providers")
               )
               for shard in range(2):

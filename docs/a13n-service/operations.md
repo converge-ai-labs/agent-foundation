@@ -22,6 +22,18 @@ Use `all` for one process. Scale `control` replicas behind a load balancer and `
 
 Each worker executes up to `worker.slots` attempts. If it crashes, another worker continues the run from its last checkpoint in a new attempt after the lease expires; a run fails after `worker.max_attempts` charged attempts. During shutdown, the worker stops claiming and allows up to `worker.drain_seconds` for a checkpointed handoff. External side effects are not automatically rolled back or guaranteed safe to repeat.
 
+## Environment monitoring collectors
+
+Optional vmagent and Grafana Alloy integration runs in `all` or `control`, with exactly one configured writer per collector. Workers do not reconcile collector configuration. Follow [collector bootstrap](environment-monitoring.md#bootstrap-an-optional-collector) before enabling `writer = true`; other API replicas advertise the collector with `writer = false`.
+
+During replacement, keep the writer's protected configuration directory shared with the collector and the replacement writer. Back up operator-owned forwarding configuration and its credentials under the same protections as other deployment secrets. Service regenerates its own fragment from current environment bindings.
+
+After a change, inspect the environment's collector status, the collector's active targets and fresh samples in the query backend. `reload_requested` confirms only that the reload request was accepted. In external mode, remove the managed fragment and reload the collector before stopping the writer or disabling monitoring; stopping Service leaves loaded scrape jobs active.
+
+The optional Helm-managed vmagent pairs a dedicated writer and collector in one Recreate Pod, with loopback listeners and a retained queue PVC. Ordinary control replicas can scale independently. Unbind or disable sources and verify removal, then drain pending writes before disabling the managed deployment. On replacement, bootstrap clears stale jobs while retaining the queue. Fence a lost node before forced replacement; RWO and file locks are not distributed node fencing. Monitor queue capacity and retain its PVC until queued data is delivered or deliberately discarded. See the [Helm lifecycle guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors).
+
+Preset settings and tokens are loaded at process startup. After deployment-token rotation, restart ordinary control Pods and explicitly replace credentials on previously saved sources. Removing a preset or its allowlist entry only affects future confirmation; it does not revoke saved credentials at the backend.
+
 ## Schema migrations
 
 ```sh

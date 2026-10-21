@@ -8,9 +8,11 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 from pydantic import BaseModel
 
 from .desktop_access import Reply, Request
+from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +30,13 @@ class EnvironmentProvider[E: BaseModel](ABC):
 
     @abstractmethod
     async def create(
-        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None = None
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        operation_id: str,
+        state: EnvironmentState | None = None,
+        metrics: MetricsLaunch | None = None,
     ) -> EnvironmentState | None: ...
 
     @abstractmethod
@@ -69,6 +77,23 @@ class EnvironmentProvider[E: BaseModel](ABC):
 
     @abstractmethod
     async def close(self) -> None: ...
+
+    async def scrape_target(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> ScrapeTarget:
+        """Resolve protected collector inputs without a Session or target lifecycle operation."""
+        raise NotImplementedError("HTTP metric scraping is unavailable for this provider")
+
+    async def observe_device(
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        credential_cache: ManagedCredentialCache | None = None,
+    ) -> DeviceObservation:
+        """Read cached Device observations; never create a Session or change target lifecycle."""
+        raise NotImplementedError("Device observation is unavailable for this provider")
 
     async def desktop_access(
         self,

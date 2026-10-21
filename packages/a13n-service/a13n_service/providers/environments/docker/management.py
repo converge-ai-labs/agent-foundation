@@ -12,11 +12,19 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.configuration import DockerProviderStateData
 from a13n_harness.providers.environment.docker.errors import engine_errors
-from a13n_harness.providers.environment.docker.http import http_execution
+from a13n_harness.providers.environment.docker.http import http_execution, http_runtime
 from a13n_harness.providers.environment.docker.shared import _KEY, DockerReference, _missing
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
+from a13n_service.providers.environment.metrics import (
+    DeviceObservation,
+    MetricsLaunch,
+    ScrapeTarget,
+    observe,
+    scrape_target,
+)
 
 from .configuration import DockerRecipe
 
@@ -42,6 +50,24 @@ def resolve_image(client, image_ref: str, *, pull_policy: Literal["never", "if_m
 
 class DockerManagement(DockerReference, ManagementBackend):
     config: DockerRecipe
+    _metrics: MetricsLaunch | None = None
+
+    def configure_metrics(self, metrics: MetricsLaunch) -> None:
+        if self.config.execution != "envd_http":
+            raise self._unsupported()
+        self._metrics = metrics
+
+    async def scrape_target(self) -> ScrapeTarget:
+        if self.config.execution != "envd_http":
+            raise self._unsupported()
+        async with http_runtime(self) as runtime:
+            return scrape_target(runtime)
+
+    async def observe_device(self, *, credential_cache: ManagedCredentialCache | None = None) -> DeviceObservation:
+        if self.config.execution != "envd_http":
+            raise self._unsupported()
+        async with http_runtime(self, credential_cache=credential_cache) as runtime:
+            return await observe(runtime, self.allocation_id)
 
     def validate_management(self) -> None:
         if self.target is not None and self.target.environment_id != self.environment_id:
@@ -191,6 +217,8 @@ class DockerManagement(DockerReference, ManagementBackend):
             else self.config.user or image.labels.get("ai.a13n.environment.user")
         )
         environment = dict(self.config.environment)
+        if self._metrics is not None:
+            environment.update(self._metrics.environment)
         if self.config.desktop_assistance:
             environment["A13N_DESKTOP_ACCESS"] = "true"
         ports = None
@@ -206,6 +234,11 @@ class DockerManagement(DockerReference, ManagementBackend):
                     "A13N_ENVD_HTTP_CREDENTIAL_FILE": connection.credential_file,
                     "A13N_ENVD_CONFIG_JSON": json.dumps(
                         {
+                            **(
+                                {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
+                                if self._metrics is not None
+                                else {}
+                            ),
                             "limits": {
                                 "max_file_bytes": self.config.max_file_bytes,
                                 "max_output_preview_bytes": self.config.max_output_preview_bytes,

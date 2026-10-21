@@ -24,6 +24,7 @@ export function ModalFrame({
   description,
   closeLabel,
   finalFocus,
+  keepVisibleWhenNested = false,
   size = "md",
   children,
   footer,
@@ -35,6 +36,8 @@ export function ModalFrame({
 }: Omit<ComponentProps<typeof Dialog>, "children"> & {
   trigger?: ReactElement;
   finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
+  /** Keep the form visible underneath a nested confirmation or error dialog. */
+  keepVisibleWhenNested?: boolean;
   title: ReactNode;
   description?: ReactNode;
   closeLabel: string;
@@ -61,6 +64,7 @@ export function ModalFrame({
         description={description}
         closeLabel={closeLabel}
         finalFocus={finalFocus}
+        keepVisibleWhenNested={keepVisibleWhenNested}
         size={size}
         placement={placement}
         footer={footer}
@@ -79,6 +83,7 @@ const ModalSurface = memo(
     description,
     closeLabel,
     finalFocus,
+    keepVisibleWhenNested,
     size,
     children,
     footer,
@@ -89,6 +94,7 @@ const ModalSurface = memo(
     description?: ReactNode;
     closeLabel: string;
     finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
+    keepVisibleWhenNested: boolean;
     size: "md" | "lg" | "xl";
     placement: "center" | "top";
     children?: ReactNode;
@@ -99,6 +105,7 @@ const ModalSurface = memo(
         data-a13n-modal
         data-size={size}
         className={cn(
+          keepVisibleWhenNested && "opacity-100",
           size === "lg" && "sm:max-w-[40rem]",
           size === "xl" && "sm:max-w-[55rem]",
         )}

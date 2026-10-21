@@ -49,7 +49,15 @@ class Daemons:
     def __init__(self, binary: Path, directory: Path) -> None:
         self.binary, self.directory, self.running = binary, directory, list[Daemon]()
 
-    async def start(self, device_id: str, *, token: str = TOKEN, port: int | None = None) -> Daemon:
+    async def start(
+        self,
+        device_id: str,
+        *,
+        token: str = TOKEN,
+        port: int | None = None,
+        monitoring: bool = False,
+        daemon_config: str | None = None,
+    ) -> Daemon:
         if port is None:
             with socket.socket() as probe:
                 probe.bind(("127.0.0.1", 0))
@@ -60,13 +68,17 @@ class Daemons:
         runtime.mkdir()
         (root / "token").write_text(token)
         config = root / "envd.json"
-        config.write_text(json.dumps({"default_working_directory": str(workspace), "full_control": True}))
+        values = {"default_working_directory": str(workspace), "full_control": True}
+        if monitoring:
+            values["monitoring"] = {"sample_interval_ms": 1000}
+        config.write_text(json.dumps(values))
         process = await asyncio.create_subprocess_exec(
             str(self.binary),
             "--config",
             str(config),
             env={
                 "PATH": os.environ["PATH"],
+                **({"A13N_ENVD_CONFIG_JSON": daemon_config} if daemon_config is not None else {}),
                 "A13N_ENVD_DEVICE_ID": device_id,
                 "A13N_ENVD_RUNTIME_DIR": str(runtime),
                 "A13N_ENVD_TRANSPORT": "http",
@@ -105,6 +117,193 @@ async def daemons(tmp_path: Path) -> AsyncIterator[Daemons]:
     finally:
         for daemon in started.running:
             await started.stop(daemon)
+
+
+async def test_managed_sampler_bootstrap_enables_real_envd_without_exporter(daemons):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime
+    from a13n_harness.providers.environment.remote_envd.configuration import (
+        HttpEnvdConnectionConfiguration,
+        HttpEnvdCredential,
+    )
+    from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+    from a13n_service.providers.environment.metrics import MetricsLaunch
+    from a13n_service.providers.environments.e2b.configuration import E2BRecipe
+    from a13n_service.providers.environments.e2b.management import E2BManagement
+    from pydantic import SecretStr
+
+    management = E2BManagement(
+        E2BRecipe(execution="envd_http", template="team-envd"),
+        environment_id="env_sampled",
+        state=None,
+        runtime=E2BProviderRuntime(SecretStr("test-key")),
+        operation_id="create",
+    )
+    management.configure_metrics(MetricsLaunch({}))
+    run = AsyncMock()
+    await management._bootstrap_envd(SimpleNamespace(commands=SimpleNamespace(run=run)))
+    bootstrap = run.call_args_list[0].kwargs["envs"]
+    assert not any(name.startswith("OTEL_") for name in bootstrap)
+    daemon = await daemons.start("env_sampled", daemon_config=bootstrap["A13N_ENVD_CONFIG_JSON"])
+    async with HttpEnvdProviderRuntime(
+        HttpEnvdConnectionConfiguration(endpoint=daemon.endpoint), HttpEnvdCredential(token=SecretStr(TOKEN))
+    ) as runtime:
+        device = await runtime.acquire_device(expected_device_id="env_sampled")
+        assert "device.metrics" in device.descriptor.available_methods
+        async with asyncio.timeout(15):
+            while True:
+                report = await device.metrics()
+                if report.sample is not None:
+                    break
+                await asyncio.sleep(0.05)
+        assert report.sample.system.memory_total_bytes > 0
+        assert report.sample_interval_ms == 10_000
+
+
+async def test_proxy_reads_real_envd_without_session_and_exports_selected_source(service, daemons, monkeypatch):
+    import time
+
+    from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.environments.monitoring import collection
+    from a13n_service.runs.environments.monitoring.query import EnvironmentQuery
+    from a13n_service.runs.environments.tables import EnvironmentRow
+
+    from .test_monitoring_export import receiver
+    from .test_monitoring_proxy import controlled, external_row
+
+    proxy = await controlled(service)
+    daemon = await daemons.start("device-test", monitoring=True)
+
+    def no_session(*args, **kwargs):
+        pytest.fail("Proxy collection must not open an execution Session")
+
+    monkeypatch.setattr(HttpEnvdProviderRuntime, "open_session", no_session)
+    async with receiver() as (endpoint, deliveries):
+        created = await service.client.post(
+            f"{service.api}/metrics-data-sources",
+            json={
+                "name": "Real proxy",
+                "config": {"collection": "proxy", "export": {"endpoint": endpoint}},
+                "export_credentials": {"headers": {"authorization": "Bearer proxy-wire"}},
+            },
+        )
+        assert created.status_code == 201, created.text
+        environment = await external_row(service, created.json()["id"], endpoint=daemon.endpoint)
+        from a13n_service.runs.environments import external
+
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(EnvironmentRow, environment)
+            row.token = external.seal(service.runtime.keys, row, TOKEN)
+        original = collection.read
+
+        async def checked_read(runtime, selection, *, credential_cache=None):
+            assert runtime.storage.engine.pool.checkedout() == 0
+            return await original(runtime, selection, credential_cache=credential_cache)
+
+        monkeypatch.setattr(collection, "read", checked_read)
+        async with asyncio.timeout(10):
+            while True:
+                await proxy.poll(environment)
+                entry = proxy.entries[environment]
+                if entry.cache.report is not None and entry.cache.report.sample is not None:
+                    break
+                await asyncio.sleep(0.05)
+        assert entry.cache.system_info is not None
+        assert entry.cache.status == "ready"
+        task = asyncio.create_task(proxy.exporter.run())
+        try:
+            await asyncio.wait_for(proxy.exporter.queue.join(), timeout=5)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await proxy.exporter.close()
+        assert len(deliveries) == 1
+        assert deliveries[0][1]["authorization"] == "bearer proxy-wire"
+        metrics = deliveries[0][2].resource_metrics[0].scope_metrics[0].metrics
+        memory = next(metric for metric in metrics if metric.name == "envd_system_memory_total_bytes")
+        point = memory.gauge.data_points[0]
+        assert point.as_int > 0
+        assert {a.key: a.value.string_value for a in point.attributes}["environment_id"] == environment
+        now = time.time()
+        body = EnvironmentQuery(metric="system_memory_used_bytes", start=now - 3600, end=now + 1, step=60)
+        response = await service.client.post(
+            f"{service.api}/environments/{environment}/metrics/query", json=body.model_dump()
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["source"] == "temporary"
+        assert response.json()["history"]["series"][0]["points"][0][2] > 0
+
+
+async def test_service_native_settings_export_real_envd_samples(tmp_path: Path) -> None:
+    from a13n_service.resources.metrics_data_sources.schemas import Export
+    from a13n_service.runs.environments.monitoring.launch import exporter_environment
+    from a13n_service.runs.environments.tables import EnvironmentRow
+    from fastapi import FastAPI, Request, Response
+    from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
+
+    from .conftest import listening
+
+    received = asyncio.Queue()
+    app = FastAPI()
+
+    @app.post("/native-metrics")
+    async def ingest(request: Request):
+        await received.put(
+            (request.headers.get("authorization"), ExportMetricsServiceRequest.FromString(await request.body()))
+        )
+        return Response(content=b"", media_type="application/x-protobuf")
+
+    async with listening(app) as endpoint:
+        environment = EnvironmentRow(id="env_native", workspace_id="ws_native", organization_id="org_native")
+        values = exporter_environment(
+            Export(endpoint=endpoint + "/native-metrics", interval_seconds=5),
+            {"authorization": "Bearer write,=% token"},
+            environment,
+        )
+        process = await asyncio.create_subprocess_exec(
+            BINARY,
+            env={
+                **{name: os.environ[name] for name in ("PATH", "SystemRoot") if name in os.environ},
+                **values,
+                "A13N_ENVD_RUNTIME_DIR": str(tmp_path / "runtime"),
+                "A13N_ENVD_CONFIG_JSON": json.dumps(
+                    {"device_id": environment.id, "default_working_directory": str(tmp_path)}
+                ),
+            },
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            authorization, request = await asyncio.wait_for(received.get(), timeout=20)
+            assert authorization == "Bearer write,=% token"
+            resource = request.resource_metrics[0]
+            attributes = {item.key: item.value.string_value for item in resource.resource.attributes}
+            assert attributes["environment_id"] == "env_native"
+            assert attributes["workspace_id"] == "ws_native"
+            assert attributes["service.instance.id"] == "env_native"
+            metric = next(
+                metric
+                for scope in resource.scope_metrics
+                for metric in scope.metrics
+                if metric.name == "envd_system_memory_total_bytes"
+            )
+            point = metric.gauge.data_points[0]
+            assert {item.key: item.value.string_value for item in point.attributes}["device_id"] == "env_native"
+            assert point.as_double > 0
+        finally:
+            process.stdin.close()
+            try:
+                _, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+                raise
+        assert process.returncode == 0, stderr.decode()
+        assert b"write,=% token" not in stderr
 
 
 async def test_a_registered_target_serves_runs_and_keeps_its_token_sealed(  # type: ignore[no-untyped-def]
@@ -182,6 +381,156 @@ async def test_every_connection_expects_the_registered_device(service, daemons) 
     adapter = await execution_connector(service.runtime, await target(service, environment_id))
     async with await adapter.open():
         pass
+
+
+async def test_reverse_device_real_envd_export_cross_replica_query_and_revocation(service, tmp_path, monkeypatch):
+    import time
+    from dataclasses import replace
+
+    from a13n_envd_client import EIPDeviceConnection
+    from a13n_service.runs.environments.monitoring.proxy import Proxy, lease_key
+    from websockets.asyncio.client import connect
+    from websockets.exceptions import InvalidStatus
+
+    from .conftest import listening
+    from .test_monitoring_devices import allow_loopback, registration
+    from .test_monitoring_export import receiver
+    from .test_monitoring_proxy import controlled
+
+    owner = await controlled(service)
+    allow_loopback(service, monkeypatch)
+    owner_runtime = service.app.state.runtime
+    peer = Proxy(replace(owner_runtime, metrics_proxy=None))
+    tasks = [asyncio.create_task(owner.route()), asyncio.create_task(peer.route())]
+    await asyncio.wait_for(asyncio.gather(owner.ready.wait(), peer.ready.wait()), timeout=5)
+
+    async def no_session(*args, **kwargs):
+        pytest.fail("Reverse monitoring must not create an execution Session")
+
+    monkeypatch.setattr(EIPDeviceConnection, "open_session", no_session)
+    original_metrics = EIPDeviceConnection.metrics
+
+    async def metrics(device):
+        assert service.runtime.storage.engine.pool.checkedout() == 0
+        return await original_metrics(device)
+
+    monkeypatch.setattr(EIPDeviceConnection, "metrics", metrics)
+    try:
+        async with receiver() as (destination, deliveries), listening(service.app) as endpoint:
+            created = await service.client.post(
+                f"{service.api}/metrics-data-sources",
+                json={
+                    "name": "Reverse export",
+                    "config": {"collection": "proxy", "export": {"endpoint": destination}},
+                    "export_credentials": {"headers": {"authorization": "Bearer reverse-write"}},
+                },
+            )
+            assert created.status_code == 201, created.text
+            registered = await registration(service, source=created.json()["id"])
+            row, token = registered.json()["device"], registered.json()["token"]
+            url = endpoint.replace("http://", "ws://") + f"/api/v1/devices/{row['id']}/connect"
+            credential = tmp_path / "reverse-token"
+            credential.write_text(token)
+            credential.chmod(0o600)
+            process = await asyncio.create_subprocess_exec(
+                BINARY,
+                env={
+                    **{name: os.environ[name] for name in ("PATH", "SystemRoot") if name in os.environ},
+                    "A13N_ENVD_DEVICE_ID": row["device_id"],
+                    "A13N_ENVD_RUNTIME_DIR": str(tmp_path / "reverse-runtime"),
+                    "A13N_ENVD_TRANSPORT": "reverse_websocket",
+                    "A13N_ENVD_REVERSE_WS_URL": url,
+                    "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(credential),
+                    "A13N_ENVD_CONFIG_JSON": json.dumps(
+                        {"default_working_directory": str(tmp_path), "monitoring": {"sample_interval_ms": 1000}}
+                    ),
+                },
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                async with asyncio.timeout(10):
+                    while row["id"] not in owner.reverse:
+                        assert process.returncode is None
+                        await asyncio.sleep(0.01)
+                    await owner.reverse[row["id"]].acquire_device(expected_device_id=row["device_id"])
+                    while True:
+                        await owner.poll(row["id"])
+                        entry = owner.entries[row["id"]]
+                        if entry.cache.report is not None and entry.cache.report.sample is not None:
+                            break
+                        await asyncio.sleep(0.02)
+                # A second replica routes reads to the carrier owner; it never claims or dials the Device.
+                service.app.state.runtime = replace(owner_runtime, metrics_proxy=peer)
+                now = time.time()
+                query = await service.client.post(
+                    f"{service.api}/devices/{row['id']}/metrics/query",
+                    json={
+                        "metric": "system_memory_used_bytes",
+                        "start": now - 3600,
+                        "end": now + 1,
+                        "step": 60,
+                    },
+                )
+                assert query.status_code == 200, query.text
+                assert query.json()["history"]["series"][0]["points"][0][2] > 0
+                assert not peer.entries
+                with pytest.raises(InvalidStatus):
+                    async with connect(
+                        url,
+                        subprotocols=["eip.v1"],
+                        additional_headers={"authorization": "Bearer " + token},
+                        compression=None,
+                    ):
+                        pytest.fail("Second replica admitted an already owned Device")
+                service.app.state.runtime = owner_runtime
+                exporter = asyncio.create_task(owner.exporter.run())
+                try:
+                    await asyncio.wait_for(owner.exporter.queue.join(), timeout=5)
+                finally:
+                    exporter.cancel()
+                    await asyncio.gather(exporter, return_exceptions=True)
+                assert len(deliveries) == 1
+                scheme, credential_value = deliveries[0][1]["authorization"].split(" ", 1)
+                assert scheme.lower() == "bearer" and credential_value == "reverse-write"
+                metric = next(
+                    metric
+                    for metric in deliveries[0][2].resource_metrics[0].scope_metrics[0].metrics
+                    if metric.name == "envd_system_memory_total_bytes"
+                )
+                attributes = {a.key: a.value.string_value for a in metric.gauge.data_points[0].attributes}
+                assert attributes["device_registration_id"] == row["id"]
+                assert "environment_id" not in attributes
+                rotated = await service.client.post(
+                    f"{service.api}/devices/{row['id']}/rotate-credential",
+                    headers={"if-match": registered.headers["etag"]},
+                )
+                assert rotated.status_code == 200, rotated.text
+                await owner.poll(row["id"])
+                assert row["id"] not in owner.reverse
+                assert await service.runtime.redis.get(lease_key(row["id"])) is None
+                with pytest.raises(InvalidStatus):
+                    async with connect(
+                        url,
+                        subprotocols=["eip.v1"],
+                        additional_headers={"authorization": "Bearer " + token},
+                        compression=None,
+                    ):
+                        pytest.fail("Rotated credential reconnected")
+            finally:
+                if process.returncode is None:
+                    process.terminate()
+                _, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
+                assert token.encode() not in stderr
+    finally:
+        service.app.state.runtime = owner_runtime
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        for identity, entry in list(owner.entries.items()):
+            await owner.drop(identity, expected=entry)
+        await owner.exporter.close()
+        await peer.exporter.close()
 
 
 @pytest.mark.parametrize("lost_cleanup", [False, True])

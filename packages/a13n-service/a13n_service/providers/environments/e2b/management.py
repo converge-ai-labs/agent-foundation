@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import shlex
 from datetime import UTC, datetime, timedelta
@@ -16,11 +17,19 @@ from a13n_harness.providers.environment.e2b.configuration import (
 )
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
 from a13n_harness.providers.environment.e2b.errors import provider_error, sdk_errors
-from a13n_harness.providers.environment.e2b.http import http_execution
+from a13n_harness.providers.environment.e2b.http import http_execution, http_runtime
 from a13n_harness.providers.environment.e2b.shared import E2BProviderRuntime, E2BReference
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from a13n_service.providers.environment._backend import ManagementBackend
 from a13n_service.providers.environment.desktop_access import Description, Reply, Request, command, decode
+from a13n_service.providers.environment.metrics import (
+    DeviceObservation,
+    MetricsLaunch,
+    ScrapeTarget,
+    observe,
+    scrape_target,
+)
 
 if TYPE_CHECKING:
     from e2b import AsyncSandbox
@@ -32,6 +41,24 @@ from .configuration import E2BRecipe
 
 class E2BManagement(E2BReference, ManagementBackend):
     _configuration: E2BRecipe
+    _metrics: MetricsLaunch | None = None
+
+    async def scrape_target(self) -> ScrapeTarget:
+        if self._configuration.execution != "envd_http":
+            raise self._unsupported()
+        async with http_runtime(self) as runtime:
+            return scrape_target(runtime)
+
+    async def observe_device(self, *, credential_cache: ManagedCredentialCache | None = None) -> DeviceObservation:
+        if self._configuration.execution != "envd_http":
+            raise self._unsupported()
+        async with http_runtime(self, credential_cache=credential_cache) as runtime:
+            return await observe(runtime, self._native_id)
+
+    def configure_metrics(self, metrics: MetricsLaunch) -> None:
+        if self._configuration.execution != "envd_http":
+            raise self._unsupported()
+        self._metrics = metrics
 
     def __init__(
         self,
@@ -159,6 +186,16 @@ class E2BManagement(E2BReference, ManagementBackend):
             timeout=0,
             request_timeout=self._configuration.request_timeout_seconds,
             envs={
+                **(self._metrics.environment if self._metrics is not None else {}),
+                **(
+                    {
+                        "A13N_ENVD_CONFIG_JSON": json.dumps(
+                            {"monitoring": {"sample_interval_ms": self._metrics.sample_interval_ms}}
+                        )
+                    }
+                    if self._metrics is not None
+                    else {}
+                ),
                 "A13N_ENVD_DEVICE_ID": self._native_id,
                 "A13N_ENVD_TRANSPORT": "http",
                 "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",

@@ -14,10 +14,10 @@ from a13n_harness.providers.environment.e2b.shared import E2BReference
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_session
+from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
+from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache, managed_http_runtime
 
 
 class HttpReference(E2BReference):
@@ -28,9 +28,9 @@ class HttpReference(E2BReference):
 
 
 @asynccontextmanager
-async def http_session(
-    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+async def http_runtime(
+    reference: E2BReference, *, credential_cache: ManagedCredentialCache | None = None
+) -> AsyncIterator[HttpEnvdProviderRuntime]:
     if reference._state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     sandbox = await open_sandbox(reference._state.sandbox_id, reference._options(), reference._validate_target)
@@ -55,21 +55,36 @@ async def http_session(
             except ValueError:
                 raise provider_error("envd_credential_invalid", Category.UNAVAILABLE) from None
 
-        async with managed_http_session(
+        async with managed_http_runtime(
             provider_key="e2b",
-            session_recovery=session_recovery,
             connection=connection,
             endpoint_policy=reference._runtime.endpoint_policy,
             load_credential=credential,
+            credential_cache=credential_cache,
+            target_id=reference._state.sandbox_id,
+        ) as runtime:
+            yield runtime
+    finally:
+        await close_sandbox(sandbox)
+
+
+@asynccontextmanager
+async def http_session(
+    reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
+) -> AsyncIterator[EIPSession]:
+    async with http_runtime(reference) as runtime:
+        async with runtime.open_session(
             expected_device_id=reference._native_id,
-            configuration=RemoteEnvdEnvironmentConfiguration(
-                working_directory="/workspace",
-                required_methods=("computer.describe", "computer.observe") if reference._configuration.desktop else (),
+            session_recovery=session_recovery,
+            working_directory="/workspace",
+            required_methods=REQUIRED_METHODS
+            | (
+                frozenset({"computer.describe", "computer.observe"})
+                if reference._configuration.desktop
+                else frozenset()
             ),
         ) as session:
             yield session
-    finally:
-        await close_sandbox(sandbox)
 
 
 def http_execution(

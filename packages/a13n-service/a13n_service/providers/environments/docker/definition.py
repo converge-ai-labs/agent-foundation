@@ -35,4 +35,5 @@ DOCKER = management_definition(
     supports_stop=True,
     supports_destroy=True,
     requires_keepalive=False,
+    metrics_launch=lambda recipe: recipe.execution == "envd_http",
 )
