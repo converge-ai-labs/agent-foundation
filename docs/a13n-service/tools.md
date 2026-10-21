@@ -41,6 +41,7 @@ Platform tools are Service API operations that a run calls with its own short-li
 | `connections`           | Connections, their tools and connector apps                                                              |
 | `skills`                | Skills and their versions                                                                                |
 | `environment_templates` | Environment templates                                                                                    |
+| `schedules`             | One-time and recurring schedules, enable/pause/archive, manual dispatch and trigger history              |
 | `providers`             | Providers, and tests of their saved connections                                                          |
 | `execution`             | Sessions, threads, runs, traces and findings; its only write submits a finding (`POST /api/v1/findings`) |
 

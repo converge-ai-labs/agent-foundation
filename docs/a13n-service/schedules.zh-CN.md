@@ -77,7 +77,7 @@ Schedule 在指定时间一次性或定期向 Agent 发送固定文本或 JSON�
 
 初始 run 是触发记录的第一条输入分配到的 run，后续 run 不会替换摘要中的初始 run。`has_unfinished_work` 在输入提交后为 true，直到主 thread 首次出现 completed、failed 或 cancelled 状态的 run。waiting 及多次恢复期间仍算未结束；之后的续聊和子任务不会让已结束的触发记录重新变为未结束。false 不代表执行成功。尚未提交输入的记录，其初始 entry 状态和 run 都为 null。执行观测变化时，触发记录可能保持相同版本；执行结束会将状态改为 `completed` 并增加版本。收到 thread 变化或重新连接后，应刷新展开的历史查询。完整输出继续通过原 run items 接口读取。
 
-完整筛选条件和字段见 API 参考。计划接口目前仅支持 HTTP；Composer 和 MCP 接入属于后续工作。
+完整筛选条件和字段见 API 参考。所有计划管理接口也支持 MCP。[Agent Composer](agent-composer.md) 已启用 `schedules` 平台工具组；其他 Agent 可以在工具配置中主动启用。查询和时间预览默认直接执行，创建、修改、启用、暂停、归档和手动触发默认请求审批。MCP 沿用 HTTP 的请求体、ETag、幂等键和创建者权限。通过 Composer 创建的计划在对话结束后仍保留已保存的执行授权。实时输出继续使用 HTTP Session 事件流。
 
 ## 订阅状态和加载历史
 

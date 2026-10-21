@@ -77,7 +77,7 @@ Add `?include=execution` to either occurrence read to include current execution 
 
 The initial run is the run assigned to the trigger's first input. Later runs do not replace it in this summary. `has_unfinished_work` is true for a submitted trigger until its root thread first contains a completed, failed or cancelled run. Waiting is unfinished, including across resumes; later conversation and child work do not reopen a finished trigger. False does not mean the work succeeded. A trigger with no submitted input has null initial entry and run values. Execution observations can change at the same occurrence version. Completion changes its status to `completed` and advances its version. Refresh the expanded history after thread changes or reconnecting. Read full output through the ordinary run items API.
 
-The API reference contains all filters and fields. Schedule endpoints are currently HTTP-only; Composer and MCP integration are separate work.
+The API reference contains all filters and fields. All Schedule management endpoints are also available through MCP. [Agent Composer](agent-composer.md) enables the `schedules` platform toolset; other Agents can opt in through their toolsets. Reads and time previews run directly by default; create, update, enable, pause, archive and manual dispatch request approval. MCP uses the same request bodies, ETags, idempotency keys and creator permissions as HTTP. A plan created by Composer keeps its saved execution authority after that conversation ends. Live output continues through the HTTP Session stream.
 
 ## Observe live state and load history
 

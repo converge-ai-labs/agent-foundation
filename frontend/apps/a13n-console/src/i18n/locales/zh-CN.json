@@ -2877,5 +2877,6 @@
   "Title, source, ID, or message…": "标题、来源、ID 或消息…",
   "Try a title, source link, external ID, or words from the conversation.": "试试标题、来源链接、外部 ID，或对话中的关键词。",
   "What is this session about?": "这个会话在讨论什么？",
-  "Your edits are preserved. Reload the saved details before making further changes.": "你的编辑已保留。请重新加载已保存的信息后再修改。"
+  "Your edits are preserved. Reload the saved details before making further changes.": "你的编辑已保留。请重新加载已保存的信息后再修改。",
+  "One-time and recurring Agent schedules, manual dispatch and trigger history.": "一次性和重复 Agent 计划、手动触发及触发记录。"
 }

@@ -734,5 +734,101 @@
     "method": "GET",
     "path": "/api/v1/traces/{trace_id}/spans/{span_id}/content",
     "summary": "Read Span Content"
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "list_schedules",
+    "method": "GET",
+    "path": "/api/v1/schedules",
+    "summary": "List Schedules"
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "create_schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules",
+    "summary": "Create Schedule"
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "preview_schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules/preview",
+    "summary": "Preview Schedule"
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "archive_schedule",
+    "method": "DELETE",
+    "path": "/api/v1/schedules/{schedule_id}",
+    "summary": "Archive Schedule"
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "get_schedule",
+    "method": "GET",
+    "path": "/api/v1/schedules/{schedule_id}",
+    "summary": "Get Schedule"
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "update_schedule",
+    "method": "PATCH",
+    "path": "/api/v1/schedules/{schedule_id}",
+    "summary": "Update Schedule"
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "dispatch_schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules/{schedule_id}/dispatch",
+    "summary": "Dispatch Schedule"
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "enable_schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules/{schedule_id}/enable",
+    "summary": "Enable Schedule"
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "list_schedule_occurrences",
+    "method": "GET",
+    "path": "/api/v1/schedules/{schedule_id}/occurrences",
+    "summary": "List Schedule Occurrences"
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "get_schedule_occurrence",
+    "method": "GET",
+    "path": "/api/v1/schedules/{schedule_id}/occurrences/{occurrence_id}",
+    "summary": "Get Schedule Occurrence"
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "pause_schedule",
+    "method": "POST",
+    "path": "/api/v1/schedules/{schedule_id}/pause",
+    "summary": "Pause Schedule"
+  },
+  {
+    "effect": "read",
+    "group": "schedules",
+    "key": "get_schedule_status",
+    "method": "GET",
+    "path": "/api/v1/schedules/{schedule_id}/status",
+    "summary": "Get Schedule Status"
   }
 ]

@@ -1,6 +1,6 @@
 ---
 name: platform-operations
-description: Configure workspace resources and diagnose sessions, threads, runs and attempts using the Service MCP tools.
+description: Configure workspace resources, manage one-time and recurring schedules, and diagnose executions using the Service MCP tools.
 ---
 
 # Platform operations
@@ -26,6 +26,7 @@ Read only the references needed for the current task:
 - [Connections](references/connections.md): tools, tests and authorization.
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.
 - [Environment templates](references/environment-templates.md): recipes and instance boundaries.
+- [Schedules](references/schedules.md): read before creating, changing or dispatching scheduled work; covers time preview, durable delegation, approval and trigger results.
 - [Execution and diagnostics](references/execution-and-diagnostics.md): sessions through attempts and traces.
 - [Versions and conflicts](references/versions-and-conflicts.md): ETags, review and partial success.
 - [Permissions and errors](references/permissions-and-errors.md): scope and safe failures.

@@ -32,17 +32,20 @@ Use the existing Console pages for connection credentials, custom secret headers
 
 ## What it can do
 
-| Group                 | Available work                                                                                                      |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Agents                | Create, read, rename, label, archive and manage configuration revisions and defaults.                               |
-| Models                | Read, create and update configured models.                                                                          |
-| Connections           | Read, create, update, discover tools and test connections.                                                          |
-| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions.                       |
-| Environment templates | Read, create and update templates for later instances.                                                              |
-| Providers             | Read, create and update providers through private Console credential cards.                                         |
-| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings, and submit a finding. |
+| Group                 | Available work                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Agents                | Create, read, rename, label, archive and manage configuration revisions and defaults.                                              |
+| Models                | Read, create and update configured models.                                                                                         |
+| Connections           | Read, create, update, discover tools and test connections.                                                                         |
+| Skills                | Validate and import uploaded or public GitHub packages, update metadata and manage revisions.                                      |
+| Environment templates | Read, create and update templates for later instances.                                                                             |
+| Providers             | Read, create and update providers through private Console credential cards.                                                        |
+| Schedules             | Preview, create and update one-time or recurring schedules; enable, pause, archive, manually dispatch and inspect trigger history. |
+| Execution             | Query sessions, threads, inbox entries, runs, attempts, display content, traces and findings, and submit a finding.                |
 
 Composer uses platform MCP tools with a short-lived credential supplied for the run. Reads run directly by default; writes and connection tests use [approval](agents-and-runs.md#waits-approvals-and-questions). Operations remain within your current permissions, the run's accepted authority and its workspace. Approval grants no additional platform permissions.
+
+For [Schedules](schedules.md), specify the time and timezone, target Agent and input. Composer previews the timing before proposing a write. Creation defaults to paused; explicitly request immediate enablement to start future scheduled execution. A Schedule retains your delegated execution authority after the Composer conversation ends. Pause or archive it to stop future work; approving its creation does not automatically approve tools used by its future Runs.
 
 For diagnosis, give Composer a run ID or describe the failure. It can find a past failed run without its session ID and distinguish a failed attempt from a run that later recovered. Its answer identifies missing trace evidence when relevant.
 

@@ -597,7 +597,8 @@
         "skills",
         "environment_templates",
         "providers",
-        "execution"
+        "execution",
+        "schedules"
       ],
       "type": "string"
     },

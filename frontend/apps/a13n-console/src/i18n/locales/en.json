@@ -2877,5 +2877,6 @@
   "Title, source, ID, or message…": "Title, source, ID, or message…",
   "Try a title, source link, external ID, or words from the conversation.": "Try a title, source link, external ID, or words from the conversation.",
   "What is this session about?": "What is this session about?",
-  "Your edits are preserved. Reload the saved details before making further changes.": "Your edits are preserved. Reload the saved details before making further changes."
+  "Your edits are preserved. Reload the saved details before making further changes.": "Your edits are preserved. Reload the saved details before making further changes.",
+  "One-time and recurring Agent schedules, manual dispatch and trigger history.": "One-time and recurring Agent schedules, manual dispatch and trigger history."
 }

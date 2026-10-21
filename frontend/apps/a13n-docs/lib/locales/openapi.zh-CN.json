@@ -520,12 +520,12 @@
   "Get Schedule Occurrence": "获取触发记录",
   "Commands accept no configuration or authority overrides.": "操作不接受配置或权限覆盖。",
   "List Schedule Occurrences": "列出触发记录",
-  "Authorize recurring execution as the creator, independently of the accepting credential's lifetime.": "以创建者身份授权周期执行，授权不受本次请求凭证有效期的限制。",
   "Archive Schedule": "归档定时任务",
   "Update Schedule": "更新定时任务",
   "Create Schedule": "创建定时任务",
   "Current execution observations alongside the durable occurrence completion facts.": "当前执行观测及持久保存的触发记录完成信息。",
   "Absent fields match every event; a specified identity must exist and match.": "省略字段匹配全部事件；指定的标识必须存在且匹配。",
   "Caller-supplied display context, not execution provenance or an authorization boundary.": "由调用方提供的展示信息，不代表经过验证的执行来源，也不作为授权依据。",
-  "Session/thread ID, title, origin, label value or retained conversation text": "会话或线程 ID、标题、来源、标签值，或保留的对话文本"
+  "Session/thread ID, title, origin, label value or retained conversation text": "会话或线程 ID、标题、来源、标签值，或保留的对话文本",
+  "Save durable execution authority as the creator, beyond this credential or Run's lifetime.\n\nDefaults to paused. Set state=enabled only when automatic future execution is intended.": "以创建者身份保存持久执行授权，授权在本次凭证或 Run 结束后仍然有效。\n\n默认暂停。只有希望开始后续自动执行时，才设置 state=enabled。"
 }

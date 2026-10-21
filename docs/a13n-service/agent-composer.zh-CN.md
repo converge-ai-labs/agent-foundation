@@ -40,9 +40,12 @@ Agent Composer 帮助你在 Console 中创建和修改 agent。描述想要的�
 | Skill    | 校验和导入上传包或公开 GitHub 来源、更新元数据和管理修订版本。                             |
 | 环境模板 | 读取、创建和更新供后续实例使用的模板。                                                     |
 | Provider | 读取 provider，通过 Console 私密凭据卡片创建和更新。                                       |
+| 定时计划 | 预览、创建和修改一次性或重复计划，启用、暂停、归档、手动触发，以及查询触发记录。           |
 | 执行查询 | 查询 session、thread、输入队列、run、attempt、展示内容、trace 和 finding，并提交 finding。 |
 
 Composer 使用平台 MCP 工具，Service 为运行提供短期凭据。读取默认直接执行；写入和连接测试使用[审批](agents-and-runs.md#waits-approvals-and-questions)。操作受用户当前权限、运行接受时的授权上限和工作空间限制。批准不会增加平台权限。
+
+创建[定时计划](schedules.md)时，提供时间和时区、目标 Agent 以及输入。Composer 会先预览时间，再提出写入方案。创建默认暂停；明确要求立即启用后，才开始未来的定时执行。计划会在 Composer 对话结束后继续保留你的执行授权。需要停止后续任务时，暂停或归档计划；批准创建计划不会自动批准未来 Run 中的工具调用。
 
 诊断时，提供运行 ID 或描述故障。Composer 可以在不知道 session ID 的情况下查找历史失败运行，并区分某次 attempt 失败与最终恢复成功。缺少相关 trace 证据时，答复会指出缺口。
 
