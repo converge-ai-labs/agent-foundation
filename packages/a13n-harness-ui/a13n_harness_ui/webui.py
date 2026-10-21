@@ -47,7 +47,7 @@ from a13n_harness_ui.browser import (
     BrowserState,
     BrowserViewportRequest,
 )
-from a13n_harness_ui.browser_setup import BrowserSetup
+from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
@@ -1109,6 +1109,10 @@ def create_webui(
         finally:
             draft.detach(participant)
 
+    @server.post("/api/browser/scan", response_model=BrowserScan)
+    async def scan_browser_executables() -> BrowserScan:
+        return await app().scan_browser_executables()
+
     @server.get("/api/threads/{thread_id}/browser", response_model=BrowserState)
     async def browser_state(thread_id: str) -> BrowserState:
         return await app().browser_state(thread_id)
@@ -1116,10 +1120,6 @@ def create_webui(
     @server.get("/api/threads/{thread_id}/browser/setup", response_model=BrowserSetup)
     async def browser_setup(thread_id: str) -> BrowserSetup:
         return await app().browser_setup(thread_id)
-
-    @server.post("/api/threads/{thread_id}/browser/install", response_model=BrowserSetup)
-    async def install_browser(thread_id: str) -> BrowserSetup:
-        return await app().install_browser(thread_id)
 
     @server.post("/api/threads/{thread_id}/browser/enable", response_model=BrowserState)
     async def enable_browser(thread_id: str) -> BrowserState:

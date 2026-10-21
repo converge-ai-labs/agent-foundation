@@ -1636,6 +1636,24 @@
         }
       }
     },
+    "/api/browser/scan": {
+      "post": {
+        "summary": "Scan Browser Executables",
+        "operationId": "scan_browser_executables_api_browser_scan_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserScan"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/browser": {
       "get": {
         "summary": "Browser State",
@@ -1679,45 +1697,6 @@
       "get": {
         "summary": "Browser Setup",
         "operationId": "browser_setup_api_threads__thread_id__browser_setup_get",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrowserSetup"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/threads/{thread_id}/browser/install": {
-      "post": {
-        "summary": "Install Browser",
-        "operationId": "install_browser_api_threads__thread_id__browser_install_post",
         "parameters": [
           {
             "name": "thread_id",
@@ -8917,6 +8896,7 @@
             "type": "string",
             "enum": [
               "system",
+              "custom",
               "playwright"
             ],
             "title": "Source"
@@ -8930,45 +8910,6 @@
           "source"
         ],
         "title": "BrowserExecutable"
-      },
-      "BrowserInstallState": {
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "idle",
-              "installing",
-              "succeeded",
-              "failed"
-            ],
-            "title": "Status",
-            "default": "idle"
-          },
-          "step": {
-            "type": "string",
-            "title": "Step",
-            "default": ""
-          },
-          "output": {
-            "type": "string",
-            "title": "Output",
-            "default": ""
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "BrowserInstallState"
       },
       "BrowserInstallStep": {
         "properties": {
@@ -9023,6 +8964,11 @@
           "detail": {
             "type": "string",
             "title": "Detail"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -9033,6 +8979,29 @@
           "detail"
         ],
         "title": "BrowserRequirement"
+      },
+      "BrowserScan": {
+        "properties": {
+          "browsers": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserExecutable"
+            },
+            "type": "array",
+            "title": "Browsers",
+            "default": []
+          },
+          "vncs": {
+            "items": {
+              "$ref": "#/components/schemas/VncExecutable"
+            },
+            "type": "array",
+            "title": "Vncs",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BrowserScan"
       },
       "BrowserSetup": {
         "properties": {
@@ -9068,6 +9037,16 @@
               }
             ]
           },
+          "vnc": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VncExecutable"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "requirements": {
             "items": {
               "$ref": "#/components/schemas/BrowserRequirement"
@@ -9088,19 +9067,6 @@
             "type": "string",
             "title": "Message",
             "default": ""
-          },
-          "installable": {
-            "type": "boolean",
-            "title": "Installable",
-            "default": false
-          },
-          "install_message": {
-            "type": "string",
-            "title": "Install Message",
-            "default": ""
-          },
-          "installation": {
-            "$ref": "#/components/schemas/BrowserInstallState"
           }
         },
         "additionalProperties": false,
@@ -9210,6 +9176,11 @@
                 "height": 390
               }
             ]
+          },
+          "resize_available": {
+            "type": "boolean",
+            "title": "Resize Available",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -20795,6 +20766,79 @@
         "type": "object",
         "title": "VideoInputPolicy",
         "description": "Base64-after byte budget for both one video and all inline videos in a request."
+      },
+      "VncExecutable": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/VncKind",
+            "default": "tigervnc"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "system",
+              "custom"
+            ],
+            "title": "Source"
+          },
+          "window_manager": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Manager"
+          },
+          "xrandr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xrandr"
+          },
+          "display_server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Server"
+          },
+          "disable_resizing": {
+            "type": "boolean",
+            "title": "Disable Resizing",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "source"
+        ],
+        "title": "VncExecutable"
+      },
+      "VncKind": {
+        "type": "string",
+        "enum": [
+          "tigervnc",
+          "x11vnc",
+          "wayvnc"
+        ]
       },
       "VoiceSnapshot": {
         "properties": {

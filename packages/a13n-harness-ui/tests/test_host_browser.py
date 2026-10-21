@@ -12,7 +12,7 @@ from a13n_harness_ui.browser import (
     HostBrowsers,
     browser_url,
 )
-from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserSetup
+from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserScan, BrowserSetup
 from a13n_harness_ui.errors import HarnessUiError
 
 from .test_app import _settings, _write_configuration
@@ -45,8 +45,17 @@ async def ready(browsers):
     session.page = Mock()
     session.page.is_closed.return_value = False
     session.page.screenshot = AsyncMock(return_value=b"picture")
+    session.page.bring_to_front = AsyncMock()
+
+    async def close_page(**kwargs):
+        session.page.is_closed.return_value = True
+        session.page_closed(session.page)
+
+    session.page.close = AsyncMock(side_effect=close_page)
     session.page.keyboard.press = AsyncMock()
-    session.state = state.model_copy(update={"status": "ready"})
+    session.windows["thread-test"].page = session.page
+    session.page_owners[session.page] = "thread-test"
+    session.state = state.model_copy(update={"status": "ready", "resize_available": True})
     return session, browsers.backend("thread-test", state.session_id)
 
 
@@ -62,7 +71,7 @@ async def test_takeover_blocks_reads_actions_and_requires_fresh_observation_on_h
     await browsers.control("thread-test", session.state.session_id, human=False)
     with pytest.raises(HarnessUiError, match="after handback"):
         await backend.act("press", value="Enter")
-    session.requires_observation = False
+    session.windows["thread-test"].requires_observation = False
     await backend.act("press", value="Enter")
     session.page.keyboard.press.assert_awaited_once_with("Enter")
 
@@ -153,14 +162,14 @@ async def test_stop_retires_queued_work_preserves_profile_and_new_binding(browse
     session, backend = await ready(browsers)
     session.profile.mkdir(parents=True)
     (session.profile / "retained-login").write_text("fixture")
-    session.targets["old"] = AsyncMock()
+    session.windows["thread-test"].targets["old"] = AsyncMock()
     stopped = await browsers.stop("thread-test", session.state.session_id)
     assert stopped.status == "stopped"
     with pytest.raises(HarnessUiError, match="session changed"):
         await backend.screenshot()
     assert (await browsers.enable("thread-test")).status == "stopped"
     monkeypatch.setattr(module.BrowserSession, "start", AsyncMock())
-    new = await browsers.start("thread-test", session.state.session_id, explicit=True)
+    new = await browsers.start("thread-test", stopped.session_id, explicit=True)
     assert new.session_id != session.state.session_id
     assert (session.profile / "retained-login").read_text() == "fixture"
 
@@ -210,24 +219,18 @@ async def test_concurrent_viewers_cannot_exceed_the_limit_while_connecting(brows
     assert sum(writer.close.call_count for writer in writers) == 1
 
 
-async def test_shutdown_attempts_all_runtime_cleanups_after_one_fails(browsers):
+async def test_shutdown_closes_shared_runtime_once_even_after_a_cleanup_failure(browsers):
     first = await browsers.enable("thread-first")
     second = await browsers.enable("thread-second")
-    sessions = [
-        browsers.session("thread-first", first.session_id),
-        browsers.session("thread-second", second.session_id),
-    ]
-    for session in sessions:
-        session.close = AsyncMock()
-    sessions[1].close.side_effect = RuntimeError("Cleanup failed")
+    session = browsers.session("thread-first", first.session_id)
+    assert session is browsers.session("thread-second", second.session_id)
+    session.close = AsyncMock(side_effect=RuntimeError("Cleanup failed"))
     with pytest.raises(RuntimeError, match="Cleanup failed"):
         await browsers.close()
-    assert all(session.retired for session in sessions)
-    for session in sessions:
-        session.close.assert_awaited_once()
-        if session.cleanup is not None:
-            await session.cleanup
-    assert not browsers.sessions
+    session.close.assert_awaited_once()
+    if session.cleanup is not None:
+        await session.cleanup
+    assert session.retired and not browsers.sessions
 
 
 async def test_preparation_is_read_only_and_rechecks_authority(browsers):
@@ -252,37 +255,6 @@ async def test_enable_rejects_unprepared_host_without_creating_binding(browsers,
     assert raised.value.code == "browser_runtime_not_ready"
     assert not browsers.sessions
     assert not browsers.root.exists()
-
-
-async def test_installation_is_host_scoped_idempotent_and_does_not_enable_a_browser(browsers, monkeypatch):
-    preparation = BrowserSetup(platform="linux", supported=True, ready=False, installable=True)
-    monkeypatch.setattr(module, "inspect_browser", AsyncMock(return_value=preparation))
-    started, release = asyncio.Event(), asyncio.Event()
-
-    async def install(*args):
-        started.set()
-        await release.wait()
-
-    operation = AsyncMock(side_effect=install)
-    monkeypatch.setattr(browsers.installer, "install", operation)
-    result = await browsers.install("thread-a")
-    await started.wait()
-    assert result.installation.status == "installing"
-    assert (await browsers.install("thread-b")).installation.status == "installing"
-    assert operation.await_count == 1
-    assert not browsers.sessions
-    release.set()
-    await browsers.installer.task
-
-
-async def test_installation_rejects_missing_system_privileges(browsers, monkeypatch):
-    preparation = BrowserSetup(
-        platform="linux", supported=True, ready=False, installable=False, install_message="Administrator required"
-    )
-    monkeypatch.setattr(module, "inspect_browser", AsyncMock(return_value=preparation))
-    with pytest.raises(HarnessUiError, match="Administrator required"):
-        await browsers.install("thread-a")
-    assert browsers.installer.task is None
 
 
 @pytest.mark.parametrize("connected", [False, True])
@@ -335,6 +307,13 @@ async def test_webui_opt_in_is_authenticated_and_default_shell_use_has_no_browse
             server.router.lifespan_context(server),
             AsyncClient(transport=ASGITransport(app=server), base_url="http://127.0.0.1") as client,
         ):
+            scan = AsyncMock(return_value=BrowserScan())
+            monkeypatch.setattr(app, "scan_browser_executables", scan)
+            assert (await client.post("/api/browser/scan")).status_code == 401
+            scan.assert_not_awaited()
+            response = await client.post("/api/browser/scan", headers={"Authorization": "Bearer test-key"})
+            assert response.status_code == 200 and response.json() == {"browsers": [], "vncs": []}
+            scan.assert_awaited_once()
             url = f"/api/threads/{thread.thread_id}/browser/enable"
             setup_url = f"/api/threads/{thread.thread_id}/browser/setup"
             assert (await client.get(setup_url)).status_code == 401
@@ -349,13 +328,17 @@ async def test_webui_opt_in_is_authenticated_and_default_shell_use_has_no_browse
                 )
                 headers = {"Authorization": f"Bearer {share.key}"}
                 prefix = f"/api/shared/{share.grant.share_id}"
+                scan.reset_mock()
+                assert (await client.post("/api/browser/scan", headers=headers)).status_code == 401
+                assert (await client.post(prefix + "/browser/scan", headers=headers)).status_code == 405
+                scan.assert_not_awaited()
                 for method, suffix in (("GET", "/setup"), ("POST", "/install"), ("POST", "/access")):
                     path = f"/threads/{thread.thread_id}/browser{suffix}"
                     assert (await client.request(method, "/api" + path, headers=headers)).status_code == 401
                     assert (await client.request(method, prefix + path, headers=headers)).status_code == (
                         404 if method == "GET" else 405
                     )
-            assert not app.browsers().sessions and not app.browsers().installer.running
+            assert not app.browsers().sessions
             assert (await client.post(url)).status_code == 401
             reset_url = f"/api/threads/{thread.thread_id}/browser/reset"
             assert (await client.post(reset_url, json={"session_id": "unknown"})).status_code == 401
@@ -422,11 +405,12 @@ async def test_closing_a_tab_preserves_a_remaining_browser_tab_and_expires_refs(
     replacement = Mock()
     replacement.is_closed.return_value = False
     session.context = Mock(pages=[replacement])
-    session.revision = "old-tab"
+    session.page_owners[replacement] = "thread-test"
+    session.windows["thread-test"].revision = "old-tab"
     assert browsers.state("thread-test").status == "ready"
-    assert session.page is replacement
-    assert session.requires_observation
-    assert session.revision == ""
+    assert session.windows["thread-test"].page is replacement
+    assert session.windows["thread-test"].requires_observation
+    assert session.windows["thread-test"].revision == ""
 
 
 async def test_stopping_the_browser_wakes_a_handback_waiter_without_replaying(browsers):
@@ -481,23 +465,22 @@ async def test_runtime_failure_revokes_before_cleanup_and_explicit_reopen_replac
     new = await browsers.start("thread-test", binding, explicit=True)
     replacement = browsers.session("thread-test", new.session_id)
     assert new.session_id != binding
-    assert replacement.requires_observation
+    assert replacement.windows["thread-test"].requires_observation
     assert (replacement.profile / "saved-profile").read_text() == "retained"
     with pytest.raises(HarnessUiError, match="session changed"):
         await backend.screenshot()
 
 
-async def test_closed_last_page_fails_without_waiting_for_a_viewer(browsers):
-    session, _ = await ready(browsers)
+async def test_closed_last_page_stops_only_its_window_without_waiting_for_a_viewer(browsers):
+    session, backend = await ready(browsers)
     session.page.is_closed.return_value = True
-    session.context = Mock(pages=[])
     session.page_closed(session.page)
-    assert session.retired
-    assert session.state.status == "stopped"
-    detected = session.state
-    assert await browsers.stop("thread-test", session.state.session_id) == detected
-    await session.close()
-    assert session.context is session.page is None
+    assert not session.retired
+    assert browsers.state("thread-test").status == "stopped"
+    with pytest.raises(HarnessUiError, match="session changed"):
+        await backend.screenshot()
+    if session.page_tasks:
+        await asyncio.gather(*tuple(session.page_tasks))
 
 
 async def test_unexpected_process_exit_fails_the_runtime(browsers):
@@ -525,9 +508,9 @@ async def test_renderer_failure_is_a_safe_browser_error_and_retired_results_are_
         await backend.screenshot()
 
 
-async def test_reset_cleans_old_runtime_before_start_and_revokes_old_bindings(browsers, monkeypatch):
+async def test_reset_retires_only_its_window_and_preserves_the_runtime(browsers, monkeypatch):
     session, backend = await ready(browsers)
-    binding = session.state.session_id
+    binding = browsers.state("thread-test").session_id
     await browsers.control("thread-test", binding, human=True)
     pending = asyncio.create_task(backend.wait_for_handback())
     await asyncio.sleep(0)
@@ -535,33 +518,70 @@ async def test_reset_cleans_old_runtime_before_start_and_revokes_old_bindings(br
     session.resources.push_async_callback(cleanup)
     session.profile.mkdir(parents=True)
     (session.profile / "saved-settings").write_text("retained")
+    page = session.page
 
-    async def start(replacement):
-        cleanup.assert_awaited_once()
-        replacement.state = replacement.state.model_copy(update={"status": "ready"})
+    async def open_window(thread_id):
+        assert page.is_closed()
+        session.windows[thread_id].page = Mock()
 
-    monkeypatch.setattr(module.BrowserSession, "start", start)
+    session.start = AsyncMock()
+    session.open_window = AsyncMock(side_effect=open_window)
     state = await browsers.reset("thread-test", binding)
-    assert state.status == "ready"
-    assert state.control == "agent"
+    assert state.status == "ready" and state.control == "agent"
     assert state.session_id != binding
+    cleanup.assert_not_awaited()
+    assert not session.retired
+    assert browsers.session("thread-test", state.session_id) is session
     assert (session.profile / "saved-settings").read_text() == "retained"
-    assert browsers.session("thread-test", state.session_id).requires_observation
+    assert session.windows["thread-test"].requires_observation
     with pytest.raises(HarnessUiError, match="session changed"):
         await asyncio.wait_for(pending, 1)
     with pytest.raises(HarnessUiError, match="session changed"):
         await backend.screenshot()
 
 
-async def test_stopped_sessions_release_capacity_but_start_still_enforces_the_limit(browsers):
-    states = [await browsers.enable(f"thread-{i}") for i in range(4)]
-    with pytest.raises(HarnessUiError, match="Stop an unused"):
-        await browsers.enable("thread-extra")
-    await browsers.stop("thread-0", states[0].session_id)
-    await browsers.enable("thread-extra")
-    with pytest.raises(HarnessUiError, match="Stop an unused"):
-        await browsers.start("thread-0", states[0].session_id, explicit=True)
-    assert browsers.state("thread-0").status == "stopped"
+async def test_threads_share_runtime_but_stop_and_start_have_independent_bindings(browsers, monkeypatch):
+    states = [await browsers.enable(f"thread-{i}") for i in range(6)]
+    runtime = browsers.session("thread-0", states[0].session_id)
+    assert len(set(browsers.sessions.values())) == 1
+    assert len({state.session_id for state in states}) == 6
+    assert runtime.profile == browsers.root and runtime.profile.name == "profile"
+    assert len(runtime.windows) == 6
+    stopped = await browsers.stop("thread-0", states[0].session_id)
+    assert stopped.status == "stopped"
+    assert all(browsers.binding(f"thread-{i}") == states[i].session_id for i in range(1, 6))
+    assert not runtime.retired
+    monkeypatch.setattr(module.BrowserSession, "start", AsyncMock())
+    restarted = await browsers.start("thread-0", stopped.session_id, explicit=True)
+    assert restarted.session_id != states[0].session_id
+    assert len(set(browsers.sessions.values())) == 1
+    assert all(browsers.binding(f"thread-{i}") == states[i].session_id for i in range(1, 6))
+    with pytest.raises(HarnessUiError, match="session changed"):
+        browsers.session("thread-0", states[0].session_id)
+
+
+async def test_takeover_in_one_thread_pauses_every_thread_and_invalidates_all_references(browsers):
+    runtime, _ = await ready(browsers)
+    second = await browsers.enable("thread-second")
+    tab = runtime.windows["thread-second"]
+    tab.page = Mock()
+    tab.page.is_closed.return_value = False
+    tab.page.screenshot = AsyncMock(return_value=b"second")
+    tab.page.bring_to_front = AsyncMock()
+    tab.revision = "old"
+    tab.targets["element"] = AsyncMock()
+    backend = browsers.backend("thread-second", second.session_id)
+    await browsers.control("thread-test", runtime.state.session_id, human=True)
+    with pytest.raises(HarnessUiError, match="user controls"):
+        await backend.screenshot()
+    assert not tab.revision and not tab.targets and tab.requires_observation
+    runtime.start = AsyncMock()
+    with pytest.raises(HarnessUiError, match="user controls"):
+        await backend.act("navigate", value="https://example.test")
+    runtime.start.assert_not_awaited()
+    await browsers.control("thread-test", runtime.state.session_id, human=False)
+    assert await backend.screenshot() == b"second"
+    assert runtime.windows["thread-test"].page is not tab.page
 
 
 async def test_viewport_resize_requires_controller_and_invalidates_old_observation(browsers):
@@ -575,13 +595,13 @@ async def test_viewport_resize_requires_controller_and_invalidates_old_observati
     control = await browsers.control("thread-test", session.state.session_id, human=True)
     with pytest.raises(HarnessUiError, match="Take control"):
         await browsers.resize("thread-test", request.model_copy(update={"control_token": "wrong"}))
-    session.revision = "old-layout"
+    session.windows["thread-test"].revision = "old-layout"
     state = await browsers.resize("thread-test", request.model_copy(update={"control_token": control.control_token}))
     assert state.viewport == "phone"
     assert state.session_id == request.session_id
     assert state.control == "human"
-    assert session.requires_observation
-    assert not session.revision
+    assert session.windows["thread-test"].requires_observation
+    assert not session.windows["thread-test"].revision
     session.layout.assert_awaited_once_with(session.page, "phone")
 
 
@@ -603,3 +623,169 @@ async def test_partial_viewport_failure_stops_the_runtime_instead_of_exposing_mi
     assert not session.control_token
     with pytest.raises(HarnessUiError, match="session changed"):
         await backend.screenshot()
+
+
+async def test_start_uses_inspected_executable_bindings_and_managed_profile(tmp_path, monkeypatch):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    import playwright.async_api
+    from a13n_harness_ui.browser_setup import VncExecutable
+    from a13n_harness_ui.configuration.models import BrowserConfiguration
+
+    configuration = BrowserConfiguration(
+        executable="/custom/chrome", vnc_executable="/custom/Xvnc", profile_root=str(tmp_path / "profiles")
+    )
+    preparation = BrowserSetup(
+        platform="linux",
+        supported=True,
+        ready=True,
+        browser=BrowserExecutable(name="Chrome", path="/custom/chrome", source="custom"),
+        vnc=VncExecutable(
+            path="/custom/Xvnc",
+            source="custom",
+            window_manager="/custom/openbox",
+            xrandr="/custom/xrandr",
+        ),
+    )
+    inspect = AsyncMock(return_value=preparation)
+    monkeypatch.setattr(module, "inspect_browser", inspect)
+    launch = AsyncMock(side_effect=RuntimeError("Stop after recording the launch arguments"))
+
+    @asynccontextmanager
+    async def driver():
+        yield SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=launch))
+
+    monkeypatch.setattr(playwright.async_api, "async_playwright", driver)
+    process = Mock(returncode=0)
+    process.wait = AsyncMock(return_value=0)
+    process.stdout.readline = AsyncMock(return_value=b"99\n")
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(module, "spawn", spawn)
+    create = AsyncMock(return_value=process)
+    monkeypatch.setattr(module.asyncio, "create_subprocess_exec", create)
+    owner = HostBrowsers(root=tmp_path / "unused", available=True, authorize=AsyncMock(), configuration=configuration)
+    try:
+        state = await owner.enable("thread-test")
+        session = owner.session("thread-test", state.session_id)
+        session.rotate_passwords = AsyncMock()
+        session.randr = AsyncMock(return_value="VNC-0 connected")
+        with pytest.raises(HarnessUiError, match="startup failed"):
+            await owner.start("thread-test", state.session_id)
+        assert session.profile == tmp_path / "profiles"
+        assert create.call_args.args[0] == "/custom/Xvnc"
+        assert [call.args[0] for call in spawn.await_args_list] == ["/custom/openbox"]
+        assert launch.call_args.kwargs["executable_path"] == "/custom/chrome"
+        assert launch.call_args.args == (str(session.profile),)
+        assert "--ozone-platform=x11" in launch.call_args.kwargs["args"]
+        assert all(call.args == (configuration,) for call in inspect.await_args_list)
+    finally:
+        await owner.close()
+
+
+async def test_fixed_desktop_rejects_resizing_without_stopping_basic_browsing(browsers):
+    session, backend = await ready(browsers)
+    session.context = Mock(pages=[session.page])
+    session.state = session.state.model_copy(update={"resize_available": False})
+    control = await browsers.control("thread-test", session.state.session_id, human=True)
+    with pytest.raises(HarnessUiError, match="resizing is unavailable"):
+        await browsers.resize(
+            "thread-test",
+            BrowserViewportRequest(
+                session_id=session.state.session_id, control_token=control.control_token, preset="phone"
+            ),
+        )
+    assert session.state.status == "ready"
+    await browsers.control("thread-test", session.state.session_id, human=False)
+    session.context = None
+    assert await backend.screenshot() == b"picture"
+
+
+async def test_stopping_another_window_preserves_human_control_and_wakes_only_its_waiter(browsers):
+    runtime, active = await ready(browsers)
+    second = await browsers.enable("thread-second")
+    other = browsers.backend("thread-second", second.session_id)
+    control = await browsers.control("thread-test", runtime.state.session_id, human=True)
+    waiter_a = asyncio.create_task(active.wait_for_handback())
+    waiter_b = asyncio.create_task(other.wait_for_handback())
+    await asyncio.sleep(0)
+    token = runtime.control_token
+    await browsers.stop("thread-second", second.session_id)
+    with pytest.raises(HarnessUiError, match="session changed"):
+        await asyncio.wait_for(waiter_b, 1)
+    assert not waiter_a.done()
+    assert runtime.state.control == "human" and runtime.control_token == token
+    await browsers.control("thread-test", runtime.state.session_id, human=False)
+    await asyncio.wait_for(waiter_a, 1)
+    assert control.control_token
+
+
+async def test_window_stop_revokes_before_waiting_for_another_inflight_operation(browsers):
+    runtime, backend = await ready(browsers)
+    writer, other_writer = Mock(), Mock()
+    runtime.connections.update([writer, other_writer])
+    runtime.connection_threads.update({writer: "thread-test", other_writer: "thread-second"})
+    ticket = await browsers.access("thread-test", BrowserAccessRequest(session_id=runtime.state.session_id))
+    await runtime.lock.acquire()
+    stopping = asyncio.create_task(browsers.stop("thread-test", runtime.state.session_id))
+    try:
+        await asyncio.sleep(0)
+        assert browsers.state("thread-test").status == "stopped"
+        assert not runtime.retired and not stopping.done()
+        writer.close.assert_called_once()
+        other_writer.close.assert_not_called()
+        with pytest.raises(HarnessUiError, match="session changed"):
+            await browsers.connect("thread-test", ticket.ticket)
+        with pytest.raises(HarnessUiError, match="session changed"):
+            await backend.wait_for_handback()
+    finally:
+        runtime.lock.release()
+    await stopping
+
+
+async def test_controller_token_is_bound_to_its_conversation_window(browsers):
+    runtime, _ = await ready(browsers)
+    second = await browsers.enable("thread-second")
+    runtime.windows["thread-second"].page = Mock(bring_to_front=AsyncMock())
+    control = await browsers.control("thread-test", runtime.state.session_id, human=True)
+    with pytest.raises(HarnessUiError, match="input authority"):
+        await browsers.access(
+            "thread-second", BrowserAccessRequest(session_id=second.session_id, control_token=control.control_token)
+        )
+    with pytest.raises(HarnessUiError, match="Hand back"):
+        await browsers.reset("thread-second", second.session_id)
+    assert browsers.binding("thread-second") == second.session_id
+
+
+async def test_failed_window_creation_retires_only_that_conversation(browsers):
+    from contextlib import asynccontextmanager
+
+    runtime, _ = await ready(browsers)
+    first = runtime.windows["thread-test"].page
+    second = await browsers.enable("thread-second")
+    runtime.keepalive = Mock()
+    cdp = Mock(send=AsyncMock(side_effect=RuntimeError("Cannot create a native window")), detach=AsyncMock())
+
+    @asynccontextmanager
+    async def expect_page():
+        yield Mock()
+
+    runtime.context = Mock(new_cdp_session=AsyncMock(return_value=cdp), expect_page=expect_page)
+    with pytest.raises(HarnessUiError, match="window could not open"):
+        await browsers.start("thread-second", second.session_id)
+    assert browsers.state("thread-second").status == "stopped"
+    assert browsers.state("thread-test").status == "ready"
+    assert not first.is_closed() and not runtime.retired
+    cdp.detach.assert_awaited_once()
+
+
+async def test_x11_window_focus_never_uses_an_inherited_personal_sway_socket(browsers, monkeypatch):
+    from a13n_harness_ui.browser_setup import VncExecutable
+
+    runtime, _ = await ready(browsers)
+    runtime.desktop = VncExecutable(path="/private/Xtigervnc", source="custom")
+    runtime.env = {"SWAYSOCK": "/personal/desktop.sock"}
+    command = AsyncMock(side_effect=AssertionError("The private X11 runtime must not access the user's compositor"))
+    monkeypatch.setattr(module, "sway_command", command)
+    await runtime.focus(runtime.page)
+    command.assert_not_awaited()

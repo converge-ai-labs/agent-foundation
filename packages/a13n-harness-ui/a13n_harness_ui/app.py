@@ -44,7 +44,7 @@ from a13n_harness_ui.browser import (
     BrowserViewportRequest,
     HostBrowsers,
 )
-from a13n_harness_ui.browser_setup import BrowserSetup
+from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
     AgentReconstructor,
@@ -1760,13 +1760,13 @@ class HarnessUiApp:
             await self.browsers().authorize(thread_id)
             return self.browsers().state(thread_id)
 
+    async def scan_browser_executables(self) -> BrowserScan:
+        async with self._operation():
+            return await scan_browsers()
+
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():
             return await self.browsers().setup(thread_id)
-
-    async def install_browser(self, thread_id: str) -> BrowserSetup:
-        async with self._operation():
-            return await self.browsers().install(thread_id)
 
     async def enable_browser(self, thread_id: str) -> BrowserState:
         async with self._operation(), self._root_runs.require_inactive(thread_id):
@@ -3261,6 +3261,7 @@ async def open_harness_ui_app(
                 root=settings.storage.data_root / "browsers",
                 available=host_mode == "webui" and share_computer,
                 authorize=authorize_browser,
+                configuration=None if runtime_configuration is None else runtime_configuration.document.browser,
             )
             resources.push_async_callback(browsers.close)
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)

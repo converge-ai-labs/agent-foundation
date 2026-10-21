@@ -9,6 +9,7 @@ import tempfile
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
@@ -22,10 +23,19 @@ from a13n_harness.capabilities.browser import (
 )
 from pydantic import Field
 
-from a13n_harness_ui.browser_auth import vnc_passwords, write_private
+from a13n_harness_ui.browser_auth import vnc_passwords, write_private, xauthority
 from a13n_harness_ui.browser_cursor import Cursor
-from a13n_harness_ui.browser_install import BrowserInstaller
-from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserSetup, inspect_browser
+from a13n_harness_ui.browser_display import (
+    settle_wayvnc,
+    spawn,
+    sway_command,
+    sway_windows,
+    terminate,
+    wait_socket,
+    wayland,
+)
+from a13n_harness_ui.browser_setup import BrowserSetup, VncExecutable, inspect_browser
+from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.surfaces import SurfaceModel
 
@@ -53,6 +63,7 @@ VIEWPORTS = (
     BrowserViewport(preset="phone-landscape", label="Phone landscape", width=844, height=390),
 )
 VIEWPORT_BY_PRESET = {viewport.preset: viewport for viewport in VIEWPORTS}
+FIXED_DESKTOP = (1366, 1024)
 
 
 class BrowserState(SurfaceModel):
@@ -63,6 +74,7 @@ class BrowserState(SurfaceModel):
     error: str | None = None
     viewport: BrowserPreset = "desktop"
     viewports: tuple[BrowserViewport, ...] = VIEWPORTS
+    resize_available: bool = False
 
 
 class BrowserCommand(SurfaceModel):
@@ -109,34 +121,11 @@ def browser_url(value: str) -> str:
     return value
 
 
-async def require_browser() -> BrowserExecutable:
-    setup = await inspect_browser()
+async def require_browser(configuration: BrowserConfiguration) -> BrowserSetup:
+    setup = await inspect_browser(configuration)
     if not setup.ready or setup.browser is None:
         raise failure(setup.message, "runtime_not_ready")
-    return setup.browser
-
-
-async def terminate(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is None:
-        try:
-            process.terminate()
-        except ProcessLookupError:
-            await process.wait()
-            return
-        try:
-            await asyncio.wait_for(process.wait(), 5)
-        except TimeoutError:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-            await process.wait()
-
-
-async def spawn(*args: str, env: dict[str, str] | None = None) -> asyncio.subprocess.Process:
-    return await asyncio.create_subprocess_exec(
-        *args, env=env, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-    )
+    return setup
 
 
 async def close_context(context: BrowserContext) -> None:
@@ -151,28 +140,61 @@ async def close_context(context: BrowserContext) -> None:
             raise
 
 
+@dataclass
+class BrowserWindow:
+    binding: str = field(default_factory=lambda: "browser_" + secrets.token_hex(12))
+    stopped: bool = False
+    closed: asyncio.Event = field(default_factory=asyncio.Event)
+    window_id: int | None = None
+    page: Page | None = None
+    revision: str = ""
+    targets: dict[str, ElementHandle] = field(default_factory=dict)
+    requires_observation: bool = False
+
+    async def invalidate(self) -> None:
+        self.revision = ""
+        targets, self.targets = self.targets, {}
+        await asyncio.gather(*(element.dispose() for element in targets.values()), return_exceptions=True)
+
+
 class BrowserSession:
-    def __init__(self, thread_id: str, profile: Path, *, viewport: BrowserPreset = "desktop") -> None:
-        self.thread_id, self.profile = thread_id, profile
+    def __init__(
+        self,
+        thread_id: str,
+        profile: Path,
+        *,
+        viewport: BrowserPreset = "desktop",
+        configuration: BrowserConfiguration | None = None,
+    ) -> None:
+        self.profile = profile
+        self.active_thread = thread_id
+        self.human_thread = ""
+        self.windows: dict[str, BrowserWindow] = {}
+        self.window_owners: dict[int, str] = {}
+        self.native_windows: dict[int, int] = {}
+        self.page_owners: dict[Page, str] = {}
+        self.configuration = configuration or BrowserConfiguration()
+        self.desktop: VncExecutable | None = None
         self.state = BrowserState(session_id="browser_" + secrets.token_hex(12), status="enabled", viewport=viewport)
+        self.windows[thread_id] = BrowserWindow(binding=self.state.session_id)
         self.lock = asyncio.Lock()
         self.resources = AsyncExitStack()
         self.context: BrowserContext | None = None
         self.page: Page | None = None
+        self.keepalive: Page | None = None
         self.cursor = Cursor()
         self.env: dict[str, str] = {}
         self.display = ""
         self.control_socket = ""
+        self.readonly_socket = ""
         self.password_file: Path | None = None
         self.password = ""
         self.readonly_password = ""
         self.control_token = ""
-        self.revision = ""
-        self.targets: dict[str, ElementHandle] = {}
-        self.requires_observation = False
         self.released = asyncio.Event()
         self.released.set()
         self.connections: set[asyncio.StreamWriter] = set()
+        self.connection_threads: dict[asyncio.StreamWriter, str] = {}
         self.controller_connection: asyncio.StreamWriter | None = None
         self.generation = 0
         self.retired = False
@@ -186,20 +208,137 @@ class BrowserSession:
         if self.password_file is None:
             return
         password, readonly = secrets.token_urlsafe(6), secrets.token_urlsafe(6)
-        await asyncio.to_thread(write_private, self.password_file, vnc_passwords(password, readonly))
+        content = (
+            f"{password}\n{readonly}\n".encode("ascii")
+            if self.desktop is not None and self.desktop.kind == "x11vnc"
+            else vnc_passwords(password, readonly)
+        )
+        await asyncio.to_thread(
+            write_private,
+            self.password_file,
+            content,
+            advance_mtime=self.desktop is not None and self.desktop.kind == "x11vnc",
+        )
         self.password, self.readonly_password = password, readonly
 
     async def invalidate(self) -> None:
-        self.revision = ""
-        targets, self.targets = self.targets, {}
-        # A closed/crashed renderer may already have invalidated these handles.
-        await asyncio.gather(*(element.dispose() for element in targets.values()), return_exceptions=True)
+        for tab in self.windows.values():
+            await tab.invalidate()
+            tab.requires_observation = True
+
+    async def window_id(self, page: Page) -> int:
+        assert self.context is not None
+        cdp = await self.context.new_cdp_session(page)
+        try:
+            return (await cdp.send("Browser.getWindowForTarget"))["windowId"]
+        finally:
+            if not page.is_closed():
+                await cdp.detach()
+
+    async def native_window(self, page: Page, before: set[int] | None = None) -> int:
+        identity = await self.window_id(page)
+        if identity in self.native_windows:
+            return self.native_windows[identity]
+        async with asyncio.timeout(5):
+            while True:
+                windows = await sway_windows(self.env)
+                candidates = set(windows) - (before if before is not None else set(self.native_windows.values()))
+                if len(candidates) > 1:
+                    title = await page.title()
+                    candidates = {
+                        key for key in candidates if windows[key] == title or windows[key].startswith(title + " - ")
+                    }
+                if len(candidates) == 1:
+                    native = candidates.pop()
+                    self.native_windows[identity] = native
+                    return native
+                await asyncio.sleep(0.025)
+
+    async def focus(self, page: Page) -> None:
+        await page.bring_to_front()
+        if self.desktop is not None and self.desktop.kind == "wayvnc":
+            await sway_command(self.env, await self.native_window(page), "focus")
+
+    async def open_window(self, thread_id: str) -> BrowserWindow:
+        window = self.windows[thread_id]
+        if window.stopped:
+            raise failure("Browser window stopped. Start it before acting.", "session_conflict")
+        if self.context is not None and (window.page is None or window.page.is_closed()):
+            try:
+                assert self.keepalive is not None
+                self.active_thread = thread_id
+                before = (
+                    set(await sway_windows(self.env))
+                    if self.desktop is not None and self.desktop.kind == "wayvnc"
+                    else None
+                )
+                cdp = await self.context.new_cdp_session(self.keepalive)
+                try:
+                    async with self.context.expect_page() as opened:
+                        await cdp.send("Target.createTarget", {"url": "about:blank", "newWindow": True})
+                    page = await opened.value
+                finally:
+                    await cdp.detach()
+                window.window_id = await self.window_id(page)
+                if before is not None:
+                    await self.native_window(page, before)
+                self.window_owners[window.window_id] = thread_id
+                self.page_owners[page] = thread_id
+                window.page = self.page = page
+                await self.layout(page, self.state.viewport)
+                await self.fit_display()
+                await self.focus(page)
+            except Exception as exc:
+                await self.close_window(thread_id)
+                raise failure(
+                    "The browser window could not open. Start it again after checking the Host display.",
+                    "window_unavailable",
+                ) from exc
+        return window
+
+    def retire_window(self, thread_id: str) -> BrowserWindow:
+        window = self.windows[thread_id]
+        window.closed.set()
+        replacement = BrowserWindow(stopped=True, requires_observation=True)
+        self.windows[thread_id] = replacement
+        self.native_windows = {
+            key: native for key, native in self.native_windows.items() if self.window_owners.get(key) != thread_id
+        }
+        self.window_owners = {key: owner for key, owner in self.window_owners.items() if owner != thread_id}
+        if self.human_thread == thread_id:
+            self.control_token = ""
+        for writer, owner in tuple(self.connection_threads.items()):
+            if owner == thread_id:
+                writer.close()
+        return window
+
+    async def close_window(self, thread_id: str, window: BrowserWindow | None = None) -> None:
+        window = window or self.retire_window(thread_id)
+        try:
+            if self.human_thread == thread_id:
+                await self.revoke()
+                self.human_thread = ""
+                self.state = self.state.model_copy(update={"control": "agent"})
+                self.released.set()
+                await self.invalidate()
+            # Keep the runtime's internal window alive even when the final
+            # conversation closes, so Chromium retains its profile and process.
+            while pages := [page for page, owner in self.page_owners.items() if owner == thread_id]:
+                for page in pages:
+                    if not page.is_closed():
+                        await page.close(run_before_unload=False)
+                    self.page_owners.pop(page, None)
+            self.window_owners = {key: owner for key, owner in self.window_owners.items() if owner != thread_id}
+        finally:
+            await window.invalidate()
 
     def retire(self) -> None:
         self.retired = True
         self.generation += 1
         self.control_token = ""
         self.released.set()
+        for window in self.windows.values():
+            window.closed.set()
         for writer in tuple(self.connections):
             writer.close()
 
@@ -214,26 +353,60 @@ class BrowserSession:
     def page_closed(self, page: Page) -> None:
         if self.retired:
             return
-        pages = [candidate for candidate in self.context.pages if not candidate.is_closed()] if self.context else []
-        if not pages:
-            self.end()
-        elif self.page is page:
-            self.page = pages[-1]
-            self.revision = ""
-            self.requires_observation = True
+        if page is self.keepalive:
+            self.end("The browser runtime window closed. Start the browser to continue.")
+            return
+        owner = self.page_owners.pop(page, None)
+        if owner is not None:
+            window = self.windows[owner]
+            pages = [
+                candidate
+                for candidate, thread in self.page_owners.items()
+                if thread == owner and not candidate.is_closed()
+            ]
+            if not pages and not window.stopped:
+                window = self.retire_window(owner)
+                task = asyncio.create_task(self.finish_closed_window(owner, window))
+                self.page_tasks.add(task)
+                task.add_done_callback(self.page_tasks.discard)
+            elif window.page is page:
+                window.page = pages[-1] if pages else None
+                window.revision = ""
+                window.requires_observation = True
+        if self.page is page:
+            self.page = self.keepalive
+
+    async def finish_closed_window(self, thread_id: str, window: BrowserWindow) -> None:
+        async with self.lock:
+            await window.invalidate()
+            if window.page is not None and not window.page.is_closed():
+                await window.page.close(run_before_unload=False)
+            if self.human_thread == thread_id:
+                await self.revoke()
+                self.human_thread = ""
+                self.state = self.state.model_copy(update={"control": "agent"})
+                self.released.set()
+                await self.invalidate()
 
     def watch_page(self, page: Page) -> None:
         page.set_default_timeout(10_000)
         page.on("close", lambda _: self.page_closed(page))
-        page.on("crash", lambda _: self.end("A browser page crashed. Start the browser to continue."))
+        page.on("crash", lambda _: self.page_closed(page))
+
+        def popup_owner(popup: Page) -> None:
+            self.page_owners.setdefault(popup, self.page_owners.get(page, self.active_thread))
+
+        page.on("popup", popup_owner)
         if self.state.status == "ready":
-            task = asyncio.create_task(self.prepare_page(page))
+            task = asyncio.create_task(self.prepare_page(page, self.human_thread or self.active_thread))
             self.page_tasks.add(task)
             task.add_done_callback(self.page_tasks.discard)
 
     async def randr(self, *args: str) -> str:
+        if self.desktop is None or self.desktop.xrandr is None:
+            raise failure("Desktop resizing is unavailable on this Host.", "resize_unavailable")
         process = await asyncio.create_subprocess_exec(
-            "xrandr", *args, env=self.env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+            self.desktop.xrandr, *args, env=self.env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
         )
         try:
             output, _ = await asyncio.wait_for(process.communicate(), 5)
@@ -265,7 +438,7 @@ class BrowserSession:
         # Keep the full desktop large enough for other browser windows, including
         # login popups with different amounts of browser chrome.
         for page in self.context.pages:
-            if page.is_closed():
+            if page.is_closed() or page is self.keepalive:
                 continue
             cdp = await self.context.new_cdp_session(page)
             try:
@@ -277,6 +450,13 @@ class BrowserSession:
                     await cdp.detach()
         if not 32 <= width <= 4096 or not 32 <= height <= 4096:
             raise failure("The browser window is outside supported desktop dimensions.", "resize_failed")
+        if self.desktop is None or self.desktop.xrandr is None:
+            if width > FIXED_DESKTOP[0] or height > FIXED_DESKTOP[1]:
+                raise failure(
+                    "The browser window exceeds the fixed desktop size. Prepare desktop resizing support.",
+                    "resize_unavailable",
+                )
+            return
         mode = f"a13n-{width}x{height}"
         if mode not in self.display_modes:
             clock = (width + 24) * (height + 3) * 60 / 1_000_000
@@ -293,13 +473,26 @@ class BrowserSession:
             self.display_modes.add(mode)
         await self.randr("--output", self.display_output, "--mode", mode)
 
-    async def prepare_page(self, page: Page) -> None:
+    async def prepare_page(self, page: Page, owner_hint: str) -> None:
         async with self.lock:
             if self.retired or page.is_closed():
                 return
             try:
-                await self.invalidate()
-                self.requires_observation = True
+                identity = await self.window_id(page)
+                owner = self.page_owners.get(page) or self.window_owners.get(identity)
+                if owner is None:
+                    opener = await page.opener()
+                    owner = self.page_owners.get(opener, owner_hint) if opener is not None else owner_hint
+                if owner not in self.windows or self.windows[owner].stopped:
+                    await page.close(run_before_unload=False)
+                    return
+                self.window_owners[identity] = owner
+                self.page_owners[page] = owner
+                window = self.windows[owner]
+                if window.page is not page:
+                    await window.invalidate()
+                    window.page = page
+                    window.requires_observation = True
                 await self.layout(page, self.state.viewport)
                 await self.fit_display()
             except Exception:
@@ -318,70 +511,124 @@ class BrowserSession:
     async def start(self) -> None:
         if self.retired:
             raise failure("Browser session changed. Start the browser before acting.", "session_conflict")
-        if self.page is not None and not self.page.is_closed():
+        if self.context is not None:
             return
-        browser = await require_browser()
+        preparation = await require_browser(self.configuration)
+        browser, self.desktop = preparation.browser, preparation.vnc
+        assert browser is not None and self.desktop is not None
         try:
             from playwright.async_api import async_playwright
 
             await asyncio.to_thread(self.profile.mkdir, parents=True, exist_ok=True, mode=0o700)
             temporary = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="a13n-browser-"))
-            authority = Path(temporary) / "Xauthority"
-            authority.touch(mode=0o600)
+            processes: list[tuple[asyncio.subprocess.Process, str]] = []
             self.control_socket = str(Path(temporary) / "desktop.sock")
-            self.password_file = Path(temporary) / "passwd"
-            await self.rotate_passwords()
-            display = await asyncio.create_subprocess_exec(
-                "Xtigervnc",
-                "-displayfd",
-                "1",
-                "-s",
-                "0",
-                "-geometry",
-                "1280x800",
-                "-depth",
-                "24",
-                "-rfbport",
-                "-1",
-                "-rfbunixpath",
-                self.control_socket,
-                "-rfbunixmode",
-                "0600",
-                "-SecurityTypes",
-                "VncAuth",
-                "-PasswordFile",
-                str(self.password_file),
-                "-AlwaysShared",
-                "-AcceptSetDesktopSize=0",
-                "-SendPrimary=0",
-                "-SetPrimary=0",
-                "-MaxCutText",
-                "262144",
-                "-localhost",
-                "yes",
-                "-nolisten",
-                "tcp",
-                "-auth",
-                str(authority),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            self.resources.push_async_callback(terminate, display)
-            assert display.stdout is not None
-            number = (await asyncio.wait_for(display.stdout.readline(), 10)).strip().decode()
-            if not number.isdecimal():
-                raise failure("The virtual display did not provide a display number.", "runtime_unavailable")
-            self.display = ":" + number
-            auth = await spawn("xauth", "-f", str(authority), "add", self.display, ".", secrets.token_hex(16))
-            if await auth.wait() != 0:
-                raise failure("Display authentication could not be prepared.", "runtime_unavailable")
-            self.env = {**os.environ, "DISPLAY": self.display, "XAUTHORITY": str(authority)}
-            outputs = (await self.randr("--query")).splitlines()
-            self.display_output = next((line.split()[0] for line in outputs if " connected" in line), "")
-            if not self.display_output:
-                raise failure("The virtual display has no resizeable output.", "runtime_unavailable")
-            manager = await spawn("openbox", env=self.env)
-            self.resources.push_async_callback(terminate, manager)
+            if self.desktop.kind == "wayvnc":
+                self.env, processes = await wayland(self.desktop, Path(temporary), self.resources, FIXED_DESKTOP)
+                self.readonly_socket = str(Path(temporary) / "readonly.sock")
+            else:
+                authority = Path(temporary) / "Xauthority"
+                cookie = secrets.token_bytes(16)
+                await asyncio.to_thread(write_private, authority, xauthority("", cookie))
+                self.control_socket = str(Path(temporary) / "desktop.sock")
+                self.password_file = Path(temporary) / "passwd"
+                await self.rotate_passwords()
+                arguments = [
+                    self.desktop.path,
+                    "-displayfd",
+                    "1",
+                    "-s",
+                    "0",
+                    "-geometry",
+                    f"{FIXED_DESKTOP[0]}x{FIXED_DESKTOP[1]}",
+                    "-depth",
+                    "24",
+                    "-rfbport",
+                    "-1",
+                    "-rfbunixpath",
+                    self.control_socket,
+                    "-rfbunixmode",
+                    "0600",
+                    "-SecurityTypes",
+                    "VncAuth",
+                    "-PasswordFile",
+                    str(self.password_file),
+                    "-AlwaysShared",
+                    "-AcceptSetDesktopSize=0",
+                    "-SendPrimary=0",
+                    "-SetPrimary=0",
+                    "-MaxCutText",
+                    "262144",
+                    "-localhost",
+                    "yes",
+                    "-nolisten",
+                    "tcp",
+                    "-auth",
+                    str(authority),
+                ]
+                if self.desktop.kind == "x11vnc":
+                    assert self.desktop.display_server is not None
+                    arguments = [
+                        self.desktop.display_server,
+                        "-displayfd",
+                        "1",
+                        "-screen",
+                        "0",
+                        f"{FIXED_DESKTOP[0]}x{FIXED_DESKTOP[1]}x24",
+                        "-nolisten",
+                        "tcp",
+                        "-auth",
+                        str(authority),
+                    ]
+                display = await asyncio.create_subprocess_exec(
+                    *arguments, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+                )
+                self.resources.push_async_callback(terminate, display)
+                assert display.stdout is not None
+                number = (await asyncio.wait_for(display.stdout.readline(), 10)).strip().decode()
+                if not number.isdecimal():
+                    raise failure("The virtual display did not provide a display number.", "runtime_unavailable")
+                self.display = ":" + number
+                await asyncio.to_thread(write_private, authority, xauthority(number, cookie))
+                self.env = {**os.environ, "DISPLAY": self.display, "XAUTHORITY": str(authority)}
+                processes.append((display, "The virtual display"))
+                if self.desktop.kind == "x11vnc":
+                    vnc = await spawn(
+                        self.desktop.path,
+                        "-norc",
+                        "-display",
+                        self.display,
+                        "-auth",
+                        str(authority),
+                        "-unixsock",
+                        self.control_socket,
+                        "-rfbport",
+                        "0",
+                        "-passwdfile",
+                        "read:" + str(self.password_file),
+                        "-forever",
+                        "-shared",
+                        "-noprimary",
+                        "-nosetprimary",
+                        env=self.env,
+                    )
+                    self.resources.push_async_callback(terminate, vnc)
+                    await wait_socket(Path(self.control_socket), vnc)
+                    processes.append((vnc, "The x11vnc server"))
+            if self.desktop.xrandr:
+                try:
+                    outputs = (await self.randr("--query")).splitlines()
+                    self.display_output = next((line.split()[0] for line in outputs if " connected" in line), "")
+                except (HarnessUiError, OSError, TimeoutError):
+                    self.display_output = ""
+                if not self.display_output:
+                    self.desktop = self.desktop.model_copy(update={"xrandr": None})
+            if self.desktop.xrandr is None:
+                self.state = self.state.model_copy(update={"viewport": "desktop"})
+            manager = None
+            if self.desktop.window_manager:
+                manager = await spawn(self.desktop.window_manager, env=self.env)
+                self.resources.push_async_callback(terminate, manager)
             driver = await self.resources.enter_async_context(async_playwright())
             self.context = await driver.chromium.launch_persistent_context(
                 str(self.profile),
@@ -389,7 +636,10 @@ class BrowserSession:
                 headless=False,
                 env={**self.env},
                 viewport=None,
-                args=["--window-position=0,0"],
+                args=[
+                    "--window-position=0,0",
+                    f"--ozone-platform={'wayland' if self.desktop.kind == 'wayvnc' else 'x11'}",
+                ],
                 accept_downloads=False,
             )
             if self.context.browser is not None:
@@ -402,14 +652,28 @@ class BrowserSession:
             for page in self.context.pages:
                 self.watch_page(page)
             self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
-            for page in self.context.pages:
-                await self.layout(page, self.state.viewport)
-            await self.fit_display()
-            if self.retired or self.page.is_closed():
+            self.keepalive = self.page
+            await self.keepalive.evaluate("document.title = 'A13n Harness browser runtime'")
+            if self.desktop is not None and self.desktop.kind == "wayvnc":
+                await sway_command(self.env, await self.native_window(self.keepalive), "move scratchpad")
+            cdp = await self.context.new_cdp_session(self.keepalive)
+            try:
+                identity = await cdp.send("Browser.getWindowForTarget")
+                await cdp.send(
+                    "Browser.setWindowBounds",
+                    {"windowId": identity["windowId"], "bounds": {"windowState": "minimized"}},
+                )
+            finally:
+                await cdp.detach()
+            if self.retired or self.keepalive.is_closed():
                 raise failure("Chromium closed during startup. Start the browser to try again.", "runtime_unavailable")
-            self.state = self.state.model_copy(update={"status": "ready", "error": None})
-            self.watch_process(display, "The virtual display")
-            self.watch_process(manager, "The window manager")
+            self.state = self.state.model_copy(
+                update={"status": "ready", "error": None, "resize_available": self.desktop.xrandr is not None}
+            )
+            for process, name in processes:
+                self.watch_process(process, name)
+            if manager is not None:
+                self.watch_process(manager, "The window manager")
         except BaseException as exc:
             self.retire()
             # start() already owns the operation lock.
@@ -419,7 +683,7 @@ class BrowserSession:
             message = (
                 str(exc)
                 if isinstance(exc, HarnessUiError)
-                else "Browser startup failed. Check Playwright Chromium and Linux display dependencies."
+                else "Browser startup failed. Check the configured executables and display dependencies, and ensure the shared profile is not open in another process. WayVNC with Sway requires a non-root Host process."
             )
             self.state = self.state.model_copy(update={"status": "failed", "control": "agent", "error": message})
             raise failure(message, "runtime_unavailable") from exc
@@ -434,8 +698,21 @@ class BrowserSession:
         if not self.retired:
             try:
                 await self.rotate_passwords()
+                if self.readonly_socket:
+                    await settle_wayvnc(Path(self.control_socket).with_suffix(".ctl"))
+                if self.desktop is not None and self.desktop.kind == "x11vnc" and self.page is not None:
+                    # Unlike TigerVNC, x11vnc retains global X11 key state after
+                    # a client disconnect. Use its native synchronous control
+                    # command before allowing the Agent to resume.
+                    reset = await spawn(self.desktop.path, "-norc", "-sync", "-R", "clear_all", env=self.env)
+                    try:
+                        await asyncio.wait_for(reset.wait(), 5)
+                        if reset.returncode != 0:
+                            raise RuntimeError("x11vnc could not release held keys")
+                    finally:
+                        await terminate(reset)
             except Exception:
-                self.end("VNC authentication could not be renewed. Start the browser to continue.")
+                self.end("VNC input authority could not be renewed. Start the browser to continue.")
                 raise
 
     async def clear_resources(self) -> None:
@@ -451,8 +728,14 @@ class BrowserSession:
             await self.resources.aclose()
         finally:
             self.resources = AsyncExitStack()
-            self.context = self.page = None
-            self.control_socket = ""
+            self.context = self.page = self.keepalive = None
+            self.window_owners.clear()
+            self.native_windows.clear()
+            self.connection_threads.clear()
+            self.page_owners.clear()
+            for tab in self.windows.values():
+                tab.page = None
+            self.control_socket = self.readonly_socket = ""
             self.password_file = None
             self.password = self.readonly_password = ""
             self.env = {}
@@ -472,93 +755,125 @@ class BrowserSession:
 
 
 class HostBrowsers:
-    def __init__(self, *, root: Path, available: bool, authorize: Callable[[str], Awaitable[None]]) -> None:
-        self.root, self.available, self.authorize = root, available, authorize
+    def __init__(
+        self,
+        *,
+        root: Path,
+        available: bool,
+        authorize: Callable[[str], Awaitable[None]],
+        configuration: BrowserConfiguration | None = None,
+    ) -> None:
+        self.configuration = configuration or BrowserConfiguration()
+        self.root = Path(self.configuration.profile_root) if self.configuration.profile_root else root / "profile"
+        self.available, self.authorize = available, authorize
+        # Enabled Thread bindings borrow one runtime; these values are aliases.
         self.sessions: dict[str, BrowserSession] = {}
         self.tickets: dict[str, tuple[str, str, int, bool, float]] = {}
         self.lifecycle = asyncio.Lock()
-        self.installer = BrowserInstaller()
 
     def state(self, thread_id: str) -> BrowserState:
         session = self.sessions.get(thread_id)
-        if session and session.page and session.page.is_closed():
-            session.page_closed(session.page)
-        return session.state if session else BrowserState()
+        if session and (page := session.windows[thread_id].page) is not None and page.is_closed():
+            session.page_closed(page)
+        if session is None:
+            return BrowserState()
+        tab = session.windows[thread_id]
+        return session.state.model_copy(
+            update={
+                "session_id": tab.binding,
+                "status": "stopped"
+                if tab.stopped
+                else ("enabled" if session.state.status == "ready" and tab.page is None else session.state.status),
+                "url": tab.page.url if tab.page is not None and not tab.page.is_closed() else "",
+            }
+        )
 
     def binding(self, thread_id: str) -> str | None:
         session = self.sessions.get(thread_id)
-        return session.state.session_id if session and not session.retired else None
+        return (
+            session.windows[thread_id].binding
+            if session and not session.retired and not session.windows[thread_id].stopped
+            else None
+        )
 
     def session(self, thread_id: str, binding: str) -> BrowserSession:
         session = self.sessions.get(thread_id)
-        if session is None or session.retired or session.state.session_id != binding:
+        if (
+            session is None
+            or session.retired
+            or session.windows[thread_id].stopped
+            or session.windows[thread_id].binding != binding
+        ):
             raise failure("Browser session changed. Refresh before acting.", "session_conflict")
         return session
 
     async def setup(self, thread_id: str) -> BrowserSetup:
         await self.authorize(thread_id)
-        result = (
-            self.installer.preparation
-            if self.installer.running and self.installer.preparation is not None
-            else await inspect_browser()
-        )
+        result = await inspect_browser(self.configuration)
         await self.authorize(thread_id)
-        return result.model_copy(update={"installation": self.installer.state})
-
-    async def install(self, thread_id: str) -> BrowserSetup:
-        await self.authorize(thread_id)
-        async with self.lifecycle:
-            if self.installer.running:
-                return await self.setup(thread_id)
-            preparation = await self.setup(thread_id)
-            if preparation.ready:
-                return preparation
-            if not preparation.installable:
-                raise failure(preparation.install_message, "installation_unavailable")
-            self.installer.start(preparation, lambda: self.authorize(thread_id))
-            return preparation.model_copy(update={"installation": self.installer.state})
+        return result
 
     async def enable(self, thread_id: str) -> BrowserState:
         await self.authorize(thread_id)
         async with self.lifecycle:
             if thread_id not in self.sessions:
-                if sum(not session.retired for session in self.sessions.values()) >= 4:
-                    raise failure("Stop an unused browser before enabling another.", "limit")
-                await require_browser()
+                await require_browser(self.configuration)
                 await self.authorize(thread_id)
-                self.sessions[thread_id] = BrowserSession(thread_id, self.root / thread_id)
+                runtime = next(iter(self.sessions.values()), None)
+                if runtime is None:
+                    runtime = BrowserSession(thread_id, self.root, configuration=self.configuration)
+                async with runtime.lock:
+                    runtime.windows.setdefault(thread_id, BrowserWindow(requires_observation=runtime.retired))
+                    self.sessions[thread_id] = runtime
             return self.state(thread_id)
 
     async def replace(self, session: BrowserSession) -> BrowserSession:
-        if sum(not other.retired for other in self.sessions.values() if other is not session) >= 4:
-            raise failure("Stop an unused browser before starting another.", "limit")
         await session.close()
-        replacement = BrowserSession(session.thread_id, session.profile, viewport=session.state.viewport)
-        replacement.requires_observation = True
-        self.sessions[session.thread_id] = replacement
+        threads = [thread_id for thread_id, runtime in self.sessions.items() if runtime is session]
+        replacement = BrowserSession(
+            threads[0], session.profile, viewport=session.state.viewport, configuration=self.configuration
+        )
+        replacement.windows = {
+            thread_id: BrowserWindow(stopped=True, requires_observation=True) for thread_id in threads
+        }
+        for thread_id in threads:
+            self.sessions[thread_id] = replacement
         return replacement
 
     async def start(self, thread_id: str, binding: str, *, explicit: bool = False) -> BrowserState:
         async with self.lifecycle:
             await self.authorize(thread_id)
             session = self.sessions.get(thread_id)
-            if session is None or session.state.session_id != binding:
+            if session is None or session.windows[thread_id].binding != binding:
                 raise failure("Browser session changed. Refresh before acting.", "session_conflict")
             if session.retired:
-                if not explicit or session.state.status not in {"stopped", "failed"}:
+                if not explicit:
                     raise failure("Browser session changed. Start the browser before acting.", "session_conflict")
                 session = await self.replace(session)
             async with session.lock:
+                if session.state.control == "human":
+                    raise failure("The user controls the browser. Ask for handback before continuing.", "human_control")
+                if session.windows[thread_id].stopped:
+                    if not explicit:
+                        raise failure("Browser session changed. Start the browser before acting.", "session_conflict")
+                    session.windows[thread_id] = BrowserWindow(requires_observation=True)
                 await session.start()
-            return session.state
+                await session.open_window(thread_id)
+            return self.state(thread_id)
 
     async def reset(self, thread_id: str, binding: str) -> BrowserState:
         async with self.lifecycle:
             await self.authorize(thread_id)
-            session = await self.replace(self.session(thread_id, binding))
+            session = self.session(thread_id, binding)
+            if session.state.control == "human" and session.human_thread != thread_id:
+                raise failure("Hand back control before resetting another browser window.", "human_control")
+            window = session.retire_window(thread_id)
             async with session.lock:
+                await session.close_window(thread_id, window)
+                session.windows[thread_id] = BrowserWindow(requires_observation=True)
                 await session.start()
-            return session.state
+                await session.open_window(thread_id)
+            return self.state(thread_id)
 
     async def resize(self, thread_id: str, request: BrowserViewportRequest) -> BrowserState:
         await self.authorize(thread_id)
@@ -568,19 +883,21 @@ class HostBrowsers:
             self.session(thread_id, request.session_id)
             if (
                 session.state.control != "human"
+                or session.human_thread != thread_id
                 or not request.control_token
                 or not secrets.compare_digest(request.control_token, session.control_token)
             ):
                 raise failure("Take control before changing the browser viewport.", "control_required")
             if session.context is None:
                 raise failure("Start the browser before changing its viewport.", "not_ready")
+            if not session.state.resize_available:
+                raise failure("Desktop resizing is unavailable on this Host.", "resize_unavailable")
             if request.preset == session.state.viewport:
-                return session.state
+                return self.state(thread_id)
             try:
                 await session.invalidate()
-                session.requires_observation = True
                 for page in session.context.pages:
-                    if not page.is_closed():
+                    if not page.is_closed() and page is not session.keepalive:
                         await session.layout(page, request.preset)
                 await session.fit_display()
                 self.session(thread_id, request.session_id)
@@ -588,20 +905,18 @@ class HostBrowsers:
             except Exception as exc:
                 session.end("Browser resizing failed. Start the browser to continue.")
                 raise failure("Browser resizing failed. Start the browser to continue.", "resize_failed") from exc
-            return session.state
+            return self.state(thread_id)
 
     async def stop(self, thread_id: str, binding: str) -> BrowserState:
         async with self.lifecycle:
             await self.authorize(thread_id)
             session = self.sessions.get(thread_id)
-            if session is None or session.state.session_id != binding:
+            if session is None or session.windows[thread_id].binding != binding:
                 raise failure("Browser session changed. Refresh before acting.", "session_conflict")
-            session.end()
-            await session.close()
-            session.state = session.state.model_copy(
-                update={"status": "stopped", "control": "agent", "url": "", "error": None}
-            )
-            return session.state
+            window = session.retire_window(thread_id)
+            async with session.lock:
+                await session.close_window(thread_id, window)
+            return self.state(thread_id)
 
     async def control(self, thread_id: str, binding: str, *, human: bool) -> BrowserControl:
         session = self.session(thread_id, binding)
@@ -609,7 +924,7 @@ class HostBrowsers:
         await self.authorize(thread_id)
         if human and session.state.control == "human":
             raise failure("The browser is already under human control.", "control_conflict")
-        if human and session.page is None:
+        if human and session.windows[thread_id].page is None:
             raise failure("Start the browser before taking control.", "not_ready")
         session.state = session.state.model_copy(update={"control": "human"})
         session.released.clear()
@@ -618,16 +933,20 @@ class HostBrowsers:
             self.session(thread_id, binding)
             await session.revoke()
             await session.invalidate()
-            session.requires_observation = True
             if human:
                 await session.cursor.hide()
-                if session.page is None:
+                page = session.windows[thread_id].page
+                if page is None:
                     raise failure("Start the browser before taking control.", "not_ready")
+                await session.focus(page)
+                session.page = page
+                session.human_thread = thread_id
                 session.control_token = secrets.token_urlsafe(24)
             else:
+                session.human_thread = ""
                 session.state = session.state.model_copy(update={"control": "agent"})
                 session.released.set()
-            return BrowserControl(state=session.state, control_token=session.control_token)
+            return BrowserControl(state=self.state(thread_id), control_token=session.control_token)
 
     async def access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
         await self.authorize(thread_id)
@@ -635,13 +954,18 @@ class HostBrowsers:
         async with session.lock:
             await self.authorize(thread_id)
             self.session(thread_id, request.session_id)
-            if session.page is None:
+            page = session.windows[thread_id].page
+            if page is None:
                 raise failure("Start the browser before opening its desktop.", "not_ready")
-            controlling = bool(request.control_token) and secrets.compare_digest(
-                request.control_token, session.control_token
+            controlling = (
+                session.human_thread == thread_id
+                and bool(request.control_token)
+                and secrets.compare_digest(request.control_token, session.control_token)
             )
             if request.control_token and (not controlling or session.state.control != "human"):
                 raise failure("Human input authority has been revoked.", "control_conflict")
+            if session.state.control == "agent" or controlling:
+                await session.focus(page)
             now = time.monotonic()
             self.tickets = {k: v for k, v in self.tickets.items() if v[4] > now}
             if len(self.tickets) >= 128:
@@ -669,18 +993,22 @@ class HostBrowsers:
             raise failure("Too many browser viewers.", "limit")
         if controlling and session.controller_connection is not None:
             raise failure("A controller is already connected.", "control_conflict")
-        reader, writer = await asyncio.open_unix_connection(session.control_socket)
-        if session.generation != generation or session.retired:
+        reader, writer = await asyncio.open_unix_connection(
+            session.readonly_socket if not controlling and session.readonly_socket else session.control_socket
+        )
+        if session.generation != generation or session.retired or session.windows[thread_id].binding != binding:
             writer.close()
             raise failure("Viewer access was revoked.", "access_expired")
         if len(session.connections) >= 8:
             writer.close()
             raise failure("Too many browser viewers.", "limit")
         session.connections.add(writer)
+        session.connection_threads[writer] = thread_id
         if controlling:
             # Recheck after opening the socket: two concurrent tickets cannot create two controllers.
             if session.controller_connection is not None:
                 session.connections.discard(writer)
+                session.connection_threads.pop(writer, None)
                 writer.close()
                 raise failure("A controller is already connected.", "control_conflict")
             session.controller_connection = writer
@@ -688,6 +1016,7 @@ class HostBrowsers:
 
     async def disconnect(self, session: BrowserSession, writer: asyncio.StreamWriter) -> None:
         session.connections.discard(writer)
+        session.connection_threads.pop(writer, None)
         writer.close()
         if session.controller_connection is writer:
             async with session.lock:
@@ -700,12 +1029,11 @@ class HostBrowsers:
         return HostBrowserBackend(self, thread_id, binding)
 
     async def close(self) -> None:
-        await self.installer.close()
         # Shutdown owns cleanup even after Thread authority has been revoked.
         # Retire every binding first, and attempt all cleanups if one fails.
         try:
             async with AsyncExitStack() as resources:
-                for session in self.sessions.values():
+                for session in set(self.sessions.values()):
                     session.end()
                     resources.push_async_callback(session.close)
         finally:
@@ -719,9 +1047,17 @@ class HostBrowserBackend:
 
     async def wait_for_handback(self) -> None:
         session = self.browsers.session(self.thread_id, self.binding)
-        # No page-operation lock or database transaction is retained while waiting.
+        window = session.windows[self.thread_id]
+        # A stopped window wakes its own queued tools even if a different
+        # conversation still holds the global human-control barrier.
         while session.state.control == "human":
-            await session.released.wait()
+            waits = [asyncio.create_task(session.released.wait()), asyncio.create_task(window.closed.wait())]
+            try:
+                await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in waits:
+                    task.cancel()
+                await asyncio.gather(*waits, return_exceptions=True)
             await self.browsers.authorize(self.thread_id)
             self.browsers.session(self.thread_id, self.binding)
 
@@ -730,24 +1066,29 @@ class HostBrowserBackend:
         session = self.browsers.session(self.thread_id, self.binding)
         if session.state.control == "human":
             raise failure("The user controls the browser. Ask for handback before continuing.", "human_control")
+        tab = await session.open_window(self.thread_id)
         if session.context is not None:
-            # Follow the actual foreground tab after a user opens a tab or login popup.
-            # This collection occurs only after the takeover barrier has been released.
+            # Human-opened tabs and popups stay with their owning Thread. Never
+            # adopt another Thread's foreground page merely because it has focus.
             for candidate in reversed(session.context.pages[-16:]):
-                if candidate.is_closed():
+                if candidate.is_closed() or session.page_owners.get(candidate) != self.thread_id:
                     continue
                 try:
                     focused = await asyncio.wait_for(candidate.evaluate("document.hasFocus()"), 1)
                 except Exception:
                     continue
                 if focused:
-                    if session.page != candidate:
-                        await session.invalidate()
-                        session.page = candidate
-                        session.requires_observation = True
+                    if tab.page != candidate:
+                        await tab.invalidate()
+                        tab.page = candidate
+                        tab.requires_observation = True
                     break
-        if session.page is None or session.page.is_closed():
+        if tab.page is None or tab.page.is_closed():
             raise failure("Browser is not running. Navigate to start it.", "not_ready")
+        session.active_thread = self.thread_id
+        session.page = tab.page
+        if session.context is not None:
+            await session.focus(tab.page)
         return session
 
     @asynccontextmanager
@@ -767,12 +1108,14 @@ class HostBrowserBackend:
 
     async def observe(self) -> BrowserObservation:
         async with self.operation() as session:
-            assert session.page is not None
-            await session.invalidate()
-            session.revision = secrets.token_hex(12)
+            tab = session.windows[self.thread_id]
+            page = tab.page
+            assert page is not None
+            await tab.invalidate()
+            tab.revision = secrets.token_hex(12)
             elements = []
             # Keep actual element handles, never infer a replacement target from a stale index.
-            candidates = await session.page.locator(
+            candidates = await page.locator(
                 "a,button,input,textarea,select,[role=button],[contenteditable=true]"
             ).element_handles()
             for element in candidates[:256]:
@@ -783,52 +1126,54 @@ class HostBrowserBackend:
                 description = await element.evaluate(
                     "e => [e.tagName.toLowerCase(), e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.innerText || e.getAttribute('name') || e.getAttribute('type') || ''].join(' ').slice(0,240)"
                 )
-                session.targets[target] = element
+                tab.targets[target] = element
                 elements.append(BrowserElement(target, description))
             for element in candidates[256:]:
                 await element.dispose()
-            text = (await session.page.locator("body").aria_snapshot())[:24_000]
-            session.requires_observation = False
-            session.state = session.state.model_copy(update={"url": session.page.url})
-            return BrowserObservation(f"URL: {session.page.url}\n{text}", session.revision, tuple(elements))
+            text = (await page.locator("body").aria_snapshot())[:24_000]
+            tab.requires_observation = False
+            session.state = session.state.model_copy(update={"url": page.url})
+            return BrowserObservation(f"URL: {page.url}\n{text}", tab.revision, tuple(elements))
 
     async def act(self, action: BrowserAction, *, target: str = "", value: str = "", revision: str = "") -> str:
         if action == "navigate":
             browser_url(value)
             await self.browsers.start(self.thread_id, self.binding)
         async with self.operation() as session:
-            assert session.page is not None
-            if session.requires_observation:
+            tab = session.windows[self.thread_id]
+            page = tab.page
+            assert page is not None
+            if tab.requires_observation:
                 raise failure(
                     "Observe the browser after handback or reopening before continuing.", "observation_required"
                 )
             try:
                 if action == "navigate":
-                    await session.invalidate()
-                    await session.page.goto(value, wait_until="domcontentloaded", timeout=20_000)
+                    await tab.invalidate()
+                    await page.goto(value, wait_until="domcontentloaded", timeout=20_000)
                 elif action in {"click", "fill"}:
-                    element = session.targets.get(target)
+                    element = tab.targets.get(target)
                     if (
                         not revision
-                        or revision != session.revision
+                        or revision != tab.revision
                         or element is None
                         or not await element.evaluate("e => e.isConnected")
                     ):
                         raise failure("Element reference expired. Observe again.", "reference_expired")
                     if action == "click":
-                        await session.cursor.show(session.page, element)
+                        await session.cursor.show(page, element)
                         await element.click()
                     else:
                         if await element.get_attribute("type") in {"password", "file"}:
                             raise failure("Use human takeover for password or file input.", "sensitive_input")
-                        await session.cursor.show(session.page, element)
+                        await session.cursor.show(page, element)
                         await element.fill(value)
                 elif action == "press":
-                    await session.cursor.show(session.page)
-                    await session.page.keyboard.press(value)
+                    await session.cursor.show(page)
+                    await page.keyboard.press(value)
                 elif action == "wait":
-                    await session.page.get_by_text(value, exact=False).first.wait_for(state="visible")
-                session.state = session.state.model_copy(update={"url": session.page.url})
+                    await page.get_by_text(value, exact=False).first.wait_for(state="visible")
+                session.state = session.state.model_copy(update={"url": page.url})
                 return f"Browser {action} completed. Observe to verify the result."
             except HarnessUiError:
                 raise
@@ -837,8 +1182,10 @@ class HostBrowserBackend:
 
     async def screenshot(self) -> bytes:
         async with self.operation() as session:
-            assert session.page is not None
-            picture = await session.page.screenshot(type="jpeg", quality=65)
+            tab = session.windows[self.thread_id]
+            page = tab.page
+            assert page is not None
+            picture = await page.screenshot(type="jpeg", quality=65)
             if len(picture) > 3 * 1024 * 1024:
                 raise failure("Screenshot exceeds the browser output limit.")
             return picture

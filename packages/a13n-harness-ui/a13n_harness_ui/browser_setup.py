@@ -1,12 +1,12 @@
-"""Read-only browser preparation checks and platform-specific installation guidance."""
+"""Read-only discovery of Host browser and managed VNC executable bindings."""
 
 from __future__ import annotations
 
 import asyncio
-import importlib
 import importlib.util
 import ntpath
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -14,8 +14,7 @@ from pathlib import Path
 from platform import freedesktop_os_release
 from typing import Literal
 
-from pydantic import Field
-
+from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.surfaces import SurfaceModel
 
 type BrowserPlatform = Literal["linux", "macos", "windows", "other"]
@@ -24,25 +23,32 @@ type BrowserPlatform = Literal["linux", "macos", "windows", "other"]
 class BrowserExecutable(SurfaceModel):
     name: str
     path: str
-    source: Literal["system", "playwright"]
+    source: Literal["system", "custom", "playwright"]
+
+
+type VncKind = Literal["tigervnc", "x11vnc", "wayvnc"]
+
+
+class VncExecutable(SurfaceModel):
+    kind: VncKind = "tigervnc"
+    path: str
+    source: Literal["system", "custom"]
+    window_manager: str | None = None
+    xrandr: str | None = None
+    display_server: str | None = None
+    disable_resizing: bool = False
 
 
 class BrowserRequirement(SurfaceModel):
     name: str
     installed: bool
     detail: str
+    required: bool = True
 
 
 class BrowserInstallStep(SurfaceModel):
     title: str
     command: str
-
-
-class BrowserInstallState(SurfaceModel):
-    status: Literal["idle", "installing", "succeeded", "failed"] = "idle"
-    step: str = ""
-    output: str = ""
-    error: str | None = None
 
 
 class BrowserSetup(SurfaceModel):
@@ -51,12 +57,10 @@ class BrowserSetup(SurfaceModel):
     supported: bool
     ready: bool
     browser: BrowserExecutable | None = None
+    vnc: VncExecutable | None = None
     requirements: tuple[BrowserRequirement, ...] = ()
     steps: tuple[BrowserInstallStep, ...] = ()
     message: str = ""
-    installable: bool = False
-    install_message: str = ""
-    installation: BrowserInstallState = Field(default_factory=BrowserInstallState)
 
 
 def host_platform() -> BrowserPlatform:
@@ -71,7 +75,20 @@ def linux_distribution() -> dict[str, str]:
         return {}
 
 
-def system_browser(platform: BrowserPlatform) -> BrowserExecutable | None:
+def executable_path(path: str) -> str | None:
+    candidate = Path(path).expanduser().resolve(strict=False)
+    return str(candidate) if candidate.is_file() and os.access(candidate, os.X_OK) else None
+
+
+def find_program(*names: str) -> str | None:
+    for name in names:
+        if found := shutil.which(name):
+            if path := executable_path(found):
+                return path
+    return None
+
+
+def system_browsers(platform: BrowserPlatform) -> list[BrowserExecutable]:
     candidates: list[tuple[str, str]] = []
     if platform == "linux":
         for name, command in (
@@ -82,163 +99,272 @@ def system_browser(platform: BrowserPlatform) -> BrowserExecutable | None:
             ("Microsoft Edge", "microsoft-edge"),
             ("Microsoft Edge", "microsoft-edge-stable"),
         ):
-            if executable := shutil.which(command):
-                candidates.append((name, executable))
+            if path := shutil.which(command):
+                candidates.append((name, path))
     elif platform == "macos":
         for root in (Path("/Applications"), Path.home() / "Applications"):
-            for name, executable in (
+            for name, path in (
                 ("Google Chrome", "Google Chrome.app/Contents/MacOS/Google Chrome"),
                 ("Chromium", "Chromium.app/Contents/MacOS/Chromium"),
                 ("Microsoft Edge", "Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
             ):
-                candidates.append((name, str(root / executable)))
+                candidates.append((name, str(root / path)))
     elif platform == "windows":
         for variable in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
             if root := os.environ.get(variable):
-                for name, executable in (
+                for name, path in (
                     ("Google Chrome", r"Google\Chrome\Application\chrome.exe"),
                     ("Chromium", r"Chromium\Application\chrome.exe"),
                     ("Microsoft Edge", r"Microsoft\Edge\Application\msedge.exe"),
                 ):
-                    candidates.append((name, ntpath.join(root, executable)))
-    for name, executable in candidates:
-        if Path(executable).is_file():
-            return BrowserExecutable(name=name, path=executable, source="system")
+                    candidates.append((name, ntpath.join(root, path)))
+    found: dict[str, BrowserExecutable] = {}
+    for name, candidate in candidates:
+        if path := executable_path(candidate):
+            found.setdefault(path, BrowserExecutable(name=name, path=path, source="system"))
+    return list(found.values())
+
+
+async def playwright_browser() -> BrowserExecutable | None:
+    if importlib.util.find_spec("playwright") is None:
+        return None
+    try:
+        from playwright.async_api import async_playwright
+
+        async with asyncio.timeout(10), async_playwright() as driver:
+            path = await asyncio.to_thread(executable_path, driver.chromium.executable_path)
+            if path:
+                return BrowserExecutable(name="Chromium", path=path, source="playwright")
+    except Exception:
+        pass
     return None
 
 
-async def inspect_browser() -> BrowserSetup:
+def supported_browser(version: str) -> bool:
+    return any(name in version.lower() for name in ("chromium", "chrome", "edge", "brave", "vivaldi"))
+
+
+def supported_tigervnc(help_text: str) -> bool:
+    required = ("rfbunixpath", "rfbport", "passwordfile", "securitytypes", "displayfd")
+    return "tigervnc" in help_text.lower() and all(option in help_text.lower() for option in required)
+
+
+async def inspect_vnc(path: str, source: Literal["system", "custom"]) -> VncExecutable | None:
+    help_text = await probe(path, "-help")
+    if supported_tigervnc(help_text):
+        return VncExecutable(path=path, source=source)
+    # x11vnc's full help exceeds the probe's output bound. Its option inventory
+    # is small and includes the private transport and native auth capabilities.
+    options = await probe(path, "-opts")
+    if all(option in options for option in ("-unixsock", "-passwdfile", "-display", "-shared")):
+        return VncExecutable(kind="x11vnc", path=path, source=source)
+    help_text = await probe(path, "--help")
+    if all(option in help_text for option in ("--unix-socket", "--disable-input", "--config", "--socket")):
+        disable_resizing = "--disable-resizing" in help_text
+        # Older WayVNC does not implement desktop resizing at all. Reject
+        # unknown versions unless resizing can explicitly be disabled.
+        version = await probe(path, "--version")
+        legacy = re.search(r"wayvnc[^\n]*?\b0\.([0-7])\.", version, re.IGNORECASE)
+        if disable_resizing or legacy:
+            return VncExecutable(kind="wayvnc", path=path, source=source, disable_resizing=disable_resizing)
+    return None
+
+
+class BrowserScan(SurfaceModel):
+    browsers: tuple[BrowserExecutable, ...] = ()
+    vncs: tuple[VncExecutable, ...] = ()
+
+
+async def scan_browsers() -> BrowserScan:
+    """Enumerate supported installed executables only when explicitly requested."""
+    importlib.invalidate_caches()
+    platform = host_platform()
+    candidates = await asyncio.to_thread(system_browsers, platform)
+    if bundled := await playwright_browser():
+        if all(candidate.path != bundled.path for candidate in candidates):
+            candidates.append(bundled)
+    browsers = []
+    for candidate in candidates:
+        if supported_browser(await probe(candidate.path, "--version")):
+            browsers.append(candidate)
+    vncs: dict[str, VncExecutable] = {}
+    if platform == "linux":
+        for name in ("Xtigervnc", "Xvnc", "x11vnc", "wayvnc"):
+            path = await asyncio.to_thread(find_program, name)
+            if path and path not in vncs:
+                if candidate := await inspect_vnc(path, "system"):
+                    vncs[path] = candidate
+    return BrowserScan(browsers=tuple(browsers), vncs=tuple(vncs.values()))
+
+
+async def probe(path: str, argument: str) -> str:
+    """Bound help/version probes without launching a desktop or executing a shell."""
+    process = None
+    try:
+        async with asyncio.timeout(5):
+            process = await asyncio.create_subprocess_exec(
+                path, argument, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+            )
+            assert process.stdout is not None
+            output = bytearray()
+            while chunk := await process.stdout.read(min(8192, 65537 - len(output))):
+                output.extend(chunk)
+                if len(output) > 65536:
+                    return ""
+            await process.wait()
+            return output.decode(errors="replace")
+    except (OSError, TimeoutError):
+        return ""
+    finally:
+        if process is not None and process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+
+
+async def inspect_browser(configuration: BrowserConfiguration | None = None) -> BrowserSetup:
+    configuration = configuration or BrowserConfiguration()
     importlib.invalidate_caches()
     platform = host_platform()
     supported = platform == "linux"
     distribution = await asyncio.to_thread(linux_distribution) if supported else {}
-    minimum = {"ubuntu": 22, "debian": 12}.get(distribution.get("ID", ""))
-    major = distribution.get("VERSION_ID", "").split(".")[0]
-    unsupported_version = minimum is not None and major.isdecimal() and int(major) < minimum
-    if unsupported_version:
-        supported = False
-    browser = await asyncio.to_thread(system_browser, platform)
+    browser = None
+    browser_detail = "Select a browser executable in General settings, save and restart Harness UI"
+    if configuration.executable:
+        path = await asyncio.to_thread(executable_path, configuration.executable)
+        if path:
+            browser = BrowserExecutable(name="Configured browser", path=path, source="custom")
+        browser_detail = "Configured browser executable is missing or not executable"
     automation = importlib.util.find_spec("playwright") is not None
-    repair_automation = False
-    automation_detail = (
-        "Installed in this Python environment" if automation else "Install the optional Playwright package"
-    )
-    if automation:
-        try:
-            from playwright.async_api import async_playwright
+    if browser:
+        version = await probe(browser.path, "--version")
+        if not supported_browser(version):
+            browser_detail = "Browser version probe failed or the executable is not a supported Chromium browser"
+            browser = None
+        else:
+            browser_detail = f"{browser.path} ({browser.source})"
 
-            async with asyncio.timeout(10), async_playwright() as driver:
-                executable = driver.chromium.executable_path
-                if await asyncio.to_thread(Path(executable).is_file):
-                    browser = BrowserExecutable(name="Chromium", path=executable, source="playwright")
-        except Exception:
-            automation = False
-            repair_automation = True
-            automation_detail = "Playwright could not initialize; repair its installation in this Python environment"
-    groups = (
-        ("Remote desktop", ("Xtigervnc", "tigervncpasswd")),
-        ("Window manager", ("openbox",)),
-        ("Display tools", ("xrandr", "xauth")),
-    )
+    resizing = await asyncio.to_thread(find_program, "xrandr") if supported else None
+    manager = await asyncio.to_thread(find_program, "openbox", "fluxbox", "icewm", "twm") if supported else None
+    vnc = None
+    vnc_detail = "Select a VNC executable in General settings, save and restart Harness UI"
+    if supported and configuration.vnc_executable:
+        path = await asyncio.to_thread(executable_path, configuration.vnc_executable)
+        if not path:
+            vnc_detail = "Configured VNC executable is missing or not executable"
+        elif candidate := await inspect_vnc(path, "custom"):
+            display_server = None
+            if candidate.kind == "x11vnc":
+                display_server = await asyncio.to_thread(find_program, "Xvfb")
+                resizing = None
+            elif candidate.kind == "wayvnc":
+                display_server = await asyncio.to_thread(find_program, "sway")
+                manager = resizing = None
+            vnc = candidate.model_copy(
+                update={
+                    "window_manager": manager,
+                    "xrandr": resizing,
+                    "display_server": display_server,
+                }
+            )
+            vnc_detail = f"{path} ({vnc.kind})"
+        else:
+            vnc_detail = "VNC executable is not a compatible TigerVNC Xvnc, x11vnc or WayVNC server"
     requirements = [
-        BrowserRequirement(name="Browser automation", installed=automation, detail=automation_detail),
+        BrowserRequirement(name="Browser", installed=browser is not None, detail=browser_detail),
+        BrowserRequirement(name="VNC server", installed=vnc is not None, detail=vnc_detail),
         BrowserRequirement(
-            name="Compatible browser",
-            installed=browser is not None,
-            detail=f"{browser.name} ({browser.source})" if browser else "Chrome, Chromium or Edge was not found",
+            name="Browser automation",
+            installed=automation,
+            detail="Playwright is installed" if automation else "Install the optional browser Python dependencies",
         ),
     ]
-    missing_tools: list[str] = []
-    if platform == "linux":
-        for name, commands in groups:
-            missing = [command for command in commands if shutil.which(command) is None]
-            missing_tools.extend(missing)
-            requirements.append(
-                BrowserRequirement(
-                    name=name,
-                    installed=not missing,
-                    detail="Missing: " + ", ".join(missing) if missing else ", ".join(commands),
-                )
+    if vnc and vnc.kind != "tigervnc":
+        requirements.append(
+            BrowserRequirement(
+                name="Display server",
+                installed=vnc.display_server is not None,
+                detail=vnc.display_server
+                or (
+                    "Install Xvfb for a private x11vnc display"
+                    if vnc.kind == "x11vnc"
+                    else "Install Sway for a private headless WayVNC compositor; run Harness UI as a non-root user"
+                ),
             )
-    ready = supported and all(item.installed for item in requirements)
+        )
+    if vnc and vnc.kind == "wayvnc":
+        requirements.append(
+            BrowserRequirement(
+                name="Host account",
+                installed=os.geteuid() != 0,
+                detail="Headless Sway requires Harness UI to run as a non-root user",
+            )
+        )
+    if supported:
+        requirements.append(
+            BrowserRequirement(
+                name="Desktop resizing",
+                installed=resizing is not None,
+                required=False,
+                detail=resizing
+                or (
+                    "The selected VNC adapter currently uses a fixed-size desktop"
+                    if vnc and vnc.kind != "tigervnc"
+                    else "Fixed-size desktop is available; install a RandR utility to enable viewport size switching"
+                ),
+            )
+        )
+        requirements.append(
+            BrowserRequirement(
+                name="Window management",
+                installed=manager is not None or bool(vnc and vnc.kind == "wayvnc" and vnc.display_server),
+                required=False,
+                detail=(vnc.display_server if vnc and vnc.kind == "wayvnc" else manager)
+                or "No supported window manager found; browser windows run without a desktop window manager",
+            )
+        )
+    ready = supported and all(requirement.installed for requirement in requirements if requirement.required)
     steps = []
-    python = shlex.quote(sys.executable)
-    apt_available = supported and shutil.which("apt-get") is not None
-    package_installer = shutil.which("uv")
-    pip_available = importlib.util.find_spec("pip") is not None
-    if supported and not ready:
-        if not automation:
-            if package_installer:
-                installer = f"{shlex.quote(package_installer)} pip install --python {python}"
-                repair = " --reinstall-package playwright" if repair_automation else ""
-            else:
-                installer = f"{python} -m pip install"
-                repair = " --force-reinstall" if repair_automation else ""
-            steps.append(
-                BrowserInstallStep(
-                    title="Install browser automation",
-                    command=f"{installer}{repair} 'playwright>=1.58,<2'",
-                )
+    if supported and not automation:
+        steps.append(
+            BrowserInstallStep(
+                title="Install browser automation",
+                command=f"uv pip install --python {shlex.quote(sys.executable)} 'a13n-harness-ui[browser]'",
             )
-        if browser is None:
-            dependencies = " --with-deps" if apt_available else ""
-            steps.append(
-                BrowserInstallStep(
-                    title="Install Chromium and its system libraries" if apt_available else "Install Chromium",
-                    command=f"{python} -m playwright install{dependencies} --no-shell chromium",
-                )
+        )
+    if supported and vnc is None and shutil.which("apt-get"):
+        steps.append(
+            BrowserInstallStep(
+                title="Install a compatible VNC server (if needed)",
+                command="sudo apt-get update\nsudo apt-get install --no-install-recommends tigervnc-standalone-server",
             )
-        if missing_tools and apt_available:
-            prefix = "" if os.geteuid() == 0 else "sudo "
-            steps.append(
-                BrowserInstallStep(
-                    title="Install the Linux desktop components",
-                    command=f"{prefix}apt-get update\n{prefix}apt-get install -y --no-install-recommends "
-                    "tigervnc-standalone-server tigervnc-tools x11-xserver-utils xauth openbox",
-                )
+        )
+    if supported and vnc and vnc.kind != "tigervnc" and not vnc.display_server and shutil.which("apt-get"):
+        package = "xvfb" if vnc.kind == "x11vnc" else "sway"
+        steps.append(
+            BrowserInstallStep(
+                title="Install the selected VNC display component",
+                command=f"sudo apt-get install --no-install-recommends {package}",
             )
-    message = (
-        "Browser support is ready on this Host."
-        if ready
-        else "Install the missing components on the Host running Harness UI."
-    )
+        )
     if not supported:
-        message = (
-            f"{distribution.get('PRETTY_NAME', 'This Linux release')} is not supported by the current browser runtime. Use Ubuntu 22.04 or newer, or Debian 12 or newer."
-            if unsupported_version
-            else "The remote desktop currently requires a Linux Host. Browser detection is available for this platform, but desktop support is not implemented yet."
-        )
-    elif not apt_available and (missing_tools or browser is None):
-        message += " Install any missing browser shared libraries, TigerVNC, its password tool, Openbox, xrandr and xauth using your distribution's package manager."
-    installable = supported and not ready and bool(steps)
-    install_message = "Installs the missing components on this Host using its current account."
-    if not supported:
-        installable, install_message = False, message
-    elif not apt_available and (missing_tools or browser is None):
-        installable = False
-        install_message = "Automatic desktop installation currently supports apt-based Hosts. Use your distribution's package manager, then check again."
-    elif missing_tools and os.geteuid() != 0:
-        installable = False
-        install_message = (
-            "System packages require an administrator. Run the commands below on the Host, then check again."
-        )
-    elif browser is None and os.geteuid() != 0:
-        installable = False
-        install_message = (
-            "Browser system libraries require an administrator. Prepare them on the Host, then check again."
-        )
-    elif not automation and not package_installer and not pip_available:
-        installable = False
-        install_message = "Install uv or pip in this Host environment before installing browser automation."
+        message = "The remote desktop currently requires a Linux Host. Browser detection is available on this platform."
+    elif ready:
+        message = "Browser and VNC executables are ready. Harness manages their startup and cleanup."
+    else:
+        message = "Select browser and VNC executables in General settings, save and restart Harness UI. Prepare any missing components on this Host."
+        if not shutil.which("apt-get"):
+            message += " Use your distribution's package manager for Chromium and a compatible VNC server."
     return BrowserSetup(
         platform=platform,
         distribution=distribution.get("PRETTY_NAME"),
         supported=supported,
         ready=ready,
         browser=browser,
+        vnc=vnc,
         requirements=tuple(requirements),
         steps=tuple(steps),
         message=message,
-        installable=installable,
-        install_message=install_message,
     )

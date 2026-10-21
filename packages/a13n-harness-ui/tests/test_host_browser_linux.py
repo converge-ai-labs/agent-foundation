@@ -2,6 +2,7 @@
 
 Set A13N_BROWSER_REAL_TEST=1 and PLAYWRIGHT_BROWSERS_PATH to the installed
 Chromium cache explicitly: repository fixtures isolate HOME during tests.
+A13N_BROWSER_TEST_VNC selects an alternative adapter (x11vnc or wayvnc).
 """
 
 from __future__ import annotations
@@ -16,10 +17,12 @@ import struct
 import sys
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 
 import pytest
 import uvicorn
+import yaml
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.browser import (
     VIEWPORTS,
@@ -28,6 +31,8 @@ from a13n_harness_ui.browser import (
     BrowserViewportRequest,
     HostBrowsers,
 )
+from a13n_harness_ui.browser_setup import scan_browsers
+from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.webui import create_webui
 
@@ -40,6 +45,15 @@ pytestmark = [
         reason="Optional Linux Host VNC validation",
     ),
 ]
+
+
+@pytest.fixture
+async def browser_configuration():
+    candidates = await scan_browsers()
+    kind = os.environ.get("A13N_BROWSER_TEST_VNC", "tigervnc")
+    candidate = next((vnc for vnc in candidates.vncs if vnc.kind == kind), None)
+    assert candidates.browsers and candidate
+    return BrowserConfiguration(executable=candidates.browsers[0].path, vnc_executable=candidate.path)
 
 
 @pytest.fixture
@@ -76,19 +90,24 @@ async def rfb(
     writer.write(b"RFB 003.008\n")
     count = (await reader.readexactly(1))[0]
     security = await reader.readexactly(count)
-    assert 2 in security
-    writer.write(b"\x02")
-    challenge = await reader.readexactly(16)
-    # Independent test client for TigerVNC's standard VncAuth handshake.
-    from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
-    from cryptography.hazmat.primitives.ciphers import Cipher, modes
+    if not access.password:
+        assert 1 in security
+        writer.write(b"\x01")
+        assert await reader.readexactly(4) == b"\x00\x00\x00\x00"
+    else:
+        assert 2 in security
+        writer.write(b"\x02")
+        challenge = await reader.readexactly(16)
+        # Independent test client for TigerVNC's standard VncAuth handshake.
+        from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
+        from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
-    password = bytes(int(f"{byte:08b}"[::-1], 2) for byte in (native_password or access.password).encode())
-    encryptor = Cipher(TripleDES(password * 3), modes.ECB()).encryptor()
-    writer.write(encryptor.update(challenge) + encryptor.finalize())
-    if await reader.readexactly(4) != b"\x00\x00\x00\x00":
-        await browsers.disconnect(session, writer)
-        raise PermissionError("Native VNC credentials were revoked.")
+        password = bytes(int(f"{byte:08b}"[::-1], 2) for byte in (native_password or access.password).encode())
+        encryptor = Cipher(TripleDES(password * 3), modes.ECB()).encryptor()
+        writer.write(encryptor.update(challenge) + encryptor.finalize())
+        if await reader.readexactly(4) != b"\x00\x00\x00\x00":
+            await browsers.disconnect(session, writer)
+            raise PermissionError("Native VNC credentials were revoked.")
     writer.write(b"\x01")
     header = await reader.readexactly(24)
     await reader.readexactly(struct.unpack(">I", header[-4:])[0])
@@ -100,13 +119,15 @@ def key(writer, keysym):
     writer.write(struct.pack(">BBHI", 4, 0, 0, keysym))
 
 
-async def test_server_rejects_readonly_rfb_input_and_handoff_preserves_profile(tmp_path, site):
+async def test_server_rejects_readonly_rfb_input_and_handoff_preserves_profile(tmp_path, site, browser_configuration):
     from playwright.async_api import expect
 
     async def authorize(thread_id):
         pass
 
-    browsers = HostBrowsers(root=tmp_path / "profiles", available=True, authorize=authorize)
+    browsers = HostBrowsers(
+        root=tmp_path / "profiles", available=True, authorize=authorize, configuration=browser_configuration
+    )
     state = await browsers.enable("thread-test")
     backend = browsers.backend("thread-test", state.session_id)
     try:
@@ -155,8 +176,8 @@ async def test_server_rejects_readonly_rfb_input_and_handoff_preserves_profile(t
         with pytest.raises(HarnessUiError, match="after handback"):
             await backend.act("press", value="Enter")
         assert "Signed in" in (await backend.observe()).text
-        await browsers.stop("thread-test", state.session_id)
-        new = await browsers.start("thread-test", state.session_id, explicit=True)
+        stopped = await browsers.stop("thread-test", state.session_id)
+        new = await browsers.start("thread-test", stopped.session_id, explicit=True)
         replacement = browsers.backend("thread-test", new.session_id)
         await replacement.observe()
         await replacement.act("navigate", value=site)
@@ -167,13 +188,17 @@ async def test_server_rejects_readonly_rfb_input_and_handoff_preserves_profile(t
         await browsers.close()
 
 
-async def test_agent_cursor_tracks_actions_without_intercepting_input_or_surviving_takeover(tmp_path, site):
+async def test_agent_cursor_tracks_actions_without_intercepting_input_or_surviving_takeover(
+    tmp_path, site, browser_configuration
+):
     from playwright.async_api import expect
 
     async def authorize(thread_id):
         pass
 
-    browsers = HostBrowsers(root=tmp_path / "profiles", available=True, authorize=authorize)
+    browsers = HostBrowsers(
+        root=tmp_path / "profiles", available=True, authorize=authorize, configuration=browser_configuration
+    )
     state = await browsers.enable("thread-test")
     backend = browsers.backend("thread-test", state.session_id)
     try:
@@ -254,11 +279,14 @@ async def test_agent_cursor_tracks_actions_without_intercepting_input_or_survivi
 
 
 @pytest.mark.parametrize("platform", ["Linux x86_64", "MacIntel", "Win32"])
-async def test_real_novnc_panel_login_handback_and_viewer_closure(tmp_path, site, platform):
+async def test_real_novnc_panel_login_handback_and_viewer_closure(tmp_path, site, platform, browser_configuration):
     from a13n_harness.capabilities.browser import BrowserUseCapability
     from playwright.async_api import async_playwright, expect
 
     root = _write_configuration(tmp_path)
+    configuration = yaml.safe_load(root.read_text())
+    configuration["browser"] = browser_configuration.model_dump()
+    root.write_text(yaml.safe_dump(configuration))
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen()
@@ -389,7 +417,7 @@ async def test_real_novnc_panel_login_handback_and_viewer_closure(tmp_path, site
                         for control_key in ("ControlLeft", "ControlRight"):
                             await page.keyboard.press(f"{modifier}+a")
                             await page.keyboard.down(control_key)
-                            await page.get_by_role("combobox", name="Browser viewport size").focus()
+                            await page.get_by_role("button", name="Hand back to Agent").focus()
                             await page.keyboard.up(control_key)
                             await page.locator("[data-browser-screen] canvas").focus()
                             await page.keyboard.type("a")
@@ -445,8 +473,12 @@ async def test_real_novnc_panel_login_handback_and_viewer_closure(tmp_path, site
         listener.close()
 
 
-@pytest.mark.parametrize("exit_kind", ["last-page", "browser", "browser-crash", "display", "window-manager"])
-async def test_real_browser_exit_cleans_runtime_and_reopens_profile(tmp_path, site, monkeypatch, exit_kind):
+@pytest.mark.parametrize(
+    "exit_kind", ["last-page", "browser", "browser-quit", "browser-crash", "display", "window-manager"]
+)
+async def test_real_browser_exit_cleans_runtime_and_reopens_profile(
+    tmp_path, site, monkeypatch, exit_kind, browser_configuration
+):
     processes = {}
     watch = BrowserSession.watch_process
 
@@ -459,20 +491,25 @@ async def test_real_browser_exit_cleans_runtime_and_reopens_profile(tmp_path, si
     async def authorize(thread_id):
         pass
 
-    browsers = HostBrowsers(root=tmp_path / "profiles", available=True, authorize=authorize)
+    browsers = HostBrowsers(
+        root=tmp_path / "profiles", available=True, authorize=authorize, configuration=browser_configuration
+    )
     state = await browsers.enable("thread-exit")
     backend = browsers.backend("thread-exit", state.session_id)
     try:
         await backend.act("navigate", value=site)
         session = browsers.session("thread-exit", state.session_id)
+        if exit_kind == "window-manager" and (session.desktop is None or session.desktop.window_manager is None):
+            pytest.skip("No optional window manager was started")
         assert session.page is not None
         assert session.context is not None
         await session.page.get_by_role("button", name="Sign in").click()
-        if exit_kind in {"display", "browser-crash"}:
+        if exit_kind in {"display", "browser-crash", "browser-quit"}:
             # Abrupt exit need not flush new cookies. Seed an actually persisted
             # login through a clean shutdown before testing crash recovery.
-            await browsers.stop("thread-exit", state.session_id)
-            state = await browsers.start("thread-exit", state.session_id, explicit=True)
+            session.end()
+            await session.close()
+            state = await browsers.start("thread-exit", browsers.state("thread-exit").session_id, explicit=True)
             backend = browsers.backend("thread-exit", state.session_id)
             await backend.observe()
             await backend.act("navigate", value=site)
@@ -500,6 +537,9 @@ async def test_real_browser_exit_cleans_runtime_and_reopens_profile(tmp_path, si
             key(writer, 0xFFC1)  # F4
             writer.write(struct.pack(">BBHI", 4, 0, 0, 0xFFE9))
             await writer.drain()
+        elif exit_kind == "browser-quit":
+            assert session.context.browser is not None
+            await session.context.browser.close()
         elif exit_kind == "browser-crash":
             assert browser_pid is not None
             os.kill(browser_pid, signal.SIGKILL)
@@ -512,15 +552,19 @@ async def test_real_browser_exit_cleans_runtime_and_reopens_profile(tmp_path, si
         # No state polling or open viewer is needed to detect the exit.
         with pytest.raises(HarnessUiError, match="session changed"):
             await asyncio.wait_for(pending, 15)
-        assert session.state.status == "stopped"
+        assert browsers.state("thread-exit").status == "stopped"
         assert not session.control_token
-        old_processes = tuple(processes.values())
-        await asyncio.wait_for(session.close(), 20)
-        assert all(process.returncode is not None for process in old_processes)
-        assert session.context is session.page is None
+        if exit_kind in {"last-page", "browser"}:
+            assert not session.retired and session.context is not None
+            assert all(process.returncode is None for process in processes.values())
+        else:
+            old_processes = tuple(processes.values())
+            await asyncio.wait_for(session.close(), 20)
+            assert all(process.returncode is not None for process in old_processes)
+            assert session.context is session.page is None
         with pytest.raises(HarnessUiError, match="session changed"):
             await backend.act("navigate", value=site)
-        reopened = await browsers.start("thread-exit", state.session_id, explicit=True)
+        reopened = await browsers.start("thread-exit", browsers.state("thread-exit").session_id, explicit=True)
         assert reopened.status == "ready"
         assert reopened.session_id != state.session_id
         replacement = browsers.backend("thread-exit", reopened.session_id)
@@ -535,11 +579,13 @@ async def test_real_browser_exit_cleans_runtime_and_reopens_profile(tmp_path, si
         await browsers.close()
 
 
-async def test_reset_restores_an_offscreen_window_and_keeps_the_profile(tmp_path, site):
+async def test_reset_restores_an_offscreen_window_and_keeps_the_profile(tmp_path, site, browser_configuration):
     async def authorize(thread_id):
         pass
 
-    browsers = HostBrowsers(root=tmp_path / "profiles", available=True, authorize=authorize)
+    browsers = HostBrowsers(
+        root=tmp_path / "profiles", available=True, authorize=authorize, configuration=browser_configuration
+    )
     state = await browsers.enable("thread-reset")
     backend = browsers.backend("thread-reset", state.session_id)
     try:
@@ -579,16 +625,22 @@ async def test_reset_restores_an_offscreen_window_and_keeps_the_profile(tmp_path
         await browsers.close()
 
 
-async def test_viewport_presets_reflow_live_pages_and_resize_the_entire_vnc_desktop(tmp_path, site):
+async def test_viewport_presets_reflow_live_pages_and_resize_the_entire_vnc_desktop(
+    tmp_path, site, browser_configuration
+):
     async def authorize(thread_id):
         pass
 
-    browsers = HostBrowsers(root=tmp_path / "profiles", available=True, authorize=authorize)
+    browsers = HostBrowsers(
+        root=tmp_path / "profiles", available=True, authorize=authorize, configuration=browser_configuration
+    )
     state = await browsers.enable("thread-size")
     backend = browsers.backend("thread-size", state.session_id)
     try:
         await backend.act("navigate", value=site)
         session = browsers.session("thread-size", state.session_id)
+        if not session.state.resize_available:
+            pytest.skip("Optional desktop resizing is unavailable")
         assert session.page is not None
         assert session.context is not None
         await session.page.evaluate("window.keptAcrossResize = 'retained'")
@@ -626,3 +678,186 @@ async def test_viewport_presets_reflow_live_pages_and_resize_the_entire_vnc_desk
         assert await new.page.evaluate("[innerWidth, innerHeight]") == [844, 390]
     finally:
         await browsers.close()
+
+
+async def test_global_executable_bindings_launch_owned_browser_and_vnc(tmp_path, site, browser_configuration):
+    root = _write_configuration(tmp_path)
+    configuration = yaml.safe_load(root.read_text())
+    profile_root = tmp_path / "custom profiles"
+    configuration["browser"] = {
+        "executable": browser_configuration.executable,
+        "vnc_executable": browser_configuration.vnc_executable,
+        "profile_root": str(profile_root),
+    }
+    root.write_text(yaml.safe_dump(configuration))
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=root, host_mode="webui", share_computer=True
+    ) as app:
+        thread = await app.create_thread()
+        detected = await app.browser_setup(thread.thread_id)
+        assert detected.ready and detected.browser and detected.vnc
+        assert detected.browser.source == detected.vnc.source == "custom"
+        from a13n_harness_ui.thread_service import RootThreadDefaults
+
+        other = await app.create_thread(defaults=RootThreadDefaults(project_id=None))
+        other_state = await app.enable_browser(other.thread_id)
+        state = await app.enable_browser(thread.thread_id)
+        backend = app.browsers().backend(thread.thread_id, state.session_id)
+        await backend.act("navigate", value=site)
+        session = app.browsers().session(thread.thread_id, state.session_id)
+        assert session is app.browsers().session(other.thread_id, other_state.session_id)
+        assert session.profile == profile_root
+        assert session.desktop and session.desktop.path == browser_configuration.vnc_executable
+        socket_path = Path(session.control_socket)
+        assert socket_path.is_socket()
+        assert "login" in (await backend.observe()).text.lower()
+    assert session.context is None and not socket_path.exists()
+    assert session.profile.is_dir()
+
+
+async def test_shared_profile_uses_independent_windows_and_local_stop_reset(tmp_path, site, browser_configuration):
+    from unittest.mock import AsyncMock
+
+    from playwright.async_api import expect
+
+    owner = HostBrowsers(
+        root=tmp_path / "browsers", available=True, authorize=AsyncMock(), configuration=browser_configuration
+    )
+    try:
+        first = await owner.enable("thread-first")
+        second = await owner.enable("thread-second")
+        assert first.session_id != second.session_id
+        a, b = owner.backend("thread-first", first.session_id), owner.backend("thread-second", second.session_id)
+        await a.act("navigate", value=site)
+        runtime = owner.session("thread-first", first.session_id)
+        page_a = runtime.windows["thread-first"].page
+        assert page_a is not None and runtime.context is not None
+        context, socket = runtime.context, runtime.control_socket
+        await page_a.evaluate(
+            "document.cookie='shared_login=retained;max-age=3600;path=/'; localStorage.setItem('shared-setting', 'saved'); document.querySelector('input').type='text'"
+        )
+        observation = await a.observe()
+        target = observation.elements[0].target
+        await b.act("navigate", value=site)
+        page_b = runtime.windows["thread-second"].page
+        assert page_b is not None and page_b is not page_a
+        assert page_a.context is page_b.context is context
+        assert await runtime.window_id(page_a) != await runtime.window_id(page_b)
+        assert "shared_login=retained" in await page_b.evaluate("document.cookie")
+        assert await page_b.evaluate("localStorage.getItem('shared-setting')") == "saved"
+        await a.act("fill", target=target, revision=observation.revision, value="first-thread-only")
+        await expect(page_a.locator("input")).to_have_value("first-thread-only")
+        await expect(page_b.locator("input")).to_have_value("")
+        with pytest.raises(HarnessUiError, match="reference expired"):
+            await b.act("fill", target=target, revision=observation.revision, value="wrong-thread")
+        # Popup ownership follows its opener even while the other Thread is active.
+        async with page_b.expect_popup() as opened:
+            await page_b.evaluate("window.open('/popup', 'thread-second-popup')")
+        popup = await opened.value
+        if runtime.page_tasks:
+            await asyncio.gather(*tuple(runtime.page_tasks))
+        assert runtime.page_owners[popup] == "thread-second"
+        await popup.close()
+        assert runtime.windows["thread-second"].page is page_b
+        _, _, writer = await rfb(owner, "thread-second", second.session_id)
+        stopped = await owner.stop("thread-first", first.session_id)
+        assert stopped.status == "stopped" and page_a.is_closed()
+        assert not runtime.retired and runtime.context is context and runtime.control_socket == socket
+        assert not writer.is_closing() and owner.state("thread-second").status == "ready"
+        assert owner.state("thread-second").session_id == second.session_id
+        assert "Welcome" in (await b.observe()).text
+        with pytest.raises(HarnessUiError, match="session changed"):
+            await a.screenshot()
+        restarted = await owner.start("thread-first", stopped.session_id, explicit=True)
+        a = owner.backend("thread-first", restarted.session_id)
+        await a.observe()
+        await a.act("navigate", value=site)
+        page_a = runtime.windows["thread-first"].page
+        assert page_a is not None and "shared_login=retained" in await page_a.evaluate("document.cookie")
+        await page_a.evaluate("document.querySelector('input').type='text'")
+        observation = await a.observe()
+        reset = await owner.reset("thread-second", second.session_id)
+        assert reset.session_id != second.session_id and page_b.is_closed()
+        assert runtime.context is context and runtime.control_socket == socket
+        assert not page_a.is_closed() and owner.state("thread-first").session_id == restarted.session_id
+        await a.act("fill", target=observation.elements[0].target, revision=observation.revision, value="still-usable")
+        await expect(page_a.locator("input")).to_have_value("still-usable")
+        with pytest.raises(HarnessUiError, match="session changed"):
+            await b.screenshot()
+        # Closing every conversation window still retains the shared runtime.
+        await owner.stop("thread-second", reset.session_id)
+        await owner.stop("thread-first", restarted.session_id)
+        assert runtime.context is context and runtime.keepalive and not runtime.keepalive.is_closed()
+        assert not runtime.retired
+    finally:
+        await owner.close()
+
+
+@pytest.mark.parametrize("broken_resize_tool", [False, True])
+async def test_basic_browser_needs_no_optional_desktop_programs(
+    tmp_path, site, browser_configuration, monkeypatch, broken_resize_tool
+):
+    from unittest.mock import AsyncMock
+
+    from a13n_harness_ui import browser_setup
+    from playwright.async_api import expect
+
+    tool = tmp_path / "unavailable-randr"
+    tool.write_text("#!/bin/sh\nexit 1\n")
+    tool.chmod(0o700)
+    monkeypatch.setattr(
+        browser_setup, "find_program", lambda *names: str(tool) if broken_resize_tool and names == ("xrandr",) else None
+    )
+    owner = HostBrowsers(
+        root=tmp_path / "browsers", available=True, authorize=AsyncMock(), configuration=browser_configuration
+    )
+    try:
+        preparation = await owner.setup("thread-minimal")
+        assert preparation.ready and preparation.vnc
+        assert preparation.vnc.window_manager is None
+        assert (preparation.vnc.xrandr is not None) == broken_resize_tool
+        state = await owner.enable("thread-minimal")
+        runtime = owner.session("thread-minimal", state.session_id)
+        runtime.state = runtime.state.model_copy(update={"viewport": "tablet"})
+        backend = owner.backend("thread-minimal", state.session_id)
+        await backend.act("navigate", value=site)
+        session = owner.session("thread-minimal", state.session_id)
+        assert session.page is not None
+        assert not session.state.resize_available
+        assert session.state.viewport == "desktop"
+        assert await session.page.evaluate("[innerWidth, innerHeight]") == [1280, 800]
+        # The replacement for xauth must keep unauthenticated local X11 clients out.
+        reader, writer = await asyncio.open_unix_connection(f"/tmp/.X11-unix/X{session.display[1:]}")
+        try:
+            writer.write(struct.pack("<BBHHHHH", ord("l"), 0, 11, 0, 0, 0, 0))
+            await writer.drain()
+            assert (await asyncio.wait_for(reader.readexactly(8), 5))[0] == 0
+        finally:
+            writer.close()
+            await writer.wait_closed()
+        await session.page.locator("input").focus()
+        control = await owner.control("thread-minimal", state.session_id, human=True)
+        _, _, controller = await rfb(owner, "thread-minimal", state.session_id, control.control_token)
+        key(controller, ord("x"))
+        await controller.drain()
+        await expect(session.page.locator("input")).to_have_value("x")
+        with pytest.raises(HarnessUiError, match="resizing is unavailable"):
+            await owner.resize(
+                "thread-minimal",
+                BrowserViewportRequest(
+                    session_id=state.session_id, control_token=control.control_token, preset="phone"
+                ),
+            )
+        assert session.state.status == "ready"
+        await owner.control("thread-minimal", state.session_id, human=False)
+        await backend.observe()
+        assert await backend.screenshot()
+        async with session.page.expect_popup() as opened:
+            await session.page.evaluate("window.open('/popup', 'minimal-popup', 'width=480,height=420')")
+        popup = await opened.value
+        if session.page_tasks:
+            await asyncio.gather(*tuple(session.page_tasks))
+        assert owner.state("thread-minimal").status == "ready"
+        await popup.close()
+    finally:
+        await owner.close()

@@ -631,6 +631,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browser/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Browser Executables */
+        post: operations["scan_browser_executables_api_browser_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/browser": {
         parameters: {
             query?: never;
@@ -659,23 +676,6 @@ export interface paths {
         get: operations["browser_setup_api_threads__thread_id__browser_setup_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/browser/install": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Install Browser */
-        post: operations["install_browser_api_threads__thread_id__browser_install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2979,28 +2979,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "system" | "playwright";
-        };
-        /** BrowserInstallState */
-        BrowserInstallState: {
-            /**
-             * Status
-             * @default idle
-             * @enum {string}
-             */
-            status?: "idle" | "installing" | "succeeded" | "failed";
-            /**
-             * Step
-             * @default
-             */
-            step?: string;
-            /**
-             * Output
-             * @default
-             */
-            output?: string;
-            /** Error */
-            error?: string | null;
+            source: "system" | "custom" | "playwright";
         };
         /** BrowserInstallStep */
         BrowserInstallStep: {
@@ -3021,6 +3000,24 @@ export interface components {
             installed: boolean;
             /** Detail */
             detail: string;
+            /**
+             * Required
+             * @default true
+             */
+            required?: boolean;
+        };
+        /** BrowserScan */
+        BrowserScan: {
+            /**
+             * Browsers
+             * @default []
+             */
+            browsers?: components["schemas"]["BrowserExecutable"][];
+            /**
+             * Vncs
+             * @default []
+             */
+            vncs?: components["schemas"]["VncExecutable"][];
         };
         /** BrowserSetup */
         BrowserSetup: {
@@ -3032,6 +3029,7 @@ export interface components {
             /** Ready */
             ready: boolean;
             browser?: components["schemas"]["BrowserExecutable"] | null;
+            vnc?: components["schemas"]["VncExecutable"] | null;
             /**
              * Requirements
              * @default []
@@ -3047,17 +3045,6 @@ export interface components {
              * @default
              */
             message?: string;
-            /**
-             * Installable
-             * @default false
-             */
-            installable?: boolean;
-            /**
-             * Install Message
-             * @default
-             */
-            install_message?: string;
-            installation?: components["schemas"]["BrowserInstallState"];
         };
         /** BrowserState */
         BrowserState: {
@@ -3135,6 +3122,11 @@ export interface components {
              *     ]
              */
             viewports?: components["schemas"]["BrowserViewport"][];
+            /**
+             * Resize Available
+             * @default false
+             */
+            resize_available?: boolean;
         };
         /** BrowserViewport */
         BrowserViewport: {
@@ -7280,6 +7272,31 @@ export interface components {
              */
             max_video_bytes?: number;
         };
+        /** VncExecutable */
+        VncExecutable: {
+            /** @default tigervnc */
+            kind?: components["schemas"]["VncKind"];
+            /** Path */
+            path: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "system" | "custom";
+            /** Window Manager */
+            window_manager?: string | null;
+            /** Xrandr */
+            xrandr?: string | null;
+            /** Display Server */
+            display_server?: string | null;
+            /**
+             * Disable Resizing
+             * @default false
+             */
+            disable_resizing?: boolean;
+        };
+        /** @enum {string} */
+        VncKind: "tigervnc" | "x11vnc" | "wayvnc";
         /** VoiceSnapshot */
         VoiceSnapshot: {
             /**
@@ -9778,6 +9795,26 @@ export interface operations {
             };
         };
     };
+    scan_browser_executables_api_browser_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserScan"];
+                };
+            };
+        };
+    };
     browser_state_api_threads__thread_id__browser_get: {
         parameters: {
             query?: never;
@@ -9810,37 +9847,6 @@ export interface operations {
         };
     };
     browser_setup_api_threads__thread_id__browser_setup_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BrowserSetup"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    install_browser_api_threads__thread_id__browser_install_post: {
         parameters: {
             query?: never;
             header?: never;
