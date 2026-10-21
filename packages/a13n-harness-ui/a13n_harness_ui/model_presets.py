@@ -49,7 +49,7 @@ API_PROVIDERS = (
     ApiProvider(
         "vercel", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", "VERCEL_AI_GATEWAY_API_KEY", "openai-client"
     ),
-    ApiProvider("cloudflare", "Cloudflare AI Gateway", "", "CF_API_TOKEN"),
+    ApiProvider("cloudflare", "Cloudflare AI Gateway", "", "CLOUDFLARE_API_TOKEN"),
     ApiProvider("grok", "xAI · Chat Completions", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
     ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai", supports_session_affinity=False),
 )

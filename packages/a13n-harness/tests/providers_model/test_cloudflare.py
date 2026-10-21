@@ -152,3 +152,17 @@ async def test_streamed_tool_call_and_followup_keep_gateway_identity(name):
         assert events[-1].result.usage.requests == 2
     assert len(bodies) == 2
     assert any(message.get("role") == "tool" and message["content"] == "record 42" for message in bodies[1]["messages"])
+
+
+@pytest.mark.parametrize(
+    "path", ["/ai/v1", "/ai/v1/", "/ai/v1/chat/completions", "/v1", "/ai?team=a", "/ai#section", "/ai?", "/ai#"]
+)
+def test_configuration_rejects_wrong_api_root_even_with_account_id(path):
+    with pytest.raises(ValueError, match="must end in /ai"):
+        DEFINITION.bind({"base_url": f"https://gateway.example{path}", "account_id": "a" * 32}, {"api_key": "token"})
+
+
+@pytest.mark.parametrize("path", ["/ai", "/ai/", "/proxy/ai"])
+def test_configuration_accepts_api_root_and_optional_trailing_slash(path):
+    endpoint = f"https://gateway.example{path}"
+    assert DEFINITION.bind({"base_url": endpoint}, {"api_key": "token"}).endpoint == endpoint

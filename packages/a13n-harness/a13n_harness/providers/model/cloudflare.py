@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Annotated
+from urllib.parse import urlsplit
 
 import httpx2
-from pydantic import Field, StringConstraints, model_validator
+from pydantic import Field, StringConstraints, field_validator, model_validator
 
 from .credentials import ApiKeyCredential
 from .definition import ModelProviderDefinition, require_credential, require_endpoint
@@ -20,6 +21,15 @@ class CloudflareConfiguration(ProviderConfiguration):
     gateway_id: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9-]*$", max_length=64)] | None = Field(
         default=None, description="Optional AI Gateway ID; omitted third-party requests use the default gateway."
     )
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_api_root(cls, value: str | None) -> str | None:
+        if value is not None:
+            url = urlsplit(value)
+            if not value.rstrip("/").endswith("/ai") or url.query or url.fragment:
+                raise ValueError("Cloudflare base_url must end in /ai, without /v1, a method path, query, or fragment")
+        return value
 
     @model_validator(mode="after")
     def require_account_endpoint(self) -> CloudflareConfiguration:
