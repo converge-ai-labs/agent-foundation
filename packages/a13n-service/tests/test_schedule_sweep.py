@@ -152,13 +152,16 @@ async def test_pause_between_plan_and_submit_and_processed_clock_floor(service, 
         row = await session.get_one(ScheduleRow, schedule["id"])
         row.next_fire_at = (await now(session)).replace(second=0, microsecond=0) - timedelta(minutes=1)
     await plan_next(service.runtime)
+    async with short_session(service.runtime.storage) as session:
+        planned = (await session.get_one(ScheduleRow, schedule["id"])).pending_occurrence_id
     paused = await service.client.post(
         f"{service.api}/schedules/{schedule['id']}/pause", json={}, headers=runs_kit.if_match(schedule)
     )
     assert paused.status_code == 200
     await dispatch.process(service.runtime, schedule["id"])
     async with transaction(service.runtime.storage) as session:
-        item = (await session.scalars(select(OccurrenceRow))).one()
+        # A minute boundary before the pause also closes the newly due fire; the planned one is the subject.
+        item = await session.get_one(OccurrenceRow, planned)
         assert item.status == "cancelled" and item.reason == "schedule_paused"
         row = await session.get_one(ScheduleRow, schedule["id"])
         future = await now(session) + timedelta(hours=1)
