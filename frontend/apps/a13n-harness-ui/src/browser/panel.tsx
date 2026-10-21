@@ -20,7 +20,11 @@ export function BrowserPanel({
   const queries = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [controlToken, setControlToken] = useState("");
+  const [authority, setAuthority] = useState<{
+    threadId: string;
+    binding: string;
+    token: string;
+  } | null>(null);
   const state = useQuery({
     queryKey: ["browser", threadId],
     enabled: !!threadId && fullControl,
@@ -34,6 +38,12 @@ export function BrowserPanel({
     retry: false,
   });
   const session = state.data;
+  const controlToken =
+    authority &&
+    authority.threadId === threadId &&
+    authority.binding === session?.session_id
+      ? authority.token
+      : "";
   const preparation = useQuery({
     queryKey: ["browser-setup", threadId],
     enabled:
@@ -48,29 +58,9 @@ export function BrowserPanel({
         }),
       ),
     refetchOnWindowFocus: false,
-    refetchInterval: (query) =>
-      query.state.data?.installation?.status === "installing" ? 1000 : false,
     retry: false,
   });
-  const install = async () => {
-    if (!threadId || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const value = await result(
-        client.POST("/api/threads/{thread_id}/browser/install", {
-          params: { path: { thread_id: threadId } },
-        }),
-      );
-      queries.setQueryData(["browser-setup", threadId], value);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const refresh = () =>
-    queries.invalidateQueries({ queryKey: ["browser", threadId] });
+  const refresh = () => queries.invalidateQueries({ queryKey: ["browser"] });
   const command = async (
     kind: "enable" | "start" | "reset" | "stop" | "take-control" | "handback",
   ) => {
@@ -96,27 +86,31 @@ export function BrowserPanel({
         await result(
           client.POST("/api/threads/{thread_id}/browser/reset", path),
         );
-        setControlToken("");
+        setAuthority(null);
       }
       if (kind === "stop") {
         await result(
           client.POST("/api/threads/{thread_id}/browser/stop", path),
         );
-        setControlToken("");
+        setAuthority(null);
       }
       if (kind === "take-control") {
         const value = await result(
           client.POST("/api/threads/{thread_id}/browser/take-control", path),
         );
         queries.setQueryData(["browser", threadId], value.state);
-        setControlToken(value.control_token);
+        setAuthority({
+          threadId,
+          binding: value.state.session_id!,
+          token: value.control_token,
+        });
       }
       if (kind === "handback") {
         const value = await result(
           client.POST("/api/threads/{thread_id}/browser/handback", path),
         );
         queries.setQueryData(["browser", threadId], value.state);
-        setControlToken("");
+        setAuthority(null);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -153,14 +147,17 @@ export function BrowserPanel({
     }
   };
   useEffect(() => {
-    if (session?.control !== "human") setControlToken("");
-  }, [session?.control, session?.session_id]);
+    if (session?.control !== "human") setAuthority(null);
+  }, [session?.control]);
+  useEffect(() => {
+    setAuthority(null);
+  }, [threadId, session?.session_id]);
   if (!threadId || !fullControl)
     return (
       <div className={styles.empty}>
         <LockSimple size={28} />
         <strong>Browse on the Host</strong>
-        <p>Open a Full Control conversation to enable its browser.</p>
+        <p>Open a Full Control conversation to use the shared Host browser.</p>
       </div>
     );
   const ready = session?.status === "ready";
@@ -174,11 +171,15 @@ export function BrowserPanel({
             className={styles.viewport}
             aria-label="Browser viewport size"
             title={
-              controlToken
-                ? "Resize the page viewport"
-                : "Take control to change the viewport size"
+              !session.resize_available
+                ? "Desktop resizing is unavailable on this Host"
+                : controlToken
+                  ? "Resize the page viewport"
+                  : "Take control to change the viewport size"
             }
-            disabled={busy || !human || !controlToken}
+            disabled={
+              busy || !human || !controlToken || !session.resize_available
+            }
             value={session.viewport}
             onChange={(event) =>
               void changeViewport(
@@ -196,6 +197,11 @@ export function BrowserPanel({
           <Button
             size="sm"
             variant={human ? "default" : "outline"}
+            title={
+              human
+                ? "Resume browser tools in all conversations"
+                : "Pause browser tools in all conversations and take control"
+            }
             disabled={busy}
             onClick={() => void command(human ? "handback" : "take-control")}
           >
@@ -206,7 +212,7 @@ export function BrowserPanel({
             size="icon"
             variant="ghost"
             aria-label="Reset browser"
-            title="Restart browser and restore window position"
+            title="Reopen this conversation’s browser window and restore its position"
             disabled={busy}
             onClick={() => void command("reset")}
           >
@@ -216,6 +222,7 @@ export function BrowserPanel({
             size="icon"
             variant="ghost"
             aria-label="Stop browser"
+            title="Close this conversation’s browser window"
             disabled={busy}
             onClick={() => void command("stop")}
           >
@@ -242,7 +249,6 @@ export function BrowserPanel({
           loading={preparation.isFetching || state.isLoading}
           error={preparation.error}
           check={() => void preparation.refetch()}
-          install={() => void install()}
           busy={busy}
         />
       ) : (
@@ -253,8 +259,8 @@ export function BrowserPanel({
           </strong>
           <p>
             {stopped
-              ? "Start again with your saved browser profile."
-              : "A dedicated browser with saved login state. Take control for login and verification, then let the Agent continue."}
+              ? "Reopen this conversation’s window with your shared browser profile."
+              : "One shared browser profile for all conversations and projects. Each conversation uses its own browser window. Taking control pauses browser tools in every conversation."}
           </p>
           <Button
             disabled={busy || state.isLoading || preparation.isFetching}

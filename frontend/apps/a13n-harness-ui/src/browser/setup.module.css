@@ -68,27 +68,10 @@
   font-size: 13px;
   font-weight: 500;
 }
-.instructions > summary,
-.logs > summary {
+.instructions > summary {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-}
-.logs pre {
-  max-height: 200px;
-  overflow: auto;
-  margin: 10px 0 0;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--a13n-surface);
-  font-size: 11px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.progress {
-  font-size: 13px;
-  margin: 0;
 }
 .buttons {
   display: flex;
@@ -140,4 +123,10 @@
   color: var(--a13n-text);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.actions > a {
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

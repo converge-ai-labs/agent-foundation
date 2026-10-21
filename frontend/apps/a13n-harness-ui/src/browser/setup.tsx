@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "a13n-ui";
 import {
   ArrowClockwise,
@@ -6,7 +6,7 @@ import {
   CheckCircle,
   CircleDashed,
   Copy,
-  DownloadSimple,
+  Monitor,
 } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import styles from "./setup.module.css";
@@ -16,23 +16,14 @@ export function BrowserSetup({
   loading,
   error,
   check,
-  install,
   busy,
 }: {
   setup?: Schema<"BrowserSetup">;
   loading: boolean;
   error: Error | null;
   check: () => void;
-  install: () => void;
   busy: boolean;
 }) {
-  const installation = setup?.installation;
-  const installing = installation?.status === "installing";
-  const output = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    if (installing && output.current)
-      output.current.scrollTop = output.current.scrollHeight;
-  }, [installation?.output, installing]);
   const [copied, setCopied] = useState("");
   const [copyError, setCopyError] = useState("");
   const copy = async (title: string, command: string) => {
@@ -55,17 +46,15 @@ export function BrowserSetup({
       other: "Unsupported platform",
     }[setup.platform];
   return (
-    <div className={styles.setup} aria-label="Browser installation">
+    <div className={styles.setup} aria-label="Browser preparation">
       <div className={styles.content}>
         <header className={styles.heading}>
-          <DownloadSimple size={28} />
+          <Monitor size={28} />
           <div>
             <h3>
               {setup && !setup.supported
                 ? "Browser support on this platform"
-                : installing
-                  ? "Installing browser support"
-                  : "Set up your browser"}
+                : "Set up your browser"}
             </h3>
             <p>
               {setup?.distribution ||
@@ -82,28 +71,7 @@ export function BrowserSetup({
             {error.message}
           </p>
         )}
-        {installation?.error && (
-          <p role="alert" className={styles.error}>
-            {installation.error}
-          </p>
-        )}
-        {installing && (
-          <p role="status" className={styles.progress}>
-            {installation?.step || "Preparing installation…"}
-          </p>
-        )}
-        {installation?.output && (
-          <details
-            className={styles.logs}
-            open={installing || installation.status === "failed"}
-          >
-            <summary>Installation output</summary>
-            <pre ref={output} aria-label="Browser installation output">
-              {installation.output}
-            </pre>
-          </details>
-        )}
-        {!installing && !!setup?.requirements?.length && (
+        {!!setup?.requirements?.length && (
           <ul className={styles.requirements} aria-label="Browser requirements">
             {setup.requirements?.map((requirement) => (
               <li key={requirement.name}>
@@ -117,17 +85,18 @@ export function BrowserSetup({
                   <span>{requirement.detail}</span>
                 </div>
                 <span className={styles.state}>
-                  {requirement.installed ? "Installed" : "Missing"}
+                  {requirement.installed
+                    ? "Installed"
+                    : requirement.required === false
+                      ? "Optional"
+                      : "Missing"}
                 </span>
               </li>
             ))}
           </ul>
         )}
         {!!setup?.steps?.length && (
-          <details
-            className={styles.instructions}
-            open={!setup?.installable && !installing}
-          >
+          <details className={styles.instructions} open>
             <summary>Manual installation commands</summary>
             <p>
               Run these commands in the Harness UI environment. For Docker,
@@ -164,35 +133,12 @@ export function BrowserSetup({
       </div>
       <div className={styles.actions}>
         <div className={styles.buttons}>
-          {(setup?.installable || installing) && (
-            <Button
-              disabled={busy || loading || installing}
-              loading={installing}
-              onClick={install}
-            >
-              <DownloadSimple />
-              {installing
-                ? "Installing…"
-                : installation?.status === "failed"
-                  ? "Retry installation"
-                  : "Install browser support"}
-            </Button>
-          )}
-          <Button
-            variant={setup?.installable ? "ghost" : "default"}
-            disabled={busy || loading || installing}
-            onClick={check}
-          >
+          <Button variant="default" disabled={busy || loading} onClick={check}>
             <ArrowClockwise />
             {loading ? "Checking…" : "Check again"}
           </Button>
         </div>
-        {setup?.supported && (
-          <p>
-            {setup.install_message ||
-              "Once the components are installed, check again to enable the browser."}
-          </p>
-        )}
+        <a href="/settings#browser">Configure browser and VNC</a>
       </div>
     </div>
   );

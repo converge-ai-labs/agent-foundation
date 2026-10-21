@@ -45,19 +45,13 @@ function setup(
   installed = true,
   initialStatus = "ready",
   platform = "linux",
-  installable = false,
+  resizing = true,
 ) {
   let control = "agent";
   let status = initialStatus;
   let sessionId = initialStatus === "disabled" ? "" : "browser-a";
   let runtimeError: string | null = null;
   let viewport = "desktop";
-  let installation = {
-    status: "idle",
-    step: "",
-    output: "",
-    error: null as string | null,
-  };
   const preparation = () => ({
     platform,
     supported: platform === "linux",
@@ -66,16 +60,24 @@ function setup(
       platform === "linux"
         ? "Install missing components on this Host."
         : "The remote desktop currently requires a Linux Host.",
-    installable,
-    installation,
     requirements: [
       {
         name: "Remote desktop",
         installed,
         detail: installed
-          ? "Xtigervnc, tigervncpasswd"
-          : "Missing: tigervncpasswd",
+          ? "Xtigervnc"
+          : "Configured VNC executable is missing",
       },
+      ...(!resizing
+        ? [
+            {
+              name: "Desktop resizing",
+              installed: false,
+              required: false,
+              detail: "Fixed-size desktop is available",
+            },
+          ]
+        : []),
     ],
     steps:
       installed || platform !== "linux"
@@ -83,7 +85,7 @@ function setup(
         : [
             {
               title: "Install desktop components",
-              command: "sudo apt-get install tigervnc-tools",
+              command: "sudo apt-get install tigervnc-standalone-server",
             },
           ],
   });
@@ -100,21 +102,13 @@ function setup(
     url: "https://example.com",
     viewport,
     viewports,
+    resize_available: resizing,
   });
   const post = vi.fn(
     async (
       url: string,
       options: { body?: { control_token?: string; preset?: string } },
     ) => {
-      if (url.endsWith("/install")) {
-        installation = {
-          status: "installing",
-          step: "Installing desktop components",
-          output: "Downloading packages…",
-          error: null,
-        };
-        return { data: preparation() };
-      }
       if (url.endsWith("viewport")) {
         viewport = options.body!.preset!;
         return { data: state() };
@@ -162,34 +156,22 @@ function setup(
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  render(
+  const view = (threadId: string) => (
     <QueryClientProvider client={queries}>
       <TransportContext value={{ client } as unknown as Transport}>
-        <BrowserPanel threadId="thread-a" fullControl={fullControl} />
+        <BrowserPanel threadId={threadId} fullControl={fullControl} />
       </TransportContext>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const rendered = render(view("thread-a"));
   return {
     client,
+    switchThread: (threadId: string) => {
+      sessionId = "browser-c";
+      rendered.rerender(view(threadId));
+    },
     install: () => {
       installed = true;
-      installation = {
-        status: "succeeded",
-        step: "Installation finished",
-        output: "Done",
-        error: null,
-      };
-    },
-    failInstallation: async () => {
-      installation = {
-        status: "failed",
-        step: "Installing desktop components",
-        output: "Package unavailable",
-        error: "Package installation failed",
-      };
-      await queries.invalidateQueries({
-        queryKey: ["browser-setup", "thread-a"],
-      });
     },
     stopExternally: async () => {
       status = "stopped";
@@ -207,8 +189,9 @@ it("guides installation, copies a command, and requires a successful recheck bef
     value: { writeText },
   });
   try {
-    const { client, install } = setup(true, false, "disabled");
-    await screen.findByText("Missing: tigervncpasswd");
+    const { client, install } = setup(true, false, "disabled", "linux", false);
+    await screen.findByText("Configured VNC executable is missing");
+    expect(screen.getByText("Optional")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Enable browser" })).toBeNull();
     expect(client.POST).not.toHaveBeenCalled();
     fireEvent.click(
@@ -218,7 +201,7 @@ it("guides installation, copies a command, and requires a successful recheck bef
     );
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(
-        "sudo apt-get install tigervnc-tools",
+        "sudo apt-get install tigervnc-standalone-server",
       ),
     );
     install();
@@ -230,6 +213,13 @@ it("guides installation, copies a command, and requires a successful recheck bef
       await screen.findByRole("button", { name: "Start browser" }),
     );
     await connected();
+    fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+    await connected(true);
+    const viewport = screen.getByRole("combobox", {
+      name: "Browser viewport size",
+    }) as HTMLSelectElement;
+    expect(viewport.disabled).toBe(true);
+    expect(viewport.title).toBe("Desktop resizing is unavailable on this Host");
     expect(client.POST).toHaveBeenCalledWith(
       expect.stringContaining("/enable"),
       expect.anything(),
@@ -251,48 +241,24 @@ it("keeps unsupported Hosts unavailable without offering Linux installation comm
   expect(client.POST).not.toHaveBeenCalled();
 });
 
-it("installs from the panel, shows a failure with retry, and polls until ready without manual rechecking", async () => {
-  const { client, install, failInstallation } = setup(
-    true,
-    false,
-    "disabled",
-    "linux",
-    true,
-  );
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Install browser support" }),
-  );
-  expect(await screen.findByText("Installing desktop components")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Installing…" })).toHaveProperty(
-    "disabled",
-    true,
-  );
-  expect(screen.getByRole("button", { name: "Check again" })).toHaveProperty(
-    "disabled",
-    true,
-  );
-  await failInstallation();
-  expect(await screen.findByRole("alert")).toHaveProperty(
-    "textContent",
-    "Package installation failed",
-  );
-  expect(screen.getByLabelText("Browser installation output").textContent).toBe(
-    "Package unavailable",
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Retry installation" }));
-  await screen.findByRole("button", { name: "Installing…" });
-  install();
-  await screen.findByRole(
-    "button",
-    { name: "Enable browser" },
-    { timeout: 2500 },
-  );
+it("offers settings and manual rechecking without an installation action", async () => {
+  const { client } = setup(true, false, "disabled");
+  await screen.findByText("Configured VNC executable is missing");
   expect(
-    client.POST.mock.calls.filter(([url]) => url.endsWith("/install")),
-  ).toHaveLength(2);
-  expect(client.POST.mock.calls.some(([url]) => url.endsWith("/start"))).toBe(
-    false,
+    screen
+      .getByRole("link", { name: "Configure browser and VNC" })
+      .getAttribute("href"),
+  ).toBe("/settings#browser");
+  expect(
+    screen.queryByRole("button", { name: "Install browser support" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await waitFor(() =>
+    expect(
+      client.GET.mock.calls.filter(([url]) => url.endsWith("/setup")).length,
+    ).toBeGreaterThan(1),
   );
+  expect(client.POST).not.toHaveBeenCalled();
 });
 
 async function connected(control = false) {
@@ -334,7 +300,9 @@ it("starts read only, requests explicit takeover, and reconnects read only after
 it("does not acquire Host browser access for a Sandbox conversation", () => {
   const { client } = setup(false);
   expect(
-    screen.getByText("Open a Full Control conversation to enable its browser."),
+    screen.getByText(
+      "Open a Full Control conversation to use the shared Host browser.",
+    ),
   ).toBeTruthy();
   expect(client.GET).not.toHaveBeenCalled();
   expect(client.POST).not.toHaveBeenCalled();
@@ -477,4 +445,23 @@ it("reconnects a lost viewer without resetting or stopping the browser", async (
       ([url]) => url.endsWith("/reset") || url.endsWith("/stop"),
     ),
   ).toBe(false);
+});
+
+it("never sends another conversation's controller token when switching windows", async () => {
+  const { client, switchThread } = setup();
+  await connected();
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await connected(true);
+  act(() => switchThread("thread-b"));
+  await connected();
+  const otherAccess = client.POST.mock.calls.filter(
+    ([url, options]) =>
+      url.endsWith("/access") &&
+      (options as unknown as { params: { path: { thread_id: string } } }).params
+        .path.thread_id === "thread-b",
+  );
+  expect(otherAccess.length).toBeGreaterThan(0);
+  for (const [, options] of otherAccess)
+    expect(options.body?.control_token).toBe("");
+  expect(connections.at(-1)?.viewOnly).toBe(true);
 });
