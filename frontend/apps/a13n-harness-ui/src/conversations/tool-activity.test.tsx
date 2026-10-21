@@ -439,3 +439,120 @@ it("does not pair provider search results with local calls sharing an ID", () =>
   expect(tools[1].result).toBeUndefined();
   expect(activitySummary(tools).issue).toBe(true);
 });
+
+it("groups execution controls in live and saved output and keeps waiting distinct from execution completion", () => {
+  const observation = {
+    execution_id: "exec-one",
+    tool_name: "shell_exec",
+    run_id: "run-one",
+    status: "running",
+  };
+  const blocks = [
+    {
+      id: "inspect",
+      kind: "tool" as const,
+      name: "tool_execution_info",
+      text: '{"execution_id":"exec-one"}',
+      result: JSON.stringify(observation),
+      done: true,
+    },
+    {
+      id: "wait",
+      kind: "tool" as const,
+      name: "tool_execution_wait",
+      text: '{"execution_id":"exec-one"}',
+      inputComplete: true,
+    },
+  ];
+  const mounted = render(<LiveOutput gap={false} blocks={blocks} />);
+  const group = screen.getByRole("button", {
+    name: /Tool executions · 2 operations/,
+  });
+  expect(group.textContent).toContain("1 waiting");
+  fireEvent.click(group);
+  expect(screen.getByText("Running at last check")).toBeTruthy();
+  mounted.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={blocks.map((block) => ({
+        ...block,
+        result: JSON.stringify(observation),
+        done: true,
+      }))}
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Tool executions/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(screen.queryByText("1 waiting")).toBeNull();
+  expect(screen.getAllByText("Running at last check").length).toBeGreaterThan(
+    0,
+  );
+  const entries = [
+    {
+      position: 0,
+      parts: blocks.flatMap((block) => [
+        {
+          kind: "tool_call",
+          tool_name: block.name,
+          tool_call_id: block.id,
+          value: { execution_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: block.name,
+          tool_call_id: block.id,
+          value: observation,
+        },
+      ]),
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
+  expect(saved).toHaveLength(2);
+  expect(activitySummary(saved)).toMatchObject({
+    title: "Tool executions · 2 operations",
+    status: "Running at last check",
+  });
+});
+
+it("keeps execution failures and cancellation requests visible without interpreting native result status as execution state", () => {
+  const waiting = completed("tool_execution_wait", {
+    execution_id: "exec-one",
+  });
+  const failed = {
+    ...waiting,
+    result: {
+      execution_id: "exec-one",
+      tool_name: "shell_exec",
+      run_id: "run-one",
+      status: "failed",
+    },
+  };
+  expect(activitySummary([failed])).toMatchObject({
+    issue: true,
+    status: "Failed at last check",
+  });
+  expect(
+    describeTool({
+      ...waiting,
+      result: { status: "running", data: "native result" },
+    }).phase,
+  ).toBe("Result received");
+  expect(
+    describeTool({ ...waiting, resultOmitted: true, result: undefined }).phase,
+  ).toBe("Result received");
+  const cancelled = {
+    ...failed,
+    name: "tool_execution_cancel",
+    result: { ...failed.result, status: "running" },
+  };
+  expect(describeTool(cancelled).phase).toBe("Cancellation requested");
+  expect(activitySummary([cancelled]).status).toContain(
+    "1 cancellation request",
+  );
+  expect(
+    activitySummary([{ ...waiting, result: { status: "unavailable" } }]),
+  ).toMatchObject({ issue: true, status: "Unavailable" });
+});

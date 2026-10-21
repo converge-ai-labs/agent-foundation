@@ -44,6 +44,40 @@ export function sourceText(value: unknown): string {
 }
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
+const executionTools = new Set([
+  "tool_execution_info",
+  "tool_execution_result",
+  "tool_execution_wait",
+  "tool_execution_cancel",
+]);
+
+/** These are observations at return, never a live execution subscription. */
+function executionPhase(name: string, output: unknown): string | undefined {
+  if (name === "tool_execution_info" && Array.isArray(output))
+    return `${output.length} execution${output.length === 1 ? "" : "s"} listed`;
+  if (!record(output)) return;
+  if (output.status === "unavailable") return "Unavailable";
+  if (
+    typeof output.execution_id !== "string" ||
+    typeof output.tool_name !== "string" ||
+    typeof output.run_id !== "string"
+  )
+    return;
+  const status = text(output.status);
+  if (
+    !["queued", "running", "succeeded", "failed", "cancelled", "lost"].includes(
+      status,
+    )
+  )
+    return;
+  if (
+    name === "tool_execution_cancel" &&
+    ["queued", "running"].includes(status)
+  )
+    return "Cancellation requested";
+  return `${status[0].toUpperCase()}${status.slice(1)} at last check`;
+}
+
 export function describeTool(tool: ToolView) {
   const input = parsed(tool.input);
   const args = record(input) ? input : {};
@@ -146,7 +180,9 @@ export function describeTool(tool: ToolView) {
       summary = text(args.pattern);
       break;
     case "tool_execution_info":
-      label = "Inspect tool execution";
+      label = text(args.execution_id)
+        ? "Inspect tool execution"
+        : "List tool executions";
       summary = text(args.execution_id);
       break;
     case "tool_execution_result":
@@ -364,6 +400,12 @@ export function describeTool(tool: ToolView) {
     )
       phase = "Instruction accepted";
   }
+  if (executionTools.has(tool.name)) {
+    if (phase === "Awaiting result" && tool.name === "tool_execution_wait")
+      phase = "Waiting";
+    else if (phase === "Result received" && !tool.resultOmitted)
+      phase = executionPhase(tool.name, output) ?? phase;
+  }
   const detail = record(result.thread) ? result.thread : {};
   const thread = record(detail.thread) ? detail.thread : detail;
   const receipt = record(result.receipt) ? result.receipt : {};
@@ -545,8 +587,9 @@ export function hostLookupPath(path: string): string | undefined {
 
 export const MAX_ACTIVITY_TOOLS = 16;
 export type ActivityKind =
-  "explore" | "shell" | "web" | "edit" | "work" | "subagents";
+  "explore" | "shell" | "web" | "edit" | "work" | "subagents" | "executions";
 export function activityKind(tool: ToolView): ActivityKind | undefined {
+  if (executionTools.has(tool.name)) return "executions";
   if (
     [
       "task_create",
@@ -615,7 +658,7 @@ export function activitySummary(tools: ToolView[]) {
   const count = (n: number, noun: string) =>
     `${n} ${noun}${n === 1 ? "" : "s"}`;
   const files = new Set(infos.map((info) => info.path).filter(Boolean)).size;
-  const pending = tools.filter(
+  const pendingTools = tools.filter(
     (tool) =>
       tool.result === undefined &&
       tool.resultParts === undefined &&
@@ -623,7 +666,8 @@ export function activitySummary(tools: ToolView[]) {
       !tool.stopped &&
       !tool.failure &&
       !tool.retry,
-  ).length;
+  );
+  const pending = pendingTools.length;
   const issues = infos.filter(
     (info) =>
       info.failed ||
@@ -632,10 +676,15 @@ export function activitySummary(tools: ToolView[]) {
         "Retry requested",
         "No result recorded",
         "Not accepted",
+        "Unavailable",
+        "Failed at last check",
+        "Lost at last check",
       ].includes(info.phase),
   );
   let title: string;
-  if (kind === "work" || kind === "subagents")
+  if (kind === "executions")
+    title = `Tool executions · ${count(tools.length, "operation")}`;
+  else if (kind === "work" || kind === "subagents")
     title = `${kind === "work" ? "Tasks & notes" : "Subagents"} · ${count(tools.length, "operation")}`;
   else if (kind === "edit")
     title = `File changes · ${files ? count(files, "file") : count(tools.length, "operation")}`;
@@ -651,12 +700,32 @@ export function activitySummary(tools: ToolView[]) {
     const searches = tools.length - reads;
     title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" · ")}`;
   }
-  const notices = issues.filter((info) => info.phase !== "Failed");
+  const notices = issues.filter(
+    (info) => info.phase !== "Failed" || kind === "executions",
+  );
+  const waiting = pendingTools.filter(
+    (tool) => tool.name === "tool_execution_wait",
+  ).length;
+  const cancellations = tools.filter(
+    (tool) => tool.name === "tool_execution_cancel",
+  ).length;
+  const lastPhase = infos.at(-1)?.phase;
   return {
     title,
     issue: issues.length > 0,
     status: [
-      pending ? `${pending} running` : "",
+      waiting ? `${waiting} waiting` : "",
+      pending > waiting ? `${pending - waiting} running` : "",
+      kind === "executions" && cancellations
+        ? count(cancellations, "cancellation request")
+        : "",
+      kind === "executions" &&
+      !pending &&
+      !issues.length &&
+      lastPhase !== "Result received" &&
+      lastPhase !== "Cancellation requested"
+        ? lastPhase
+        : "",
       notices.length === 1
         ? notices[0].phase
         : notices.length

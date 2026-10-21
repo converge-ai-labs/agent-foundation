@@ -1,16 +1,27 @@
-"""Concise semantic tool rows and bounded exploration groups; no execution authority."""
+"""Concise semantic tool rows and bounded activity groups; no execution authority."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from itertools import groupby
 from pathlib import Path
+from typing import Literal
 
 from .panels import display_path
 from .transcript import Transcript
 
 EXPLORATION_TOOLS = {"view", "glob", "grep", "ls"}
 CONTEXT_TOOLS = {"summarize", "compact"}
+EXECUTION_TOOLS = {"tool_execution_info", "tool_execution_wait", "tool_execution_result", "tool_execution_cancel"}
+
+
+def activity_kind(name: str) -> Literal["explore", "executions"] | None:
+    if name in EXPLORATION_TOOLS:
+        return "explore"
+    if name in EXECUTION_TOOLS:
+        return "executions"
+    return None
 
 
 def arguments_object(text: str) -> dict[str, object]:
@@ -42,6 +53,14 @@ def semantic_tool_row(name: str, arguments: str, directory: Path | None = None) 
     def string(key: str, default: str = "") -> str:
         return _excerpt(value.get(key), default)
 
+    if name in EXECUTION_TOOLS:
+        label = {
+            "tool_execution_info": "Inspect execution" if string("execution_id") else "List tool executions",
+            "tool_execution_wait": "Wait for execution",
+            "tool_execution_result": "Retrieve result",
+            "tool_execution_cancel": "Request cancellation",
+        }[name]
+        return label + (f" · {string('execution_id')}" if string("execution_id") else ""), None
     if name in {"view", "ls"}:
         raw = value.get("file_path" if name == "view" else "path")
         path = raw if isinstance(raw, str) else "path unavailable" if name == "view" else "."
@@ -110,6 +129,29 @@ def subagent_result_row(name: str, semantic: str, result: str) -> str | None:
     return heading + f" · {detail}" + separator + instruction
 
 
+def execution_result_row(name: str, semantic: str, result: str) -> str | None:
+    """Describe recorded control results without implying ongoing observation."""
+    if name not in EXECUTION_TOOLS:
+        return None
+    value = arguments_object(result)
+    if value.get("part_kind") == "tool-return":
+        content = value.get("content")
+        value = content if isinstance(content, dict) else arguments_object(content) if isinstance(content, str) else {}
+    if value.get("status") == "unavailable":
+        return semantic + " · unavailable"
+    if not all(isinstance(value.get(key), str) for key in ("execution_id", "tool_name", "run_id")):
+        return None
+    status = value.get("status")
+    if not isinstance(status, str) or status not in {"queued", "running", "succeeded", "failed", "cancelled", "lost"}:
+        return None
+    observed = (
+        "cancellation requested"
+        if name == "tool_execution_cancel" and status in {"queued", "running"}
+        else f"{status} at last check"
+    )
+    return semantic + " · " + observed
+
+
 def failure_reason(text: str, state: str) -> str:
     """Prefer an explicit tool diagnostic, never an arbitrary successful output line."""
     value = arguments_object(text)
@@ -135,7 +177,7 @@ def failure_reason(text: str, state: str) -> str:
 
 
 @dataclass(slots=True)
-class ExplorationMember:
+class ToolActivityMember:
     block_id: int
     brief: str
     read_path: str | None = None
@@ -144,9 +186,10 @@ class ExplorationMember:
 
 
 @dataclass(slots=True)
-class ExplorationGroup:
+class ToolActivityGroup:
     identity: tuple[str, str | None]
-    members: list[ExplorationMember] = field(default_factory=list)
+    kind: Literal["explore", "executions"] = "explore"
+    members: list[ToolActivityMember] = field(default_factory=list)
 
     def refresh(self, transcript: Transcript) -> None:
         self.members[:] = [member for member in self.members if member.block_id in transcript.blocks]
@@ -157,6 +200,16 @@ class ExplorationGroup:
             transcript.blocks[member.block_id].concise_anchor = None if member is first else first.block_id
         if len(self.members) == 1:
             transcript.preview(first.block_id, first.brief)
+            return
+        if self.kind == "executions":
+            lines = [f"Tool executions · {len(self.members)} operations"]
+            for brief, repeated in groupby(self.members, key=lambda member: member.brief):
+                members = list(repeated)
+                if len(members) > 1 and all(not member.failed and not member.active for member in members):
+                    lines.append(f"  {brief} ({len(members)} checks)")
+                else:
+                    lines.extend("  " + member.brief for member in members)
+            transcript.preview(first.block_id, "\n".join(lines), len(lines), limit=16384)
             return
         lines = ["Exploring" if any(member.active for member in self.members) else "Explored"]
         reads: set[str] = set()

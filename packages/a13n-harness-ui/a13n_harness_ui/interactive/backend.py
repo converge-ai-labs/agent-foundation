@@ -87,6 +87,7 @@ class SessionBackend:
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
         )
         self.receipt_id: str | None = None
+        self.observed_receipts: dict[str, None] = {}
         self.cancel_requested = False
         self.import_preview: ExternalSubagentImportPreview | None = None
         self.resumed_transcript: TranscriptPage | None = None
@@ -827,6 +828,22 @@ class SessionBackend:
             mode=mode,
         )
 
+    def observe_operation(
+        self, renderer: StreamRenderer, receipt_id: str, *, flush: Callable[[], Awaitable[None]] | None = None
+    ) -> Coroutine[object, object, str]:
+        """Attach to App-owned work without submitting another input or clearing the draft."""
+        self.cancel_requested = False
+        return self._execute(
+            renderer,
+            prompt=None,
+            response=None,
+            flush=flush,
+            admitted=None,
+            skill_references=(),
+            mode="normal",
+            receipt_id=receipt_id,
+        )
+
     async def _execute(
         self,
         renderer: StreamRenderer,
@@ -837,11 +854,16 @@ class SessionBackend:
         admitted: Callable[[], None] | None,
         skill_references: tuple[SkillReference, ...],
         mode: GoalMode,
+        receipt_id: str | None = None,
     ) -> str:
-        if self.cancel_requested:
+        if self.cancel_requested and receipt_id is None:
             return "Cancelled before admission. No operation was submitted."
         await self.refresh()
         thread_id = await self.ensure_session()
+        attached = await self.app.get_root_operation(receipt_id) if receipt_id is not None else None
+        if attached is not None and attached.receipt.thread_id != thread_id:
+            return "The operation belongs to another conversation."
+        observed_run_id = attached.run_id if attached is not None else None
         last_ordinal = -1
         custom_events = CustomEventAssembler()
         # Snapshot before admission; live notifications refresh this committed
@@ -851,7 +873,12 @@ class SessionBackend:
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
             async def ingest(event: LiveEvent) -> bool:
-                nonlocal last_ordinal
+                nonlocal last_ordinal, observed_run_id
+                if event.run_kind == "root":
+                    if observed_run_id is None:
+                        observed_run_id = event.run_id
+                    elif event.run_id != observed_run_id:
+                        return False
                 renderer.ingest(
                     event.event_type,
                     event.payload,
@@ -881,7 +908,11 @@ class SessionBackend:
 
             async def consume() -> None:
                 try:
-                    if subscription.root_stream is not None:
+                    if (
+                        attached is not None
+                        and subscription.root_stream is not None
+                        and subscription.root_stream.summary.run_id == observed_run_id
+                    ):
                         for batch in subscription.root_stream.batches():
                             for event in batch:
                                 renderer.ingest(
@@ -896,24 +927,31 @@ class SessionBackend:
 
             pump = asyncio.create_task(consume())
             try:
-                if self.cancel_requested:
+                if self.cancel_requested and attached is None:
                     return "Cancelled before admission. No operation was submitted."
                 receipt = (
-                    await self.app.submit_thread(
-                        thread_id=thread_id,
-                        prompt=prompt or "",
-                        model_overrides=self.overrides,
-                        skill_references=skill_references,
-                        input_surface="tui",
-                        mode=mode,
-                    )
-                    if response is None
-                    else await self.app.respond_thread(
-                        thread_id=thread_id, response=response, model_overrides=self.overrides
+                    attached.receipt
+                    if attached is not None
+                    else (
+                        await self.app.submit_thread(
+                            thread_id=thread_id,
+                            prompt=prompt or "",
+                            model_overrides=self.overrides,
+                            skill_references=skill_references,
+                            input_surface="tui",
+                            mode=mode,
+                        )
+                        if response is None
+                        else await self.app.respond_thread(
+                            thread_id=thread_id, response=response, model_overrides=self.overrides
+                        )
                     )
                 )
                 self.receipt_id = receipt.receipt_id
-                self.status.execution_status = "preparing"
+                self.observed_receipts[receipt.receipt_id] = None
+                while len(self.observed_receipts) > 128:
+                    self.observed_receipts.pop(next(iter(self.observed_receipts)))
+                self.status.execution_status = attached.status.value if attached is not None else "preparing"
                 if admitted is not None:
                     admitted()
                 self.status.goal = (await self.app.get_root_operation(receipt.receipt_id)).goal

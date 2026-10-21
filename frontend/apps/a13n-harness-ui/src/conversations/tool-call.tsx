@@ -16,6 +16,7 @@ import {
   Chats,
   ListChecks,
   UsersThree,
+  Hourglass,
 } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
@@ -741,6 +742,7 @@ export const ToolActivity = memo(function ToolActivity({
     edit: PencilSimple,
     work: ListChecks,
     subagents: UsersThree,
+    executions: Hourglass,
   }[kind];
   return (
     <section
@@ -749,6 +751,7 @@ export const ToolActivity = memo(function ToolActivity({
       data-tool-id={tools[0].id}
     >
       <DisclosureSection
+        className={styles.groupDisclosure}
         open={expanded}
         onOpenChange={setExpanded}
         title={

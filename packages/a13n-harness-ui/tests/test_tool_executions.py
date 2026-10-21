@@ -730,6 +730,7 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
 
 
 async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_once(tmp_path, monkeypatch):
+    import asyncio
     import sys
 
     import a13n_harness.models.codex as codex
@@ -737,6 +738,11 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
     from a13n_harness_ui.cli import CliRequest
     from a13n_harness_ui.interactive.backend import SessionBackend
     from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from a13n_harness_ui.interactive.shell import CliShell
+    from anyio.lowlevel import checkpoint
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.output import DummyOutput
     from pydantic_ai.messages import UserPromptPart
 
     from .test_interactive import _seed
@@ -811,8 +817,15 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         assert await backend.initialize()
-        renderer = StreamRenderer(backend.status)
+        with create_app_session(input=DummyInput(), output=DummyOutput()):
+            shell = CliShell(CliRequest())
+        shell.backend = backend
+        shell.status = backend.status
+        shell.renderer = StreamRenderer(backend.status)
+        shell.ready = True
+        renderer = shell.renderer
         first_done = Event()
+        watcher = asyncio.create_task(shell._watch_background_runs())
 
         async def execute():
             assert await backend.execute(renderer, prompt="Run a reviewed command") == ""
@@ -820,14 +833,18 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
 
         try:
             with fail_after(20):
-                async with create_task_group() as group:
-                    group.start_soon(execute)
+                async with create_task_group():
+                    while not app._summary_hub._subscribers:
+                        await checkpoint()
+                    shell.launch(execute(), kind="run")
                     await reviewing.wait()
                     assert await backend.steer("Continue without waiting") == "Guidance sent."
                     assert not first_done.is_set() and not admissions
                     approve.set()
                     await admitted.wait()
                     await first_done.wait()
+                    await shell.job
+                    shell.composer.text = "Unsent draft"
                     records = await app.tool_executions(backend.thread_id)
                     assert len(records) == 1 and records[0].execution_id == execution_id
                     assert records[0].foreground_released
@@ -838,6 +855,18 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
                     await resumed.wait()
                     while (active := await app.active_root_operation(backend.thread_id)) is not None:
                         await app.wait_root_operation(active.receipt.receipt_id)
+                    while "Follow-up completed." not in "".join(
+                        block.source for block in renderer.transcript.blocks.values()
+                    ):
+                        await checkpoint()
+                    if shell.job is not None:
+                        await shell.job
+            shown = "".join(block.source for block in renderer.transcript.blocks.values())
+            assert shown.count("Follow-up completed.") == 1
+            assert shown.count("Tool execution succeeded") == 1
+            assert "Tool executions completed. Inspect" not in shown
+            assert shell.composer.text == "Unsent draft"
+            assert not shell.busy and backend.receipt_id is None
             records = await app.tool_executions(backend.thread_id)
             assert len(records) == len(admissions) == reviews == 2
             assert {record.tool_call_id for record in records} == {"first", "followup"}
@@ -856,4 +885,151 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
         finally:
             approve.set()
             finish.set()
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+            if shell.job is not None and not shell.job.done():
+                shell.job.cancel()
+                await asyncio.gather(shell.job, return_exceptions=True)
             renderer.transcript.close()
+
+
+@pytest.mark.parametrize("attach", ["live", "terminal", "cancel"])
+async def test_tui_observes_existing_goal_receipt_and_stop_before_attach(tmp_path, monkeypatch, attach):
+    import asyncio
+
+    import a13n_harness.models.codex as codex
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from anyio.lowlevel import checkpoint
+
+    from .test_interactive import _seed
+
+    path = await _seed(tmp_path, monkeypatch)
+    started, finish = Event(), Event()
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        started.set()
+        if calls == 1:
+            await finish.wait()
+        yield "First iteration." if calls == 1 else "Final iteration.\n[GOAL_COMPLETE]"
+
+    monkeypatch.setattr(codex, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        assert await backend.initialize()
+        thread_id = await backend.ensure_session()
+        renderer = StreamRenderer(backend.status)
+        try:
+            receipt = await app.submit_thread(thread_id=thread_id, prompt="Verify the objective", mode="goal")
+            await started.wait()
+            if attach == "terminal":
+                finish.set()
+                await app.wait_root_operation(receipt.receipt_id)
+            observation = backend.observe_operation(renderer, receipt.receipt_id)
+            if attach == "cancel":
+                await backend.cancel()
+            with fail_after(10):
+                observing = asyncio.create_task(observation)
+                if attach == "live":
+                    while backend.receipt_id is None:
+                        await checkpoint()
+                    finish.set()
+                result = await observing
+            operation = await app.get_root_operation(receipt.receipt_id)
+            assert backend.receipt_id is None
+            if attach == "cancel":
+                assert operation.status.value == "cancelled"
+                assert "No operation was submitted" not in result
+            else:
+                assert result == ""
+                assert calls == 2
+                shown = "".join(block.source for block in renderer.transcript.blocks.values())
+                assert shown.count("Final iteration.") == 1
+                if attach == "live":
+                    assert shown.count("First iteration.") == 1
+                assert operation.goal.status == "verified"
+        finally:
+            finish.set()
+            renderer.transcript.close()
+
+
+@pytest.mark.parametrize("switch_thread", [False, True])
+async def test_tui_background_observer_drains_burst_and_handles_terminal_receipt(tmp_path, monkeypatch, switch_thread):
+    import asyncio
+
+    import a13n_harness.models.codex as codex
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from a13n_harness_ui.interactive.shell import CliShell
+    from anyio.lowlevel import checkpoint
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.output import DummyOutput
+
+    from .test_interactive import _seed
+
+    path = await _seed(tmp_path, monkeypatch)
+
+    async def model(messages, info):
+        yield "Background answer."
+
+    monkeypatch.setattr(codex, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=model))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        assert await backend.initialize()
+        thread_id = await backend.ensure_session()
+        with create_app_session(input=DummyInput(), output=DummyOutput()):
+            shell = CliShell(CliRequest())
+        shell.backend = backend
+        shell.status = backend.status
+        shell.renderer = StreamRenderer(backend.status)
+        shell.ready = True
+        release = Event()
+
+        async def foreground():
+            await release.wait()
+            return ""
+
+        watcher = asyncio.create_task(shell._watch_background_runs())
+        try:
+            with fail_after(10):
+                while not app._summary_hub._subscribers:
+                    await checkpoint()
+                shell.launch(foreground(), kind="command")
+                await app._summary_hub.publish(kind="thread", thread_id=thread_id)
+                await checkpoint()
+                for _ in range(100):
+                    await app._summary_hub.publish(kind="thread", thread_id="thread-other")
+                    await checkpoint()
+                receipt = await app.submit_thread(thread_id=thread_id, prompt="Complete in background")
+                await app.wait_root_operation(receipt.receipt_id)
+                if switch_thread:
+                    other = await app.create_thread(title="Other conversation")
+                    backend.thread_id = other.thread_id
+                shell.composer.text = "Keep this draft"
+                release.set()
+                await shell.job
+                if switch_thread:
+                    for _ in range(20):
+                        await checkpoint()
+                    assert receipt.receipt_id not in backend.observed_receipts
+                else:
+                    while receipt.receipt_id not in backend.observed_receipts:
+                        await checkpoint()
+                    await shell.job
+                assert not watcher.done()
+                shown = "".join(block.source for block in shell.renderer.transcript.blocks.values())
+                assert shown.count("Background answer.") == (0 if switch_thread else 1)
+                assert shell.composer.text == "Keep this draft"
+        finally:
+            release.set()
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+            if shell.job is not None:
+                await shell.job
+            shell.renderer.transcript.close()
