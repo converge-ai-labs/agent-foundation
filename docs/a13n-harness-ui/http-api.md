@@ -6,6 +6,10 @@ description: The WebUI server's HTTP API for setup, conversations, live output, 
 
 The WebUI API serves the same App as the TUI. Callers share an instance key; receipts are process-local and live events are best effort. This is not Service’s managed `/api/v1` API. Start with [WebUI](webui.md), or use [Python embedding](embedding.md) without a listener.
 
+Root `POST /api/operations/{receipt_id}/steer` and child `POST /api/threads/{thread_id}/children/{execution_id}/steer` use global `input.steering_mode`, defaulting to `immediate` while supported tool calls continue. Set `queued` globally to wait for the next safe boundary. Steering requests have no per-message mode field.
+
+`GET /api/threads/{thread_id}/tool-executions?offset=0&limit=20` returns a bounded page of exact-Thread execution statuses; `limit` is 1–100. `POST /api/threads/{thread_id}/tool-executions/{execution_id}/cancel` requests cancellation. These authenticated operations expose no private result payload and do not consume results. A cancellation response reports current status, not completed rollback. Records are process-local. See [WebUI controls](webui.md#tool-executions-and-immediate-steering) for Stop and completion-wake behavior.
+
 ## Authenticate and discover the contract
 
 Set `HUI_URL` to the listener origin and `HUI_API_KEY` to its configured access key:

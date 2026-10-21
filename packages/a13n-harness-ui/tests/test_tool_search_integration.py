@@ -119,7 +119,11 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
         },
     }
     agent_path.write_text(yaml.safe_dump(agent))
-    path.write_text(path.read_text() + "tools: {enable_codeact: false, enable_ask_user_question: false}\n")
+    # This reconstruction test supplies RunBindings directly, without an App-owned runtime.
+    path.write_text(
+        path.read_text()
+        + "tools: {enable_codeact: false, enable_ask_user_question: false, execution: {mode: inline}}\n"
+    )
 
     def status() -> str:
         return "ready"
@@ -226,6 +230,46 @@ async def test_exact_target_allowlist_never_grants_all_group_members(names: froz
     assert (await executable.run("test", bindings=RunBindings.embedded())).output_or_raise() == "done"
 
 
+@pytest.mark.parametrize("bound", [False, True])
+@pytest.mark.parametrize("selected", [False, True])
+async def test_allowlist_filters_bound_execution_controls_without_resurrecting_unbound_tools(bound, selected):
+    from a13n_harness import AgentSpec, HarnessBuilder, ToolExecutionRuntime
+    from a13n_harness.capabilities import ToolExecutionCapability
+
+    controls = {f"tool_execution_{action}" for action in ("info", "result", "wait", "cancel")}
+    allowlist = _ToolAllowlistCapability(frozenset({"tool_execution_info"} if selected else set()))
+    runtime = ToolExecutionRuntime()
+    requests = 0
+
+    async def model(messages, info):
+        nonlocal requests
+        requests += 1
+        assert controls.intersection(tool.name for tool in info.function_tools) == (
+            {"tool_execution_info"} if bound and selected else set()
+        )
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(ToolExecutionCapability(), allowlist),
+    )
+    try:
+        result = await executable.run(
+            "inspect", bindings=RunBindings.embedded(tool_execution=runtime if bound else None)
+        )
+        if selected and not bound:
+            # Explicit selection is strict: missing controls fail preparation,
+            # rather than becoming callable through an allowlist entry.
+            assert result.status == "failed" and requests == 0
+            assert result.failure.details["exception_type"] == "CompositionError"
+        else:
+            assert result.output_or_raise() == "done" and requests == 1
+    finally:
+        await runtime.close()
+
+
 async def test_configuration_mutation_reads_back_static_active_dormant_direct_sources(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
@@ -254,7 +298,11 @@ async def test_inactive_plan_preserves_direct_tool_matching_control_name(tmp_pat
         "config": {"mode": "proxy", "search_name": "search"},
     }
     agent_path.write_text(yaml.safe_dump(agent))
-    path.write_text(path.read_text() + "tools: {enable_codeact: false, enable_ask_user_question: false}\n")
+    # This reconstruction test supplies RunBindings directly, without an App-owned runtime.
+    path.write_text(
+        path.read_text()
+        + "tools: {enable_codeact: false, enable_ask_user_question: false, execution: {mode: inline}}\n"
+    )
     configuration = await load_harness_ui_configuration(path)
     selection = replace(_selection(), mcp_server_ids=(), harness_plugin_ids=())
     catalog = HarnessUiExtensionCatalog(host_plugin_factories=(_MemoryFactory(),))

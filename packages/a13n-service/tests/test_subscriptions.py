@@ -1,6 +1,8 @@
 """Subscriptions: admin configuration, write-only signing secrets, signed webhook delivery and redelivery."""
 
+import base64
 import json
+import secrets
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,7 +18,7 @@ from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, enqueue, enqueue_batch
+from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, enqueue, enqueue_batch, secret_location
 from a13n_service.resources.subscriptions import service as subscriptions
 from a13n_service.resources.subscriptions.delivery import (
     Subject,
@@ -27,17 +29,23 @@ from a13n_service.resources.subscriptions.delivery import (
     stage_webhooks,
     webhook_target,
 )
-from a13n_service.resources.subscriptions.schemas import SECRET_UNAVAILABLE, SubscriptionCreate
+from a13n_service.resources.subscriptions.schemas import (
+    SECRET_UNAVAILABLE,
+    SubscriptionCreate,
+    WebhookTarget,
+    signing_key,
+)
 from a13n_service.resources.subscriptions.tables import SubscriptionRow
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.webhooks import notify_subscribers
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 from a13n_service.tenancy.tables import GrantRow, PrincipalRow
 from sqlalchemy import select
+from standardwebhooks import Webhook
 
 pytestmark = pytest.mark.anyio
 
-SECRET = "whsec_test_signing_secret_value"
+SECRET = "whsec_" + base64.b64encode(b"a13n test signing secret 32byte!").decode()
 THREAD = "thread_" + "0" * 32
 
 
@@ -136,6 +144,52 @@ async def test_subscription_configuration_is_admin_only(service) -> None:  # typ
     assert denial is not None and denial.action == "subscription.read"
 
 
+def test_signatures_match_the_standard_webhooks_vector() -> None:
+    # The reference vector published with the Standard Webhooks specification.
+    key = signing_key("whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
+    body = b'{"test": 2432232314}'
+    expected = "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="
+    assert signature(key, "1614265330", "msg_p5jXN8AQM9LWM0D4loKWxJek", body) == expected
+    for legacy in ("whsec_" + secrets.token_urlsafe(32), "test_signing_secret_value", "whsec_", standard_secret(23)):
+        with pytest.raises(ValueError):
+            signing_key(legacy)
+
+
+def standard_secret(size: int) -> str:
+    return "whsec_" + base64.b64encode(bytes(range(size))).decode()
+
+
+async def test_signing_secrets_must_have_the_standard_shape(service) -> None:  # type: ignore[no-untyped-def]
+    base = f"{service.api}/subscriptions"
+    body = {"name": "Runs", "url": "http://127.0.0.1:9/hook", "kinds": ["run.completed"]}
+    generated = (await service.client.post(base, json=body)).json()["signing_secret"]
+    assert generated.startswith("whsec_") and len(base64.b64decode(generated[6:], validate=True)) == 32
+
+    for size in (24, 64):
+        accepted = await service.client.post(base, json={**body, "signing_secret": standard_secret(size)})
+        assert accepted.status_code == 201, accepted.text
+
+    # One rule, one error shape: no prefix, free-form or old URL-safe text, and keys outside 24 to 64 bytes.
+    legacy = "whsec_" + secrets.token_urlsafe(32)
+    malformed = (SECRET.removeprefix("whsec_"), "whsec_test_signing_secret_value", legacy, "whsec_" + "-_" * 20)
+    unusable = (*malformed, standard_secret(23), standard_secret(65), "whsec_" + "A" * 31 + "=")
+    for secret in unusable:
+        refused = await service.client.post(base, json={**body, "signing_secret": secret})
+        assert refused.status_code == 400, secret
+        assert refused.json()["error"]["details"]["fields"][0]["field"].endswith("signing_secret"), secret
+
+    created = (await service.client.post(base, json=body)).json()
+    item = f"{base}/{created['id']}"
+    for secret in unusable:
+        refused = await service.client.patch(item, json={"signing_secret": secret}, headers={"if-match": etag(created)})
+        assert refused.status_code == 400, secret
+        assert refused.json()["error"]["details"]["fields"][0]["field"].endswith("signing_secret"), secret
+    replaced = await service.client.patch(
+        item, json={"signing_secret": standard_secret(32)}, headers={"if-match": etag(created)}
+    )
+    assert replaced.status_code == 200 and "signing_secret" not in replaced.json()
+
+
 @contextmanager
 def receiver(
     statuses: list[int], *, headers: dict[str, str] | None = None, body: bytes = b""
@@ -227,9 +281,9 @@ async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant, monk
         assert await status(runtime, accepted) == ("delivered", 1, None)
         headers, sent = received[0]
         assert json.loads(sent) == {"kind": "run.completed", "sequence": 1, "text": "é"}
-        assert headers["x-a13n-delivery-id"] == accepted
-        timestamp = headers["x-a13n-webhook-timestamp"]
-        assert headers["x-a13n-webhook-signature"] == signature(SECRET.encode(), timestamp, accepted, sent)
+        assert headers["webhook-id"] == accepted
+        # The request the sender produced verifies with the unmodified reference library.
+        assert Webhook(SECRET).verify(sent, headers) == {"kind": "run.completed", "sequence": 1, "text": "é"}
 
         retried = await queue(runtime, subscription.id, 2)
         await send(runtime, attempts=3)
@@ -254,7 +308,7 @@ async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant, monk
         assert (restored.status, restored.attempts) == ("pending", 0)
         await send(runtime, attempts=1)
         assert await status(runtime, dead) == ("delivered", 1, None)
-        assert received[-1][0]["x-a13n-delivery-id"] == dead
+        assert received[-1][0]["webhook-id"] == dead
 
 
 async def subscribe(service: SimpleNamespace, url: str, kinds: list[str], **fields: object) -> dict:
@@ -334,6 +388,45 @@ async def test_an_undecryptable_signing_secret_never_blocks_a_run(service: Simpl
     redeliver = f"{service.api}/subscriptions/{broken['id']}/deliveries/{dead.id}/redeliver"
     refused = await service.client.post(redeliver)
     assert refused.status_code == 409 and refused.json()["error"]["details"]["reason"] == SECRET_UNAVAILABLE
+
+
+async def test_a_legacy_signing_secret_fails_with_a_clear_reason(
+    service: SimpleNamespace, runs_kit: SimpleNamespace
+) -> None:
+    await runs_kit.pause_sweeps(service)
+    runtime, storage = service.runtime, service.runtime.storage
+    subscription = await subscribe(service, "http://127.0.0.1:9/hook", ["run.completed"])
+    legacy = "whsec_" + secrets.token_urlsafe(32)
+    async with transaction(storage) as session:
+        row = await session.get_one(SubscriptionRow, subscription["id"])
+        row.signing_secret = runtime.keys.protect(legacy.encode(), subscriptions.signing_location(row)).model_dump()
+        # A delivery staged before the upgrade carries its own copy of that secret.
+        delivery_id = new_object_id("obx")
+        target = WebhookTarget(
+            url=row.url,
+            signing_secret=runtime.keys.protect(
+                legacy.encode(), secret_location(row.organization_id, delivery_id, "target")
+            ),
+        )
+        enqueue(
+            session,
+            organization_id=row.organization_id,
+            workspace_id=row.workspace_id,
+            kind="webhook",
+            target=target.model_dump(mode="json"),
+            payload={"kind": "run.completed", "sequence": 1},
+            subscription_id=row.id,
+            row_id=delivery_id,
+        )
+    await send(runtime, attempts=1)
+    assert await status(runtime, delivery_id) == ("dead", 1, SECRET_UNAVAILABLE)
+
+    # New deliveries are staged dead at once, with the same reason, until the subscription is re-keyed.
+    run = Subject(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
+    async with transaction(storage) as session:
+        await stage_webhooks(session, runtime.keys, run, ["run.completed"], {"seq": 2}, limit=32)
+    staged = [row for row in await webhook_rows(service) if row.payload.get("seq") == 2]
+    assert [(row.status, row.last_error) for row in staged] == [("dead", SECRET_UNAVAILABLE)]
 
 
 async def test_the_status_alone_settles_a_delivery(service: SimpleNamespace, runs_kit: SimpleNamespace) -> None:

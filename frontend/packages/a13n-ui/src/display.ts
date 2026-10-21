@@ -22,6 +22,31 @@ export interface ContentRef {
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+/** Foreground return receipt, not the retained operation's final result. */
+export function toolExecutionReceipt(
+  value: unknown,
+): { execution_id: string; tool_name: string; status: string } | undefined {
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return;
+    }
+  }
+  if (
+    record(value) &&
+    value.type === "tool_execution_receipt" &&
+    typeof value.execution_id === "string" &&
+    typeof value.tool_name === "string" &&
+    typeof value.status === "string"
+  )
+    return {
+      execution_id: value.execution_id,
+      tool_name: value.tool_name,
+      status: value.status,
+    };
+}
+
 const states = new Set(["in_progress", "completed", "interrupted", "failed"]);
 const kinds = new Set([
   "text_message",

@@ -865,3 +865,225 @@ async def test_codeact_failure_metadata_tracks_started_calls_without_replay(star
     assert result.output_or_raise() == "handled"
     assert requests == 2
     assert calls == ([7] if start_tool else [])
+
+
+async def test_background_runner_keeps_real_nested_values_and_publishes_late_state() -> None:
+    import asyncio
+
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.codeact.state import CodeActStateOwner
+    from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+
+    entered, finish = asyncio.Event(), asyncio.Event()
+    calls = 0
+    requests = 0
+    receipt = None
+
+    async def lookup() -> int:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await finish.wait()
+        return 21
+
+    async def model(messages, info):
+        nonlocal requests, receipt
+        requests += 1
+        if requests == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="run_code",
+                    tool_call_id="code-background",
+                    json_args=json.dumps(
+                        {"code": 'value = await lookup()\nawait store(key="late", value=value * 2)\nvalue * 2'}
+                    ),
+                )
+            }
+        else:
+            if requests == 2:
+                receipt = _tool_returns(messages, "run_code")[-1].content
+            yield "conversation continues"
+
+    runtime, values = ToolExecutionRuntime(), CodeActStateOwner()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            CodeActCapability(),
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+            _codeact_tools(lookup, allowed=("lookup",)),
+        ),
+    )
+    first = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime, codeact_state=values))
+    frozen_checkpoint = first.state.model_dump_json()
+    await entered.wait()
+    assert receipt is not None and receipt["execution_id"].startswith("exec-")
+    finish.set()
+    outcome = await runtime.wait(first.thread_id, receipt["execution_id"])
+    assert outcome.record.status == "succeeded", outcome.record.error
+    assert outcome.result.return_value == 42
+    assert calls == 1
+    assert (await values.snapshot()).values == {"late": 42}
+    assert first.state.model_dump_json() == frozen_checkpoint
+    second = await executable.run(
+        "next",
+        previous_state=first.state,
+        bindings=RunBindings.embedded(tool_execution=runtime, codeact_state=values),
+    )
+    assert '"late":42' in second.state.model_dump_json()
+    assert first.state.model_dump_json() == frozen_checkpoint
+    await runtime.close()
+
+
+async def test_owned_codeact_requires_host_held_explicit_state():
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+
+    requests = []
+
+    async def model(messages, info):
+        requests.append(messages)
+        yield "should not run"
+
+    runtime = ToolExecutionRuntime()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(), ToolExecutionCapability()),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded(tool_execution=runtime))
+    assert result.status != "completed"
+    assert requests == []
+    assert await runtime.summarize(result.thread_id) == ()
+    await runtime.close()
+
+
+async def test_background_runner_retains_dynamic_generation_and_task_affine_scope() -> None:
+    import asyncio
+
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+    from anyio import create_task_group
+    from pydantic_ai.toolsets import DynamicToolset
+
+    finish = asyncio.Event()
+    generations = []
+    calls = []
+    receipt = None
+    requests = 0
+
+    class ScopedTools(FunctionToolset):
+        async def __aenter__(self):
+            self.group = create_task_group()
+            await self.group.__aenter__()
+            self.owner = asyncio.current_task()
+            self.open = True
+            return self
+
+        async def __aexit__(self, *args):
+            assert asyncio.current_task() is self.owner
+            self.open = False
+            await self.group.__aexit__(*args)
+
+    def factory(ctx):
+        generation = len(generations) + 1
+
+        async def lookup() -> int:
+            assert tools.open
+            calls.append(generation)
+            await finish.wait()
+            assert tools.open
+            return generation
+
+        tools = ScopedTools([lookup], id="generation-tools")
+        generations.append(tools)
+        return CodeActPolicyToolset(wrapped=tools, policy=CodeActToolPolicy(default=True))
+
+    async def model(messages, info):
+        nonlocal requests, receipt
+        requests += 1
+        if requests == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="run_code",
+                    tool_call_id="dynamic-code",
+                    json_args=json.dumps({"code": "first = await lookup()\nsecond = await lookup()\n[first, second]"}),
+                )
+            }
+        else:
+            receipt = _tool_returns(messages, "run_code")[-1].content
+            yield "continue"
+
+    runtime = ToolExecutionRuntime()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            CodeActCapability(),
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+            Capability(toolsets=[DynamicToolset(factory)]),
+        ),
+    )
+    from a13n_harness.codeact.state import CodeActStateOwner
+
+    result = await executable.run(
+        "start", bindings=RunBindings.embedded(tool_execution=runtime, codeact_state=CodeActStateOwner())
+    )
+    assert len(generations) >= 2
+    assert generations[0].open
+    finish.set()
+    outcome = await runtime.wait(result.thread_id, receipt["execution_id"])
+    assert outcome.record.status == "succeeded", outcome.record.error
+    assert outcome.result.return_value == [1, 1]
+    assert calls == [1, 1]
+    assert not any(item.open for item in generations)
+    await runtime.close()
+
+
+async def test_inline_session_lease_covers_result_validation_and_busy_restart():
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    state = CodeActRunState(CodeActConfig())
+    validating, finish = asyncio.Event(), asyncio.Event()
+
+    async def result(execution):
+        return execution.completed.output
+
+    async def blocked_result(execution):
+        validating.set()
+        await finish.wait()
+        return await result(execution)
+
+    options = dict(
+        dispatch=AsyncMock(),
+        admit=AsyncMock(),
+        release=AsyncMock(),
+        valid_names=set(),
+        sequential_names=set(),
+        global_sequential=False,
+        restart=False,
+    )
+    try:
+        active = asyncio.create_task(state.execute_inline("saved = 41\nsaved", finish=blocked_result, **options))
+        await validating.wait()
+        with pytest.raises(RuntimeError, match="already owns"):
+            await state.execute_inline("saved = 0", finish=result, **{**options, "restart": True})
+        finish.set()
+        assert await active == 41
+        assert await state.execute_inline("saved + 1", finish=result, **options) == 42
+
+        async def invalid_result(execution):
+            raise ValueError("invalid final output")
+
+        with pytest.raises(ValueError, match="invalid final output"):
+            await state.execute_inline("saved", finish=invalid_result, **options)
+        from pydantic_monty import MontyRuntimeError
+
+        with pytest.raises(MontyRuntimeError, match="saved"):
+            await state.execute_inline("saved", finish=result, **options)
+    finally:
+        await state.close()

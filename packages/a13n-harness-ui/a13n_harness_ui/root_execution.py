@@ -97,6 +97,7 @@ from a13n_harness_ui.thread_projection import build_thread_inspection
 from a13n_harness_ui.thread_service import ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
+from a13n_harness_ui.tool_executions import ToolExecutions
 from a13n_harness_ui.tool_images import ToolImageCollector
 
 
@@ -154,7 +155,9 @@ class RootRunExecutor:
         work: ThreadWorkService | None = None,
         restart_coordinator: GracefulRestart | None = None,
         mcp_apps: AppSnapshots | None = None,
+        tool_executions: ToolExecutions | None = None,
     ) -> None:
+        self._tool_executions = tool_executions
         self._store = store
         self._mcp_apps = mcp_apps
         self._restart = restart_coordinator
@@ -412,7 +415,9 @@ class RootRunExecutor:
                 )
                 image_events = await tool_images.observe(observed)
                 app_events = (
-                    await self._mcp_apps.observe(observed, thread_id=thread_id, run_id=stream.run_id)
+                    await self._mcp_apps.observe(
+                        observed, thread_id=thread_id, run_id=stream.run_id, context=stream.context
+                    )
                     if self._mcp_apps is not None
                     else ()
                 )
@@ -485,6 +490,8 @@ class RootRunExecutor:
                 host_refs={"thread_id": thread.thread_id},
             )
             bindings = RunBindings(
+                tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
+                codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
                 instance=instance,
                 configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
@@ -565,7 +572,7 @@ class RootRunExecutor:
                 result = stream.outcome
         finally:
             if self._mcp_apps is not None and stream is not None:
-                self._mcp_apps.connections.captures.discard_run(stream.run_id)
+                self._mcp_apps.finish_run(stream.context)
 
         if result is not None:
             record_output(result.output, status=result.status)

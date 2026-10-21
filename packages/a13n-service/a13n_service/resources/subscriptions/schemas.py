@@ -1,9 +1,19 @@
 """Lifecycle kinds, subscription requests and representations, and the webhook delivery shapes."""
 
+import base64
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SecretStr,
+    StringConstraints,
+    field_validator,
+)
 
 from a13n_service.infra.crypto import Envelope
 from a13n_service.infra.ids import ObjectId
@@ -33,13 +43,44 @@ type LifecycleKind = Literal[
 ]
 
 LIFECYCLE_KINDS: tuple[str, ...] = LifecycleKind.__value__.__args__
-# The error of a delivery staged dead because its subscription's signing secret cannot be decrypted.
+# The error of a delivery that cannot be signed because its signing secret cannot be decrypted or is not a
+# Standard Webhooks key, such as one stored before that scheme.
 SECRET_UNAVAILABLE = "signing_secret_unavailable"
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Url = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
 Kinds = Annotated[list[LifecycleKind], Field(min_length=1, max_length=len(LIFECYCLE_KINDS))]
-SigningSecret = Annotated[SecretStr, Field(min_length=16, max_length=256)]
+SECRET_PREFIX = "whsec_"
+
+
+def signing_key(secret: str) -> bytes:
+    """The HMAC key of a Standard Webhooks secret: `whsec_` and the standard base64 of a 24 to 64 byte key.
+
+    The one owner of the secret format; a value that is not that shape raises `ValueError`.
+    """
+    try:
+        key = (
+            base64.b64decode(secret.removeprefix(SECRET_PREFIX), validate=True)
+            if secret.startswith(SECRET_PREFIX)
+            else b""
+        )
+    except ValueError:  # binascii.Error
+        key = b""
+    if not 24 <= len(key) <= 64:
+        raise ValueError("must be whsec_ followed by standard base64 of a 24 to 64 byte key")
+    return key
+
+
+def _standard_signing_secret(value: SecretStr) -> SecretStr:
+    signing_key(value.get_secret_value())
+    return value
+
+
+SigningSecret = Annotated[
+    SecretStr,
+    Field(min_length=len(SECRET_PREFIX) + 32, max_length=len(SECRET_PREFIX) + 88),
+    AfterValidator(_standard_signing_secret),
+]
 
 
 class SubscriptionFilter(BaseModel):

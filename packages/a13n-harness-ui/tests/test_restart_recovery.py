@@ -101,6 +101,8 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(
     tmp_path, monkeypatch, finalization_failure, mode
 ):
     root = _write_configuration(tmp_path)
+    # Preserve pending guidance while the first request reaches its tool checkpoint.
+    root.write_text(root.read_text() + "\ninput:\n  steering_mode: queued\n")
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     started, release = Event(), Event()
     requests = []

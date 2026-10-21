@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness._tool_execution import RunToolExecutions
 from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentError,
@@ -28,6 +29,7 @@ from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
+from a13n_harness.tool_execution import ToolExecutionConfig
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
     _ProcessController,
@@ -74,19 +76,23 @@ class _Steering:
 class _ToolDeps:
     def __init__(self) -> None:
         self._steering = _Steering()
+        self._tool_executions = RunToolExecutions()
+        self._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> None:
         del data, suffix
         return None
 
 
-def _ctx() -> Any:
+def _ctx(wait_seconds: float = 0) -> Any:
     events = []
 
     async def emit(event) -> None:
         events.append(event)
 
-    return SimpleNamespace(deps=_ToolDeps(), emit=emit, events=events)
+    deps = _ToolDeps()
+    deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=wait_seconds)
+    return SimpleNamespace(deps=deps, emit=emit, events=events, tool_call_id=None)
 
 
 @asynccontextmanager
@@ -137,8 +143,8 @@ async def test_shell_exec_returns_no_id_for_quick_completion_and_run_id_for_live
         toolset = ShellToolset(environment)
         ctx = _ctx()
 
-        quick = await toolset.shell_exec(ctx, "printf quick", yield_time_seconds=2)
-        live = await toolset.shell_exec(ctx, "printf ready; sleep 30", yield_time_seconds=0)
+        quick = await toolset.shell_exec(_ctx(2), "printf quick")
+        live = await toolset.shell_exec(ctx, "printf ready; sleep 30")
 
         assert quick["ok"] is True
         assert "process_id" not in quick
@@ -176,7 +182,6 @@ async def test_shell_wait_repeats_output_for_repeated_explicit_offsets(tmp_path:
         started = await toolset.shell_exec(
             ctx,
             "printf first; sleep 0.1; printf second",
-            yield_time_seconds=0,
         )
         process_id = cast(str, started["process_id"])
 
@@ -220,7 +225,6 @@ async def test_shell_input_and_signal_mutate_without_returning_output(tmp_path: 
         started = await toolset.shell_exec(
             ctx,
             'IFS= read -r value; printf "got:%s" "$value"',
-            yield_time_seconds=0,
         )
         process_id = cast(str, started["process_id"])
 
@@ -247,8 +251,8 @@ async def test_live_completion_notifies_once_but_quick_completion_does_not(tmp_p
         ctx = _ctx()
 
         async def run_commands() -> tuple[dict[str, Any], dict[str, Any]]:
-            quick = await toolset.shell_exec(ctx, "printf quick", yield_time_seconds=2)
-            live = await toolset.shell_exec(ctx, "sleep 0.05; printf done", yield_time_seconds=0)
+            quick = await toolset.shell_exec(_ctx(2), "printf quick")
+            live = await toolset.shell_exec(ctx, "sleep 0.05; printf done")
             await asyncio.wait_for(ctx.deps._steering.notified.wait(), timeout=2)
             return cast(dict[str, Any], quick), cast(dict[str, Any], live)
 
@@ -514,8 +518,9 @@ async def test_cancellation_after_publication_releases_observation_without_killi
             await asyncio.sleep(0)
 
         start_task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await start_task
+        result = await start_task
+        assert result["process_id"] in controller._entries
+        assert controller._entries[result["process_id"]].model_visible.is_set()
 
         assert len(controller._entries) == 1
         process_id = next(iter(controller._entries))
@@ -525,6 +530,87 @@ async def test_cancellation_after_publication_releases_observation_without_killi
         await controller.close()
         assert not controller._entries
         assert (await environment.processes.inspect(handle)).status.phase == "running"
+
+
+async def test_cancellation_during_admission_settles_original_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _bound_process_environment(tmp_path) as environment:
+        controller = _ProcessController(environment)
+        started, publish = asyncio.Event(), asyncio.Event()
+        original_start = environment.processes.start
+        calls = 0
+
+        async def blocked_start(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            result = await original_start(*args, **kwargs)
+            started.set()
+            await publish.wait()
+            return result
+
+        monkeypatch.setattr(environment.processes, "start", blocked_start)
+        request = ShellToolset._command_request(
+            "sleep 30", cwd=None, environment=None, execution_timeout_seconds=None, keep_stdin_open=True
+        )
+        task = asyncio.create_task(controller.start(request, alias=None, yield_time_seconds=30))
+        await started.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        task.cancel()
+        publish.set()
+        result = await task
+        assert calls == 1
+        entry = controller._entries[result["process_id"]]
+        assert entry.model_visible.is_set()
+        await controller.close()
+        assert (await environment.processes.inspect(entry.handle)).status.phase == "running"
+
+
+@pytest.mark.parametrize("mode", ["inline", "auto"])
+@pytest.mark.parametrize("wait_seconds", [None, 0, 0.125])
+async def test_shell_uses_common_foreground_wait_policy(tmp_path: Path, monkeypatch, mode, wait_seconds):
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        ctx = _ctx()
+        config = (
+            ToolExecutionConfig(mode=mode)
+            if wait_seconds is None
+            else ToolExecutionConfig(mode=mode, foreground_wait_seconds=wait_seconds)
+        )
+        ctx.deps._tool_executions.config = config
+        start = AsyncMock(wraps=toolset._process_controller.start)
+        monkeypatch.setattr(toolset._process_controller, "start", start)
+        await toolset.shell_exec(ctx, "echo value")
+        assert start.await_args.kwargs["yield_time_seconds"] == (5.0 if wait_seconds is None else wait_seconds)
+        await toolset.close()
+
+
+async def test_shell_without_execution_runtime_returns_live_reference_after_default_wait(tmp_path, monkeypatch):
+    async with _bound_process_environment(tmp_path) as environment:
+        toolset = ShellToolset(environment)
+        ctx = _ctx()
+        ctx.deps.tool_execution = None
+        ctx.deps._tool_executions.config = ToolExecutionConfig()
+        original_wait = environment.processes.wait
+        wait = AsyncMock(side_effect=EnvironmentError("Wait expired", code="environment_timeout"))
+        monkeypatch.setattr(environment.processes, "wait", wait)
+        result = await toolset.shell_exec(ctx, "while [ ! -f release ]; do sleep 0.01; done; printf done")
+        assert result["ok"] is True, result
+        assert wait.await_count == 1
+        assert wait.await_args.kwargs["timeout_seconds"] == 5.0
+        assert result["status"]["phase"] == "running"
+        process_id = result["process_id"]
+        assert process_id is not None
+        (tmp_path / "release").touch()
+        await original_wait(
+            toolset._process_controller._entries[process_id].handle, condition="initial_terminal", timeout_seconds=2
+        )
+        completed = await toolset.shell_wait(ctx, process_id, timeout_seconds=2)
+        assert completed["status"]["phase"] == "exited"
+        assert completed["stdout"]["text"] == "done"
+        await toolset.close()
 
 
 async def test_process_references_are_run_local_and_cleanup_is_idempotent(tmp_path: Path) -> None:
@@ -704,11 +790,11 @@ async def test_quick_large_output_is_recoverable_through_disclosure(tmp_path: Pa
                 return f"/workspace/.a13n/tool-results/quick{suffix}"
 
         toolset = ShellToolset(environment)
-        ctx = SimpleNamespace(deps=SpillDeps())
+        ctx = SimpleNamespace(deps=SpillDeps(), tool_call_id=None)
+        ctx.deps._tool_executions.config = ToolExecutionConfig(mode="auto", foreground_wait_seconds=2)
         result = await toolset.shell_exec(
             ctx,
             "head -c 30000 /dev/zero | tr '\\0' x",
-            yield_time_seconds=2,
         )
 
         assert result["ok"] is True
@@ -759,7 +845,7 @@ async def test_observation_does_not_require_stdin_signals_or_standalone_outputs(
     async with _bound_process_environment(tmp_path, operations) as environment:
         toolset = ShellToolset(environment)
         assert set(toolset.get_toolset().tools) == {"shell_exec", "shell_info", "shell_wait"}
-        result = await toolset.shell_exec(_ctx(), "sleep 0.05; printf observed", yield_time_seconds=0)
+        result = await toolset.shell_exec(_ctx(), "sleep 0.05; printf observed")
         assert result["ok"]
         ref = result["process_id"]
         final = await toolset.shell_wait(_ctx(), ref, timeout_seconds=2)
@@ -781,9 +867,9 @@ async def test_invented_alias_does_not_start_process_and_valid_interactive_flow_
         toolset = ShellToolset(environment)
         ctx = _ctx()
         try:
-            first = await toolset.shell_exec(ctx, "printf ordinary")
+            first = await toolset.shell_exec(_ctx(1), "printf ordinary")
             assert first["ok"] and first["stdout"]["text"] == "ordinary"
-            invalid = await toolset.shell_exec(ctx, "cat", alias="shell-smoke-input", yield_time_seconds=0)
+            invalid = await toolset.shell_exec(ctx, "cat", alias="shell-smoke-input")
             assert not invalid["ok"]
             assert invalid["error"]["code"] == "environment_selection_invalid"
             assert invalid["error"]["details"]["field"] == "alias"
@@ -791,7 +877,7 @@ async def test_invented_alias_does_not_start_process_and_valid_interactive_flow_
             assert "process_id" not in invalid
             assert not toolset._process_controller._entries
 
-            started = await toolset.shell_exec(ctx, "cat; printf 'stdin: EOF' >&2", yield_time_seconds=0)
+            started = await toolset.shell_exec(ctx, "cat; printf 'stdin: EOF' >&2")
             assert started["ok"]
             ref = started["process_id"]
             inspected = await toolset.shell_inspect(ctx, ref)
@@ -888,7 +974,7 @@ async def test_input_close_permission_is_checked_before_writing(tmp_path: Path, 
 async def test_input_acceptance_survives_later_status_lookup_failure(tmp_path: Path, monkeypatch) -> None:
     async with _bound_process_environment(tmp_path) as environment:
         toolset = ShellToolset(environment)
-        started = await toolset.shell_exec(_ctx(), "cat", yield_time_seconds=0)
+        started = await toolset.shell_exec(_ctx(), "cat")
 
         async def unavailable(handle):
             raise EnvironmentError("Temporarily unavailable.", code="environment_unavailable")
@@ -941,7 +1027,7 @@ async def test_shell_toolset_owns_binding_and_process_resources(tmp_path: Path) 
         assert bindings[0].kind == "mount"
         info_resolver = tools["shell_info"].metadata[HARNESS_TOOL_METADATA_KEY].resource_resolver
         assert await info_resolver({}, context=ctx.deps) == bindings
-        started = await toolset.shell_exec(ctx, "cat", yield_time_seconds=0)
+        started = await toolset.shell_exec(ctx, "cat")
         try:
             process_id = started["process_id"]
             for name in ("shell_info", "shell_wait", "shell_input", "shell_signal"):

@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
-from pydantic_ai.messages import ModelMessage, ModelResponse, PartStartEvent
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, PartStartEvent, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.output import NativeOutput, PromptedOutput, TextOutput, ToolOutput
 from pydantic_ai.tools import DeferredToolRequests, Tool
@@ -1142,3 +1142,130 @@ async def test_stream_steer_records_host_input_id_in_exported_history() -> None:
     assert terminal.result.state is not None
     assert steering_input_ids(terminal.result.state.message_history) == ("inb_1",)
     assert steering_input_ids(calls[1]) == ("inb_1",)
+
+
+async def test_pending_steering_survives_cancel_and_restores_before_new_input() -> None:
+    from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
+    from a13n_harness.capabilities.steering import steering_input_ids
+
+    started = asyncio.Event()
+
+    async def blocked(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "partial"
+        started.set()
+        await asyncio.Event().wait()
+
+    executable = _build(FunctionModel(stream_function=blocked))
+    async with executable.stream("initial") as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        await stream.steer("accepted before stop", input_id="input_one")
+        stream.cancel()
+        await asyncio.wait_for(consumer, 2)
+    state = await stream.export_state()
+    assert steering_input_ids(state.message_history) == ()
+    pending = state.agent_context_state.entries["a13n.steering"].data["pending_requests"]
+    assert len(pending) == 1
+
+    calls: list[tuple[ModelMessage, ...]] = []
+    resumed = HarnessBuilder().build(
+        AgentSpec(name="test-agent"),
+        output_type=str,
+        model=_turn_model(calls),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1_000_000)),),
+    )
+    async with resumed.stream("new input", previous_state=state) as continuation:
+        items = await _consume_stream(continuation)
+    text = [
+        part.content
+        for message in calls[0]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    ]
+    assert text.index("accepted before stop") < text.index("new input")
+    result = items[-1].result
+    assert result.state.agent_context_state.entries["a13n.steering"].data["pending_requests"] == []
+    assert steering_input_ids(result.state.message_history) == ("input_one",)
+    retained = result.state.agent_context_state.entries["a13n.steering"].data["retained_requests"]
+    assert [request["parts"][0]["content"] for request in retained] == ["accepted before stop", "new input"]
+    # Exported snapshots remain detached from later incorporation.
+    assert len(state.agent_context_state.entries["a13n.steering"].data["pending_requests"]) == 1
+
+
+async def test_immediate_steering_without_runtime_rejects_before_acceptance_during_model_generation() -> None:
+    from a13n_harness.capabilities.steering import steering_input_ids
+
+    started, finish = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def responding(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        calls += 1
+        yield "partial"
+        started.set()
+        await finish.wait()
+        yield " completed"
+
+    executable = _build(FunctionModel(stream_function=responding))
+    async with executable.stream("initial") as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        with pytest.raises(RunError) as caught:
+            await stream.steer("rejected", input_id="rejected-input", immediate=True)
+        assert caught.value.code == "tool_execution_unbound"
+        assert not consumer.done()
+        await stream.steer("accepted", input_id="accepted-input")
+        finish.set()
+        await asyncio.wait_for(consumer, 2)
+        assert stream.result.status == "completed"
+        assert steering_input_ids(stream.result.state.message_history) == ("accepted-input",)
+        assert calls == 2  # Queued input runs only after the original response completes.
+
+
+async def test_immediate_steering_reenters_logical_run_and_preserves_partial_output() -> None:
+    from a13n_harness.capabilities.steering import steering_input_ids
+    from a13n_harness.tool_execution import ToolExecutionRuntime
+
+    started = asyncio.Event()
+    calls: list[tuple[ModelMessage, ...]] = []
+
+    async def responding(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(tuple(messages))
+        if len(calls) == 1:
+            yield "partial response"
+            started.set()
+            await asyncio.Event().wait()
+        else:
+            yield "steered response"
+
+    executable = _build(FunctionModel(stream_function=responding))
+    runtime = ToolExecutionRuntime()
+    async with executable.stream("initial", bindings=RunBindings.embedded(tool_execution=runtime)) as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        await stream.steer("change direction", input_id="input_one", immediate=True)
+        await stream.steer("and preserve order", input_id="input_two", immediate=True)
+        items = await asyncio.wait_for(consumer, 2)
+    await runtime.close()
+    terminals = [item for item in items if isinstance(item, HarnessRunResultEvent)]
+    assert len(terminals) == 1
+    assert terminals[0].result.status == "completed"
+    assert terminals[0].result.run_id == stream.run_id
+    assert len(calls) == 2
+    assert steering_input_ids(terminals[0].result.state.message_history) == ("input_one", "input_two")
+    text = [
+        part.content
+        for message in calls[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    ]
+    assert text.index("change direction") < text.index("and preserve order")
+    assert any(
+        isinstance(message, ModelResponse)
+        and any(isinstance(part, TextPart) and part.content == "partial response" for part in message.parts)
+        for message in calls[1]
+    )

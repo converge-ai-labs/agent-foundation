@@ -17,6 +17,7 @@ import {
   Notebook,
   UsersThree,
   Terminal,
+  Wrench,
   X,
 } from "@phosphor-icons/react";
 import { type Schema } from "../transport/client";
@@ -27,6 +28,7 @@ import { MessageText } from "./message-text";
 import { Children } from "./details";
 import type { FocusDisplay } from "./stream";
 import { Processes } from "./processes";
+import { ToolExecutions } from "./tool-executions";
 import styles from "./work-inspector.module.css";
 
 type Task = Schema<"TaskView">;
@@ -133,7 +135,7 @@ export function WorkInspector({
 }) {
   const guest = useGuestAccess();
   const [tab, setTab] = useState<
-    "tasks" | "notes" | "children" | "processes" | null
+    "tasks" | "notes" | "children" | "processes" | "tools" | null
   >(null);
   const work = useThreadWork(threadId, {
     tasks: tab === "tasks",
@@ -165,10 +167,11 @@ export function WorkInspector({
     notes: "Notes",
     children: "Subagents",
     processes: "Processes",
+    tools: "Tools",
   };
-  const tabs = (["tasks", "notes", "children", "processes"] as const).filter(
-    (key) => !guest || key !== "processes",
-  );
+  const tabs = (
+    ["tasks", "notes", "children", "processes", "tools"] as const
+  ).filter((key) => !guest || (key !== "processes" && key !== "tools"));
   return (
     <div className={styles.strip} aria-label="Work inspection">
       {tabs.map((key) => {
@@ -179,7 +182,9 @@ export function WorkInspector({
               ? Notebook
               : key === "children"
                 ? UsersThree
-                : Terminal;
+                : key === "tools"
+                  ? Wrench
+                  : Terminal;
         return (
           <Popover
             key={key}
@@ -264,6 +269,9 @@ export function WorkInspector({
                   {!saved.isPending && !page && <p>Task state unavailable.</p>}
                   <TaskList page={page} />
                 </>
+              )}
+              {key === "tools" && tab === key && (
+                <ToolExecutions threadId={threadId} />
               )}
               {key === "processes" && tab === key && (
                 <Processes

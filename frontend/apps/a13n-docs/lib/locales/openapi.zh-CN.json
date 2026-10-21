@@ -520,7 +520,6 @@
   "Get Schedule Occurrence": "获取触发记录",
   "Commands accept no configuration or authority overrides.": "操作不接受配置或权限覆盖。",
   "List Schedule Occurrences": "列出触发记录",
-  "Authorize recurring execution as the creator, independently of the accepting credential's lifetime.": "以创建者身份授权周期执行，授权不受本次请求凭证有效期的限制。",
   "Archive Schedule": "归档定时任务",
   "Update Schedule": "更新定时任务",
   "Create Schedule": "创建定时任务",

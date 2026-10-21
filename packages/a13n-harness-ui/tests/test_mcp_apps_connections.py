@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessEvent, RunBindings
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
 from a13n_harness_ui.configuration.models import McpCommandTransport
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
@@ -685,4 +685,131 @@ async def test_modern_input_is_not_captured_until_native_terminal_tool_return(tm
         assert connections.captures._pending == {} and connection.connected
     finally:
         await inputs.close()
+        await connections.close()
+
+
+@pytest.mark.parametrize("codeact", [False, True])
+@pytest.mark.parametrize("captured_before_return", [False, True])
+async def test_detached_result_keeps_original_app_across_runs(
+    tmp_path: Path, monkeypatch, codeact: bool, captured_before_return: bool
+) -> None:
+    import json
+    from dataclasses import dataclass
+
+    from a13n_harness import CodeActStateOwner, ToolExecutionConfig, ToolExecutionRuntime
+    from a13n_harness.capabilities import CodeActCapability, ToolExecutionCapability
+    from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
+    from a13n_harness_ui.mcp_apps.connections import AppClient
+    from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots, app_references
+    from a13n_harness_ui.settings import StorageSettings
+    from a13n_harness_ui.storage import open_local_store
+    from pydantic_ai.capabilities import WrapperCapability
+    from pydantic_ai.messages import FunctionToolResultEvent
+
+    @dataclass
+    class Eligible(WrapperCapability):
+        def get_toolset(self):
+            return CodeActPolicyToolset(self.wrapped.get_toolset(), CodeActToolPolicy(tools={"counter": True}))
+
+    entered, finish = asyncio.Event(), asyncio.Event()
+    call_tool = AppClient.call_tool_mcp
+    calls = 0
+
+    async def paused_call(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if captured_before_return:
+            result = await call_tool(self, *args, **kwargs)
+        entered.set()
+        await finish.wait()
+        return result if captured_before_return else await call_tool(self, *args, **kwargs)
+
+    monkeypatch.setattr(AppClient, "call_tool_mcp", paused_call)
+    transport = _server(tmp_path)
+    connections = Connections()
+    runtime = ToolExecutionRuntime()
+    recipe = ResolvedMcpRecipe(
+        server_id="counter", transport=McpCommandTransport(command=sys.executable, arguments=tuple(transport.args))
+    )
+    stage = 0
+    execution_id = None
+
+    async def model(messages, info):
+        nonlocal stage, execution_id
+        current = stage
+        stage += 1
+        if current == 0:
+            name = (
+                "run_code"
+                if codeact
+                else next(tool.name for tool in info.function_tools if tool.name.endswith("counter"))
+            )
+            args = {"code": "await counter()"} if codeact else {}
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id="original")}
+        elif current == 1:
+            await entered.wait()
+            part = next(part for message in messages for part in message.parts if isinstance(part, ToolReturnPart))
+            execution_id = part.content["execution_id"]
+            yield "Waiting"
+        elif current == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="tool_execution_result",
+                    json_args=json.dumps({"execution_id": execution_id}),
+                    tool_call_id="retrieval",
+                )
+            }
+        else:
+            yield "Received"
+
+    capabilities = [
+        Eligible(HarnessUiMCP(recipe, apps=connections)),
+        ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+    ]
+    if codeact:
+        capabilities.append(CodeActCapability())
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=capabilities
+    )
+    bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=CodeActStateOwner())
+    try:
+        async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+            snapshots = AppSnapshots(store.objects, connections)
+            async with executable.stream("Start", bindings=bindings) as first:
+                events = [event async for event in first]
+                assert first.result.status == "completed"
+                for event in events:
+                    assert not await snapshots.observe(
+                        event, thread_id=first.thread_id, run_id=first.run_id, context=first.context
+                    )
+                snapshots.finish_run(first.context)
+                assert bool(connections.captures._pending) is captured_before_return
+            finish.set()
+            result = await runtime.wait(first.thread_id, execution_id, timeout_seconds=10)
+            assert result.record.result_available
+            async with executable.stream("Read result", previous_state=first.result.state, bindings=bindings) as second:
+                # Deliberately consume after native acknowledgement, as a slow UI observer can.
+                events = [event async for event in second]
+                assert second.result.status == "completed"
+                references = []
+                for event in events:
+                    await snapshots.observe(
+                        event, thread_id=second.thread_id, run_id=second.run_id, context=second.context
+                    )
+                    if isinstance(event, HarnessEvent) and isinstance(event.event, FunctionToolResultEvent):
+                        references.extend(app_references(event.event.part))
+                snapshots.finish_run(second.context)
+            assert len(references) == 1
+            reference = references[0]
+            assert reference.run_id == first.run_id and reference.tool_call_id == "original"
+            presentation = await snapshots.read(reference)
+            assert presentation.snapshot.result["_meta"]["private"] == "not-for-the-model"
+            assert presentation.snapshot.result["structuredContent"]["count"] == 1
+            assert presentation.resource.html == "<!doctype html><p>Counter</p>"
+            assert not connections.captures._pending
+            assert calls == 1
+    finally:
+        finish.set()
+        await runtime.close()
+        await runtime.join()
         await connections.close()

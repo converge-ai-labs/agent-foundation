@@ -41,6 +41,7 @@ Agent 的工具来自五个地方，都在[修订版本](agents-and-runs.md#agen
 | `connections`           | 连接、其工具和 connector 应用                                                               |
 | `skills`                | Skill 及其版本                                                                              |
 | `environment_templates` | 环境模板                                                                                    |
+| `schedules`             | 一次性与重复计划、启停、手动触发和触发记录                                                  |
 | `providers`             | Provider，以及对其已保存连接的测试                                                          |
 | `execution`             | Session、thread、run、trace 和发现项；唯一的写入操作是提交发现项（`POST /api/v1/findings`） |
 

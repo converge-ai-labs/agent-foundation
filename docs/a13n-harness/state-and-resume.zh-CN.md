@@ -260,13 +260,13 @@ await context.state.write(
 
 未知命名空间可在 Run 中保持不透明。只有所属 Capability 解释载荷和版本。不要在 Capability 命名空间存储凭据、客户端、锁或 `EnvironmentState`。
 
-## Run 本地 shell 观测
+## Shell 执行与观测
 
-`DynamicEnvironmentCapability` 按各挂载实际动作组合 shell 执行、`shell_info` 发现/检查、显式偏移 `shell_wait` 和支持的 stdin/控制工具。shell 进程引用属于一个 Harness Run，不属于持久进程服务。查询不重置输出；原生完成不代表输出已完整捕获。
+`DynamicEnvironmentCapability` 按各挂载实际动作组合 shell 执行、`shell_info` 发现/检查、显式偏移 `shell_wait` 和支持的 stdin/控制工具。独立的 `process-*` 引用属于一个 Harness Run。绑定 Host 持有的 `ToolExecutionRuntime` 后，顶层 Shell 执行通过 `exec-*` 标识，在同一 Thread 的多个 Run 之间保留原进程和输出捕获。查询不重置输出；原生完成不代表输出已完整捕获。
 
-Run 关闭释放观测，不会统一终止全部进程。根据 Provider 状态恢复的新 adapter 可能发现后端保留的命令；新 Run 分配新引用，不能使用历史旧引用。进程引用、缓冲、watcher 和输出游标不进入 Harness Capability 状态。Provider 状态保存原生恢复证据；Host 负责目标生命周期和状态发布。
+Run 关闭释放未被保留的观测，不会统一终止全部进程。仍存活的 `exec-*` 执行可通过同一 Host runtime 继续控制，每次控制都检查当前授权和目标。Host 重启后，根据 Provider 状态恢复的新 adapter 可能发现后端保留的命令；该发现分配新的本地引用，不会恢复先前的 runtime。进程引用、缓冲、watcher 和输出游标不进入 Harness Capability 状态。Provider 状态保存原生恢复证据；Host 负责目标生命周期和状态发布。
 
-用法和 Provider 专用限制见 [Environment 工具](environments.md)。不要求 Host 进程管理器、进程数据库或持久 Run 后唤醒集成。
+用法和 Provider 专用限制见 [Environment 工具](environments.md)。存活 runtime 的保留与可移植检查点恢复是独立的生命周期。
 
 ## Host 检查点
 

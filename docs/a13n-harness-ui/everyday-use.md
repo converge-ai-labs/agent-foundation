@@ -109,6 +109,8 @@ Image, audio, video, and document inputs remain native Harness content. TUI pres
 
 ### Tasks, usage, and terminal feedback
 
+Retained tool controls appear together under **Tool executions**. Expand details to inspect individual checks and results. A returned status describes the last check; a cancellation request is not a completed cancellation. When a retained tool completes while the TUI is idle, it shows a short notice and automatically displays the Agent's continuation without sending or clearing your draft. Stop cancels that continuation; `/executions cancel <execution-id>` separately cancels retained tool work.
+
 **System** labels distinguish command, steering, and cancellation feedback from Agent responses. File summaries shorten paths inside your launch directory; raw tool paths remain unchanged.
 
 Press F2 to expand or collapse the task panel. It shows up to five saved task rows, active work first, with IDs and dependencies. The activity line shows subagent totals and observed background processes. These inspection commands also work during execution:

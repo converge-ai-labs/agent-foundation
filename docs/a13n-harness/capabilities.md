@@ -341,11 +341,11 @@ When `WebCapability()` is constructed without an explicit configuration, these e
 
 An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebBinding` in `RunBindings.web`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
 `DynamicEnvironmentCapability` derives shell execution, native discovery/inspection through `shell_info`, explicit-offset `shell_wait`, and supported input/control tools from the current mount actions. The tool surface does not require a Host process operator or all-or-nothing interactive permissions.
 
-Run cleanup releases local observations without blanket command termination. References and buffers are Run-local; a later Run can discover commands actually retained by the Provider under fresh references. Completion hints report native exit, not complete output capture. No process database or post-Run wake service is introduced.
+With the Host-held tool runtime, top-level Shell executions retain their original process and capture across Runs until native termination and output observation closure. Standalone `process-*` references and buffers remain Run-local, with best-effort native exit hints. Provider discovery owns recovery after scope loss; the Harness tool runtime owns retained execution results and completion observations.
 
 See [Environment tools](environments.md) for signatures, output provenance, observation limits, and Provider-specific recovery behavior.
 

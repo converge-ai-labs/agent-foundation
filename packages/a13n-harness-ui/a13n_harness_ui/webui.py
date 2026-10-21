@@ -175,6 +175,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -1685,6 +1686,16 @@ def create_webui(
         return await app().steer_child_execution(
             parent_thread_id=thread_id, execution_id=execution_id, message=body.prompt
         )
+
+    @server.get("/api/threads/{thread_id}/tool-executions", response_model=tuple[ToolExecutionView, ...])
+    async def tool_executions(
+        thread_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
+    ) -> tuple[ToolExecutionView, ...]:
+        return await app().tool_executions(thread_id, offset=offset, limit=limit)
+
+    @server.post("/api/threads/{thread_id}/tool-executions/{execution_id}/cancel", response_model=ToolExecutionView)
+    async def cancel_tool_execution(thread_id: str, execution_id: str) -> ToolExecutionView:
+        return await app().cancel_tool_execution(thread_id, execution_id)
 
     @server.post("/api/threads/{thread_id}/children/{execution_id}/cancel", response_model=ChildControlResult)
     async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:

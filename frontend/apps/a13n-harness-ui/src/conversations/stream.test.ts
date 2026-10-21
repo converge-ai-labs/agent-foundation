@@ -1855,17 +1855,30 @@ it("continues active snapshot text and tool arguments without duplicate blocks a
   expect(display.gap).toBe(false);
 });
 
-it.each([false, true])(
-  "preserves tool arguments and process identity across dual results (native first: %s)",
-  (nativeFirst) => {
+it.each([
+  { nativeFirst: false, owned: false },
+  { nativeFirst: true, owned: false },
+  { nativeFirst: false, owned: true },
+  { nativeFirst: true, owned: true },
+])(
+  "preserves shell commands across dual results (native first: $nativeFirst, Host owned: $owned)",
+  ({ nativeFirst, owned }) => {
     const display = new FocusDisplay();
     display.accept(snapshot(0));
     display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-    const result = {
-      ok: true,
-      process_id: "process-one",
-      status: { phase: "running" },
-    };
+    const processId = owned ? "exec-one" : "process-one";
+    const result = owned
+      ? {
+          type: "tool_execution_receipt",
+          execution_id: processId,
+          tool_name: "shell_exec",
+          status: "running",
+        }
+      : {
+          ok: true,
+          process_id: processId,
+          status: { phase: "running" },
+        };
     const native = {
       type: "CUSTOM",
       name: "a13n.pydantic_ai.function_tool_result",
@@ -1917,8 +1930,29 @@ it.each([false, true])(
       name: "shell_exec",
       text: '{"command":"server"}',
     });
+    if (owned) {
+      expect(display.processes.background).toEqual([]);
+      display.accept(
+        compactFrame(106, [
+          compactItem(
+            "wait-item",
+            6,
+            {
+              toolCallId: "wait-call",
+              toolCallName: "shell_wait",
+              arguments: JSON.stringify({ process_id: processId }),
+              value: {
+                process_id: processId,
+                status: { phase: "running" },
+              },
+            },
+            "tool_call",
+          ),
+        ]),
+      );
+    }
     expect(display.processes.background).toMatchObject([
-      { command: "server", processId: "process-one", phase: "running" },
+      { command: "server", processId, phase: "running" },
     ]);
   },
 );

@@ -110,6 +110,7 @@ from a13n_harness_ui.errors import (
     EnvironmentLifecycleError,
     HarnessUiError,
     LivePresentationError,
+    RunCoordinationError,
     ThreadError,
 )
 from a13n_harness_ui.extensions import (
@@ -285,6 +286,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -302,6 +304,7 @@ from a13n_harness_ui.thread_files import (
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
+from a13n_harness_ui.tool_executions import ToolExecutions, execution_view
 from a13n_harness_ui.voice import VoiceController
 from a13n_harness_ui.web_push import WebPush
 
@@ -377,6 +380,7 @@ class HarnessUiApp:
         terminal_projections: TerminalProjectionService,
         work: ThreadWorkService,
         root_runs: RootRunCoordinator,
+        tool_executions: ToolExecutions,
         thread_files: ThreadFiles,
         subagent_operator: HarnessUiSubagentOperator,
         live_hub: HarnessUiLiveHub,
@@ -443,6 +447,9 @@ class HarnessUiApp:
         self._shared_drafts: dict[str, SharedDraft] = {}
         self._page_presence = PagePresence()
         self._root_runs = root_runs
+        self._tool_executions = tool_executions
+        tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
         self._summary_hub = summary_hub
@@ -1587,6 +1594,7 @@ class HarnessUiApp:
                 await self._threads.clear_context(
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
+                self._tool_executions.clear_state(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
             return await self._projections.detail(thread_id)
@@ -2090,6 +2098,7 @@ class HarnessUiApp:
                 human_input=True,
                 authorize=authorize_app_message if mcp_app_view is not None else None,
             )
+            self._tool_executions.user_input(thread_id)
             await self._clear_submitted_draft(thread_id, draft_clear)
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -2175,6 +2184,52 @@ class HarnessUiApp:
             model_overrides=model_overrides,
         )
 
+    async def tool_executions(
+        self, thread_id: str, *, offset: int = 0, limit: int = 20
+    ) -> tuple[ToolExecutionView, ...]:
+        async with self._operation():
+            await self._threads.get(thread_id)
+            records = await self._tool_executions.runtime.summarize(thread_id, offset=offset, limit=limit)
+            return tuple(execution_view(record) for record in records)
+
+    async def cancel_tool_execution(self, thread_id: str, execution_id: str) -> ToolExecutionView:
+        async with self._operation():
+            await self._threads.require_interactive(thread_id)
+            record = await self._tool_executions.runtime.cancel(thread_id, execution_id)
+            if record is None:
+                raise RunCoordinationError(
+                    "The tool execution is unavailable in this Thread.", code="tool_execution_unavailable"
+                )
+            await self._tool_execution_changed(thread_id)
+            return execution_view(record)
+
+    async def _tool_execution_changed(self, thread_id: str) -> None:
+        thread = await self._store.threads.get(thread_id)
+        if thread is not None:
+            await self._summary_hub.publish(
+                kind="thread", thread_id=thread_id, root_thread_id=await self._subagent_operator._root_thread_id(thread)
+            )
+
+    async def _deliver_tool_completion(self, thread_id: str, prompt: str) -> bool:
+        if self._state is not AppState.ready:
+            return False
+        detail = await self._projections.detail(thread_id)
+        if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
+            return False
+        # Lifecycle hints are model context, not human-authored messages. Keep
+        # the annotation through active steering and idle continuation alike.
+        content = (ContentItem(prompt, ContentMetadata(display=False, source_id="tool_execution.completion")),)
+        if detail.thread.parent_thread_id is not None:
+            return await self._subagent_operator.deliver_tool_completion(thread_id, content)
+        operation = await self._root_runs.active(thread_id)
+        if operation is not None:
+            result = await self._root_runs.steer(
+                receipt_id=operation.receipt.receipt_id, message=content, immediate=False
+            )
+            return result.accepted
+        await self._root_runs.submit_prompt(thread_id=thread_id, prompt=content)
+        return True
+
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:
         async with self._operation():
             return await self._root_runs.get(receipt_id)
@@ -2227,8 +2282,15 @@ class HarnessUiApp:
             )
             if catalog is not None:
                 prepared = prepare_skill_input(prepared, catalog, selected_skills)
-            result = await self._root_runs.steer(receipt_id=receipt_id, message=prepared, touch=True)
+            source = await self._configurations.current()
+            result = await self._root_runs.steer(
+                receipt_id=receipt_id,
+                message=prepared,
+                immediate=source is None or source.document.input.steering_mode == "immediate",
+                touch=True,
+            )
             if result.accepted:
+                self._tool_executions.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
             return result
 
@@ -2281,11 +2343,17 @@ class HarnessUiApp:
     ) -> ChildControlResult:
         async with self._operation():
             await self._threads.require_interactive(parent_thread_id)
+            source = await self._configurations.current()
             result = await self._subagent_operator.steer_execution(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
                 message=message,
+                immediate=source is None or source.document.input.steering_mode == "immediate",
             )
+            if result.accepted:
+                head = await self._store.child_executions.get(execution_id)
+                if head is not None:
+                    self._tool_executions.user_input(head.child_thread_id)
             return ChildControlResult(
                 execution_id=result.execution_id,
                 accepted=result.accepted,
@@ -2757,6 +2825,7 @@ class HarnessUiApp:
                     thread=thread,
                     root_operation=root_operation,
                     mcp_inputs=await self.mcp_input_requests(root_thread_id),
+                    tool_executions=await self.tool_executions(root_thread_id),
                     recent_events=tuple(reversed(retained_events)),
                     root_stream=root_stream.summary if root_stream is not None else None,
                 ),
@@ -2908,6 +2977,7 @@ class HarnessUiApp:
                 return
             self._state = AppState.stopping
             idle = self._operations_idle
+        self._tool_executions.stop()
         self._memory_organizer.stop()
         if self._voice is not None:
             await self._voice.stop()
@@ -2952,9 +3022,12 @@ class HarnessUiApp:
                 get_logger(__name__).debug("Closing live subscriptions…")
                 with CancelScope(shield=True):
                     try:
-                        await self._live_hub.close()
+                        await self._tool_executions.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
                     finally:
-                        await self._summary_hub.close()
+                        try:
+                            await self._live_hub.close()
+                        finally:
+                            await self._summary_hub.close()
 
     def _require_ready(self) -> None:
         if self._state is not AppState.ready:
@@ -3169,7 +3242,9 @@ async def open_harness_ui_app(
                 resources.push_async_callback(mcp_operations.close)
 
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
+            tool_executions = ToolExecutions()
             operator = HarnessUiSubagentOperator(
+                tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 thread_files=thread_files,
                 restart_coordinator=restart_coordinator,
@@ -3190,6 +3265,7 @@ async def open_harness_ui_app(
             )
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
+                tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 restart_coordinator=restart_coordinator,
                 work=work,
@@ -3250,6 +3326,7 @@ async def open_harness_ui_app(
 
             root_runs = RootRunCoordinator(
                 root_executor,
+                tool_executions=tool_executions,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
@@ -3323,6 +3400,7 @@ async def open_harness_ui_app(
                 terminal_projections=terminal_projections,
                 work=work,
                 root_runs=root_runs,
+                tool_executions=tool_executions,
                 thread_files=thread_files,
                 subagent_operator=operator,
                 live_hub=live_hub,

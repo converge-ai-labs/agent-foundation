@@ -8,6 +8,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { ConversationConfiguration } from "./configuration";
 import { MessageText } from "./message-text";
 import { ChildSavedOutputs } from "./child-output";
+import { ToolExecutions } from "./tool-executions";
 import { AppCard } from "../mcp-apps/app-card";
 import { useOperation, useThreads } from "./queries";
 import type { FocusDisplay } from "./stream";
@@ -251,6 +252,7 @@ export function Child({
 }) {
   const { client, shareId } = useTransport();
   const [open, setOpen] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const { state: controlState, update: updateControl } = useChildControlState(
     child.parent_thread_id,
     child.execution_id,
@@ -332,6 +334,20 @@ export function Child({
             </div>
           </dl>
           <ChildPresentation child={child} live={live} />
+          {!shareId && (
+            <details
+              open={showTools}
+              onToggle={(event) => setShowTools(event.currentTarget.open)}
+            >
+              <summary>Tool executions</summary>
+              {showTools && (
+                <ToolExecutions
+                  threadId={child.child_thread_id}
+                  rootThreadId={child.parent_thread_id}
+                />
+              )}
+            </details>
+          )}
           {child.failure && <p role="alert">{child.failure.message}</p>}
           <ErrorNotice error={controlState.error} />
           {!shareId && child.available_actions?.includes("steer") && (

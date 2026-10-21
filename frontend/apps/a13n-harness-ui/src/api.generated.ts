@@ -1769,6 +1769,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/tool-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool Executions */
+        get: operations["tool_executions_api_threads__thread_id__tool_executions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Tool Execution */
+        post: operations["cancel_tool_execution_api_threads__thread_id__tool_executions__execution_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/children/{execution_id}/cancel": {
         parameters: {
             query?: never;
@@ -6626,6 +6660,57 @@ export interface components {
             children: components["schemas"]["ChildStatusCounts"];
         };
         /**
+         * ToolExecutionView
+         * @description Detached status only; native results stay behind Harness result tools.
+         */
+        ToolExecutionView: {
+            /** Execution Id */
+            execution_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "lost";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Completed At
+             * @default null
+             */
+            completed_at?: string | null;
+            /**
+             * Result Available
+             * @default false
+             */
+            result_available?: boolean;
+            /**
+             * Foreground Released
+             * @default false
+             */
+            foreground_released?: boolean;
+            /**
+             * Delivery Acknowledged
+             * @default false
+             */
+            delivery_acknowledged?: boolean;
+            /**
+             * Available Actions
+             * @default []
+             */
+            available_actions?: "cancel"[];
+        };
+        /**
          * ToolImageView
          * @description Host-retained tool image, served through authenticated Thread attachment access.
          */
@@ -7358,6 +7443,11 @@ export interface components {
              * @default []
              */
             mcp_inputs?: components["schemas"]["McpInputRequestView"][];
+            /**
+             * Tool Executions
+             * @default []
+             */
+            tool_executions?: components["schemas"]["ToolExecutionView"][];
             /**
              * Recent Events
              * @default []
@@ -11741,6 +11831,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChildControlResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_executions_api_threads__thread_id__tool_executions_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_tool_execution_api_threads__thread_id__tool_executions__execution_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionView"];
                 };
             };
             /** @description Validation Error */

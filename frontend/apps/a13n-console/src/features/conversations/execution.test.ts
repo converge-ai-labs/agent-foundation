@@ -647,3 +647,21 @@ it("isolates inline model, edit, usage and interrupt facts when native IDs repea
     state.steps.find((step) => step.id === "1/model-request-1")?.usage,
   ).toBeUndefined();
 });
+
+it("keeps a retained execution handoff distinct from a successful tool result after sealing", () => {
+  const call = tool("lookup", "lookup-call");
+  const receipt = JSON.stringify({
+    type: "tool_execution_receipt",
+    execution_id: "exec-lookup",
+    tool_name: "lookup",
+    status: "running",
+  });
+  const state = foldRun(
+    { status: "completed", sealed_at: TIME },
+    call,
+    finish(call, { result: receipt }),
+  );
+  expect(state.steps.find((step) => step.id === "lookup-call")?.state).toBe(
+    "handed_off",
+  );
+});

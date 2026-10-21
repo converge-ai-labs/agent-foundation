@@ -32,6 +32,14 @@ flowchart TB
 
 Markdown opens in **Preview**; **Text** switches to the editor. Preview includes unsaved edits. **Add to chat** attaches selected source lines, or the complete file when nothing is selected, without sending. Agent links in the form `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` open the Files drawer. Bare paths and Files API URLs do not; external links open separately.
 
+## Tool executions and immediate steering
+
+While a Run is active, **Steer** interrupts primary model generation or releases supported tool waits by default. Tool review and validation finish first; the current batch returns results or retained-execution receipts, or suspends for approval, before the Agent continues with your guidance. Supported tool calls keep running once under their original ownership. Acceptance confirms that guidance was queued, not that the Agent has already incorporated it. Root and child steering use the same global `input.steering_mode`; select `queued` in configuration to wait for the next safe boundary instead. The composer needs no additional mode control.
+
+Open **Work → Tools** to inspect retained tool executions, view their originating Run and call, page through records, or cancel active work. The panel reads status without consuming results. The Agent retrieves results through `tool_execution_result` or `tool_execution_wait`; completion hints and subsequent input include current execution status. [Automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in for generic tools; process-backed Shell automatically yields after the configured foreground wait in either mode. Immediate steering can release foreground waits earlier. Shell processes remain in their separate process view.
+
+**Stop** cancels the conversation and suppresses automatic completion wake until new user input. It does not cancel every retained tool; use the execution's **Cancel** action for that. Cancellation acceptance is not proof of remote rollback. Records and results are process-local and expire under bounded retention; restarting the App makes old references unavailable.
+
 ## Organize Projects and work in a conversation
 
 1. Open **Home** or a Project’s **+** to start a draft. Select a Project when the Agent needs its server directories.

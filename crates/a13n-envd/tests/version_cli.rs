@@ -31,3 +31,43 @@ fn version_rejects_additional_arguments() {
         "a13n-envd failed: --version cannot be combined with other arguments\n"
     );
 }
+
+#[test]
+fn update_help_and_check_do_not_start_daemon() {
+    let temp = tempfile::tempdir().unwrap();
+    let copied = temp.path().join(if cfg!(windows) {
+        "a13n-envd.exe"
+    } else {
+        "a13n-envd"
+    });
+    std::fs::copy(env!("CARGO_BIN_EXE_a13n-envd"), &copied).unwrap();
+    for args in [
+        vec!["update", "--help"],
+        vec!["update", "--version", env!("CARGO_PKG_VERSION"), "--check"],
+        vec!["update", "--version", env!("CARGO_PKG_VERSION")],
+    ] {
+        let output = Command::new(&copied)
+            .args(args)
+            .env_clear()
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty());
+    }
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+    std::fs::write(
+        temp.path().join(".a13n-envd-version"),
+        env!("CARGO_PKG_VERSION"),
+    )
+    .unwrap();
+    let output = Command::new(&copied)
+        .args(["update", "--version", "9.9.9", "--check"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("pinned"));
+}

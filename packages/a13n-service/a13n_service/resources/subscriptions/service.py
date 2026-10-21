@@ -1,5 +1,6 @@
 """Webhook subscriptions and inspection of their deliveries; all of it is workspace `admin` configuration."""
 
+import base64
 import secrets
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -15,6 +16,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.resources.rows import audit_row, find_row, given, record_update
 from a13n_service.resources.subscriptions.schemas import (
+    SECRET_PREFIX,
     SECRET_UNAVAILABLE,
     CreatedSubscription,
     DeliveryPage,
@@ -31,6 +33,10 @@ from a13n_service.tenancy.authorize import Principal
 
 def signing_location(row: SubscriptionRow) -> SecretLocation:
     return SecretLocation(row.organization_id, "subscriptions", "signing_secret", row.id)
+
+
+def generated_signing_secret() -> str:
+    return SECRET_PREFIX + base64.b64encode(secrets.token_bytes(32)).decode("ascii")
 
 
 async def _permitted_url(
@@ -69,7 +75,6 @@ async def create_subscription(
 ) -> CreatedSubscription:
     """The signing secret, generated unless supplied, is returned here and never again."""
     url = await _permitted_url(storage, access, policy, actor, workspace_id, body.url, action="subscription.create")
-    secret = body.signing_secret.get_secret_value() if body.signing_secret else "whsec_" + secrets.token_urlsafe(32)
     async with administering_workspace(storage, access, actor, workspace_id, action="subscription.create") as (
         session,
         scope,
@@ -93,6 +98,7 @@ async def create_subscription(
             created_by_id=actor.id,
             updated_by_id=actor.id,
         )
+        secret = body.signing_secret.get_secret_value() if body.signing_secret else generated_signing_secret()
         row.signing_secret = keys.protect(secret.encode(), signing_location(row)).model_dump()
         session.add(row)
         audit_row(session, actor, row, "create")

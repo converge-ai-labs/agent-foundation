@@ -137,6 +137,21 @@ sequenceDiagram
 
 The stream is lazy: entering it performs preparation but no model or tool work. First iteration starts the async plugin invocation and, if middleware reaches the inner path, starts the first `ModelAttempt`. A plugin short-circuit starts no `ModelAttempt`.
 
+## Immediate Steering
+
+`HarnessRunStream.steer(..., immediate=False)` preserves ordinary queued steering. An explicit `immediate=True` requires a Host-supplied `RunBindings.tool_execution`, even during model-only generation. A missing runtime or active unsupported tool rejects the request before input acceptance. With the binding, immediate steering accepts input into the ordered mailbox and selects a handoff according to the active phase:
+
+| Active phase                                                                    | Handoff                                                                                                                                                          |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary model request, including its request hooks                              | Cancel and drain the native attempt, settle usable partial history, then continue with pending input.                                                            |
+| Tool review, argument validation, preparation, execution, or result integration | Keep the native attempt and original invocations running. Release supported foreground waits cooperatively, including calls admitted later in the current batch. |
+
+Auxiliary model requests used by tools belong to the tool phase. Tool-phase handoff preserves policy checks and the full native batch: each call produces its real result or retained execution receipt, or the batch suspends through native deferral, before a later primary model request. Input acceptance, phase selection and signaling form one non-yielding transition. Repeated requests add ordered input without cancelling tool work or repeatedly cancelling model-attempt cleanup. The next primary request starts with ordinary foreground-wait policy again. Run identity, usage accounting and bindings remain unchanged; immediate steering does not spend the model-failure retry budget.
+
+[Host-held tool execution](07-tool-execution.md#host-held-tool-executions) preserves an admitted invocation and its scope. Interruption settlement keeps an existing result, uses an available completed result, or records the accepted execution receipt. A recorded receipt remains unchanged when its result later arrives. Whole CodeAct runners and top-level Shell calls use this boundary; their nested tool calls await native results without independent runtime admission. Unsupported tool handoff fails explicitly rather than cancelling and reissuing an operation. Immediate scheduling and automatic timeout-based offload are independent options.
+
+The returned enqueue identity acknowledges acceptance, not completed handoff or model incorporation. Accepted input remains pending until canonical history proves incorporation. Export and graceful interrupt-save retain pending input through existing state-publication boundaries; immediate steering adds no unconditional checkpoint write. At a terminal boundary, pending input either continues the current Run or follows the Host's next-Run policy. Explicit cancellation ends the conversation Run. Hosts separately cancel retained executions and control automatic wake after Stop.
+
 ## Model Attempt Recovery
 
 `ModelRecoveryPolicy` is disabled by default. When enabled, `max_attempts` bounds consecutive failed attempts without an accepted primary model response, including the initial failed attempt. It defaults to five: one initial attempt and at most four recovery continuations in each failure streak. It does not cap the cumulative number of `ModelAttempt` values in a logical Run. The policy owns:

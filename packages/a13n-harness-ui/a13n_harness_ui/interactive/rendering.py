@@ -17,9 +17,10 @@ from .input_display import composer_piece
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
 from .tool_rows import (
     CONTEXT_TOOLS,
-    EXPLORATION_TOOLS,
-    ExplorationGroup,
-    ExplorationMember,
+    ToolActivityGroup,
+    ToolActivityMember,
+    activity_kind,
+    execution_result_row,
     failure_reason,
     semantic_tool_row,
     subagent_result_row,
@@ -227,7 +228,6 @@ class Status:
             f"cache {self.cache_rate_text}",
             cost,
             f"{'think' if compact else 'Thinking'} {self.thinking}",
-            *((f"Fast {self.fast_label}",) if speed_label is None else ()),
             *((f"Mode {self.reasoning_mode_label}",) if self.reasoning_mode != "pro" else ()),
             self.model.split(":")[-1],
             _elapsed_text(elapsed),
@@ -275,8 +275,8 @@ class _ToolPreview:
     protocol_result_seen: bool = False
     semantic: str = ""
     read_path: str | None = None
-    group: ExplorationGroup | None = None
-    member: ExplorationMember | None = None
+    group: ToolActivityGroup | None = None
+    member: ToolActivityMember | None = None
 
 
 @dataclass(slots=True)
@@ -339,7 +339,7 @@ class StreamRenderer:
         self._display_items: dict[str, Item] = {}
         self._display_blocks: dict[str, int] = {}
         self._display_staged: list[Item] = []
-        self._exploration: ExplorationGroup | None = None
+        self._activity: ToolActivityGroup | None = None
         self._context: dict[tuple[str, str], ContextActivity] = {}
         self._write_notices: dict[tuple[str, str, str], None] = {}
         # Root deferred call IDs survive a fresh response Run. Other tools and
@@ -991,7 +991,7 @@ class StreamRenderer:
         assistant = message and not user
         identity = terminal_text(execution_id or run_id)
         if thinking or message:
-            self._exploration = None
+            self._activity = None
             if not user and not child and self.status.state != "cancelling":
                 self.status.state = "thinking" if thinking else "responding"
             if child and not detailed:
@@ -1052,13 +1052,14 @@ class StreamRenderer:
             preview = self._tools.get(key)
             label = f"{identity} / {call_id}" if child else call_id
             if event_type.endswith("START"):
-                if self._exploration is not None and self._exploration.members:
-                    if next(reversed(self.transcript.blocks), None) != self._exploration.members[-1].block_id:
-                        self._exploration = None
+                if self._activity is not None and self._activity.members:
+                    if next(reversed(self.transcript.blocks), None) != self._activity.members[-1].block_id:
+                        self._activity = None
                 preview = _ToolPreview(str(payload.get("toolCallName") or "tool")[:60], time.monotonic())
                 preview.semantic, preview.read_path = semantic_tool_row(preview.name, "", self.status.directory)
-                if preview.name not in EXPLORATION_TOOLS:
-                    self._exploration = None
+                group_kind = activity_kind(preview.name)
+                if group_kind is None:
+                    self._activity = None
                 self._tools[key] = preview
                 if not child and self.status.state != "cancelling":
                     self.status.state = preview.name
@@ -1076,16 +1077,17 @@ class StreamRenderer:
                     self.transcript.preview(preview.block_id, brief)
                     if preview.name in CONTEXT_TOOLS or preview.name == "ask_user_question":
                         self.transcript.blocks[preview.block_id].concise_hidden = True
-                    elif preview.name in EXPLORATION_TOOLS:
+                    elif group_kind is not None:
                         group_identity = (run_id, execution_id if child else None)
                         if (
-                            self._exploration is None
-                            or self._exploration.identity != group_identity
-                            or len(self._exploration.members) >= 16
+                            self._activity is None
+                            or self._activity.identity != group_identity
+                            or self._activity.kind != group_kind
+                            or len(self._activity.members) >= 16
                         ):
-                            self._exploration = ExplorationGroup(group_identity)
-                        preview.group = self._exploration
-                        preview.member = ExplorationMember(preview.block_id, brief)
+                            self._activity = ToolActivityGroup(group_identity, kind=group_kind)
+                        preview.group = self._activity
+                        preview.member = ToolActivityMember(preview.block_id, brief)
                         preview.group.members.append(preview.member)
                         preview.group.refresh(self.transcript)
                     self.append(header + "\n", display=False)
@@ -1143,7 +1145,7 @@ class StreamRenderer:
                         if child:
                             brief += f" | {identity}"
                     failed = state.startswith("failed") or state in {"retry", "denied"}
-                    if name not in {"edit", "multi_edit"}:
+                    if name not in {"edit", "multi_edit"} and not state.startswith("execution handed off"):
                         semantic = (
                             preview.semantic if preview else semantic_tool_row(name, "", self.status.directory)[0]
                         )
@@ -1152,7 +1154,11 @@ class StreamRenderer:
                         elif failed:
                             brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(result_text, state)} — {semantic}"
                         else:
-                            brief = subagent_result_row(name, semantic, text) or semantic
+                            brief = (
+                                execution_result_row(name, semantic, result_text)
+                                or subagent_result_row(name, semantic, text)
+                                or semantic
+                            )
                             if name in {"note_write", "note_delete"} and state in {
                                 "created",
                                 "updated",
@@ -1283,7 +1289,7 @@ class StreamRenderer:
                 self._tools.pop(next(iter(self._tools)))
             return
         if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
-            self._exploration = None
+            self._activity = None
             self.end_process_observations(run_id)
         if event_type == "RUN_FINISHED":
             outcome = payload.get("outcome")
@@ -1376,7 +1382,7 @@ class StreamRenderer:
                 if context_content or (
                     name == "a13n.harness.context" and context_kind.startswith(("compaction_", "handoff_"))
                 ):
-                    self._exploration = None
+                    self._activity = None
                     if not child or detailed:
                         observation = event if context_content else mutation
                         assert isinstance(observation, dict)

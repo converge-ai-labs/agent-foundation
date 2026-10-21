@@ -53,7 +53,7 @@ curl -X POST "$A13N_URL/api/v1/subscriptions" \
 
 - `kinds` selects events: `run.accepted`, `run.running`, `run.waiting`, `run.completed`, `run.failed`, `run.cancelled`, and for attempts `run_attempt.leased`, `run_attempt.running`, `run_attempt.succeeded`, `run_attempt.yielded`, `run_attempt.failed`, `run_attempt.cancelled`.
 - `filter` optionally narrows events to an `agent_id`, `session_id`, `thread_id` or `schedule_id`. Conditions combine with AND; an event lacking a specified identity does not match. The Schedule filter also applies to Run and Attempt events through their origin.
-- `signing_secret` (16–256 characters) is optional; without it the Service generates one. The secret is returned only in the creation response.
+- `signing_secret` is optional: `whsec_` followed by the standard base64 of 24 to 64 bytes, as [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) defines it. Without it the Service generates one from 32 random bytes. Any other value is rejected with `invalid_argument`. The secret is returned only in the creation response. Subscriptions created before this format must be re-keyed: send a `PATCH` with a new `whsec_…` secret as an admin, or recreate the subscription. Deliveries queued before the upgrade cannot be recovered: they fail with `signing_secret_unavailable`, and redelivering them reuses the old secret.
 - `PATCH` changes the name, URL, kinds, filter, `enabled` or `signing_secret`; `DELETE` removes the subscription. Both take `If-Match`. Changes affect only deliveries queued afterwards.
 - A workspace has at most `control.subscriptions` subscriptions (32 by default). The URL must pass the [outbound policy](configuration.md#outbound-requests) when saved and on every delivery.
 
@@ -79,33 +79,25 @@ Run events carry `attempt: null`; attempt events add the attempt's `id`, `number
 
 Schedule payloads replace `run` and `attempt` with `schedule` containing `id`, `session_id`, `agent_id`, `name`, `state`, `pause_reason` and `version`. Occurrence payloads contain `occurrence`, the compact history record with `schedule_id`, status/reason and completion fields, without the input snapshot. All event families share `id`, `type`, `occurred_at` and `workspace_id`. Completion reports `execution_outcome`, `completion_run_id` and `completed_at`. Run payloads include nullable `schedule_origin: {schedule_id, occurrence_id}`.
 
-Every request carries:
+Deliveries are signed with the [Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks) scheme, so an unmodified Standard Webhooks library verifies them. Every request carries:
 
-| Header                     | Value                                                                                                       |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `X-A13n-Delivery-Id`       | The delivery ID, also the payload `id`. Use it to discard duplicates.                                       |
-| `X-A13n-Webhook-Timestamp` | Unix seconds when the request was signed.                                                                   |
-| `X-A13n-Webhook-Signature` | `v1=` followed by the hex HMAC-SHA256 of `{timestamp}.{delivery_id}.{body}`, keyed with the signing secret. |
+| Header              | Value                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `webhook-id`        | The delivery ID, also the payload `id`. Use it as the idempotency key to discard duplicates.                                         |
+| `webhook-timestamp` | Unix seconds when the request was signed.                                                                                            |
+| `webhook-signature` | `v1,` followed by the base64 HMAC-SHA256 of `{webhook-id}.{webhook-timestamp}.{body}`, keyed with the base64-decoded signing secret. |
 
-Verify the signature over the raw body and reject stale timestamps. This example allows five minutes of clock difference; choose a window for your receiver and keep its clock synchronized:
+Verify with a Standard Webhooks library over the raw body, exactly as received and not re-serialized. The library rejects a timestamp more than five minutes from your clock, so keep the receiver's clock synchronized. The earlier `X-A13n-*` headers and hex signature are no longer sent.
 
 ```python
-import hashlib
-import hmac
-import time
+from standardwebhooks import Webhook, WebhookVerificationError
 
-def verify(secret: str, headers, body: bytes, *, max_age_seconds: int = 300) -> bool:
+def handle(secret: str, headers, body: bytes) -> None:
     try:
-        timestamp = headers["X-A13n-Webhook-Timestamp"]
-        delivery_id = headers["X-A13n-Delivery-Id"]
-        received = headers["X-A13n-Webhook-Signature"]
-        if abs(time.time() - int(timestamp)) > max_age_seconds:
-            return False
-    except (KeyError, ValueError):
-        return False
-    signed = f"{timestamp}.{delivery_id}.".encode() + body
-    expected = "v1=" + hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, received)
+        event = Webhook(secret).verify(body, headers)  # webhook-id, webhook-timestamp, webhook-signature
+    except WebhookVerificationError:
+        return  # reject with a 4xx
+    ...  # skip the event when headers["webhook-id"] was already processed
 ```
 
 ### Delivery and retries

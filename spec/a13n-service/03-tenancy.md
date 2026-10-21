@@ -226,7 +226,7 @@ Accepting work requires `run` in the workspace and records the caller's verbs th
 
 Credential expiry, logout and API-key revocation stop further requests, not accepted work. Accepted work is stopped by interrupt, by disabling the principal, by removing its grants or by archiving the workspace. The worker rechecks authority every `worker.authority_seconds`, and a run whose principal lost it fails with `authority_revoked` ([05](05-runs.md#claim-heartbeat-and-authority)); calls already dispatched still complete.
 
-Schedule creation also persists recurring execution authority. Its creator restrictions, immutable ceiling and stop semantics are owned by [Schedule authority](13-schedules.md#authority). Schedule HTTP endpoints are not admitted to Run platform credentials or MCP.
+Schedule creation also persists recurring execution authority. Its creator restrictions, immutable ceiling and stop semantics are owned by [Schedule authority](13-schedules.md#authority). Schedule management is admitted to MCP and Run platform credentials through the `schedules` group; its durable authority remains bounded by the originating Run ceiling.
 
 ### Run platform credentials
 
@@ -236,7 +236,7 @@ A trusted Worker holding the current unexpired Attempt lease may issue a short-l
 
 Every MCP or direct HTTP request validates token integrity and expiry, the Run's running and non-cancelled state, current Attempt and lease, active principal and workspace, and current execution authority. The resulting principal is confined to the Run's workspace with the intersection of current verbs and the persisted ceiling. New grants never widen old work. Session logout or expiry/revocation of the original accepting API key does not revoke this independent accepted-work credential. Cancelled/sealed Runs and expired, yielded or replaced Attempts cannot issue or use it.
 
-The HTTP boundary admits only explicitly marked platform operations in those groups. MCP discovery and invocation apply that same metadata. The Host offers the model only the enabled tools, so the groups are a ceiling on, not a copy of, the tool selection. Account, permission and credential management, execution control, browser authorization and unselected operations refuse even if addressed directly. Forwarding preserves the Run token; it never substitutes a broader user credential. Existing business authorization and version checks still apply.
+The HTTP boundary admits only explicitly marked platform operations in those groups. MCP discovery and invocation apply that same metadata. The Host offers the model only the enabled tools, so the groups are a ceiling on, not a copy of, the tool selection. Account, permission and credential management, direct Run control, browser authorization and unselected operations refuse even if addressed directly. Forwarding preserves the Run token; it never substitutes a broader user credential. Existing business authorization and version checks still apply.
 
 The Host refreshes before sending requests and never retries an unknown write as part of refresh. Accepted calls retain their ordinary completion semantics; revocation does not undo effects already committed. Audit keeps the actual actor and adds source Run, Attempt and request IDs. Tokens, lease secrets, cookies and credential headers remain outside model-visible values and stored Agent configuration.
 

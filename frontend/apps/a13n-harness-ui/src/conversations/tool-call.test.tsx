@@ -599,3 +599,39 @@ it("distinguishes process listing from single-process inspection", () => {
     }),
   ).toMatchObject({ label: "Inspect process", summary: "process-one" });
 });
+
+it("renders retained execution receipts as handoffs in live and saved tools", () => {
+  const receipt = {
+    type: "tool_execution_receipt",
+    execution_id: "exec-lookup",
+    tool_name: "lookup",
+    status: "running",
+  };
+  const tool = { id: "call", name: "lookup", result: receipt };
+  expect(describeTool(tool).phase).toBe("Execution handed off");
+  expect(describeTool({ ...tool, result: JSON.stringify(receipt) }).phase).toBe(
+    "Execution handed off",
+  );
+  expect(
+    describeTool({ ...tool, result: { ...receipt, type: undefined } }).phase,
+  ).toBe("Result received");
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_call_id: "call",
+          tool_name: "lookup",
+          value: {},
+        },
+        { kind: "tool_result", tool_call_id: "call", value: receipt },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const saved = savedTools(entries).get(entries[0].parts[0])!;
+  expect(describeTool(saved).phase).toBe("Execution handed off");
+  render(<ToolCall tool={saved} />);
+  expect(screen.getByText("Execution handed off")).toBeTruthy();
+  expect(screen.queryByText("Result received")).toBeNull();
+});

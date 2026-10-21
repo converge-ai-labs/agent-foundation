@@ -45,6 +45,17 @@ Run one foreground WebUI server with bundled browser assets.
 | `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`        | Disable Web authentication only; does not change Agent permissions.                                                   |
 | `--share-computer` / `--no-share-computer`                      | boolean          | `true`         | Share native Host Files, Git Changes, and Terminal panels as the server OS account, independent of Agent permissions. |
 
+### `envd update`
+
+Update Envd without starting the App. Stop daemons using the installation first. With no executable override, prepare the client-selected managed version. See [Envd maintenance](automation-and-troubleshooting.md).
+
+| Parameter      | Type / choices | Parser default | Meaning                                                                          |
+| -------------- | -------------- | -------------- | -------------------------------------------------------------------------------- |
+| `--executable` | path           | not set        | Override the configured runtime with a standalone executable.                    |
+| `--version`    | text           | not set        | Exact native version; managed installations remain pinned to the client version. |
+| `--check`      | boolean        | `false`        | Inspect the selected update without installing.                                  |
+| `--force`      | boolean        | `false`        | Reinstall the selected version; mutually exclusive with `--check`.               |
+
 ### `update`
 
 Update this uv-tool installation now, without starting the TUI or setup.
@@ -297,6 +308,7 @@ Type these in the TUI composer, not your shell. Tab completes supported syntax; 
 | `/recover`                                                    | —       | No         | Restore an unsent prompt.                                                                                                                                                                  |
 | `/status`                                                     | —       | Yes        | Show Model, context, Environment, and subscription usage.                                                                                                                                  |
 | `/ps`                                                         | —       | Yes        | Inspect observed background processes and their last reported status.                                                                                                                      |
+| `/executions [offset\|cancel execution-id]`                   | —       | Yes        | Inspect a page of retained tool executions or request cancellation.                                                                                                                        |
 | `/subagents [execution-id\|next]`                             | —       | Yes        | Inspect this conversation's child executions and retained output.                                                                                                                          |
 | `/usage [all\|root\|subagents\|details\|subscription\|reset]` | —       | Yes        | Show this Thread's tokens, costs, and models for all/root/subagents; details adds attribution and Runs. Subscription limits and confirmed Codex reset credits are separate.                |
 | `/goal task description`                                      | —       | No         | Work toward a goal with completion audits and bounded continuations.                                                                                                                       |
@@ -319,11 +331,13 @@ Type these in the TUI composer, not your shell. Tab completes supported syntax; 
 
 `/thinking` opens the selected Model's supported choices; command completion uses the same list. `default` inherits the Model's configured settings. Depending on the model and adapter, explicit choices can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported choices are rejected, and unknown models offer only default with an explanation. `/environment` selects `full-control`, `envd`, `desktop`, or `sandbox` where supported. `envd` and `desktop` prepare the runtime before changing the current conversation's next-turn profile; a failed check preserves the selection. This changes the Thread, not the new-conversation default. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
 
+`/steer message` and Enter while busy use the global `input.steering_mode`, defaulting to model interruption or cooperative tool handoff after review and validation while supported tool work continues once. Select `queued` globally to wait for the next safe boundary. `/executions` reads status without consuming results. `/cancel` stops the conversation and suppresses automatic tool-completion wake until new input; `/executions cancel execution-id` separately requests cancellation of retained work. Records are process-local. See [tool execution controls](webui.md#tool-executions-and-immediate-steering).
+
 ## Consequential actions and limitations
 
 - `auth key delete REFERENCE --yes` skips the delete confirmation explicitly; it does not make deletion reversible.
 - `plugin uninstall ID` removes installed files and edits immediately. It is not merely disabling a source.
-- `update` requests installation without a second confirmation. A startup update check still requires confirmation before installation.
+- `update` and `envd update` request installation without a second confirmation. Startup update detection only displays a notice; it never installs.
 - `import subagents` previews unless `--apply` is supplied; imported files are not automatically enrolled in every Agent.
 - One-shot `run` does not open interactive approval selectors; suspended/failed operations exit nonzero. Resume interactively for decisions.
 - `webui --dangerous-skip-permissions` changes HTTP authentication only, not Agent execution permissions. Read [WebUI](webui.md) before exposing a listener.

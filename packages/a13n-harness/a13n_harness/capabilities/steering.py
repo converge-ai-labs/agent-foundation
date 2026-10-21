@@ -22,7 +22,9 @@ from a13n_harness.state import AgentContextState
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
-    from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.capabilities import WrapModelRequestHandler
+    from pydantic_ai.messages import ModelMessage, ModelResponse
+    from pydantic_ai.models import ModelRequestContext
 
     from a13n_harness.context import AgentContext
 
@@ -41,8 +43,9 @@ class _SteeringState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     retained_requests: tuple[ModelRequest, ...] = ()
+    pending_requests: tuple[ModelRequest, ...] = ()
 
-    @field_validator("retained_requests")
+    @field_validator("retained_requests", "pending_requests")
     @classmethod
     def _validate_retained_requests(cls, value: tuple[ModelRequest, ...]) -> tuple[ModelRequest, ...]:
         for request in value:
@@ -72,6 +75,8 @@ class SteeringBridge:
         self._pending_requests: dict[str, ModelRequest] = {}
         self._active_context: RunContext[Any] | None = None
         self._prepared = False
+        self._between_attempts = False
+        self.model_active = False
         self._lock = asyncio.Lock()
 
     @property
@@ -103,36 +108,57 @@ class SteeringBridge:
             replayed.append(request)
         return tuple(replayed)
 
-    async def prepare(self, input: SemanticRunInput, *, restore_retained: bool) -> None:
-        """Start this logical run's retained-input ledger."""
+    async def prepare(self, *, restore_retained: bool) -> tuple[ModelRequest, ...]:
+        """Start the logical Run's ledger and restore its accepted pending inputs."""
         async with self._lock:
             if self._prepared:
-                return
+                return ()
+            restored = await self._state.read(STEERING_CAPABILITY_ID, _SteeringState, version=_STEERING_STATE_VERSION)
+            pending = restored.pending_requests if restored is not None else ()
+            self._pending_requests = {uuid4().hex: request for request in pending}
             retained: tuple[ModelRequest, ...] = ()
             if self._retain_inputs:
-                if restore_retained:
-                    restored = await self._state.read(
-                        STEERING_CAPABILITY_ID,
-                        _SteeringState,
-                        version=_STEERING_STATE_VERSION,
-                    )
-                    if restored is not None:
-                        retained = restored.retained_requests
-                if input.value is not None:
-                    retained = (*retained, _request_for_input(input.value, source_run_id=self._run_id))
+                if restore_retained and restored is not None:
+                    retained = restored.retained_requests
                 await self._write(retained)
             self._retained_requests = deepcopy(retained)
             self._prepared = True
+            return deepcopy(pending)
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None) -> str:
+    async def retain_initial(self, input: SemanticRunInput) -> None:
+        """Append this Run's input after restored pending inputs enter history."""
+        if self._retain_inputs and input.value is not None:
+            async with self._lock:
+                self._retained_requests = (
+                    *self._retained_requests,
+                    _request_for_input(input.value, source_run_id=self._run_id),
+                )
+                await self._write(self._retained_requests)
+
+    def pause(self) -> None:
+        """Keep accepting ordered input while the current native attempt drains."""
+        self._between_attempts = True
+
+    async def checkpoint(self, messages: Sequence[ModelMessage]) -> None:
+        """Reconcile incorporation and retain accepted inputs at the normal save boundary."""
+        await self.resolve_delivered(messages)
+        async with self._lock:
+            if self._prepared:
+                await self._write(self._retained_requests)
+
+    async def steer(
+        self,
+        input: RunInputValue,
+        *,
+        input_id: str | None = None,
+        before_accept: Callable[[], None] | None = None,
+        after_accept: Callable[[], None] | None = None,
+    ) -> str:
         """Enqueue one user steering value for the active native run.
 
         A host that needs durable evidence passes its own `input_id`; `steering_input_ids` finds it in
         exported history once the value has been delivered.
         """
-        active = self._active_context
-        if active is None:
-            raise RunError("The Agent is not accepting steering.", code="run_not_active")
         if input_id is not None and not 1 <= len(input_id) <= 256:
             raise RunError("A steering input ID must have 1 to 256 characters.", code="input_invalid")
         normalized = normalize_input(input)
@@ -142,11 +168,22 @@ class SteeringBridge:
             source_run_id=self._run_id,
             input_id=input_id or uuid4().hex,
         )
-        enqueue_id = active.enqueue(request, priority="asap")
-        if enqueue_id is None:
-            raise RunError("Steering input must not be empty.", code="input_empty")
         async with self._lock:
+            active = self._active_context
+            if active is None and not self._between_attempts:
+                raise RunError("The Agent is not accepting steering.", code="run_not_active")
+            if before_accept is not None:
+                before_accept()
+            if self._between_attempts:
+                enqueue_id = uuid4().hex
+            else:
+                assert active is not None
+                enqueue_id = active.enqueue(request, priority="asap")
+            if enqueue_id is None:
+                raise RunError("Steering input must not be empty.", code="input_empty")
             self._pending_requests[enqueue_id] = deepcopy(request)
+            if after_accept is not None:
+                after_accept()
         await self._emit_enqueued(enqueue_id, source="external", references=())
         return enqueue_id
 
@@ -235,10 +272,10 @@ class SteeringBridge:
                         if _NOTIFICATION_SOURCE_METADATA_KEY not in (self._pending_requests[enqueue_id].metadata or {})
                     ),
                 )
-                await self._write(retained)
                 self._retained_requests = deepcopy(retained)
             for enqueue_id in applied_enqueue_ids:
                 self._observe_delivered(enqueue_id, self._pending_requests.pop(enqueue_id))
+            await self._write(self._retained_requests)
 
     def _observe_delivered(self, enqueue_id: str, request: ModelRequest) -> None:
         if self._delivered is not None:
@@ -252,9 +289,9 @@ class SteeringBridge:
                 return
             if self._retain_inputs and _NOTIFICATION_SOURCE_METADATA_KEY not in (request.metadata or {}):
                 retained = (*self._retained_requests, request)
-                await self._write(retained)
                 self._retained_requests = deepcopy(retained)
             self._observe_delivered(enqueue_id, self._pending_requests.pop(enqueue_id))
+            await self._write(self._retained_requests)
 
     async def bind(self, ctx: RunContext[Any]) -> bool:
         """Bind the outer native attempt and redeliver its unresolved public inputs."""
@@ -262,6 +299,7 @@ class SteeringBridge:
             if self._active_context is not None:
                 return False
             self._active_context = ctx
+            self._between_attempts = False
             if not self._pending_requests:
                 return True
             pending = tuple(self._pending_requests.values())
@@ -306,7 +344,14 @@ class SteeringBridge:
     async def _write(self, retained: tuple[ModelRequest, ...]) -> None:
         await self._state.write(
             STEERING_CAPABILITY_ID,
-            _SteeringState(retained_requests=retained),
+            _SteeringState(
+                retained_requests=retained,
+                pending_requests=tuple(
+                    request
+                    for request in self._pending_requests.values()
+                    if _INPUT_ID_METADATA_KEY in (request.metadata or {})
+                ),
+            ),
             version=_STEERING_STATE_VERSION,
         )
 
@@ -360,6 +405,28 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
         replacement = SteeringCapability()
         ctx.deps._record_run_capability(STEERING_CAPABILITY_ID, replacement)
         return replacement
+
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
+        # Only the primary request owns the interruptible generation window.
+        # Tool preparation and response-to-tool transitions stay outside it;
+        # review/helper Agents sharing these deps cannot change its phase.
+        if ctx.run_id != ctx.deps._model_input.attempt_id:
+            return await handler(request_context)
+        bridge = ctx.deps._steering
+        ctx.deps._tool_executions.handoff_requested.clear()
+        bridge.model_active = True
+        try:
+            return await handler(request_context)
+        finally:
+            # Revoke preemption synchronously before the response is committed
+            # and tools can start. Native cancellation drains the request first.
+            bridge.model_active = False
 
     async def wrap_run(
         self,

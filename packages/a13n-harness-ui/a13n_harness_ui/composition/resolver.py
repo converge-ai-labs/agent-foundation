@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from a13n_harness import RunConfiguration
+from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
     EnvironmentRunExtensionFactoryRegistration,
@@ -269,6 +269,7 @@ class AgentCompositionResolver:
                 project_roots=selection.local_roots,
                 memory_enabled=source.document.memory.enabled,
                 run_configuration=source.document.run_configuration,
+                tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
                 root=self._live_node(source),
                 environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
@@ -301,6 +302,7 @@ class AgentCompositionResolver:
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
             run_configuration=run_configuration or source.document.run_configuration,
+            tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,

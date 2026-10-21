@@ -33,6 +33,8 @@ dev = [
     "pytest-timeout>=2.4,<3",
     "pytest-xdist>=3.8,<4",
     "ruff>=0.16,<0.17",
+    # Verifies webhook deliveries against the reference implementation of the scheme the Service signs with.
+    "standardwebhooks>=1.1,<2",
     # 4.15.0 reads mapped ports before Docker publishes them; retain readiness retries.
     "testcontainers[postgres,redis]==4.13.1",
     "types-aiobotocore-s3>=2.1,<3",

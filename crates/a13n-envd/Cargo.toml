@@ -52,6 +52,12 @@ tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
 url = "2.5.7"
 rcgen = "0.14"
 zeroize = "1.8"
+semver = "1"
+tempfile = "3"
+self-replace = "1.5"
+flate2 = "1"
+tar = "0.4"
+zip = { version = "4", default-features = false, features = ["deflate"] }
 
 [target.'cfg(all(target_arch = "aarch64", any(target_os = "linux", target_os = "macos")))'.dependencies]
 # sha2 0.10 gates ARM SHA intrinsics behind asm, with runtime CPU detection and fallback.

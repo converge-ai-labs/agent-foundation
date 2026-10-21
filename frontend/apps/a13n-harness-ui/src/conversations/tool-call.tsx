@@ -16,6 +16,7 @@ import {
   Chats,
   ListChecks,
   UsersThree,
+  Hourglass,
 } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
@@ -254,6 +255,13 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       {info.errorText && (
         <p role="status" className={styles.error}>
           {info.errorText}
+        </p>
+      )}
+      {info.executionReceipt && (
+        <p role="status">
+          Execution <code>{info.executionReceipt.execution_id}</code> was handed
+          off ({info.executionReceipt.status} at handoff). This is a receipt;
+          the retained result is retrieved separately.
         </p>
       )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
@@ -734,6 +742,7 @@ export const ToolActivity = memo(function ToolActivity({
     edit: PencilSimple,
     work: ListChecks,
     subagents: UsersThree,
+    executions: Hourglass,
   }[kind];
   return (
     <section
@@ -742,6 +751,7 @@ export const ToolActivity = memo(function ToolActivity({
       data-tool-id={tools[0].id}
     >
       <DisclosureSection
+        className={styles.groupDisclosure}
         open={expanded}
         onOpenChange={setExpanded}
         title={

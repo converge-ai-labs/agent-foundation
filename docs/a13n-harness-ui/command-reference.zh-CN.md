@@ -45,6 +45,17 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `--dangerous-skip-permissions, --dangerously-bypass-permission` | 布尔值        | `false`       | 只关闭 Web 身份验证，不改变 Agent 权限。                                               |
 | `--share-computer` / `--no-share-computer`                      | 布尔值        | `true`        | 以服务器 OS 账户共享原生 Host Files、Git Changes 和 Terminal 面板，与 Agent 权限独立。 |
 
+### `envd update`
+
+更新 Envd，不启动 App。先停止使用该安装的守护进程。未指定可执行文件覆盖时，准备客户端选定的托管版本。参见 [Envd 维护](automation-and-troubleshooting.md)。
+
+| 参数           | 类型 / 选项 | 解析器默认值 | 含义                                       |
+| -------------- | ----------- | ------------ | ------------------------------------------ |
+| `--executable` | 路径        | 未设置       | 使用独立可执行文件覆盖配置的运行时。       |
+| `--version`    | 文本        | 未设置       | 精确原生版本；托管安装仍固定为客户端版本。 |
+| `--check`      | 布尔值      | `false`      | 查看所选更新，不执行安装。                 |
+| `--force`      | 布尔值      | `false`      | 重新安装所选版本；与 `--check` 互斥。      |
+
 ### `update`
 
 立即更新当前 uv tool 安装，不启动 TUI 或设置。
@@ -297,6 +308,7 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 | `/recover`                                                    | —       | 否         | 恢复未发送提示。                                                                                                                            |
 | `/status`                                                     | —       | 是         | 显示 Model、上下文、Environment 和订阅用量。                                                                                                |
 | `/ps`                                                         | —       | 是         | 查看观测的后台进程及其最后报告状态。                                                                                                        |
+| `/executions [offset\|cancel execution-id]`                   | —       | 是         | 分页查看保留的工具执行，或请求取消。                                                                                                        |
 | `/subagents [execution-id\|next]`                             | —       | 是         | 查看本对话子级执行和保留输出。                                                                                                              |
 | `/usage [all\|root\|subagents\|details\|subscription\|reset]` | —       | 是         | 按 all/root/subagents 查看当前 Thread 的 token、费用和各模型明细；details 补充归属和 Run。订阅限额与需确认的 Codex 重置额度单独查询或操作。 |
 | `/goal task description`                                      | —       | 否         | 朝目标工作，带完成审核和有上限的续接。                                                                                                      |
@@ -319,11 +331,13 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 
 `/thinking` 打开所选 Model 支持的选项；命令补全使用相同列表。`default` 继承 Model 配置。按模型和适配器，显式选择可能包括 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。不支持的选项会被拒绝；未知模型仅提供 default 并解释原因。`/environment` 在支持时选择 `full-control`、`envd`、`desktop` 或 `sandbox`。`envd` 和 `desktop` 先准备运行时，再修改当前对话下一轮的 profile；检查失败保留原选择。此操作修改当前 Thread，不修改新对话默认值。原生 `/steer` 保留整个尾随消息，不拆成 shell 词语。
 
+`/steer message` 和忙碌时的 Enter 使用全局 `input.steering_mode`，默认中断主模型生成，或在审查和参数校验后协作交接工具等待，同时保留支持的工具执行。全局选择 `queued` 可改为等待下一个安全边界。`/executions` 只读取状态，不消耗结果。`/cancel` 停止对话，并在新输入到来前禁止工具完成事件自动唤醒；`/executions cancel execution-id` 单独请求取消保留的执行。记录只存在于当前进程。详见[工具执行控制](webui.md#tool-executions-and-immediate-steering)。
+
 ## 重要操作与限制
 
 - `auth key delete REFERENCE --yes` 显式跳过删除确认，不使删除变得可逆。
 - `plugin uninstall ID` 立即删除安装文件和修改，不只是关闭来源。
-- `update` 请求安装，不再次确认。启动更新检查仍需在安装前确认。
+- `update` 和 `envd update` 请求安装，不再次确认。启动更新检测只显示提示，从不安装。
 - `import subagents` 未提供 `--apply` 时只预览；导入文件不会自动加入每个 Agent。
 - 单次 `run` 不打开交互审批选择器；挂起/失败操作以非零状态退出。需要决策时以交互方式恢复。
 - `webui --dangerous-skip-permissions` 只改变 HTTP 身份验证，不改变 Agent 执行权限。暴露监听器前阅读 [WebUI](webui.md)。

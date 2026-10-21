@@ -645,6 +645,90 @@ class CliShell:
         self._emit_decision()
         self.bell()
 
+    async def _watch_background_runs(self) -> None:
+        """Observe App-admitted continuations; the terminal never resubmits their input."""
+        assert self.backend is not None
+        backend = self.backend
+        from a13n_harness_ui.errors import LivePresentationError
+
+        noticed: dict[str, None] = {}
+        pending: dict[str, str] = {}
+        changed = asyncio.Event()
+
+        async def observe() -> None:
+            while not self.closing:
+                await changed.wait()
+                changed.clear()
+                thread_id = backend.thread_id
+                # Drain the foreground reader without blocking summary delivery.
+                if self.busy and self.job is not None:
+                    await asyncio.shield(asyncio.gather(self.job, return_exceptions=True))
+                if self.closing or thread_id is None or backend.thread_id != thread_id:
+                    continue
+                records = await backend.app.tool_executions(thread_id, limit=100)
+                if backend.thread_id != thread_id:
+                    continue
+                for record in records:
+                    if (
+                        record.foreground_released
+                        and record.completed_at is not None
+                        and record.execution_id not in noticed
+                    ):
+                        noticed[record.execution_id] = None
+                        self.emit(f"Tool execution {record.status} · {record.tool_name} · {record.execution_id}")
+                while len(noticed) > 256:
+                    noticed.pop(next(iter(noticed)))
+                operation = await backend.app.active_root_operation(thread_id)
+                if operation is not None:
+                    pending.setdefault(operation.receipt.receipt_id, thread_id)
+                while pending and not self.busy and backend.thread_id == thread_id:
+                    receipt_id = next(iter(pending))
+                    owner = pending.pop(receipt_id)
+                    if owner != thread_id or receipt_id in backend.observed_receipts:
+                        continue
+                    self.launch(backend.observe_operation(self.renderer, receipt_id, flush=self.flush), kind="run")
+                    # Another queued completion must be observed even if no more
+                    # summary events arrive after this reader finishes.
+                    changed.set()
+                if pending:
+                    changed.set()
+
+        async with asyncio.TaskGroup() as tasks:
+            observer = tasks.create_task(observe())
+            try:
+                first = True
+                while not self.closing:
+                    try:
+                        async with backend.app.summary_events() as events:
+                            if first:
+                                # Existing terminal records are history, not new alerts.
+                                if backend.thread_id is not None:
+                                    records = await backend.app.tool_executions(backend.thread_id, limit=100)
+                                    noticed.update(
+                                        (record.execution_id, None)
+                                        for record in records
+                                        if record.completed_at is not None
+                                    )
+                                first = False
+                            async for event in events:
+                                if (
+                                    not self.closing
+                                    and backend.thread_id is not None
+                                    and event.thread_id == backend.thread_id
+                                    and event.kind in {"thread", "root_operation"}
+                                ):
+                                    if event.notice is not None:
+                                        pending[event.notice.receipt_id] = backend.thread_id
+                                        while len(pending) > 128:
+                                            pending.pop(next(iter(pending)))
+                                    changed.set()
+                            return
+                    except LivePresentationError:
+                        self.emit("Background updates skipped. Refreshing active work; /history shows retained output.")
+                        changed.set()
+            finally:
+                observer.cancel()
+
     async def _watch_mcp_inputs(self) -> None:
         assert self.backend is not None
         async with self.backend.app.summary_events() as events:
@@ -1256,6 +1340,7 @@ class CliShell:
         flusher = self.app.create_background_task(self._flusher())
         activity_refresher = self.app.create_background_task(self._activity_refresher())
         mcp_watcher = self.app.create_background_task(self._watch_mcp_inputs())
+        background_watcher = self.app.create_background_task(self._watch_background_runs())
         loop = asyncio.get_running_loop()
         previous_handler = loop.get_exception_handler()
 
@@ -1324,7 +1409,10 @@ class CliShell:
                 flusher.cancel()
                 activity_refresher.cancel()
                 mcp_watcher.cancel()
-                await asyncio.gather(flusher, activity_refresher, mcp_watcher, return_exceptions=True)
+                background_watcher.cancel()
+                await asyncio.gather(
+                    flusher, activity_refresher, mcp_watcher, background_watcher, return_exceptions=True
+                )
                 self.renderer.finish()
                 self.renderer.transcript.close()
                 self.backend = None
@@ -1493,7 +1581,9 @@ class CliShell:
                 assert self.backend is not None
                 prompt = self.inline.compile(text)
                 result = await self.backend.steer(
-                    prompt, receipt_id=steering_receipt, skill_references=self.registry.skill_references(prompt)
+                    prompt,
+                    receipt_id=steering_receipt,
+                    skill_references=self.registry.skill_references(prompt),
                 )
                 self.emit(result)
             except asyncio.CancelledError:
@@ -1825,6 +1915,11 @@ class CliShell:
                 self.emit("Goal is unavailable while preparing.")
             elif argument is not None:
                 self.send_prompt(argument.strip(), goal=True)
+        elif name == "executions":
+            if self.backend is None:
+                self.emit("Tool execution inspection is unavailable while preparing.")
+            else:
+                self.emit(await self.backend.tool_executions(invocation.arguments), kind="tool executions")
         elif name == "ps":
             self.emit(self.renderer.process_details(), kind="processes")
         elif name == "subagents":

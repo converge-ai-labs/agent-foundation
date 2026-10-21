@@ -260,13 +260,13 @@ await context.state.write(
 
 Unknown namespaces can remain opaque across a Run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or `EnvironmentState` in a Capability namespace.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
-`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A shell process reference belongs to one Harness Run, not to a durable process service. Queries do not reset output, and native completion does not imply complete capture.
+`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A standalone `process-*` reference belongs to one Harness Run. With a Host-held `ToolExecutionRuntime`, a top-level Shell execution instead retains its original process and capture under an `exec-*` identifier across Runs of the same Thread. Queries do not reset output, and native completion does not imply complete capture.
 
-Run close releases observations without blanket process termination. A fresh adapter restored from Provider state may discover commands the backend retained; a fresh Run assigns new references and cannot use old references from history. No process reference, buffer, watcher or output cursor enters Harness Capability state. Provider state owns native recovery evidence, and the Host owns target lifetime and state publication.
+Run close releases unretained observations without blanket process termination. Live `exec-*` controls continue through the same Host runtime with current authorization and target validation. After Host restart, a fresh adapter restored from Provider state may discover commands the backend retained; that discovery assigns new local references rather than restoring the previous runtime. No process reference, buffer, watcher or output cursor enters Harness Capability state. Provider state owns native recovery evidence, and the Host owns target lifetime and state publication.
 
-See [Environment tools](environments.md) for usage and Provider-specific limitations. No Host process manager, process database, or durable post-Run wake integration is required.
+See [Environment tools](environments.md) for usage and Provider-specific limitations. Live runtime retention and portable checkpoint restoration are separate lifecycles.
 
 ## Host Checkpointing
 

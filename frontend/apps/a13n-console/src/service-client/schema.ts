@@ -2512,7 +2512,9 @@ export interface paths {
     put?: never;
     /**
      * Create Schedule
-     * @description Authorize recurring execution as the creator, independently of the accepting credential's lifetime.
+     * @description Save durable execution authority as the creator, beyond this credential or Run's lifetime.
+     *
+     *     Defaults to paused. Set state=enabled only when automatic future execution is intended.
      */
     post: operations["create_schedule"];
     delete?: never;
@@ -8864,7 +8866,8 @@ export interface components {
       | "skills"
       | "environment_templates"
       | "providers"
-      | "execution";
+      | "execution"
+      | "schedules";
     /**
      * PluginSelection
      * @description One instance of a Harness plugin factory the deployment installed.

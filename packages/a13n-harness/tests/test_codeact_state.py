@@ -13,13 +13,11 @@ from a13n_harness.context import AgentContext
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from a13n_harness.toolsets.codeact import _ExecutionBudget
-from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.usage import RunUsage, UsageLimits
+from pydantic_ai.usage import UsageLimits
 
 from .test_codeact import _codeact_tools, _local_environment
 
@@ -96,6 +94,51 @@ def _stored(values: dict[str, Any]) -> HarnessState:
             entries={"a13n.codeact": CapabilityState(version="1", data={"values": values})}
         )
     )
+
+
+@pytest.mark.parametrize("limit", [2, 3])
+async def test_detached_runner_keeps_original_parent_call_budget(limit):
+    import asyncio
+
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_harness.codeact.state import CodeActStateOwner
+    from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
+
+    entered, finish = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def work(value: int) -> int:
+        calls.append(value)
+        entered.set()
+        await finish.wait()
+        return value
+
+    snapshots = []
+
+    class Reporter:
+        async def report(self, snapshot):
+            snapshots.append(snapshot)
+
+    runtime = ToolExecutionRuntime()
+    result, seen, _ = await _run(
+        [_code("await work(value=1)\nawait work(value=2)")],
+        capabilities=(
+            _codeact_tools(work, allowed=("work",)),
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+        ),
+        bindings=RunBindings.embedded(
+            tool_execution=runtime, codeact_state=CodeActStateOwner(), usage_reporter=Reporter()
+        ),
+        usage_limits=UsageLimits(tool_calls_limit=limit),
+    )
+    await entered.wait()
+    finish.set()
+    outcome = await runtime.wait(result.thread_id, seen[0].content["execution_id"])
+    assert calls == ([1] if limit == 2 else [1, 2])
+    assert outcome.record.status == ("failed" if limit == 2 else "succeeded")
+    assert snapshots[-1].tool_calls == limit
+    assert {snapshot.run_id for snapshot in snapshots} == {result.run_id}
+    await runtime.close()
 
 
 async def test_explicit_values_survive_failure_restart_and_json_continuation() -> None:
@@ -297,17 +340,17 @@ async def test_restored_values_cannot_restore_old_tool_authority() -> None:
     assert _values(result.state) == {"tool.name": "hidden", "saved": 2}
 
 
-async def test_parent_budget_waits_for_counted_callback_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_parent_budget_does_not_double_reserve_counted_callback_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
     counted = asyncio.Event()
     second_admission = asyncio.Event()
     calls: list[int] = []
     original = _ExecutionBudget.admit
 
-    async def synchronized_admit(self, ctx):
+    async def synchronized_admit(self):
         if self.admitted == 1:
             await counted.wait()
             second_admission.set()
-        return await original(self, ctx)
+        return await original(self)
 
     monkeypatch.setattr(_ExecutionBudget, "admit", synchronized_admit)
 
@@ -333,23 +376,21 @@ async def test_parent_budget_waits_for_counted_callback_hooks(monkeypatch: pytes
     assert result.usage.tool_calls == 3
 
 
-async def test_parent_budget_rejects_real_overflow_and_wait_is_cancellable() -> None:
-    ctx = RunContext(deps=None, model=FunctionModel(lambda messages, info: "unused"), usage=RunUsage())
-    ctx.usage_limits = UsageLimits(tool_calls_limit=2)
-    budget = _ExecutionBudget(CodeActConfig())
-    ordinal = await budget.admit(ctx)
-    waiting = asyncio.create_task(budget.admit(ctx))
-    await asyncio.sleep(0)
-    assert not waiting.done()
-    waiting.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await waiting
-    assert budget.admitted == budget.pending == 1
-    ctx.usage.tool_calls = 1
-    await budget.release(ordinal)
-    with pytest.raises(UsageLimitExceeded):
-        await budget.admit(ctx)
-    assert budget.pending == 0
+async def test_parent_budget_rejects_real_overflow_before_nested_effect() -> None:
+    calls = []
+
+    async def work(value: int) -> int:
+        calls.append(value)
+        return value
+
+    result, seen, _ = await _run(
+        [_code("await work(value=1)\nawait work(value=2)")],
+        capabilities=(_codeact_tools(work, allowed=("work",)),),
+        usage_limits=UsageLimits(tool_calls_limit=2),
+    )
+    assert calls == [1]
+    assert seen[0].outcome == "failed"
+    assert result.usage.tool_calls == 1
 
 
 @pytest.mark.parametrize("enabled", [True, False])

@@ -5049,6 +5049,120 @@
         }
       }
     },
+    "/api/threads/{thread_id}/tool-executions": {
+      "get": {
+        "summary": "Tool Executions",
+        "operationId": "tool_executions_api_threads__thread_id__tool_executions_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ToolExecutionView"
+                  },
+                  "title": "Response Tool Executions Api Threads  Thread Id  Tool Executions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
+      "post": {
+        "summary": "Cancel Tool Execution",
+        "operationId": "cancel_tool_execution_api_threads__thread_id__tool_executions__execution_id__cancel_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Execution Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolExecutionView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/children/{execution_id}/cancel": {
       "post": {
         "summary": "Cancel Child",
@@ -19141,6 +19255,97 @@
         "title": "ThreadWork",
         "description": "Current work observations; sections are independently owned, not atomic."
       },
+      "ToolExecutionView": {
+        "additionalProperties": false,
+        "description": "Detached status only; native results stay behind Harness result tools.",
+        "properties": {
+          "execution_id": {
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "title": "Tool Call Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "lost"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Completed At"
+          },
+          "result_available": {
+            "default": false,
+            "title": "Result Available",
+            "type": "boolean"
+          },
+          "foreground_released": {
+            "default": false,
+            "title": "Foreground Released",
+            "type": "boolean"
+          },
+          "delivery_acknowledged": {
+            "default": false,
+            "title": "Delivery Acknowledged",
+            "type": "boolean"
+          },
+          "available_actions": {
+            "default": [],
+            "items": {
+              "const": "cancel",
+              "type": "string"
+            },
+            "title": "Available Actions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "execution_id",
+          "thread_id",
+          "run_id",
+          "tool_call_id",
+          "tool_name",
+          "status",
+          "created_at"
+        ],
+        "title": "ToolExecutionView",
+        "type": "object"
+      },
       "ToolImageView": {
         "properties": {
           "thread_id": {
@@ -21050,6 +21255,14 @@
               "$ref": "#/components/schemas/McpInputRequestView"
             },
             "title": "Mcp Inputs",
+            "type": "array"
+          },
+          "tool_executions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ToolExecutionView"
+            },
+            "title": "Tool Executions",
             "type": "array"
           },
           "recent_events": {

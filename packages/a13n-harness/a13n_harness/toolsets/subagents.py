@@ -166,9 +166,10 @@ class AsyncSubagentToolset:
         ctx: RunContext[AgentContext],
         execution_id: Annotated[str, Field(min_length=1, max_length=256)],
         message: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
+        immediate: bool = False,
     ) -> JsonValue:
         self._require_context(ctx)
-        request = SubagentSteerRequest(execution_id=execution_id, message=message)
+        request = SubagentSteerRequest(execution_id=execution_id, message=message, immediate=immediate)
         result = _validate_model(
             SubagentSteerResult,
             await self._operator.steer(self._operator_context(), request, tool_call=_tool_call_context(ctx)),

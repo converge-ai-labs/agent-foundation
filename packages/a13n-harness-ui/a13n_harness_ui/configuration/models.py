@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
-from a13n_harness import RunConfiguration
+from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -137,6 +137,10 @@ class TerminalDisplayConfiguration(ConfigurationModel):
     max_tool_argument_chars: int = Field(default=8192, ge=128, le=65536)
 
 
+class ToolExecutionConfiguration(ToolExecutionConfig):
+    """Harness UI waits inline by default while retaining immediate handoff support."""
+
+
 class ToolsConfiguration(ConfigurationModel):
     """Application-owned tool switches and uniform interactive waiting policy."""
 
@@ -148,6 +152,7 @@ class ToolsConfiguration(ConfigurationModel):
         validation_alias=AliasChoices("interaction_timeout_seconds", "ask_user_question_timeout_seconds"),
     )
     enable_codeact: bool = True
+    execution: ToolExecutionConfiguration = Field(default_factory=ToolExecutionConfiguration)
 
     @model_validator(mode="before")
     @classmethod
@@ -171,8 +176,9 @@ class SubagentsConfiguration(ConfigurationModel):
 
 
 class InputConfiguration(ConfigurationModel):
-    """User-text delivery policy captured for each root Run."""
+    """Global user-input scheduling and captured long-text delivery policy."""
 
+    steering_mode: Literal["immediate", "queued"] = "immediate"
     long_text_threshold_chars: int | None = Field(default=8000, ge=1)
 
 

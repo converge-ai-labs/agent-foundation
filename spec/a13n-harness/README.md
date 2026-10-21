@@ -4,7 +4,7 @@
 
 This directory defines `a13n-harness`, the Pydantic AI-based process-local execution library used by embedded applications and hosted workers.
 
-The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
+The Harness owns code-first Agent construction, a neutral package-local official model catalog, SDK-first process-local Model OAuth, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It also supplies the optional Host-held tool execution runtime, storage interface and default memory store. Hosts own durable Agent schemas, Presets, artifact installation or trust, persistent execution adapters, queues, worker leases, product delivery and billing.
 
 ## Document Catalog
 
@@ -61,7 +61,7 @@ Read `06`, `10`, and `16`. Read `16a` for OAuth-backed native Models and Host cr
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then `08a` and `08b` for connection and provider guarantees, [Service Environment Management](../a13n-service/06a-environment-management.md) for target lifecycle, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run calls its Host sources' `ensure_ready()` on first use, opens independent executions from the returned connectors, and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
+Read `07`, `08`, `13`, and `15`, then `08a` and `08b` for connection and provider guarantees, [Service Environment Management](../a13n-service/06a-environment-management.md) for target lifecycle, and `22` for the shared Provider core. For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `07` owns retained tool execution and `08` owns Shell control and process-observation semantics. A Run calls its Host sources' `ensure_ready()` on first use, opens independent executions from the returned connectors, and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Service runs](../a13n-service/05-runs.md).
 
 ### Add Agent Memory
 
@@ -69,7 +69,7 @@ Read `21` for file memory and `21a` for record memory, then `09` for the model c
 
 ### Implement Hosting or Persistence
 
-Read `10`, `12`, `13`, `14`, and `20`, then the [a13n Service specification](../a13n-service/README.md). A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
+Read `10`, `12`, `13`, `14`, and `20`, then the [a13n Service specification](../a13n-service/README.md). A Host owns all async-child lifecycle authority. Top-level Shell executions can retain their original scopes across Runs in the same Host runtime. Standalone `process-*` references remain Run-local. Provider state owns native recovery after scope or Host loss. See `07` and `08` for execution retention, control authorization and independent process/output completion boundaries.
 
 ### Integrate Observation
 

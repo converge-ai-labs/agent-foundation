@@ -100,6 +100,7 @@ export interface WorkSummary {
   failed: boolean;
   /** A step the run never resolved: the line must not read as success. */
   interrupted: boolean;
+  handedOff: boolean;
 }
 
 export function workSummary(
@@ -128,6 +129,7 @@ export function workSummary(
     running: entries.some((entry) => entry.state === "working"),
     failed: entries.some((entry) => entry.state === "failed"),
     interrupted: entries.some((entry) => entry.state === "interrupted"),
+    handedOff: entries.some((entry) => entry.state === "handed_off"),
   };
 }
 

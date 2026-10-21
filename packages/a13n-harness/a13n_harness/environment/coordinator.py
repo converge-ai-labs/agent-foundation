@@ -7,7 +7,7 @@ import math
 import secrets
 import sys
 from collections.abc import AsyncGenerator, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
@@ -737,6 +737,59 @@ class CompositeBoundEnvironment(BoundEnvironment):
             limits = limits.model_copy(update={"wall_time_seconds": effective})
         return entered, request.model_copy(update={"cwd": cwd, "limits": limits})
 
+    @asynccontextmanager
+    async def retained_process_lease(
+        self,
+        handle: BoundProcessHandle,
+        *,
+        owner: BoundEnvironment,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AsyncGenerator[BoundProcessOperations]:
+        self._assert_open()
+        if not isinstance(owner, CompositeBoundEnvironment):
+            raise EnvironmentError("Retained process owner is unsupported.", code="environment_unsupported")
+        identity = handle.identity
+        original = owner._entered_for_handle(handle)
+        matches = [
+            item
+            for item in self._entered.values()
+            if item.public.provider_type == identity.provider_type
+            and item.environment_id == identity.environment_id
+            and (alias is None or item.public.name == alias)
+        ]
+        if len(matches) != 1:
+            raise EnvironmentError(
+                "The retained process target is not uniquely attached.", code="environment_selection_invalid"
+            )
+        entered = matches[0]
+        if not actions:
+            raise EnvironmentError("Process control requires an action.", code="environment_request_invalid")
+        for action in actions:
+            self.require_action(entered.mount_id, action)
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(owner._mount_slot(original, allow_retired=True))
+            current = await stack.enter_async_context(
+                self._operation_scope(entered, "processes", timeout_seconds=timeout_seconds)
+            )
+            descriptor = current.public.descriptor
+            same_scope = descriptor.generation == identity.generation
+            same_backing = backing_identity is not None and descriptor.backing_identity == backing_identity
+            if not (same_scope or same_backing):
+                raise EnvironmentError("The retained process target has changed.", code="environment_stale_mount")
+            for action in actions:
+                self.require_action(current.mount_id, action)
+            try:
+                for action in sorted(actions, key=lambda action: action.value):
+                    await stack.enter_async_context(current.provider.admit(action))
+            except EnvironmentError as exc:
+                # Already-entered Host guards must know no native control ran.
+                exc.details["dispatch_stage"] = "pre_dispatch"
+                raise
+            yield _ProcessFacade(owner, retained_handle=handle, authorized_actions=actions)
+
     def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredMount:
         if not isinstance(identity, ProcessIdentity):
             raise EnvironmentError("Process identity is invalid.", code="environment_request_invalid")
@@ -1123,6 +1176,30 @@ class CompositeBoundEnvironment(BoundEnvironment):
         timeout_code: str = "environment_timeout",
         allow_retired: bool = False,
     ) -> AsyncGenerator[_EnteredMount]:
+        if action not in entered.public.permission_ceiling.operations:
+            raise _action_denied(entered, action)
+        async with self._operation_scope(
+            entered,
+            family,
+            timeout_seconds=timeout_seconds,
+            timeout_code=timeout_code,
+            allow_retired=allow_retired,
+        ) as current:
+            self.require_action(current.mount_id, action)
+            async with current.provider.admit(action):
+                yield current
+
+    @asynccontextmanager
+    async def _operation_scope(
+        self,
+        entered: _EnteredMount,
+        family: EnvironmentOperationFamily,
+        *,
+        timeout_seconds: float | None = None,
+        timeout_code: str = "environment_timeout",
+        allow_retired: bool = False,
+    ) -> AsyncGenerator[_EnteredMount]:
+        """Pin and prepare a mount before action guards admit native dispatch."""
         timeout = (
             DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS
             if timeout_seconds is None
@@ -1131,8 +1208,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 timeout_seconds + DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
             )
         )
-        if action not in entered.public.permission_ceiling.operations:
-            raise _action_denied(entered, action)
         async with self._mount_slot(entered, allow_retired=allow_retired):
             try:
                 async with asyncio.timeout(timeout):
@@ -1141,14 +1216,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     entered = self._current_publication(entered)
                     if previous_generation not in {"unprepared", entered.public.descriptor.generation}:
                         raise EnvironmentError("Environment changed before dispatch", code="environment_stale_mount")
-                    self.require_action(entered.mount_id, action)
                     self._validate_live_observation(
                         entered,
                         entered.provider.availability,
                         frozenset({family}),
                     )
-                    async with entered.provider.admit(action):
-                        yield entered
+                    yield entered
             except TimeoutError as exc:
                 raise EnvironmentError(
                     "Environment operation timed out.",

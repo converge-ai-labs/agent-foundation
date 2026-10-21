@@ -42,6 +42,7 @@ from a13n_harness.capabilities.subagents import (
     _AsyncSubagentCapability,
     _InlineSubagentCapability,
 )
+from a13n_harness.capabilities.tool_execution import TOOL_EXECUTION_CAPABILITY_ID, ToolExecutionCapability
 from a13n_harness.capabilities.tool_search import (
     TOOL_SEARCH_CAPABILITY_ID,
     ToolSearchCapability,
@@ -82,6 +83,7 @@ _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
     TOOL_SEARCH_CAPABILITY_ID: (_ToolSearchSurfaceCapability,),
     CODEACT_CAPABILITY_ID: (CodeActCapability,),
+    TOOL_EXECUTION_CAPABILITY_ID: (ToolExecutionCapability,),
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID: (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
     TOOL_PERMISSIONS_CAPABILITY_ID: (ToolPermissionsCapability,),
     RUNTIME_CONTEXT_CAPABILITY_ID: (RuntimeContextCapability,),

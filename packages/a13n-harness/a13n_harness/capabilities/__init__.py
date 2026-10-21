@@ -94,6 +94,7 @@ if TYPE_CHECKING:
         SubagentWaitRequest,
         SubagentWaitResult,
     )
+    from .tool_execution import ToolExecutionCapability, ToolExecutionConfig
     from .tool_review import (
         AgentToolReviewer,
         ToolCallSource,
@@ -164,6 +165,7 @@ if TYPE_CHECKING:
     )
 
 _EXPORTS = {
+    "a13n_harness.capabilities.tool_execution": ("ToolExecutionCapability", "ToolExecutionConfig"),
     "a13n_harness.capabilities.codeact": (
         "CodeActCapability",
         "CodeActConfig",

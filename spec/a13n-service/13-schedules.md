@@ -85,7 +85,9 @@ Enable and time-affecting configuration edits select a next time strictly after 
 
 ## Management API
 
-All paths below are relative to `/api/v1` and use the ordinary Workspace, authentication, pagination and error contracts. The Schedule endpoints are HTTP-only; MCP and Composer admission are outside this surface.
+All paths below are relative to `/api/v1` and use the ordinary Workspace, authentication, pagination and error contracts. All Schedule management endpoints below are also admitted through MCP and the internal `schedules` platform toolset. List, detail, status, occurrence history and time preview have a `read` effect; creation, update, enable, pause, archive and manual dispatch have a `write` effect. Internal reads default to allow and writes to ordinary Harness review. Live Session streams remain HTTP-only.
+
+A Run platform credential creates the Schedule as its authenticated principal, with the intersection of current grants and the originating Run's accepted execution ceiling. The Schedule saves this authority, never the short-lived credential; completion or cancellation of the originating Run does not revoke the Schedule. Later submission still rechecks the principal's current authority. Tool selection admits Schedule management, not direct Run submission or control. Approval does not expand business permissions. ETags, request keys, creator-only actions and unknown-outcome rules are identical across HTTP and MCP.
 
 | Method and path                                | Contract                                                          |
 | ---------------------------------------------- | ----------------------------------------------------------------- |

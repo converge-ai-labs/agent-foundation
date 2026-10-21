@@ -68,7 +68,18 @@ a13n-harness-ui update
 
 该命令本身就是安装请求，因此不会再次确认，也不会打开 TUI 或设置。它针对当前运行安装的工具目录执行 `uv tool upgrade a13n-harness-ui`，跳过启动元数据缓存。关闭启动检测不会关闭此命令。PATH 中必须有 uv；不支持的安装方式会失败，并提示使用原来的包管理器。包解析和网络错误由 uv 处理。失败时返回安装器状态，不会重试；中断更新以状态 130 退出，并提示重试前先检查安装。成功后重启 Harness UI。你也可以直接运行 `uv tool upgrade a13n-harness-ui`。
 
-在 macOS 上，`update` 成功后还会输出电脑操作权限提醒和恢复指南链接。如果升级后 Envd 报告缺少屏幕录制或辅助功能权限，即使系统设置中的条目仍显示开启，也请按[升级后恢复 macOS 权限](../a13n-envd/computer-use.md#restore-macos-permissions-after-an-upgrade)操作。此提醒不会检查或重置权限。该命令更新 Harness UI 的 Python 安装；已连接 Device 上的独立 Envd 安装需要[单独更新](../a13n-envd/installation.md#options-and-behavior)。
+该命令更新 Harness UI 的 Python 安装。要单独准备所选原生 Envd 版本，先停止使用同一数据根的其他 Harness UI 实例，再运行：
+
+```console
+a13n-harness-ui envd update --check
+a13n-harness-ui envd update
+```
+
+命令遵循全局 `--config` 和 `--data-root` 选项，不启动 App 或守护进程。托管 Envd 固定为已安装客户端的版本；升级 Harness UI 后才会选择新的托管版本。`--check` 只报告文件是否存在，不验证可执行文件。`--force` 重新安装该版本。获取过程委托给已有原生更新器；首次安装或旧版缓存程序使用引导下载。原生更新失败会直接报告，不会自动回退或重试。
+
+更新独立安装时，先停止其守护进程，再使用 `a13n-harness-ui envd update --executable /absolute/path/to/a13n-envd`。配置中的 `envd.executable` 会自动被选中。此命令委托给 [Envd 原生更新命令](../a13n-envd/installation.md#update-an-existing-installation)，默认选择最新的 Envd 稳定版；添加 `--version X.Y.Z` 可指定与客户端匹配的版本或 RC。它不会通过 EIP 更新远程 Device。成功后重启受影响的应用或服务。
+
+包更新成功后不再打印权限提醒。如果替换后 Envd 报告缺少 macOS 屏幕录制或辅助功能权限，请按错误指引[恢复权限](../a13n-envd/computer-use.md#restore-macos-permissions-after-an-upgrade)。
 
 清理后，你的终端会显示已保存对话（其根 Thread）的恢复命令。该命令保留显式配置和数据根选项，并说明应在哪个工作目录运行。失败和中断的操作会在释放前保存可用的有效 Harness 检查点，包括安全保留的部分文本。下一轮和 `--resume` 使用所选检查点。记录过的工具结果不会重放，先前的审批也不授权重放。未回答调用遵循 Harness 默认的 [`tool_recovery="declared"` 策略](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls)：当前声明为可重试的工具可能在新的权限和审批要求下再次执行。与检查点一起保存的已接受延迟结果，在原生历史纳入它们前仍可用；这不保证每条已接受输入都已保存。如果状态导出或存储失败，或进程在清理前被终止，恢复会使用之前的检查点。
 

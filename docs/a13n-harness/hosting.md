@@ -46,6 +46,37 @@ result = await executable.run(
 
 Scope streams with `async with executable.stream(...)`. The executable has no `close()` method; close Host-owned clients at their own lifespan boundary.
 
+## Retain Tools Across Conversation Turns
+
+Add `ToolExecutionCapability` to the definition and hold one `ToolExecutionRuntime` for the Host lifetime. Bind the runtime to each Run; use a separate `CodeActStateOwner` per Thread when CodeAct writes must remain visible after the originating Run ends.
+
+```python
+from a13n_harness import (
+    CodeActStateOwner,
+    RunBindings,
+    ToolExecutionConfig,
+    ToolExecutionRuntime,
+)
+from a13n_harness.capabilities import ToolExecutionCapability
+
+capability = ToolExecutionCapability(
+    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
+)
+runtime = ToolExecutionRuntime()
+thread_values = CodeActStateOwner()
+bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
+```
+
+Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Whole CodeAct runners can detach; their nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
+
+Bind the Harness runtime through `RunBindings.tool_execution` to enable automatic background execution and immediate steering. The runtime owns active calls; its store retains records and results. Runs without this binding use blocking generic tools, queued steering, and the Environment's native shell process controls. Enabling `auto` requires the binding at Run preparation; requesting immediate steering requires it before input acceptance.
+
+`await stream.steer(message, immediate=True)` continues the same logical Run with new input. During a primary model request it interrupts the request and recovers the attempt. During tools it preserves the current attempt, finishes review and validation, and releases supported foreground waits with real results or retained execution receipts. The native tool batch settles or suspends for approval before the next model request. Its returned input ID confirms acceptance; canonical history confirms incorporation. Automatic mode independently returns control when the foreground wait expires. Ordinary steering defaults to `immediate=False`, and accepted pending input is included in normal state exports.
+
+The Agent inspects, retrieves, waits for and cancels work through `tool_execution_info`, `tool_execution_result`, `tool_execution_wait` and `tool_execution_cancel`. These controls and the status-only context summary appear only when the Run has both `ToolExecutionCapability` and a runtime binding, in either `inline` or `auto` mode. An unbound inline Run exposes neither. Reads are scoped to the owning Thread. A real result entering canonical history acknowledges delivery. The default memory store keeps active work and the most recently completed records; its contents last for the Host process lifetime. Hosts can supply a `ToolExecutionStore` with their own persistence and retention policy.
+
+Use the runtime's `on_completed` callback to schedule Host delivery without blocking execution. Before closing shared clients, stop new Host admission, settle interactive waiters, then call `await runtime.close(timeout_seconds=...)` and `await runtime.join()`. `close` bounds its cancellation wait; `join` preserves ownership until cooperative cleanup finishes. Conversation cancellation and tool cancellation are separate policies.
+
 ## Fresh Authority
 
 On every Run, select the current user/policy, model credentials, Provider state, and current Environment sources. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
@@ -76,9 +107,9 @@ A suspended Run is closed. Store its pending request and checkpoint, authenticat
 
 Supply a Host-owned `EnvironmentSource` for each target through `environment=` or a named `environments=` mapping. Harness prepares each target on first use, opens a fresh execution, and closes it without destroying the target; the Host owns Provider configuration, authoritative `EnvironmentState`, retention, and explicit `destroy()`. For multiple mounts, choose `default_environment` explicitly when a default route is needed. [Environments](environments.md) has runnable examples.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
-Harness issues process references only within the current Run and releases the Run's process observations when the Run closes; it does **not** kill every backend command. A later Run constructs a new adapter and uses Provider state/native discovery if the backend retained the process. Do not persist `process-*` references as a recovery mechanism.
+Standalone `process-*` references belong to one Run and are released with its observations at Run close, without blanket command termination. Top-level Shell calls bound to the Host-held tool runtime instead retain their original scope until execution settlement, and live `exec-*` controls use current-Run authorization. After Host or scope loss, use Provider state/native discovery if the backend retained the command. Persisted references alone do not restore execution authority.
 
 ## Minimal vs. Production Host
 

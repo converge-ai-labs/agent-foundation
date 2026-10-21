@@ -46,6 +46,37 @@ result = await executable.run(
 
 通过 `async with executable.stream(...)` 管理流的作用域。executable 没有 `close()` 方法；Host 自己持有的客户端，应在各自生命周期结束时关闭。
 
+## 跨对话轮次保留工具执行
+
+将 `ToolExecutionCapability` 加入定义，并在 Host 生命周期内持有一个 `ToolExecutionRuntime`。每次 Run 都绑定该运行时；如果 CodeAct 写入需要在来源 Run 结束后继续可见，则为每个 Thread 单独持有一个 `CodeActStateOwner`。
+
+```python
+from a13n_harness import (
+    CodeActStateOwner,
+    RunBindings,
+    ToolExecutionConfig,
+    ToolExecutionRuntime,
+)
+from a13n_harness.capabilities import ToolExecutionCapability
+
+capability = ToolExecutionCapability(
+    ToolExecutionConfig(mode="auto", foreground_wait_seconds=5.0)
+)
+runtime = ToolExecutionRuntime()
+thread_values = CodeActStateOwner()
+bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
+```
+
+将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。CodeAct runner 可整体转到后台，嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
+
+通过 `RunBindings.tool_execution` 绑定 Harness runtime，即可启用自动后台执行和即时 steering。runtime 管理活动调用，store 保留记录和结果。未绑定时，Run 使用阻塞式通用工具、排队 steering，以及 Environment 的原生 shell 进程控制。启用 `auto` 时在 Run 准备阶段检查绑定；请求即时 steering 时在接收输入前检查绑定。
+
+`await stream.steer(message, immediate=True)` 在同一个逻辑 Run 中接收新输入并继续执行。主模型请求期间会中断请求并恢复执行尝试；工具阶段则保留当前尝试，完成审查和参数校验，并以真实结果或保留执行回执结束支持工具的前台等待。原生工具批次完成或挂起等待审批后，才进入下一次模型请求。返回的输入 ID 表示已接受，规范历史记录确认输入已纳入。自动模式独立地在前台等待到期时交还控制权。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
+
+Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。只有 Run 同时启用 `ToolExecutionCapability` 并绑定 runtime，才会提供这些控制工具和仅含状态的上下文摘要；`inline` 与 `auto` 模式遵循同一规则。未绑定的 inline Run 不提供这两项。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
+
+通过运行时的 `on_completed` 回调安排 Host 投递，不阻塞执行。关闭共享客户端前，先停止 Host 新准入并结束交互等待，再调用 `await runtime.close(timeout_seconds=...)` 和 `await runtime.join()`。`close` 限制取消等待时间；`join` 保持所有权直到协作式清理完成。对话取消与工具取消由不同策略控制。
+
 ## 每次执行都使用当前权限
 
 每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建当前 Environment 来源。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。
@@ -76,9 +107,9 @@ Host 可以通过 `RunBindings.model_call_check` 提供实现了 `ModelCallCheck
 
 Host 为每个目标提供 `EnvironmentSource`，通过 `environment=` 或具名的 `environments=` 映射传入。Harness 在首次使用时准备目标、打开独立 execution，并在结束时关闭 execution，不销毁目标。Provider 配置、权威 `EnvironmentState`、保留策略和显式 `destroy()` 都由 Host 管理。挂载多个环境时，如果需要默认路由，请显式选择 `default_environment`。[环境](environments.md)中有可运行的示例。
 
-## 当前 Run 中的 Shell 观测
+## Shell 执行与观测
 
-Harness 发出的进程引用只在当前 Run 内有效，Run 关闭时会释放该 Run 的进程观测资源；这并**不** 意味着它会终止所有后端命令。如果后端仍保留进程，之后的 Run 应创建新的适配器，并通过 Provider 状态或后端原生发现机制找到它。不要持久化 `process-*` 引用来实现恢复。
+独立的 `process-*` 引用只属于一个 Run，在 Run 关闭时随观测一起释放，不统一终止所有命令。绑定 Host 工具 runtime 的顶层 Shell 调用则保留原资源范围直到执行结束，存活的 `exec-*` 控制使用当前 Run 的授权。Host 或资源范围丢失后，如果后端仍保留命令，通过 Provider 状态或原生发现恢复。只持久化引用不能恢复执行权限。
 
 ## 从简单应用到生产 Host
 

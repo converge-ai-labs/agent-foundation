@@ -298,7 +298,7 @@ The model-facing Toolset is standard:
 - no model-facing `background` flag, `shell_status`, or `shell_kill` exists;
 - an empty Environment exposes no Environment tools.
 
-The file tool surface exposes a tool when at least one mount supports a valid argument branch. Mutation-only mounts do not require an unrelated read action. Write and empty-old-string edit branches require text-write; existing edits require byte-read plus text-write, not patch-text. A captured mount root is not recreated, including explicit roots without a default mount. Parent creation additionally requires mkdir only when the requested path makes the tool call mkdir, even if that parent already exists. Mkdir, move, and delete require their corresponding actions. Copy requires copy-source and copy-destination, possibly on different mounts; internal streaming does not add separate byte-read/write requirements. Its `overwrite` flag permits replacing an existing regular file but also allows creating an absent destination, consistently with the Provider `copy(replace=True)` contract. With the flag false, an existing destination is a conflict and remains unchanged. Other same-mount requirements cannot be assembled by combining partial actions from different mounts. Tool instructions follow the exposed names. Every call re-authorizes the exact selected current mount incarnation and fails without provider effects when that mount lacks an action required by the requested operation. A foreground-only mount keeps completion-only `shell_exec`; a process-capable mount uses the same name with automatic bounded yield.
+The file tool surface exposes a tool when at least one mount supports a valid argument branch. Mutation-only mounts do not require an unrelated read action. Write and empty-old-string edit branches require text-write; existing edits require byte-read plus text-write, not patch-text. A captured mount root is not recreated, including explicit roots without a default mount. Parent creation additionally requires mkdir only when the requested path makes the tool call mkdir, even if that parent already exists. Mkdir, move, and delete require their corresponding actions. Copy requires copy-source and copy-destination, possibly on different mounts; internal streaming does not add separate byte-read/write requirements. Its `overwrite` flag permits replacing an existing regular file but also allows creating an absent destination, consistently with the Provider `copy(replace=True)` contract. With the flag false, an existing destination is a conflict and remains unchanged. Other same-mount requirements cannot be assembled by combining partial actions from different mounts. Tool instructions follow the exposed names. Every call re-authorizes the exact selected current mount incarnation and fails without provider effects when that mount lacks an action required by the requested operation. Both foreground-only and process-capable mounts use `shell_exec`. Its foreground and handoff behavior follows [Shell Executions and Observations](#shell-executions-and-observations).
 
 After Environment execution replacement or changed availability, Harness derives the next model-request context and tool selection from the resulting current snapshot. No stale process reference or readiness observation crosses an Environment execution incarnation. Changing the backing target requires an explicit Host selection and mount replacement with a new source; a failed operation is not replayed against the new target.
 
@@ -346,7 +346,7 @@ Provider file arguments remain provider-local after routing. Paths returned by s
 
 Tool results use bounded disclosures and stable model-safe errors. An absolute path outside every available mount returns `environment_selection_invalid` with an actionable routing diagnostic: the path was not checked for existence, and relocating files or worktrees is not a routing remedy. Any Shell alternative remains subject to the selected Environment's authority and the user's task. A failed file lookup within a selected mount returns `environment_not_found` with path-verification guidance, rather than implying an unavailable route or global Host absence. Structured safe hints are preserved without exposing raw provider exceptions. Internal mount identity, generation, state, and receipts are not model-editable arguments.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
 `DynamicEnvironmentCapability` composes the standard Shell Toolset over the current entered `BoundEnvironment`. Foreground-only execution returns a bounded inline/observed command result without requiring standalone output permissions. The Provider owns internal capture materialization and cleanup. Background observation requires start, inspect, wait, read-output and release, not stdin, all signals, native discovery or standalone output resources.
 
@@ -358,7 +358,6 @@ async def shell_exec(
     *,
     cwd: str | None = None,
     environment: Mapping[str, str] | None = None,
-    yield_time_seconds: float = 10,
     execution_timeout_seconds: float | None = None,
     alias: str | None = None,
 ) -> ShellExecResult: ...
@@ -395,9 +394,13 @@ async def shell_signal(
 ) -> ProcessSignalResult: ...
 ```
 
-`yield_time_seconds` and `shell_wait.timeout_seconds` bound waiting only. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. There is no generic default deadline for a backend lacking that guarantee. Foreground-only mounts omit the yield argument. There is no model-selected background mode.
+Top-level `shell_exec` participates in [Host-held tool execution](07-tool-execution.md#host-held-tool-executions). With a runtime binding, one execution owns the original invocation, native process handle and output observation through settlement. On process-capable mounts, both inline and automatic modes wait up to `ToolExecutionConfig.foreground_wait_seconds` (default five seconds) before returning an `exec-*` receipt if the command is still live. Immediate steering releases that same foreground wait. Returning a receipt or closing the originating Run preserves the live operation and its original Environment scope in the same Host runtime.
 
-Completion inside the yield window returns observed terminal status and bounded output without a process reference. Otherwise Harness publishes a concise Run-local reference such as `process-a3f1-1`. Process completion depends on native terminal evidence, not completed output producers or tree cleanup. Missing or unknown status does not imply successful completion.
+For process-capable mounts, successful execution settlement requires native terminal evidence and closure of both stdout and stderr observations. Native process exit, output-producer completion and tree cleanup remain separate facts. The final result contains bounded output and status without a process reference; missing or unknown native status fails the execution with an unknown-outcome explanation. Live Shell controls accept its `exec-*` identifier as `process_id`; after settlement, execution controls own retained result retrieval.
+
+Without runtime ownership, and inside CodeAct callbacks, process-backed Shell calls return actual native results: terminal status and bounded output when available within the configured wait, otherwise a Run-local reference such as `process-a3f1-1`. This finite wait applies in both modes and requires no runtime binding. Nested calls never create another tool execution or return an execution receipt; the outer CodeAct runner owns any cross-Run lifetime. Foreground-only mounts use the generic inline/automatic wait policy through the same top-level execution boundary when bound.
+
+The Host supplies the initial wait policy; `shell_wait.timeout_seconds` controls subsequent observation waits. `execution_timeout_seconds` requests a Provider-enforced hard execution deadline and is rejected before dispatch where unsupported. Neither wait policy imposes a command execution deadline.
 
 ### Query, observation and control
 
@@ -409,17 +412,19 @@ The `alias` argument selects an existing public mount name from the active Envir
 
 `shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](08a-environment-execution.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
 
-A transient native reconnect preserves the reference and accumulated observation offsets, appends newly observed text and reports partial coverage. A new Run creates fresh references and observations at zero. Target replacement invalidates identities rather than reusing a PID against another sandbox. Capped output remains readable but cannot be reset by querying or waiting.
+A transient native reconnect preserves the reference and accumulated observation offsets, appends newly observed text and reports partial coverage. A retained Shell execution continues using its original handle and capture across Runs. Native discovery in a new Run creates fresh local references and observations at zero. Target replacement invalidates identities rather than reusing a PID against another sandbox. Capped output remains readable but cannot be reset by querying or waiting.
+
+Control of a retained execution requires the same owning Thread and runtime, a uniquely selected current mount with the same provider and Environment identity, and matching generation or stable backing identity. Harness validates target continuity and the effective permission ceiling before entering Host operation guards. The current Run's guards authorize every requested action before native effects; a guard-acquisition rejection is reported as pre-dispatch to already-entered guards. The original scope supplies the native handle, capture and control synchronization, not the new call's authorization. Concurrent observation waits do not block input or signal controls.
 
 `shell_input` mutates UTF-8 stdin/EOF without reading output. `shell_signal` requests only a supported native control action and reports acceptance independently from later exit evidence. Kill support does not imply interrupt/terminate support. Mixed mounts compose the union of tools but each call rechecks its exact selected mount and action before effects.
 
 ### Run-local controller and failure
 
-The controller owns references, authorized routing, latest bounded observations, serialized local control and optional best-effort completion watchers. It owns no execution database, portable process state, native process lifecycle, unread cursor or Host process operator. Canonical process policy resources are scoped to the mount and native identity rather than a bare PID.
+The controller owns references, authorized routing, latest bounded observations, serialized mutations and optional best-effort completion watchers. It owns no execution database, portable process state, native process lifecycle, unread cursor or Host process operator. Canonical process policy resources are scoped to the mount and native identity rather than a bare PID.
 
 Admission reserves a fresh reference, starts once through the authorized Provider and publishes the accepted handle cancellation-safely. Failure after native acceptance does not grant permission to kill or repeat the command. A usable but unpublished observation is released; an uncertain start is reported without replay. Provider state and native discovery own any later recovery.
 
-An active watcher polls status without reconnecting streams. After native terminal evidence it may enqueue one bounded hint:
+A runtime-owned Shell execution uses the runtime's completion notification and releases its observation after final capture. A standalone Run-local observation instead uses an active watcher that polls status without reconnecting streams. After native terminal evidence it may enqueue one bounded hint:
 
 ```text
 Background process process-<ref> has exited. Call shell_wait for available output.
@@ -431,11 +436,11 @@ The hint contains no output, secret, native handle or durable-delivery promise. 
 
 ### Run cleanup and recovery ownership
 
-Run cleanup fences admission, cancels local watchers and releases observations through Provider operations before adapters close. It never blanket-kills commands or separately coordinates mandatory standalone output references. Cleanup failures join the normal Run cleanup aggregate. Repeated cancellation cannot abandon accepted cleanup, and cleanup never invokes target destruction.
+Run cleanup fences local admission, cancels local watchers and releases unretained observations through Provider operations before adapters close. Runtime-owned operations keep their original scopes until settlement; explicit execution cancellation attempts supported native termination and reports failure if termination cannot be confirmed. Host shutdown cancels and drains these owned executions. Ordinary Run cleanup never blanket-kills commands or separately coordinates mandatory standalone output references. Cleanup failures join the normal Run cleanup aggregate. Repeated cancellation cannot abandon accepted cleanup, and cleanup never invokes target destruction.
 
 A released observation no longer pins mount retirement even if its remote command survives. Native scope-close semantics remain Provider-owned. Native Docker and E2B can preserve commands in a surviving target; Direct Local and Envd-backed Providers retain their actual scope cleanup behavior. Harness never infers persistence from the presence of non-null state.
 
-No model reference, log offset, status mirror or watcher enters Harness Capability state. Provider `EnvironmentState` remains opaque and owns backend-specific recovery evidence. A later Run starts an empty controller, uses native discovery when supported and rejects references copied from old messages; no command is replayed automatically. Async subagents retain their independent Host operator.
+No model reference, log offset, status mirror or watcher enters Harness Capability state. Provider `EnvironmentState` remains opaque and owns backend-specific recovery evidence. A later Run starts an empty local controller, can control live `exec-*` Shell executions retained by the same Host runtime, and rejects old `process-*` references. After Host restart, Provider state and native discovery own any native recovery; no command is replayed automatically. Async subagents retain their independent Host operator.
 
 ## Ports
 

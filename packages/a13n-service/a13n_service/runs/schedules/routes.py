@@ -1,10 +1,11 @@
-"""Recurring Agent invocation service. MCP admission is deliberately deferred."""
+"""Schedule management shared by HTTP, external MCP and internal platform tools."""
 
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Response
 
 from a13n_service.infra.http import IdempotencyKey, IfMatch, tagged
+from a13n_service.infra.platform import platform_operation
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schedules import dispatch, queries, service
 from a13n_service.runs.schedules.schemas import (
@@ -26,7 +27,7 @@ from a13n_service.tenancy.requests import Actor, WorkspaceId
 router = APIRouter(prefix="/api/v1/schedules", tags=["schedules"])
 
 
-@router.post("", response_model=Schedule, status_code=201)
+@router.post("", response_model=Schedule, status_code=201, openapi_extra=platform_operation("schedules", "write"))
 async def create_schedule(
     response: Response,
     workspace_id: WorkspaceId,
@@ -35,34 +36,37 @@ async def create_schedule(
     body: ScheduleCreate,
     key: IdempotencyKey,
 ) -> Schedule:
-    """Authorize recurring execution as the creator, independently of the accepting credential's lifetime."""
+    """Save durable execution authority as the creator, beyond this credential or Run's lifetime.
+
+    Defaults to paused. Set state=enabled only when automatic future execution is intended.
+    """
     result, created = await service.create(runtime, actor, workspace_id, body, request_key=key)
     response.status_code = 201 if created else 200
     return tagged(response, result)
 
 
-@router.get("", response_model=SchedulePage)
+@router.get("", response_model=SchedulePage, openapi_extra=platform_operation("schedules", "read"))
 async def list_schedules(
     workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime, filters: Annotated[ScheduleQuery, Query()]
 ) -> SchedulePage:
     return await queries.list_schedules(runtime.storage, actor, workspace_id, filters)
 
 
-@router.post("/preview", response_model=SchedulePreview)
+@router.post("/preview", response_model=SchedulePreview, openapi_extra=platform_operation("schedules", "read"))
 async def preview_schedule(
     workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime, body: SchedulePreviewRequest
 ) -> SchedulePreview:
     return await service.preview(runtime, actor, workspace_id, body)
 
 
-@router.get("/{schedule_id}", response_model=Schedule)
+@router.get("/{schedule_id}", response_model=Schedule, openapi_extra=platform_operation("schedules", "read"))
 async def get_schedule(
     response: Response, workspace_id: WorkspaceId, schedule_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Schedule:
     return tagged(response, await queries.get(runtime.storage, actor, workspace_id, schedule_id))
 
 
-@router.patch("/{schedule_id}", response_model=Schedule)
+@router.patch("/{schedule_id}", response_model=Schedule, openapi_extra=platform_operation("schedules", "write"))
 async def update_schedule(
     response: Response,
     workspace_id: WorkspaceId,
@@ -75,7 +79,7 @@ async def update_schedule(
     return tagged(response, await service.update(runtime, actor, workspace_id, schedule_id, body, if_match=if_match))
 
 
-@router.post("/{schedule_id}/enable", response_model=Schedule)
+@router.post("/{schedule_id}/enable", response_model=Schedule, openapi_extra=platform_operation("schedules", "write"))
 async def enable_schedule(
     response: Response,
     workspace_id: WorkspaceId,
@@ -90,7 +94,7 @@ async def enable_schedule(
     )
 
 
-@router.post("/{schedule_id}/pause", response_model=Schedule)
+@router.post("/{schedule_id}/pause", response_model=Schedule, openapi_extra=platform_operation("schedules", "write"))
 async def pause_schedule(
     response: Response,
     workspace_id: WorkspaceId,
@@ -105,7 +109,7 @@ async def pause_schedule(
     )
 
 
-@router.delete("/{schedule_id}", status_code=204)
+@router.delete("/{schedule_id}", status_code=204, openapi_extra=platform_operation("schedules", "write"))
 async def archive_schedule(
     workspace_id: WorkspaceId, schedule_id: str, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
 ) -> Response:
@@ -113,14 +117,18 @@ async def archive_schedule(
     return Response(status_code=204)
 
 
-@router.get("/{schedule_id}/status", response_model=ScheduleStatus)
+@router.get(
+    "/{schedule_id}/status", response_model=ScheduleStatus, openapi_extra=platform_operation("schedules", "read")
+)
 async def get_schedule_status(
     workspace_id: WorkspaceId, schedule_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> ScheduleStatus:
     return await queries.status(runtime.storage, actor, workspace_id, schedule_id)
 
 
-@router.get("/{schedule_id}/occurrences", response_model=OccurrencePage)
+@router.get(
+    "/{schedule_id}/occurrences", response_model=OccurrencePage, openapi_extra=platform_operation("schedules", "read")
+)
 async def list_schedule_occurrences(
     workspace_id: WorkspaceId,
     schedule_id: str,
@@ -131,7 +139,11 @@ async def list_schedule_occurrences(
     return await queries.list_occurrences(runtime.storage, actor, workspace_id, schedule_id, filters)
 
 
-@router.get("/{schedule_id}/occurrences/{occurrence_id}", response_model=Occurrence)
+@router.get(
+    "/{schedule_id}/occurrences/{occurrence_id}",
+    response_model=Occurrence,
+    openapi_extra=platform_operation("schedules", "read"),
+)
 async def get_schedule_occurrence(
     workspace_id: WorkspaceId,
     schedule_id: str,
@@ -145,7 +157,12 @@ async def get_schedule_occurrence(
     )
 
 
-@router.post("/{schedule_id}/dispatch", response_model=Occurrence, status_code=202)
+@router.post(
+    "/{schedule_id}/dispatch",
+    response_model=Occurrence,
+    status_code=202,
+    openapi_extra=platform_operation("schedules", "write"),
+)
 async def dispatch_schedule(
     response: Response,
     workspace_id: WorkspaceId,
