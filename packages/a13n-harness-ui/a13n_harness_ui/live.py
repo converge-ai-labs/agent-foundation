@@ -254,6 +254,7 @@ class _LiveSubscriber:
         self.send = send
         self.receive = receive
         self.root_thread_id = root_thread_id
+        self.root_stream: _RootStream | None = None
         self.gap = False
 
     def accepts(self, event: LiveEvent) -> bool:
@@ -273,6 +274,16 @@ class LiveSubscription:
     @property
     def cursor(self) -> LiveCursor:
         return self._cursor.model_copy(deep=True)
+
+    def capture_root_stream(self, run_id: str) -> RootStreamReplay | None:
+        """Refresh this scoped observer's baseline without dropping queued child events.
+
+        The shared compact state stays reachable until unsubscribe, including
+        the terminal cut after the hub releases a saved Run. Capturing is
+        synchronous with publication on the owning event loop.
+        """
+        stream = self._subscriber.root_stream
+        return stream.capture() if stream is not None and stream.run_id == run_id else None
 
     def __aiter__(self) -> AsyncIterator[LiveEvent]:
         return self
@@ -393,6 +404,9 @@ class HarnessUiLiveHub:
                         current.apps.clear()
                     current.items.update((item.id, item) for item in display.items)
                     current.continuation = display.continuation
+                    for subscriber in self._subscribers:
+                        if subscriber.root_thread_id == thread_id:
+                            subscriber.root_stream = current
                     for item in display.items:
                         apps = item.content.get("mcp_apps")
                         if isinstance(apps, list):
@@ -511,6 +525,7 @@ class HarnessUiLiveHub:
                 self._root_rings[root_thread_id] = deque(maxlen=self._ring_size)
                 self._root_floors[root_thread_id] = start_sequence
             root_stream = self._root_streams.get(root_thread_id or "")
+            subscriber.root_stream = root_stream
             subscription = LiveSubscription(
                 subscriber,
                 LiveCursor(epoch=self._epoch, sequence=start_sequence),
@@ -544,6 +559,7 @@ class HarnessUiLiveHub:
         return after.sequence
 
     def _discard_subscriber(self, subscriber: _LiveSubscriber) -> None:
+        subscriber.root_stream = None
         self._subscribers.discard(subscriber)
         subscriber.send.close()
         subscriber.receive.close()
@@ -562,6 +578,7 @@ class HarnessUiLiveHub:
             self._root_floors.clear()
             self._terminal_streams.clear()
             for subscriber in subscribers:
+                subscriber.root_stream = None
                 subscriber.send.close()
                 subscriber.receive.close()
 

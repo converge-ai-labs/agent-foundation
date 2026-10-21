@@ -346,6 +346,20 @@ class StreamRenderer:
         # child executions keep their ordinary Run-local correlation.
         self._questions: dict[str, _QuestionReceipt] = {}
 
+    @property
+    def gap(self) -> bool:
+        return self._gap or self.display_gap
+
+    @gap.setter
+    def gap(self, value: bool) -> None:
+        self._gap = value
+        if not value:
+            self.display_gap = False
+
+    def begin_display_snapshot(self) -> None:
+        """Start a fresh baseline, keeping item identities and pending child frames."""
+        self._display_staged.clear()
+
     def register_questions(self, request: StructuredQuestionRequestView) -> None:
         """Retain a typed root request, not a local answer or acceptance receipt.
 
@@ -697,6 +711,8 @@ class StreamRenderer:
         for item in items:
             key = item.id
             before = self._display_items.get(key)
+            if before == item:
+                continue
             self._display_items[key] = item
             content = item.content
             scope = content.get("subagentRunId")
@@ -848,7 +864,10 @@ class StreamRenderer:
         from a13n_stream_protocol.display import DisplayFold, DisplaySnapshot, Item
 
         if payload is None:
-            self.gap = True
+            if display_position is not None:
+                self.display_gap = True
+            else:
+                self.gap = True
             return
         if display_position is not None:
             fold = self._display_fold
@@ -857,8 +876,8 @@ class StreamRenderer:
             if display_position.sequence <= fold.sequence:
                 return
             if display_position.sequence != fold.sequence + 1:
-                # Do not pretend printed output can be rewound or missing bytes recovered.
-                self.gap = True
+                # Only a new compact baseline can repair a missing raw suffix.
+                self.display_gap = True
                 return
             fold.fold([dict(payload)])
             if item is not None and item.id in fold.items:
@@ -877,11 +896,12 @@ class StreamRenderer:
             return
         if event_type == "CUSTOM":
             payload = self._custom_events.accept(payload)
-            self.gap |= self._custom_events.gap
+            if self._custom_events.gap:
+                self.gap = True
             if payload is None:
                 return
         if event_type == "CUSTOM" and payload.get("name") == "a13n.display.reset":
-            self.gap = True
+            self.display_gap = True
             return
         if event_type == "CUSTOM" and payload.get("name") == "a13n.display.snapshot":
             value = payload.get("value")
@@ -896,6 +916,7 @@ class StreamRenderer:
             self._display_fold = DisplayFold.restore(snapshot)
             self._display_fold.changed.clear()
             self._display_rows(snapshot.items, run_id=run_id)
+            self.display_gap = False
             return
         inline_child = payload.get("subagentRunId")
         if isinstance(inline_child, str):

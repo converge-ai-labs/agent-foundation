@@ -872,6 +872,26 @@ class SessionBackend:
         self.status.restore_usage(totals.combined)
         async with self.app.live_events(root_thread_id=thread_id) as subscription:
 
+            async def restore_display(*, refresh: bool = False) -> bool:
+                replay = (
+                    subscription.capture_root_stream(observed_run_id)
+                    if refresh and observed_run_id is not None
+                    else subscription.root_stream
+                )
+                if replay is None or replay.summary.run_id != observed_run_id:
+                    return False
+                renderer.begin_display_snapshot()
+                snapshot_events = CustomEventAssembler()
+                for batch in replay.batches():
+                    for event in batch:
+                        if event.payload is not None:
+                            payload = snapshot_events.accept(event.payload)
+                            if payload is not None:
+                                renderer.ingest(event.event_type, payload, run_id=replay.summary.run_id)
+                if flush is not None:
+                    await flush()
+                return not renderer.display_gap
+
             async def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal, observed_run_id
                 if event.run_kind == "root":
@@ -890,7 +910,8 @@ class SessionBackend:
                 )
                 if event.event_type == "CUSTOM" and event.payload is not None:
                     payload = custom_events.accept(event.payload)
-                    renderer.gap |= custom_events.gap
+                    if custom_events.gap:
+                        renderer.gap = True
                     if payload is None:
                         return False
                     event = event.model_copy(update={"payload": payload})
@@ -908,18 +929,12 @@ class SessionBackend:
 
             async def consume() -> None:
                 try:
-                    if (
-                        attached is not None
-                        and subscription.root_stream is not None
-                        and subscription.root_stream.summary.run_id == observed_run_id
-                    ):
-                        for batch in subscription.root_stream.batches():
-                            for event in batch:
-                                renderer.ingest(
-                                    event.event_type, event.payload, run_id=subscription.root_stream.summary.run_id
-                                )
+                    if attached is not None:
+                        await restore_display()
                     async for event in subscription:
                         usage_changed = await ingest(event)
+                        if renderer.display_gap:
+                            await restore_display(refresh=True)
                         if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
                 except HarnessUiError:
@@ -970,6 +985,8 @@ class SessionBackend:
                         usage_changed = await ingest(event)
                         if flush is not None and (usage_changed or renderer.should_flush):
                             await flush()
+                    if renderer.display_gap:
+                        await restore_display(refresh=True)
                 except HarnessUiError:
                     renderer.gap = True
                 finally:
