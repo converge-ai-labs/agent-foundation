@@ -202,7 +202,7 @@ tool_search:
     max_search_bytes: 32768
 ```
 
-`config.mode: proxy` 为默认模式，使用 Harness 的发现、详情和调用工具。发现默认返回摘要，唯一精确名称命中且定义较小时自动展开；详情查询读取所选工具的完整 schema 和指令。要使用原生发现和直接本地调用，将 `config` 替换为 `{mode: native, strategy: bm25}`。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。原生模式不接受代理控制工具名称和限制；代理模式不接受原生策略设置。两种模式均保留分组工具名称，并在本地执行。
+`config.mode: proxy` 为默认模式，使用 Harness 的发现、详情和调用工具。发现保留所有关键词候选，精确名称命中优先排序，默认返回摘要；仅当整个候选集只有一个精确名称命中且定义较小时自动展开；详情查询读取所选工具的完整 schema 和指令。要使用原生发现和直接本地调用，将 `config` 替换为 `{mode: native, strategy: bm25}`。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。原生模式不接受代理控制工具名称和限制；代理模式不接受原生策略设置。两种模式均保留分组工具名称，并在本地执行。
 
 使用原生模式时，选择支持原生工具搜索的 Model。不支持的 Model 会在发送模型请求前报错，不会回退。执行细节见[原生工具搜索](../a13n-harness/tool-search.md#select-native-tool-search)。
 

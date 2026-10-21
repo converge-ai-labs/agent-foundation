@@ -103,19 +103,21 @@ The generated instructions teach the model to:
 4. paginate results and refresh discovery when a tool becomes unavailable;
 5. inspect uncertain side effects rather than blindly retry a mutation.
 
-An empty or whitespace-only query browses a group or all groups. Exact local or `group__tool` names take priority, ignoring case and surrounding whitespace but preserving separators. If a local name appears in multiple groups, select a group to disambiguate it.
+An empty or whitespace-only query browses a group or all groups. An explicit `group` filters candidates first. Exact local or `group__tool` names rank first, ignoring case and surrounding whitespace but preserving separators. Other keyword matches remain available: searching `payment` still finds `payment_lookup` and `refund_payment` when `payment` exists. A canonical-name query does not implicitly filter by group; use the returned group and local name to describe the intended tool.
 
-Otherwise all query words must match across group identifiers, local names, and full descriptions. Whitespace, punctuation, underscores, hyphens, and camelCase split words; repeated words add no weight. Tool-name words rank first, then whole-word matches, with substrings as weaker matches and canonical names breaking ties. Group descriptions do not make every member match. Use short keywords rather than a sentence; reduce keywords if there are no matches. A punctuation-only nonempty query is invalid. This is deterministic local search, not semantic retrieval or Chinese word segmentation.
+Search splits query keywords at whitespace, punctuation, underscores, hyphens, and camelCase boundaries, then matches any keyword as a case-insensitive substring. Searchable fields are local names, full tool descriptions, group identifiers, input property names, and input schema descriptions. Nested parameters and local schema definitions are scanned without expanding references. Defaults, examples, enum values, return schemas, source instructions, and group descriptions do not contribute matches.
+
+Results rank by exact name, then number of distinct keywords covered, then relevance, then canonical name. Each keyword contributes only its strongest match: whole words before substrings, with local name, tool description, group identifier, parameter name, and parameter description as the field priority within each tier. Repeated keywords or repeated text add no weight. Summaries default to 10 results per page, within the configured count and byte caps. Use short keywords rather than a sentence. A punctuation-only nonempty query must be an exact tool name. CamelCase affects keyword splitting, so differently cased queries can split differently even though exact-name and keyword comparisons ignore case. This is deterministic local search, not semantic retrieval or Chinese word segmentation.
 
 Choose discovery detail per call:
 
-| `detail`         | Behavior                                                                                                             |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `auto` (default) | Return summaries, except for a unique exact name whose complete response fits 8 KiB and the configured byte cap.     |
-| `summary`        | Always return candidates; descriptions collapse whitespace and are limited to 256 characters including any ellipsis. |
-| `full`           | Return complete definitions; never silently downgrade to summaries.                                                  |
+| `detail`         | Behavior                                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Return summaries; expand only a sole exact candidate at offset 0 whose complete response fits 8 KiB and the configured byte cap. |
+| `summary`        | Always return candidates; descriptions collapse whitespace and are limited to 256 characters including any ellipsis.             |
+| `full`           | Return complete definitions; never silently downgrade to summaries.                                                              |
 
-A single fuzzy match or `limit=1` does not make auto expand. The response always identifies its actual representation, and a page never mixes summaries and full definitions. To obtain a known tool directly, call `describe_tool(group=..., tool=...)` without searching first. Discovery and description invoke no business operation.
+Uniqueness is checked against the entire candidate set, before pagination. A single fuzzy match, `limit=1`, or a byte-limited page does not make auto expand. The response always identifies its actual representation, and a page never mixes summaries and full definitions. To obtain a known tool directly, call `describe_tool(group=..., tool=...)` without searching first. Discovery and description invoke no business operation.
 
 Follow `next_offset` using the same query, group, and detail; byte limits can shorten a page. Offsets apply to the current directory, not a snapshot or durable cursor. A changing directory can shift pages. Disabling Toolset instructions also disables generated guidance and source instructions in complete definitions.
 

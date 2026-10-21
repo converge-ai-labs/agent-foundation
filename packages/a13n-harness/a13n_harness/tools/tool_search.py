@@ -28,9 +28,9 @@ class ProxyToolSearchConfig:
     mode: Literal["proxy"] = field(default="proxy", kw_only=True)
     search_name: str = "discover_tools"
     call_name: str = "call_tool"
-    describe_name: str = "describe_tool"
     max_results: Annotated[int, Field(strict=True)] = 10
     max_search_bytes: Annotated[int, Field(strict=True)] = 32_768
+    describe_name: str = "describe_tool"
 
     def __post_init__(self) -> None:
         if self.mode != "proxy":
@@ -186,9 +186,11 @@ def resolve_proxy_tool(tools: Mapping[str, ToolsetTool[AgentContext]], group: st
         groups = sorted({key[0] for key in directory})
         if group not in groups:
             raise ModelRetry(
-                f"Group {group!r} is unavailable in this step. Search a current group before calling. Available groups: {', '.join(groups) or '(none)'}."
+                f"Group {group!r} is unavailable in this step. Choose a current group. Available groups: {', '.join(groups) or '(none)'}."
             )
-        raise ModelRetry(f"Tool {group}/{tool} is unavailable in this step. Search again for its current schema.")
+        raise ModelRetry(
+            f"Tool {group}/{tool} is unavailable in this step. Rediscover available tools and use an exact current group and local tool name."
+        )
     return name
 
 

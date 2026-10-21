@@ -15613,11 +15613,6 @@
             "title": "Call Name",
             "default": "call_tool"
           },
-          "describe_name": {
-            "type": "string",
-            "title": "Describe Name",
-            "default": "describe_tool"
-          },
           "max_results": {
             "type": "integer",
             "title": "Max Results",
@@ -15627,6 +15622,11 @@
             "type": "integer",
             "title": "Max Search Bytes",
             "default": 32768
+          },
+          "describe_name": {
+            "type": "string",
+            "title": "Describe Name",
+            "default": "describe_tool"
           },
           "mode": {
             "type": "string",

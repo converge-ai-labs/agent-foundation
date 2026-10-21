@@ -20,7 +20,7 @@ def _operation(value: int = 1) -> int:
 
 
 @pytest.mark.parametrize("query", ["github create issue", "CREATE create ISSUE", "create-issue", "createIssue"])
-async def test_keywords_require_all_words_and_normalize_identifiers(query):
+async def test_keywords_recall_any_word_and_rank_coverage_first(query):
     _, results = await _run(
         (
             _group(
@@ -34,7 +34,7 @@ async def test_keywords_require_all_words_and_normalize_identifiers(query):
     )
     page = results[0].content
     assert page["detail"] == "summary"
-    assert [entry["tool"] for entry in page["tools"]] == ["create_issue"]
+    assert [entry["tool"] for entry in page["tools"]] == ["create_issue", "create_repository", "delete_issue"]
     assert "parameters_json_schema" not in page["tools"][0]
 
 
@@ -63,11 +63,25 @@ async def test_exact_identity_precedes_fuzzy_candidates_and_disambiguates_groups
         ],
     )
     assert results[0].content["detail"] == "summary"
-    assert [(x["group"], x["tool"]) for x in results[0].content["tools"]] == [("crm", "lookup"), ("docs", "lookup")]
-    assert results[1].content["detail"] == results[2].content["detail"] == "full"
-    assert results[2].content["tools"][0]["group"] == "docs"
-    assert results[3].content["detail"] == "summary"
-    assert results[4].content == {"detail": "summary", "tools": [], "total": 1, "next_offset": None}
+    assert [(x["group"], x["tool"]) for x in results[0].content["tools"]] == [
+        ("crm", "lookup"),
+        ("docs", "lookup"),
+        ("crm", "lookup_extra"),
+        ("docs", "lookup_extra"),
+    ]
+    assert all(result.content["detail"] == "summary" for result in results)
+    assert [(x["group"], x["tool"]) for x in results[1].content["tools"]] == [
+        ("crm", "lookup"),
+        ("crm", "lookup_extra"),
+    ]
+    assert [(x["group"], x["tool"]) for x in results[2].content["tools"]] == [
+        ("docs", "lookup"),
+        ("docs", "lookup_extra"),
+        ("crm", "lookup"),
+        ("crm", "lookup_extra"),
+    ]
+    assert results[4].content["total"] == 2
+    assert [x["tool"] for x in results[4].content["tools"]] == ["lookup_extra"]
 
 
 async def test_ranking_prefers_name_words_then_whole_words_with_stable_ties():
@@ -79,9 +93,10 @@ async def test_ranking_prefers_name_words_then_whole_words_with_stable_ties():
                 Tool(_operation, name="a_create", description="An issue"),
                 Tool(_operation, name="c_action", description="Create an issue"),
                 Tool(_operation, name="a_substring", description="Recreate issues"),
+                Tool(_operation, name="create_only", description="Partial match"),
             ),
         ),
-        [("discover_tools", {"query": "create issue"}), ("discover_tools", {"query": "no_match"})],
+        [("discover_tools", {"query": "create issue"}), ("discover_tools", {"query": "absentkeyword"})],
     )
     assert [x["tool"] for x in results[0].content["tools"]] == [
         "z_issue_create",
@@ -89,6 +104,7 @@ async def test_ranking_prefers_name_words_then_whole_words_with_stable_ties():
         "b_create",
         "c_action",
         "a_substring",
+        "create_only",
     ]
     assert results[1].content == {"detail": "summary", "tools": [], "total": 0, "next_offset": None}
 
@@ -271,3 +287,197 @@ async def test_nonempty_punctuation_query_is_not_browsing_and_describe_checks_av
     assert len(retries) == 2
     assert "operation keywords" in retries[0]
     assert "unavailable" in retries[1]
+
+
+@pytest.mark.parametrize("limit", [1, 10])
+async def test_exact_priority_preserves_candidates_and_auto_uses_whole_set(limit):
+    reads = []
+
+    class Source(FunctionToolset):
+        async def get_instructions(self, ctx):
+            reads.append(True)
+            return "Source guidance"
+
+    related = ["payment_lookup", "refund_payment", "payment_history", "payment_status"]
+    source = Source([Tool(_operation, name=name, description="多" * 90) for name in ["payment", *related]])
+    config = ProxyToolSearchConfig(max_search_bytes=1024)
+    search = ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Operations")}, config=config)
+    _, results = await _run(
+        (search,),
+        [("discover_tools", {"query": "payment", "offset": i, "limit": limit}) for i in range(5)],
+    )
+    pages = [r.content for r in results]
+    assert not reads
+    offset = 0
+    found = []
+    while offset is not None:
+        page = pages[offset]
+        assert page["detail"] == "summary" and page["total"] == 5
+        found.extend(x["tool"] for x in page["tools"])
+        offset = page["next_offset"]
+    assert found == ["payment", *sorted(related)]
+    _, before = await _run(
+        (_group(*(Tool(_operation, name=name) for name in related)),),
+        [("discover_tools", {"query": "payment"})],
+    )
+    assert {x["tool"] for x in before[0].content["tools"]} == set(found[1:])
+
+
+@pytest.mark.parametrize("query", ["getHTTP", "GETHTTP", "gethttp", "crm__GETHTTP"])
+async def test_case_insensitive_exact_and_raw_substrings_survive_camel_boundaries(query):
+    _, results = await _run(
+        (_group(Tool(_operation, name="getHTTP"), Tool(_operation, name="getHTTPStatus")),),
+        [("discover_tools", {"query": query})],
+    )
+    assert [x["tool"] for x in results[0].content["tools"]] == ["getHTTP", "getHTTPStatus"]
+    assert results[0].content["detail"] == "summary"
+
+
+async def test_canonical_local_collision_and_case_variants_keep_distinct_identities():
+    search = ToolSearchCapability(
+        groups={
+            "crm": ToolSearchGroup(
+                FunctionToolset([Tool(_operation, name="lookup"), Tool(_operation, name="LOOKUP")], id="crm"), "CRM"
+            ),
+            "ops": ToolSearchGroup(FunctionToolset([Tool(_operation, name="crm__lookup")], id="ops"), "Operations"),
+        }
+    )
+    _, results = await _run(
+        (search,),
+        [
+            ("discover_tools", {"query": "crm__lookup"}),
+            ("discover_tools", {"query": "crm__lookup", "group": "ops"}),
+        ],
+    )
+    assert {(x["group"], x["tool"]) for x in results[0].content["tools"]} == {
+        ("crm", "lookup"),
+        ("crm", "LOOKUP"),
+        ("ops", "crm__lookup"),
+    }
+    assert results[0].content["detail"] == "summary"
+    assert results[1].content["detail"] == "full" and results[1].content["total"] == 1
+
+
+async def test_punctuation_only_exact_name_is_valid():
+    _, results = await _run(
+        (_group(Tool(_operation, name="__"), Tool(_operation, name="other")),),
+        [("discover_tools", {"query": " __ "})],
+    )
+    assert results[0].content["detail"] == "full"
+    assert [x["tool"] for x in results[0].content["tools"]] == ["__"]
+
+
+async def test_parameter_search_traverses_current_input_schema_only():
+    schema = {
+        "type": "object",
+        "properties": {
+            "payload": {"anyOf": [{"$ref": "#/$defs/Node"}, {"type": "null"}]},
+            "mapping": {
+                "type": "object",
+                "additionalProperties": {"type": "string", "description": "warehouse locator"},
+            },
+            "pair": {"type": "array", "prefixItems": [{"description": "fingerprint"}, {"type": "integer"}]},
+        },
+        "$defs": {
+            "Node": {
+                "properties": {
+                    "customerId": {"type": "string", "description": "Purchaser reference"},
+                    "children": {"type": "array", "items": {"$ref": "#/$defs/Node"}},
+                },
+                "allOf": [{"description": "nested guidance"}],
+            }
+        },
+        "description": "Root guidance",
+        "default": {"description": "defaultsecret"},
+        "examples": [{"properties": {"examplesecret": {"description": "examplesecret"}}}],
+        "title": "titlesecret",
+        "$ref": "https://invalid.example/remotesecret",
+    }
+    original = json.dumps(schema, sort_keys=True)
+    reads = []
+
+    async def prepare(ctx, definition):
+        return replace(definition, parameters_json_schema=schema, return_schema={"description": "returnsecret"})
+
+    class Source(FunctionToolset):
+        async def get_instructions(self, ctx):
+            reads.append(True)
+            return "instructionsecret"
+
+    source = Source([Tool(_operation, name="action", description="Execute", prepare=prepare)])
+    search = ToolSearchCapability(groups={"ops": ToolSearchGroup(source, "groupsecret")})
+    hits = ["CUSTOMERID", "purchas", "warehouse", "fingerprint", "nested", "root", "payload"]
+    misses = [
+        "defaultsecret",
+        "examplesecret",
+        "returnsecret",
+        "instructionsecret",
+        "titlesecret",
+        "remotesecret",
+        "groupsecret",
+        "Node",
+    ]
+    _, results = await _run((search,), [("discover_tools", {"query": q}) for q in [*hits, *misses]])
+    assert [r.content["total"] for r in results] == [1] * len(hits) + [0] * len(misses)
+    assert all(r.content["detail"] == "summary" for r in results)
+    assert not reads and json.dumps(schema, sort_keys=True) == original
+
+
+async def test_parameter_search_uses_each_steps_prepared_definition():
+    steps = []
+
+    async def prepare(ctx, definition):
+        steps.append(ctx.run_step)
+        return replace(
+            definition,
+            parameters_json_schema={"type": "object", "properties": {}, "description": f"step{ctx.run_step}"},
+        )
+
+    _, results = await _run(
+        (_group(Tool(_operation, prepare=prepare)),),
+        [("discover_tools", {"query": "step1"}), ("discover_tools", {"query": "step1"})],
+    )
+    assert steps[:2] == [1, 2]
+    assert [r.content["total"] for r in results] == [1, 0]
+
+
+async def test_field_priority_counts_each_keyword_once_and_keeps_stable_ties():
+    async def parameter_name(ctx, definition):
+        return replace(definition, parameters_json_schema={"properties": {"needle": {"type": "string"}}})
+
+    async def parameter_description(ctx, definition):
+        return replace(definition, parameters_json_schema={"properties": {"value": {"description": "needle " * 30}}})
+
+    search = ToolSearchCapability(
+        groups={
+            "ops": ToolSearchGroup(
+                FunctionToolset(
+                    [
+                        Tool(_operation, name="z_needle"),
+                        Tool(_operation, name="b_description", description="needle " * 30, prepare=parameter_name),
+                        Tool(_operation, name="a_description", description="needle"),
+                        Tool(_operation, name="c_parameter", prepare=parameter_name),
+                        Tool(_operation, name="d_parameter", prepare=parameter_description),
+                        Tool(_operation, name="a_needles"),
+                    ],
+                    id="ops",
+                ),
+                "Operations",
+            ),
+            "needle": ToolSearchGroup(FunctionToolset([Tool(_operation, name="action")], id="needle"), "Domain"),
+        }
+    )
+    _, results = await _run((search,), [("discover_tools", {"query": q}) for q in ["needle", "needle NEEDLE needle"]])
+    expected = ["z_needle", "a_description", "b_description", "action", "c_parameter", "d_parameter", "a_needles"]
+    assert all([x["tool"] for x in r.content["tools"]] == expected for r in results)
+
+
+def test_config_preserves_existing_positional_arguments():
+    config = ProxyToolSearchConfig("find", "invoke", 20, 4096)
+    assert (
+        config.search_name,
+        config.call_name,
+        config.max_results,
+        config.max_search_bytes,
+        config.describe_name,
+    ) == ("find", "invoke", 20, 4096, "describe_tool")

@@ -202,7 +202,7 @@ tool_search:
     max_search_bytes: 32768
 ```
 
-`config.mode: proxy` is the default and uses Harness discovery, description, and call tools. Discovery defaults to summaries and automatically expands small unique exact-name matches. Description loads a selected tool's complete schema and instructions. To use native discovery and direct local calls, replace `config` with `{mode: native, strategy: bm25}`. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default. Native mode rejects proxy control names and limits; proxy mode rejects native strategy settings. Both modes retain grouped tool names and local execution.
+`config.mode: proxy` is the default and uses Harness discovery, description, and call tools. Discovery keeps all keyword candidates, ranks exact names first, and defaults to summaries; it automatically expands a small exact match only when it is the sole candidate. Description loads a selected tool's complete schema and instructions. To use native discovery and direct local calls, replace `config` with `{mode: native, strategy: bm25}`. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default. Native mode rejects proxy control names and limits; proxy mode rejects native strategy settings. Both modes retain grouped tool names and local execution.
 
 For native mode, select a Model that supports native tool search. Unsupported Models fail before the model request, without fallback. See [native tool search](../a13n-harness/tool-search.md#select-native-tool-search) for execution details.
 

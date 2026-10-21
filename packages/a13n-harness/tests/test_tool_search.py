@@ -780,7 +780,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
         if isinstance(part, RetryPromptPart)
     )
     assert "crm/missing" in retry.content
-    assert "Search again" in retry.content
+    assert "Rediscover available tools" in retry.content
 
 
 async def test_empty_groups_leave_direct_tools_unchanged() -> None:

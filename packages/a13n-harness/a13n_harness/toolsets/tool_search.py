@@ -164,9 +164,9 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             self._search,
             name=self.config.search_name,
             description=(
-                "Discover tools without executing them. All keywords must match; use short operation keywords, "
+                "Discover tools without executing them. Any keyword can match names, descriptions, groups, or input parameters; use short keywords, "
                 "or an exact tool name. Omit group to search all groups; use an empty query to browse. "
-                "Auto returns summaries except for a unique exact name with a small complete definition. "
+                "Exact names rank first without hiding other matches. Auto expands only a sole exact candidate with a small definition. "
                 f"For summaries, use {self.config.describe_name} before {self.config.call_name} unless the schema "
                 "is already known. Pagination applies to the current directory.\n" + summary
             ),
@@ -251,13 +251,16 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
         ctx: RunContext[AgentContext],
         query: Annotated[
             str,
-            Field(max_length=2048, description="All keywords must match; exact names take priority. Empty to browse."),
+            Field(
+                max_length=2048,
+                description="Any keyword can match; exact names rank first, then keyword coverage. Empty to browse.",
+            ),
         ],
         group: Annotated[str | None, Field(description="Optional group; omit to search across groups.")] = None,
         detail: Annotated[
             Literal["auto", "summary", "full"],
             Field(
-                description="Auto expands only a unique exact name with a small definition; summary browses cheaply; full includes complete schemas."
+                description="Auto expands only when the entire candidate set is one exact match with a small definition; summary browses cheaply; full includes complete schemas."
             ),
         ] = "auto",
         limit: Annotated[
@@ -388,27 +391,90 @@ def _search_matches(
     """Rank current prepared definitions, without constructing schemas or source guidance."""
     query = query.strip()
     scoped = {key: name for key, name in directory.items() if group is None or key[0] == group}
-    exact = [
+    exact = {
         name
         for (group_name, local_name), name in scoped.items()
         if query.casefold() in (local_name.casefold(), f"{group_name}__{local_name}".casefold())
-    ]
-    if exact:
-        return [tools[name] for name in sorted(exact)], True
+    }
     tokens = set(_words(query))
-    if query and not tokens:
-        raise ModelRetry("Supply operation keywords or an exact tool name; use an empty query to browse.")
     if not tokens:
-        return [tools[name] for name in sorted(scoped.values())], False
-    matches: list[tuple[int, int, str]] = []
+        if query and not exact:
+            raise ModelRetry("Supply operation keywords or an exact tool name; use an empty query to browse.")
+        return [tools[name] for name in sorted(exact if query else scoped.values())], bool(exact)
+    matches: list[tuple[int, int, tuple[int, ...], str]] = []
     for (group_name, local_name), canonical in scoped.items():
-        name_words = set(_words(local_name))
-        words = name_words | set(_words(group_name)) | set(_words(tools[canonical].tool_def.description or ""))
-        if not all(token in words or any(token in word for word in words) for token in tokens):
-            continue
-        matches.append((-len(tokens & name_words), -len(tokens & words), canonical))
+        definition = tools[canonical].tool_def
+        fields = (
+            local_name,
+            definition.description or "",
+            group_name,
+            *_parameter_search_text(definition.parameters_json_schema),
+        )
+        coverage, relevance = _keyword_rank(tokens, fields)
+        # Exact identity is independent of tokenization (e.g. getHTTP vs GETHTTP).
+        if canonical in exact or coverage:
+            matches.append((-int(canonical in exact), -coverage, relevance, canonical))
     matches.sort()
-    return [tools[name] for _, _, name in matches], False
+    return [tools[name] for _, _, _, name in matches], bool(exact)
+
+
+def _keyword_rank(tokens: set[str], fields: tuple[str, ...]) -> tuple[int, tuple[int, ...]]:
+    """Count each keyword in its strongest whole-word/substring field bucket."""
+    best: dict[str, int] = {}
+    for field, text in enumerate(fields):
+        folded = text.casefold()
+        hits = {token for token in tokens if token in folded}
+        if not hits:
+            continue
+        words = set(_words(text))
+        for token in hits:
+            bucket = field if token in words else len(fields) + field
+            best[token] = min(best.get(token, bucket), bucket)
+    counts = [0] * (2 * len(fields))
+    for bucket in best.values():
+        counts[bucket] -= 1
+    return len(best), tuple(counts)
+
+
+def _parameter_search_text(schema: dict[str, Any]) -> tuple[str, str]:
+    """Read input property names/descriptions at physical schema nodes, without resolving refs."""
+    names: list[str] = []
+    descriptions: list[str] = []
+    pending = [schema]
+    while pending:
+        node = pending.pop()
+        description = node.get("description")
+        if isinstance(description, str):
+            descriptions.append(description)
+        for key in ("properties", "patternProperties", "$defs", "definitions", "dependentSchemas"):
+            children = node.get(key)
+            if isinstance(children, dict):
+                if key == "properties":
+                    names.extend(children)
+                pending.extend(child for child in children.values() if isinstance(child, dict))
+        for key in (
+            "items",
+            "additionalItems",
+            "additionalProperties",
+            "contains",
+            "propertyNames",
+            "unevaluatedItems",
+            "unevaluatedProperties",
+            "not",
+            "if",
+            "then",
+            "else",
+            "allOf",
+            "anyOf",
+            "oneOf",
+            "prefixItems",
+        ):
+            child = node.get(key)
+            if isinstance(child, dict):
+                pending.append(child)
+            elif isinstance(child, list):
+                pending.extend(item for item in child if isinstance(item, dict))
+    return " ".join(names), " ".join(descriptions)
 
 
 def _summary_entry(tool: ToolsetTool[AgentContext]) -> dict[str, Any]:
