@@ -6,6 +6,7 @@ import {
   RunOptionsDialog,
   type OptionField,
   type RunOptionsState,
+  type RunOptionValues,
 } from "./options-dialog";
 import styles from "./composer.module.css";
 
@@ -23,7 +24,10 @@ export function RunOptions({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [focus, setFocus] = useState<OptionField>();
+  // The choices the dialog opened with, restored when it is cancelled.
+  const [saved, setSaved] = useState<RunOptionValues>();
   function edit(field?: OptionField) {
+    setSaved(options.values);
     setFocus(field);
     setOpen(true);
   }
@@ -85,6 +89,10 @@ export function RunOptions({
         showAgent={showAgent}
         open={open}
         onOpenChange={setOpen}
+        onCancel={() => {
+          if (saved) options.restore(saved);
+          setOpen(false);
+        }}
         focus={focus}
       />
     </>

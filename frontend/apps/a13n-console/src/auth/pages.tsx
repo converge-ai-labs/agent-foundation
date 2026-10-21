@@ -92,7 +92,7 @@ function readFailure(
       ? rejectedFields(error)
       : [];
   if (mode === "login" && (error.status === 401 || rejected.length > 0))
-    return { field: true, message: t("Email or password is incorrect") };
+    return { field: true, message: t("Email or password is incorrect.") };
   if (mode === "invite" && error.status === 401)
     return {
       field: true,
@@ -106,6 +106,35 @@ function readFailure(
       message: t("Choose a password with at least 8 characters."),
     };
   return { message: error.message };
+}
+
+type Field = "name" | "email" | "password";
+
+/**
+ * What the reader must fix before the request is worth sending, by field. The
+ * form validates itself rather than through the browser's bubbles, so every
+ * message reads like the rest of the console and sits under its field.
+ */
+function invalidFields(
+  mode: Mode,
+  values: Record<Field, string>,
+  t: Translate,
+): Partial<Record<Field, string>> {
+  const errors: Partial<Record<Field, string>> = {};
+  if (mode === "invite" && !values.name.trim())
+    errors.name = t("Enter your name.");
+  if (["login", "setup", "forgot"].includes(mode)) {
+    const email = values.email.trim();
+    if (!email) errors.email = t("Enter your email address.");
+    else if (!/^[^\s@]+@[^\s@]+$/.test(email))
+      errors.email = t("Enter a valid email address.");
+  }
+  if (["login", "setup", "invite", "reset"].includes(mode)) {
+    if (!values.password) errors.password = t("Enter your password.");
+    else if (mode !== "login" && values.password.length < 8)
+      errors.password = t("Choose a password with at least 8 characters.");
+  }
+  return errors;
 }
 
 function Notice({
@@ -161,7 +190,8 @@ export function AuthPage() {
   );
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
-    [name, setName] = useState("");
+    [name, setName] = useState(""),
+    [attempted, setAttempted] = useState(false);
   const mutation = useMutation({
     mutationFn: async () => {
       if (mode === "forgot") {
@@ -227,12 +257,18 @@ export function AuthPage() {
   const withoutDelivery =
     mode === "forgot" && configuration.data?.email_delivery === false;
   const failure = readFailure(mutation.error, mode, t);
+  // Field messages appear once the reader tries to submit, then follow edits.
+  const invalid = attempted
+    ? invalidFields(mode, { name, email, password }, t)
+    : {};
   const fieldError =
     failure?.field && asksPassword ? failure.message : undefined;
   const noticeMessage = failure && !fieldError ? failure.message : undefined;
   const succeeded =
     mutation.isSuccess && ["forgot", "reset", "email"].includes(mode);
-  const passwordRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null),
+    emailRef = useRef<HTMLInputElement>(null),
+    passwordRef = useRef<HTMLInputElement>(null);
   /** A rejected credential returns the reader to the field that owns the fix. */
   useEffect(() => {
     if (fieldError) passwordRef.current?.focus();
@@ -268,7 +304,17 @@ export function AuthPage() {
   if (routeMode === "login" && configuration.isPending) return <Loading />;
   function submit(event: FormEvent) {
     event.preventDefault();
-    mutation.mutate();
+    setAttempted(true);
+    const errors = invalidFields(mode, { name, email, password }, t);
+    const first = errors.name
+      ? nameRef
+      : errors.email
+        ? emailRef
+        : errors.password
+          ? passwordRef
+          : undefined;
+    if (first) first.current?.focus();
+    else mutation.mutate();
   }
   /** A stale failure must not outlive the correction the reader is typing. */
   function edit(apply: (value: string) => void) {
@@ -310,8 +356,17 @@ export function AuthPage() {
           <Wordmark />
         </div>
         <h1 className={styles.title}>{titles[mode]}</h1>
-        <p className={styles.description}>{descriptions[mode]}</p>
-        {succeeded ? (
+        {!withoutDelivery && (
+          <p className={styles.description}>{descriptions[mode]}</p>
+        )}
+        {withoutDelivery ? (
+          <p className={styles.unavailable}>
+            <InfoIcon size={16} aria-hidden="true" />
+            {t(
+              "Email delivery is not configured. Contact your organization administrator.",
+            )}
+          </p>
+        ) : succeeded ? (
           <div className={styles.success}>
             <CheckCircleIcon size={20} weight="fill" aria-hidden="true" />
             <h2>
@@ -334,10 +389,11 @@ export function AuthPage() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={submit} className={styles.form}>
+          <form onSubmit={submit} className={styles.form} noValidate>
             {mode === "invite" && (
-              <FormField label={t("Your name")}>
+              <FormField label={t("Your name")} error={invalid.name}>
                 <Input
+                  ref={nameRef}
                   size="lg"
                   required={true}
                   autoComplete="name"
@@ -348,8 +404,9 @@ export function AuthPage() {
               </FormField>
             )}
             {asksEmail && (
-              <FormField label={t("Email address")}>
+              <FormField label={t("Email address")} error={invalid.email}>
                 <Input
+                  ref={emailRef}
                   size="lg"
                   required={true}
                   type="email"
@@ -369,7 +426,7 @@ export function AuthPage() {
                     ? t("At least 8 characters.")
                     : undefined
                 }
-                error={fieldError}
+                error={invalid.password ?? fieldError}
               >
                 <Input
                   ref={passwordRef}
@@ -391,13 +448,6 @@ export function AuthPage() {
               <Notice>
                 {t(
                   "The link is missing its verification token. Open the complete link from your email.",
-                )}
-              </Notice>
-            )}
-            {withoutDelivery && (
-              <Notice>
-                {t(
-                  "Email delivery is not configured. Contact your organization administrator.",
                 )}
               </Notice>
             )}
@@ -429,7 +479,6 @@ export function AuthPage() {
               variant="default"
               disabled={
                 missingToken ||
-                withoutDelivery ||
                 (mode === "email" && (!auth.data || auth.anonymous))
               }
               loading={mutation.isPending}

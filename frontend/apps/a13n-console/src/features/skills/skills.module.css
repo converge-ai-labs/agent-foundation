@@ -41,7 +41,15 @@
   background: var(--a13n-hover);
 }
 
-/* Detail: retained version notice --------------------------------------- */
+/* Detail ----------------------------------------------------------------- */
+.detailAvatar {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 12px;
+  font-size: var(--a13n-text-xl);
+}
+
 .retained {
   display: flex;
   align-items: center;
@@ -63,41 +71,6 @@
 }
 
 /* Import dialog ---------------------------------------------------------- */
-.dropZone {
-  padding: 6px;
-  border-radius: var(--a13n-radius-group);
-  background: var(--a13n-surface);
-}
-.dropZoneInner {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 26px 20px;
-  border: 1px dashed var(--a13n-border);
-  border-radius: var(--a13n-radius-row);
-  text-align: center;
-  transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
-}
-.dropZone[data-dragging="true"] .dropZoneInner {
-  border-color: var(--a13n-focus);
-  background: var(--a13n-hover);
-}
-.dropZoneInner > p {
-  margin: 0;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-}
-.dropZoneFile {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
 .receipt {
   display: grid;
   gap: 10px;
@@ -134,7 +107,7 @@
   font-size: var(--a13n-text-xs);
 }
 .dot {
-  color: var(--a13n-border);
+  color: var(--a13n-tertiary);
 }
 .sourceField {
   display: flex;

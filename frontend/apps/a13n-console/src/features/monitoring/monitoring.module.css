@@ -15,6 +15,32 @@
   align-items: center;
   gap: 8px;
 }
+/* Edit mode reads as one tinted strip: the name on the left, panel actions on the right. */
+.editBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.nameField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 280px;
+  max-width: 420px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+  white-space: nowrap;
+}
+.editActions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
 .range {
   color: var(--a13n-secondary);
   font-size: 12px;
@@ -65,11 +91,15 @@
   display: flex;
   flex-direction: column;
 }
+/* uPlot draws on a Canvas: the axes read their color, grid and font from here. */
 .canvas {
   flex: 1;
   min-height: 100px;
   width: 100%;
   overflow: hidden;
+  color: var(--a13n-secondary);
+  border-color: var(--a13n-border-soft);
+  font-size: var(--a13n-text-2xs);
 }
 .canvas :global(.uplot) {
   font-family: inherit;
@@ -83,13 +113,21 @@
   color: var(--a13n-secondary);
   font-variant-numeric: tabular-nums;
 }
+/* Two rows stay visible; the header counts the rest until expanded. */
 .legend {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  max-height: 64px;
+  gap: 2px 16px;
+  max-height: 50px;
+  overflow: hidden;
+  padding: 2px 0;
+}
+.legend[data-expanded] {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
-  padding: 4px 0;
 }
 .legend button {
   display: flex;
@@ -102,16 +140,20 @@
   color: var(--a13n-secondary);
   border: 0;
   background: none;
-  padding: 3px 0;
+  padding: 2px 0;
+  line-height: 18px;
 }
 .legend button[hidden] {
   display: none;
 }
 .legend button:focus-visible,
-.targetRow:focus-visible,
 .notices summary:focus-visible {
   outline: 2px solid var(--a13n-signal);
   outline-offset: 2px;
+}
+.targetRow:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: -2px;
 }
 .legend button[aria-pressed="false"] {
   opacity: 0.4;
@@ -139,6 +181,30 @@
   min-height: 90px;
   color: var(--a13n-tertiary);
   font-size: 12px;
+}
+.panelError {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  color: var(--a13n-danger);
+  font-size: var(--a13n-text-xs);
+}
+.failure {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  max-width: min(100%, 360px);
+  padding: 0 12px;
+  text-align: center;
+}
+.failure > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
 }
 .notices {
   color: var(--a13n-secondary);
@@ -176,43 +242,77 @@
 .legendHeader {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 22px;
-  gap: 12px;
+  min-height: 28px;
+  gap: 8px;
 }
-.legendHeader input {
-  max-width: 160px;
-  height: 26px;
-  font-size: 11px;
+.legendSearch {
+  width: 160px;
+  margin-left: auto;
+}
+.legendToggle {
+  flex: none;
+  margin-left: auto;
+  color: var(--a13n-secondary);
+  font-weight: 400;
+}
+.legendSearch + .legendToggle {
+  margin-left: 0;
+}
+.triggerLabel {
+  color: var(--a13n-secondary);
 }
 .targetTrigger {
-  max-width: 280px;
+  max-width: 320px;
+  font-weight: 400;
 }
-.targetTrigger span {
+.targetCaret {
+  color: var(--a13n-secondary);
+}
+.targetName {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.targetPopup {
+  width: min(400px, calc(100vw - 24px));
+  padding: 0;
+}
+.targetPopup [data-slot="popover-viewport"] {
+  padding: 0;
+}
+.targetSearch {
+  display: grid;
+  gap: 8px;
+  padding: 8px 8px 4px;
+}
 .targetFilters {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
+.targetFilters [data-slot="select-trigger"] {
+  min-width: 0;
+}
+/* A fixed height keeps the popover still while filtering narrows the list. */
 .targetList {
-  max-height: 360px;
-  overflow: auto;
+  height: 264px;
+  overflow-y: auto;
+  padding: 4px 6px;
 }
 .targetRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
+  padding: 7px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--a13n-radius-row);
   background: transparent;
   color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
   text-align: left;
-  padding: 12px;
   cursor: pointer;
 }
 .targetRow:hover {
@@ -222,34 +322,44 @@
   background: var(--a13n-selected);
 }
 .targetRow > span {
-  flex: 1;
-  min-width: 0;
   display: grid;
-  gap: 3px;
+  gap: 1px;
+  min-width: 0;
 }
 .targetRow strong {
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .targetRow small {
-  font-size: 12px;
   color: var(--a13n-secondary);
-  overflow-wrap: anywhere;
+  font-size: var(--a13n-text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .targetRow > svg {
-  flex-shrink: 0;
   color: var(--a13n-secondary);
 }
-.liveState {
-  font-size: 11px;
+.targetEmpty {
+  margin: 0;
+  padding: 24px 12px;
   color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  text-align: center;
 }
-.liveState[data-live="true"] {
-  color: var(--a13n-signal);
-}
-.presets {
+.targetFooter {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px 4px 12px;
+  border-top: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
 }
 .stats {
   display: flex;
@@ -313,8 +423,23 @@
   align-items: center;
   justify-content: space-between;
 }
+.queryActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .preview {
   height: 280px;
+}
+.previewHint {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-xs);
 }
 .mobile {
   display: flex;
@@ -340,7 +465,11 @@
   }
   .time {
     margin-left: 0;
-    justify-content: space-between;
+  }
+  /* The range and auto refresh fill their rows; icon buttons keep their size. */
+  .time > [data-slot="popover-trigger"],
+  .time > :not(button) {
+    flex: 1 1 auto;
   }
   .toolbar {
     align-items: stretch;
@@ -351,7 +480,7 @@
     width: 100%;
     max-width: none;
   }
-  .targetTrigger span {
+  .targetName {
     flex: 1;
     text-align: left;
   }

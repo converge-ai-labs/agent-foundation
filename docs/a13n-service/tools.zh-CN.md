@@ -210,7 +210,7 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已启用的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
 
 - **原生工具搜索**（`config.mode: native`）使用提供商原生发现和普通工具调用。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。
-- **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `search_proxy_tools` 和 `call_proxy_tool`。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
+- **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `discover_tools`、`describe_tool` 和 `call_tool`。发现保留关键词候选并优先排序精确名称命中，默认返回简短摘要；仅当整个候选集只有一个精确名称命中且定义较小时自动展开；详情查询读取单个完整定义。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
 - **使用来源的加载设置**（省略 `tool_search`）沿用各来源现有的加载方式。
 
 分组成员关系决定 agent 已有工具的呈现方式。分组内的连接使用分组发现模式，同时保留已保存的 `defer_loading`；移出分组后恢复该设置。未分组的来源保持现有行为。每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。

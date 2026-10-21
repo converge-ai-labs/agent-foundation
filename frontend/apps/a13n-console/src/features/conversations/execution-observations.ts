@@ -46,12 +46,9 @@ export function applyObservation(
           state: "waiting",
           waitingReason:
             interrupt.reason === "approval" ? "approval" : "external_call",
+          // The step keeps its tool's name: that is what the reader approves.
           ...(interrupt.reason === "approval"
-            ? {
-                kind: "hitl" as const,
-                hitl: "approval" as const,
-                name: "Approval",
-              }
+            ? { kind: "hitl" as const, hitl: "approval" as const }
             : {}),
           detail: interrupt.metadata,
         });

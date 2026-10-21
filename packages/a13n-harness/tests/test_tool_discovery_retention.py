@@ -169,12 +169,12 @@ async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
     effects = []
     index = 0
     observed = []
-    search = ("search_proxy_tools", {"query": "double"})
+    search = ("discover_tools", {"query": "double"})
     if nested:
-        search = ("run_code", {"code": "await search_proxy_tools(query='double')"})
+        search = ("run_code", {"code": "await discover_tools(query='double')"})
     calls = [
         search,
-        ("run_code", {"code": "await call_proxy_tool(group='math', tool='double', arguments={'value': 20})"}),
+        ("run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 20})"}),
         ("summarize", {"content": "Continue arithmetic"}),
     ]
 
@@ -212,7 +212,7 @@ async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
         if resumed == 2:
             assert "parameters_json_schema" in ModelMessagesTypeAdapter.dump_json(messages).decode()
             return _call(
-                "run_code", {"code": "await call_proxy_tool(group='math', tool='double', arguments={'value': 21})"}, 11
+                "run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 21})"}, 11
             )
         return ModelResponse(parts=[TextPart("done")])
 
@@ -252,7 +252,7 @@ async def _run_calls(capabilities, calls, *, previous_state=None):
 async def test_search_without_target_calls_retains_nothing(monkeypatch, proxy):
     monkeypatch.setattr(discovery, "_MAX_TOOLS", 1)
     capabilities = (_source([], proxy=proxy), ToolSearch(strategy="keywords"), CodeActCapability(), HandoffCapability())
-    search = ("search_proxy_tools", {"query": ""}) if proxy else ("search_tools", {"queries": ["double triple"]})
+    search = ("discover_tools", {"query": ""}) if proxy else ("search_tools", {"queries": ["double triple"]})
     _, snapshots = await _run_calls(capabilities, [search, ("summarize", {"content": "Continue"})])
     messages, info = snapshots[-1]
     assert not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts)
@@ -314,8 +314,8 @@ async def test_proxy_revalidation_drops_stale_evidence(change):
     first, _ = await _run_calls(
         (grouped(), HandoffCapability()),
         [
-            ("search_proxy_tools", {"query": "lookup"}),
-            ("call_proxy_tool", {"group": "db", "tool": "lookup", "arguments": {"value": 1}}),
+            ("discover_tools", {"query": "lookup"}),
+            ("call_tool", {"group": "db", "tool": "lookup", "arguments": {"value": 1}}),
         ],
     )
     state = HarnessState.model_validate_json(first.state.model_dump_json())
@@ -501,11 +501,11 @@ async def test_nested_proxy_state_deduplicates_calls_and_eviction_does_not_resur
     first, _ = await _run_calls(
         capabilities,
         [
-            ("run_code", {"code": "await search_proxy_tools(query='double')"}),
+            ("run_code", {"code": "await discover_tools(query='double')"}),
             (
                 "run_code",
                 {
-                    "code": "for i in range(40):\n    await call_proxy_tool(group='math', tool='double', arguments={'value': i})"
+                    "code": "for i in range(40):\n    await call_tool(group='math', tool='double', arguments={'value': i})"
                 },
             ),
         ],
@@ -577,15 +577,15 @@ async def test_multi_tool_search_retains_only_called_member(monkeypatch, mode):
         calls = [("search_tools", {"queries": ["double triple"]}), ("double", {"value": 1})]
     elif mode == "proxy":
         calls = [
-            ("search_proxy_tools", {"query": ""}),
-            ("call_proxy_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
+            ("discover_tools", {"query": ""}),
+            ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
         ]
     else:
         calls = [
             (
                 "run_code",
                 {
-                    "code": "await search_proxy_tools(query='')\nawait call_proxy_tool(group='math', tool='double', arguments={'value': 1})"
+                    "code": "await discover_tools(query='')\nawait call_tool(group='math', tool='double', arguments={'value': 1})"
                 },
             )
         ]
@@ -597,7 +597,7 @@ async def test_multi_tool_search_retains_only_called_member(monkeypatch, mode):
     retained_calls = [p for msg in messages for p in msg.parts if isinstance(p, ToolCallPart)]
     assert len(retained_calls) == 1
     marker = "[query omitted during context replacement]"
-    assert retained_calls[0].args_as_dict() == ({"query": marker} if proxy else {"queries": [marker]})
+    assert retained_calls[0].args_as_dict() == ({"query": marker, "detail": "full"} if proxy else {"queries": [marker]})
     assert "Original search queries were not retained" in ModelMessagesTypeAdapter.dump_json(messages).decode()
     if proxy:
         assert [entry["tool"] for entry in results[0].content["tools"]] == ["double"]
@@ -655,14 +655,14 @@ async def test_wrapped_proxy_search_does_not_break_called_tool_retention(nested)
         CodeActCapability(),
         HandoffCapability(),
     )
-    search = ("search_proxy_tools", {"query": "lookup"})
+    search = ("discover_tools", {"query": "lookup", "detail": "full"})
     if nested:
-        search = ("run_code", {"code": "await search_proxy_tools(query='lookup')"})
+        search = ("run_code", {"code": "await discover_tools(query='lookup', detail='full')"})
     result, snapshots = await _run_calls(
         capabilities,
         [
             search,
-            ("call_proxy_tool", {"group": "db", "tool": "lookup", "arguments": {}}),
+            ("call_tool", {"group": "db", "tool": "lookup", "arguments": {}}),
             ("summarize", {"content": "Continue"}),
         ],
     )
@@ -783,10 +783,23 @@ async def test_proxy_call_without_search_reconstructs_current_schema():
     _, snapshots = await _run_calls(
         (_source([], proxy=True), HandoffCapability()),
         [
-            ("call_proxy_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
+            ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
             ("summarize", {"content": "Continue"}),
         ],
     )
     retained = next(p for msg in snapshots[-1][0] for p in msg.parts if isinstance(p, ToolReturnPart))
     assert [entry["tool"] for entry in retained.content["tools"]] == ["double"]
     assert retained.content["tools"][0]["parameters_json_schema"]["required"] == ["value"]
+
+
+@pytest.mark.parametrize("nested", [False, True])
+async def test_describe_without_execution_retains_nothing(nested):
+    describe = ("describe_tool", {"group": "math", "tool": "double"})
+    if nested:
+        describe = ("run_code", {"code": "await describe_tool(group='math', tool='double')"})
+    result, snapshots = await _run_calls(
+        (_source([], proxy=True), CodeActCapability(), HandoffCapability()),
+        [describe, ("summarize", {"content": "Continue"})],
+    )
+    assert not any(isinstance(p, ToolReturnPart) for msg in snapshots[-1][0] for p in msg.parts)
+    assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None

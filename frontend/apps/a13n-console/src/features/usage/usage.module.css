@@ -1,23 +1,15 @@
 .filters {
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 8px;
 }
-.timezone,
 .footnote {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
 }
-.customRange {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: end;
-}
-.customRange p {
-  flex-basis: 100%;
-  color: var(--a13n-danger);
-  font-size: var(--a13n-text-sm);
+.overview {
+  container-type: inline-size;
 }
 .metrics {
   display: grid;
@@ -42,7 +34,9 @@
   line-height: 1.1;
   letter-spacing: var(--a13n-tracking-title);
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tokens {
   display: grid;
@@ -68,6 +62,7 @@
   font-size: var(--a13n-text-lg);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .notice {
   margin-top: 12px;
@@ -107,10 +102,12 @@
   color: var(--a13n-text);
   font-weight: 500;
 }
+/* The axis column is shared by the plot and the date row below it. */
 .chart {
-  display: flex;
-  height: 220px;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 220px auto;
+  gap: 10px 12px;
   margin-top: 8px;
 }
 .axis {
@@ -127,7 +124,6 @@
 }
 .plot {
   position: relative;
-  flex: 1;
   min-width: 0;
 }
 .grid {
@@ -192,22 +188,37 @@
   );
 }
 .dates {
+  grid-column: 2;
   display: flex;
-  justify-content: space-between;
-  margin: 10px 0 0 56px;
+  gap: 10px;
   color: var(--a13n-tertiary);
   font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;
+}
+.dates span {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  white-space: nowrap;
 }
 .model {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 .identity {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+}
+.identity strong,
+.identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .identity strong {
   font-weight: 500;
@@ -216,33 +227,59 @@
   font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
 }
+/* Stacked rows lay cells out as flex items; let the identity shrink to truncate. */
+.breakdown td > div {
+  min-width: 0;
+}
+.cost {
+  position: relative;
+  white-space: nowrap;
+}
 .partial {
+  position: absolute;
+  left: 100%;
+  margin-left: 2px;
   color: var(--a13n-secondary);
 }
-.footnote {
-  line-height: 1.7;
-  margin-top: 8px;
+/* Narrower tables drop the derived columns first, then token detail. */
+@container (width < 1000px) {
+  .breakdown [data-column="cached"],
+  .breakdown [data-column="cacheRate"] {
+    display: none;
+  }
 }
-@media (width < 768px) {
-  .metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@container (560px <= width < 760px) {
+  .breakdown [data-column="runTime"] {
+    display: none;
   }
-  .metrics > div {
-    padding: 14px 16px 16px;
-  }
-  .metrics dd {
-    font-size: var(--a13n-text-2xl);
-  }
+}
+/* Four figures need room; a narrower overview reads as two by two. */
+@container (width < 800px) {
+  .metrics,
   .tokens {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tokens {
     row-gap: 10px;
   }
   .tokens > div:nth-child(odd) {
     padding-left: 0;
     border-left: 0;
   }
+}
+.footnote {
+  line-height: 1.7;
+  margin-top: 8px;
+}
+@media (width < 768px) {
+  .metrics > div {
+    padding: 14px 16px 16px;
+  }
+  .metrics dd {
+    font-size: var(--a13n-text-2xl);
+  }
   .chart {
-    height: 160px;
+    grid-template-rows: 160px auto;
   }
   .chartReadout {
     height: auto;

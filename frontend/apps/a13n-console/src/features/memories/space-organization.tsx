@@ -100,7 +100,7 @@ export function SpaceOrganization({ space }: { space: Schema["MemorySpace"] }) {
               </div>
               <p>
                 {!space.enabled
-                  ? t("Enable this Space to organize its files.")
+                  ? t("Enable this space to organize its files.")
                   : !space.organization.model
                     ? t("Choose an organizer model in Configuration to begin.")
                     : state.active_run_id
@@ -238,7 +238,7 @@ export function SpaceSessions({ spaceId }: { spaceId: string }) {
     <Section
       title={t("Associated sessions")}
       description={t(
-        "Sessions that selected this Space, including those with memory participation turned off.",
+        "Sessions that selected this space, including those with memory participation turned off.",
       )}
     >
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -291,7 +291,7 @@ export function SpaceSessions({ spaceId }: { spaceId: string }) {
           <Empty
             title={t("No associated sessions")}
             description={t(
-              "Select this Space in a session or in an agent's defaults for new sessions.",
+              "Select this space in a session or in an agent's defaults for new sessions.",
             )}
           />
         )

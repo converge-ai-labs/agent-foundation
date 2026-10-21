@@ -56,11 +56,6 @@ export function MediaUnderstandingDefaults() {
     error === save.error && error instanceof ApiError && error.status === 412;
   return (
     <div className={styles.mediaDefaults}>
-      <p className={styles.mediaRule}>
-        {t(
-          "An agent whose own model reads a kind never uses these; an agent or a run can pick a different model.",
-        )}
-      </p>
       <ErrorNotice
         error={error}
         description={
@@ -77,7 +72,7 @@ export function MediaUnderstandingDefaults() {
         <SettingsSection>
           <MediaUnderstandingFields
             value={value}
-            inherit={{ label: t("Not configured") }}
+            inherit={{ label: t("Not configured"), icon: null }}
             disabled={!can("admin") || !query.data?.etag || save.isPending}
             pendingKind={inFlight?.kind}
             onChange={(selection, kind) => {

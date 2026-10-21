@@ -37,7 +37,7 @@ import { ThreadBranches } from "./thread-branches";
 import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
-import { originLink, sessionTitle } from "./session-identity";
+import { sessionTitle } from "./session-identity";
 import { ThreadToolExecutionsDialog } from "./tool-executions";
 import styles from "./conversations.module.css";
 
@@ -69,12 +69,28 @@ export function SessionHeader({
   const [mounts, setMounts] = useState(false);
   const [editing, setEditing] = useState(false);
   const title = session.data && sessionTitle(session.data);
-  const source = originLink(session.data?.origin);
   const [tools, setTools] = useState(false);
   const [execution, setExecution] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
+  // How this session started reads the same at both levels.
+  const note = debugSession
+    ? [
+        t("Debug session"),
+        runs.length ? t("{{count}} runs", { count: runs.length }) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : run.data?.schedule_origin
+      ? t("Scheduled execution")
+      : run.data
+        ? t("Started by {{trigger}}", {
+            trigger: t(`trigger.${run.data.trigger}`, {
+              defaultValue: run.data.trigger,
+            }),
+          })
+        : "";
   const active =
     valid &&
     !!run.data &&
@@ -95,8 +111,8 @@ export function SessionHeader({
       <span className={styles.headerRule} aria-hidden="true" />
       <div className={styles.sessionIdentity}>
         {title ? (
-          <span className={styles.agentLink} title={title}>
-            <span className={styles.agentName}>{title}</span>
+          <span className={styles.sessionTitle} title={title}>
+            {title}
           </span>
         ) : agent.data ? (
           <Link
@@ -114,28 +130,11 @@ export function SessionHeader({
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
-        <span className={styles.subNote}>
-          {level === "chat"
-            ? t("Thread")
-            : debugSession
-              ? [
-                  t("Debug session"),
-                  runs.length
-                    ? t("{{count}} runs", { count: runs.length })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : run.data?.schedule_origin
-                ? t("Scheduled execution")
-                : run.data
-                  ? t("Started by {{trigger}}", {
-                      trigger: t(`trigger.${run.data.trigger}`, {
-                        defaultValue: run.data.trigger,
-                      }),
-                    })
-                  : ""}
-        </span>
+        {note && (
+          <span className={styles.subNote} title={note}>
+            {note}
+          </span>
+        )}
       </div>
       <div className={styles.sessionControls}>
         {active && run.data && (
@@ -197,14 +196,6 @@ export function SessionHeader({
             <MenuItem onClick={() => setEditing(true)}>
               <PencilSimpleIcon size={14} aria-hidden="true" />
               {t("Edit session details")}
-            </MenuItem>
-          )}
-          {source && (
-            <MenuItem
-              render={<a href={source} target="_blank" rel="noreferrer" />}
-            >
-              <ArrowSquareOutIcon size={14} aria-hidden="true" />
-              {t("Open source")}
             </MenuItem>
           )}
           {level === "debug" && collapse && (

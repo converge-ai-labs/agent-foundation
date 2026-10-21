@@ -210,7 +210,7 @@ The model discovers individual tools through its provider's native search, then 
 Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's enabled platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
 
 - **Native tool search** (`config.mode: native`) uses provider-native discovery and ordinary tool calls. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default.
-- **Grouped proxy search** (`config.mode: proxy`) uses Harness's `search_proxy_tools` and `call_proxy_tool`. Optional `config` settings follow [Harness ToolSearch](../a13n-harness/tool-search.md).
+- **Grouped proxy search** (`config.mode: proxy`) uses Harness's `discover_tools`, `describe_tool`, and `call_tool`. Discovery keeps keyword candidates with exact names ranked first and defaults to compact summaries, automatically expanding a small exact match only when it is the sole candidate; description loads one complete definition. Optional `config` settings follow [Harness ToolSearch](../a13n-harness/tool-search.md).
 - **Source defaults** (omit `tool_search`) uses each source's existing loading settings.
 
 Group membership selects presentation for tools the agent already has. A grouped connection uses the group's discovery mode while preserving its saved `defer_loading`; leaving the group restores that setting. Sources outside the groups keep their current behavior. Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` turns grouping off for that run.

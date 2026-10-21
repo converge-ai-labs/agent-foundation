@@ -13,7 +13,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { discoveryKey, modelApi } from "./api";
 import { CatalogPicker } from "./catalog-picker";
 import { CatalogNotice, type ModelDraft } from "./model-form";
-import { ModelIcon } from "./model-icon";
+import { ModelIcon, providerBrand } from "./model-icon";
 import { ProviderAuthorization } from "./provider-authorization";
 
 /** Account discovery and public catalog metadata are independent selection sources. */
@@ -151,7 +151,7 @@ function DiscoveredModels({
             icon={
               <ModelIcon
                 upstream={entry.slug}
-                provider={model.selectedProvider?.type}
+                provider={providerBrand(model.selectedProvider)}
                 size={20}
               />
             }

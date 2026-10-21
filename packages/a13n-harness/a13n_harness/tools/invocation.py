@@ -405,7 +405,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             or (mode in {"owned", "owned_auto"} and self._scope is None)
         )
         if unsupported:
-            ctx.deps._tool_executions.unsupported_calls.add(call_id)
+            ctx.deps._tool_executions.block_handoff(call_id)
         try:
             return await self._authorize_and_call(name, tool_args, ctx, tool)
         finally:
@@ -413,7 +413,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             # Reserving here covers nested and foreground calls with one ledger.
             state.usage_pending -= 1
             if unsupported:
-                ctx.deps._tool_executions.unsupported_calls.discard(call_id)
+                ctx.deps._tool_executions.unblock_handoff(call_id)
 
     async def _authorize_and_call(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
@@ -603,7 +603,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         if callable(mode):
             mode = mode(tool_args)
         if mode in {"control", "process"}:
-            state.unsupported_calls.discard(ctx.tool_call_id or tool.tool_def.name)
+            state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
         sequential = tool.tool_def.sequential or (
             ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
         )
@@ -646,7 +646,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             await release()
             raise
         state.calls[ctx.tool_call_id] = record
-        state.unsupported_calls.discard(ctx.tool_call_id)
+        state.unblock_handoff(ctx.tool_call_id)
         try:
             result = await state.wait_foreground(
                 runtime, ctx.deps.thread_id, record.execution_id, automatic=mode == "owned_auto"

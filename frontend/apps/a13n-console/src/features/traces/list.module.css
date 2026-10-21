@@ -11,28 +11,28 @@
   display: block;
 }
 
+/* Fixed columns; the trace identity takes the rest and truncates. */
 .traceTable {
   table-layout: fixed;
-  min-width: 880px;
-}
-.traceTable th:first-child {
-  width: auto;
-  min-width: 220px;
 }
 .traceTable th[data-column="run"] {
-  width: 164px;
+  width: 148px;
 }
 .traceTable th[data-column="level"] {
   width: 96px;
 }
 .traceTable th[data-column="duration"] {
-  width: 100px;
+  width: 96px;
 }
 .traceTable th[data-column="cost"] {
-  width: 92px;
+  width: 96px;
 }
 .traceTable th[data-column="started"] {
-  width: 182px;
+  width: 176px;
+}
+.traceTable th,
+.traceTable td[data-column="started"] {
+  white-space: nowrap;
 }
 /* The timestamp keeps its own inset so it never touches the cost column. */
 .traceTable th[data-column="started"],
@@ -44,36 +44,16 @@
 .traceTable td[data-column="cost"] {
   font-variant-numeric: tabular-nums;
 }
-@media (max-width: 1160px) {
-  .traceTable {
-    min-width: 700px;
-  }
-  .traceTable th:first-child {
-    min-width: 180px;
-  }
-  .traceTable th[data-column="run"] {
-    width: 116px;
-  }
-  .traceTable th[data-column="level"] {
-    width: 88px;
-  }
-  .traceTable th[data-column="duration"] {
-    width: 88px;
-  }
-  .traceTable th[data-column="cost"] {
-    width: 80px;
+/* The run stays one click away on the trace itself. */
+@container (width < 1100px) {
+  .traceTable [data-column="run"] {
+    display: none;
   }
   .traceTable th[data-column="started"] {
-    width: 150px;
+    width: 156px;
   }
 }
 
-.traceIdentity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
 .traceCopy {
   display: grid;
   gap: 1px;
@@ -92,40 +72,36 @@
 .traceName:hover {
   text-decoration: underline;
 }
-.traceMeta {
+/* An ID with its copy action, which shows on row hover. */
+.copyable {
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-2xs);
 }
 @media (hover: hover) {
-  .traceMeta button {
+  .copyable button {
     opacity: 0;
     transition: opacity 120ms ease;
   }
-  tr:hover .traceMeta button,
-  .traceMeta button:focus-visible {
+  tr:hover .copyable button,
+  .copyable button:focus-visible {
     opacity: 1;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .traceMeta button {
+  .copyable button {
     transition: none;
   }
 }
 .runLink {
-  display: inline-block;
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-2xs);
+  font-size: var(--a13n-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
 }
 .runLink:hover {
   color: var(--a13n-text);
@@ -145,66 +121,46 @@
 }
 .sortButton svg {
   flex: none;
-  opacity: 0.25;
-  transition: opacity 120ms ease;
-}
-.sortButton:hover svg,
-.sortButton[data-active] svg {
-  opacity: 1;
 }
 
-/* Filter popovers -------------------------------------------------------- */
-.filterPopup {
-  width: min(336px, calc(100vw - 24px));
+/* Filters ---------------------------------------------------------------- */
+/* Reads like the time range beside it: muted label, regular-weight value. */
+.filterTrigger {
+  font-weight: 400;
+}
+.filterTrigger > svg:last-child {
+  color: var(--a13n-secondary);
+}
+.chipLabel {
+  color: var(--a13n-secondary);
+}
+.filterCount {
+  min-width: 18px;
+  padding-inline: 5px;
+  border-radius: 999px;
+  background: var(--a13n-selected);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: center;
 }
 .metadataPopup {
-  width: min(400px, calc(100vw - 24px));
+  width: min(440px, calc(100vw - 24px));
 }
 .filterPopover {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
-.popoverTitle {
-  margin: 0;
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-}
-.popoverHint {
-  margin: 3px 0 0;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  line-height: 1.5;
-}
-.presets {
+.metadataRows {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--a13n-radius-row);
-  background: var(--a13n-surface);
+  gap: 8px;
 }
-.presets button {
-  font-weight: 400;
-}
-.presets button[data-active] {
-  background: var(--a13n-elevated);
-  box-shadow: var(--a13n-shadow-subtle);
-  color: var(--a13n-text);
-}
-.rangeFields {
+.metadataRow {
   display: grid;
-  gap: 12px;
-}
-.rangeFields [data-slot="field-label"] {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-}
-.popoverError {
-  margin: 0;
-  color: var(--destructive-foreground);
-  font-size: var(--a13n-text-xs);
-  line-height: 1.5;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
 }
 .popoverFooter {
   display: flex;
@@ -216,25 +172,20 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
 }
-.chipLabel {
-  color: var(--a13n-secondary);
-}
+/* The add action lines up with the fields' text, not the popover edge. */
 .addFilter {
-  justify-self: start;
+  margin-inline-start: -8px;
 }
-.metadataRows {
-  display: grid;
-  gap: 8px;
+/* Rows for the previous filters stay readable, dimmed, until the next page lands. */
+.results {
+  transition: opacity 120ms ease;
 }
-.metadataRow {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr) auto;
-  align-items: center;
-  gap: 6px;
+.results[aria-busy] {
+  opacity: 0.55;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sortButton svg {
+  .results {
     transition: none;
   }
 }

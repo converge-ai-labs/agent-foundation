@@ -12,7 +12,11 @@ import { PlusIcon } from "@phosphor-icons/react";
 import { useRef, useState, type ReactNode } from "react";
 import { useWorkspace } from "../../../layout/workspace";
 import { AddModel } from "../../models/add-model";
-import { ModelKeyLabel } from "../../models/model-icon";
+import {
+  ModelIcon,
+  ModelKeyLabel,
+  providerBrand,
+} from "../../models/model-icon";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
@@ -22,7 +26,6 @@ import {
   modelOption,
   modelPopupWidth,
   useMediaSummary,
-  useMediaUnderstandingChoices,
   useWorkspaceMediaDefault,
 } from "../../models/media-understanding-fields";
 import type { useAgentChoices } from "../choices";
@@ -56,7 +59,6 @@ export function ModelSection({
   const [pickerOpen, setPickerOpen] = useState(false);
   const modelPicker = useRef<HTMLButtonElement>(null);
   const { can } = useWorkspace();
-  const identity = useMediaUnderstandingChoices();
   const workspaceDefault = useWorkspaceMediaDefault();
   const mediaSummary = useMediaSummary();
   return (
@@ -85,9 +87,22 @@ export function ModelSection({
             {
               label: t("Available models"),
               options:
-                choices.data?.models.map((item) =>
-                  modelOption(item, identity.providerName(item.provider_id)),
-                ) ?? [],
+                choices.data?.models.map((item) => {
+                  const provider = choices.data.providers.find(
+                    (entry) => entry.id === item.provider_id,
+                  );
+                  return {
+                    ...modelOption(item, provider?.name),
+                    icon: (
+                      <ModelIcon
+                        upstream={item.config.model_name}
+                        catalogRef={item.catalog_ref}
+                        provider={providerBrand(provider)}
+                        size={20}
+                      />
+                    ),
+                  };
+                }) ?? [],
             },
           ]}
           onValueChange={draft.setModel}

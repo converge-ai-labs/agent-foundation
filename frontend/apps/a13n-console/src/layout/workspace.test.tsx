@@ -21,7 +21,10 @@ vi.mock("../auth/context", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: Record<string, string>) =>
+      key.replace(/\{\{(\w+)\}\}/g, (_, name: string) => values?.[name] ?? ""),
+  }),
 }));
 afterEach(() => {
   cleanup();
@@ -107,13 +110,11 @@ it.each(["/workspace/ws_missing/agents", "/workspace/design/agents"])(
   async (path) => {
     mount(path);
     expect(
-      await screen.findByRole("heading", { name: "Not found" }),
+      await screen.findByRole("heading", { name: "Workspace not found" }),
     ).toBeTruthy();
     expect(screen.queryByText(/\|ws_/)).toBeNull();
     expect(
-      screen
-        .getByRole("link", { name: "Switch workspace: Design" })
-        .getAttribute("href"),
+      screen.getByRole("link", { name: "Open Design" }).getAttribute("href"),
     ).toBe("/workspace/ws_second/agents");
   },
 );

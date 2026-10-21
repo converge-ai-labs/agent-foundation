@@ -117,7 +117,7 @@ it("submits a bounded denial reason with the rest of the answers", async () => {
   });
 });
 
-it("falls back to JSON for malformed approval presentation", () => {
+it("reads the known presentation fields and never dumps the rest as JSON", () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
@@ -126,17 +126,22 @@ it("falls back to JSON for malformed approval presentation", () => {
           calls: [],
           approvals: [
             approval("first", {
+              tool_id: "shell",
               target: "path: /workspace",
               reason: { unexpected: true },
             }),
+            approval("second", { tool_id: "shell", target: " " }),
           ],
         }}
         accepted={accepted}
       />
     </QueryClientProvider>,
   );
-  expect(screen.getByText("Request details")).toBeTruthy();
+  expect(screen.getByText("path: /workspace")).toBeTruthy();
   expect(screen.queryByText("Review reason")).toBeNull();
+  expect(screen.queryByText(/tool_id/)).toBeNull();
+  // Without a target, the call's own arguments say what is being approved.
+  expect(screen.getAllByText("Request details")).toHaveLength(1);
 });
 
 function question(

@@ -418,7 +418,16 @@ it("saves an existing template's recipe and idle policy against its ETag", async
   );
   const user = userEvent.setup();
   await screen.findByRole("button", { name: "Official default" });
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  const save = screen.getByRole("button", { name: "Save changes" });
+  // Nothing to save until the template differs from the saved one.
+  expect(save.hasAttribute("disabled")).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Lifecycle" }));
+  const stop = screen.getByRole("spinbutton", {
+    name: "Stop after idle seconds",
+  });
+  await user.clear(stop);
+  await user.type(stop, "900");
+  await user.click(save);
   await waitFor(() =>
     expect(state.PATCH).toHaveBeenCalledWith(
       "/api/v1/environment-templates/{template_id}",
@@ -431,7 +440,7 @@ it("saves an existing template's recipe and idle policy against its ETag", async
           provider_id: "eprov_e2b",
           config: {
             recipe: { template: "base" },
-            stop_after_seconds: 600,
+            stop_after_seconds: 900,
             delete_after_seconds: null,
           },
         },
@@ -782,7 +791,6 @@ it("creates a desktop preset without exposing image or execution controls", asyn
   expect(
     screen.queryByRole("switch", { name: "Desktop capability" }),
   ).toBeNull();
-  expect(screen.queryByRole("button", { name: "JSON" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Create template" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
   expect(state.POST.mock.calls[0]?.[1].body.config.recipe).toEqual({

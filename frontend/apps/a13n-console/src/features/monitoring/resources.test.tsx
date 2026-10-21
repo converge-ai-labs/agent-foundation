@@ -29,7 +29,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const source: Source = {
   id: "mds_test",
@@ -150,11 +153,10 @@ it("shows saved credential presence to readers without mutation controls", async
   const { user } = setup(<DataSourcesPage />);
   await user.click(await screen.findByText(source.name));
   const dialog = await screen.findByRole("dialog");
-  expect(
-    within(dialog).getByText(
-      /Export credentials.*Saved.*Query credentials.*Saved/,
-    ),
-  ).toBeTruthy();
+  for (const name of ["Export credentials", "Query credentials"])
+    expect(within(dialog).getByRole("group", { name }).textContent).toContain(
+      "Saved",
+    );
   expect(
     within(dialog).queryByRole("button", { name: "Save data source" }),
   ).toBeNull();
@@ -379,7 +381,7 @@ it("prefills deployment defaults and only creates after confirmation with explic
   await user.click(
     screen.getByRole("combobox", { name: "Use deployment query credentials" }),
   );
-  await user.click(screen.getByRole("option", { name: "Yes" }));
+  await user.click(await screen.findByRole("option", { name: "Yes" }));
   await user.click(screen.getByRole("button", { name: "Save data source" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
   expect(state.POST.mock.calls[0][1].body).toMatchObject({
@@ -401,7 +403,7 @@ it("clears deployment credential consent when the destination changes and preser
   await user.click(
     screen.getByRole("combobox", { name: "Use deployment query credentials" }),
   );
-  await user.click(screen.getByRole("option", { name: "Yes" }));
+  await user.click(await screen.findByRole("option", { name: "Yes" }));
   const endpoint = screen.getByLabelText("Prometheus query endpoint");
   await user.clear(endpoint);
   await user.type(endpoint, "https://another.example.com");

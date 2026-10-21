@@ -70,7 +70,8 @@ it("keeps missing numeric values and native histogram notices explicit", () => {
     [150, null],
     [240, 2],
   ]);
-  expect(result.series[0].label).toContain("interface=eth0");
+  expect(result.series[0].label).toBe("eth0");
+  expect(result.series[0].detail).toContain("interface=eth0");
   expect(result.notices).toContain("partial");
   expect(
     result.notices.some(

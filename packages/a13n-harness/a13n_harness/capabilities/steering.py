@@ -77,6 +77,7 @@ class SteeringBridge:
         self._prepared = False
         self._between_attempts = False
         self.model_active = False
+        self.ready = asyncio.Event()
         self._lock = asyncio.Lock()
 
     @property
@@ -138,6 +139,7 @@ class SteeringBridge:
     def pause(self) -> None:
         """Keep accepting ordered input while the current native attempt drains."""
         self._between_attempts = True
+        self.ready.set()
 
     async def checkpoint(self, messages: Sequence[ModelMessage]) -> None:
         """Reconcile incorporation and retain accepted inputs at the normal save boundary."""
@@ -152,7 +154,7 @@ class SteeringBridge:
         *,
         input_id: str | None = None,
         before_accept: Callable[[], None] | None = None,
-        after_accept: Callable[[], None] | None = None,
+        after_accept: Callable[[], bool] | None = None,
     ) -> str:
         """Enqueue one user steering value for the active native run.
 
@@ -182,9 +184,8 @@ class SteeringBridge:
             if enqueue_id is None:
                 raise RunError("Steering input must not be empty.", code="input_empty")
             self._pending_requests[enqueue_id] = deepcopy(request)
-            if after_accept is not None:
-                after_accept()
-        await self._emit_enqueued(enqueue_id, source="external", references=())
+            handoff_requested = after_accept() if after_accept is not None else False
+        await self._emit_enqueued(enqueue_id, source="external", references=(), handoff_requested=handoff_requested)
         return enqueue_id
 
     async def notify(
@@ -301,6 +302,7 @@ class SteeringBridge:
             self._active_context = ctx
             self._between_attempts = False
             if not self._pending_requests:
+                self.ready.set()
                 return True
             pending = tuple(self._pending_requests.values())
             reenqueued: dict[str, ModelRequest] = {}
@@ -312,13 +314,17 @@ class SteeringBridge:
                     reenqueued[enqueue_id] = request
             except BaseException:
                 self._active_context = None
+                self.ready.clear()
                 raise
             self._pending_requests = reenqueued
+            self.ready.set()
             return True
 
     def unbind(self, ctx: RunContext[Any], *, owned: bool) -> None:
         if owned and self._active_context is ctx:
             self._active_context = None
+            if not self._between_attempts:
+                self.ready.clear()
 
     async def _emit_enqueued(
         self,
@@ -326,6 +332,7 @@ class SteeringBridge:
         *,
         source: SteeringInputSource,
         references: tuple[str, ...],
+        handoff_requested: bool = False,
     ) -> None:
         try:
             await emit_harness_event(
@@ -335,6 +342,7 @@ class SteeringBridge:
                     enqueue_id=enqueue_id,
                     source=source,
                     references=references,
+                    handoff_requested=handoff_requested,
                 ),
             )
         except RunError:

@@ -28,7 +28,13 @@ export function ResourceIdentity({
       {icon && <IconTile size={32}>{icon}</IconTile>}
       <span className={styles.resourceCopy}>
         <strong title={name}>{name}</strong>
-        {description && <small>{description}</small>}
+        {description && (
+          <small
+            title={typeof description === "string" ? description : undefined}
+          >
+            {description}
+          </small>
+        )}
       </span>
     </>
   );

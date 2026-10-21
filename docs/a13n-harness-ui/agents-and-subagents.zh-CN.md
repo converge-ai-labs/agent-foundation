@@ -195,13 +195,14 @@ tool_search:
       harness_plugins: [plugin-memory]
   config:
     mode: proxy
-    search_name: search_proxy_tools
-    call_name: call_proxy_tool
+    search_name: discover_tools
+    describe_name: describe_tool
+    call_name: call_tool
     max_results: 10
     max_search_bytes: 32768
 ```
 
-`config.mode: proxy` 为默认模式，使用 Harness 的搜索和调用工具。要使用原生发现和直接本地调用，将 `config` 替换为 `{mode: native, strategy: bm25}`。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。原生模式不接受代理控制工具名称和限制；代理模式不接受原生策略设置。两种模式均保留分组工具名称，并在本地执行。
+`config.mode: proxy` 为默认模式，使用 Harness 的发现、详情和调用工具。发现保留所有关键词候选，精确名称命中优先排序，默认返回摘要；仅当整个候选集只有一个精确名称命中且定义较小时自动展开；详情查询读取所选工具的完整 schema 和指令。要使用原生发现和直接本地调用，将 `config` 替换为 `{mode: native, strategy: bm25}`。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。原生模式不接受代理控制工具名称和限制；代理模式不接受原生策略设置。两种模式均保留分组工具名称，并在本地执行。
 
 使用原生模式时，选择支持原生工具搜索的 Model。不支持的 Model 会在发送模型请求前报错，不会回退。执行细节见[原生工具搜索](../a13n-harness/tool-search.md#select-native-tool-search)。
 
@@ -218,7 +219,7 @@ a13n-harness-ui config show --format json
 
 `config show` 为已配置 Agent 提供 `tool_search_previews`。预览和验证不连接 MCP，也不发现工具。
 
-使用精确 `tools` 允许列表时，列出 `knowledge__lookup` 等规范目标名，不能只列 `call_proxy_tool`。代理控件不授权所有成员。重命名组会改变规范名称，需更新受影响允许列表。已有 CodeAct 策略保留；分组不会让不符合条件的工具可被 CodeAct 调用。见 [ToolSearch 发现与执行](../a13n-harness/tool-search.md)。
+使用精确 `tools` 允许列表时，列出 `knowledge__lookup` 等规范目标名，不能只列 `call_tool`。代理控件不授权所有成员。重命名组会改变规范名称，需更新受影响允许列表。已有 CodeAct 策略保留；分组不会让不符合条件的工具可被 CodeAct 调用。见 [ToolSearch 发现与执行](../a13n-harness/tool-search.md)。
 
 独立 Agent 子级使用自己的分组。Markdown subagent 继承父级分组方案和已有来源/工具限制。没有分组方案的旧 Run 保留直接展示。
 

@@ -2,7 +2,7 @@ import {
   CaretRightIcon,
   FileTextIcon,
   FolderIcon,
-  DotsThreeIcon,
+  DotsThreeOutlineVerticalIcon,
 } from "@phosphor-icons/react";
 import {
   Button,
@@ -163,11 +163,10 @@ function FileTree({
                         aria-label={t("Actions for {{path}}", {
                           path: node.path,
                         })}
-                        title={t("Actions for {{path}}", { path: node.path })}
                       />
                     }
                   >
-                    <DotsThreeIcon />
+                    <DotsThreeOutlineVerticalIcon weight="fill" />
                   </MenuTrigger>
                   <MenuPopup align="start">{fileMenu(node.path)}</MenuPopup>
                 </Menu>

@@ -143,9 +143,14 @@ function parseFrame(event: string, text: string): SessionFrame | undefined {
       isRecord(data.occurrence) &&
       isId(data.occurrence.id) &&
       isCount(data.occurrence.version) &&
-      ["pending", "submitted", "skipped", "failed", "cancelled"].includes(
-        String(data.occurrence.status),
-      )
+      [
+        "pending",
+        "submitted",
+        "completed",
+        "skipped",
+        "failed",
+        "cancelled",
+      ].includes(String(data.occurrence.status))
     )
       return { type: "occurrence", data: data as unknown as OccurrenceEvent };
     throw new ProtocolError(`Invalid session stream ${event} frame.`);

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable, Coroutine, Generator
 from contextlib import suppress
 from pathlib import Path
@@ -668,14 +669,22 @@ class CliShell:
                 records = await backend.app.tool_executions(thread_id, limit=100)
                 if backend.thread_id != thread_id:
                     continue
-                for record in records:
-                    if (
-                        record.foreground_released
-                        and record.completed_at is not None
-                        and record.execution_id not in noticed
-                    ):
-                        noticed[record.execution_id] = None
-                        self.emit(f"Tool execution {record.status} · {record.tool_name} · {record.execution_id}")
+                completed = [
+                    record
+                    for record in records
+                    if record.foreground_released
+                    and record.completed_at is not None
+                    and record.execution_id not in noticed
+                ]
+                noticed.update((record.execution_id, None) for record in completed)
+                unread = [record for record in completed if not record.delivery_acknowledged]
+                if len(unread) == 1:
+                    record = unread[0]
+                    self.emit(f"Tool execution {record.status} · {record.tool_name} · {record.execution_id}")
+                elif unread:
+                    counts = Counter(record.status for record in unread)
+                    summary = ", ".join(f"{count} {status}" for status, count in sorted(counts.items()))
+                    self.emit(f"Tool executions · {summary}. Use /executions for details.")
                 while len(noticed) > 256:
                     noticed.pop(next(iter(noticed)))
                 operation = await backend.app.active_root_operation(thread_id)

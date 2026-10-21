@@ -136,6 +136,7 @@ function NewFileForm({
       <FormActions
         onCancel={onCancel}
         pending={create.isPending}
+        disabled={!path.trim()}
         label={t("Create file")}
       />
     </form>

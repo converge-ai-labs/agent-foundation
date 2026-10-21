@@ -56,3 +56,47 @@ it("asks for the existing account's password when the invited email already has 
   expect(password.getAttribute("aria-invalid")).toBe("true");
   expect(document.activeElement).toBe(password);
 });
+
+function renderAt(path: string, configuration: { email_delivery: boolean }) {
+  http.GET.mockResolvedValue({
+    data: { initialized: true, ...configuration },
+    response: new Response(),
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path={path} element={<AuthPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return userEvent.setup();
+}
+
+it("validates sign-in under each field instead of sending an empty request", async () => {
+  const user = renderAt("/login", { email_delivery: true });
+  await user.click(await screen.findByRole("button", { name: "Sign in" }));
+
+  expect(screen.getByText("Enter your email address.")).toBeTruthy();
+  expect(screen.getByText("Enter your password.")).toBeTruthy();
+  expect(document.activeElement).toBe(screen.getByLabelText("Email address"));
+  expect(http.POST).not.toHaveBeenCalled();
+
+  await user.type(screen.getByLabelText("Email address"), "ada");
+  expect(screen.getByText("Enter a valid email address.")).toBeTruthy();
+});
+
+it("explains unavailable password recovery without offering a form it cannot send", async () => {
+  renderAt("/forgot-password", { email_delivery: false });
+  expect(
+    await screen.findByText(
+      "Email delivery is not configured. Contact your organization administrator.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText("Email address")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Send recovery link" }),
+  ).toBeNull();
+  expect(screen.getByRole("link", { name: "Back to sign in" })).toBeTruthy();
+});

@@ -51,6 +51,7 @@ ROUTES = {
     "together": RouteSpec("together", "openai.chat_completions"),
     "cerebras": RouteSpec("cerebras", "openai.chat_completions"),
     "sambanova": RouteSpec("sambanova", "openai.chat_completions"),
+    "cloudflare": RouteSpec("cloudflare_ai_gateway", "openai.chat_completions"),
     "vercel": RouteSpec("vercel", "openai.chat_completions"),
     "deepseek": RouteSpec("deepseek", "openai.chat_completions"),
     "zai": RouteSpec("zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4", _zai_model),

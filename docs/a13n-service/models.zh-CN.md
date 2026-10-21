@@ -22,6 +22,7 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 | `fireworks`, `together`, `cerebras`, `sambanova`, `vercel`, `xai`  | `openai.chat_completions`                                                         |
 | `ollama`                                                           | `ollama.chat_completions`                                                         |
 | `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu` | `openai.chat_completions`                                                         |
+| `cloudflare_ai_gateway`                                            | `openai.chat_completions`                                                         |
 | `typesafe`                                                         | `typesafe.system_one`                                                             |
 
 各类型的配置和凭据字段来自 Harness；`GET /api/v1/provider-types/model` 以 JSON Schema 返回。多数类型接受可选 `base_url` 和 `api_key` 凭据。各类型选项请参阅 [Harness 模型](../a13n-harness/models.md)和[模型认证](../a13n-harness/model-authentication.md)。
@@ -42,6 +43,8 @@ Cerebras、SambaNova、Vercel AI Gateway 和 xAI / Grok 同样使用 API key，�
 Vercel 需要填写完整的网关模型 ID，例如 `anthropic/claude-sonnet-4.6`。请通过测试已保存的模型来验证凭据：它的公开模型列表不能用于验证身份。其余三家提供无需推理的连接测试。xAI / Grok 使用 HTTP Chat Completions。这些 provider 选项不提供 Responses API 或 xAI 原生服务端搜索工具。
 
 连接使用 API key 的网关或 Vertex Express Mode 时，选择 **Google Vertex AI → API key**。Project ID 和 Location 留空，**Base URL** 填网关 origin，不添加 `/v1beta1` 或模型路径。SDK 发送 `x-goog-api-key`，请求路径为 `/v1beta1/publishers/google/models/...`。使用现有 Google Cloud IAM 配置时，选择 **Service account**，填写服务账号凭证及必填的 Project ID、Location。API 的 `credential` 接受 `{"api_key": "..."}` 或现有的扁平服务账号对象；在表单中切换凭证类型会清空上一种类型的凭证草稿。
+
+Cloudflare AI Gateway 使用 `cloudflare_ai_gateway` provider 类型和 models.dev 的 `cloudflare-ai-gateway` 频道。将 `account_id` 设为 Cloudflare 的 32 位账号 ID，并将 Cloudflare API token 保存为 `api_key` 凭证。Token 需要 **Account → Workers AI → Read** 权限。在 Cloudflare 中配置默认别名的 BYOK 凭证或统一计费。通过 `gateway_id` 指定网关；省略时，第三方模型使用 Cloudflare 默认网关。所有受支持的聊天模型统一使用 `openai.chat_completions`；切换模型 ID 不改变调用协议。保留完整模型 ID，例如 `openai/gpt-5.4` 或 `anthropic/claude-sonnet-4.6`。自定义 `base_url` 应以 `/ai` 结尾，不含 `/v1` 或方法路径。通过测试已保存的模型验证访问权限；此 provider 不提供独立连接探测，也不暴露原生服务端工具或单独的 Workers AI 目录。参见 [Cloudflare 统一 REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/)。
 
 ## ChatGPT 订阅 provider
 

@@ -1,6 +1,86 @@
 /* Resource table --------------------------------------------------------- */
+.frame {
+  container-type: inline-size;
+  min-width: 0;
+}
 .table {
   width: 100%;
+}
+/* Keep room for the identity without crowding every supporting column. */
+:where(.table[data-fit]) > thead > tr > th:first-child,
+:where(.table[data-fit]) > tbody > tr > td:first-child {
+  width: 40%;
+  max-width: 0;
+  min-width: 200px;
+}
+/*
+ * A narrow list stacks each row: the identity and its menu on the first line,
+ * then the supporting values, each named by its column. Rules stay at zero
+ * specificity so a list with its own narrow layout keeps it.
+ */
+@container (width < 560px) {
+  .frame .table {
+    display: block;
+    min-width: 0;
+  }
+  :where(.table) > thead {
+    display: none;
+  }
+  :where(.table) > tbody {
+    display: block;
+  }
+  :where(.table) > tbody > tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    padding: 12px 0;
+  }
+  :where(.table) > tbody > tr > td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  /* Column sizes from a list's wide layout do not apply to stacked rows. */
+  .frame .table > tbody > tr > td {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    min-width: 0;
+    padding: 0;
+  }
+  /* Leaves room for the 44px menu cell and the gap on the first line. */
+  :where(.table) > tbody > tr > td:first-child {
+    flex: 1 1 calc(100% - 56px);
+  }
+  :where(.table) > tbody > tr > td:where(:not(:first-child)) {
+    flex: 1 1 calc(50% - 12px);
+    order: 2;
+    font-size: var(--a13n-text-xs);
+  }
+  :where(.table)
+    > tbody
+    > tr
+    > td:where(:not(:first-child, .menuCell))::before {
+    content: attr(data-label);
+    margin-bottom: 2px;
+    font-size: var(--a13n-text-2xs);
+    color: var(--a13n-tertiary);
+  }
+}
+@container (width < 560px) {
+  .table > tbody > tr > .menuCell {
+    flex: 0 0 32px;
+    order: 1;
+    align-items: flex-end;
+  }
+  .table .rowMenu {
+    opacity: 1;
+  }
+  .cell[data-align="right"] > div {
+    justify-content: flex-start;
+  }
 }
 /* Only body rows respond to the pointer. */
 .table thead tr:hover {
@@ -10,7 +90,7 @@
   color: var(--a13n-text-supporting);
   font-size: var(--a13n-text-sm);
   font-weight: 400;
-  line-height: 1.5;
+  line-height: 20px;
 }
 .cell[data-tone="primary"] {
   color: var(--a13n-text);
@@ -24,7 +104,8 @@
 }
 .cell small {
   display: block;
-  margin-top: 3px;
+  margin-top: 2px;
+  line-height: 16px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
   font-weight: 400;
@@ -43,7 +124,7 @@ tr:focus-within .rowMenu,
 .rowMenu:has([data-popup-open]) {
   opacity: 1;
 }
-@media (pointer: coarse) {
+@media (pointer: coarse), (hover: none) {
   .rowMenu {
     opacity: 1;
   }
@@ -77,22 +158,35 @@ tr:focus-within .rowMenu,
 }
 
 /* Collection footer ------------------------------------------------------ */
+/* The footer measures itself like the table frame above it, so the count
+   follows the rows: inset with table cells, flush with stacked rows. */
 .footer {
+  container-type: inline-size;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 16px 0;
+  padding-top: 14px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
 }
 .footer p {
   margin: 0;
+  padding-left: 16px;
 }
 .pagination {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  padding-right: 16px;
+}
+@container (width < 560px) {
+  .footer p {
+    padding-left: 0;
+  }
+  .pagination {
+    padding-right: 0;
+  }
 }
 
 /* Surface rows ----------------------------------------------------------- */
@@ -241,4 +335,9 @@ tr:focus-within .rowMenu,
 .archivedChip[data-active="true"] {
   background: var(--a13n-selected);
   color: var(--a13n-text);
+}
+
+/* Align the status dot with the column label, compensating for pill padding. */
+.cell [data-slot="status-pill"] {
+  margin-inline-start: -8px;
 }

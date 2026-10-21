@@ -429,7 +429,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 if not is_codeact_tool_eligible(canonical_name, prepared):
                     raise RuntimeError(
                         f"Tool {canonical_name!r} is not enabled for CodeAct. "
-                        "Use an ordinary proxy call outside the runner, or ask the tool owner to enable its CodeAct policy."
+                        "Use the tool call outside the runner, or ask the tool owner to enable its CodeAct policy."
                     )
             current = manager.tools.get(canonical_name) if manager.tools is not None else None
             if current is not prepared:

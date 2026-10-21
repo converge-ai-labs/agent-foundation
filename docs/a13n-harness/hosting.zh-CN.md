@@ -73,6 +73,10 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 `await stream.steer(message, immediate=True)` 在同一个逻辑 Run 中接收新输入并继续执行。主模型请求期间会中断请求并恢复执行尝试；工具阶段则保留当前尝试，完成审查和参数校验，并以真实结果或保留执行回执结束支持工具的前台等待。原生工具批次完成或挂起等待审批后，才进入下一次模型请求。返回的输入 ID 表示已接受，规范历史记录确认输入已纳入。自动模式独立地在前台等待到期时交还控制权。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
 
+如果原生 steering 尚未就绪，或仍有不支持交接的工具在运行，即时 steering 会在接受输入前最多等待 5 秒。超时抛出错误码为 `steering_timeout` 的 `RunError`，输入不会被接受。停止或关闭 Run 会及时结束等待。默认情况下，调用保持即时语义，不会回退为排队 steering；输入一旦被接受，等待期限即结束。
+
+交互式投递可以传入 `immediate=True, best_effort=True`。如果有不支持交接的工具在运行，或未绑定工具 runtime，Harness 会立即接受为普通排队输入；否则请求即时交接。原生就绪仍采用相同的有界等待。输入只入队一次；非法输入、取消和 Run 已停止仍然会失败。`best_effort` 不影响普通 steering。`steering_input_enqueued` 事件通过 `handoff_requested` 区分即时交接请求与普通排队，两者都不表示模型已经读到输入。
+
 Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。只有 Run 同时启用 `ToolExecutionCapability` 并绑定 runtime，才会提供这些控制工具和仅含状态的上下文摘要；`inline` 与 `auto` 模式遵循同一规则。未绑定的 inline Run 不提供这两项。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
 
 通过运行时的 `on_completed` 回调安排 Host 投递，不阻塞执行。关闭共享客户端前，先停止 Host 新准入并结束交互等待，再调用 `await runtime.close(timeout_seconds=...)` 和 `await runtime.join()`。`close` 限制取消等待时间；`join` 保持所有权直到协作式清理完成。对话取消与工具取消由不同策略控制。

@@ -95,9 +95,11 @@ it.each([
     expect(
       screen.getByRole("link", { name: "Settings" }).getAttribute("href"),
     ).toBe("/workspace/ws_design/settings");
-    await user.hover(
-      screen.getByRole("button", { name: new RegExp(`${trigger}$`) }),
-    );
+    const menu = screen.getByRole("button", {
+      name: new RegExp(`${trigger}$`),
+    });
+    if (trigger === "Alex") await user.click(menu);
+    else await user.hover(menu);
     await user.click(await screen.findByRole("menuitem", { name: entry }));
     expect(screen.getByText(landing)).toBeTruthy();
     expect(

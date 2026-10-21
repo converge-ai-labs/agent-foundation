@@ -28,6 +28,78 @@ it("counts returned running shell handles, not foreground statuses or unrelated 
   ]);
 });
 
+it.each(["shell_wait", "shell_info"])(
+  "retains the command from a Host execution receipt for %s observations",
+  (name) => {
+    const processes = new ProcessObservations();
+    processes.result(
+      "run-one",
+      "shell_exec",
+      JSON.stringify({ command: "pnpm   dev\n--host" }),
+      JSON.stringify({
+        type: "tool_execution_receipt",
+        execution_id: "exec-one",
+        tool_name: "shell_exec",
+        status: "running",
+      }),
+    );
+    // A runtime receipt alone is not a running process observation.
+    expect(processes.background).toEqual([]);
+    processes.result(
+      "run-one",
+      name,
+      { process_id: "exec-one" },
+      { process_id: "exec-one", status: { phase: "running" } },
+    );
+    expect(processes.background).toEqual([
+      {
+        runId: "run-one",
+        processId: "exec-one",
+        command: "pnpm dev --host",
+        phase: "running",
+        background: true,
+      },
+    ]);
+    processes.result(
+      "run-one",
+      "shell_wait",
+      { process_id: "exec-one" },
+      { process_id: "exec-one", status: { phase: "exited", exit_code: 7 } },
+    );
+    expect(processes.background[0]).toMatchObject({
+      command: "pnpm dev --host",
+      phase: "exited",
+      exitCode: 7,
+    });
+  },
+);
+
+it("fills a late receipt's command without replacing observed completion or crossing Runs", () => {
+  const processes = new ProcessObservations();
+  processes.result(
+    "run-one",
+    "shell_wait",
+    {},
+    { process_id: "exec-one", status: { phase: "running" } },
+  );
+  processes.status("run-one", "exec-one", "exited", 0);
+  for (const run of ["run-one", "run-two"])
+    processes.result(
+      run,
+      "shell_exec",
+      { command: run },
+      {
+        type: "tool_execution_receipt",
+        execution_id: "exec-one",
+        tool_name: "shell_exec",
+        status: "running",
+      },
+    );
+  expect(processes.background).toMatchObject([
+    { runId: "run-one", command: "run-one", phase: "exited", exitCode: 0 },
+  ]);
+});
+
 it("does not resurrect completion when tool return is delivered after the callback", () => {
   const processes = new ProcessObservations();
   processes.status("run-one", "process-one", "exited", 7);

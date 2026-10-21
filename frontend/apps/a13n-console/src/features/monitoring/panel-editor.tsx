@@ -1,5 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+} from "a13n-ui";
 import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -14,8 +21,7 @@ import {
   type TimeRange,
 } from "./api";
 import { MetricsPanel } from "./panel";
-import { unitOptions } from "./labels";
-import { metricLabel } from "./series";
+import { metricName, metrics, unitOptions } from "./labels";
 const PromQLEditor = lazy(() =>
   import("./promql-editor").then((module) => ({
     default: module.PromQLEditor,
@@ -23,44 +29,6 @@ const PromQLEditor = lazy(() =>
 );
 import styles from "./monitoring.module.css";
 
-type Metric = Extract<PanelQuery, { kind: "metric" }>["metric"];
-// Exhaustive against the generated API union: new backend metrics require a UI entry.
-const metricCatalog: Record<Metric, null> = {
-  system_cpu_busy_ratio: null,
-  system_memory_used_bytes: null,
-  system_memory_total_bytes: null,
-  system_memory_available_bytes: null,
-  system_memory_cache_bytes: null,
-  system_memory_wired_bytes: null,
-  system_memory_compressed_bytes: null,
-  system_swap_used_bytes: null,
-  system_swap_total_bytes: null,
-  system_commit_total_bytes: null,
-  system_commit_limit_bytes: null,
-  system_processes: null,
-  system_threads: null,
-  system_handles: null,
-  cgroup_memory_current_bytes: null,
-  cgroup_pids_current: null,
-  tcp_connections: null,
-  udp_sockets: null,
-  daemon_sessions: null,
-  daemon_processes: null,
-  daemon_connections: null,
-  daemon_transfers: null,
-  daemon_retained_output_bytes: null,
-  network_received_bytes_per_second: null,
-  network_transmitted_bytes_per_second: null,
-  disk_read_bytes_per_second: null,
-  disk_written_bytes_per_second: null,
-  disk_read_operations_per_second: null,
-  disk_write_operations_per_second: null,
-  cgroup_io_read_bytes_per_second: null,
-  cgroup_io_written_bytes_per_second: null,
-  cgroup_io_read_operations_per_second: null,
-  cgroup_io_write_operations_per_second: null,
-};
-export const metrics = Object.keys(metricCatalog) as Metric[];
 export function newPanel(panels: Panel[], title: string): Panel {
   return {
     id: crypto.randomUUID(),
@@ -88,12 +56,15 @@ export function newPanel(panels: Panel[], title: string): Panel {
 }
 export function PanelEditor({
   panel,
+  adding,
   target,
   range,
   onApply,
   onClose,
 }: {
   panel: Panel;
+  /** The panel is not on the dashboard yet. */
+  adding: boolean;
   target: Target | null;
   range: TimeRange;
   onApply: (panel: Panel) => void;
@@ -134,7 +105,7 @@ export function PanelEditor({
         if (!open) onClose();
       }}
       size="lg"
-      title={t("Edit panel")}
+      title={adding ? t("Add panel") : t("Edit panel")}
       closeLabel={t("Close")}
     >
       <form
@@ -182,18 +153,14 @@ export function PanelEditor({
             onValueChange={(value) => update({ legend: value === "on" })}
           />
         </div>
-        <details>
-          <summary>{t("Description (optional)")}</summary>
-          <FormField label={t("Description (optional)")}>
-            <Input
-              maxLength={2048}
-              value={draft.description ?? ""}
-              onChange={(e) => update({ description: e.target.value })}
-            />
-          </FormField>
-        </details>
-        <details>
-          <summary>{t("Panel position and size")}</summary>
+        <FormField label={t("Description (optional)")}>
+          <Input
+            maxLength={2048}
+            value={draft.description ?? ""}
+            onChange={(e) => update({ description: e.target.value })}
+          />
+        </FormField>
+        <DisclosureSection title={t("Panel position and size")}>
           <div className={styles.row}>
             {(["x", "y", "w", "h"] as const).map((key) => (
               <FormField
@@ -228,7 +195,7 @@ export function PanelEditor({
               </FormField>
             ))}
           </div>
-        </details>
+        </DisclosureSection>
         <ErrorNotice error={sources.error} />
         {draft.queries.map((query, index) => (
           <div className={styles.query} key={queryKeys[index]}>
@@ -287,7 +254,7 @@ export function PanelEditor({
                   value={query.metric}
                   options={metrics.map((value) => ({
                     value,
-                    label: metricLabel(value),
+                    label: metricName(t, value),
                   }))}
                   onValueChange={(metric) =>
                     queryChange(index, {
@@ -347,7 +314,7 @@ export function PanelEditor({
                 />
                 <Suspense fallback={<p>{t("Loading…")}</p>}>
                   <PromQLEditor
-                    label={`${t("PromQL expression")} ${index + 1}`}
+                    label={`${t("PromQL expression")} ${String.fromCharCode(65 + index)}`}
                     value={query.expression}
                     onChange={(expression) =>
                       queryChange(index, { ...query, expression })
@@ -365,7 +332,7 @@ export function PanelEditor({
             )}
           </div>
         ))}
-        <div className={styles.row}>
+        <div className={styles.queryActions}>
           <Button
             type="button"
             variant="outline"
@@ -399,20 +366,26 @@ export function PanelEditor({
             {t("Run queries")}
           </Button>
         </div>
-        {preview && (
-          <div className={styles.preview}>
+        {/* The preview keeps its place so running the queries does not move the form. */}
+        <div className={styles.preview}>
+          {preview ? (
             <MetricsPanel
               panel={preview.panel}
+              title={preview.panel.title}
               target={preview.target}
               range={preview.range}
               revision={revision}
               syncKey="panel-preview"
             />
-          </div>
-        )}
+          ) : (
+            <p className={styles.previewHint}>
+              {t("Run the queries to preview this panel.")}
+            </p>
+          )}
+        </div>
         <FormActions
           onCancel={onClose}
-          label={t("Apply panel")}
+          label={adding ? t("Add panel") : t("Apply panel")}
           pending={false}
           disabled={!valid}
         />

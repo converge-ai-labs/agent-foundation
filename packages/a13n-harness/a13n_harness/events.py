@@ -281,6 +281,7 @@ class SteeringInputEnqueuedPayload(_FirstPartyPayload):
     enqueue_id: str = Field(min_length=1, max_length=256)
     source: Literal["external", "async_subagent", "background_process"]
     references: tuple[str, ...] = Field(default=(), max_length=16)
+    handoff_requested: bool = False
 
     @field_validator("references")
     @classmethod

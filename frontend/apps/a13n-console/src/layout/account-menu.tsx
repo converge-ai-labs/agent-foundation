@@ -44,7 +44,6 @@ export function AccountMenu({
     <>
       <Menu>
         <MenuTrigger
-          openOnHover
           delay={100}
           closeDelay={150}
           render={

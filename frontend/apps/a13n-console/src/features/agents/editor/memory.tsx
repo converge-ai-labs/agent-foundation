@@ -21,8 +21,9 @@ export function MemorySection({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const mounts = draft.memoryMounts;
+  // Two sections of the editor, spaced by it like every other section.
   return (
-    <div className="grid gap-8">
+    <>
       <Section
         title={t("Session memory defaults")}
         description={t(
@@ -105,6 +106,6 @@ export function MemorySection({
           }
         />
       </Section>
-    </div>
+    </>
   );
 }

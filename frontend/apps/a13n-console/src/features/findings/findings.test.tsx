@@ -1,9 +1,17 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TooltipProvider } from "a13n-ui";
+import { ApiError } from "../../service-client";
 import { FindingDetail } from "./detail";
 import { FindingsPage } from "./page";
 
@@ -270,6 +278,48 @@ it("reviews impact independently and sends the exact revision and evidence to Co
   expect(http.POST).not.toHaveBeenCalled();
 });
 
+it("keeps an unreadable cited run as a quiet note and retries only transient failures", async () => {
+  const original = http.GET.getMockImplementation()!;
+  let offline = true;
+  http.GET.mockImplementation(async (path: string, ...args: unknown[]) => {
+    if (path === "/api/v1/findings/{finding_id}")
+      return {
+        data: {
+          ...finding,
+          evidence: [
+            ...finding.evidence,
+            { run_id: "run_gone", trace_id: "b".repeat(32), span_ids: [] },
+          ],
+        },
+      };
+    if (path === "/api/v1/runs/{run_id}") {
+      const { run_id } = (args[0] as { params: { path: { run_id: string } } })
+        .params.path;
+      if (run_id === "run_gone")
+        throw new ApiError(404, "run_not_found", "Run not found", {}, null);
+      if (offline) throw new Error("offline");
+    }
+    return original(path, ...args);
+  });
+  const user = mount("/workspace/ws_test/findings/fnd_test");
+  await waitFor(() =>
+    expect(screen.getAllByText("Run unavailable")).toHaveLength(2),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  const retry = screen.getByRole("button", { name: "Retry" });
+  offline = false;
+  await user.click(retry);
+  expect(
+    (await screen.findByRole("link", { name: "Open run" })).getAttribute(
+      "href",
+    ),
+  ).toBe(
+    "/workspace/ws_test/sessions/sess_target/threads/thread_target/runs/run_target",
+  );
+  expect(screen.getAllByText("Run unavailable")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
 it("switches collections without stacking tables and preserves analysis evidence in row details", async () => {
   const original = http.GET.getMockImplementation()!;
   http.GET.mockImplementation(async (path: string, ...args: unknown[]) =>
@@ -310,10 +360,16 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(screen.queryByRole("link", { name: "Open analysis run" })).toBeNull();
   expect(screen.getByRole("button", { name: "Analyze traces" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Workspace traces" }));
-  await screen.findByRole("dialog", { name: "Analysis details" });
-  expect(screen.getByText("Selected traces: 2")).toBeTruthy();
-  expect(screen.getByText("Findings: 3")).toBeTruthy();
-  expect(screen.getByText("Evidence-cited traces: 1")).toBeTruthy();
+  const details = await screen.findByRole("dialog", {
+    name: "Analysis details",
+  });
+  const fact = (label: string) =>
+    within(details).getByText(label, { selector: "dt" }).nextElementSibling
+      ?.textContent;
+  expect(fact("Scope")).toBe("Workspace traces");
+  expect(fact("Selected traces")).toBe("2");
+  expect(fact("Findings")).toBe("3");
+  expect(fact("Evidence-cited traces")).toBe("1");
   expect(screen.queryByText(/Coverage not reported/)).toBeNull();
   expect(screen.getByText(/Selection capped/)).toBeTruthy();
   expect(

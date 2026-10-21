@@ -38,10 +38,32 @@ vi.mock("../../layout/workspace", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
-      key.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
-        values?.[name] === undefined ? match : String(values[name]),
+      String(values?.defaultValue ?? key).replace(
+        /\{\{(\w+)\}\}/g,
+        (match, name: string) =>
+          values?.[name] === undefined ? match : String(values[name]),
       ),
+    i18n: { resolvedLanguage: "en" },
   }),
+}));
+// The calendar field has its own tests; here local values are typed directly.
+vi.mock("../../shared/forms", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../shared/forms")>()),
+  DateTimeField: ({
+    label,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    value: string;
+    onValueChange: (value: string) => void;
+  }) => (
+    <input
+      aria-label={label}
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    />
+  ),
 }));
 vi.mock("./chart", () => ({ MetricsChart: () => null }));
 vi.mock("react-grid-layout", () => ({
@@ -75,6 +97,18 @@ const dashboard: Dashboard = {
     ],
   },
 };
+async function setRange(
+  user: ReturnType<typeof userEvent.setup>,
+  start: string,
+  end: string,
+) {
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.clear(screen.getByLabelText("Start time"));
+  await user.type(screen.getByLabelText("Start time"), start);
+  await user.clear(screen.getByLabelText("End time"));
+  await user.type(screen.getByLabelText("End time"), end);
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+}
 beforeEach(() => {
   vi.clearAllMocks();
   state.write = true;
@@ -155,26 +189,19 @@ it("discards edited time defaults without leaking them into a later name-only sa
   );
   await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
   await user.click(screen.getByRole("button", { name: /Time range:/ }));
-  await user.click(screen.getByRole("button", { name: "15m" }));
-  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  await user.click(screen.getByRole("button", { name: "Last 15 minutes" }));
   await user.click(screen.getByRole("combobox", { name: "Auto refresh" }));
-  await user.click(screen.getByRole("option", { name: "Off" }));
-  await user.clear(screen.getByLabelText("From"));
-  await user.type(screen.getByLabelText("From"), "2026-10-19T10:00");
-  await user.clear(screen.getByLabelText("To"));
-  await user.type(screen.getByLabelText("To"), "2026-10-19T12:00");
-  await user.click(screen.getByRole("button", { name: "Apply range" }));
+  await user.click(await screen.findByRole("option", { name: "Off" }));
+  await setRange(user, "2026-10-19T10:00", "2026-10-19T12:00");
   expect(screen.getByRole("button", { name: "Back to live" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Discard" }));
   expect(screen.queryByRole("button", { name: "Back to live" })).toBeNull();
   expect(
     screen.getByRole("button", { name: /Time range:/ }).textContent,
-  ).toContain("Last 1h");
-  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  ).toContain("Last hour");
   expect(
     screen.getByRole("combobox", { name: "Auto refresh" }).textContent,
-  ).toContain("30s");
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  ).toContain("30 seconds");
   await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
   await user.type(
     screen.getByRole("textbox", { name: "Dashboard name" }),
@@ -192,7 +219,7 @@ it("keeps viewer time overrides separate from saved dashboard defaults", async (
   const { user } = setup();
   await screen.findByText("Select a target to explore metrics");
   await user.click(screen.getByRole("button", { name: /Time range:/ }));
-  await user.click(screen.getByRole("button", { name: "6h" }));
+  await user.click(screen.getByRole("button", { name: "Last 6 hours" }));
   await user.click(screen.getByRole("button", { name: "Edit dashboard" }));
   await user.click(screen.getByRole("button", { name: "Save dashboard" }));
   await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
@@ -205,11 +232,11 @@ it("applies panel editing to the draft and discards without a server write", asy
     await screen.findByRole("button", { name: "Edit dashboard" }),
   );
   await user.click(screen.getByRole("button", { name: "Add panel" }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit panel" });
+  const dialog = await screen.findByRole("dialog", { name: "Add panel" });
   const title = within(dialog).getByRole("textbox", { name: "Title" });
   await user.clear(title);
   await user.type(title, "Extra CPU");
-  await user.click(within(dialog).getByRole("button", { name: "Apply panel" }));
+  await user.click(within(dialog).getByRole("button", { name: "Add panel" }));
   await screen.findByRole("heading", { name: "Extra CPU" });
   expect(state.PATCH).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Discard" }));
@@ -470,16 +497,11 @@ it("keeps the initial view focused and applies preset, refresh and absolute time
   await screen.findByText("Select a target to explore metrics");
   expect(screen.queryByRole("region", { name: "CPU" })).toBeNull();
   await user.click(screen.getByRole("button", { name: /Time range:/ }));
-  await user.click(screen.getByRole("button", { name: "6h" }));
+  await user.click(screen.getByRole("button", { name: "Last 6 hours" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await user.click(screen.getByRole("button", { name: /Time range:/ }));
   await user.click(screen.getByRole("combobox", { name: "Auto refresh" }));
-  await user.click(await screen.findByRole("option", { name: "10s" }));
-  await user.clear(screen.getByLabelText("From"));
-  await user.type(screen.getByLabelText("From"), "2026-10-19T10:00");
-  await user.clear(screen.getByLabelText("To"));
-  await user.type(screen.getByLabelText("To"), "2026-10-19T12:00");
-  await user.click(screen.getByRole("button", { name: "Apply range" }));
+  await user.click(await screen.findByRole("option", { name: "10 seconds" }));
+  await setRange(user, "2026-10-19T10:00", "2026-10-19T12:00");
   await user.click(screen.getByRole("button", { name: "Zoom out" }));
   await user.click(screen.getByRole("button", { name: "Back to live" }));
   expect(screen.queryByRole("button", { name: "Back to live" })).toBeNull();
@@ -491,23 +513,16 @@ it.each(["2026-03-08", "2026-11-01"])(
   async (date) => {
     const { user } = setup();
     await screen.findByText("Select a target to explore metrics");
-    await user.click(screen.getByRole("button", { name: /Time range:/ }));
     const start = `${date}T00:30`;
     const end = `${date}T03:30`;
-    await user.clear(screen.getByLabelText("From"));
-    await user.type(screen.getByLabelText("From"), start);
-    await user.clear(screen.getByLabelText("To"));
-    await user.type(screen.getByLabelText("To"), end);
-    await user.click(screen.getByRole("button", { name: "Apply range" }));
-    const trigger = screen.getByRole("button", { name: /Time range:/ });
-    expect(trigger.getAttribute("title")).toBe(
-      `${new Date(start).toLocaleString()} – ${new Date(end).toLocaleString()}`,
+    await setRange(user, start, end);
+    await user.click(screen.getByRole("button", { name: /Time range:/ }));
+    expect(
+      (screen.getByLabelText("Start time") as HTMLInputElement).value,
+    ).toBe(start);
+    expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
+      end,
     );
-    await user.click(trigger);
-    expect((screen.getByLabelText("From") as HTMLInputElement).value).toBe(
-      start,
-    );
-    expect((screen.getByLabelText("To") as HTMLInputElement).value).toBe(end);
     expect(state.PATCH).not.toHaveBeenCalled();
   },
 );
@@ -645,7 +660,11 @@ it("refreshes a live dashboard when visible again and reuses results across resp
         [{ ...live, config: { ...live.config, refresh_seconds: 0 } }],
       );
     });
-    await screen.findByText("Paused");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Auto refresh" }).textContent,
+      ).toContain("Off"),
+    );
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });

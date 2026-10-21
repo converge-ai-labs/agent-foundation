@@ -4,7 +4,14 @@ import {
   DesktopIcon,
   StackIcon,
 } from "@phosphor-icons/react";
-import { Button, ChoiceField, Input, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  Input,
+  Popover,
+  PopoverPopup,
+  PopoverTrigger,
+} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
@@ -72,6 +79,8 @@ export function matchesTarget(
       .every((word) => text.includes(word))
   );
 }
+const noFilters = { search: "", kind: "", status: "", source: "" };
+/** A searchable popover over every Environment and Device in the workspace. */
 export function TargetPicker({
   items,
   sources,
@@ -86,42 +95,54 @@ export function TargetPicker({
   const { t } = useTranslation();
   const statuses = statusLabels(t);
   const [open, setOpen] = useState(false);
-  const [filters, setFilters] = useState({
-    search: "",
-    kind: "",
-    status: "",
-    source: "",
-  });
+  const [filters, setFilters] = useState(noFilters);
   const selected = items.find((item) => item.value === value);
   const visible = items.filter((item) => matchesTarget(item, filters));
   const sourceName = (id: string) =>
     sources.find((source) => source.id === id)?.name ??
     (id || t("No data source"));
+  const name =
+    selected?.name ?? (value ? t("Unavailable target") : t("Select target"));
   return (
-    <>
-      <Button
-        variant="outline"
-        className={styles.targetTrigger}
-        onClick={() => setOpen(true)}
-        aria-label={`${t("Target")}: ${selected?.name ?? t("Select target")}`}
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setFilters(noFilters);
+      }}
+    >
+      <PopoverTrigger
+        render={
+          <Button
+            variant="outline"
+            className={styles.targetTrigger}
+            aria-label={`${t("Target")}: ${name}`}
+          />
+        }
       >
-        {selected?.kind === "device" ? <DesktopIcon /> : <StackIcon />}
-        <span>
-          {selected?.name ??
-            (value ? t("Unavailable target") : t("Select target"))}
-        </span>
-        <CaretDownIcon />
-      </Button>
-      <ModalFrame
-        open={open}
-        onOpenChange={setOpen}
-        title={t("Select target")}
-        closeLabel={t("Close")}
-        size="lg"
+        <span className={styles.triggerLabel}>{t("Target")}</span>
+        {selected &&
+          (selected.kind === "device" ? (
+            <DesktopIcon aria-hidden="true" />
+          ) : (
+            <StackIcon aria-hidden="true" />
+          ))}
+        <span className={styles.targetName}>{name}</span>
+        <CaretDownIcon
+          size={16}
+          aria-hidden="true"
+          className={styles.targetCaret}
+        />
+      </PopoverTrigger>
+      <PopoverPopup
+        aria-label={t("Select target")}
+        align="start"
+        className={styles.targetPopup}
       >
-        <div className={styles.fields}>
+        <div className={styles.targetSearch}>
           <Input
             type="search"
+            size="sm"
             autoFocus
             aria-label={t("Search targets")}
             placeholder={t("Search name, ID or label (region=west)…")}
@@ -171,64 +192,69 @@ export function TargetPicker({
               ]}
               onValueChange={(source) => setFilters({ ...filters, source })}
             />
-            {Object.values(filters).some(Boolean) && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setFilters({ search: "", kind: "", status: "", source: "" })
-                }
-              >
-                {t("Clear filters")}
-              </Button>
-            )}
           </div>
-          <div
-            className={`${styles.targetList} a13n-scrollbar`}
-            aria-label={t("Targets")}
-          >
-            {visible.map((item) => (
-              <button
-                type="button"
-                key={item.value}
-                className={styles.targetRow}
-                aria-pressed={item.value === value}
-                onClick={() => {
-                  onChange(item.value);
-                  setOpen(false);
-                }}
-              >
-                {item.kind === "device" ? (
-                  <DesktopIcon size={20} />
-                ) : (
-                  <StackIcon size={20} />
-                )}
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    {t(item.kind === "device" ? "Device" : "Environment")} ·{" "}
-                    {statuses[item.status] ?? item.status} ·{" "}
-                    {sourceName(item.source)}
-                  </small>
-                  {!!Object.keys(item.labels).length && (
-                    <small>
-                      {Object.entries(item.labels)
-                        .map(([key, value]) => `${key}=${value}`)
-                        .join(" · ")}
-                    </small>
-                  )}
-                </span>
-                {item.value === value && <CheckIcon size={18} />}
-              </button>
-            ))}
-            {!visible.length && (
-              <p className={styles.noData}>{t("No matching targets")}</p>
-            )}
-          </div>
-          <small className={styles.range}>
-            {visible.length} / {items.length}
-          </small>
         </div>
-      </ModalFrame>
-    </>
+        <div
+          className={`${styles.targetList} a13n-scrollbar`}
+          aria-label={t("Targets")}
+        >
+          {visible.map((item) => (
+            <button
+              type="button"
+              key={item.value}
+              className={styles.targetRow}
+              aria-pressed={item.value === value}
+              onClick={() => {
+                onChange(item.value);
+                setOpen(false);
+                setFilters(noFilters);
+              }}
+            >
+              {item.kind === "device" ? (
+                <DesktopIcon size={16} aria-hidden="true" />
+              ) : (
+                <StackIcon size={16} aria-hidden="true" />
+              )}
+              <span>
+                <strong>{item.name}</strong>
+                <small>
+                  {[
+                    t(item.kind === "device" ? "Device" : "Environment"),
+                    statuses[item.status] ?? item.status,
+                    sourceName(item.source),
+                    ...Object.entries(item.labels).map(
+                      ([key, label]) => `${key}=${label}`,
+                    ),
+                  ].join(" · ")}
+                </small>
+              </span>
+              {item.value === value && (
+                <CheckIcon size={14} aria-hidden="true" />
+              )}
+            </button>
+          ))}
+          {!visible.length && (
+            <p className={styles.targetEmpty}>{t("No matching targets")}</p>
+          )}
+        </div>
+        <div className={styles.targetFooter}>
+          <span>
+            {t("{{shown}} of {{count}} targets", {
+              shown: visible.length,
+              count: items.length,
+            })}
+          </span>
+          {Object.values(filters).some(Boolean) && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => setFilters(noFilters)}
+            >
+              {t("Clear filters")}
+            </Button>
+          )}
+        </div>
+      </PopoverPopup>
+    </Popover>
   );
 }

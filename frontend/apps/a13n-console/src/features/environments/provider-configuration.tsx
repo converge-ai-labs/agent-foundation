@@ -5,7 +5,7 @@ import {
   SettingsRow,
   Switch,
 } from "a13n-ui";
-import { Fragment, useId, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./environments.module.css";
 import {
@@ -34,6 +34,7 @@ export function ProviderConfiguration({
   error,
   note,
   variant = "default",
+  children,
 }: {
   schema?: Record<string, unknown>;
   text: string;
@@ -43,10 +44,11 @@ export function ProviderConfiguration({
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
   variant?: "default" | "docker" | "e2b" | "daytona";
+  /** Template settings that close the group, such as its lifecycle. */
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const desktopId = useId();
-  const internetId = useId();
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
   const [custom, setCustom] = useState(false);
@@ -91,9 +93,6 @@ export function ProviderConfiguration({
   const primary = schema?.["x-primary-fields"];
   const image: typeof properties = [];
   const e2bTemplate = properties.find(([key]) => key === "template")?.[1];
-  const internet = properties.find(
-    ([key]) => key === "allow_internet_access",
-  )?.[1];
   const desktop = properties.find(([key]) => key === "desktop")?.[1];
   const execution: typeof properties = [];
   const mounts: typeof properties = [];
@@ -116,11 +115,7 @@ export function ProviderConfiguration({
       ].includes(key)
     )
       continue;
-    if (
-      variant === "e2b" &&
-      ["template", "allow_internet_access"].includes(key)
-    )
-      continue;
+    if (variant === "e2b" && key === "template") continue;
     if (
       (variant === "e2b" || variant === "daytona") &&
       key.startsWith("desktop_") &&
@@ -143,6 +138,14 @@ export function ProviderConfiguration({
     else if ((variant === "docker" || variant === "e2b") && key === "desktop")
       continue;
     else if (variant === "docker" && key === "mounts") mounts.push(property);
+    else if (variant === "e2b" && key === "allow_internet_access")
+      common.push([
+        key,
+        {
+          ...(property[1] as Record<string, unknown>),
+          description: "Allow the sandbox to connect to external services.",
+        },
+      ]);
     else if (
       variant === "docker" &&
       ["environment", "init_script", "disable_network"].includes(key)
@@ -163,28 +166,26 @@ export function ProviderConfiguration({
       ),
     );
   const fieldsAvailable = !!schema && !!value;
-  const jsonMode = !builtIn && (mode === "json" || !fieldsAvailable);
+  const jsonMode = mode === "json" || !fieldsAvailable;
   return (
     <FormSection
       title={t("Configuration")}
       description={note}
       actions={
         <>
-          {!builtIn && (
-            <SegmentedControl
-              label={t("Configuration editor")}
-              value={jsonMode ? "json" : "fields"}
-              onValueChange={setMode}
-              options={[
-                {
-                  value: "fields",
-                  label: t("Fields"),
-                  disabled: !fieldsAvailable,
-                },
-                { value: "json", label: "JSON" },
-              ]}
-            />
-          )}
+          <SegmentedControl
+            label={t("Configuration editor")}
+            value={jsonMode ? "json" : "fields"}
+            onValueChange={setMode}
+            options={[
+              {
+                value: "fields",
+                label: t("Fields"),
+                disabled: !fieldsAvailable,
+              },
+              { value: "json", label: "JSON" },
+            ]}
+          />
           {!readOnly && (
             <Button
               type="button"
@@ -206,7 +207,7 @@ export function ProviderConfiguration({
         </>
       }
     >
-      {presets && (
+      {presets && !jsonMode && (
         <fieldset disabled={readOnly} className={styles.environmentKinds}>
           <legend>{t("Environment type")}</legend>
           <div className={styles.environmentKindChoices}>
@@ -427,38 +428,11 @@ export function ProviderConfiguration({
                 )}
               </p>
             )}
-            <div className={variant === "e2b" ? styles.e2bRuntime : "contents"}>
-              <SchemaFields
-                schema={{ ...schema, properties: Object.fromEntries(common) }}
-                value={value}
-                onChange={change}
-              />
-              {variant === "e2b" && internet && (
-                <div className={styles.e2bInternet}>
-                  <SettingsRow
-                    label={t("Allow internet access")}
-                    description={t(
-                      "Allow the sandbox to connect to external services.",
-                    )}
-                    controlId={internetId}
-                    stackOnNarrow={false}
-                  >
-                    <Switch
-                      id={internetId}
-                      checked={
-                        (value.allow_internet_access ??
-                          (internet as Record<string, unknown>).default) ===
-                        true
-                      }
-                      disabled={readOnly}
-                      onCheckedChange={(enabled) =>
-                        change({ ...value, allow_internet_access: enabled })
-                      }
-                    />
-                  </SettingsRow>
-                </div>
-              )}
-            </div>
+            <SchemaFields
+              schema={{ ...schema, properties: Object.fromEntries(common) }}
+              value={value}
+              onChange={change}
+            />
           </fieldset>
           {mounts.length > 0 && (
             <DisclosureSection title={t("Mounts")}>
@@ -495,6 +469,7 @@ export function ProviderConfiguration({
           )}
         </Fragment>
       )}
+      {children}
     </FormSection>
   );
 }

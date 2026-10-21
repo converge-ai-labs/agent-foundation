@@ -54,7 +54,7 @@ export function EnvironmentNameEditor({
   });
   return (
     <form
-      className={styles.rename}
+      className={styles.inlineEditor}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -69,7 +69,7 @@ export function EnvironmentNameEditor({
         />
       </FormField>
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      <div className={styles.renameActions}>
+      <div className={styles.inlineEditorActions}>
         {onCancel && (
           <Button
             type="button"

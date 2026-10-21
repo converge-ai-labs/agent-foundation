@@ -6,24 +6,8 @@
 
 /* Template editor -------------------------------------------------------- */
 
-.editorFooter {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 20px;
-}
-
 .advanced {
   font-size: var(--a13n-text-sm);
-}
-.lifecycleSection {
-  min-width: 0;
-  padding-bottom: 16px;
-}
-.advancedBody {
-  display: grid;
-  gap: 20px;
-  padding: 0;
 }
 
 /* The chosen provider sits above the configuration group, on its own. */
@@ -38,6 +22,8 @@
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+  /* A provider named after its type has one line; the card keeps its height. */
+  min-height: 58px;
   padding: 10px 12px;
   border-radius: var(--a13n-radius-row);
   background: var(--a13n-surface);
@@ -107,7 +93,7 @@
 }
 .fact {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
@@ -145,7 +131,8 @@
   min-width: 0;
 }
 
-.rename {
+/* An editor opened in place under the facts it changes. */
+.inlineEditor {
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -153,9 +140,26 @@
   border-radius: var(--a13n-radius-row);
   background: var(--a13n-surface);
 }
-.renameActions {
+.inlineEditorActions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+}
+/* A group's own action sits at its content width. */
+.groupAction {
+  justify-self: start;
+}
+
+/* Metric identity labels: a name and a value per row. */
+.labelFields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.labelRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
 }
 
@@ -380,15 +384,6 @@
   font-size: var(--a13n-text-xs);
   line-height: 1.5;
   color: var(--a13n-secondary);
-}
-.e2bRuntime {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  align-items: center;
-  gap: 12px 24px;
-}
-.e2bInternet {
-  min-width: 0;
 }
 @media (max-width: 480px) {
   .e2bTemplateHeading {

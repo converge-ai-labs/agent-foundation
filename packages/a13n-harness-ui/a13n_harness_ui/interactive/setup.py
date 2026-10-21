@@ -491,7 +491,12 @@ class SetupWizard:
                     Choice(
                         p.route,
                         p.label,
-                        p.base_url or "Official gRPC endpoint; enables X Search and other native xAI tools",
+                        p.base_url
+                        or (
+                            "Official gRPC endpoint; enables X Search and other native xAI tools"
+                            if p.transport == "xai"
+                            else "Enter your account-specific API endpoint"
+                        ),
                     )
                     for p in API_PROVIDERS
                 ),

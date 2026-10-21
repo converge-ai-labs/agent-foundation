@@ -1,15 +1,11 @@
-import { Button } from "a13n-ui";
-import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import {
   queryOptions,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { data } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 import { downloadBlob } from "../../shared/download";
-import { ErrorToast } from "../../shared/feedback";
 
 /** Everything needed to reach one published package. */
 export interface RevisionRef {
@@ -54,40 +50,19 @@ export function archiveQuery(
 
 /**
  * The package bytes are already cached for the file browser, so a download
- * reuses them instead of asking for the archive twice.
+ * reuses them instead of asking for the archive twice. The file is named
+ * after the package and its version.
  */
-export function useArchiveDownload(revision: RevisionRef, filename: string) {
+export function useArchiveDownload() {
   const client = useClient(),
     cache = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (revision: Schema["SkillRevision"]) => {
       const bytes = await cache.fetchQuery(archiveQuery(client, revision));
-      downloadBlob(new Blob([bytes], { type: "application/zip" }), filename);
+      downloadBlob(
+        new Blob([bytes], { type: "application/zip" }),
+        `${revision.config.name}-v${revision.number}.zip`,
+      );
     },
   });
-}
-
-export function DownloadRevision({
-  revision,
-  filename,
-}: {
-  revision: RevisionRef;
-  filename: string;
-}) {
-  const { t } = useTranslation();
-  const download = useArchiveDownload(revision, filename);
-  return (
-    <>
-      <Button
-        size="sm"
-        variant="ghost"
-        loading={download.isPending}
-        onClick={() => download.mutate()}
-      >
-        <DownloadSimpleIcon size={14} aria-hidden="true" />
-        {t("Download ZIP")}
-      </Button>
-      <ErrorToast error={download.error} />
-    </>
-  );
 }

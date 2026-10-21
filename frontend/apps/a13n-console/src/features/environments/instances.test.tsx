@@ -163,7 +163,7 @@ it("registers an external target by its endpoint and token, with no provider to 
   const { cache, user } = await openCreate();
   await user.click(screen.getByRole("combobox", { name: "Ownership" }));
   await user.click(
-    await screen.findByRole("option", { name: /^External target/ }),
+    await screen.findByRole("option", { name: /^External environment/ }),
   );
   expect(screen.queryByRole("combobox", { name: "Provider" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Template" })).toBeNull();

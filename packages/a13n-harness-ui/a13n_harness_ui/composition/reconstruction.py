@@ -413,7 +413,9 @@ class AgentReconstructor:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
             controls = (
-                frozenset({tool_search.config.search_name, tool_search.config.call_name})
+                frozenset(
+                    {tool_search.config.search_name, tool_search.config.describe_name, tool_search.config.call_name}
+                )
                 if tool_search is not None and isinstance(tool_search.config, ProxyToolSearchConfig)
                 else frozenset()
             )

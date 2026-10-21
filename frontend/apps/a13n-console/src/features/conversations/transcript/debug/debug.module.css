@@ -199,9 +199,9 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Last among the facts, wrapping with them rather than alone at the edge. */
 .factId {
   align-items: center;
-  margin-left: auto;
 }
 .factId dd {
   color: var(--a13n-text-supporting);
@@ -663,9 +663,6 @@
   /* The run's two actions keep their glyphs and stay on the name's line. */
   .headingActions [data-action-label] {
     display: none;
-  }
-  .factId {
-    margin-left: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

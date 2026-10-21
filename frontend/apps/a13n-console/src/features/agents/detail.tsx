@@ -1,9 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, MenuItem, MenuSeparator, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import {
   ChatIcon,
   ChatsIcon,
-  DownloadSimpleIcon,
   PencilSimpleIcon,
   PlayIcon,
 } from "@phosphor-icons/react";
@@ -34,7 +33,6 @@ import { useAgentComposer } from "./composer";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
 import { AgentEditor, type AgentDraftSummary } from "./editor";
-import { ExportAgent } from "./export";
 import { editableAgent } from "./queries";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
@@ -186,17 +184,15 @@ export function AgentDetail() {
           </RailRow>
         </RailSection>
         <RailNote>
-          {t(
-            "Versions are immutable. Every save creates a new version; older versions stay available in",
-          )}{" "}
+          {t("Versions are immutable. Every save creates a new version.")}
+          <br />
           <button
             type="button"
             className={styles.railLink}
             onClick={() => setTab("versions")}
           >
-            {t("Version history")}
+            {t("View version history")}
           </button>
-          .
         </RailNote>
       </>
     );
@@ -238,9 +234,8 @@ export function AgentDetail() {
                     variant="ghost"
                     size="icon-xs"
                     aria-label={t("Edit agent details")}
-                    title={t("Edit agent details")}
                   >
-                    <PencilSimpleIcon size={13} />
+                    <PencilSimpleIcon aria-hidden="true" />
                   </Button>
                 }
                 title={t("Edit agent details")}
@@ -269,7 +264,7 @@ export function AgentDetail() {
                   loading={composer.pending}
                   onClick={() => composer.start({ agent, revision })}
                 >
-                  <ChatIcon size={15} aria-hidden="true" />
+                  <ChatIcon aria-hidden="true" />
                   {t("Edit with AI")}
                 </Button>
               )}
@@ -282,7 +277,7 @@ export function AgentDetail() {
                     />
                   }
                 >
-                  <ChatsIcon size={15} aria-hidden="true" />
+                  <ChatsIcon aria-hidden="true" />
                   {t("View sessions")}
                 </Button>
               )}
@@ -294,31 +289,15 @@ export function AgentDetail() {
                     navigate(`${basePath}/sessions/new?agent=${agent.id}`)
                   }
                 >
-                  <PlayIcon size={14} />
+                  <PlayIcon aria-hidden="true" />
                   {t("Try agent")}
                 </Button>
               )}
               <AgentActions
                 key={editorKey}
                 resource={query.data}
+                revision={revision}
                 reload={() => void reload()}
-                triggerVariant="outline"
-                leading={
-                  <>
-                    <ExportAgent
-                      agent={agent}
-                      config={revision.config}
-                      version={revision.number}
-                      trigger={
-                        <MenuItem closeOnClick={false}>
-                          <DownloadSimpleIcon size={14} />
-                          {t("Export agent")}
-                        </MenuItem>
-                      }
-                    />
-                    <MenuSeparator />
-                  </>
-                }
               />
             </>
           }

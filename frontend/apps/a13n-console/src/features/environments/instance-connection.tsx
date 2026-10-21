@@ -60,7 +60,7 @@ export function EnvironmentConnectionEditor({
   });
   return (
     <form
-      className={styles.rename}
+      className={styles.inlineEditor}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -89,7 +89,7 @@ export function EnvironmentConnectionEditor({
         />
       </FormField>
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      <div className={styles.renameActions}>
+      <div className={styles.inlineEditorActions}>
         <Button
           type="button"
           size="sm"

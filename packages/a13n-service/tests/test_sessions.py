@@ -12,7 +12,6 @@ ORIGIN = {
     "application": "review-bot",
     "name": "GitHub · acme/widgets #42",
     "external_id": "main_discussion_42",
-    "url": "https://github.com/acme/widgets/pull/42",
 }
 
 
@@ -47,9 +46,7 @@ async def test_identity_create_update_clear_and_stale_editor(service) -> None:
     [
         {"title": " "},
         {"title": "x" * 257},
-        {"origin": {**ORIGIN, "url": "javascript:alert(1)"}},
-        {"origin": {**ORIGIN, "url": "https://user:secret@example.com/"}},
-        {"origin": {**ORIGIN, "url": "https://example.com/\nattack"}},
+        {"origin": {**ORIGIN, "url": "https://github.com/acme/widgets/pull/42"}},
         {"origin": {**ORIGIN, "application": " "}},
     ],
 )
@@ -120,7 +117,6 @@ async def test_search_combines_identity_text_scope_and_filters(service, scripted
         "widgets",
         "#42",
         ORIGIN["external_id"],
-        ORIGIN["url"],
         owner,
         created["thread"]["id"],
         "南京",

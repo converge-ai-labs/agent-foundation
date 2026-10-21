@@ -13,7 +13,10 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 vi.mock("./chart", () => ({ MetricsChart: () => null }));
 const panel: Panel = {
@@ -53,6 +56,7 @@ it("runs preview queries only on explicit submission using a snapshot of the cur
     <QueryClientProvider client={cache}>
       <PanelEditor
         panel={panel}
+        adding={false}
         target={null}
         range={range}
         onApply={vi.fn()}
@@ -61,7 +65,7 @@ it("runs preview queries only on explicit submission using a snapshot of the cur
     </QueryClientProvider>
   );
   const { rerender, unmount } = render(editor({ start: 0, end: 3600 }));
-  await screen.findByLabelText("PromQL expression 1", {}, { timeout: 5000 });
+  await screen.findByLabelText("PromQL expression A", {}, { timeout: 5000 });
   expect(state.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Run queries" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledTimes(1));
@@ -101,6 +105,7 @@ it("retains the remaining PromQL editor when an earlier query is removed", async
             },
           ],
         }}
+        adding={false}
         target={null}
         range={{ start: 0, end: 3600 }}
         onApply={apply}
@@ -108,9 +113,9 @@ it("retains the remaining PromQL editor when an earlier query is removed", async
       />
     </QueryClientProvider>,
   );
-  const second = await screen.findByLabelText("PromQL expression 2");
+  const second = await screen.findByLabelText("PromQL expression B");
   await user.click(screen.getAllByRole("button", { name: "Remove query" })[0]);
-  expect(screen.getByLabelText("PromQL expression 1")).toBe(second);
+  expect(screen.getByLabelText("PromQL expression A")).toBe(second);
   expect(second.textContent).toBe("rate(foo[5m])");
   await user.click(screen.getByRole("button", { name: "Apply panel" }));
   expect(apply.mock.calls[0][0].queries).toEqual([
@@ -164,6 +169,7 @@ it("defaults PromQL to an enabled query-capable source", async () => {
           ...panel,
           queries: [{ kind: "metric", metric: "system_cpu_busy_ratio" }],
         }}
+        adding
         target={null}
         range={{ start: 0, end: 3600 }}
         onApply={vi.fn()}
@@ -174,7 +180,7 @@ it("defaults PromQL to an enabled query-capable source", async () => {
   await waitFor(() => expect(state.GET).toHaveBeenCalled());
   await user.click(screen.getByRole("combobox", { name: "Query type" }));
   await user.click(screen.getByRole("option", { name: "PromQL" }));
-  await screen.findByLabelText("PromQL expression 1", {}, { timeout: 5000 });
+  await screen.findByLabelText("PromQL expression A", {}, { timeout: 5000 });
   expect(
     screen.getByRole("combobox", { name: "Data source" }).textContent,
   ).toContain("Enabled");

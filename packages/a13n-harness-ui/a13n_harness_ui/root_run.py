@@ -547,7 +547,7 @@ class RootRunCoordinator:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
-            enqueue_id = await stream.steer(prepared, immediate=immediate)
+            enqueue_id = await stream.steer(prepared, immediate=immediate, best_effort=True)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:

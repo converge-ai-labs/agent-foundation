@@ -128,7 +128,7 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
                 <Label htmlFor="space-enabled">{t("Enabled")}</Label>
                 <p>
                   {t(
-                    "Disabled Spaces keep their files and selections, but are omitted from new runs.",
+                    "Disabled spaces keep their files and selections, but are omitted from new runs.",
                   )}
                 </p>
               </div>
@@ -144,7 +144,7 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
         <Section
           title={t("Organization")}
           description={t(
-            "An organizer reads all session notes and curates shared knowledge using only this Space's memory tools.",
+            "An organizer reads all session notes and curates shared knowledge using only this space's memory tools.",
           )}
         >
           <div className="grid gap-4">
@@ -283,11 +283,12 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
         <Section
           title={t("Memory instructions")}
           description={t(
-            "Tell agents what to keep in this Space. Session folder boundaries are enforced separately.",
+            "Tell agents what to keep in this space. Session folder boundaries are enforced separately.",
           )}
         >
           <GuideField
             kind="file"
+            hideLabel
             value={draft.guide}
             onChange={(guide) => change({ guide })}
             readOnly={readOnly}
@@ -310,7 +311,7 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
       </fieldset>
       {isStale(save.error) ? (
         <ConflictNotice
-          title={t("This Space changed")}
+          title={t("This space changed")}
           description={t(
             "Your draft is preserved. Load the saved version, then save again.",
           )}
@@ -326,20 +327,20 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
       <ErrorNotice error={reload.error} />
       {!readOnly && (
         <Section
-          title={t("Delete Space")}
+          title={t("Delete space")}
           description={t(
-            "Remove this Space from sessions and agent defaults first. Active organization must finish before deletion.",
+            "Remove this space from sessions and agent defaults first. Active organization must finish before deletion.",
           )}
         >
           <div>
             <Confirm
               danger
               triggerVariant="outline"
-              trigger={t("Delete Space")}
-              title={t("Delete Space")}
+              trigger={t("Delete space")}
+              title={t("Delete space")}
               subject={space.name}
               description={t(
-                "Deletes this Space, its files and revision history. This cannot be undone.",
+                "Deletes this space, its files and revision history. This cannot be undone.",
               )}
               action={() =>
                 client

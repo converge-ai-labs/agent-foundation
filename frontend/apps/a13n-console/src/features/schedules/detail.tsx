@@ -32,6 +32,7 @@ import {
 import { WebhookEditor } from "../settings/webhooks/editor";
 import { ScheduleEditor } from "./editor";
 import { ScheduleHistory } from "./history";
+import { ScheduleTiming } from "./timing";
 import styles from "./schedules.module.css";
 
 export function ScheduleDetail() {
@@ -274,13 +275,7 @@ function ScheduleContent({
         <div>
           <dt>{t("Timing")}</dt>
           <dd>
-            {schedule.schedule.type === "once" ? (
-              <Timestamp value={schedule.schedule.run_at} precise />
-            ) : (
-              <>
-                {schedule.schedule.expression} · {schedule.schedule.timezone}
-              </>
-            )}
+            <ScheduleTiming rule={schedule.schedule} />
           </dd>
         </div>
         <div>

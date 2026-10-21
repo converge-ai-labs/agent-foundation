@@ -86,14 +86,14 @@ export function MemoriesPage() {
                 ]}
               />
               <ChoiceField
-                label={t("Type")}
+                label={t("Backend")}
                 variant="filter"
                 value={type ?? "all"}
                 onValueChange={(value) =>
                   setType(value === "all" ? undefined : value)
                 }
                 options={[
-                  { value: "all", label: t("All types") },
+                  { value: "all", label: t("All backends") },
                   ...types.map((item) => ({
                     value: item,
                     label: typeName(item),
@@ -133,29 +133,25 @@ export function MemoriesPage() {
                 render: (memory) => t(kindLabel(memory.kind)),
               },
               {
-                label: t("Type"),
-                tone: "muted",
+                label: t("Backend"),
                 render: (memory) => typeName(memory.type),
               },
               // Only the Service's own store counts a memory's files and bytes.
               {
                 label: t("Files"),
+                align: "right",
                 render: (memory) =>
                   memory.file_count === null
                     ? "—"
-                    : t("{{count}} files", { count: memory.file_count }),
+                    : memory.file_count.toLocaleString(),
               },
               {
-                label: t("Size"),
-                tone: "muted",
+                label: t("Size (KB)"),
+                align: "right",
                 render: (memory) =>
                   memory.content_bytes === null || memory.history_bytes === null
                     ? "—"
-                    : t("{{size}} KB", {
-                        size: Math.ceil(
-                          (memory.content_bytes + memory.history_bytes) / 1024,
-                        ),
-                      }),
+                    : kilobytes(memory.content_bytes + memory.history_bytes),
               },
               {
                 label: t("Updated"),
@@ -190,4 +186,10 @@ export function MemoriesPage() {
       )}
     </Page>
   );
+}
+
+/** One decimal below 10 KB; rounded up so a non-empty memory never reads 0. */
+function kilobytes(bytes: number) {
+  const step = bytes < 10 * 1024 ? 10 : 1;
+  return (Math.ceil((bytes / 1024) * step) / step).toLocaleString();
 }

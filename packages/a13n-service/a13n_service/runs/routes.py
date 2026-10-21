@@ -146,6 +146,12 @@ async def get_message_authors(
     actor: Actor,
     query: Annotated[MessageAuthorQuery, Query()],
 ) -> MessageAuthors:
+    """Get message senders' current display names, emails, account kinds, status and avatar URLs.
+
+    Supply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;
+    only message entries in that session are returned. This is not an arbitrary user or member-directory lookup.
+    Use returned names to identify senders in answers; retain IDs when needed for precise references.
+    """
     return await authors.message_authors(runtime.storage, actor, workspace_id, session_id, query)
 
 

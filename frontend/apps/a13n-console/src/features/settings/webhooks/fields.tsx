@@ -83,7 +83,7 @@ export function SubscriptionFields({
                 key={label}
                 type="button"
                 size="sm"
-                variant="ghost"
+                variant="outline"
                 onClick={() => set("kinds", [...kinds])}
               >
                 {t(label)}

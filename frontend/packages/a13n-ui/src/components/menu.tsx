@@ -4,16 +4,47 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type * as React from "react";
+import { createContext, useContext, useRef } from "react";
 import { cn } from "../lib/utils";
 
 export const MenuCreateHandle: typeof MenuPrimitive.createHandle =
   MenuPrimitive.createHandle;
 
-export const Menu: typeof MenuPrimitive.Root = MenuPrimitive.Root;
+type MenuActions = React.RefObject<MenuPrimitive.Root.Actions | null>;
+
+// A dialog opened from a menu item closes its menu once the dialog is gone.
+const MenuActionsContext = createContext<MenuActions | null>(null);
+
+export function useMenuActions(): MenuActions | null {
+  return useContext(MenuActionsContext);
+}
+
+export function Menu({
+  actionsRef,
+  ...props
+}: MenuPrimitive.Root.Props): React.ReactElement {
+  const ownActions = useRef<MenuPrimitive.Root.Actions>(null);
+  const actions = actionsRef ?? ownActions;
+  return (
+    <MenuActionsContext value={actions}>
+      <MenuPrimitive.Root actionsRef={actions} {...props} />
+    </MenuActionsContext>
+  );
+}
 
 // Base UI shares the popup, items, and positioning implementation with Menu.
-export const ContextMenu: typeof ContextMenuPrimitive.Root =
-  ContextMenuPrimitive.Root;
+export function ContextMenu({
+  actionsRef,
+  ...props
+}: ContextMenuPrimitive.Root.Props): React.ReactElement {
+  const ownActions = useRef<MenuPrimitive.Root.Actions>(null);
+  const actions = actionsRef ?? ownActions;
+  return (
+    <MenuActionsContext value={actions}>
+      <ContextMenuPrimitive.Root actionsRef={actions} {...props} />
+    </MenuActionsContext>
+  );
+}
 export const ContextMenuTrigger: typeof ContextMenuPrimitive.Trigger =
   ContextMenuPrimitive.Trigger;
 
@@ -59,7 +90,7 @@ export function MenuPopup({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
-        className="z-50"
+        className="z-50 has-[[data-a13n-dialog-open]]:invisible"
         data-slot="menu-positioner"
         side={side}
         sideOffset={sideOffset}

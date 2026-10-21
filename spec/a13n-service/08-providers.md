@@ -65,6 +65,8 @@ Each kind adds its own fields:
 
 The registry derives each calling API's settings schema when it is assembled, which imports that API's SDK, so the route imports nothing.
 
+The `cloudflare_ai_gateway` model provider uses Cloudflare's account-scoped unified REST API. It accepts `account_id` (a 32-digit hexadecimal account ID), optional `gateway_id`, and an `api_key` credential containing a Cloudflare API token. An explicit `base_url` replaces account-derived routing and names the API root ending in `/ai`; the adapter appends `/v1/chat/completions`. The sole calling API is `openai.chat_completions` for every supported chat model; changing its publisher does not change the protocol. Model IDs retain their publisher prefix on the wire. The catalog channel is `cloudflare-ai-gateway`; Workers AI is a separate channel. Authentication and the configured gateway header are reserved. This provider exposes no unauthenticated model-list probe or native server tools; test a saved Model to verify inference access.
+
 ## Handles
 
 A handle is opened per use from values resolved in a short database session, after the session closes, and closed when its context exits. The credential is revealed only when the handle opens; no handle, client or credential is cached across uses.

@@ -21,7 +21,9 @@ import {
   entryGlyph,
   entryLabel,
   entrySubject,
+  entryWait,
   StateMark,
+  waitingLabel,
   workState,
   type WorkState,
 } from "../entry-language";
@@ -316,12 +318,7 @@ function actionText(
     entrySubject(entry),
     // Without a link to follow, the row still says where the work went.
     entry.dispatchOnly && !childPath && t("child thread"),
-    state === "waiting" &&
-      t(
-        asksAQuestion(entry)
-          ? "waiting for your answer"
-          : "waiting for your approval",
-      ),
+    state === "waiting" && waitingLabel(entryWait(entry), t),
   ].filter(Boolean) as string[];
   return { ...entryLabel(entry, t), subject: notes.join(" · ") };
 }

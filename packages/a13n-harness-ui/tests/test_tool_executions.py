@@ -863,6 +863,7 @@ async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_o
                         await shell.job
             shown = "".join(block.source for block in renderer.transcript.blocks.values())
             assert shown.count("Follow-up completed.") == 1
+            assert not renderer.gap
             assert shown.count("Tool execution succeeded") == 1
             assert "Tool executions completed. Inspect" not in shown
             assert shell.composer.text == "Unsent draft"

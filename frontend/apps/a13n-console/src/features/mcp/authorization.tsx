@@ -28,6 +28,11 @@ export function MCPAuthorization({
     [bearer, setBearer] = useState(""),
     [headers, setHeaders] = useState<Record<string, string>>({});
   const mode = basis.auth;
+  const names = "url" in basis.config ? (basis.config.headers ?? []) : [];
+  const complete =
+    mode === "bearer"
+      ? !!bearer.trim()
+      : names.every((name) => !!headers[name]);
   const credentials = useMutation({
     gcTime: 0,
     mutationFn: () =>
@@ -55,6 +60,16 @@ export function MCPAuthorization({
       void reload();
     },
   });
+  const check = (
+    <Button
+      variant="outline"
+      loading={reconnect.isPending}
+      onClick={() => reconnect.mutate()}
+      type="button"
+    >
+      {t(basis.status === "pending" ? "Retry check" : "Check connection")}
+    </Button>
+  );
   return (
     <div className={mcp.authorization}>
       <div>
@@ -63,7 +78,9 @@ export function MCPAuthorization({
           {t(
             mode === "none"
               ? "This server does not require credentials. Verify the connection to refresh its available tools."
-              : "Manage the credentials used to access this server.",
+              : mode === "oauth"
+                ? "Manage the credentials used to access this server."
+                : "Existing credentials are never displayed. Supply a complete replacement.",
           )}
         </p>
       </div>
@@ -72,45 +89,32 @@ export function MCPAuthorization({
           connection={basis}
           onConnectionChange={onConnectionChange}
         />
+      ) : mode === "none" ? (
+        <div className={mcp.authorizationActions}>{check}</div>
       ) : (
-        mode !== "none" && (
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              credentials.mutate();
-            }}
-          >
-            <h3>{t("Replace credentials")}</h3>
-            <p className={styles.muted}>
-              {t(
-                "Existing credentials are never displayed. Supply a complete replacement.",
-              )}
-            </p>
-            <MCPCredentialFields
-              mode={mode}
-              names={"url" in basis.config ? (basis.config.headers ?? []) : []}
-              bearer={bearer}
-              onBearer={setBearer}
-              headers={headers}
-              onHeaders={setHeaders}
-            />
-            <FormActions
-              pending={credentials.isPending}
-              label={t("Save credentials")}
-            />
-          </form>
-        )
-      )}
-      {mode !== "oauth" && (
-        <Button
-          variant="outline"
-          loading={reconnect.isPending}
-          onClick={() => reconnect.mutate()}
-          type="button"
+        <form
+          className={styles.form}
+          onSubmit={(event) => {
+            event.preventDefault();
+            credentials.mutate();
+          }}
         >
-          {t(basis.status === "pending" ? "Retry check" : "Check connection")}
-        </Button>
+          <MCPCredentialFields
+            mode={mode}
+            replace
+            names={names}
+            bearer={bearer}
+            onBearer={setBearer}
+            headers={headers}
+            onHeaders={setHeaders}
+          />
+          <FormActions
+            pending={credentials.isPending}
+            disabled={!complete}
+            leading={check}
+            label={t("Save credentials")}
+          />
+        </form>
       )}
       <ErrorNotice
         error={credentials.error ?? reconnect.error}

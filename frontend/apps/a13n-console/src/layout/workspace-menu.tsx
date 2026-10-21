@@ -53,6 +53,7 @@ export function WorkspaceMenu({
         }
       >
         <UserAvatar
+          id={context.workspace.id}
           name={context.workspace.name}
           url={context.workspace.image_url}
           className="size-5 rounded-md text-[10px]"
@@ -95,15 +96,14 @@ export function WorkspaceMenu({
               >
                 <span aria-hidden="true">
                   <UserAvatar
+                    id={item.id}
                     name={item.name}
                     url={item.image_url}
                     className="size-5 rounded-md text-[10px]"
                   />
                 </span>
                 <span className={styles.menuName}>{item.name}</span>
-                {current && (
-                  <CheckIcon aria-hidden="true" className="ms-auto" />
-                )}
+                {current && <CheckIcon aria-hidden="true" />}
               </MenuItem>
             );
           })}

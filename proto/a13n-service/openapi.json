@@ -15625,8 +15625,13 @@
         "description": "Names and bounded discovery settings for one Agent's proxy surface.",
         "properties": {
           "call_name": {
-            "default": "call_proxy_tool",
+            "default": "call_tool",
             "title": "Call Name",
+            "type": "string"
+          },
+          "describe_name": {
+            "default": "describe_tool",
+            "title": "Describe Name",
             "type": "string"
           },
           "max_results": {
@@ -15646,7 +15651,7 @@
             "type": "string"
           },
           "search_name": {
-            "default": "search_proxy_tools",
+            "default": "discover_tools",
             "title": "Search Name",
             "type": "string"
           }
@@ -18177,19 +18182,6 @@
               }
             ],
             "title": "Name"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 8,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Url"
           }
         },
         "required": [
@@ -41521,6 +41513,7 @@
     },
     "/api/v1/sessions/{session_id}/message-authors": {
       "get": {
+        "description": "Get message senders' current display names, emails, account kinds, status and avatar URLs.\n\nSupply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;\nonly message entries in that session are returned. This is not an arbitrary user or member-directory lookup.\nUse returned names to identify senders in answers; retain IDs when needed for precise references.",
         "operationId": "get_message_authors",
         "parameters": [
           {

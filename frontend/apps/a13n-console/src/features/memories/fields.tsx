@@ -43,6 +43,7 @@ export function GuideField({
   onChange,
   inherited,
   readOnly = false,
+  hideLabel = false,
 }: {
   kind: Kind;
   value: GuideDraft;
@@ -50,6 +51,8 @@ export function GuideField({
   /** The deployment's guide, which a memory without its own receives. */
   inherited?: string;
   readOnly?: boolean;
+  /** A section that already names and explains the instructions. */
+  hideLabel?: boolean;
 }) {
   const { t } = useTranslation();
   const modes: { value: GuideMode; label: string }[] = [
@@ -59,26 +62,28 @@ export function GuideField({
   ];
   return (
     <div className={styles.guide}>
-      <div className={styles.guideHeading}>
-        <span>{t("Memory instructions")}</span>
-        {!readOnly && (
-          <SegmentedControl
-            label={t("Memory instructions")}
-            value={value.mode}
-            onValueChange={(mode) =>
-              onChange({
-                mode: mode as GuideMode,
-                // Customizing starts from the guide the memory had.
-                text:
-                  mode === "custom" && !value.text
-                    ? (inherited ?? "")
-                    : value.text,
-              })
-            }
-            options={modes}
-          />
-        )}
-      </div>
+      {!(hideLabel && readOnly) && (
+        <div className={styles.guideHeading}>
+          {!hideLabel && <span>{t("Memory instructions")}</span>}
+          {!readOnly && (
+            <SegmentedControl
+              label={t("Memory instructions")}
+              value={value.mode}
+              onValueChange={(mode) =>
+                onChange({
+                  mode: mode as GuideMode,
+                  // Customizing starts from the guide the memory had.
+                  text:
+                    mode === "custom" && !value.text
+                      ? (inherited ?? "")
+                      : value.text,
+                })
+              }
+              options={modes}
+            />
+          )}
+        </div>
+      )}
       {value.mode === "custom" ? (
         <TextAreaField
           label={t("Memory instructions")}
@@ -88,9 +93,13 @@ export function GuideField({
           rows={6}
           value={value.text}
           onChange={(text) => onChange({ ...value, text })}
-          hint={t(
-            "Tell agents what to remember and how to organize it. These instructions guide their behavior; they do not enforce storage rules. Agents cannot edit them.",
-          )}
+          hint={
+            hideLabel
+              ? undefined
+              : t(
+                  "Tell agents what to remember and how to organize it. These instructions guide their behavior; they do not enforce storage rules. Agents cannot edit them.",
+                )
+          }
         />
       ) : value.mode === "none" ? (
         <p className={styles.note}>

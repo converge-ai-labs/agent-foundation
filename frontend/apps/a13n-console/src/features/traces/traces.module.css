@@ -74,13 +74,6 @@
 .chips span span {
   color: var(--a13n-muted);
 }
-.levelPill {
-  display: inline-flex;
-  min-width: 0;
-}
-.levelPill [data-slot="status-pill"] > span[aria-hidden] {
-  display: none;
-}
 
 /* Observations timeline --------------------------------------------------- */
 .observationToolbar {
@@ -106,6 +99,7 @@
 }
 
 .timeline {
+  container-type: inline-size;
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
   overflow: hidden;
@@ -114,7 +108,7 @@
 .timelineHeader,
 .observation {
   display: grid;
-  grid-template-columns: minmax(200px, 38%) minmax(0, 1fr) 72px;
+  grid-template-columns: minmax(240px, 44%) minmax(0, 1fr) 64px;
   align-items: center;
   gap: 16px;
   padding-inline: 14px;
@@ -230,16 +224,17 @@
 .observation[data-selected] .errorDot {
   box-shadow: 0 0 0 1.5px var(--a13n-selected);
 }
-/* Name and kind share one line; the kind gives way first. */
+/* Name and kind share one line; the kind gives way before the name shrinks. */
 .observationCopy {
   display: flex;
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
 }
 .observationTitle {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: none;
+  max-width: 100%;
   overflow: hidden;
   font-size: var(--a13n-text-sm);
   font-weight: 500;
@@ -248,7 +243,7 @@
   white-space: nowrap;
 }
 .observationMeta {
-  flex: 0 3 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
@@ -317,9 +312,11 @@
 }
 
 /* Detail content and metadata -------------------------------------------- */
+/* Both columns start at the top, so their toolbars share one line. */
 .contentPair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 28px;
 }
 .contentPair > section {
@@ -328,8 +325,14 @@
 .diagnosticValues {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px 40px;
-  margin-block: 4px 12px;
+  gap: 14px 36px;
+  margin: 4px 0 0;
+}
+.diagnosticValues dd {
+  overflow-wrap: anywhere;
+}
+.panelSection > .providerNote {
+  margin: 0 2px;
 }
 .statusMessage {
   margin-block: 6px 0;
@@ -351,7 +354,7 @@
 .identifier > span {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
 .properties {
   display: grid;
@@ -374,12 +377,6 @@
 .properties dd {
   margin: 0;
   min-width: 0;
-  overflow-wrap: anywhere;
-}
-.modelIdentity {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
   overflow-wrap: anywhere;
 }
 
@@ -436,6 +433,28 @@
   display: grid;
   gap: 18px;
   min-width: 0;
+}
+/* The panel body is the one scroll container: content and payloads grow in
+   place instead of nesting scroll areas. */
+.panelStack .contentBody,
+.panelStack .payloadBody,
+.panelStack .rawContent {
+  max-height: none;
+  overflow: visible;
+}
+/* From 1024px the inspector sits beside the timeline instead of over it. */
+.inspecting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 38%, 480px);
+  align-items: start;
+  gap: 16px;
+}
+.inspector {
+  position: sticky;
+  top: 16px;
+  height: calc(100dvh - 32px);
+  overflow: hidden;
+  border-radius: var(--a13n-radius-group);
 }
 .panelSection {
   display: grid;
@@ -495,11 +514,21 @@
 .content {
   min-width: 0;
 }
+/* Retained code wraps; a hidden sideways scroll would clip long values. */
+.content pre,
+.payloadBody pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .contentToolbar,
 .contentToolbar > div {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.contentToolbar button {
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
 }
 .contentToolbar {
   justify-content: space-between;
@@ -583,8 +612,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-/* Below 860px the waterfall track stops carrying meaning; durations stay. */
-@media (max-width: 860px) {
+/* Below 560px the waterfall track stops carrying meaning; durations stay. */
+@container (width < 560px) {
   .timelineHeader,
   .observation {
     grid-template-columns: minmax(0, 1fr) 68px;
@@ -609,9 +638,6 @@
   .properties > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
-  }
-  .modelIdentity {
-    grid-template-columns: minmax(0, 1fr);
   }
   .contentBody,
   .rawContent {

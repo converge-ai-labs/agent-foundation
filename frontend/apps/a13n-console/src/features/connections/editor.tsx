@@ -1,5 +1,8 @@
-import { ConfigurationSummary } from "../../shared/configuration-summary";
-import { DotsThreeIcon } from "@phosphor-icons/react";
+import {
+  DotsThreeOutlineVerticalIcon,
+  PowerIcon,
+  ProhibitIcon,
+} from "@phosphor-icons/react";
 import {
   BrandIcon,
   Button,
@@ -16,7 +19,7 @@ import {
   TabsTab,
 } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useId, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -149,7 +152,7 @@ export function ConnectionDetails({
         connection && (
           <div className={styles.panelBody} key={generation}>
             {!manage ? (
-              <ConfigurationSummary value={connection.config} />
+              <ConnectionSettings connection={connection} reload={reload} />
             ) : (
               <>
                 {/* Details stays mounted so an unsaved name survives a tab visit. */}
@@ -189,17 +192,6 @@ function ConnectionMenu({
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation();
-  const http = client.workspace(connection.workspace_id);
-  const request = {
-    params: { path: { connection_id: connection.id } },
-    headers: ifMatch(rowTag(connection)),
-  };
-  const done = () => {
-    void cache.invalidateQueries({ queryKey: ["connections"] });
-    onDone();
-  };
-  const retry = () =>
-    void cache.invalidateQueries({ queryKey: ["connections"] });
   return (
     <Menu>
       <MenuTrigger
@@ -213,64 +205,93 @@ function ConnectionMenu({
           />
         }
       >
-        <DotsThreeIcon size={16} />
+        <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
       </MenuTrigger>
       <MenuPopup align="end">
-        <Confirm
-          subject={connection.name}
-          retry={retry}
-          title={t(
-            connection.enabled ? "Disable connection" : "Enable connection",
-          )}
-          description={t(
-            "This changes whether new agent calls can use the connection.",
-          )}
-          triggerElement={
+        <AvailabilityConfirm
+          connection={connection}
+          trigger={
             <MenuItem closeOnClick={false}>
+              <PowerIcon size={14} />
               {t(connection.enabled ? "Disable" : "Enable")}
             </MenuItem>
           }
-          action={async () => {
-            data(
-              await http.PATCH("/api/v1/connections/{connection_id}", {
-                ...request,
-                body: { enabled: !connection.enabled },
-              }),
-            );
-            done();
-          }}
         />
         {connection.auth !== "none" && (
           <>
             <MenuSeparator />
             <Confirm
               subject={connection.name}
-              retry={retry}
+              retry={() =>
+                void cache.invalidateQueries({ queryKey: ["connections"] })
+              }
               title={t("Revoke authorization")}
               description={t(
                 "Local access is disabled immediately. The result reports whether external cleanup succeeded.",
               )}
               triggerElement={
                 <MenuItem closeOnClick={false} variant="destructive">
+                  <ProhibitIcon size={14} />
                   {t("Revoke")}
                 </MenuItem>
               }
               danger
               action={async () => {
                 const revoked = data(
-                  await http.POST(
-                    "/api/v1/connections/{connection_id}/revoke",
-                    request,
-                  ),
+                  await client
+                    .workspace(connection.workspace_id)
+                    .POST("/api/v1/connections/{connection_id}/revoke", {
+                      params: { path: { connection_id: connection.id } },
+                      headers: ifMatch(rowTag(connection)),
+                    }),
                 );
                 onCleanup(revokeCleanup(revoked));
-                done();
+                void cache.invalidateQueries({ queryKey: ["connections"] });
+                onDone();
               }}
             />
           </>
         )}
       </MenuPopup>
     </Menu>
+  );
+}
+
+/** Turns a connection on or off once the change is confirmed. */
+function AvailabilityConfirm({
+  connection,
+  trigger,
+}: {
+  connection: Schema["Connection"];
+  trigger: ReactElement;
+}) {
+  const client = useClient(),
+    cache = useQueryClient(),
+    { t } = useTranslation();
+  const refresh = () =>
+    void cache.invalidateQueries({ queryKey: ["connections"] });
+  return (
+    <Confirm
+      subject={connection.name}
+      retry={refresh}
+      title={t(connection.enabled ? "Disable connection" : "Enable connection")}
+      description={t(
+        "This changes whether new agent calls can use the connection.",
+      )}
+      triggerElement={trigger}
+      action={async () => {
+        data(
+          await client
+            .workspace(connection.workspace_id)
+            .PATCH("/api/v1/connections/{connection_id}", {
+              params: { path: { connection_id: connection.id } },
+              headers: ifMatch(rowTag(connection)),
+              body: { enabled: !connection.enabled },
+            }),
+        );
+        refresh();
+      }}
+    />
   );
 }
 
@@ -284,6 +305,7 @@ function ConnectionSettings({
 }) {
   const client = useClient(),
     cache = useQueryClient(),
+    { can } = useWorkspace(),
     { t } = useTranslation(),
     nameId = useId(),
     [name, setName] = useState(connection.name);
@@ -310,31 +332,55 @@ function ConnectionSettings({
   });
   const lastCheck = connection.last_test;
   const changed = name !== connection.name;
+  const manage = can("write");
   return (
     <>
-      <SettingsSection>
-        <SettingsRow label={t("Name")} controlId={nameId}>
-          <form
-            className={styles.inlineEdit}
-            onSubmit={(event) => {
-              event.preventDefault();
-              save.mutate();
-            }}
-          >
-            <Input
-              id={nameId}
-              size="sm"
-              required
-              value={name}
-              maxLength={128}
-              onChange={(event) => setName(event.target.value)}
-            />
-            {changed && (
-              <Button type="submit" size="sm" loading={save.isPending}>
-                {t("Save")}
-              </Button>
+      {!connection.enabled && (
+        <div className={styles.reason}>
+          <p>
+            {t(
+              "After enabling, check the connection. Open the Authorization tab if new credentials are needed.",
             )}
-          </form>
+          </p>
+          {manage && (
+            <AvailabilityConfirm
+              connection={connection}
+              trigger={
+                <Button type="button" variant="outline" size="sm">
+                  {t("Enable")}
+                </Button>
+              }
+            />
+          )}
+        </div>
+      )}
+      <SettingsSection>
+        <SettingsRow label={t("Name")} controlId={manage ? nameId : undefined}>
+          {manage ? (
+            <form
+              className={styles.inlineEdit}
+              onSubmit={(event) => {
+                event.preventDefault();
+                save.mutate();
+              }}
+            >
+              <Input
+                id={nameId}
+                size="sm"
+                required
+                value={name}
+                maxLength={128}
+                onChange={(event) => setName(event.target.value)}
+              />
+              {changed && (
+                <Button type="submit" size="sm" loading={save.isPending}>
+                  {t("Save")}
+                </Button>
+              )}
+            </form>
+          ) : (
+            connection.name
+          )}
         </SettingsRow>
         <SettingsRow label={t("Source")}>
           {connection.type === "mcp" ? t("Remote MCP") : t("Connected account")}
@@ -376,28 +422,22 @@ function ConnectionSettings({
                 <Timestamp value={lastCheck.tested_at} relative />
               </>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              loading={check.isPending}
-              disabled={!connection.enabled}
-              onClick={() => check.mutate()}
-            >
-              {t("Check connection")}
-            </Button>
+            {manage && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={check.isPending}
+                disabled={!connection.enabled}
+                onClick={() => check.mutate()}
+              >
+                {t("Check connection")}
+              </Button>
+            )}
           </span>
         </SettingsRow>
       </SettingsSection>
       <ErrorNotice error={check.error} />
-      {!connection.enabled && (
-        <p className={styles.reason}>
-          {t(
-            "After enabling, check the connection. Open the Authorization tab if new credentials are needed.",
-          )}
-        </p>
-      )}
-      <ConfigurationSummary value={connection.config} />
     </>
   );
 }

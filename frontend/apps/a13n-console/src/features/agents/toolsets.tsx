@@ -234,11 +234,12 @@ export function AgentToolsets({
               }
             >
               <span className={styles.toolsetGroupName}>{groupLabel}</span>
-              {group.description && (
-                <span className={styles.toolsetGroupDescription}>
-                  {t(group.description)}
-                </span>
-              )}
+              <span
+                className={styles.toolsetGroupDescription}
+                title={group.description ? t(group.description) : undefined}
+              >
+                {group.description && t(group.description)}
+              </span>
               <span className={styles.toolsetGroupCount}>
                 {enabled
                   ? t("{{count}} of {{total}} on", {
@@ -290,7 +291,7 @@ export function AgentToolsets({
                   : undefined;
                 return (
                   <div
-                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""} ${group.platform ? styles.toolsetToolPlatform : ""}`}
+                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""}`}
                     key={tool.key}
                   >
                     <Collapsible>
@@ -320,7 +321,7 @@ export function AgentToolsets({
                               })
                             }
                           />
-                          <span>{tool.model_name}</span>
+                          <span title={tool.model_name}>{tool.model_name}</span>
                         </Label>
                         {providerHint && (
                           <span
@@ -330,7 +331,10 @@ export function AgentToolsets({
                             {providerHint}
                           </span>
                         )}
-                        <span className={styles.toolsetToolDescription}>
+                        <span
+                          className={styles.toolsetToolDescription}
+                          title={t(tool.description || tool.display_name)}
+                        >
                           {t(tool.description || tool.display_name)}
                         </span>
                         <div className={styles.toolsetToolActions}>
@@ -453,7 +457,9 @@ export function AgentToolsets({
           title={t("Advanced / Platform Features")}
           defaultOpen={false}
         >
-          <div className={styles.toolsetCard}>{platform.map(renderGroup)}</div>
+          <div className={`${styles.toolsetCard} ${styles.toolsetCardNested}`}>
+            {platform.map(renderGroup)}
+          </div>
         </DisclosureSection>
       )}
       <ErrorNotice error={catalog.error} />

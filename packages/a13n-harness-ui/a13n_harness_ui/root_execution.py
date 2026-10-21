@@ -535,8 +535,6 @@ class RootRunExecutor:
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
             tool_evidence = ToolEvidenceCollector(run_id=stream.run_id)
             tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
-            if on_stream is not None:
-                await on_stream(stream, input_files)
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
                 run_id=stream.run_id,
@@ -545,6 +543,8 @@ class RootRunExecutor:
             ):
                 stream_entry_attempted = True
                 async with stream:
+                    if on_stream is not None:
+                        await on_stream(stream, input_files)
                     async for item in stream:
                         record_skill_event(item)
                         excerpts.observe(item)

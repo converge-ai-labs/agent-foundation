@@ -88,13 +88,13 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   expect(screen.queryByRole("option", { name: "No environment" })).toBeNull();
   await user.click(
     await screen.findByRole("option", {
-      name: "Create from template: Research",
+      name: /^Research.*Create from template$/,
     }),
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
   expect(
     screen.getByRole("button", {
-      name: "Environment: Create from template: Research",
+      name: "Environment: Research",
     }),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Submit" }));
@@ -105,18 +105,18 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
   expect(
     await screen.findByRole("option", {
-      name: "Reuse existing: Research (env_first)",
+      name: /^Research.*Reuse existing · env_first$/,
     }),
   ).toBeTruthy();
   // A deleted environment is never mounted again.
   expect(
     screen.queryByRole("option", {
-      name: "Reuse existing: Research (env_gone)",
+      name: /^Research.*Reuse existing · env_gone$/,
     }),
   ).toBeNull();
   await user.click(
     screen.getByRole("option", {
-      name: "Reuse existing: Research (env_second)",
+      name: /^Research.*Reuse existing · env_second$/,
     }),
   );
   await user.click(screen.getByRole("button", { name: "Apply" }));
@@ -153,7 +153,7 @@ it.each([null, "envt_managed"])(
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(
       await screen.findByRole("option", {
-        name: "Reuse existing: Device (env_device)",
+        name: /^Device.*Reuse existing · env_device$/,
       }),
     );
     await user.type(
@@ -396,4 +396,20 @@ it("combines sparse execution choices with overrides without turning them into t
   expect(() => result.current.build()).toThrow(
     "Foreground wait must be between 0 and 300 seconds.",
   );
+});
+
+it("restores execution choices with the other options when edits are cancelled", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => result.current.setExecution({ steering: "boundary" }));
+  const saved = result.current.values;
+  act(() => {
+    result.current.setExecution({
+      tools: { mode: "auto", foreground_wait_seconds: 1 },
+    });
+    result.current.setModel("model-test");
+  });
+  act(() => result.current.restore(saved));
+  expect(result.current.build().options).toEqual({
+    execution: { steering: "boundary" },
+  });
 });

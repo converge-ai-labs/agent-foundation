@@ -17,10 +17,6 @@
   width: 120px;
   padding-left: 28px;
 }
-/* The header names the title, not the avatar beside it. */
-.table thead [data-column="identity"] {
-  padding-left: 60px;
-}
 .table tbody td {
   height: 60px;
   padding-top: 10px;
@@ -46,11 +42,12 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
 }
+/* Sized to its text, so the reference marker follows it as in other collections. */
 .identityText {
   display: grid;
   gap: 2px;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 .title {
   overflow: hidden;
@@ -66,7 +63,6 @@
   color: var(--a13n-secondary);
 }
 .title:hover,
-a.sourceName:hover > span,
 .application:hover {
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
@@ -84,17 +80,11 @@ a.sourceName:hover > span,
   font-size: var(--a13n-text-xs);
   line-height: 18px;
 }
-.sessionId,
 .agent {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.sessionId + .agent::before {
-  content: "·";
-  margin-right: 6px;
-  color: var(--a13n-tertiary);
 }
 /* Chips that do not fit wrap onto the clipped second line instead of being cut. */
 .tags {
@@ -141,45 +131,21 @@ button.tag:hover .tagKey {
 }
 
 /* Source -------------------------------------------------------------------- */
+/* One column track, so long names truncate inside the cell instead of widening it. */
 .source {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-}
-.sourceMark {
-  display: flex;
-  align-items: center;
-  flex: none;
-  height: 20px;
-  color: var(--a13n-tertiary);
-}
-.sourceText {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   justify-items: start;
-  min-width: 0;
-  flex: 1;
 }
 .sourceName {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
   max-width: 100%;
-  color: var(--a13n-text-supporting);
-  font-size: var(--a13n-text-sm);
-  line-height: 20px;
-  text-decoration: none;
-}
-.sourceName > span {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sourceName svg {
-  flex: none;
-  color: var(--a13n-tertiary);
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
 }
 .application {
   cursor: pointer;
@@ -289,6 +255,10 @@ button.tag:hover .tagKey {
     padding: 0;
     min-width: 0;
   }
+  /* Each line names itself, so the shared column captions stay off. */
+  .table tbody td::before {
+    content: none;
+  }
   .table [data-column="identity"] {
     grid-column: 1 / 3;
     grid-row: 1;
@@ -314,12 +284,6 @@ button.tag:hover .tagKey {
   }
   .table tbody td:last-child > div {
     opacity: 1;
-  }
-  .source {
-    gap: 6px;
-  }
-  .sourceMark {
-    height: 18px;
   }
   .sourceName {
     display: none;

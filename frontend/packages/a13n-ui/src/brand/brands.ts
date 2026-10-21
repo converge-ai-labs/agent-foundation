@@ -25,7 +25,13 @@ const curatedBrands: Record<string, Brand> = {
   },
   cloudflare: {
     ...lobeBrands.cloudflare,
-    hosts: ["mcp.cloudflare.com", "cloudflare.com"],
+    aliases: ["cloudflare_ai_gateway", "cloudflare-ai-gateway"],
+    hosts: [
+      "mcp.cloudflare.com",
+      "cloudflare.com",
+      "api.cloudflare.com",
+      "gateway.ai.cloudflare.com",
+    ],
   },
   linear: {
     icon: `${svgl}linear.svg`,

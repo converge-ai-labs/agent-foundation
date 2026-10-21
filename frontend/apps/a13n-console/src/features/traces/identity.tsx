@@ -7,8 +7,28 @@ import {
   StackIcon,
   WrenchIcon,
 } from "@phosphor-icons/react";
+import type { TFunction } from "i18next";
 import type { Schema } from "../../shared/api";
 import styles from "./traces.module.css";
+
+const kindLabels: Record<string, string> = {
+  agent: "Agent",
+  chain: "Chain",
+  embedding: "Embedding",
+  evaluator: "Evaluator",
+  event: "Event",
+  generation: "Generation",
+  guardrail: "Guardrail",
+  retriever: "Retriever",
+  span: "Span",
+  tool: "Tool",
+};
+
+/** The reported observation type in the reader's language; an unfamiliar type reads as reported. */
+export function kindLabel(t: TFunction, kind: string) {
+  const label = kindLabels[kind.toLowerCase()];
+  return label ? t(label) : kind;
+}
 
 /** Open telemetry types retain a neutral fallback; names refine generic spans only. */
 export function observationKind(

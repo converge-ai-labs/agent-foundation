@@ -26,21 +26,23 @@ class ProxyToolSearchConfig:
     __pydantic_config__ = ConfigDict(extra="forbid", json_schema_extra={"required": ["mode"]})
 
     mode: Literal["proxy"] = field(default="proxy", kw_only=True)
-    search_name: str = "search_proxy_tools"
-    call_name: str = "call_proxy_tool"
+    search_name: str = "discover_tools"
+    call_name: str = "call_tool"
     max_results: Annotated[int, Field(strict=True)] = 10
     max_search_bytes: Annotated[int, Field(strict=True)] = 32_768
+    describe_name: str = "describe_tool"
 
     def __post_init__(self) -> None:
         if self.mode != "proxy":
             raise ValueError("ProxyToolSearchConfig.mode must be 'proxy'")
-        for name in (self.search_name, self.call_name):
+        names = (self.search_name, self.describe_name, self.call_name)
+        for name in names:
             if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", name) is None:
                 raise ValueError(
                     "ToolSearch entry names must start with a letter or underscore and contain 1-64 letters, digits, underscores, or hyphens."
                 )
-        if self.search_name == self.call_name:
-            raise ValueError("ToolSearch search and call names must differ")
+        if len(set(names)) != len(names):
+            raise ValueError("ToolSearch discovery, describe, and call names must differ")
         if (
             isinstance(self.max_results, bool)
             or not isinstance(self.max_results, int)
@@ -170,19 +172,26 @@ def resolve_proxy_call(
     """Resolve a call envelope, leaving target validation/execution to ToolManager."""
     group, tool, values = arguments.get("group"), arguments.get("tool"), arguments.get("arguments")
     if not isinstance(group, str) or not isinstance(tool, str) or not isinstance(values, dict):
-        raise ModelRetry("Supply group, tool, and an arguments object using the schema returned by proxy search.")
+        raise ModelRetry("Supply group, tool, and an arguments object matching the tool's complete current schema.")
     if set(arguments) != {"group", "tool", "arguments"}:
-        raise ModelRetry("Proxy calls accept only group, tool, and arguments.")
+        raise ModelRetry("Tool calls accept only group, tool, and arguments.")
+    return resolve_proxy_tool(tools, group, tool), values
+
+
+def resolve_proxy_tool(tools: Mapping[str, ToolsetTool[AgentContext]], group: str, tool: str) -> str:
+    """Resolve an exact current identity for either description or execution."""
     directory = proxy_directory(tools)
     name = directory.get((group, tool))
     if name is None:
         groups = sorted({key[0] for key in directory})
         if group not in groups:
             raise ModelRetry(
-                f"Group {group!r} is unavailable in this step. Search a current group before calling. Available groups: {', '.join(groups) or '(none)'}."
+                f"Group {group!r} is unavailable in this step. Choose a current group. Available groups: {', '.join(groups) or '(none)'}."
             )
-        raise ModelRetry(f"Tool {group}/{tool} is unavailable in this step. Search again for its current schema.")
-    return name, values
+        raise ModelRetry(
+            f"Tool {group}/{tool} is unavailable in this step. Rediscover available tools and use an exact current group and local tool name."
+        )
+    return name
 
 
 def active_proxy_tools(ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:

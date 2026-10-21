@@ -38,7 +38,7 @@ A Session optionally carries a caller-owned `title` and structured `origin`, ind
 
 `title` is trimmed, nonempty when supplied, and at most 256 characters. If the Session has no title when its first input is accepted, Service stores the first input's text with whitespace collapsed and a 256-character limit. Later inputs do not replace that title. Existing Sessions are not backfilled from historical input.
 
-`origin` contains a required application key `application` (up to 128 characters), optional readable `name` (256), application-owned `external_id` (512), and HTTP(S) `url` (2048). Links exclude embedded credentials and control characters. These fields describe where to find the conversation; they grant no authority, do not establish verified provenance, and are not inserted into model context. Project, role and other application dimensions use existing Session labels.
+`origin` contains a required application key `application` (up to 128 characters), optional readable `name` (256) and application-owned `external_id` (512). These fields name the application and conversation a Session came from; they carry no link to the external system, grant no authority, do not establish verified provenance, and are not inserted into model context. Project, role and other application dimensions use existing Session labels.
 
 `PATCH /sessions/{session}` uses the Session's existing `run` permission and `If-Match` precondition. Omitted identity fields remain unchanged; explicit null clears them. A supplied origin replaces the entire object. Creation, read, list and update representations expose both fields, including null for older Sessions.
 

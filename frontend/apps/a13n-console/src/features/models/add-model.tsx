@@ -11,11 +11,11 @@ import {
 } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
-import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
+import { ResourceEditorButton } from "../../shared/identity";
 import { connectStepDescription, connectStepTitle } from "./add-provider";
 import { ModelPicker } from "./model-picker";
 import { ModelFields, ModelSelection, useModelDraft } from "./model-form";
-import { ModelIcon } from "./model-icon";
+import { ModelIcon, ModelProviderIcon, providerBrand } from "./model-icon";
 import { useProviderDraft } from "./provider-draft";
 import { ProviderChoice, ProviderConnect } from "./provider-setup";
 import styles from "./models.module.css";
@@ -198,7 +198,11 @@ function stepHeading(
     return {
       title: (
         <BrandTitle
-          mark={<ProviderIcon type={model.selectedProvider?.type ?? ""} />}
+          mark={
+            model.selectedProvider && (
+              <ModelProviderIcon provider={model.selectedProvider} />
+            )
+          }
         >
           {t("Choose a model")}
         </BrandTitle>
@@ -218,7 +222,7 @@ function stepHeading(
           <ModelIcon
             upstream={model.draft.model_name}
             catalogRef={model.draft.catalog_ref}
-            provider={model.selectedProvider?.type}
+            provider={providerBrand(model.selectedProvider)}
             size={20}
           />
         }

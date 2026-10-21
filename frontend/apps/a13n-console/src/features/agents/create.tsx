@@ -142,7 +142,7 @@ export function CreateAgent() {
         pending={create.isPending || upload.isPending || !!created}
         error={create.error}
         saveLabel={t("Create agent")}
-        saveDisabled={!name.trim()}
+        unnamed={!name.trim()}
         discard={() => navigate(`${basePath}/agents`)}
         identity={
           <Section

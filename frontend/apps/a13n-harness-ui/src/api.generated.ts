@@ -5318,12 +5318,12 @@ export interface components {
         ProxyToolSearchConfig: {
             /**
              * Search Name
-             * @default search_proxy_tools
+             * @default discover_tools
              */
             search_name?: string;
             /**
              * Call Name
-             * @default call_proxy_tool
+             * @default call_tool
              */
             call_name?: string;
             /**
@@ -5336,6 +5336,11 @@ export interface components {
              * @default 32768
              */
             max_search_bytes?: number;
+            /**
+             * Describe Name
+             * @default describe_tool
+             */
+            describe_name?: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}

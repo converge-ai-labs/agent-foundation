@@ -36,6 +36,8 @@ class RunToolExecutions:
         self.usage_pending = 0
         self.handoff_requested = asyncio.Event()
         self.unsupported_calls: set[str] = set()
+        self.handoff_ready = asyncio.Event()
+        self.handoff_ready.set()
         self.calls: dict[str, ToolExecutionRecord] = {}
         self.returns: dict[str, Any] = {}
         self.observed_returns: set[str] = set()
@@ -47,6 +49,15 @@ class RunToolExecutions:
         self._drained.set()
         self.closing = False
         self.owner: asyncio.Task[None] | None = None
+
+    def block_handoff(self, call_id: str) -> None:
+        self.unsupported_calls.add(call_id)
+        self.handoff_ready.clear()
+
+    def unblock_handoff(self, call_id: str) -> None:
+        self.unsupported_calls.discard(call_id)
+        if not self.unsupported_calls:
+            self.handoff_ready.set()
 
     @property
     def retained(self) -> bool:

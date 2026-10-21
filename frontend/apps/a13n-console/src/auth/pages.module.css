@@ -6,9 +6,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Anchored from the top, so a message that grows the card never moves it. */
+  justify-content: flex-start;
   gap: 28px;
-  padding: 48px 24px;
+  padding: clamp(48px, 22vh, 220px) 24px 48px;
   background:
     radial-gradient(
       ellipse 70% 55% at 50% -8%,
@@ -113,6 +114,24 @@
 .link:focus-visible {
   outline: 2px solid var(--a13n-focus);
   outline-offset: 3px;
+}
+
+/* An unavailable flow explains itself on the quiet surface, not as an error. */
+.unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 26px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+}
+.unavailable svg {
+  flex: none;
+  margin-top: 1px;
 }
 
 .success {

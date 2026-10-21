@@ -73,6 +73,7 @@ export function ConnectorProviders() {
     queryFn: ({ signal }) =>
       connectorApi(client, workspace.id).providers(signal, page.cursor),
   });
+  const definitions = useConnectorDefinitions();
   const manage = can("write");
   return (
     <>
@@ -97,7 +98,10 @@ export function ConnectorProviders() {
         row={(item) => ({
           id: item.id,
           name: item.name,
-          definition: item.type,
+          definition:
+            definitions.data?.items.find(
+              (definition) => definition.type === item.type,
+            )?.display_name ?? item.type,
           type: item.type,
           credentials: item.credential_configured
             ? "configured"

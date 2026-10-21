@@ -79,13 +79,11 @@
 }
 
 /* File editor ------------------------------------------------------------- */
-.filesContent.filesContent {
-  padding-top: 8px;
-}
 .editor {
   display: grid;
   gap: 12px;
-  padding: 16px;
+  /* Lines the editor up with the file header's path. */
+  padding: 16px 18px;
 }
 .editor textarea {
   min-height: min(480px, calc(100dvh - 380px));
@@ -95,9 +93,6 @@
 }
 
 /* History ----------------------------------------------------------------- */
-.history {
-  max-width: 960px;
-}
 .historyFilters {
   display: flex;
   align-items: center;
@@ -136,6 +131,20 @@
 .revisionRow.revisionRow {
   background: transparent;
 }
+/* Both row actions read as one quiet pair. */
+.revisionActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.revisionActions button {
+  color: var(--a13n-secondary);
+  font-weight: 400;
+}
+.revisionActions button:hover,
+.revisionActions button[aria-expanded="true"] {
+  color: var(--a13n-text);
+}
 .revisionDiff {
   padding: 0 12px 12px;
 }
@@ -157,5 +166,52 @@
 /* Records ------------------------------------------------------------------ */
 .recordText {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Record source ------------------------------------------------------------ */
+.sources {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.sourceWarning {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--a13n-radius-row);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.source {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.source h3 {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 500;
+}
+.sourceLead {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+}
+.sourceFacts {
+  display: grid;
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 24px;
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+}
+.sourceFacts dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.sourceFacts dd {
+  min-width: 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }

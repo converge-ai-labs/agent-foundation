@@ -1,7 +1,8 @@
 import {
   type Icon,
   BrainIcon,
-  MagnifyingGlassIcon,
+  GaugeIcon,
+  LightbulbIcon,
   ChartBarIcon,
   PulseIcon,
   HeadCircuitIcon,
@@ -56,14 +57,14 @@ export const navigationGroups: {
   {
     label: "Observe",
     entries: [
-      ["monitoring", "Metrics dashboards", MonitorIcon],
+      ["monitoring", "Metrics dashboards", GaugeIcon],
       ["usage", "Usage", ChartBarIcon],
       ["traces", "Traces", PulseIcon],
     ],
   },
   {
     label: "Improve",
-    entries: [["findings", "Findings", MagnifyingGlassIcon]],
+    entries: [["findings", "Findings", LightbulbIcon]],
   },
 ];
 

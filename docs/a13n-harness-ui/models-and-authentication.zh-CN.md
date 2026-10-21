@@ -450,6 +450,8 @@ a13n-harness-ui login codex --allow-account-switch
 
 ## API 提供方与设置预设
 
+使用 Cloudflare AI Gateway 时，选择 **Cloudflare AI Gateway**。基础 URL 填写 `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai`，使用具有 **Account → Workers AI → Read** 权限的 Cloudflare token（`CLOUDFLARE_API_TOKEN`）。模型 ID 保留厂商前缀，例如 `openai/gpt-5.4`。`cloudflare:` 路由对所有受支持的聊天模型统一使用网关的 Chat Completions API。切换厂商只需修改模型 ID，无需选择协议。在 Cloudflare 中配置默认别名的 BYOK 或统一计费。通过 `settings.extra_headers` 中的 `{"cf-aig-gateway-id": "your-gateway"}` 指定网关；省略时第三方模型使用默认网关。不暴露单独的 Workers AI 目录和原生服务端工具。
+
 向导式 HTTP/API 密钥目录包含 OpenAI Responses、OpenAI 兼容 Chat Completions、Anthropic、Google Gemini API、OpenRouter、DeepSeek、Z.AI / GLM、Moonshot AI / Kimi、Groq、Mistral、Together AI、Fireworks AI、Cerebras、SambaNova 和 Vercel AI Gateway 集成。xAI 有两种独立 API 密钥选项：`grok:` 使用 Chat Completions，`xai:` 使用原生 SDK 默认 gRPC 端点，提供原生 X Search 和其他 xAI 工具。原生 SDK 跳过 HTTP 基础 URL 步骤。两者都不同于 Grok 订阅身份验证。其他 OpenAI 兼容服务，选择 **OpenAI-compatible · Chat Completions**，填写服务 URL 和模型 ID。Cloud IAM 和订阅传输不是通用 URL/密钥连接。
 
 预设选择器在推理旁显示输出上限；最后的 Environment 或命名问题在保存前显示组装的连接和设置。首次设置、`add model` 和新 Model 的 `add agent` 共用这些创建时预设。预设写入普通、可编辑 YAML：

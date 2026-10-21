@@ -112,7 +112,7 @@ export function EnvironmentInstances() {
     templates.data?.map((template) => [template.id, template]),
   );
   function templateName(item: Schema["EnvironmentView"]) {
-    if (!item.template_id) return t("External target");
+    if (!item.template_id) return t("External environment");
     const template = templateById.get(item.template_id);
     if (template) return template.name;
     return templates.isPending ? <InlineLoading width="6rem" /> : t("Managed");
@@ -206,12 +206,20 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Activity"),
-                render: (item) => <Timestamp value={item.last_used_at} />,
+                tone: "muted",
+                render: (item) =>
+                  item.last_used_at ? (
+                    <Timestamp value={item.last_used_at} relative />
+                  ) : (
+                    t("Not used yet")
+                  ),
               },
               {
                 label: t("Updated"),
                 tone: "muted",
-                render: (item) => <Timestamp value={item.updated_at} />,
+                render: (item) => (
+                  <Timestamp value={item.updated_at} relative />
+                ),
               },
             ]}
           />
@@ -271,7 +279,7 @@ function CreateEnvironment() {
       placement="top"
       title={t("Create environment")}
       description={t(
-        "Allocate from a template or connect an externally managed target.",
+        "Allocate from a template or connect an externally managed environment.",
       )}
       closeLabel={t("Close")}
       open={open}
@@ -370,14 +378,14 @@ function EnvironmentForm({ close }: { close: () => void }) {
                   value: "managed",
                   label: t("Managed from template"),
                   description: t(
-                    "Service allocates and retires the target for you.",
+                    "The Service allocates and retires the environment for you.",
                   ),
                 },
                 {
                   value: "external",
-                  label: t("External target"),
+                  label: t("External environment"),
                   description: t(
-                    "Register a target you run and keep control of.",
+                    "Register an environment you run and keep control of.",
                   ),
                 },
               ],

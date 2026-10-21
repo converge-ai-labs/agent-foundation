@@ -108,3 +108,16 @@ export function primaryArgument(args: unknown): string {
   );
   return resultExcerpt(first, 80);
 }
+
+/** A time zone's current offset as people compare zones, such as GMT+8; empty for a zone this browser does not know. */
+export function zoneOffset(timeZone?: string, locale?: string) {
+  try {
+    return (
+      new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "shortOffset" })
+        .formatToParts()
+        .find((part) => part.type === "timeZoneName")?.value ?? ""
+    );
+  } catch {
+    return "";
+  }
+}

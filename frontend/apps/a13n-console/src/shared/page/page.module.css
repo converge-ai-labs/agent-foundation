@@ -2,7 +2,7 @@
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 36px 48px 64px;
+  padding: 32px 48px 64px;
 }
 .back {
   display: inline-flex;
@@ -21,11 +21,16 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: 3px;
 }
+/* Actions move under the title before the title has to break. */
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px 24px;
+}
+.header > :first-child {
+  flex: 1 1 360px;
 }
 .titleRow {
   display: flex;
@@ -38,7 +43,7 @@
   font-size: var(--a13n-text-2xl);
   font-weight: 600;
   letter-spacing: var(--a13n-tracking-title);
-  line-height: 1.2;
+  line-height: 32px;
 }
 .count {
   align-self: flex-end;
@@ -50,10 +55,10 @@
 }
 .description {
   max-width: 72ch;
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-sm);
-  line-height: 1.5;
+  line-height: 20px;
 }
 .actions {
   display: flex;
@@ -78,9 +83,9 @@
 
 /* Detail page ----------------------------------------------------------- */
 .detailPage {
-  max-width: 1180px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 28px 48px 120px;
+  padding: 32px 48px 120px;
 }
 .identity {
   display: flex;
@@ -93,19 +98,23 @@
   gap: 4px;
   min-width: 0;
 }
+/* Text flow, so status and edit follow the last line of a wrapped name. */
 .detailTitleRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
 }
 .detailTitleRow h1 {
+  display: inline;
   margin: 0;
   font-size: var(--a13n-text-2xl);
   font-weight: 600;
   letter-spacing: var(--a13n-tracking-title);
-  line-height: 1.2;
-  overflow-wrap: anywhere;
+  line-height: 32px;
+  overflow-wrap: break-word;
+  vertical-align: middle;
+}
+.detailTitleRow > :not(h1) {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 .subtitle {
   display: flex;
@@ -119,11 +128,15 @@
 .subtitle .dot {
   color: var(--a13n-border);
 }
+/* A summary keeps two lines; the full text is in its title. */
 .subtitleText {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 48ch;
+  max-width: 72ch;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 .tabs {
   margin-top: 24px;
@@ -140,7 +153,7 @@
 }
 .content {
   container-type: inline-size;
-  padding-top: 28px;
+  padding-top: 24px;
 }
 .layout {
   display: grid;
@@ -153,7 +166,7 @@
 }
 .main {
   display: grid;
-  gap: 36px;
+  gap: 32px;
   min-width: 0;
 }
 .rail {
@@ -210,7 +223,7 @@
 /* Section --------------------------------------------------------------- */
 .section {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 .sectionHeader {
@@ -229,8 +242,8 @@
 .sectionHeader p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
-  line-height: 1.5;
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
 }
 .sectionBody {
   display: grid;
@@ -255,6 +268,13 @@
   box-shadow:
     0 12px 32px color-mix(in srgb, var(--a13n-text) 12%, transparent),
     0 1px 2px color-mix(in srgb, var(--a13n-text) 6%, transparent);
+}
+/* Beside the desktop sidebar the bar centres on the content column. */
+@media (width >= 768px) {
+  .saveBar {
+    left: calc(50% + var(--sidebar-width, 0px) / 2);
+    width: min(760px, calc(100% - var(--sidebar-width, 0px) - 48px));
+  }
 }
 .saveStatus {
   display: flex;
@@ -308,11 +328,6 @@
     grid-column: 1 / -1;
   }
 }
-@media (max-width: 1000px) {
-  .detailPage {
-    padding-inline: 24px;
-  }
-}
 @media (width < 768px) {
   .page {
     padding: 24px var(--a13n-page-gutter-mobile) 40px;
@@ -321,6 +336,13 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
+  }
+  .header > :first-child {
+    flex-basis: auto;
+    width: 100%;
+  }
+  .actions {
+    justify-content: flex-start;
   }
   .detailPage {
     padding: 20px var(--a13n-page-gutter-mobile) 140px;
@@ -439,4 +461,25 @@
   .panelInline {
     width: 100% !important;
   }
+}
+
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .panel:not(.panelInline) {
+    animation: panel-enter 160ms ease-out;
+  }
+}
+.panelTitle:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 4px;
+  border-radius: 4px;
 }

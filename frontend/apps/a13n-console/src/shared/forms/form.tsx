@@ -121,7 +121,7 @@ export function FormActions({
             onClick={onCancel}
             type="button"
           >
-            {cancelLabel ?? t("Cancel")}
+            {cancelLabel ?? t(dismiss ? "Close" : "Cancel")}
           </Button>
         )}
         {!dismiss && (

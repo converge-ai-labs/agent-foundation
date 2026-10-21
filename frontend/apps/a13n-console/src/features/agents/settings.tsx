@@ -6,21 +6,27 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
+  MenuSeparator,
   MenuTrigger,
 } from "a13n-ui";
-import { ArchiveIcon, CopyIcon, DotsThreeIcon } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import {
+  ArchiveIcon,
+  CopyIcon,
+  DotsThreeOutlineVerticalIcon,
+  DownloadSimpleIcon,
+} from "@phosphor-icons/react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, type Schema } from "../../shared/api";
-import { changeAgentImage } from "./images";
-import { AgentAvatar } from "./avatar";
-import { ImagePicker } from "../../shared/forms";
 import { ErrorNotice } from "../../shared/feedback";
 import { Confirm } from "../../shared/dialogs";
-import { FormActions } from "../../shared/forms";
+import { FormActions, ImagePicker } from "../../shared/forms";
+import { AgentAvatar } from "./avatar";
+import { ExportAgent } from "./export";
+import { changeAgentImage } from "./images";
 import styles from "../../shared/shared.module.css";
 
 export function AgentDetails({
@@ -86,83 +92,78 @@ export function AgentDetails({
     },
   });
   return (
-    <div className={styles.stack}>
-      <form
-        className={styles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <fieldset
+        className={`fieldset-reset ${styles.stack}`}
+        disabled={save.isPending || image.isPending || !can("write")}
       >
-        <fieldset
-          className="fieldset-reset"
-          disabled={save.isPending || image.isPending || !can("write")}
+        <ImagePicker
+          hasImage={!!agent.image_url}
+          editable={can("write")}
+          pending={save.isPending || image.isPending}
+          onChange={async (file) => {
+            await image.mutateAsync(file);
+          }}
+          description={
+            image.isPending ? (
+              <span role="status">{t("Saving…")}</span>
+            ) : (
+              t(
+                "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.",
+              )
+            )
+          }
         >
-          <div className={styles.stack}>
-            <div className="mb-2">
-              <ImagePicker
-                hasImage={!!agent.image_url}
-                editable={can("write")}
-                pending={save.isPending || image.isPending}
-                onChange={async (file) => {
-                  await image.mutateAsync(file);
-                }}
-                description={
-                  image.isPending ? (
-                    <span role="status">{t("Saving…")}</span>
-                  ) : (
-                    t(
-                      "PNG, JPEG or WebP, up to 20 MiB. Crop and compress before saving.",
-                    )
-                  )
-                }
-              >
-                <AgentAvatar
-                  name={name}
-                  id={agent.id}
-                  url={agent.image_url}
-                  className="size-16 rounded-xl text-2xl"
-                />
-              </ImagePicker>
-            </div>
-            <FormField className="min-w-0 w-full" label={t("Name")}>
-              <Input
-                required={true}
-                maxLength={128}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </FormField>
-            <FormField className="min-w-0 w-full" label={t("Description")}>
-              <Input
-                maxLength={4096}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </FormField>
-          </div>
-          <FormActions
-            pending={save.isPending}
-            onCancel={close}
-            disabled={name === agent.name && description === agent.description}
+          <AgentAvatar
+            name={name}
+            id={agent.id}
+            url={agent.image_url}
+            className="size-16 rounded-xl text-2xl"
           />
-        </fieldset>
-        <ErrorNotice error={save.error ?? image.error} retry={reload} />
-      </form>
-    </div>
+        </ImagePicker>
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            maxLength={128}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <FormField className="min-w-0 w-full" label={t("Description")}>
+          <Input
+            maxLength={4096}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </FormField>
+      </fieldset>
+      <ErrorNotice error={save.error ?? image.error} retry={reload} />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        disabled={
+          image.isPending ||
+          (name === agent.name && description === agent.description)
+        }
+      />
+    </form>
   );
 }
 
 export function AgentActions({
   resource,
+  revision,
   reload,
-  leading,
-  triggerVariant = "ghost",
 }: {
   resource: { value: Schema["Agent"]; etag?: string };
+  revision: Schema["AgentRevision"];
   reload: () => void;
-  leading?: ReactNode;
-  triggerVariant?: "ghost" | "outline";
 }) {
   const { value: agent, etag } = resource,
     client = useClient(),
@@ -192,37 +193,26 @@ export function AgentActions({
       <MenuTrigger
         render={
           <Button
-            variant={triggerVariant}
-            size={triggerVariant === "outline" ? "icon" : "icon-sm"}
+            variant="outline"
+            size="icon"
             aria-label={t("More agent actions")}
-            title={t("More agent actions")}
           />
         }
       >
-        <DotsThreeIcon size={16} />
+        <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
       </MenuTrigger>
       <MenuPopup align="end">
-        {leading}
-        {can("write") && agent.source === "custom" && (
-          <Confirm
-            subject={agent.name}
-            title={t(agent.archived_at ? "Unarchive agent" : "Archive agent")}
-            description={t(
-              "Archived agents leave the default list. Their history remains available.",
-            )}
-            triggerElement={
-              <MenuItem
-                closeOnClick={false}
-                variant={agent.archived_at ? "default" : "destructive"}
-              >
-                <ArchiveIcon size={14} />
-                {t(agent.archived_at ? "Unarchive" : "Archive")}
-              </MenuItem>
-            }
-            danger={!agent.archived_at}
-            action={archive}
-          />
-        )}
+        <ExportAgent
+          agent={agent}
+          config={revision.config}
+          version={revision.number}
+          trigger={
+            <MenuItem closeOnClick={false}>
+              <DownloadSimpleIcon aria-hidden="true" />
+              {t("Export agent")}
+            </MenuItem>
+          }
+        />
         {can("write") && !agent.archived_at && (
           <Confirm
             subject={agent.name}
@@ -230,7 +220,7 @@ export function AgentActions({
             description={t("Create an independent agent from this version.")}
             triggerElement={
               <MenuItem closeOnClick={false}>
-                <CopyIcon size={13} />
+                <CopyIcon aria-hidden="true" />
                 {t("Duplicate")}
               </MenuItem>
             }
@@ -247,6 +237,29 @@ export function AgentActions({
               navigate(`${basePath}/agents/${result.id}`);
             }}
           />
+        )}
+        {can("write") && agent.source === "custom" && (
+          <>
+            <MenuSeparator />
+            <Confirm
+              subject={agent.name}
+              title={t(agent.archived_at ? "Unarchive agent" : "Archive agent")}
+              description={t(
+                "Archived agents leave the default list. Their history remains available.",
+              )}
+              triggerElement={
+                <MenuItem
+                  closeOnClick={false}
+                  variant={agent.archived_at ? "default" : "destructive"}
+                >
+                  <ArchiveIcon aria-hidden="true" />
+                  {t(agent.archived_at ? "Unarchive" : "Archive")}
+                </MenuItem>
+              }
+              danger={!agent.archived_at}
+              action={archive}
+            />
+          </>
         )}
       </MenuPopup>
     </Menu>

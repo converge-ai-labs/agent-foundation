@@ -22,7 +22,9 @@ from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 async def test_every_offered_provider_constructs_native_model_with_selected_endpoint(provider, monkeypatch) -> None:
 
     monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
-    endpoint = "https://example.invalid/custom/v1"
+    endpoint = (
+        "https://example.invalid/custom/ai" if provider.route == "cloudflare" else "https://example.invalid/custom/v1"
+    )
     model_cfg = {} if provider.transport == "xai" else {"base_url": endpoint}
     model_name = "openai/test-model" if provider.route == "openrouter" else "test-model"
     recipe = ResolvedModelRecipe(
@@ -39,6 +41,8 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
         from pydantic_ai.models.xai import XaiModel
 
         assert isinstance(model, XaiModel)
+    elif provider.route == "cloudflare":
+        assert str(model.provider.base_url).rstrip("/") == f"{endpoint}/v1"
     elif provider.transport == "openai-client":
         assert str(model.client.base_url).rstrip("/") == endpoint
     else:
@@ -566,7 +570,11 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     for value in (
         "api",
         provider.route,
-        *(("",) if provider.transport != "xai" else ()),
+        *(
+            (provider.base_url or "https://api.cloudflare.com/client/v4/accounts/" + "a" * 32 + "/ai",)
+            if provider.transport != "xai"
+            else ()
+        ),
         "new",
         "env:TEST_KEY",
     ):
@@ -797,3 +805,19 @@ def test_reviewed_hosted_model_suggestions_use_endpoint_context(provider, model_
 
     assert model_id in API_MODEL_SUGGESTIONS[provider]
     assert known_context_window(provider, model_id, API_PROVIDER_BY_ROUTE[provider].base_url) == context
+
+
+@pytest.mark.parametrize("base_url", [None, "https://gateway.example/ai/v1", "https://gateway.example/v1"])
+def test_cloudflare_recipe_rejects_missing_or_incorrect_api_root(base_url):
+    with pytest.raises(CompositionError, match="configuration"):
+        PydanticAiModelAdapter().validate(
+            route="cloudflare:openai/gpt-5.4",
+            settings={},
+            model_cfg={"base_url": base_url} if base_url is not None else {},
+        )
+
+
+def test_cloudflare_authoring_uses_documented_token_variable():
+    from a13n_harness_ui.model_authoring import model_connection
+
+    assert model_connection("cloudflare").credential_env == "CLOUDFLARE_API_TOKEN"

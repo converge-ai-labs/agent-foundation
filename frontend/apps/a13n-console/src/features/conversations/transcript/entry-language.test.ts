@@ -67,6 +67,10 @@ it("keeps tool names in monospace and everything else in prose", () => {
   expect(entryLabel(action({ kind: "hitl", hitl: "approval" }), t).name).toBe(
     "Approval",
   );
+  // An approval names the call it gates, as the step reported it.
+  expect(
+    entryLabel(action({ kind: "hitl", hitl: "approval", name: "shell" }), t),
+  ).toEqual({ name: "shell", mono: true });
 });
 
 it("words a lifecycle fact in prose and draws it by what it says", () => {
@@ -101,9 +105,33 @@ it("words a lifecycle fact in prose and draws it by what it says", () => {
   expect(entryLabel(cancelled, t).name).toBe("Run cancelled");
   expect(entrySubject(cancelled)).toBe("The run was interrupted");
   expect(entryGlyph(cancelled)).toBe(SquareIcon);
-  const waiting = outcome({ status: "waiting", wait_reason: "call" });
-  expect(entryLabel(waiting, t).name).toBe("Waiting for call results");
+  // A wait is worded by what it asks of the reader, the same on every surface.
+  const call = (tool_name: string) => ({
+    tool_call_id: `call_${tool_name}`,
+    tool_name,
+    arguments: {},
+  });
+  const waiting = outcome({
+    status: "waiting",
+    wait_reason: "call",
+    pending: { approvals: [], calls: [call("lookup")] },
+  });
+  expect(entryLabel(waiting, t).name).toBe("Waiting for a tool result");
   expect(entryGlyph(waiting)).toBe(PauseIcon);
+  const asking = outcome({
+    status: "waiting",
+    wait_reason: "call",
+    pending: { approvals: [], calls: [call("ask_user_question")] },
+  });
+  expect(entryLabel(asking, t).name).toBe("Waiting for your answer");
+  const approving = outcome({ status: "waiting", wait_reason: "approval" });
+  expect(entryLabel(approving, t).name).toBe("Waiting for your approval");
+  const mixed = outcome({
+    status: "waiting",
+    wait_reason: "multiple",
+    pending: { approvals: [call("shell")], calls: [call("lookup")] },
+  });
+  expect(entryLabel(mixed, t).name).toBe("Waiting for your response");
 });
 
 it("reads the subject from the call, the question or the result", () => {

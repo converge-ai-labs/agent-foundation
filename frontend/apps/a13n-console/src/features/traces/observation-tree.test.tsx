@@ -11,6 +11,7 @@ vi.mock("react-i18next", () => ({
       options?.count === undefined
         ? key
         : key.replace("{{count}}", String(options.count)),
+    i18n: { resolvedLanguage: "en" },
   }),
 }));
 afterEach(cleanup);
@@ -133,6 +134,13 @@ it("moves, collapses and opens rows from the keyboard behind one tab stop", asyn
   expect(onSelect).toHaveBeenCalledWith("sibling");
   await user.keyboard("{Home}");
   expect(focused()?.getAttribute("title")).toBe("root");
+});
+
+it("names each kind in words and reads sub-second spans in milliseconds", () => {
+  mount();
+  expect(row(/^root/).textContent).toContain("Span");
+  expect(row(/^root/).textContent).not.toContain("span");
+  expect(screen.getAllByText("1.00 s").length).toBeGreaterThan(0);
 });
 
 it("offers no carets, levels or indentation outside the call tree", () => {

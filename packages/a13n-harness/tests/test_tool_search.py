@@ -119,18 +119,18 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
 
     def inspect(_step: int, info: AgentInfo) -> None:
         definitions = {tool.name: tool for tool in info.function_tools}
-        assert set(definitions) == {"search_proxy_tools", "call_proxy_tool"}
-        assert definitions["call_proxy_tool"].parameters_json_schema["properties"]["group"]["enum"] == ["crm"]
-        assert "crm operations" in definitions["search_proxy_tools"].description
-        assert "Double a customer" not in definitions["search_proxy_tools"].description
+        assert set(definitions) == {"discover_tools", "describe_tool", "call_tool"}
+        assert definitions["call_tool"].parameters_json_schema["properties"]["group"]["enum"] == ["crm"]
+        assert "crm operations" in definitions["discover_tools"].description
+        assert "Double a customer" not in definitions["discover_tools"].description
         assert "Grouped tool discovery" in info.instructions
         assert "Use exact customer IDs." not in info.instructions
 
     result, returns = await _run(
         (_group(double), Hooks()),
         [
-            ("search_proxy_tools", {"query": "double"}),
-            ("call_proxy_tool", {"group": "crm", "tool": "double", "arguments": {"value": "21"}}),
+            ("discover_tools", {"query": "double"}),
+            ("call_tool", {"group": "crm", "tool": "double", "arguments": {"value": "21"}}),
         ],
         inspect=inspect,
     )
@@ -141,7 +141,7 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
     assert found["instructions"] == ["Use exact customer IDs."]
     assert found["codeact_eligible"] is True
     assert returns[-1].content == 42
-    assert validated == ["search_proxy_tools", "call_proxy_tool", "crm__double"]
+    assert validated == ["discover_tools", "call_tool", "crm__double"]
     assert executed == validated
 
 
@@ -188,14 +188,14 @@ async def test_codeact_can_search_and_call_proxy_without_expanding_business_cata
 
     def inspect(_step: int, info: AgentInfo) -> None:
         runner = next(tool for tool in info.function_tools if tool.name == "run_code")
-        assert "search_proxy_tools" in runner.description
-        assert "call_proxy_tool" in runner.description
+        assert "discover_tools" in runner.description
+        assert "call_tool" in runner.description
         assert "crm__double" not in runner.description
         assert "async def double" not in runner.description
 
-    source = """found = await search_proxy_tools(query='double', group='crm')
+    source = """found = await discover_tools(query='double', group='crm')
 match = found['tools'][0]
-await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'value': 21})"""
+await call_tool(group=match['group'], tool=match['tool'], arguments={'value': 21})"""
     capability = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([double]), CodeActToolPolicy(default=True))])
     result, returns = await _run(
         (CodeActCapability(), capability if use_plan else _group(double)),
@@ -219,7 +219,7 @@ async def test_codeact_proxy_does_not_grant_target_eligibility() -> None:
 
     result, returns = await _run(
         (CodeActCapability(), _group(forbidden, eligible=False)),
-        [("run_code", {"code": "await call_proxy_tool(group='crm', tool='forbidden', arguments={})"})],
+        [("run_code", {"code": "await call_tool(group='crm', tool='forbidden', arguments={})"})],
     )
     assert result.output_or_raise() == "done"
     assert calls == []
@@ -236,7 +236,7 @@ async def test_invalid_arguments_do_not_execute_target() -> None:
 
     result, _ = await _run(
         (_group(typed),),
-        [("call_proxy_tool", {"group": "crm", "tool": "typed", "arguments": {"value": "invalid"}})],
+        [("call_tool", {"group": "crm", "tool": "typed", "arguments": {"value": "invalid"}})],
     )
     assert result.output_or_raise() == "done"
     assert calls == []
@@ -250,7 +250,7 @@ async def test_proxy_composes_with_native_tool_search() -> None:
         return "normal"
 
     def inspect(_step: int, info: AgentInfo) -> None:
-        assert {"search_tools", "search_proxy_tools", "call_proxy_tool"} <= {tool.name for tool in info.function_tools}
+        assert {"search_tools", "discover_tools", "call_tool"} <= {tool.name for tool in info.function_tools}
 
     result, _ = await _run(
         (
@@ -275,7 +275,7 @@ async def test_capability_group_wraps_a_fresh_run_replacement() -> None:
 
     result, returns = await _run(
         (ToolSearchCapability(groups={"identity": ToolSearchGroup(Source(id="fresh"), "Current run")}),),
-        [("call_proxy_tool", {"group": "identity", "tool": "identify", "arguments": {}})],
+        [("call_tool", {"group": "identity", "tool": "identify", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     assert isinstance(returns[-1].content, str)
@@ -287,7 +287,7 @@ async def test_search_budget_never_returns_partial_schema() -> None:
 
     result, returns = await _run(
         (_group(Tool(giant, description="x" * 2000), config=ProxyToolSearchConfig(max_search_bytes=1024)),),
-        [("search_proxy_tools", {"query": "giant"})],
+        [("discover_tools", {"query": "giant", "detail": "full"})],
     )
     assert result.output_or_raise() == "done"
     assert returns[-1].outcome == "failed"
@@ -324,10 +324,10 @@ async def test_proxy_preserves_managed_authorization_and_successful_call_account
             return request_context
 
     capabilities = (_group(HarnessTool(write, harness_metadata=_metadata())), InspectUsage())
-    call = ("call_proxy_tool", {"group": "crm", "tool": "write", "arguments": {"value": "7"}})
+    call = ("call_tool", {"group": "crm", "tool": "write", "arguments": {"value": "7"}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='write', arguments={'value': '7'})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='write', arguments={'value': '7'})"})
     result, _ = await _run(
         capabilities,
         [call],
@@ -356,10 +356,10 @@ async def test_proxy_usage_limit_admits_one_actual_target_not_a_second_router_ca
             return request_context
 
     capabilities = (_group(work), Usage())
-    call = ("call_proxy_tool", {"group": "crm", "tool": "work", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "work", "arguments": {}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='work', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='work', arguments={})"})
     result, _ = await _run(capabilities, [call], usage_limits=UsageLimits(tool_calls_limit=2))
     assert result.output_or_raise() == "done"
     assert effects == [True]
@@ -392,9 +392,7 @@ async def test_proxy_preserves_inline_approval_without_leaking_unresolved_nested
     caps = (_group(Tool(change, requires_approval=True)),)
     if resolution != "unresolved":
         caps += (HandleDeferredToolCalls(handler=handler),)
-    result, returns = await _run(
-        caps, [("call_proxy_tool", {"group": "crm", "tool": "change", "arguments": {"value": 3}})]
-    )
+    result, returns = await _run(caps, [("call_tool", {"group": "crm", "tool": "change", "arguments": {"value": 3}})])
     assert result.output_or_raise() == "done"
     assert effects == ([3] if resolution == "approve" else [])
     assert returns[-1].outcome == ("success" if resolution == "approve" else "failed")
@@ -417,11 +415,11 @@ async def test_group_source_preparation_updates_schema_and_disappearing_groups_r
 
     def inspect(step, info):
         names = {tool.name for tool in info.function_tools}
-        assert ("search_proxy_tools" in names) == (step < 2)
+        assert ("discover_tools" in names) == (step < 2)
 
     result, returns = await _run(
         (_group(Tool(lookup, prepare=prepare)),),
-        [("search_proxy_tools", {"query": "lookup"}), ("search_proxy_tools", {"query": "lookup"})],
+        [("discover_tools", {"query": "lookup"}), ("discover_tools", {"query": "lookup"})],
         inspect=inspect,
     )
     assert result.output_or_raise() == "done"
@@ -449,7 +447,7 @@ async def test_proxy_supersession_removes_target_from_search_and_codeact() -> No
                 HarnessTool(new, harness_metadata=_metadata("new")),
             ),
         ),
-        [("search_proxy_tools", {"query": ""}), ("call_proxy_tool", {"group": "crm", "tool": "old", "arguments": {}})],
+        [("discover_tools", {"query": ""}), ("call_tool", {"group": "crm", "tool": "old", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     assert [tool["tool"] for tool in returns[0].content["tools"]] == ["new"]
@@ -461,10 +459,10 @@ async def test_proxy_retains_multimodal_tool_return_content(codeact: bool) -> No
         return ToolReturn(return_value={"value": 1}, content="supplemental evidence", metadata={"source": "test"})
 
     caps = (_group(rich),)
-    call = ("call_proxy_tool", {"group": "crm", "tool": "rich", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "rich", "arguments": {}})
     if codeact:
         caps += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='rich', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='rich', arguments={})"})
     result, returns = await _run(caps, [call])
     assert result.output_or_raise() == "done"
     from a13n_harness.tools._output import tool_execution_value
@@ -497,7 +495,7 @@ async def test_grouped_sequential_tool_keeps_awaitable_barrier_in_codeact() -> N
             (
                 "run_code",
                 {
-                    "code": "import asyncio\nawait asyncio.gather(call_proxy_tool(group='crm', tool='work', arguments={'value': 1}), call_proxy_tool(group='crm', tool='work', arguments={'value': 2}))"
+                    "code": "import asyncio\nawait asyncio.gather(call_tool(group='crm', tool='work', arguments={'value': 1}), call_tool(group='crm', tool='work', arguments={'value': 2}))"
                 },
             )
         ],
@@ -518,7 +516,7 @@ async def test_proxy_keeps_target_retry_context_and_does_not_charge_envelope_bud
             raise ModelRetry("Try this operation again")
         return "recovered"
 
-    call = ("call_proxy_tool", {"group": "crm", "tool": "retrying", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "retrying", "arguments": {}})
     result, returns = await _run(
         (_group(Tool(retrying, max_retries=3)),),
         [call, call, call],
@@ -556,8 +554,8 @@ async def test_outer_prefix_preserves_group_identity_source_guidance_and_codeact
     result, returns = await _run(
         (ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Customer data")}),),
         [
-            ("search_proxy_tools", {"query": "value"}),
-            ("call_proxy_tool", {"group": "crm", "tool": "outer_value", "arguments": {}}),
+            ("discover_tools", {"query": "value", "detail": "full"}),
+            ("call_tool", {"group": "crm", "tool": "outer_value", "arguments": {}}),
         ],
     )
     assert result.output_or_raise() == "done"
@@ -575,7 +573,7 @@ async def test_unknown_execution_failure_is_bounded_and_does_not_retry_side_effe
 
     result, returns = await _run(
         (_group(mutate),),
-        [("call_proxy_tool", {"group": "crm", "tool": "mutate", "arguments": {}})],
+        [("call_tool", {"group": "crm", "tool": "mutate", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     assert effects == [True]
@@ -614,10 +612,10 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
         result, returns = await _run(
             caps,
             [
-                ("search_proxy_tools", {"query": "", "limit": 2}),
-                ("search_proxy_tools", {"query": "", "limit": 2, "offset": count - 1}),
+                ("discover_tools", {"query": "", "limit": 2}),
+                ("discover_tools", {"query": "", "limit": 2, "offset": count - 1}),
                 (
-                    "call_proxy_tool",
+                    "call_tool",
                     {"group": "crm", "tool": f"operation_{count - 1:04}", "arguments": {"index": count}},
                 ),
             ],
@@ -647,9 +645,9 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
 
     (tmp_path / "job.codeact.py").write_text(
         "async def main(inputs):\n"
-        "    found = await search_proxy_tools(query='double', group='crm')\n"
+        "    found = await discover_tools(query='double', group='crm')\n"
         "    match = found['tools'][0]\n"
-        "    return await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'value': inputs['value']})\n",
+        "    return await call_tool(group=match['group'], tool=match['tool'], arguments={'value': inputs['value']})\n",
         encoding="utf-8",
     )
     provider = DirectLocalSource(
@@ -694,15 +692,15 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> Non
         def inspect(_step: int, info: AgentInfo, enabled: bool = enabled) -> None:
             instructions = info.instructions or ""
             assert ("Grouped tool discovery" in instructions) is enabled
-            assert "search_proxy_tools" not in instructions
-            assert "call_proxy_tool" not in instructions
+            assert "discover_tools" not in instructions
+            assert "call_tool" not in instructions
             if enabled:
                 assert "find_ops" in instructions
                 assert "invoke_op" in instructions
 
         result, returns = await _run(
             (_group(value, config=config),),
-            [("find_ops", {"query": ""})],
+            [("find_ops", {"query": "", "detail": "full"})],
             inspect=inspect,
             toolset_instructions=enabled,
         )
@@ -738,8 +736,8 @@ async def test_group_wraps_combined_capabilities_without_duplicate_tools_or_hook
     result, returns = await _run(
         (ToolSearchCapability(groups={"combined": ToolSearchGroup(source, "Combined source")}),),
         [
-            ("search_proxy_tools", {"query": ""}),
-            ("call_proxy_tool", {"group": "combined", "tool": "second", "arguments": {}}),
+            ("discover_tools", {"query": ""}),
+            ("call_tool", {"group": "combined", "tool": "second", "arguments": {}}),
         ],
     )
     assert result.output_or_raise() == "done"
@@ -771,7 +769,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
 
     result, _ = await _run(
         (_group(value),),
-        [("call_proxy_tool", {"group": "crm", "tool": "missing", "arguments": {}})],
+        [("call_tool", {"group": "crm", "tool": "missing", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     retry = next(
@@ -782,7 +780,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
         if isinstance(part, RetryPromptPart)
     )
     assert "crm/missing" in retry.content
-    assert "Search again" in retry.content
+    assert "Rediscover available tools" in retry.content
 
 
 async def test_empty_groups_leave_direct_tools_unchanged() -> None:
@@ -811,7 +809,7 @@ async def test_group_mapping_is_consumed_at_construction() -> None:
     groups = {"crm": descriptor}
     proxy = ToolSearchCapability(groups=groups)
     groups.clear()
-    result, returns = await _run((proxy,), [("call_proxy_tool", {"group": "crm", "tool": "value", "arguments": {}})])
+    result, returns = await _run((proxy,), [("call_tool", {"group": "crm", "tool": "value", "arguments": {}})])
     assert result.output_or_raise() == "done"
     assert returns[0].content == 42
 
@@ -903,9 +901,9 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
             log.append("plugin:wrap_run")
             return await call_next(exchange)
 
-    target = ("call_proxy_tool", {"group": "crm", "tool": "identify", "arguments": {}}) if grouped else ("identify", {})
+    target = ("call_tool", {"group": "crm", "tool": "identify", "arguments": {}}) if grouped else ("identify", {})
     if codeact:
-        code = "await call_proxy_tool(group='crm', tool='identify', arguments={})" if grouped else "await identify()"
+        code = "await call_tool(group='crm', tool='identify', arguments={})" if grouped else "await identify()"
         target = ("run_code", {"code": code})
     calls = [target, ("status", {})]
     requests = 0
@@ -918,11 +916,11 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
         assert "Preserve capability instructions." in (info.instructions or "")
         if codeact:
             runner = next(tool for tool in info.function_tools if tool.name == "run_code")
-            assert ("call_proxy_tool" in runner.description) is grouped
+            assert ("call_tool" in runner.description) is grouped
             assert ("async def identify" in runner.description) is not grouped
         else:
             assert ("identify" in names) is not grouped
-            assert ("call_proxy_tool" in names) is grouped
+            assert ("call_tool" in names) is grouped
         index = requests
         requests += 1
         if index < len(calls):
@@ -1115,9 +1113,9 @@ async def test_plan_groups_exact_plugin_instances_and_keeps_unlisted_sources_dir
     result, returns = await _run(
         (source,),
         [
-            ("call_proxy_tool", {"group": "first", "tool": "identify", "arguments": {}}),
-            ("call_proxy_tool", {"group": "second", "tool": "identify", "arguments": {}}),
-            ("call_proxy_tool", {"group": "first", "tool": "local", "arguments": {}}),
+            ("call_tool", {"group": "first", "tool": "identify", "arguments": {}}),
+            ("call_tool", {"group": "second", "tool": "identify", "arguments": {}}),
+            ("call_tool", {"group": "first", "tool": "local", "arguments": {}}),
             ("identify", {}),
         ],
         plugins=(Plugin("plugin-one"), Plugin("plugin-two"), Plugin("plugin-direct")),
@@ -1239,7 +1237,7 @@ async def test_grouped_custom_container_retains_native_binding_hooks_and_state(u
 
     async def model(messages, info):
         assert "Container-owned instructions." in info.instructions
-        assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+        assert {tool.name for tool in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -1274,11 +1272,11 @@ async def test_build_plan_survives_model_recovery_without_replaying_completed_ta
     async def model(messages, info):
         nonlocal requests
         requests += 1
-        assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+        assert {tool.name for tool in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
         if requests == 1:
             yield {
                 0: DeltaToolCall(
-                    name="call_proxy_tool",
+                    name="call_tool",
                     json_args='{"group":"storage","tool":"write","arguments":{}}',
                     tool_call_id="call-write",
                 )
@@ -1321,10 +1319,10 @@ async def test_proxy_target_permission_gate_precedes_business_dispatch(codeact: 
         _group(forbidden),
         ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/native/forbidden": mode})),
     )
-    call = ("call_proxy_tool", {"group": "crm", "tool": "forbidden", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "forbidden", "arguments": {}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='forbidden', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='forbidden', arguments={})"})
     result, _ = await _run(capabilities, [call])
     assert result.status == "completed"
     assert not effects
@@ -1345,10 +1343,10 @@ async def test_proxy_and_codeact_use_capability_approval_override(codeact: bool,
         _group(Tool(change, requires_approval=True)),
         ToolPermissionsCapability(ToolPermissions(rules={"tool/native/change": mode})),
     )
-    call = ("call_proxy_tool", {"group": "crm", "tool": "change", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "change", "arguments": {}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='change', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='change', arguments={})"})
     result, _ = await _run(capabilities, [call])
     assert result.status == "completed"
     assert effects == ([False] if mode == "allow" else [])
@@ -1397,8 +1395,8 @@ async def test_native_search_preserves_group_names_and_direct_local_dispatch() -
 
     def inspect(step: int, info: AgentInfo) -> None:
         tools = {tool.name: tool for tool in info.function_tools}
-        assert "search_proxy_tools" not in tools
-        assert "call_proxy_tool" not in tools
+        assert "discover_tools" not in tools
+        assert "call_tool" not in tools
         assert tools["crm__lookup"].defer_loading
         assert tools["crm__lookup"].with_native == "tool_search"
         assert not tools["direct"].defer_loading

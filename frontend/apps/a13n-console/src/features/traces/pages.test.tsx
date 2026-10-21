@@ -183,33 +183,35 @@ it("searches identifiers automatically and preserves empty-page continuation", a
   );
 });
 
-it("applies metadata key=value filters from the popover", async () => {
+it("filters by attributes picked from the listed traces", async () => {
   const user = typingUser();
+  const root = {
+    ...trace(),
+    attributes: { ...trace().attributes, scenario: "review", synthetic: true },
+  };
   http.GET.mockImplementation(async (path) =>
     isSpans(path)
       ? response({ items: [], next_cursor: null })
       : response(
-          isBackend(path)
-            ? descriptor
-            : { items: [trace()], next_cursor: null },
+          isBackend(path) ? descriptor : { items: [root], next_cursor: null },
         ),
   );
   mount(<TracesPage />);
   await screen.findByRole("link", { name: /root/ }, { timeout: 3000 });
   await user.click(screen.getByRole("button", { name: "Metadata" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Metadata key 1" }),
-    "scenario",
-  );
+  await user.click(screen.getByRole("combobox", { name: "Metadata key 1" }));
+  // Service correlation is searched by ID, so only the other attributes are offered.
+  expect(
+    (await screen.findAllByRole("option")).map((item) => item.textContent),
+  ).toEqual(["scenario", "synthetic"]);
+  await user.click(screen.getByRole("option", { name: "scenario" }));
   await user.type(
     screen.getByRole("textbox", { name: "Metadata value 1" }),
     "review",
   );
   await user.click(screen.getByRole("button", { name: "Add filter" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Metadata key 2" }),
-    "synthetic",
-  );
+  await user.click(screen.getByRole("combobox", { name: "Metadata key 2" }));
+  await user.click(await screen.findByRole("option", { name: "synthetic" }));
   await user.type(
     screen.getByRole("textbox", { name: "Metadata value 2" }),
     "true",
@@ -568,7 +570,7 @@ it("shows seconds, normalized levels and paginated aggregate cost in the list", 
   });
   mount(<TracesPage />);
   await screen.findByText("$0.35");
-  expect(screen.getByText("2.5 s")).toBeTruthy();
+  expect(screen.getByText("2.50 s")).toBeTruthy();
   expect(screen.getByText("Info")).toBeTruthy();
   expect(
     screen.getAllByRole("columnheader").map((cell) => cell.textContent?.trim()),
@@ -679,7 +681,7 @@ it("caps advancing cost pagination without exposing a partial total", async () =
   ).toBe(UNKNOWN);
 });
 
-it("uses seconds in the detail overview, timeline and observation dialog", async () => {
+it("uses one duration format in the detail overview, timeline and observation panel", async () => {
   const user = userEvent.setup();
   const root = { ...trace(), ended_at: "2026-09-11T00:00:02.5Z" };
   http.GET.mockImplementation(async (path) =>
@@ -693,14 +695,17 @@ it("uses seconds in the detail overview, timeline and observation dialog", async
   );
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("treeitem", { name: /^root/ });
-  expect(screen.getByText("0 s").parentElement?.textContent).toBe("0 s2.5 s");
+  const scale = screen
+    .getAllByText("2.50 s")
+    .find((node) => node.closest("[aria-hidden]"));
+  expect(scale?.parentElement?.textContent).toBe("02.50 s");
   expect(
-    within(screen.getByRole("treeitem", { name: /^root/ })).getByText("2.5 s"),
+    within(screen.getByRole("treeitem", { name: /^root/ })).getByText("2.50 s"),
   ).toBeTruthy();
   expect(screen.queryByText("Root status")).toBeNull();
   await user.click(screen.getByRole("treeitem", { name: /^root/ }));
   const panel = within(await screen.findByRole("complementary"));
-  expect(panel.getByText("2.5 s")).toBeTruthy();
+  expect(panel.getByText("2.50 s")).toBeTruthy();
   expect(panel.queryByText(/\d ms\b/)).toBeNull();
 });
 
@@ -734,58 +739,92 @@ it("immediately hides revoked content without waiting for unrelated cost reads o
   expect(http.GET.mock.calls.filter(([path]) => isSpans(path))).toHaveLength(4);
 });
 
-it("sorts aggregate costs rather than root costs and keeps the order after pagination", async () => {
+it("sorts the page by start time only and keeps the order after pagination", async () => {
   const user = userEvent.setup();
-  const makeTrace = (id: string, cost: string | null) => ({
+  const makeTrace = (id: string, minute: number) => ({
     ...trace(),
     id: `${id}-span`,
     trace_id: id,
     name: id,
-    cost_usd: cost,
+    started_at: new Date(
+      Date.parse("2026-09-11T00:00:00Z") + minute * 60_000,
+    ).toISOString(),
   });
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
-    if (isSpans(path))
-      return response({
-        items: [
-          {
-            ...observation("child"),
-            cost_usd: options.params.path.trace_id === "low-root" ? "10" : null,
-          },
-        ],
-        next_cursor: null,
-      });
+    if (isSpans(path)) return response({ items: [], next_cursor: null });
     const next = options.params.query.cursor;
     return response({
       items: next
-        ? [makeTrace("next-low", "1"), makeTrace("next-high", "2")]
-        : [
-            makeTrace("high-root", "5"),
-            makeTrace("low-root", "1"),
-            makeTrace("unknown", null),
-          ],
+        ? [makeTrace("next-late", 4), makeTrace("next-early", 3)]
+        : [makeTrace("late", 2), makeTrace("early", 1), makeTrace("mid", 1.5)],
       next_cursor: next ? null : "next",
     });
   });
   mount(<TracesPage />);
-  await screen.findByText("$11.00");
+  await screen.findByRole("link", { name: "late" });
   const names = () =>
     screen
       .getAllByRole("row")
       .slice(1)
       .map((row) => within(row).getAllByRole("link")[0].textContent);
-  await user.click(screen.getByRole("button", { name: "Cost" }));
-  expect(names()).toEqual(["low-root", "high-root", "unknown"]);
-  await user.click(screen.getByRole("button", { name: "Cost" }));
-  expect(names()).toEqual(["high-root", "low-root", "unknown"]);
+  expect(screen.queryByRole("button", { name: "Cost" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Duration" })).toBeNull();
+  expect(names()).toEqual(["late", "mid", "early"]);
+  await user.click(screen.getByRole("button", { name: "Started" }));
+  expect(names()).toEqual(["early", "mid", "late"]);
   await user.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByText("$2.00");
-  expect(names()).toEqual(["next-low", "next-high"]);
+  await screen.findByRole("link", { name: "next-late" });
+  expect(names()).toEqual(["next-early", "next-late"]);
   expect(
     screen
-      .getByRole("columnheader", { name: "Cost" })
+      .getByRole("columnheader", { name: "Started" })
       .getAttribute("aria-sort"),
   ).toBe("ascending");
+});
+
+it("shows a placeholder while costs load, then one decimal count for the page", async () => {
+  let release = () => {};
+  const loaded = new Promise<void>((resolve) => (release = resolve));
+  const makeTrace = (id: string) => ({
+    ...trace(),
+    id: `${id}-span`,
+    trace_id: id,
+    name: id,
+  });
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) {
+      await loaded;
+      const id = options.params.path.trace_id;
+      return response({
+        items: [
+          { ...makeTrace(id), cost_usd: id === "small" ? "0.0035" : "0.03" },
+        ],
+        next_cursor: null,
+      });
+    }
+    return response({
+      items: [makeTrace("small"), makeTrace("large")],
+      next_cursor: null,
+    });
+  });
+  mount(<TracesPage />);
+  await screen.findByRole("link", { name: "small" });
+  const costs = () =>
+    screen
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => within(row).getAllByRole("cell")[4]);
+  expect(
+    costs().every((cell) => cell.querySelector('[aria-busy="true"]')),
+  ).toBe(true);
+  release();
+  await screen.findByText("$0.0035");
+  expect(costs().map((cell) => cell.textContent)).toEqual([
+    "$0.0035",
+    "$0.0300",
+  ]);
 });
 
 it("opens the root content tab without substituting child output", async () => {

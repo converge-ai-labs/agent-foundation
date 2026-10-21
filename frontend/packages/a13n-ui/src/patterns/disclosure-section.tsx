@@ -16,11 +16,14 @@ export function DisclosureSection({
   title: ReactNode;
   summary?: ReactNode;
 }) {
+  // A quiet disclosure: no surface of its own, so its fields keep the form's
+  // edges and a nested one never stacks a second fill. The trigger's hover
+  // fill reaches into the gutter so its caret stands on the field edge.
   return (
     <Collapsible {...props}>
-      <div className="rounded-lg bg-muted/50" data-slot="disclosure-surface">
+      <div data-slot="disclosure-surface">
         <CollapsibleTrigger
-          className="group/disclosure-trigger h-auto min-h-9 w-full justify-start gap-2 px-3 py-2 text-left whitespace-normal"
+          className="group/disclosure-trigger -mx-2 h-auto min-h-8 w-[calc(100%+--spacing(4))] justify-start gap-2 px-2 py-1.5 text-left whitespace-normal"
           render={<Button type="button" variant="ghost" />}
         >
           <CaretRightIcon
@@ -35,7 +38,7 @@ export function DisclosureSection({
           )}
         </CollapsibleTrigger>
         <CollapsiblePanel>
-          <div className="grid gap-4 px-4 pt-2 pb-4">{children}</div>
+          <div className="grid gap-4 pt-3 pb-1">{children}</div>
         </CollapsiblePanel>
       </div>
     </Collapsible>

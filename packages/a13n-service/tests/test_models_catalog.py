@@ -102,6 +102,7 @@ def test_the_catalog_channels_are_those_the_registered_types_serve() -> None:
         "azure",
         "fireworks-ai",
         "togetherai",
+        "cloudflare-ai-gateway",
     } <= channels
     assert "volcengine" not in channels
 
@@ -704,3 +705,12 @@ async def test_mcp_can_discover_and_invoke_catalog_filters(catalog_api, models_d
         prices = {price["price_key"]: Decimal(str(price["price"])) for price in item["pricing"]["rules"][0]["prices"]}
         assert prices == {"input_mtok": Decimal(3), "output_mtok": Decimal(4)}
         assert len(catalog.catalog.items) == 2 and models_dev.requests == 1
+
+
+def test_cloudflare_catalog_keeps_gateway_model_names_and_prices():
+    channels = catalog_channels(BUILT_IN_MODEL_PROVIDERS)
+    [item] = parse_catalog(document({"cloudflare-ai-gateway": {"models": {"openai/gpt-5.4": model()}}}), channels)
+    assert item.ref.provider == "cloudflare-ai-gateway"
+    assert item.ref.model == "openai/gpt-5.4"
+    assert item.pricing is not None
+    assert item.characteristics.context_window_tokens == 100000

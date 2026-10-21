@@ -268,13 +268,13 @@ async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Pa
             yield "done"
         else:
             args = (
-                {"code": "[await call_proxy_tool(group='apps', tool='counter', arguments={}) for _ in range(2)]"}
+                {"code": "[await call_tool(group='apps', tool='counter', arguments={}) for _ in range(2)]"}
                 if codeact
                 else {"group": "apps", "tool": "counter", "arguments": {}}
             )
             yield {
                 0: DeltaToolCall(
-                    name="run_code" if codeact else "call_proxy_tool",
+                    name="run_code" if codeact else "call_tool",
                     json_args=json.dumps(args),
                     tool_call_id="outer-call",
                 )

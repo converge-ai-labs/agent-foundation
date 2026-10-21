@@ -136,7 +136,7 @@ async def test_native_discovery_restores_history_and_keeps_connection_permission
         nonlocal calls
         tools = {tool.name: tool for tool in info.function_tools}
         assert "load_capability" not in tools
-        assert "call_proxy_tool" not in tools and "search_tools" not in tools
+        assert "call_tool" not in tools and "search_tools" not in tools
         assert tools["knowledge__lookup"].defer_loading
         assert any(
             tool.kind == "tool_search" and not tool.optional for tool in info.model_request_parameters.native_tools
@@ -360,10 +360,10 @@ async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeyp
                 }
                 yield {2: DeltaToolCall(name="knowledge__lookup", json_args="{}", tool_call_id="call")}
             else:
-                assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+                assert {tool.name for tool in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
                 yield {
                     0: DeltaToolCall(
-                        name="call_proxy_tool",
+                        name="call_tool",
                         json_args='{"group":"knowledge","tool":"lookup","arguments":{}}',
                         tool_call_id="call",
                     )

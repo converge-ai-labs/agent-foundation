@@ -1,4 +1,5 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
+import type { TFunction } from "i18next";
 import { Fragment, useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -6,11 +7,12 @@ import { formatDuration } from "../format";
 import { DiffBadges } from "./diff-badges";
 import { ItemContents } from "../stored-content";
 import {
-  asksAQuestion,
   entryGlyph,
   entryLabel,
   entrySubject,
+  entryWait,
   StateMark,
+  waitingLabel,
   type WorkState,
 } from "./entry-language";
 import { workSummary, type WorkEntry, type WorkSummary } from "./items";
@@ -44,14 +46,10 @@ export function WorkLine({
           onClick={() => setOpen((value) => !value)}
         >
           <StateMark state={lineState(summary)} size={13} decorative />
-          <span className={styles.workText}>
+          <span className={styles.workText} title={workTitle(summary, t)}>
             {/* The card below names the call; the line only says whose turn it is. */}
             {summary.waiting ? (
-              t(
-                asksAQuestion(summary.waiting)
-                  ? "Waiting for your answer"
-                  : "Waiting for your approval",
-              )
+              waitingLabel(entryWait(summary.waiting), t)
             ) : (
               <>
                 {summary.named.map((work, index) => (
@@ -96,6 +94,23 @@ export function WorkLine({
       )}
     </div>
   );
+}
+
+/** The whole line as text, so a truncated line still reads in full on hover. */
+function workTitle(summary: WorkSummary, t: TFunction) {
+  if (summary.waiting) return undefined;
+  const named = summary.named
+    .map(({ entry }) =>
+      [entryLabel(entry, t).name, entrySubject(entry)]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .join(", ");
+  return summary.more
+    ? [named, t("and {{count}} more", { count: summary.more })]
+        .filter(Boolean)
+        .join(" ")
+    : named;
 }
 
 function lineState(summary: WorkSummary): WorkState {

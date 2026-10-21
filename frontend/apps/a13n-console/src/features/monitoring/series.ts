@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import {
   queryStep,
   type MetricsResult,
@@ -5,11 +6,16 @@ import {
   type PanelQuery,
   type TimeRange,
 } from "./api";
+import { metricName } from "./labels";
 
 export type Point = [number, number | null];
 export type ChartSeries = {
   id: string;
+  /** The label values that tell series of one query apart. */
   label: string;
+  /** A typed query's metric; PromQL series are named by their labels alone. */
+  metric?: string;
+  /** The exact metric and labels, for the title. */
   detail?: string;
   points: Point[];
   unit: Panel["unit"];
@@ -20,33 +26,40 @@ export type ChartData = { series: ChartSeries[]; notices: ChartNotice[] };
 export const SERIES_LIMIT = 32;
 const seriesLimitNotice =
   "Showing the first 32 series. Narrow the query to see others.";
-const labelsText = (labels: Record<string, unknown>) =>
+const hiddenLabels = [
+  "__name__",
+  "environment_id",
+  "device_id",
+  "device_registration_id",
+];
+const labelEntries = (labels: Record<string, unknown>) =>
   Object.entries(labels)
-    .filter(
-      ([key]) =>
-        ![
-          "__name__",
-          "environment_id",
-          "device_id",
-          "device_registration_id",
-        ].includes(key),
-    )
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${value}`)
+    .filter(([key]) => !hiddenLabels.includes(key))
+    .sort(([a], [b]) => a.localeCompare(b));
+const labelsText = (labels: Record<string, unknown>) =>
+  labelEntries(labels)
+    .map(([key, value]) => `${key}=${String(value)}`)
     .join(", ");
+// Values name a series; a bare number ("0") keeps its key so it still says what it counts.
+const labelValues = (labels: Record<string, unknown>) =>
+  labelEntries(labels)
+    .map(([key, value]) =>
+      /^\d+$/.test(String(value)) ? `${key} ${String(value)}` : String(value),
+    )
+    .join(" · ");
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-export function metricLabel(metric: string): string {
-  const name = metric
-    .replace(/^system_/, "")
-    .replace(/_(bytes_per_second|operations_per_second|bytes|ratio)$/, "")
-    .replaceAll("_", " ")
-    .replace(/\bcpu\b/g, "CPU")
-    .replace(/\btcp\b/g, "TCP")
-    .replace(/\budp\b/g, "UDP")
-    .replace(/\bio\b/g, "I/O");
-  return name.charAt(0).toUpperCase() + name.slice(1);
+/** A series' display name in the reader's language. */
+export function seriesName(
+  series: ChartSeries,
+  t: TFunction,
+  showMetric: boolean,
+) {
+  if (!series.metric || (!showMetric && series.label)) return series.label;
+  return [metricName(t, series.metric), series.label]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function metricUnit(metric: string): Panel["unit"] {
@@ -109,12 +122,10 @@ export function normalizeResult(
             ([key]) => key !== "identity" || !(labels.interface || labels.disk),
           ),
         );
-        const displaySuffix = labelsText(displayLabels);
         return {
           id: JSON.stringify([name, series.labels]),
-          label: displaySuffix
-            ? `${metricLabel(name)} · ${displaySuffix}`
-            : metricLabel(name),
+          label: labelValues(displayLabels),
+          metric: name,
           detail: suffix ? `${name} · ${suffix}` : name,
           points,
           unit,
@@ -152,9 +163,9 @@ export function normalizeResult(
     series.push({
       id: JSON.stringify([name, labels]),
       label:
-        query.kind === "metric"
-          ? `${metricLabel(name)}${suffix ? ` · ${suffix}` : ""}`
-          : suffix || String(labels.__name__ ?? name),
+        labelValues(labels) ||
+        (query.kind === "metric" ? "" : String(labels.__name__ ?? name)),
+      metric: query.kind === "metric" ? name : undefined,
       detail: suffix ? `${name} · ${suffix}` : name,
       points,
       unit,

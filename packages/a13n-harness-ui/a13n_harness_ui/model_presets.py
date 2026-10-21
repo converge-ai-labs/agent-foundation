@@ -49,6 +49,7 @@ API_PROVIDERS = (
     ApiProvider(
         "vercel", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", "VERCEL_AI_GATEWAY_API_KEY", "openai-client"
     ),
+    ApiProvider("cloudflare", "Cloudflare AI Gateway", "", "CLOUDFLARE_API_TOKEN"),
     ApiProvider("grok", "xAI · Chat Completions", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
     ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai", supports_session_affinity=False),
 )
@@ -113,6 +114,7 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "fireworks": ("accounts/fireworks/models/ember-1", "accounts/fireworks/models/gpt-oss-120b"),
     "cerebras": ("gpt-oss-120b", "qwen-3.8-27b"),
     "sambanova": ("MiniMax-M2.7", "DeepSeek-V3.1", "Meta-Llama-3.3-70B-Instruct", "gpt-oss-120b"),
+    "cloudflare": ("openai/gpt-5.4", "anthropic/claude-sonnet-4.6", "google/gemini-3-flash"),
     "vercel": ("anthropic/claude-sonnet-5.5", "openai/gpt-6.1-sol", "moonshotai/kimi-k3"),
     "grok": ("grok-4.7", "grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
     "xai": ("grok-4.7", "grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),

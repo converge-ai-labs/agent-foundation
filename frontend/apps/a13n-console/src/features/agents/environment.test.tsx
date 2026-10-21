@@ -25,7 +25,7 @@ vi.mock("./toolsets", () => ({
 vi.mock("./choices", () => ({
   useAgentChoices: () => ({
     isPending: false,
-    data: { models: [], skills: [], mcp: [], connectors: [] },
+    data: { models: [], providers: [], skills: [], mcp: [], connectors: [] },
   }),
 }));
 vi.mock("react-i18next", () => ({

@@ -1,25 +1,21 @@
-import { ArrowClockwiseIcon } from "@phosphor-icons/react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, SegmentedControl } from "a13n-ui";
-import { useState } from "react";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SegmentedControl } from "a13n-ui";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { DateTimeField } from "../../shared/forms";
 import { Page } from "../../shared/page";
+import {
+  RefreshButton,
+  TimeRangePicker,
+  type RangeSelection,
+} from "../../shared/time-range";
 import { exactCost, formatCost } from "../../shared/cost";
 import { Breakdown } from "./breakdown";
 import { UsageChart } from "./chart";
-import {
-  compactNumber,
-  customWindow,
-  duration,
-  localWindow,
-  percent,
-  presetWindow,
-} from "./values";
+import { compactNumber, duration, percent, presetWindow } from "./values";
 import styles from "./usage.module.css";
 
 export function UsagePage() {
@@ -32,12 +28,19 @@ function UsageBrowser() {
     client = useClient(),
     cache = useQueryClient(),
     { workspace } = useWorkspace();
-  const [preset, setPreset] = useState("7");
-  const [window, setWindow] = useState(() => presetWindow(7));
-  const [draft, setDraft] = useState(() => localWindow(window));
+  const language = i18n.resolvedLanguage;
+  const [range, setRange] = useState<RangeSelection>({ preset: 7 * 86400 });
+  const [now, setNow] = useState(() => new Date());
+  // Presets cover whole local days, ending now.
+  const window = useMemo(
+    () =>
+      "preset" in range
+        ? presetWindow(range.preset / 86400, now)
+        : { start: range.start.toISOString(), end: range.end.toISOString() },
+    [range, now],
+  );
   const [group, setGroup] = useState<"agents" | "models">("agents");
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const custom = customWindow(draft.start, draft.end);
   const query = useQuery({
     queryKey: ["usage", workspace.id, "overview", window, timezone],
     queryFn: async ({ signal }) =>
@@ -48,9 +51,12 @@ function UsageBrowser() {
         }),
       ),
   });
-  const number = (value: number) => value.toLocaleString(i18n.resolvedLanguage);
-  const compact = (value: number) =>
-    compactNumber(value, i18n.resolvedLanguage);
+  const fetching = useIsFetching({ queryKey: ["usage", workspace.id] });
+  // Counts read compact at a glance; the exact value is in the title.
+  const count = (value: number): [string, string] => [
+    compactNumber(value, language),
+    value.toLocaleString(language),
+  ];
   const overview = query.data;
   const metrics: [string, string, string?][] = overview
     ? [
@@ -59,28 +65,19 @@ function UsageBrowser() {
           formatCost(overview.usage.cost),
           exactCost(overview.usage.cost),
         ],
-        [t("Runs"), number(overview.runs.runs)],
-        [t("Model requests"), number(overview.usage.requests)],
-        [t("Avg. run time"), duration(overview.runs.average_duration_seconds)],
+        [t("Runs"), ...count(overview.runs.runs)],
+        [t("Model requests"), ...count(overview.usage.requests)],
+        [
+          t("Avg. run time"),
+          duration(overview.runs.average_duration_seconds, language),
+        ],
       ]
     : [];
   const tokens: [string, string, string?][] = overview
     ? [
-        [
-          t("Input tokens"),
-          compact(overview.usage.input_tokens),
-          number(overview.usage.input_tokens),
-        ],
-        [
-          t("Output tokens"),
-          compact(overview.usage.output_tokens),
-          number(overview.usage.output_tokens),
-        ],
-        [
-          t("Cached input tokens"),
-          compact(overview.usage.cache_read_tokens),
-          number(overview.usage.cache_read_tokens),
-        ],
+        [t("Input tokens"), ...count(overview.usage.input_tokens)],
+        [t("Output tokens"), ...count(overview.usage.output_tokens)],
+        [t("Cached input tokens"), ...count(overview.usage.cache_read_tokens)],
         [t("Cache rate"), percent(overview.usage.cache_hit_rate)],
       ]
     : [];
@@ -88,88 +85,49 @@ function UsageBrowser() {
     <Page
       title={t("Usage")}
       description={t("Model consumption and run time in this workspace.")}
-      actions={
-        <Button
-          variant="outline"
-          disabled={query.isFetching}
-          onClick={() => {
-            if (preset !== "custom") {
-              const next = presetWindow(Number(preset));
-              setWindow(next);
-              setDraft(localWindow(next));
-            }
-            void cache.invalidateQueries({ queryKey: ["usage", workspace.id] });
-          }}
-        >
-          <ArrowClockwiseIcon aria-hidden="true" />
-          {t("Refresh")}
-        </Button>
-      }
       toolbar={
         <div className={styles.filters}>
-          <ChoiceField
-            className="w-44"
-            label={t("Date range")}
-            hideLabel
-            value={preset}
-            options={[
-              { value: "7", label: t("Last 7 days") },
-              { value: "30", label: t("Last 30 days") },
-              { value: "custom", label: t("Custom range") },
-            ]}
-            onValueChange={(value) => {
-              setPreset(value);
-              if (value !== "custom") {
-                const next = presetWindow(Number(value));
-                setWindow(next);
-                setDraft(localWindow(next));
-              }
+          <TimeRangePicker
+            value={range}
+            presets={usagePresets}
+            maxDays={366}
+            resolvePreset={(seconds) => {
+              const preset = presetWindow(seconds / 86400);
+              return {
+                start: new Date(preset.start),
+                end: new Date(preset.end),
+              };
+            }}
+            onChange={(value) => {
+              setRange(value);
+              setNow(new Date());
             }}
           />
-          <span className={styles.timezone}>{timezone}</span>
+          <RefreshButton
+            pending={fetching > 0}
+            onRefresh={() => {
+              if ("preset" in range) setNow(new Date());
+              else
+                void cache.invalidateQueries({
+                  queryKey: ["usage", workspace.id],
+                });
+            }}
+          />
         </div>
       }
     >
-      {preset === "custom" && (
-        <form
-          className={styles.customRange}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (custom) setWindow(custom);
-          }}
-        >
-          <DateTimeField
-            label={t("From")}
-            value={draft.start}
-            onValueChange={(start) => setDraft({ ...draft, start })}
-          />
-          <DateTimeField
-            label={t("Until")}
-            value={draft.end}
-            onValueChange={(end) => setDraft({ ...draft, end })}
-          />
-          <Button type="submit" variant="outline" disabled={!custom}>
-            {t("Apply")}
-          </Button>
-          {!custom && (
-            <p role="alert">
-              {t("Choose a valid time range of up to 366 days.")}
-            </p>
-          )}
-        </form>
-      )}
       {query.isPending ? (
         <Loading variant="cards" />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : (
         overview && (
-          <>
+          <div className={styles.overview}>
             <dl className={styles.metrics}>
               {metrics.map(([name, value, exact]) => (
                 <div key={name}>
                   <dt>{name}</dt>
-                  <dd title={exact}>{value}</dd>
+                  <dd title={exact === value ? undefined : exact}>{value}</dd>
                 </div>
               ))}
             </dl>
@@ -177,20 +135,20 @@ function UsageBrowser() {
               {tokens.map(([name, value, exact]) => (
                 <div key={name}>
                   <dt>{name}</dt>
-                  <dd title={exact}>{value}</dd>
+                  <dd title={exact === value ? undefined : exact}>{value}</dd>
                 </div>
               ))}
             </dl>
             {overview.usage.unpriced_requests > 0 && (
               <p className={styles.notice} role="status">
-                {t("{{count}} requests could not be priced.", {
-                  count: overview.usage.unpriced_requests,
-                })}{" "}
-                {t("Spend shows the known model cost only.")}
+                {t(
+                  "{{count}} requests could not be priced. Spend shows the known model cost only.",
+                  { count: overview.usage.unpriced_requests },
+                )}
               </p>
             )}
             <UsageChart days={overview.daily} />
-          </>
+          </div>
         )
       )}
       <section
@@ -215,10 +173,10 @@ function UsageBrowser() {
       </section>
       <p className={styles.footnote}>
         {t(
-          "Usage is grouped by ingestion time. Runs are counted by start time; average time includes only sealed runs.",
-        )}{" "}
-        {t("Costs are in USD. Cached tokens are included in input tokens.")}
+          "Usage is grouped by ingestion time. Runs are counted by start time; average time includes only sealed runs. Costs are in USD. Cached tokens are included in input tokens.",
+        )}
       </p>
     </Page>
   );
 }
+const usagePresets = [7 * 86400, 30 * 86400];

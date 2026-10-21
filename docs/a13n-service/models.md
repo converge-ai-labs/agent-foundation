@@ -22,6 +22,7 @@ In Console, open **Models → Add model → Connect a new provider**, or manage 
 | `fireworks`, `together`, `cerebras`, `sambanova`, `vercel`, `xai`  | `openai.chat_completions`                                                         |
 | `ollama`                                                           | `ollama.chat_completions`                                                         |
 | `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu` | `openai.chat_completions`                                                         |
+| `cloudflare_ai_gateway`                                            | `openai.chat_completions`                                                         |
 | `typesafe`                                                         | `typesafe.system_one`                                                             |
 
 Each type's configuration and credential fields come from the Harness; `GET /api/v1/provider-types/model` returns them as JSON Schema. Most types take an optional `base_url` and an `api_key` credential. See [Harness models](../a13n-harness/models.md) and [model authentication](../a13n-harness/model-authentication.md) for each type's options.
@@ -42,6 +43,8 @@ Cerebras, SambaNova, Vercel AI Gateway, and xAI / Grok also accept API-key crede
 For Vercel, use the gateway's full model ID, such as `anthropic/claude-sonnet-4.6`. Verify its credentials by testing a saved model: its public model list is not an authentication check. The other three offer a connection test without inference. The xAI / Grok provider uses HTTP Chat Completions. These provider choices do not expose Responses API or xAI's native server-side search tools.
 
 For **Google Vertex AI**, choose **API key** to connect an API-key gateway or Vertex Express Mode. Leave Project ID and Location empty and set the gateway origin as **Base URL**, without `/v1beta1` or a model path. The SDK sends `x-goog-api-key` and uses `/v1beta1/publishers/google/models/...`. Choose **Service account** for existing Google Cloud IAM access, with the service-account fields and the required Project ID and Location. The API accepts either `credential: {"api_key": "..."}` or the existing flat service-account object; switching credentials clears the previous form draft.
+
+Cloudflare AI Gateway uses provider type `cloudflare_ai_gateway` and the `cloudflare-ai-gateway` models.dev channel. Set `account_id` to your 32-character Cloudflare account ID and save the Cloudflare API token as the `api_key` credential. The token needs **Account → Workers AI → Read** permission. Configure default-alias BYOK credentials or unified billing in Cloudflare. Set `gateway_id` to select a gateway; omit it to use Cloudflare's default gateway for third-party models. All supported chat models use `openai.chat_completions`; changing the model ID does not change the protocol. Keep the full model ID, such as `openai/gpt-5.4` or `anthropic/claude-sonnet-4.6`. A custom `base_url` must name the root ending in `/ai`, without `/v1` or a method path. Test a saved model to verify access; this provider has no connection-only probe. Native server tools and the separate Workers AI catalog are not exposed. See [Cloudflare's unified REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
 ## ChatGPT subscription provider
 

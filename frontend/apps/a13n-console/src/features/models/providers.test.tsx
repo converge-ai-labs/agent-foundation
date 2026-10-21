@@ -166,7 +166,7 @@ it.each(["default", "public", "confidential"])(
         }),
       );
       await user.click(
-        await screen.findByRole("option", { name: "client_secret_basic" }),
+        await screen.findByRole("option", { name: "Client secret basic" }),
       );
       await user.type(
         screen.getByLabelText(/OAuth client secret/i),

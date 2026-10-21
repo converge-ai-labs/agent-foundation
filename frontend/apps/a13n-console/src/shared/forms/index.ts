@@ -6,7 +6,7 @@ export {
   executionPatch,
   type ExecutionOverride,
 } from "./execution-fields";
-export { FileUpload } from "./file-upload";
+export { FileDrop } from "./file-drop";
 export { FormActions, JsonView, TextAreaField } from "./form";
 export { FormSection, formSectionStyles } from "./form-section";
 export {

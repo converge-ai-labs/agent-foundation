@@ -1,6 +1,5 @@
 import { ClockIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -22,8 +21,12 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Page } from "../../shared/page";
-import { scheduleQueries, type ScheduleFilters } from "./api";
+import { ChoiceFilter } from "../conversations/filters";
+import { scheduleQueries } from "./api";
 import { ScheduleEditor } from "./editor";
+import { ScheduleTiming } from "./timing";
+
+const STATES = ["enabled", "paused", "completed", "archived"] as const;
 
 export function SchedulesPage() {
   const client = useClient(),
@@ -31,7 +34,7 @@ export function SchedulesPage() {
     { t } = useTranslation(),
     navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [state, setState] = useState<ScheduleFilters["state"]>();
+  const [state, setState] = useState<(typeof STATES)[number]>();
   const filters = { state, q: search.trim() || undefined },
     page = useCursor(filters);
   const query = useQuery(
@@ -54,33 +57,21 @@ export function SchedulesPage() {
           onSearchChange={setSearch}
           searchLabel={t("Search schedules")}
           filters={
-            <ChoiceField
+            <ChoiceFilter
               label={t("State")}
-              variant="filter"
-              value={state ?? "all"}
-              onValueChange={(value) =>
-                setState(
-                  value === "enabled" ||
-                    value === "paused" ||
-                    value === "completed" ||
-                    value === "archived"
-                    ? value
-                    : undefined,
-                )
+              allLabel={t("All states")}
+              value={state}
+              onChange={(value) =>
+                setState(STATES.find((option) => option === value))
               }
-              options={[
-                { value: "all", label: t("All states") },
-                ...["enabled", "paused", "completed", "archived"].map(
-                  (value) => ({
-                    value,
-                    label: t(
-                      value === "completed"
-                        ? "Scheduling finished"
-                        : `state.${value}`,
-                    ),
-                  }),
+              options={STATES.map((value) => ({
+                value,
+                label: t(
+                  value === "completed"
+                    ? "Scheduling finished"
+                    : `state.${value}`,
                 ),
-              ]}
+              }))}
             />
           }
         />
@@ -103,7 +94,7 @@ export function SchedulesPage() {
                   <ResourceIdentity
                     to={schedule.id}
                     name={schedule.name}
-                    description={schedule.description ?? schedule.id}
+                    description={schedule.description}
                     resourceId={schedule.id}
                     icon={<ClockIcon size={16} />}
                   />
@@ -124,15 +115,9 @@ export function SchedulesPage() {
               },
               {
                 label: t("Timing"),
-                render: (schedule) =>
-                  schedule.schedule.type === "once" ? (
-                    <Timestamp value={schedule.schedule.run_at} precise />
-                  ) : (
-                    <span>
-                      {schedule.schedule.expression} ·{" "}
-                      {schedule.schedule.timezone}
-                    </span>
-                  ),
+                render: (schedule) => (
+                  <ScheduleTiming rule={schedule.schedule} />
+                ),
               },
               {
                 label: t("Updated"),

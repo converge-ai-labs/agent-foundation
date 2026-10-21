@@ -2,7 +2,7 @@ import { useState } from "react";
 import { SegmentedControl } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { formatCost } from "../../shared/cost";
+import { formatCost, formatCostTicks } from "../../shared/cost";
 import styles from "./usage.module.css";
 import { compactNumber, niceScale } from "./values";
 
@@ -27,10 +27,10 @@ export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
     metric === "cost"
       ? formatCost(value === null ? null : String(value))
       : number(value ?? 0);
-  const tick = (value: number) =>
+  const ticks =
     metric === "cost"
-      ? `$${value.toLocaleString("en-US", { maximumFractionDigits: 3 })}`
-      : compactNumber(value, i18n.resolvedLanguage);
+      ? formatCostTicks(scale.ticks)
+      : scale.ticks.map((value) => compactNumber(value, i18n.resolvedLanguage));
   const selected = days.find((day) => day.date === active);
   const date = (value: string) =>
     new Date(`${value}T12:00:00Z`).toLocaleDateString(i18n.resolvedLanguage, {
@@ -73,8 +73,8 @@ export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
       </div>
       <div className={styles.chart}>
         <div className={styles.axis} aria-hidden="true">
-          {scale.ticks.map((value) => (
-            <span key={value}>{tick(value)}</span>
+          {ticks.map((value) => (
+            <span key={value}>{value}</span>
           ))}
         </div>
         <div className={styles.plot}>
@@ -95,32 +95,34 @@ export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
                 onMouseEnter={() => setActive(day.date)}
                 onClick={() => setActive(day.date)}
               >
-                <span
-                  className={styles.bar}
-                  data-unknown={values[index] === null || undefined}
-                  style={{
-                    height:
-                      values[index] === null
-                        ? "8px"
-                        : `${(values[index]! / scale.top) * 100}%`,
-                  }}
-                />
+                {/* A day without usage draws no bar; unknown cost is hatched. */}
+                {values[index] !== 0 && (
+                  <span
+                    className={styles.bar}
+                    data-unknown={values[index] === null || undefined}
+                    style={{
+                      height:
+                        values[index] === null
+                          ? "8px"
+                          : `${(values[index]! / scale.top) * 100}%`,
+                    }}
+                  />
+                )}
               </button>
             ))}
           </div>
         </div>
-      </div>
-      <div className={styles.dates} aria-hidden="true">
-        {days
-          .filter(
-            (_, index) =>
-              index === 0 ||
-              index === days.length - 1 ||
-              (days.length > 4 && index === Math.floor(days.length / 2)),
-          )
-          .map((day) => (
-            <span key={day.date}>{date(day.date)}</span>
+        {/* Date labels share the bars' slots, so each sits under its bar. */}
+        <div className={styles.dates} aria-hidden="true">
+          {days.map((day, index) => (
+            <span key={day.date}>
+              {(index === 0 ||
+                index === days.length - 1 ||
+                (days.length > 4 && index === Math.floor(days.length / 2))) &&
+                date(day.date)}
+            </span>
           ))}
+        </div>
       </div>
     </section>
   );

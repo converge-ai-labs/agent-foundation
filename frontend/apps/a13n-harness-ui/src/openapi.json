@@ -15606,12 +15606,12 @@
           "search_name": {
             "type": "string",
             "title": "Search Name",
-            "default": "search_proxy_tools"
+            "default": "discover_tools"
           },
           "call_name": {
             "type": "string",
             "title": "Call Name",
-            "default": "call_proxy_tool"
+            "default": "call_tool"
           },
           "max_results": {
             "type": "integer",
@@ -15622,6 +15622,11 @@
             "type": "integer",
             "title": "Max Search Bytes",
             "default": 32768
+          },
+          "describe_name": {
+            "type": "string",
+            "title": "Describe Name",
+            "default": "describe_tool"
           },
           "mode": {
             "type": "string",

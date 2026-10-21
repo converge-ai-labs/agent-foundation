@@ -16,7 +16,6 @@ vi.mock("../../layout/workspace", () => ({
     can: () => false,
   }),
 }));
-vi.mock("./queries", () => ({ useModelsByKey: () => new Map() }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>

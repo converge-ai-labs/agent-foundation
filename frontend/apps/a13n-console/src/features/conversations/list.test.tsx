@@ -214,7 +214,6 @@ it("finds readable identity and narrows by source and labels without navigating 
     origin: {
       application: "review-bot",
       name: "GitHub · acme/widgets #42",
-      url: "https://github.com/acme/widgets/pull/42",
       external_id: "main_42",
     },
     labels: { project: "Widgets", role: "main" },
@@ -247,14 +246,19 @@ it("finds readable identity and narrows by source and labels without navigating 
   const user = userEvent.setup();
   await screen.findByText("Review #42");
   expect(screen.queryByText(/Hidden transport wrapper/)).toBeNull();
-  expect(
-    screen
-      .getByRole("link", { name: "GitHub · acme/widgets #42" })
-      .getAttribute("href"),
-  ).toBe(value.origin.url);
+  // The source is display text, never a link out of the Console.
+  expect(screen.getByText("GitHub · acme/widgets #42").closest("a")).toBeNull();
   await user.click(screen.getByRole("button", { name: "review-bot" }));
   await waitFor(() =>
     expect(requests.at(-1)?.searchParams.get("application")).toBe("review-bot"),
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Remove filter Source: review-bot",
+    }),
+  );
+  await waitFor(() =>
+    expect(requests.at(-1)?.searchParams.has("application")).toBe(false),
   );
   await user.click(
     screen.getByRole("button", { name: "Filter by project: Widgets" }),

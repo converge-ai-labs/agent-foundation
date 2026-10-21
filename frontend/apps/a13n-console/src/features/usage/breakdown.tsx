@@ -75,46 +75,55 @@ export function Breakdown({
           <div className={styles.model}>
             <ModelKeyIcon modelKey={item.model} size={20} />
             <div className={styles.identity}>
-              <strong>{item.name ?? t("Unattributed model")}</strong>
-              {item.model && <span>{item.model}</span>}
+              <strong title={item.name ?? undefined}>
+                {item.name ?? t("Unattributed model")}
+              </strong>
+              {item.model && <span title={item.model}>{item.model}</span>}
             </div>
           </div>
         ) : (
           <div className={styles.identity}>
-            <strong>{item.name ?? t("Unattributed model")}</strong>
+            <strong title={item.name}>{item.name}</strong>
           </div>
         ),
     },
     {
       label: t("Requests"),
       align: "right",
+      dataColumn: "requests",
       render: (item) => number(item.usage.requests),
     },
     {
       label: t("Input tokens"),
       align: "right",
+      dataColumn: "input",
       render: (item) => number(item.usage.input_tokens),
     },
     {
       label: t("Output tokens"),
       align: "right",
+      dataColumn: "output",
       render: (item) => number(item.usage.output_tokens),
     },
     {
       label: t("Cached input tokens"),
       align: "right",
+      dataColumn: "cached",
       render: (item) => number(item.usage.cache_read_tokens),
     },
     {
       label: t("Cache rate"),
       align: "right",
+      dataColumn: "cacheRate",
       render: (item) => percent(item.usage.cache_hit_rate),
     },
     {
       label: t("Spend"),
       align: "right",
+      // The partial marker hangs outside the figures so costs stay aligned.
       render: (item) => (
         <span
+          className={styles.cost}
           title={
             item.usage.unpriced_requests
               ? t("{{count}} requests could not be priced.", {
@@ -125,7 +134,7 @@ export function Breakdown({
         >
           {formatCost(item.usage.cost)}
           {item.usage.unpriced_requests > 0 && (
-            <span className={styles.partial}> *</span>
+            <span className={styles.partial}>*</span>
           )}
         </span>
       ),
@@ -136,13 +145,20 @@ export function Breakdown({
       {
         label: t("Runs"),
         align: "right",
+        dataColumn: "runs",
         render: (item) => ("runs" in item ? number(item.runs.runs) : null),
       },
       {
         label: t("Avg. run time"),
         align: "right",
+        dataColumn: "runTime",
         render: (item) =>
-          "runs" in item ? duration(item.runs.average_duration_seconds) : null,
+          "runs" in item
+            ? duration(
+                item.runs.average_duration_seconds,
+                i18n.resolvedLanguage,
+              )
+            : null,
       },
     );
   return (

@@ -31,11 +31,11 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Page } from "../../shared/page";
-import { ModelIcon } from "../models/model-icon";
+import { workspaceModelsQuery } from "../models/api";
+import { ModelKeyLabel } from "../models/model-icon";
 import { AgentAvatar } from "./avatar";
 import { ExportAgent } from "./export";
 import { AgentCreationMenu } from "./import";
-import { useModelsByKey } from "./queries";
 import styles from "./agents.module.css";
 
 const PAGE_SIZE = 30;
@@ -171,10 +171,16 @@ function useRevisions(items: readonly Agent[]) {
 
 function AgentRows({ items }: { items: readonly Agent[] }) {
   const { t } = useTranslation(),
-    { can, basePath } = useWorkspace(),
+    client = useClient(),
+    { workspace, can, basePath } = useWorkspace(),
     navigate = useNavigate();
+  // Names and brands resolve together, so a row never shows a bare key first.
+  // Asked before the per-row revisions so it does not queue behind them.
+  const models = useQuery({
+    ...workspaceModelsQuery(client, workspace.id),
+    enabled: items.some((agent) => agent.default_revision_id),
+  });
   const revisions = useRevisions(items);
-  const modelsById = useModelsByKey();
   const state = (agent: Agent) => (agent.archived_at ? "archived" : "enabled");
   return (
     <div className={styles.listTable}>
@@ -194,7 +200,7 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
                     navigate(`${basePath}/sessions/new?agent=${agent.id}`)
                   }
                 >
-                  <PlayIcon size={14} aria-hidden="true" />
+                  <PlayIcon aria-hidden="true" />
                   {t("Try agent")}
                 </MenuItem>
               )}
@@ -205,7 +211,7 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
                   version={revision.number}
                   trigger={
                     <MenuItem closeOnClick={false}>
-                      <DownloadSimpleIcon size={14} aria-hidden="true" />
+                      <DownloadSimpleIcon aria-hidden="true" />
                       {t("Export agent")}
                     </MenuItem>
                   }
@@ -247,18 +253,17 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
               const revision = revisions[items.indexOf(agent)];
               if (!agent.default_revision_id)
                 return <span className={styles.modelName}>—</span>;
-              if (revision?.isPending) return <InlineLoading width="6rem" />;
-              const id = revision?.data?.config.model;
-              const model = id ? modelsById.get(id) : undefined;
-              return (
-                <span className={styles.modelName} title={id ?? undefined}>
-                  {model ? (
-                    <ModelIcon upstream={model.config.model_name} size={16} />
-                  ) : (
-                    <span aria-hidden="true" />
-                  )}
-                  <span>{model?.name ?? id ?? t("Unavailable")}</span>
-                </span>
+              if (revision?.isPending || models.isPending)
+                return <InlineLoading width="7rem" />;
+              const key = revision?.data?.config.model;
+              return key ? (
+                <ModelKeyLabel
+                  modelKey={key}
+                  size={16}
+                  className={styles.modelName}
+                />
+              ) : (
+                <span className={styles.modelName}>{t("Unavailable")}</span>
               );
             },
           },
@@ -290,13 +295,10 @@ function ArchiveAgent({ agent }: { agent: Agent }) {
       description={t(
         "Archived agents leave the default list. Their history remains available.",
       )}
-      danger={!archived}
+      danger={false}
       triggerElement={
-        <MenuItem
-          closeOnClick={false}
-          variant={archived ? "default" : "destructive"}
-        >
-          <ArchiveIcon size={14} aria-hidden="true" />
+        <MenuItem closeOnClick={false} variant="default">
+          <ArchiveIcon aria-hidden="true" />
           {t(archived ? "Unarchive" : "Archive")}
         </MenuItem>
       }

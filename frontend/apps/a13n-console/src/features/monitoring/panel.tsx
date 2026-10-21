@@ -1,7 +1,10 @@
-import { DotsSixVerticalIcon, InfoIcon } from "@phosphor-icons/react";
+import {
+  DotsSixVerticalIcon,
+  InfoIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { ErrorNotice } from "../../shared/feedback";
 import type { Panel, Target, TimeRange } from "./api";
 import { MetricsChart } from "./chart";
 import { statusLabels } from "./labels";
@@ -10,6 +13,7 @@ import styles from "./monitoring.module.css";
 
 export function MetricsPanel({
   panel,
+  title,
   target,
   range,
   revision,
@@ -19,6 +23,8 @@ export function MetricsPanel({
   onRemove,
 }: {
   panel: Panel;
+  /** The display title; built-in panels show it translated. */
+  title: string;
   target: Target | null;
   range: TimeRange;
   revision: number;
@@ -34,12 +40,16 @@ export function MetricsPanel({
     range,
     revision,
   );
+  // A panel reports failure in one line; the messages stay in its tooltip.
+  const failure = [...new Set(errors.map((error) => error.message))].join("\n");
+  const alert = failure && (
+    <p role="alert" className={styles.panelError} title={failure}>
+      <WarningCircleIcon size={14} aria-hidden="true" />
+      {t("Query failed")}
+    </p>
+  );
   return (
-    <section
-      className={styles.panel}
-      aria-label={panel.title}
-      aria-busy={loading}
-    >
+    <section className={styles.panel} aria-label={title} aria-busy={loading}>
       <div className={styles.panelHeader}>
         {onEdit && (
           <span
@@ -49,7 +59,7 @@ export function MetricsPanel({
             <DotsSixVerticalIcon size={18} />
           </span>
         )}
-        <h3 title={panel.title}>{panel.title}</h3>
+        <h3 title={title}>{title}</h3>
         {(loading || stale) && (
           <small role="status">
             {t(stale ? "Previous result" : "Loading…")}
@@ -83,16 +93,25 @@ export function MetricsPanel({
           </Button>
         )}
       </div>
-      {errors.map((error, index) => (
-        <ErrorNotice key={index} error={error} />
-      ))}
-      <MetricsChart
-        panel={panel}
-        series={data.series}
-        range={range}
-        syncKey={syncKey}
-        onZoom={onZoom}
-      />
+      {alert && !data.series.length ? (
+        <div className={styles.noData}>
+          <div className={styles.failure}>
+            {alert}
+            <span>{failure}</span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {alert}
+          <MetricsChart
+            panel={panel}
+            series={data.series}
+            range={range}
+            syncKey={syncKey}
+            onZoom={onZoom}
+          />
+        </>
+      )}
     </section>
   );
 }

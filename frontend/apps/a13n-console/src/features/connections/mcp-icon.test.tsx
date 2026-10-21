@@ -38,3 +38,22 @@ it("reuses the catalog logo for a saved remote MCP connection", async () => {
   );
   cache.clear();
 });
+
+it("shows a plug for a server with no catalog logo or brand", async () => {
+  get.mockResolvedValue({
+    data: { items: [], next_cursor: null },
+    response: new Response(),
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const { container } = render(
+    <QueryClientProvider client={cache}>
+      <MCPConnectionIcon endpoint="http://127.0.0.1:24706/mcp" />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(get).toHaveBeenCalled());
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector("svg")).not.toBeNull();
+  cache.clear();
+});
