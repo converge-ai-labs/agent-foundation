@@ -127,6 +127,7 @@ if TYPE_CHECKING:
 
 
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
+_IMMEDIATE_STEERING_WAIT_SECONDS = 5.0
 
 
 def _report_model_failure(
@@ -395,6 +396,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._consumer_claimed = False
         self._reading_next = False
         self._closed = False
+        self._steering_stopped = asyncio.Event()
         self._observation: _LogicalRunObservation | None = None
 
     @property
@@ -876,7 +878,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _execute(self) -> HarnessRunResult[OutputT]:
         """Own plugin and native scopes independently of bounded public consumption."""
         assert self._exchange is not None
-        result = await self._call_plugin(0, self._exchange)
+        try:
+            result = await self._call_plugin(0, self._exchange)
+        finally:
+            self._steering_stopped.set()
         self._install_terminal_fence()
         if result.status in {"failed", "cancelled"}:
             await self.context.usage_attribution._flush_cleanup()
@@ -1032,6 +1037,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._delivered_result is not None or self._closed:
             return
         self._cancel_event.set()
+        self._steering_stopped.set()
         if self._attempt_events is not None:
             self._attempt_events.cancel()
 
@@ -1039,26 +1045,37 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         """Deliver one user steering value through native Pydantic enqueue.
 
         `input_id` is the host's identity for the value; it is recorded on the delivered request, where
-        `steering_input_ids` reads it back from exported state.
+        `steering_input_ids` reads it back from exported state. Immediate steering waits up to five
+        seconds for native readiness and unsupported calls, without accepting input while waiting.
         """
         if not self._entered or self._closed or self._context is None:
             raise RunError("The run is not active.", code="run_not_active")
         context = self._context
+        if not immediate:
+            return await context._steering.steer(input, input_id=input_id)
+        if context.tool_execution is None:
+            raise RunError(
+                "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",
+                code="tool_execution_unbound",
+            )
+        # Detach caller-owned content once, before any readiness wait or retry.
+        normalized = deepcopy(normalize_input(input))
+        assert normalized.value is not None
+        waiting = asyncio.timeout(_IMMEDIATE_STEERING_WAIT_SECONDS)
 
         def check_handoff() -> None:
-            if immediate and context.tool_execution is None:
-                raise RunError(
-                    "Immediate steering requires a Host-bound ToolExecutionRuntime; ordinary steering remains available.",
-                    code="tool_execution_unbound",
-                )
-            if immediate and context._tool_executions.unsupported_calls:
+            if self._steering_stopped.is_set():
+                raise RunError("The run is not active.", code="run_not_active")
+            if context._tool_executions.unsupported_calls:
                 raise RunError(
                     "An active tool does not support immediate handoff; ordinary steering remains available.",
                     code="tool_handoff_unsupported",
                 )
 
         def request_handoff() -> None:
-            if not immediate or self._preempt_requested or self._cancel_event.is_set():
+            # Acceptance is committed. Slow event delivery must not turn it into a timeout rejection.
+            waiting.reschedule(None)
+            if self._preempt_requested or self._cancel_event.is_set():
                 return
             if context._steering.model_active:
                 self._preempt_requested = True
@@ -1070,11 +1087,45 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 # the same attempt. Later admissions in this batch see this too.
                 context._tool_executions.handoff_requested.set()
 
-        # Phase inspection, acceptance and signaling cannot interleave with a
-        # native node transition. The returned ID acknowledges acceptance only.
-        return await context._steering.steer(
-            input, input_id=input_id, before_accept=check_handoff, after_accept=request_handoff
-        )
+        try:
+            async with waiting:
+                while True:
+                    if self._steering_stopped.is_set():
+                        raise RunError("The run is not active.", code="run_not_active")
+                    try:
+                        # Recheck under the bridge lock: readiness can change after notification.
+                        return await context._steering.steer(
+                            normalized.value,
+                            input_id=input_id,
+                            before_accept=check_handoff,
+                            after_accept=request_handoff,
+                        )
+                    except RunError as exc:
+                        if exc.code == "tool_handoff_unsupported":
+                            ready = context._tool_executions.handoff_ready
+                        elif exc.code == "run_not_active":
+                            ready = context._steering.ready
+                        else:
+                            raise
+                    await self._wait_for_steering(ready)
+        except TimeoutError as exc:
+            if not waiting.expired():
+                raise
+            raise RunError(
+                "Immediate steering did not become ready within five seconds; input was not accepted.",
+                code="steering_timeout",
+            ) from exc
+
+    async def _wait_for_steering(self, ready: asyncio.Event) -> None:
+        """Wait outside the acceptance lock, waking promptly when the Run stops."""
+        ready_task = asyncio.create_task(ready.wait())
+        stopped_task = asyncio.create_task(self._steering_stopped.wait())
+        try:
+            await asyncio.wait((ready_task, stopped_task), return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            ready_task.cancel()
+            stopped_task.cancel()
+            await asyncio.gather(ready_task, stopped_task, return_exceptions=True)
 
     async def export_state(self) -> HarnessState:
         """Export active state or the detached checkpoint retained before shutdown."""
@@ -1629,6 +1680,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if cancellation is not None:
                 raise cancellation
             return
+        self._steering_stopped.set()
         if failure is not None and cancellation is None:
             self._diagnostic_error = failure
 

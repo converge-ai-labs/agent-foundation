@@ -222,7 +222,8 @@ async def test_handoff_during_validation_preserves_denial_and_native_approval():
         await runtime.close()
 
 
-async def test_unsupported_validator_rejects_immediate_without_accepting_input():
+async def test_unsupported_validator_times_out_without_accepting_input(monkeypatch):
+    monkeypatch.setattr("a13n_harness._run_stream._IMMEDIATE_STEERING_WAIT_SECONDS", 0.01)
     checking, release = asyncio.Event(), asyncio.Event()
 
     async def validate(ctx):
@@ -249,7 +250,7 @@ async def test_unsupported_validator_rejects_immediate_without_accepting_input()
             await checking.wait()
             with pytest.raises(RunError) as caught:
                 await stream.steer("rejected", input_id="rejected", immediate=True)
-            assert caught.value.code == "tool_handoff_unsupported"
+            assert caught.value.code == "steering_timeout"
             release.set()
             await consumer
             assert stream.result.status == "completed"

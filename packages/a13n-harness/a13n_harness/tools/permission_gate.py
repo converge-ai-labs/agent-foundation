@@ -356,12 +356,12 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
         )
         call_id = ctx.tool_call_id or tool.tool_def.name
         if unsupported:
-            ctx.deps._tool_executions.unsupported_calls.add(call_id)
+            ctx.deps._tool_executions.block_handoff(call_id)
         try:
             await validate_authorized(ctx, **args)
         finally:
             if unsupported:
-                ctx.deps._tool_executions.unsupported_calls.discard(call_id)
+                ctx.deps._tool_executions.unblock_handoff(call_id)
 
     async def validate_authorized(ctx: RunContext[AgentContext], **args: Any) -> None:
         check = await check_permission(ctx, tool.tool_def, args)

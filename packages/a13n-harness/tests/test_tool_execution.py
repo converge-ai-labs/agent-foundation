@@ -801,7 +801,8 @@ async def test_tool_handoff_publishes_one_return_to_each_channel(immediate):
 
 
 @pytest.mark.parametrize("bound", [False, True])
-async def test_immediate_unsupported_tool_preserves_original_operation(bound):
+async def test_immediate_unsupported_tool_preserves_original_operation(bound, monkeypatch):
+    monkeypatch.setattr("a13n_harness._run_stream._IMMEDIATE_STEERING_WAIT_SECONDS", 0.01)
     entered, finish = asyncio.Event(), asyncio.Event()
 
     async def lookup():
@@ -820,7 +821,7 @@ async def test_immediate_unsupported_tool_preserves_original_operation(bound):
         await entered.wait()
         with pytest.raises(RunError) as caught:
             await stream.steer("interrupt", immediate=True)
-        assert caught.value.code == ("tool_handoff_unsupported" if bound else "tool_execution_unbound")
+        assert caught.value.code == ("steering_timeout" if bound else "tool_execution_unbound")
         await stream.steer("ordinary steer")
         finish.set()
         await consumer
