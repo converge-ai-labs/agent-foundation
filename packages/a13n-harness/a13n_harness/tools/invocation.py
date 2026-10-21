@@ -397,9 +397,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             ctx.usage_limits.check_before_tool_call(projected)
         state.usage_pending += 1
         call_id = ctx.tool_call_id or name
-        unsupported = (
-            not _OWNED_TOOL_EXECUTION.get()
-            and (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY) != "control"
+        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
+        if callable(mode):
+            mode = mode(tool_args)
+        unsupported = not _OWNED_TOOL_EXECUTION.get() and (
+            mode not in {"owned", "control", "process"} or (mode == "owned" and self._scope is None)
         )
         if unsupported:
             ctx.deps._tool_executions.unsupported_calls.add(call_id)
@@ -645,11 +647,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         state.calls[ctx.tool_call_id] = record
         state.unsupported_calls.discard(ctx.tool_call_id)
         try:
-            result = await runtime.wait(
-                ctx.deps.thread_id,
-                record.execution_id,
-                timeout_seconds=state.config.foreground_wait_seconds if state.config.mode == "auto" else None,
-            )
+            result = await state.wait_foreground(runtime, ctx.deps.thread_id, record.execution_id)
         except asyncio.CancelledError:
             result = await runtime.result(ctx.deps.thread_id, record.execution_id)
         if result is not None and result.record.result_available:

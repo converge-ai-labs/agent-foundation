@@ -1057,16 +1057,23 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     code="tool_handoff_unsupported",
                 )
 
-        def request_preemption() -> None:
-            if immediate and not self._preempt_requested and not self._cancel_event.is_set():
+        def request_handoff() -> None:
+            if not immediate or self._preempt_requested or self._cancel_event.is_set():
+                return
+            if context._steering.model_active:
                 self._preempt_requested = True
                 context._steering.pause()
                 if self._attempt_events is not None:
                     self._attempt_events.cancel()
+            else:
+                # Review, preparation and native tool-result integration stay in
+                # the same attempt. Later admissions in this batch see this too.
+                context._tool_executions.handoff_requested.set()
 
-        # Validate, accept, and request preemption without yielding between them.
+        # Phase inspection, acceptance and signaling cannot interleave with a
+        # native node transition. The returned ID acknowledges acceptance only.
         return await context._steering.steer(
-            input, input_id=input_id, before_accept=check_handoff, after_accept=request_preemption
+            input, input_id=input_id, before_accept=check_handoff, after_accept=request_handoff
         )
 
     async def export_state(self) -> HarnessState:

@@ -22,7 +22,9 @@ from a13n_harness.state import AgentContextState
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
 
-    from pydantic_ai.messages import ModelMessage
+    from pydantic_ai.capabilities import WrapModelRequestHandler
+    from pydantic_ai.messages import ModelMessage, ModelResponse
+    from pydantic_ai.models import ModelRequestContext
 
     from a13n_harness.context import AgentContext
 
@@ -74,6 +76,7 @@ class SteeringBridge:
         self._active_context: RunContext[Any] | None = None
         self._prepared = False
         self._between_attempts = False
+        self.model_active = False
         self._lock = asyncio.Lock()
 
     @property
@@ -402,6 +405,28 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
         replacement = SteeringCapability()
         ctx.deps._record_run_capability(STEERING_CAPABILITY_ID, replacement)
         return replacement
+
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
+        # Only the primary request owns the interruptible generation window.
+        # Tool preparation and response-to-tool transitions stay outside it;
+        # review/helper Agents sharing these deps cannot change its phase.
+        if ctx.run_id != ctx.deps._model_input.attempt_id:
+            return await handler(request_context)
+        bridge = ctx.deps._steering
+        ctx.deps._tool_executions.handoff_requested.clear()
+        bridge.model_active = True
+        try:
+            return await handler(request_context)
+        finally:
+            # Revoke preemption synchronously before the response is committed
+            # and tools can start. Native cancellation drains the request first.
+            bridge.model_active = False
 
     async def wrap_run(
         self,

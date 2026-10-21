@@ -343,6 +343,27 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
     original_validator = tool.args_validator_func
 
     async def validate(ctx: RunContext[AgentContext], **args: Any) -> None:
+        from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
+        from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+
+        mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
+        if callable(mode):
+            mode = mode(args)
+        unsupported = (
+            tool.tool_def.kind != "external"
+            and not _OWNED_TOOL_EXECUTION.get()
+            and mode not in {"owned", "control", "process"}
+        )
+        call_id = ctx.tool_call_id or tool.tool_def.name
+        if unsupported:
+            ctx.deps._tool_executions.unsupported_calls.add(call_id)
+        try:
+            await validate_authorized(ctx, **args)
+        finally:
+            if unsupported:
+                ctx.deps._tool_executions.unsupported_calls.discard(call_id)
+
+    async def validate_authorized(ctx: RunContext[AgentContext], **args: Any) -> None:
         check = await check_permission(ctx, tool.tool_def, args)
         ctx = replace(ctx, tool_call_approved=check.approval.approved)
         with tool_approval_scope(ctx.deps, check.approval), tool_call_source_scope(ctx):

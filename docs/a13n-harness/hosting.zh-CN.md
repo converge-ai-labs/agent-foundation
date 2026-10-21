@@ -71,7 +71,7 @@ bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_val
 
 通过 `RunBindings.tool_execution` 绑定 Harness runtime，即可启用自动后台执行和即时 steering。runtime 管理活动调用，store 保留记录和结果。未绑定时，Run 使用阻塞式通用工具、排队 steering，以及 Environment 的原生 shell 进程控制。启用 `auto` 时在 Run 准备阶段检查绑定；请求即时 steering 时在接收输入前检查绑定。
 
-`await stream.steer(message, immediate=True)` 抢占当前原生执行尝试，在同一个逻辑 Run 中送达新输入并继续执行。两种执行模式都能保留支持的工具调用。自动模式在前台等待到期时把控制权交还 Agent。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
+`await stream.steer(message, immediate=True)` 在同一个逻辑 Run 中接收新输入并继续执行。主模型请求期间会中断请求并恢复执行尝试；工具阶段则保留当前尝试，完成审查和参数校验，并以真实结果或保留执行回执结束支持工具的前台等待。原生工具批次完成或挂起等待审批后，才进入下一次模型请求。返回的输入 ID 表示已接受，规范历史记录确认输入已纳入。自动模式独立地在前台等待到期时交还控制权。普通 steering 默认为 `immediate=False`，已接受但尚未送达的输入随正常状态导出保留。
 
 Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查看、获取、等待和取消执行。只有 Run 同时启用 `ToolExecutionCapability` 并绑定 runtime，才会提供这些控制工具和仅含状态的上下文摘要；`inline` 与 `auto` 模式遵循同一规则。未绑定的 inline Run 不提供这两项。读取限定在所属 Thread，真实结果进入规范历史后确认交付。默认内存 store 保留活动执行和最近完成的记录，内容持续到 Host 进程结束。Host 可以提供自定义 `ToolExecutionStore`，管理持久化和保留策略。
 

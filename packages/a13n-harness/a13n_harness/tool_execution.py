@@ -266,10 +266,32 @@ class ToolExecutionRuntime:
         release: Callable[[], Awaitable[None]] | None,
         slot: _ExecutionSlot,
     ) -> None:
-        _OWNED_TOOL_EXECUTION.set(True)
-        _CURRENT_TOOL_EXECUTION.set(live.record)
         artifacts: list[ToolExecutionArtifact] = []
-        _TOOL_EXECUTION_ARTIFACTS.set(artifacts)
+        owned_token = _OWNED_TOOL_EXECUTION.set(True)
+        record_token = _CURRENT_TOOL_EXECUTION.set(live.record)
+        artifacts_token = _TOOL_EXECUTION_ARTIFACTS.set(artifacts)
+        try:
+            await self._execute_owned(live, operation, release, slot, artifacts)
+        finally:
+            _TOOL_EXECUTION_ARTIFACTS.reset(artifacts_token)
+            _CURRENT_TOOL_EXECUTION.reset(record_token)
+            _OWNED_TOOL_EXECUTION.reset(owned_token)
+        # Host callbacks may start another Run. They must not inherit this
+        # invocation's ownership, resource attachment or artifact collection.
+        if self._on_completed is not None:
+            try:
+                self._on_completed(live.record)
+            except Exception:
+                get_logger(__name__).error("Tool execution completion observer failed: %s", live.record.execution_id)
+
+    async def _execute_owned(
+        self,
+        live: _LiveExecution,
+        operation: Callable[[], Awaitable[Any]],
+        release: Callable[[], Awaitable[None]] | None,
+        slot: _ExecutionSlot,
+        artifacts: list[ToolExecutionArtifact],
+    ) -> None:
         live.started = True
         result: Any = None
         status: Literal["succeeded", "failed", "cancelled"] = "failed"
@@ -343,13 +365,6 @@ class ToolExecutionRuntime:
             else:
                 live.record = terminal
                 self._live.pop(live.record.execution_id, None)
-            if self._on_completed is not None:
-                try:
-                    self._on_completed(live.record)
-                except Exception:
-                    get_logger(__name__).error(
-                        "Tool execution completion observer failed: %s", live.record.execution_id
-                    )
 
     def attach_resource(self, resource: object) -> None:
         """Attach a live control surface to the currently owned operation.

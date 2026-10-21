@@ -34,7 +34,7 @@ Markdown opens in **Preview**; **Text** switches to the editor. Preview includes
 
 ## Tool executions and immediate steering
 
-While a Run is active, **Steer** interrupts the current response and delivers your guidance promptly by default. Supported tool calls keep running once under their original ownership. Root and child steering use the same global `input.steering_mode`; select `queued` in configuration to wait for the next safe boundary instead. The composer needs no additional mode control.
+While a Run is active, **Steer** interrupts primary model generation or releases supported tool waits by default. Tool review and validation finish first; the current batch returns results or retained-execution receipts, or suspends for approval, before the Agent continues with your guidance. Supported tool calls keep running once under their original ownership. Acceptance confirms that guidance was queued, not that the Agent has already incorporated it. Root and child steering use the same global `input.steering_mode`; select `queued` in configuration to wait for the next safe boundary instead. The composer needs no additional mode control.
 
 Open **Work → Tools** to inspect retained tool executions, view their originating Run and call, page through records, or cancel active work. The panel reads status without consuming results. The Agent retrieves results through `tool_execution_result` or `tool_execution_wait`; completion hints and subsequent input include current execution status. [Automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in through global configuration; default inline waits can still be released by immediate steering. Shell processes remain in their separate process view.
 

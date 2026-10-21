@@ -211,7 +211,7 @@ for arguments in {invocations!r}:
     assert not (tmp_path / ".a13n-harness-ui").exists()
 
 
-async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, shell_review: bool = False) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     (tmp_path / "codex").mkdir()
@@ -225,7 +225,7 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         project="project-local",
         project_path=str(tmp_path),
         environment_profile="environment-native",
-        shell_review=False,
+        shell_review=shell_review,
     )
     validate = AgentCompositionResolver(HarnessUiExtensionCatalog()).validate_generation
     await preview_setup(path, selection, validate_candidate=validate)

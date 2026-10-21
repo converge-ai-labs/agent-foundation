@@ -727,3 +727,133 @@ async def test_global_steering_mode_defaults_immediate_for_root_and_child_but_no
             assert content[0].value == "Tool completed"
             assert content[0].metadata.display is False
             assert content[0].metadata.source_id == "tool_execution.completion"
+
+
+async def test_tui_shell_review_handoff_and_completion_wake_admit_each_command_once(tmp_path, monkeypatch):
+    import sys
+
+    import a13n_harness.models.codex as codex
+    from a13n_harness.toolsets.process_manager import _ProcessController
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from pydantic_ai.messages import UserPromptPart
+
+    from .test_interactive import _seed
+
+    path = await _seed(tmp_path, monkeypatch, shell_review=True)
+    reviewing, approve, admitted, finish, resumed = (Event() for _ in range(5))
+    reviews = 0
+    admissions = []
+    model_calls = 0
+    execution_id = None
+    original_admit = _ProcessController._admit
+
+    async def observe_admission(self, *args, **kwargs):
+        entry = await original_admit(self, *args, **kwargs)
+        admissions.append(entry)
+        if len(admissions) == 1:
+            admitted.set()
+            # Hold the original Shell invocation after real process admission.
+            # Its foreground has already been released by the steering input.
+            await finish.wait()
+        return entry
+
+    monkeypatch.setattr(_ProcessController, "_admit", observe_admission)
+
+    async def review(messages, info):
+        nonlocal reviews
+        reviews += 1
+        if reviews == 1:
+            reviewing.set()
+            await approve.wait()
+        yield {0: DeltaToolCall(name=info.output_tools[0].name, json_args='{"risk":"low"}')}
+
+    async def model(messages, info):
+        nonlocal model_calls, execution_id
+        model_calls += 1
+        returns = {
+            part.tool_call_id: part.content
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        }
+        if model_calls in (1, 3):
+            call_id = "first" if model_calls == 1 else "followup"
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec",
+                    json_args=json.dumps({"command": f'"{sys.executable}" -c "print(123)"'}),
+                    tool_call_id=call_id,
+                )
+            }
+        elif model_calls == 2:
+            assert any(
+                isinstance(part, UserPromptPart) and "Continue without waiting" in str(part.content)
+                for message in messages
+                for part in message.parts
+            ), messages
+            execution_id = returns["first"]["execution_id"]
+            yield "Waiting for completion."
+        else:
+            assert model_calls == 4, (model_calls, reviews, info.output_tools, returns)
+            assert returns["followup"]["stdout"]["text"].strip() == "123"
+            resumed.set()
+            yield "Follow-up completed."
+
+    def build(model_name, **kwargs):
+        return FunctionModel(
+            stream_function=review if model_name.endswith("luna") else model,
+            profile={"supports_thinking": True, "supports_json_object_output": True},
+        )
+
+    monkeypatch.setattr(codex, "CodexRequestModel", build)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        assert await backend.initialize()
+        renderer = StreamRenderer(backend.status)
+        first_done = Event()
+
+        async def execute():
+            assert await backend.execute(renderer, prompt="Run a reviewed command") == ""
+            first_done.set()
+
+        try:
+            with fail_after(20):
+                async with create_task_group() as group:
+                    group.start_soon(execute)
+                    await reviewing.wait()
+                    assert await backend.steer("Continue without waiting") == "Guidance sent."
+                    assert not first_done.is_set() and not admissions
+                    approve.set()
+                    await admitted.wait()
+                    await first_done.wait()
+                    records = await app.tool_executions(backend.thread_id)
+                    assert len(records) == 1 and records[0].execution_id == execution_id
+                    assert records[0].foreground_released
+                    finish.set()
+                    result = await app._tool_executions.runtime.wait(backend.thread_id, execution_id)
+                    assert result.record.status == "succeeded"
+                    assert result.result["stdout"]["text"].strip() == "123"
+                    await resumed.wait()
+                    while (active := await app.active_root_operation(backend.thread_id)) is not None:
+                        await app.wait_root_operation(active.receipt.receipt_id)
+            records = await app.tool_executions(backend.thread_id)
+            assert len(records) == len(admissions) == reviews == 2
+            assert {record.tool_call_id for record in records} == {"first", "followup"}
+            assert len({record.run_id for record in records}) == 2
+            assert all(record.status == "succeeded" for record in records)
+            assert model_calls == 4
+            transcript = await app.get_thread_transcript(thread_id=backend.thread_id)
+            assert (
+                sum(
+                    part.metadata.source_id == "tool_execution.completion"
+                    for entry in transcript.entries
+                    for part in entry.parts
+                )
+                == 1
+            )
+        finally:
+            approve.set()
+            finish.set()
+            renderer.transcript.close()

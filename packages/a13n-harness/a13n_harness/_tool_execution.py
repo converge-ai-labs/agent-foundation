@@ -17,7 +17,12 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
-from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRecord, ToolExecutionRuntime
+from a13n_harness.tool_execution import (
+    StoredToolExecution,
+    ToolExecutionConfig,
+    ToolExecutionRecord,
+    ToolExecutionRuntime,
+)
 
 TOOL_EXECUTION_METADATA_KEY = "a13n.tool-execution"
 
@@ -29,6 +34,7 @@ class RunToolExecutions:
         self.config = ToolExecutionConfig()
         self.enabled = False
         self.usage_pending = 0
+        self.handoff_requested = asyncio.Event()
         self.unsupported_calls: set[str] = set()
         self.calls: dict[str, ToolExecutionRecord] = {}
         self.returns: dict[str, Any] = {}
@@ -63,6 +69,34 @@ class RunToolExecutions:
 
     async def drain(self) -> None:
         await self._drained.wait()
+
+    async def wait_foreground(
+        self, runtime: ToolExecutionRuntime, thread_id: str, execution_id: str
+    ) -> StoredToolExecution | None:
+        """Release only the waiter on handoff; the runtime keeps the operation."""
+        if self.handoff_requested.is_set():
+            return await runtime.result(thread_id, execution_id)
+        waiter = asyncio.create_task(
+            runtime.wait(
+                thread_id,
+                execution_id,
+                timeout_seconds=self.config.foreground_wait_seconds if self.config.mode == "auto" else None,
+            )
+        )
+        handoff = asyncio.create_task(self.handoff_requested.wait())
+        try:
+            await asyncio.wait((waiter, handoff), return_when=asyncio.FIRST_COMPLETED)
+            if waiter.done():
+                result = waiter.result()
+                if result is not None and result.record.terminal:
+                    return result
+        finally:
+            waiter.cancel()
+            handoff.cancel()
+            await asyncio.gather(waiter, handoff, return_exceptions=True)
+        # Completion can win while waiter cleanup yields. Read pending state
+        # only afterward, keeping receipt settlement synchronous with this view.
+        return await runtime.result(thread_id, execution_id)
 
     def receipt(self, record: ToolExecutionRecord) -> dict[str, Any]:
         value = {

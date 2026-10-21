@@ -34,7 +34,7 @@ Markdown 默认以 **Preview** 打开，**Text** 切换到编辑器。预览包�
 
 ## 工具执行与即时 steering
 
-Run 活动期间，**Steer** 默认及时中断当前回复并送达你的指引。支持的工具调用仍由原有执行方继续运行一次。根级和子级 steering 使用同一全局 `input.steering_mode`；在配置中选择 `queued`，即可改为等待下一个安全边界。输入框不需要额外的模式控件。
+Run 活动期间，**Steer** 默认中断主模型生成，或释放支持工具的前台等待。工具审查和参数校验会先完成；当前批次返回结果或保留执行回执，或挂起等待审批后，Agent 才继续处理你的指引。支持的工具调用仍由原有执行方继续运行一次。请求被接受表示指引已入队，不表示 Agent 已经将其纳入处理。根级和子级 steering 使用同一全局 `input.steering_mode`；在配置中选择 `queued`，即可改为等待下一个安全边界。输入框不需要额外的模式控件。
 
 打开 **Work → Tools**，查看保留的工具执行、来源 Run 和调用、翻页浏览记录，或取消活动执行。面板只读取状态，不消耗结果。Agent 通过 `tool_execution_result` 或 `tool_execution_wait` 获取结果；完成提示和后续输入会带上当前执行状态。[自动后台执行](configuration.md#built-in-tools-and-subagents)需在全局配置中显式开启；默认的 inline 等待仍可通过即时 steering 交接。Shell 进程仍在独立的进程视图中。
 

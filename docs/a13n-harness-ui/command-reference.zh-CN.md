@@ -320,7 +320,7 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 
 `/thinking` 打开所选 Model 支持的选项；命令补全使用相同列表。`default` 继承 Model 配置。按模型和适配器，显式选择可能包括 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。不支持的选项会被拒绝；未知模型仅提供 default 并解释原因。`/environment` 在支持时选择 `full-control`、`envd`、`desktop` 或 `sandbox`。`envd` 和 `desktop` 先准备运行时，再修改当前对话下一轮的 profile；检查失败保留原选择。此操作修改当前 Thread，不修改新对话默认值。原生 `/steer` 保留整个尾随消息，不拆成 shell 词语。
 
-`/steer message` 和忙碌时的 Enter 使用全局 `input.steering_mode`，默认即时送达，同时保留支持的工具执行。全局选择 `queued` 可改为等待下一个安全边界。`/executions` 只读取状态，不消耗结果。`/cancel` 停止对话，并在新输入到来前禁止工具完成事件自动唤醒；`/executions cancel execution-id` 单独请求取消保留的执行。记录只存在于当前进程。详见[工具执行控制](webui.md#tool-executions-and-immediate-steering)。
+`/steer message` 和忙碌时的 Enter 使用全局 `input.steering_mode`，默认中断主模型生成，或在审查和参数校验后协作交接工具等待，同时保留支持的工具执行。全局选择 `queued` 可改为等待下一个安全边界。`/executions` 只读取状态，不消耗结果。`/cancel` 停止对话，并在新输入到来前禁止工具完成事件自动唤醒；`/executions cancel execution-id` 单独请求取消保留的执行。记录只存在于当前进程。详见[工具执行控制](webui.md#tool-executions-and-immediate-steering)。
 
 ## 重要操作与限制
 
