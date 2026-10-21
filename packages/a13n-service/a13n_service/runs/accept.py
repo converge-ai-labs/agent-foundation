@@ -11,7 +11,7 @@ from typing import Literal
 
 from a13n_harness.configuration import RunConfiguration
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import exists, func, select, true, update
+from sqlalchemy import and_, case, exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit, now, transaction
@@ -357,10 +357,17 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         inbox.assign(source.entry, run)
     thread.current_run_id = run.id
     if thread.purpose == "conversation":
+        # The first accepted input names an untitled Session; the savepoint discards it with a refusal.
+        first_input = " ".join(payload.text().split())[:256] if payload is not None else ""
+        untitled = and_(SessionRow.title.is_(None), SessionRow.last_run_id.is_(None))
         await session.execute(
             update(SessionRow)
             .where(SessionRow.id == thread.session_id)
-            .values(last_run_id=run.id, updated_at=func.clock_timestamp())
+            .values(
+                last_run_id=run.id,
+                updated_at=func.clock_timestamp(),
+                title=case((untitled, first_input or None), else_=SessionRow.title),
+            )
         )
     await session.flush()
     await notify_subscribers(session, runtime, run, ["run.accepted"], at=current)

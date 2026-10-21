@@ -193,8 +193,6 @@ async def prepare_thread(
     else:
         owner = new_session(scope.organization_id, scope.workspace_id, actor.id, body.session)
         session.add(owner)
-    if owner.title is None and owner.last_run_id is None:
-        owner.title = " ".join(body.payload.text().split())[:256] or None
     thread = new_thread(
         owner,
         mcp_headers=body.mcp_headers,
