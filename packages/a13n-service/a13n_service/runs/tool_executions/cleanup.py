@@ -39,7 +39,7 @@ async def reconcile(runtime: Runtime, *, limit: int = 100) -> int:
             )
             row.status, row.record, row.completed_at = "lost", record.model_dump(mode="json"), current
             row.expires_at = current + timedelta(seconds=runtime.settings.tool_executions.max_retention_seconds)
-            notify(session, row)
+            await notify(session, row)
         return len(rows)
 
 

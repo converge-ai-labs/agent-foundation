@@ -446,6 +446,23 @@ it("reads an asynchronous child's result as the child's own reply", () => {
   expect(screen.queryByText(/child_run_id/)).toBeNull();
 });
 
+it("shows retained completion as a system notification, without user attribution or raw JSON", () => {
+  const run = fixtureRun({
+    trigger: "tool_result",
+    input: {
+      execution_id: "exec_background",
+      tool_name: "shell_exec",
+      status: "succeeded",
+    },
+  });
+  show({ run, timeline: fixtureTimeline({ run }) });
+  expect(screen.getByText("trigger.tool_result")).toBeTruthy();
+  expect(screen.getByText(/shell_exec/)).toBeTruthy();
+  expect(screen.getByText("exec_background")).toBeTruthy();
+  expect(screen.queryByText("User")).toBeNull();
+  expect(screen.queryByText(/execution_id/)).toBeNull();
+});
+
 it("reads a child thread's run as the task its parent delegated", () => {
   const run = fixtureRun({
     input: {

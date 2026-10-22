@@ -57,7 +57,7 @@ async def test_stopped_origin_retains_cleanup_and_never_wakes(service, scripted_
         await asyncio.wait_for(entered.wait(), 5)
         stopped = await service.client.post(f"{service.api}/runs/{lease.run_id}/interrupt")
         assert stopped.status_code == 200, stopped.text
-        assert await heartbeat(service.runtime, lease.worker_id) == ((lease.thread_id, record.execution_id),)
+        assert (await heartbeat(service.runtime, lease.worker_id))[0] == ((lease.thread_id, record.execution_id),)
         service.runtime.executions.request_cancellation(lease.thread_id, record.execution_id)
         await asyncio.wait_for(cleaning.wait(), 5)
         # Cancellation acceptance retains ownership until actual cleanup finishes.
@@ -127,7 +127,7 @@ async def test_cross_worker_barrier_and_later_stop_scope(
             await asyncio.wait_for(next_entered.wait(), 5)
         stopped = await service.client.post(f"{service.api}/runs/{successor.run_id}/interrupt")
         assert stopped.status_code == 200, stopped.text
-        assert await heartbeat(service.runtime, origin.worker_id) == ()
+        assert (await heartbeat(service.runtime, origin.worker_id))[0] == ()
         assert (await service.runtime.executions.info(origin.thread_id, record.execution_id)).status == "running"
         finish.set()
         await service.runtime.executions.join()
@@ -177,3 +177,207 @@ async def test_full_inbox_defers_then_fenced_delivery_appends_once(serve, settin
         results = [entry for entry in await runs_kit.inbox(service, lease.thread_id) if entry["kind"] == "tool_result"]
         assert len(results) == 1
         assert (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
+
+
+async def test_archive_cancels_old_and_current_runs_and_rejects_late_admission(service, scripted_model, runs_kit):
+    from a13n_service.runs.tables import ToolExecutionRow
+
+    started, origin = await _origin(service, scripted_model, runs_kit)
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def operation():
+        entered.set()
+        await finish.wait()
+
+    old = _admit(service.runtime, origin, operation)
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        scripted_model.say("Origin completed")
+        await execute(service.runtime, origin, AttemptControl())
+        submitted = await runs_kit.submit(
+            service, origin.thread_id, runs_kit.message({"id": started["run"]["agent_id"]}, "next")
+        )
+        assert submitted.status_code == 201, submitted.text
+        (successor,) = await claim(service.runtime, worker_id="worker-a", worker_build="test", limit=1)
+        entered.clear()
+        current = _admit(service.runtime, successor, operation)
+        await asyncio.wait_for(entered.wait(), 5)
+        thread = await runs_kit.get_thread(service, origin.thread_id)
+        archived = await service.client.post(
+            f"{service.api}/threads/{origin.thread_id}/archive", headers=runs_kit.if_match(thread)
+        )
+        assert archived.status_code == 200, archived.text
+        cancellations, renewed = await heartbeat(service.runtime, origin.worker_id)
+        assert set(cancellations) == {(origin.thread_id, old.execution_id), (origin.thread_id, current.execution_id)}
+        assert renewed == {old.execution_id, current.execution_id}
+        late = _admit(service.runtime, successor, operation)
+        result = await service.runtime.executions.wait(origin.thread_id, late.execution_id)
+        assert result.record.status == "failed" and service.runtime.executions.accepting
+        async with transaction(service.runtime.storage) as session:
+            assert await session.get(ToolExecutionRow, late.execution_id) is None
+        for thread_id, execution_id in cancellations:
+            service.runtime.executions.request_cancellation(thread_id, execution_id)
+        await service.runtime.executions.join()
+        assert (
+            await service.runtime.executions.result(origin.thread_id, old.execution_id)
+        ).record.status == "cancelled"
+    finally:
+        finish.set()
+        await service.runtime.executions.close()
+
+
+@pytest.mark.parametrize("retry", [False, True])
+async def test_large_failure_hint_delivers_without_copying_error(service, scripted_model, runs_kit, retry):
+    from pydantic_ai.exceptions import ModelRetry, ToolFailed
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    message = "failure" * service.runtime.settings.control.inbox_bytes
+
+    async def operation():
+        raise ModelRetry(message) if retry else ToolFailed(message)
+
+    record = _admit(service.runtime, lease, operation)
+    await service.runtime.executions.join()
+    scripted_model.say("Origin finished")
+    await execute(service.runtime, lease, AttemptControl())
+    assert len(await _deliver(service.runtime)) == 1
+    hints = [entry for entry in await runs_kit.inbox(service, lease.thread_id) if entry["kind"] == "tool_result"]
+    assert len(hints) == 1
+    assert hints[0]["payload"] == {"execution_id": record.execution_id, "tool_name": "slow", "status": "failed"}
+    result = await service.runtime.executions.result(lease.thread_id, record.execution_id)
+    assert result.record.error == message
+    assert result.retry_prompt == (message if retry else None)
+
+
+async def test_failed_terminal_publication_is_not_renewed(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_service.runs.tables import ToolExecutionRow
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    owner = service.runtime.executions
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def operation():
+        entered.set()
+        await finish.wait()
+        return "original"
+
+    async def unavailable(*args, **kwargs):
+        raise OSError("object store unavailable")
+
+    record = _admit(service.runtime, lease, operation)
+    await asyncio.wait_for(entered.wait(), 5)
+    monkeypatch.setattr(service.runtime.objects, "put", unavailable)
+    finish.set()
+    await owner.join()
+    assert not owner.accepting and not owner.active
+    async with transaction(service.runtime.storage) as session:
+        before = (await session.get_one(ToolExecutionRow, record.execution_id)).lease_expires_at
+    assert await heartbeat(service.runtime, lease.worker_id) == ((), set())
+    async with transaction(service.runtime.storage) as session:
+        assert (await session.get_one(ToolExecutionRow, record.execution_id)).lease_expires_at == before
+    await owner.close()
+
+
+async def test_retained_cross_worker_call_stays_queued_until_barrier_clears(service, scripted_model, runs_kit):
+    started, lease = await _origin(service, scripted_model, runs_kit)
+    entered, finish, next_entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    second = replace(service.runtime)
+
+    async def first_operation():
+        entered.set()
+        await finish.wait()
+
+    async def next_operation():
+        next_entered.set()
+        return "next"
+
+    _admit(service.runtime, lease, first_operation, sequential=True)
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        scripted_model.say("Origin completed")
+        await execute(service.runtime, lease, AttemptControl())
+        submitted = await runs_kit.submit(
+            service, lease.thread_id, runs_kit.message({"id": started["run"]["agent_id"]}, "next")
+        )
+        assert submitted.status_code == 201, submitted.text
+        (successor,) = await claim(second, worker_id="worker-b", worker_build="test", limit=1)
+        record = _admit(second, successor, next_operation)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(next_entered.wait(), 0.2)
+        assert (await second.executions.info(lease.thread_id, record.execution_id)).status == "queued"
+        assert (await Store(second).get(lease.thread_id, record.execution_id)).record.status == "queued"
+        finish.set()
+        await service.runtime.executions.join()
+        await asyncio.wait_for(second.executions.join(), 5)
+        assert next_entered.is_set()
+        assert (await second.executions.result(lease.thread_id, record.execution_id)).result == "next"
+    finally:
+        finish.set()
+        await service.runtime.executions.close()
+        await second.executions.close()
+
+
+async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service, scripted_model, runs_kit):
+    from datetime import timedelta
+
+    from a13n_harness.environment.models import EnvironmentAction
+    from a13n_harness.tool_execution import execution_cleanup
+    from a13n_service.runs.attempts import AuthorityRevoked, LeaseLost
+    from a13n_service.runs.desktop_assistance.admission import operation as guard
+    from a13n_service.runs.tables import ToolExecutionRow
+
+    from .test_platform_tools import set_role
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def operation():
+        entered.set()
+        await finish.wait()
+        with execution_cleanup():
+            for action in (
+                EnvironmentAction.PROCESS_KILL,
+                EnvironmentAction.PROCESS_WAIT,
+                EnvironmentAction.PROCESS_RELEASE,
+            ):
+                async with guard(service.runtime, lease, "test-environment", None, action):
+                    pass
+            with pytest.raises(AuthorityRevoked):
+                async with guard(service.runtime, lease, "test-environment", None, EnvironmentAction.PROCESS_START):
+                    pytest.fail("revocation must still block new effects")
+            with pytest.raises(LeaseLost):
+                async with guard(
+                    service.runtime,
+                    replace(lease, token="wrong-owner"),
+                    "test-environment",
+                    None,
+                    EnvironmentAction.PROCESS_KILL,
+                ):
+                    pytest.fail("cleanup must retain token fencing")
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(ToolExecutionRow, record.execution_id)
+                row.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            assert await heartbeat(service.runtime, lease.worker_id) == (
+                ((lease.thread_id, record.execution_id),),
+                set(),
+            )
+            with pytest.raises(LeaseLost):
+                async with guard(service.runtime, lease, "test-environment", None, EnvironmentAction.PROCESS_KILL):
+                    pytest.fail("cleanup must retain expiry fencing")
+            # Restore test ownership only so the invocation can publish its assertions.
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get_one(ToolExecutionRow, record.execution_id)
+                row.lease_expires_at = datetime.now(UTC) + timedelta(seconds=60)
+        return "verified"
+
+    record = _admit(service.runtime, lease, operation)
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        async with transaction(service.runtime.storage) as session:
+            await set_role(session, service, "viewer")
+        finish.set()
+        await asyncio.wait_for(service.runtime.executions.join(), 5)
+        assert (await service.runtime.executions.result(lease.thread_id, record.execution_id)).result == "verified"
+    finally:
+        finish.set()
+        await service.runtime.executions.close()

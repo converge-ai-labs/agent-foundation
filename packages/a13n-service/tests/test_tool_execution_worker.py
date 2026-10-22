@@ -166,7 +166,7 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
         await runtime.executions.close()
 
 
-@pytest.mark.parametrize("cause", ["shutdown", "lease_loss"])
+@pytest.mark.parametrize("cause", ["shutdown", "lease_loss", "missing_owner", "other_renewed"])
 async def test_uncooperative_tool_cannot_extend_worker_process_shutdown(cause):
     # Exercise the real os._exit boundary outside the test process. asyncio.run would otherwise wait forever.
     script = textwrap.dedent("""
@@ -187,16 +187,19 @@ async def test_uncooperative_tool_cannot_extend_worker_process_shutdown(cause):
                     except asyncio.CancelledError:
                         pass
             executions = ToolExecutionRuntime()
-            executions.admit(operation, thread_id="thread", run_id="run", tool_call_id="call", tool_name="stuck")
+            record = executions.admit(operation, thread_id="thread", run_id="run", tool_call_id="call", tool_name="stuck")
+            executions.lease_deadlines = {record.execution_id: asyncio.get_running_loop().time() + 0.15}
             await entered.wait()
             runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
                 worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=0.15),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))
             worker = Worker(runtime, None)
-            if sys.argv[1] == "lease_loss":
+            if sys.argv[1] != "shutdown":
                 async def heartbeat(*args):
-                    raise ConnectionError("unavailable")
+                    if sys.argv[1] == "lease_loss":
+                        raise ConnectionError("unavailable")
+                    return (), {"other-execution"} if sys.argv[1] == "other_renewed" else set()
                 worker_module.heartbeat = heartbeat
                 await worker._supervise()
             else:

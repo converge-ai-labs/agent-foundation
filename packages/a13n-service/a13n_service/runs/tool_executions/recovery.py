@@ -57,7 +57,7 @@ async def restore(runtime: Runtime, state: HarnessState, *, thread_id: str, orig
                     "The original invocation was admitted. Its retained result has expired; do not reissue it."
                 )
             elif record.terminal and row.first_delivered_at is None:
-                notify(session, row)
+                await notify(session, row)
             returns.append(ToolReturnPart(call.tool_name, value, call.tool_call_id))
             pending.pop(call.tool_call_id)
     if not returns:

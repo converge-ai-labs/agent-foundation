@@ -43,6 +43,8 @@ export function requestLabel(request: RunRequest, t: TFunction): string {
       return t("Memory organization");
     case "feedback":
       return t("Feedback");
+    case "tool_result":
+      return t("trigger.tool_result");
     case "subagent_result":
       return request.subagent
         ? t("Subagent result · {{name}}", { name: request.subagent })
@@ -57,6 +59,20 @@ export function requestLabel(request: RunRequest, t: TFunction): string {
 /** What the request carried, rendered the same way at either level. */
 export function RequestContent({ request }: { request: RunRequest }) {
   const { t } = useTranslation();
+  if (request.kind === "tool_result")
+    return (
+      <>
+        <div className={styles.prose}>
+          {request.toolName}
+          {request.toolName && request.status && " · "}
+          {request.status &&
+            t(`state.${request.status}`, { defaultValue: request.status })}
+        </div>
+        {request.executionId && (
+          <p className={styles.requestNote}>{request.executionId}</p>
+        )}
+      </>
+    );
   if (request.kind === "subagent_result")
     return (
       <>

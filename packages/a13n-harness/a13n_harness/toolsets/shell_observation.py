@@ -28,9 +28,13 @@ class ShellStream(BaseModel):
     capture: EnvironmentOutputCapture
 
     @classmethod
-    def from_read(cls, stream: ProcessStreamRead) -> ShellStream:
+    def from_read(cls, stream: ProcessStreamRead, *, requested_offset: int = 0) -> ShellStream:
         return cls(
-            start_offset=stream.chunks[0].start_offset if stream.chunks else stream.capture.available_start,
+            start_offset=(
+                stream.chunks[0].start_offset
+                if stream.chunks
+                else max(requested_offset, stream.capture.available_start)
+            ),
             data=b"".join(chunk.data for chunk in stream.chunks),
             capture=stream.capture.model_copy(
                 update={"inline": None, "preview": (), "reference": None, "cursor": None}

@@ -10,6 +10,7 @@ from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.state import CodeActStoredValues
 from a13n_harness.tool_execution import (
     StoredToolExecution,
+    ToolExecutionAdmissionRejected,
     ToolExecutionArtifact,
     ToolExecutionRecord,
     ToolExecutionRuntime,
@@ -222,7 +223,7 @@ async def test_publication_retry_commits_result_and_notification_once(service, s
 async def test_admission_requires_current_attempt_and_matching_thread(service, scripted_model, runs_kit):
     _, lease = await _origin(service, scripted_model, runs_kit)
     store, record = Store(service.runtime), _record(lease)
-    with pytest.raises(LeaseLost):
+    with pytest.raises(ToolExecutionAdmissionRejected):
         await _save(store, replace(lease, token="stale"), StoredToolExecution(record))
     with pytest.raises(LeaseLost):
         await _save(store, lease, StoredToolExecution(record.model_copy(update={"thread_id": "other"})))
@@ -566,6 +567,7 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
                 "status": "succeeded" if status == "expired" else status,
                 "completed_at": datetime.now(UTC) if terminal else None,
                 "result_available": status in {"succeeded", "expired"},
+                "foreground_released": terminal,
             }
         )
         await _save(store, lease, StoredToolExecution(record, "retained" if record.result_available else None))
@@ -590,6 +592,17 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
             ModelRequest(parts=[ToolReturnPart("answered", "already delivered", "call-done")]),
         ],
     )
+    claims = []
+    if status in {"succeeded", "lost"}:
+        claims = await outbox.claim(
+            service.runtime.storage,
+            "tool_result",
+            owner="existing-delivery",
+            limit=1,
+            lease_seconds=60,
+            max_attempts=12,
+        )
+        assert len(claims) == 1
     assert await restore(service.runtime, state, thread_id="other-thread", origin_run_id=lease.run_id) == state
     assert await restore(service.runtime, state, thread_id=lease.thread_id, origin_run_id="other-run") == state
     restored = await restore(service.runtime, state, thread_id=lease.thread_id, origin_run_id=lease.run_id)
@@ -618,6 +631,11 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
         await prune(service.runtime)
         async with transaction(service.runtime.storage) as session:
             assert await session.get(ToolExecutionRow, record.execution_id) is None
+    elif claims:
+        # Restoration must preserve the active claim rather than reset or duplicate it.
+        assert await _deliver(service.runtime) == []
+        await tool_results(service.runtime)(claims[0])
+        assert (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
     else:
         assert len(await _deliver(service.runtime)) == 1
 

@@ -29,7 +29,7 @@ from a13n_harness.environment.commands import (
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment, BoundProcessOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
-from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime, execution_cleanup
 
 from .events import ShellStatusEvent
 from .shell_control import ShellControl, ShellTarget
@@ -275,10 +275,19 @@ class _ProcessController:
         try:
             if cancelled:
                 raise asyncio.CancelledError
+            stdout_offset = stderr_offset = 0
             while True:
                 observation = await self._observe(
-                    entry, stdout_offset=0, stderr_offset=0, wait_seconds=1, max_inline_bytes=_MAX_MODEL_OUTPUT_BYTES
+                    entry,
+                    stdout_offset=stdout_offset,
+                    stderr_offset=stderr_offset,
+                    wait_seconds=1,
+                    max_inline_bytes=64 * 1024,
                 )
+                stdout = ShellStream.from_read(observation[1].stdout, requested_offset=stdout_offset)
+                stderr = ShellStream.from_read(observation[1].stderr, requested_offset=stderr_offset)
+                stdout_offset = stdout.start_offset + len(stdout.data)
+                stderr_offset = stderr.start_offset + len(stderr.data)
                 runtime.observe_resource(
                     ShellObservation(
                         target=ShellTarget(
@@ -288,8 +297,8 @@ class _ProcessController:
                         ),
                         status=observation[0].status,
                         stdin_open=observation[0].stdin_open,
-                        stdout=ShellStream.from_read(observation[1].stdout),
-                        stderr=ShellStream.from_read(observation[1].stderr),
+                        stdout=stdout,
+                        stderr=stderr,
                     )
                 )
                 info, output = observation
@@ -302,28 +311,42 @@ class _ProcessController:
                     and output.stdout.capture.observation_closed
                     and output.stderr.capture.observation_closed
                 ):
-                    return _shell_exec_result(None, observation, bound_output=False)
+                    # Final disclosure is the provider's bounded result, not the last delta.
+                    final = await self._observe(
+                        entry,
+                        stdout_offset=0,
+                        stderr_offset=0,
+                        wait_seconds=0,
+                        max_inline_bytes=_MAX_MODEL_OUTPUT_BYTES,
+                    )
+                    return _shell_exec_result(None, final, bound_output=False)
                 if _is_final(info):
                     # Native exit can precede output producer closure.
                     await asyncio.sleep(0.05)
-        except asyncio.CancelledError:
+        except BaseException:
             try:
-                async with asyncio.timeout(5):
-                    if not _is_final(entry.latest):
-                        await self.signal(entry.process_id, "kill")
-                        inspected = await self._environment.processes.wait(
-                            entry.handle, condition="initial_terminal", timeout_seconds=5
-                        )
-                        self._adopt_info(entry, inspected)
-                        if not _is_final(entry.latest):
-                            raise ToolFailed("Shell cancellation could not confirm process termination.")
+                with execution_cleanup():
+                    async with asyncio.timeout(5):
+                        await self._cancel_owned(entry)
             except (EnvironmentError, TimeoutError) as exc:
                 raise ToolFailed(
                     "Shell cancellation could not confirm process termination; inspect the native target."
                 ) from exc
             raise
         finally:
-            await _await_cleanup_shielded(resource.close())
+            with execution_cleanup():
+                await _await_cleanup_shielded(resource.close())
+
+    async def _cancel_owned(self, entry: _ProcessEntry) -> None:
+        if not _is_final(entry.latest):
+            killed = await self._environment.processes.kill(entry.handle)
+            self._adopt_info(entry, killed.process)
+            inspected = await self._environment.processes.wait(
+                entry.handle, condition="initial_terminal", timeout_seconds=5
+            )
+            self._adopt_info(entry, inspected)
+            if not _is_final(entry.latest):
+                raise ToolFailed("Shell cancellation could not confirm process termination.")
 
     async def _admit(
         self, request: CommandRequest, *, alias: str | None, expected_mount_id: str | None, watch: bool = True

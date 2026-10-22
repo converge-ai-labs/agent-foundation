@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 async def lock_execution(
-    session: AsyncSession, lease: Lease, execution_id: str
+    session: AsyncSession, lease: Lease, execution_id: str, *, cleanup: bool = False
 ) -> tuple[RunRow, ToolExecutionRow, datetime]:
     run = await lock(session, RunRow, lease.run_id)
     row = await lock(session, ToolExecutionRow, execution_id)
@@ -40,8 +40,7 @@ async def lock_execution(
         or not hmac.compare_digest(row.lease_token_hash, secret_hash(lease.token))
         or row.completed_at is not None
         or row.lease_expires_at <= current
-        or row.cancel_requested_at is not None
-        or run.cancel_requested_at is not None
+        or (not cleanup and (row.cancel_requested_at is not None or run.cancel_requested_at is not None))
     ):
         raise LeaseLost()
     return run, row, current
@@ -116,14 +115,16 @@ async def authorize_control(
         raise LeaseLost()
 
 
-async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[str, str], ...]:
-    """Renew this incarnation's live calls, including cancellation cleanup, and return cancellation requests."""
+async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, str], ...], set[str]]:
+    """Renew locally active calls through cleanup/publication; report only confirmed renewals."""
+    active = {record.execution_id for record in runtime.executions.active}
     async with transaction(runtime.storage) as session:
         rows = list(
             await session.scalars(
                 select(ToolExecutionRow)
                 .where(
                     ToolExecutionRow.worker_id == worker_id,
+                    ToolExecutionRow.id.in_(active),
                     ToolExecutionRow.completed_at.is_(None),
                 )
                 .with_for_update()
@@ -140,6 +141,7 @@ async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[str, str], 
         principals = await execution_principals(session, runtime.access, runs.values())
         current = await now(session)
         cancel: list[tuple[str, str]] = []
+        renewed: set[str] = set()
         for row in rows:
             run = runs[row.run_id]
             if row.lease_expires_at <= current:
@@ -151,4 +153,5 @@ async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[str, str], 
                 cancel.append((row.thread_id, row.id))
             # A cancellation request does not release Environment use or permit owner-loss reconciliation.
             row.lease_expires_at = current + timedelta(seconds=runtime.settings.worker.lease_seconds)
-        return tuple(cancel)
+            renewed.add(row.id)
+        return tuple(cancel), renewed

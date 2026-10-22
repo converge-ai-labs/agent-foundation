@@ -87,7 +87,11 @@ class Routing:
                 await subscription.get_message(timeout=timeout)
                 listeners = await self.client.publish(channel(worker_id), payload)
                 if listeners == 0:
-                    return None
+                    raise EnvironmentError(
+                        "Shell owner transport is unavailable; the control was not dispatched.",
+                        code="environment_unavailable",
+                        details={"dispatch_stage": "pre_dispatch"},
+                    )
                 while True:
                     message = await subscription.get_message(ignore_subscribe_messages=True, timeout=1)
                     if message is None:

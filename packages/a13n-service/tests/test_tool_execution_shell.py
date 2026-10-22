@@ -317,9 +317,85 @@ async def test_routing_lost_reply_does_not_repeat_mutation(serve, runs_kit, monk
             assert calls == [request.id]
             assert unknown.value.details.get("dispatch_stage") != "pre_dispatch"
             absent = request.model_copy(update={"expires_at": datetime.now(UTC) + timedelta(seconds=2)})
-            assert await caller.routing.call("absent-worker", absent) is None
+            with pytest.raises(EnvironmentError) as unavailable:
+                await caller.routing.call("absent-worker", absent)
+            assert unavailable.value.details == {"dispatch_stage": "pre_dispatch"}
             assert calls == [request.id]
         finally:
             route.cancel()
             await asyncio.gather(route, return_exceptions=True)
             await caller.routing.client.aclose()
+
+
+async def test_cancelled_shell_terminates_before_sibling_releases_environment(
+    serve, settings, scripted_model, runs_kit, tmp_path
+):
+    import os
+
+    settings = settings.model_copy(
+        update={"provisioning": Provisioning(local=LocalProvisioning(enabled=True, root=tmp_path / "environments"))}
+    )
+    async with serve(settings=settings) as service:
+        await runs_kit.pause_sweeps(service)
+        provider = await service.client.post(
+            f"{service.api}/environment-providers", json={"type": "local", "name": "Local"}
+        )
+        template = await service.client.post(
+            f"{service.api}/environment-templates",
+            json={
+                "name": "Shell",
+                "provider_id": provider.json()["id"],
+                "config": {
+                    "recipe": {
+                        "root": {"path": str(tmp_path / "shell")},
+                        "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
+                    }
+                },
+            },
+        )
+        assert template.status_code == 201, template.text
+        agent = await runs_kit.create_agent(
+            service, scripted_model, default_environment_template_id=template.json()["id"]
+        )
+        await runs_kit.start_thread(service, agent, "two shells")
+        (lease,) = await claim(service.runtime, worker_id="worker-a", worker_build="test", limit=1)
+        scripted_model.call(
+            "shell_exec", {"command": f"echo $$ > {tmp_path / 'first.pid'}; read line"}, call_id="first"
+        )
+        scripted_model.call("shell_exec", {"command": "read line"}, call_id="second")
+        scripted_model.say("Both continue")
+        owner = service.runtime.executions
+        try:
+            await asyncio.wait_for(execute(service.runtime, lease, AttemptControl()), 25)
+            records = {record.tool_call_id: record for record in await owner.summarize(lease.thread_id)}
+            assert records.keys() == {"first", "second"}, records
+            first = records["first"]
+            pid = int((tmp_path / "first.pid").read_text())
+            os.kill(pid, 0)
+            await owner.cancel(lease.thread_id, first.execution_id)
+            result = await owner.wait(lease.thread_id, first.execution_id, timeout_seconds=5)
+            assert result.record.status == "cancelled"
+            assert {record.execution_id for record in owner.active} == {records["second"].execution_id}
+            with pytest.raises(ProcessLookupError):
+                os.kill(pid, 0)
+        finally:
+            await owner.close()
+
+
+async def test_missing_owner_transport_is_unavailable_before_dispatch(service, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    request = Request(
+        thread_id="thread",
+        execution_id="exec-missing",
+        caller=Caller(run_id="run", attempt_id="attempt", worker_id="caller"),
+        control=ShellControl(operation="input", data="do not replay"),
+        expires_at=datetime.now(UTC) + timedelta(seconds=5),
+    )
+    routing = service.runtime.executions.routing
+    try:
+        with pytest.raises(EnvironmentError) as unavailable:
+            await routing.call("absent-worker", request)
+        assert unavailable.value.code == "environment_unavailable"
+        assert unavailable.value.details == {"dispatch_stage": "pre_dispatch"}
+    finally:
+        await routing.client.aclose()

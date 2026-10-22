@@ -491,3 +491,46 @@ async def test_shell_settles_only_after_output_capture_closes(tmp_path, monkeypa
     finally:
         cleanup_release.set()
         await runtime.close()
+
+
+async def test_owned_shell_reads_deltas_but_materializes_final_result_from_origin(tmp_path, monkeypatch):
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+    from a13n_harness.toolsets.shell_observation import ShellObservation
+
+    original = LocalProcessManager.read_output
+    offsets, observations = [], []
+    observed_tail = asyncio.Event()
+
+    async def read(self, handle, **kwargs):
+        offsets.append(kwargs.get("stdout_start_offset"))
+        return await original(self, handle, **kwargs)
+
+    def observe(value):
+        assert isinstance(value, ShellObservation)
+        observations.append(value)
+        if value.stdout.start_offset == 5:
+            observed_tail.set()
+
+    monkeypatch.setattr(LocalProcessManager, "read_output", read)
+    runtime = ToolExecutionRuntime()
+    monkeypatch.setattr(runtime, "observe_resource", observe)
+    results = []
+    try:
+        first = await executable([("shell_exec", {"command": "printf first; read line; printf last"})], results).run(
+            "capture", environment=source(tmp_path), bindings=bindings(runtime)
+        )
+        await asyncio.wait_for(observed_tail.wait(), 5)
+        assert offsets[:2] == [0, 5]
+        assert observations[1].stdout.data == b""
+        execution_id = results[0]["execution_id"]
+        from a13n_harness.toolsets.shell_control import ShellControl
+
+        await runtime.call_resource(
+            first.thread_id, execution_id, ShellControl(operation="input", data="done\n").model_dump(mode="json")
+        )
+        settled = await runtime.wait(first.thread_id, execution_id, timeout_seconds=5)
+        assert settled.record.status == "succeeded"
+        assert settled.result["stdout"]["text"] == "firstlast"
+        assert offsets[-1] == 0
+    finally:
+        await runtime.close()

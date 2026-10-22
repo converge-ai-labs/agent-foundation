@@ -63,6 +63,9 @@ class Worker:
             group.create_task(self.runtime.executions.output.run(), name="shell-output-cache")
             try:
                 while not self.stopping:
+                    if not self.runtime.executions.accepting:
+                        await self._drain()
+                        raise RuntimeError("Tool execution publication failed; worker admission is closed.")
                     if self.free == 0:
                         self.slot_released.clear()
                         await self.slot_released.wait()
@@ -167,29 +170,31 @@ class Worker:
         """
         settings = self.runtime.settings.worker
         loop = asyncio.get_running_loop()
-        tool_deadline = loop.time() + settings.lease_seconds
         while True:
             await asyncio.sleep(settings.authority_seconds)
             sent = loop.time()
             try:
                 async with asyncio.timeout(settings.authority_seconds):
-                    cancellations = await heartbeat(self.runtime, self.id)
-                tool_deadline = sent + settings.lease_seconds
+                    cancellations, renewed = await heartbeat(self.runtime, self.id)
                 for thread_id, execution_id in cancellations:
                     self.runtime.executions.request_cancellation(thread_id, execution_id)
             except Exception as error:
                 logger.warning("Tool execution heartbeat failed", extra={"error_type": type(error).__name__})
-                if tool_deadline - loop.time() <= settings.lease_seconds / 3:
-                    # Do not depend on another database transaction to stop an owner whose renewal failed.
-                    for record in self.runtime.executions.active:
-                        self.runtime.executions.request_cancellation(
-                            record.thread_id,
-                            record.execution_id,
-                            reason="Tool execution lease renewal failed; external effects may have completed.",
-                        )
-                if loop.time() >= tool_deadline and self.runtime.executions.active:
-                    # Control may now reconcile this incarnation as lost. Do not leave local work alive
-                    # after its Environment use can be released by another process.
+                renewed = set()
+            for record in self.runtime.executions.active:
+                execution_id = record.execution_id
+                if execution_id in renewed:
+                    self.runtime.executions.lease_deadlines[execution_id] = sent + settings.lease_seconds
+                deadline = self.runtime.executions.lease_deadlines[execution_id]
+                if deadline - loop.time() <= settings.lease_seconds / 3:
+                    self.runtime.executions.request_cancellation(
+                        record.thread_id,
+                        execution_id,
+                        reason="Tool execution lease renewal failed; external effects may have completed.",
+                    )
+                if loop.time() >= deadline:
+                    # A successful heartbeat may still omit an expired, missing or reconciled owner.
+                    # Another execution's renewal never extends this invocation's fencing window.
                     logger.error("Tool execution owner lease expired; forcing process exit")
                     os._exit(1)
             attempts = list(self.running.values())

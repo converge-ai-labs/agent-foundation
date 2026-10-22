@@ -103,3 +103,38 @@ def test_observation_prefix_miss_is_not_a_new_retention_boundary():
 )
 def test_observation_does_not_execute_controls_or_long_waits(control):
     assert _observation(_stream(b"ready")).read("exec-test", control) is None
+
+
+def test_empty_delta_preserves_requested_offset_with_unknown_producer_count():
+    stream = ShellStream.from_read(
+        ProcessStreamRead(
+            chunks=(),
+            next_cursor=None,
+            capture=EnvironmentOutputCapture(
+                kind="inline", available_end=42, captured_bytes=42, producer_complete=False, content_complete=False
+            ),
+        ),
+        requested_offset=42,
+    )
+    assert stream.start_offset == 42 and stream.data == b""
+    assert stream.capture.produced_bytes is None
+
+
+def test_direct_local_silent_observations_reuse_immutable_preview():
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.providers.environment.direct_local.processes import _OutputCollector
+
+    collector = _OutputCollector(
+        policy=EnvironmentOutputPolicy(max_inline_bytes=1024 * 1024, max_output_bytes=1024 * 1024, overflow="truncate"),
+        buffer_limit=1024 * 1024,
+        writer=None,
+    )
+    collector.preview.extend(b"large" * 10000)
+    collector.produced = len(collector.preview)
+    first = collector.snapshot()
+    assert collector.snapshot().inline is first.inline
+    collector.preview.extend(b"new")
+    collector.produced += 3
+    second = collector.snapshot()
+    assert second.inline == first.inline + b"new"
+    assert collector.snapshot().inline is second.inline

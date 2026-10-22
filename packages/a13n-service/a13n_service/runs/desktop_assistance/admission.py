@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import anyio
 from a13n_harness.environment.models import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentError, EnvironmentState
+from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from sqlalchemy import exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +19,7 @@ from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
-from a13n_service.runs.tool_executions.authority import lock_owner, prove
+from a13n_service.runs.tool_executions.authority import lock_execution, lock_owner, prove
 
 TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id", "modal": "target_id"}
 
@@ -116,6 +117,17 @@ async def admit_mounts(
 async def operation(
     runtime: Runtime, lease: Lease, environment_id: str, state: EnvironmentState | None, action: EnvironmentAction
 ) -> AsyncIterator[None]:
+    if execution_cleanup_active() and action in {
+        EnvironmentAction.PROCESS_KILL,
+        EnvironmentAction.PROCESS_WAIT,
+        EnvironmentAction.PROCESS_RELEASE,
+    }:
+        record = current_execution()
+        assert record is not None
+        async with transaction(runtime.storage) as session:
+            await lock_execution(session, lease, record.execution_id, cleanup=True)
+        yield
+        return
     key = target_key(state)
     if key is None:
         await prove(runtime, lease)

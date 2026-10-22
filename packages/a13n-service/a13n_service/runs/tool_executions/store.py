@@ -9,14 +9,14 @@ import hmac
 from dataclasses import asdict
 from datetime import datetime, timedelta
 
-from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
+from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionAdmissionRejected, ToolExecutionRecord
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import lock, now, short_session, transaction
 from a13n_service.infra.objects.interface import ObjectRef, read
-from a13n_service.infra.outbox import enqueue
+from a13n_service.infra.outbox import OutboxRow, enqueue
 from a13n_service.runs.attempts import Lease, LeaseLost, lock_thread_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ToolExecutionRow
@@ -37,7 +37,14 @@ def observation(row: ToolExecutionRow) -> ToolExecutionRecord:
     )
 
 
-def notify(session: AsyncSession, row: ToolExecutionRow) -> None:
+async def notify(session: AsyncSession, row: ToolExecutionRow) -> None:
+    # Callers hold the execution row lock. Recovery and late foreground release
+    # reuse the original intent without resetting a claimed or settled delivery.
+    existing = await session.scalar(
+        select(OutboxRow.id).where(OutboxRow.kind == "tool_result", OutboxRow.dedupe_key == row.id)
+    )
+    if existing is not None:
+        return
     enqueue(
         session,
         organization_id=row.organization_id,
@@ -122,9 +129,14 @@ class Store:
                 if record.status != "queued":
                     raise LeaseLost()
                 # The INSERT's Thread foreign key also takes a row lock: follow Thread → Run → Attempt.
-                _, run, _, current = await lock_thread_lease(session, lease)
-                if run.cancel_requested_at is not None:
-                    raise LeaseLost()
+                try:
+                    thread, run, _, current = await lock_thread_lease(session, lease)
+                    if thread.archived_at is not None or run.cancel_requested_at is not None:
+                        raise LeaseLost()
+                except LeaseLost:
+                    raise ToolExecutionAdmissionRejected(
+                        "Tool admission was rejected: its origin is no longer current."
+                    ) from None
                 row = ToolExecutionRow(
                     id=record.execution_id,
                     organization_id=lease.organization_id,
@@ -153,7 +165,7 @@ class Store:
                 if record.foreground_released and not previous.foreground_released:
                     row.record = previous.model_copy(update={"foreground_released": True}).model_dump(mode="json")
                     if row.first_delivered_at is None and row.expires_at is not None and row.expires_at > current:
-                        notify(session, row)
+                        await notify(session, row)
                 return
             if row.lease_expires_at <= current:
                 raise LeaseLost()
@@ -168,7 +180,7 @@ class Store:
                 )
                 row.result_ref = asdict(ref) if ref is not None else None
                 if record.foreground_released:
-                    notify(session, row)
+                    await notify(session, row)
 
     async def get(self, thread_id: str, execution_id: str) -> StoredToolExecution | None:
         async with short_session(self.runtime.storage) as session:

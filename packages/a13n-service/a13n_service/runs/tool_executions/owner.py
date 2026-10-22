@@ -53,9 +53,16 @@ class Executions(ToolExecutionRuntime):
     """Host adapter, not another executor. Harness owns admission, tasks, results and cancellation."""
 
     def __init__(self, runtime: Runtime):
-        super().__init__(store=Store(runtime), max_active=runtime.settings.tool_executions.max_active)
+        super().__init__(
+            store=Store(runtime), max_active=runtime.settings.tool_executions.max_active, on_completed=self._completed
+        )
         self.runtime = runtime
         self._origins: dict[str, Lease] = {}
+        self.lease_deadlines: dict[str, float] = {}
+
+    def _completed(self, record: ToolExecutionRecord) -> None:
+        self._origins.pop(record.execution_id, None)
+        self.lease_deadlines.pop(record.execution_id, None)
 
     @cached_property
     def routing(self) -> Routing:
@@ -92,17 +99,11 @@ class Executions(ToolExecutionRuntime):
         host_release: Callable[[], Awaitable[None]] | None = None
         origin = ORIGIN.get()
 
-        async def dispatch() -> Any:
-            await self._predecessors(thread_id, sequential=sequential)
-            await prove(self.runtime, ORIGIN.get())
-            return await operation()
-
         async def cleanup() -> None:
             try:
                 if release is not None:
                     await release()
             finally:
-                self._origins.pop(record.execution_id, None)
                 self.output.forget(record.execution_id)
                 if host_release is not None:
                     await host_release()
@@ -110,7 +111,7 @@ class Executions(ToolExecutionRuntime):
         token = SEQUENTIAL.set(sequential)
         try:
             record = super().admit(
-                dispatch,
+                operation,
                 thread_id=thread_id,
                 run_id=run_id,
                 tool_call_id=tool_call_id,
@@ -119,6 +120,9 @@ class Executions(ToolExecutionRuntime):
                 sequential=sequential,
             )
             self._origins[record.execution_id] = origin
+            self.lease_deadlines[record.execution_id] = (
+                asyncio.get_running_loop().time() + self.runtime.settings.worker.lease_seconds
+            )
             # No await between admission and retaining the scope; failure to admit retains nothing.
             scope = _RESOURCES.get(None)
             if scope is not None:
@@ -126,6 +130,10 @@ class Executions(ToolExecutionRuntime):
             return record
         finally:
             SEQUENTIAL.reset(token)
+
+    async def before_dispatch(self, record: ToolExecutionRecord, *, sequential: bool) -> None:
+        await self._predecessors(record.thread_id, sequential=sequential)
+        await prove(self.runtime, ORIGIN.get())
 
     async def inline(self, operation: Callable[[], Awaitable[Any]], *, thread_id: str, sequential: bool) -> Any:
         async def dispatch() -> Any:
