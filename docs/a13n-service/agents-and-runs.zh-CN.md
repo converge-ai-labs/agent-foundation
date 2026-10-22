@@ -72,7 +72,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
 | `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
 | `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
-| `tool_search`                     | 为已选连接、插件和平台工具配置分组代理搜索或原生工具搜索。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                               |
+| `tool_search`                     | 为已选本地能力、连接、插件和平台工具配置固定代理发现。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                                   |
 | `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
 | `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
 | `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                                                               |
@@ -393,6 +393,64 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 - **归档：** `POST …/threads/{thread_id}/archive` 使用线程 `If-Match` 永久结束线程：撤回 pending 消息，移除挂载，中断活跃运行。历史仍可读取。
 
 每个已结束运行都是其线程继续的历史，与结果无关。失败或取消运行之后，下一个运行从它的最后一个检查点继续；若它在首个检查点前失败，则从它开始时的状态继续。它未完成的工具调用显示为已中断，不会再次执行。如果失败由历史本身导致，例如模型服务拒绝该历史，请改为分叉更早的运行。
+
+## 执行策略
+
+工具交还与引导时机可独立配置。`inline` 等待工具完成；`auto` 在前台等待结束后返回回执。`boundary` 在下一个模型边界应用引导；`immediate` 允许引导抢占当前前台等待。Service 默认使用 `auto`、5 秒和 `immediate`。
+
+各字段的优先级为：**单次运行 → 线程 → 所选智能体版本 → 部署默认值**。省略或 null 表示继承。创建智能体或发布版本时，在 `config.execution` 中设置默认值：
+
+```json
+{
+  "execution": {
+    "tools": {"mode": "auto", "foreground_wait_seconds": 5},
+    "steering": "immediate"
+  }
+}
+```
+
+持久线程覆盖可通过 `POST /threads` 的 `execution` 设置，也可携带线程的 `If-Match` 向 `PATCH /threads/{thread_id}` 发送：
+
+```json
+{"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
+```
+
+PATCH 保留省略的字段。使用 `{"execution":{"tools":{"mode":null}}}` 仅恢复工具模式的继承，或使用 `{"execution":null}` 清空全部线程覆盖。继承项跟随每次新运行所选的智能体。
+
+仅覆盖一次运行时，在消息的 `options.execution` 中设置：
+
+```json
+{
+  "kind": "message",
+  "delivery": "next_run",
+  "agent_id": "agt_example",
+  "payload": {"content": [{"type": "text", "text": "Review this change"}]},
+  "options": {"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 2}}}
+}
+```
+
+覆盖只影响该次运行。排队消息被接受为运行时，Service 冻结最终策略。恢复、交接、resume 与自动续接保留该策略。steer 可省略策略或重述相同字段；改变策略会返回 `execution_policy_immutable`。不同策略应使用 `next_run`。新运行使用 `inline` 时，仍可访问此前保留的调用。完成通知始终在边界处理。
+
+在 Console 中，智能体配置的 **执行策略** 设置默认值，**会话操作 → 执行策略** 设置当前线程。新会话 **选项** 对话框和空闲消息输入框的 **执行策略** 只影响一次运行。**详情 → 执行策略** 显示运行冻结的值。
+
+前台等待范围为 0–300 秒，不是执行截止时间。部署回退值为 `tool_executions.foreground_wait_seconds`；并发、保留期与关闭参数仍由部署统一设置。
+
+## 保留的工具执行
+
+默认 `auto` 工具模式下，支持保留的工具调用会自动交还前台：超过等待时间（默认 5 秒）后，模型收到 `exec-*` 回执并可继续处理，而同一次调用仍在原 worker 上运行。回执是引用，不是结果。整个 CodeAct 调用及其嵌套调用保持在一起；后续 Run 可由其他 worker 执行。所有者丢失时，未完成的执行标记为 `lost`，Service 不会自动重放调用。
+
+在现有 Console 会话菜单的 **工具执行** 或 Run 详情中查看这些调用。刷新可更新状态；**检查** 打开元数据，**读取结果** 按需加载有界片段。关闭检查器会释放本地结果文本。
+
+| `/api/v1/threads/{thread_id}` 下的端点        | 用途                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| `GET /tool-executions`                        | 分页查询，可按 Service `run_id` 或 `active` 筛选。                |
+| `GET /tool-executions/{execution_id}`         | 查看状态，不确认结果交付。                                        |
+| `GET /tool-executions/{execution_id}/result`  | 使用 `offset`、`limit` 和 `version` 读取结果片段。                |
+| `POST /tool-executions/{execution_id}/cancel` | 请求取消；HTTP 202 表示接受请求，不代表清理已完成或副作用已回滚。 |
+
+引用属于确切的 Thread。读取结果会确认交付；首次确认启动配置的重读窗口（默认一小时），且不超过完成后的最大保留时间（默认 24 小时）。重复读取不会延长窗口。已过期记录返回 404；状态查询与回执不改变保留时间。
+
+完成提示遵循普通收件箱的顺序与容量规则。停止原始 Run 会请求取消其保留调用，并阻止迟到结果重新启动对话。停止后续 Run 不会取消更早 Run 的调用。即使取消请求已接受，Environment 仍保持使用中，直到保留操作及其清理实际完成。
 
 ## 结果
 

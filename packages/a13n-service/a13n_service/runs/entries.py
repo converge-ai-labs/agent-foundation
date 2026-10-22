@@ -98,6 +98,7 @@ async def edit(
         authority = ExecutionAuthority.model_validate(entry.authority)
         await validate_message(session, runtime, actor, scope, thread, message, authority=authority)
         await inbox.edit_entry(session, thread, entry, message, control=runtime.settings.control)
+        runtime.mailbox.notify(session, entry)
         return await receipt(session, thread, entry)
 
 

@@ -748,11 +748,35 @@ class CompositeBoundEnvironment(BoundEnvironment):
         alias: str | None = None,
         timeout_seconds: float = 0,
     ) -> AsyncGenerator[BoundProcessOperations]:
+        async with self.authorize_retained_process(
+            handle.identity,
+            backing_identity=backing_identity,
+            actions=actions,
+            alias=alias,
+            timeout_seconds=timeout_seconds,
+        ):
+            async with owner.retained_process_dispatch(handle, actions=actions) as processes:
+                yield processes
+
+    @asynccontextmanager
+    async def retained_process_dispatch(
+        self, handle: BoundProcessHandle, *, actions: frozenset[EnvironmentAction]
+    ) -> AsyncGenerator[BoundProcessOperations]:
+        original = self._entered_for_handle(handle)
+        async with self._mount_slot(original, allow_retired=True):
+            yield _ProcessFacade(self, retained_handle=handle, authorized_actions=actions)
+
+    @asynccontextmanager
+    async def authorize_retained_process(
+        self,
+        identity: ProcessIdentity,
+        *,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AsyncGenerator[None]:
         self._assert_open()
-        if not isinstance(owner, CompositeBoundEnvironment):
-            raise EnvironmentError("Retained process owner is unsupported.", code="environment_unsupported")
-        identity = handle.identity
-        original = owner._entered_for_handle(handle)
         matches = [
             item
             for item in self._entered.values()
@@ -770,7 +794,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         for action in actions:
             self.require_action(entered.mount_id, action)
         async with AsyncExitStack() as stack:
-            await stack.enter_async_context(owner._mount_slot(original, allow_retired=True))
             current = await stack.enter_async_context(
                 self._operation_scope(entered, "processes", timeout_seconds=timeout_seconds)
             )
@@ -788,7 +811,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 # Already-entered Host guards must know no native control ran.
                 exc.details["dispatch_stage"] = "pre_dispatch"
                 raise
-            yield _ProcessFacade(owner, retained_handle=handle, authorized_actions=actions)
+            yield
 
     def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredMount:
         if not isinstance(identity, ProcessIdentity):

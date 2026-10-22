@@ -1,6 +1,6 @@
 """Durable Agent-requested assistance. Provider I/O always runs outside storage scopes."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import timedelta
@@ -37,6 +37,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Pending, Resume, Returned
 from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tool_executions.authority import lock_owner
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
@@ -110,7 +111,7 @@ async def dispatch(runtime: Runtime, target: Target, request: wire.Request, *, o
 @asynccontextmanager
 async def access_dispatch(
     runtime: Runtime, target: Target, *, operation_id: str
-) -> AsyncIterator[Callable[[wire.Request], Awaitable[wire.Reply]]]:
+) -> AsyncGenerator[Callable[[wire.Request], Awaitable[wire.Reply]]]:
     if target.state is None or target.state.provider_key != "modal":
         yield partial(dispatch, runtime, target, operation_id=operation_id)
         return
@@ -138,7 +139,7 @@ async def verify_continuation(runtime: Runtime, lease: Lease, selected: Target) 
     if key is None:
         return
     async with transaction(runtime.storage) as session:
-        await lock_lease(session, lease)
+        await lock_owner(session, runtime, lease)
         control = await lock(session, DesktopTargetRow, key)
         row = await session.get(DesktopAssistanceRow, control.holder_id) if control and control.holder_id else None
         if row is None or row.state != "consumed" or row.successor_id != lease.run_id:

@@ -103,7 +103,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             if isinstance(text, str) and text in {"alpha", "beta"}
         )
         # Inspect the live projection, while the server genuinely discovers and executes MCP tools.
-        expected = {"discover_tools", "describe_tool", "call_tool"}
+        expected = {"discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"}
         if codeact:
             expected |= {"run_code", "run_program", "store", "load", "forget"}
         assert {tool.name for tool in info.function_tools} == expected

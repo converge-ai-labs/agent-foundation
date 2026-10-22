@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.mcp_runtime.inputs import McpInputResponse
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.surfaces import RootOperationStatus
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
@@ -235,7 +236,7 @@ async def test_child_input_scope_and_sticky_retention_are_not_parent_selection(t
             pass
 
         task = asyncio.create_task(
-            connection.client.call_app_tool(
+            HostToolset(connection).call_app_tool(
                 "confirm", {}, authorize=authorize, operation=Operation(run_id="run-child", tool_call_id="child-call")
             )
         )
@@ -246,7 +247,7 @@ async def test_child_input_scope_and_sticky_retention_are_not_parent_selection(t
         with pytest.raises(HarnessUiError, match="unavailable"):
             await app.respond_mcp_input(unrelated.thread_id, request.request_id, answer)
         await app.respond_mcp_input(parent.thread_id, request.request_id, answer)
-        assert not (await task).is_error
+        assert not (await task)["isError"]
 
         # A child owns its saved generic selection, not today's parent route.
         await app._store.threads.update_configuration(

@@ -7,17 +7,15 @@ import pytest
 from a13n_harness import AgentSpec, CodeActStateOwner, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
-    NativeToolSearchConfig,
     ProxyToolSearchConfig,
     ToolSearchPlan,
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
-from pydantic_ai.capabilities import Capability, ToolSearch
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
-from pydantic_ai.profiles.anthropic import anthropic_model_profile
 
 pytestmark = pytest.mark.anyio
 
@@ -153,8 +151,7 @@ async def test_reused_executable_resolves_binding_independently_in_concurrent_ru
 
 
 @pytest.mark.parametrize("bound", [False, True])
-@pytest.mark.parametrize("native", [False, True])
-async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bound, native):
+async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bound):
     runtime = ToolExecutionRuntime()
     capability = ToolExecutionCapability()
 
@@ -170,10 +167,8 @@ async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bo
         if requests == 1:
             yield {
                 0: DeltaToolCall(
-                    name="search_tools" if native else "discover_tools",
-                    json_args=json.dumps(
-                        {"queries": ["tool_execution_info"]} if native else {"query": "tool_execution_info"}
-                    ),
+                    name="discover_tools",
+                    json_args=json.dumps({"query": "tool_execution_info"}),
                     tool_call_id="search",
                 )
             }
@@ -185,11 +180,11 @@ async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bo
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
-        model=FunctionModel(stream_function=model, profile=anthropic_model_profile("claude-sonnet-4-6")),
-        capabilities=(capability, ordinary, *((ToolSearch(strategy="keywords"),) if native else ())),
+        model=FunctionModel(stream_function=model),
+        capabilities=(capability, ordinary),
         tool_search=ToolSearchPlan(
             groups={"execution": ToolSearchSelection("Execution controls", capabilities=(capability, ordinary))},
-            config=NativeToolSearchConfig() if native else ProxyToolSearchConfig(),
+            config=ProxyToolSearchConfig(),
         ),
     )
     try:

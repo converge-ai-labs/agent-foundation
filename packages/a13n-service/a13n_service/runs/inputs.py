@@ -203,4 +203,7 @@ async def content(
     the run principal's access."""
     if entry.kind == "message":
         return await _message(runtime, principal, recipient, environment, entry, configuration=configuration)
+    if entry.kind == "tool_result":
+        hint = "A retained tool execution ended. Read its result with tool_execution_result: "
+        return (_text(entry, hint + json.dumps(entry.payload, ensure_ascii=False)),)
     return _child_result(entry)

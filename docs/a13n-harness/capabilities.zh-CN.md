@@ -123,7 +123,7 @@ executable = HarnessBuilder(
 | `CodeActCapability`            | 受限 Python runner 和显式键到 JSON 存储值                            | 明确选定的适用工具，以及用于程序的环境文件           |
 | `ContextualMCP`                | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次                        | Harness 提供的当前 `AgentContext`                    |
 
-大型本地工具集合可使用 [ToolSearchCapability](tool-search.md)，它接受由被动 `ToolSearchGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口支持分组发现、动态 schema 和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-search.md#host-integration)。
+大型本地工具集合可使用 [ToolSearchCapability](tool-search.md)，它接受由被动 `ToolSearchGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口通过固定代理 schema 支持分组发现、完整列表和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-search.md#host-integration)。
 
 每个功能只公开一个 Capability。其内部绑定执行的实例保持私有，在同一逻辑执行的模型尝试之间复用，不跨执行复用。Host 协作对象通过 `RunBindings.web`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets` 提供。`WebBinding` 和 `TaskStateBinding` 是被动冻结值，不是 Capability。这些字段不会启用缺失功能，也绝不进入 `HarnessState`。Host 负责 provider 生命周期，在 provider 契约允许时可以共享传输。
 

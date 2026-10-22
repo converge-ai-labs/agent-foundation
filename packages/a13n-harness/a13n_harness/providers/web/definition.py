@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import ClassVar
@@ -64,7 +64,7 @@ class WebProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C, K]
         *,
         options: SearchOptions | ScrapeOptions | None = None,
         transport: WebProviderTransport | None = None,
-    ) -> AsyncIterator[WebProvider[C, K]]:
+    ) -> AsyncGenerator[WebProvider[C, K]]:
         """Validate host inputs before constructing an operation handle; no I/O at open."""
         parsed = self.configuration_model.model_validate(configuration)
         yield WebProvider(

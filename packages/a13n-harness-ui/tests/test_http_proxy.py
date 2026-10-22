@@ -3,7 +3,7 @@
 import asyncio
 import os
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -27,7 +27,7 @@ def isolated_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @asynccontextmanager
-async def endpoint(status: int = 502) -> AsyncIterator[tuple[str, list[bytes]]]:
+async def endpoint(status: int = 502) -> AsyncGenerator[tuple[str, list[bytes]]]:
     requests = []
     tasks: set[asyncio.Task[None]] = set()
 

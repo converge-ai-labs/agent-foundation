@@ -377,6 +377,7 @@ async def test_file_protection_survives_incomplete_connection_cleanup(
     monkeypatch.setattr(database_module, "protect_local_files", capture_protection)
     engine = None
     escaped = None
+    driver_connection = None
     settings = StorageSettings(data_root=tmp_path, cleanup_timeout_seconds=0.01)
     try:
         with monkeypatch.context() as patch:
@@ -387,13 +388,20 @@ async def test_file_protection_survives_incomplete_connection_cleanup(
                 if cleanup == "checked_out":
                     escaped = await engine.connect()
                     await escaped.execute(text("SELECT 1"))
+                    driver_connection = (await escaped.get_raw_connection()).driver_connection
         assert leases
         assert all(is_protected_local_file(item) for item in paths)
     finally:
         if escaped is not None:
+            # dispose() replaced the pool; returning this connection to the old
+            # pool would leave its SQLite worker alive beyond the test loop.
+            await escaped.invalidate()
             await escaped.close()
         if engine is not None:
             await engine.dispose()
         for lease in leases:
             lease.close()
+    if driver_connection is not None:
+        with pytest.raises(ValueError, match="no active connection"):
+            await driver_connection.execute("SELECT 1")
     assert not any(is_protected_local_file(item) for item in paths)

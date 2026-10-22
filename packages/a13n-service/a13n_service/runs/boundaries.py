@@ -6,7 +6,7 @@ Parallel tools share one completion. Only the primary native run stages checkpoi
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -52,7 +52,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
 
     @asynccontextmanager
-    async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncIterator[None]:
+    async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncGenerator[None]:
         """Own the serial writer; failure cancels execution and wakes tool waiters."""
         try:
             async with asyncio.TaskGroup() as tasks:
@@ -105,6 +105,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         owner = self.primary is None
         if owner:
             self.primary = ctx.run_id
+            # A preempted request may restart with the same message count but new steering input.
+            self.staged_length = -1
             self.accepting_steers = True
         try:
             try:
@@ -119,13 +121,6 @@ class Boundaries(AbstractCapability[AgentContext]):
                 # Steering can read attachments through the still-entered Environment.
                 await self.drain()
             return result
-        except asyncio.CancelledError:
-            if owner and self._writer is not None:
-                # Public iteration tears down the native scope before leaving process().
-                # Stop I/O here rather than waiting on a writer cancelled only by that exit.
-                self._writer.cancel()
-                await asyncio.gather(self._writer, return_exceptions=True)
-            raise
         finally:
             if owner:
                 self.accepting_steers = False

@@ -1,7 +1,7 @@
 """track scoped automatic E2B desktop builds
 
 Revision ID: eef166eac372
-Revises: 82c26d512c94
+Revises: b527b6625219
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "eef166eac372"
-down_revision = "82c26d512c94"
+down_revision = "b527b6625219"
 branch_labels = None
 depends_on = None
 

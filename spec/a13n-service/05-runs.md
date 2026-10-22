@@ -25,7 +25,7 @@ At execution, accepted input distinguishes message content from a deferred-resul
 
 - A **session** groups related threads. Its `last_run_id` names the most recently accepted run of any of its threads.
 - A **thread** advances one history at a time. It has an inbox, desired environment and memory mounts ([06](06-environments.md#mounts), [11](11-memory.md#mounts)) and caller headers ([04](04-resources.md#caller-headers)).
-- An **entry** is one queued input: a `message` or a `child_result`. Only a pending message can change.
+- An **entry** is one queued input: a `message`, `child_result` or `tool_result`. Only a pending message can change.
 - A **run** starts from one source, either an entry or the answers that resume a waiting run. It freezes an agent revision, options and an execution identity, and may incorporate further compatible entries. Its initial history never changes.
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
@@ -76,6 +76,16 @@ Acceptance normalizes and freezes the configuration in `Run.options` alongside t
 
 A `steer` submission or pending-entry edit against an active Run may omit configuration or explicitly match the frozen value. An explicit different value fails with conflict reason `run_configuration_immutable`; it never silently becomes a later Run. `next_run` selects a new snapshot without modifying the active one. Canonical request idempotency includes normalized configuration; the other-options steering digest excludes it and steering compares configuration separately.
 
+### Execution policy
+
+Agent `config.execution`, Thread `execution`, and message `options.execution` share three independently optional leaves: `tools.mode` (`inline` or `auto`), `tools.foreground_wait_seconds` (0–300 seconds), and `steering` (`boundary` or `immediate`). Each leaf resolves at acceptance in order: message override, Thread override, selected Agent revision, Host default. Service defaults are `auto`, the deployment's `tool_executions.foreground_wait_seconds` (5 seconds by default), and `immediate`.
+
+Thread choices are sparse persistent overrides, including on `POST /threads`. They dynamically inherit the Agent selected by each new message. `PATCH /threads/{thread}` uses the ordinary `run` permission, Thread lock and `If-Match`: omitted leaves stay unchanged; null clears that leaf to inheritance; null `tools` clears both tool choices; null `execution` clears every override. Explicit `inline` and `boundary` disable their respective behaviors. A Run override never writes back to the Thread.
+
+Acceptance freezes the complete effective policy in `Run.options.execution`. Queued messages resolve when accepted, not when submitted. Recovery, handoff, resume, child-result and tool-result continuations keep the frozen policy. Ordinary new messages resolve afresh. Forks and separately spawned child Threads start with their selected Agent defaults and their own explicit choices; inline children retain their existing inline execution boundary.
+
+A steer may omit execution choices or restate matching leaves. A differing leaf fails with `execution_policy_immutable`; pending-entry edits use the same rule. `delivery: next_run` can choose a new policy. Delivery selects which Run receives an input; steering policy selects whether a user message preempts or waits for a model boundary. Internal completion notifications always use boundary delivery. Tool mode and steering are independent, and an inline Run retains access to earlier retained executions and their controls. Host concurrency, retention and shutdown limits remain deployment settings.
+
 ## Tables
 
 The tenant foreign-key rules in [03](03-tenancy.md#tenant-integrity) apply throughout. Payloads, outputs and options are bounded inline JSON; files a message refers to are assets ([04](04-resources.md)).
@@ -90,7 +100,7 @@ threads
   id  organization_id  workspace_id  session_id  origin  origin_thread_id NULL
   origin_run_id NULL  origin_tool_call_id NULL  subagent NULL
   current_run_id NULL  last_run_id NULL
-  message_history  mcp_headers  labels  archived_at NULL  version  created_at  updated_at
+  message_history  mcp_headers  execution NULL  labels  archived_at NULL  version  created_at  updated_at
   origin IN ('new', 'fork', 'child')
   CHECK (origin = 'new'   AND origin_thread_id, origin_run_id, origin_tool_call_id all NULL
       OR origin = 'fork'  AND origin_thread_id, origin_run_id set, origin_tool_call_id NULL
@@ -106,13 +116,14 @@ inbox_entries
   request_key NULL  request_digest NULL  request_kind NULL  request_target NULL
   status  assigned_run_id NULL  incorporated_checkpoint_seq NULL  failure NULL
   created_at  finished_at NULL
-  kind IN ('message', 'child_result')
+  kind IN ('message', 'child_result', 'tool_result')
   delivery IN ('steer', 'next_run')
   status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')
   request_kind IN ('thread', 'message', 'fork')
   CHECK (position > 0 AND size >= 0)
   CHECK ((kind = 'message') = (agent_id IS NOT NULL))
-  CHECK ((kind = 'child_result') = (child_run_id IS NOT NULL AND origin_run_id IS NOT NULL))
+  CHECK ((kind = 'child_result') = (child_run_id IS NOT NULL))
+  CHECK ((kind IN ('child_result', 'tool_result')) = (origin_run_id IS NOT NULL))
   CHECK (status NOT IN ('assigned', 'consumed') OR assigned_run_id IS NOT NULL)
   CHECK (status <> 'pending' OR assigned_run_id IS NULL)
   CHECK ((status = 'consumed') = (incorporated_checkpoint_seq IS NOT NULL))
@@ -135,7 +146,7 @@ runs
   checkpoint NULL  tail NULL  output NULL  failure NULL  usage_at_seal NULL
   labels  started_at NULL  sealed_at NULL  version  created_at  updated_at
   revision_selection IN ('pinned', 'default', 'inherited')
-  trigger IN ('input', 'queued', 'resume', 'child_result', 'spawned')
+  trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'spawned')
   lineage IN ('root', 'continue', 'fork')
   status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')
   wait_reason IN ('approval', 'call', 'multiple', 'desktop_control')
@@ -269,6 +280,8 @@ The durable state is **assigned to a run**, not offered to an attempt. Recovery 
 
 At each safe boundary, in the transaction that commits its checkpoint under the lease, the worker assigns a FIFO batch of compatible pending entries, bounded by `worker.delivery_count` and `worker.delivery_bytes` and scanning at most `control.inbox_count`. Compatibility is checked before budgeting, so incompatible entries neither block nor consume the batch. A message is compatible when its delivery is `steer`, it names the run's agent, its revision pin is absent or equal to the run's, and either its options are the defaults (none given), which join whatever options the run started with, or the digest of its options as submitted equals the run's `options_digest`. Caller headers and principals take no part: anyone with `run` may steer, and the run keeps the principal and authority frozen at acceptance. A child result is compatible when its origin is this run or a sealed run. A `next_run` or incompatible message waits for a later run.
 
+Immediate-steering Runs also receive input while generation or tools are pending. After an input commit, a receiver in the same process wakes directly and uses the ordinary assignment and offer path. One shared worker scan finds pending user steers for registered Threads when a local wake is unavailable or missed; empty scans do not lock each active Run. Boundary-steering Runs use checkpoint delivery without an immediate-input listener. The wake is a hint: DB assignment, authority checks and checkpoint incorporation retain their existing ownership.
+
 The worker offers assigned entries to the Harness outside any transaction, before it acknowledges the boundary. A tool boundary waits for that acknowledgement, so a compatible entry already pending when the run reaches a tool boundary joins the model request that follows the tools. Each part reaches the model as follows: text as text, `json` as its JSON text, and an asset, read with the run principal's access, or a `url`'s content, fetched once by the worker through the endpoint policy ([08](08-providers.md#outbound-endpoint-policy)) and bounded by `providers.operation_seconds` and `providers.response_bytes`, as a [file](#how-files-reach-the-model). A child result is offered as a text notice. A `url` part that cannot be read is `invalid_argument` at `field` `content.{index}.url`: `reason` `endpoint_denied` for an address the policy refuses, `http_status` (with `status`) for a definitive status other than 200, and `unreadable` for another unreadable answer. A network error, a timeout or a status 408, 429, 500, 502, 503 or 504 is `unavailable` (dependency `url`): the attempt fails, and a later attempt fetches again.
 
 A steer whose content cannot be read, such as one naming an asset that is no longer usable, fails alone with the refusal's code and the run continues without it, whether it is offered at a boundary or again by a recovered attempt. Only the run's own source entry fails the run when it cannot be read, and an `unavailable` read ends the attempt instead. An attempt whose initial entries all fail alone ends as `unavailable` too, and the next continues without them.
@@ -320,7 +333,7 @@ AND attempt.lease_token_hash = hash(caller.token)
 AND attempt.lease_expires_at > clock_timestamp()
 ```
 
-Every execution-dependent mutation uses it: checkpoint commits, steer assignment, child operations, environment preparation, lease extension and the worker's seal. A stale worker cannot revive an expired lease even before the sweep. Usage ingested outside a checkpoint commit is the one exception: it records a past charge and is scoped to its attempt without the predicate.
+Attempt-owned mutations use it: checkpoint commits, steer assignment, child operations, environment preparation, lease extension and the worker's seal. A stale worker cannot revive an expired lease even before the sweep. Already-admitted [retained tool executions](#retained-tool-executions) use their independent owner lease for dependent calls and resource access; this never authorizes checkpoint commits or sealing an ended Run. Usage ingested outside a checkpoint commit records a past charge and is scoped to its attempt without either live predicate.
 
 One supervisor task per worker polls every `worker.authority_seconds` for all its running attempts in one transaction, whose statements do not grow with their number. It reads cancellation and each run's authority without locks, and extends from database time the leases with no more than two thirds left. An extension proves the predicate with the attempt row locked and skips a row another transaction holds, so a poll never waits on an execution's own writes; a skipped lease stays due for the next poll. Planning an attempt checks the same authority before execution starts: the workspace is not archived, the principal is active and its current grants allow the frozen authority to run the run. A cancellation request stops execution with a cancelled outcome. An authority check that fails for any reason other than `unavailable` fails the run with `authority_revoked`; `unavailable` fails the poll, which then extends nothing. A renewal not confirmed within one interval has failed; once less than a third of the lease remains unrenewed, new paid calls are refused and the attempt is cancelled, and the run recovers after its lease expires.
 
@@ -342,6 +355,66 @@ Output larger than `worker.output_bytes` fails the run with `payload_too_large`.
 **Service tools.** The Service's own agent tools, `publish_asset` ([04](04-resources.md#uploads-and-assets)) and the async subagent tools ([child runs](#child-runs)), act under the run's principal and authority. A refused operation fails only its tool call, which the model reads and can recover from; an `unavailable` dependency ends the attempt, and a later attempt retries. Platform tools ([04](04-resources.md#agent-composer)) are HTTP operations under the Run credential and return the response as the tool result.
 
 When a worker drains for shutdown, each attempt yields at its next model boundary (`yield_reason = handoff`), where the in-flight request can simply be sent again; the drain waits up to `worker.drain_seconds`. A wait for mounts yields at once and a wait for children returns early, so the attempt reaches its next boundary. A yielded run is immediately due and spends no attempt.
+
+## Retained tool executions
+
+Harness owns the actual invocation, coroutine and native process handle. Each worker holds one Harness tool execution runtime across its attempts; Service supplies durable storage, independent owner leases, Thread-wide ordering and completion delivery. Releasing the foreground wait returns an execution receipt while the original invocation continues. Completing or handing off a Run does not finish its retained tools, and later Runs may execute on any worker.
+
+A retained CodeAct execution is the whole original evaluation, including nested awaits. Its runtime bindings and clients remain on the admitting worker until cleanup finishes. Explicit CodeAct `store`/`load`/`forget` values have one PostgreSQL owner per Thread; writes survive Run checkpoint changes and later evaluation failure. Temporary interpreter bindings remain local. A later Run never replaces shared values with a stale checkpoint snapshot.
+
+### Ownership and lifetime
+
+Admission durably records the invocation under the current Attempt lease before effects start. Thereafter, only its original worker incarnation and secret lease may publish progress or a terminal result. Its renewable lease is independent of the originating Run's status. Dependent calls recheck current principal authority against the original accepted ceiling, cancellation and the retained lease. The worker renews leases while cancellation cleanup is running. New calls are refused after cancellation, revocation or lease loss; accepted effects may already have happened. Cancellation and principal revocation still permit the original invocation's bounded process termination, wait and release while its retained lease remains valid. Cleanup does not authorize new effects, another owner, or an expired lease.
+
+Only locally active invocations, including their cleanup and terminal publication, renew owner leases. Each invocation keeps its own last-confirmed lease deadline; a successful heartbeat for other calls cannot extend it. Missing, expired or reconciled ownership triggers cancellation and bounded worker fencing. Exhausted terminal-publication retries stop new worker admission and renewal of the locally finished call, allowing durable owner-loss reconciliation. A known initial admission rejection creates no durable execution and releases only that local admission; uncertain storage outcomes remain fail-closed.
+
+| Boundary                                     | Retained execution behavior                                                                                                                                            |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foreground wait ends or input steers the Run | The original task continues; the receipt is not a result                                                                                                               |
+| Originating Run completes or hands off       | Its retained resources and calls remain live                                                                                                                           |
+| Originating Run is interrupted               | Request best-effort cancellation of its retained calls; late results remain readable without waking the conversation                                                   |
+| A later Run is interrupted                   | Cancel that Run's calls, not tools from older Runs                                                                                                                     |
+| Explicit execution cancellation              | Record the request; terminal status follows actual completion and cleanup                                                                                              |
+| Worker shutdown                              | Natural-completion grace, then bounded cancellation/finalization and forced process exit if cleanup cannot finish ([09](09-runtime.md#startup-readiness-and-shutdown)) |
+| Owner lease expires                          | Reconcile to `lost` with unknown effects; never migrate or replay the original invocation                                                                              |
+
+An execution retains its frozen Environment mounts as active use until terminal publication after native cleanup, or owner-loss reconciliation. Cancellation acceptance alone cannot release a mount. Host clients, Toolsets, Environment execution scopes and nested bindings close only when all retained users release them.
+
+Archiving a Thread requests cancellation of every nonterminal retained execution in that Thread, including calls from older completed Runs. Archive and initial admission serialize on the Thread lock, so a late admission cannot escape cancellation.
+
+A Thread's invocation ordering spans workers and attempts. A sequential call waits for all earlier active invocations; a later ordinary call waits for earlier sequential ones. Ordinary calls may otherwise overlap. A retained call stays `queued` while waiting for these barriers and becomes `running` only when dispatch may begin. Recovery recognizes admitted tool-call identities and returns their retained receipt or outcome instead of replaying them, even when the Run checkpoint still shows a pending call.
+
+### Shell control
+
+A later Run addresses the existing execution by exact Thread and execution ID. The caller's current frozen Environment mounts and current execution permissions authorize each inspect, poll, input or signal operation. The original Run's mount ceiling does not become a second caller ceiling. The original owner separately proves its retained lease and target identity before dispatching to the native handle; it does not reopen the process or re-enter an expired originating Run guard. Caller guards surround remote dispatch. Routing uses bounded, single-send requests ([09](09-runtime.md#redis)); an uncertain mutation reports an unknown outcome and is never resent automatically. An absent owner transport reports unavailable with `dispatch_stage = pre_dispatch`, rather than claiming that a live execution has settled.
+
+The owning worker coalesces its existing Shell observations into a bounded Redis output cache, reading from the last observed byte offsets and publishing new bounded blocks with capture metadata about once per second. Unchanged observations refresh expiry without resending output. Both byte count and block count are bounded; skipped publication intervals merge deltas within those bounds. Metadata and changed blocks become visible atomically. Lost cache keys are reseeded from the bounded owner-local window. Publication runs independently of invocation and owner-lease renewal. Cross-worker description, inspection and zero-time output polls use the cache after checking current DB eligibility and caller permissions. Cache misses, expiry and uncovered offsets fall back to the original owner's read path; input, signal and positive-time waits use the owner path directly. Original byte offsets and capture evidence survive caching, including retained-range gaps and unknown producer counts. Cached output neither acknowledges result delivery nor changes execution state. DB terminal state takes precedence over stale cache entries; final results retain the object-storage publication path below.
+
+### Human observation
+
+Workspace readers inspect executions by exact Thread and execution ID through a read-only observation endpoint. It returns durable execution metadata and a bounded Shell stdout/stderr preview with process phase, cleanup, exit code, producer counts and truncation evidence. Live previews use the existing owner output cache; they never impersonate an active Run or send process controls. Missing or expired cache data and invalid owner leases report unavailable, not completion. Durable terminal state takes precedence over cached observations and uses the immutable retained result when available. Human observation neither mutates execution state nor acknowledges Agent delivery.
+
+### Results and delivery
+
+Terminal publication persists the Harness result, retry prompt and spill content as an immutable object, then commits its pointer and one deduplicated `tool_result` outbox intent for a released foreground call. Inspection of status and result availability does not consume the result. Agent result retrieval and first mailbox delivery acknowledge it. Human HTTP inspection, including result reads and automatic observation refresh, never acknowledges delivery, shortens retention or suppresses the completion notification. The mailbox contains only the execution ID, tool name and status; full errors and retry prompts remain in the retained result. Recovery and late foreground release reuse the existing outbox intent without resetting an active claim or settled delivery. Delivery requires a current outbox claim, participates in inbox capacity, and appends at most once. A full inbox defers delivery without acknowledging it. Normal acceptance determines whether a hint steers active work or starts a successor; paused and waiting Threads retain their ordinary rules. An archived Thread or interrupted origin suppresses automatic continuation.
+
+Results expire at the earlier of completion plus `tool_executions.max_retention_seconds` and first delivery plus `tool_executions.delivered_retention_seconds`. Repeated reads do not extend retention. Expired records disappear from public reads; bounded cleanup removes payload bytes while retaining invocation identity evidence against replay. Active executions have no result-expiry deadline. Late usage retains the original Run/Attempt attribution and follows [usage records](07-facts-and-delivery.md#usage-records), without rewriting `usage_at_seal`.
+
+```
+tool_executions
+  id  organization_id  workspace_id  thread_id  run_id  attempt_id  worker_id
+  lease_token_hash  lease_expires_at  status  sequential  record  environment_mounts
+  result_ref NULL  payload_pruned  created_at  completed_at NULL
+  cancel_requested_at NULL  first_delivered_at NULL  expires_at NULL
+  status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'lost')
+  CHECK ((status IN ('queued', 'running')) = (completed_at IS NULL))
+  CHECK ((completed_at IS NULL) = (expires_at IS NULL))
+
+thread_codeact
+  thread_id PRIMARY KEY  values
+```
+
+Thread-scoped list, detail and result queries require `read`; cancellation requires `run`. Lists use newest-first `(created_at, id)` pagination with optional originating Service `run_id` and `active` filters. Views retain Harness execution identity and expose Service Run, Attempt and worker correlation, never lease secrets. Result reads use bounded versioned text fragments. Cancellation returns 202 with the current observation, not proof of termination. The Console inspects these records within existing Thread and Run views. Completion-triggered Runs render as system tool notifications with tool name, status and execution ID, without user attribution or raw envelope JSON.
 
 ## Seal and successor scheduling
 
@@ -401,7 +474,7 @@ Deferred results precede the accompanying user content in the native model reque
 
 **Fork** (`POST …/runs/{run}/fork`) needs a sealed origin (otherwise `conflict` `run_{status}`) whose checkpoint format the Service reads (otherwise `conflict` `checkpoint_incompatible`). It creates a thread in the origin's session with `origin = fork` and the origin thread's `mcp_headers`, and its first entry, atomically under the request key. The new thread shares the origin thread's desired mounts unless `fresh_environments` is set, plus any `environments` the request names ([06](06-environments.md#mounts)), and copies the origin thread's memory mounts plus any `memories` the request names ([11](11-memory.md#mounts)). Forking a waiting run automatically denies inherited approvals with "No decision was given" and fails inherited calls with "No response was given", then incorporates the new message. This is a fork-specific rule requiring no extra parameter, not a resume omission default. It is derived from the immutable origin requests and recorded in the new branch's checkpoint history; recovery does not duplicate incorporated results. It never grants an approval or resolves the original wait. A failed or cancelled origin forks its last checkpoint, with its unfinished tool calls ended interrupted.
 
-**Archive** (`POST …/threads/{thread}/archive`, `run` verb, thread `If-Match`) is final: there is no unarchive or purge, and every fact is kept. Under the thread lock it sets `archived_at`, withdraws pending entries, removes the desired mounts and stops the current run (an accepted run is sealed cancelled; a running run gets a cancellation request). A running run keeps its frozen mounts until it seals. Archived threads refuse submissions, resume, mount changes and header changes (`conflict` `archived`). Repeating archive returns the thread.
+**Archive** (`POST …/threads/{thread}/archive`, `run` verb, thread `If-Match`) is final: there is no unarchive or purge, and every fact is kept. Under the thread lock it sets `archived_at`, withdraws pending entries, removes the desired mounts and stops the current run (an accepted run is sealed cancelled; a running run gets a cancellation request). Archive also requests cancellation of all nonterminal retained tools in the Thread, including tools from older Runs. A running run keeps its frozen mounts until it seals; retained tools keep their own active use until cleanup and terminal publication or owner-loss reconciliation. Archived threads refuse submissions, resume, mount changes and header changes (`conflict` `archived`). Repeating archive returns the thread.
 
 ## Child runs
 

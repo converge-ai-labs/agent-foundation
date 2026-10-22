@@ -4,7 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
@@ -201,7 +201,7 @@ class RemoteServer:
 
 
 @asynccontextmanager
-async def remote(**options: Any) -> AsyncIterator[RemoteServer]:
+async def remote(**options: Any) -> AsyncGenerator[RemoteServer]:
     server = RemoteServer(**options)
     async with serve(server) as url:
         server.url = url
@@ -534,12 +534,6 @@ async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_he
         assert seen["results"] == ["hello"] and server.echoed == ["hello"]
         assert dispatches == [ToolDispatch(created["id"], None, "echo", "call-1")]
         assert server.requests[-1]["x-trace"] == "t1" and server.requests[-1]["x-api-key"] == SECRET
-
-        # A deferred selection shows the model a loader instead of the server's tool definitions.
-        deferred = ConnectionSelection(connection_id=created["id"], defer_loading=True)
-        async with opened(service, [deferred], {}, dispatches) as capabilities:
-            seen = await run_tool(capabilities, "echo", {"text": "unloaded"})
-        assert seen["tools"] == ["load_capability"] and server.echoed == ["hello"]
 
         # A connection disabled during the run refuses the call before it is sent.
         async with opened(service, [selection], {}, dispatches) as capabilities:
@@ -1319,7 +1313,7 @@ class Composio:
 @asynccontextmanager
 async def composio_connection(  # type: ignore[no-untyped-def]
     service, monkeypatch: pytest.MonkeyPatch, *, scheme: str = "OAUTH2", selector: str = "ac_github"
-) -> AsyncIterator[tuple[Composio, dict]]:
+) -> AsyncGenerator[tuple[Composio, dict]]:
     from a13n_harness.providers.connector.composio import catalog, runtime
 
     composio = Composio()
@@ -1542,11 +1536,6 @@ async def test_composio_account_is_set_up_through_hosted_flow_and_runs_its_pinne
         executed = composio.executed[0]
         assert executed["arguments"] == {"title": "Bug"} and executed["connected_account_id"] == "ca_2"
         assert executed["version"] == VERSION
-        # Connector actions are always loaded; only an MCP server's listing is searched.
-        deferred = ConnectionSelection(connection_id=created["id"], defer_loading=True)
-        async with short_session(service.runtime.storage) as session:
-            with pytest.raises(ServiceError, match="applies only to MCP connections"):
-                await validate_selection(session, admin(service), scope(service), deferred)
 
         revoked = await post(service, item + "/revoke", **{"If-Match": etag(connection)})
         assert revoked["status"] == "pending" and revoked["remote_revocation"] == "revoked"

@@ -158,6 +158,17 @@ The complete machine-readable validation schema, including named enum/union defi
 | `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | integer        | minimum=0; maximum=16; default=4                 |
 | `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | integer        | minimum=0; maximum=256; default=16               |
 
+## `tool_executions`
+
+| Setting                                       | Environment variable                                | Type / choices | Constraints and default                     |
+| --------------------------------------------- | --------------------------------------------------- | -------------- | ------------------------------------------- |
+| `tool_executions.max_active`                  | `A13N_TOOL_EXECUTIONS__MAX_ACTIVE`                  | integer        | minimum=1; maximum=1024; default=64         |
+| `tool_executions.foreground_wait_seconds`     | `A13N_TOOL_EXECUTIONS__FOREGROUND_WAIT_SECONDS`     | number         | minimum=0; maximum=300; default=5           |
+| `tool_executions.delivered_retention_seconds` | `A13N_TOOL_EXECUTIONS__DELIVERED_RETENTION_SECONDS` | integer        | minimum=1; maximum=31536000; default=3600   |
+| `tool_executions.max_retention_seconds`       | `A13N_TOOL_EXECUTIONS__MAX_RETENTION_SECONDS`       | integer        | minimum=1; maximum=31536000; default=86400  |
+| `tool_executions.shutdown_grace_seconds`      | `A13N_TOOL_EXECUTIONS__SHUTDOWN_GRACE_SECONDS`      | number         | minimum=0; maximum=3600; default=300        |
+| `tool_executions.finalization_seconds`        | `A13N_TOOL_EXECUTIONS__FINALIZATION_SECONDS`        | number         | maximum=300; exclusiveMinimum=0; default=10 |
+
 ## `run_search`
 
 | Setting                           | Environment variable                    | Type / choices | Constraints and default                        |

@@ -3,30 +3,17 @@ title: ToolSearch 工具分组
 description: 通过搜索工具和调用工具提供大型工具集合，让模型只需查看简短的工具分组列表。
 ---
 
-ToolSearch 将本地工具分组，支持原生或代理发现。代理模式提供三个面向模型的工具：`discover_tools`、`describe_tool` 和 `call_tool`。模型先浏览简短候选，按需读取所选工具的完整定义，再用参数对象调用工具。
+ToolSearch 将选中的本地和 MCP 工具放到固定代理后面。默认普通工具保持直接可见；启用分组后，模型通过 `discover_tools`、`describe_tool`、`call_tool`、`list_tools` 和 `list_tool_groups` 发现、浏览和调用成员。发现不会把成员 schema 加入后续模型请求。
 
-工具通过当前 `ToolManager`、原 Toolset 和 Harness 执行边界执行，由这条路径处理验证、策略、凭据、钩子、结果和用量。
+工具通过当前 `ToolManager`、原 Toolset 和 Harness 执行边界执行，保留参数验证、策略、凭据、钩子、结果和用量处理。
 
-## 选择原生工具搜索
+## 使用固定代理
 
-通过 `ToolSearchCapability` 或 `ToolSearchPlan` 的 `config` 选择模型发现和调用分组工具的方式：
+`ToolSearchCapability` 和 `ToolSearchPlan` 默认使用 `ProxyToolSearchConfig()`，也可使用别名 `ToolSearchConfig()`。Host 配置可省略 `config.mode`，或设为 `proxy`。控制工具的 schema、描述和生成指令不包含动态目录，有利于模型提示缓存。MCP 来源使用 `native=False, local=True`。
 
-- `ProxyToolSearchConfig()`（默认）：使用 `discover_tools`、`describe_tool` 和 `call_tool`。在此分支配置控制工具名称和发现限制。
-- `NativeToolSearchConfig(strategy=None)`：使用提供商原生工具搜索。省略 `strategy` 或设为 `None` 时使用提供商默认值，也可选择 `"bm25"` 或 `"regex"`。提供商适配器验证所选策略的支持情况。分组工具标记为 `defer_loading=True`，保留 `crm__customer_name` 等名称。模型发现工具后直接调用，采用标准用量统计和审批/恢复流程。来源 Toolset 指令保持原有行为。
+迁移旧配置时，将 `NativeToolSearchConfig` 替换为 `ProxyToolSearchConfig`，删除 `strategy`，并把 `mode: native` 改为 `mode: proxy`。已发现工具始终通过 `call_tool` 调用。需要审批或客户端续传的工具保持直接暴露，使用其原有恢复协议。
 
-```python
-from a13n_harness.capabilities import NativeToolSearchConfig, ToolSearchCapability
-
-search = ToolSearchCapability(groups=groups, config=NativeToolSearchConfig(strategy="bm25"))
-```
-
-Host 配置使用 `tool_search.config.mode: native|proxy`。每个分支只接受自己的设置。
-
-原生模式要求模型及协议支持原生工具搜索。不支持的模型会触发 `native_tool_search_unsupported` 错误；Harness 不会回退到其他搜索模式。工具在本地执行，并遵循已有权限。两种模式下，MCP 来源均配置为 `native=False, local=True`。
-
-两种模式均支持 [CodeAct 编排](#use-with-codeact)。原生模式的工具在发现后可调用；代理模式还允许在一次 runner 调用中完成搜索和调用。两种模式都要求来源声明类型化 CodeAct 策略。
-
-以下示例使用默认代理模式。
+代理支持 [CodeAct 编排](#use-with-codeact)，可在一次 runner 调用中发现并调用工具；目标仍须声明类型化 CodeAct 策略。
 
 ## 为 Toolset 分组
 
@@ -91,9 +78,9 @@ agent = HarnessBuilder().build(
 
 ## 指令与动态参数
 
-控制工具描述只放当前组摘要。来源 Toolset 指令随完整定义返回，不提前填满每个模型请求。摘要搜索不读取这些指令，也不复制 schema。独立的 Capability 级指令保留原生行为。
+来源 Toolset 指令随完整定义返回。摘要列表不读取这些指令，也不复制 schema。独立的 Capability 级指令保留原有行为。
 
-准备后的控制工具包含当前 `group` 枚举。完整发现和详情查询在来源准备和 Harness 工具集合解析后返回当前成员 schema，使不可用或被替代工具不能通过旧索引继续调用。`call_tool` 的 schema 保持简洁，不包含所有成员参数的联合类型。
+控制工具不包含动态 `group` 枚举。完整发现、列表和详情查询读取当前准备后的成员 schema；`call_tool` 始终保持固定参数对象结构。
 
 生成的指令告诉模型：
 
@@ -121,6 +108,12 @@ agent = HarnessBuilder().build(
 
 使用相同 query、group 和 detail 跟随 `next_offset`；字节预算可能让一页少于请求条数。offset 基于当前目录，不是快照或持久游标；目录变化可能使分页位置移动。关闭 Toolset 指令也会关闭生成的引导和完整定义中的来源指令。
 
+## 获取完整列表
+
+调用 `list_tool_groups` 获取可用分组及工具数量，再调用 `list_tools` 枚举工具。两者都返回 `total` 和 `next_offset`；沿用参数并持续请求下一页，直到 `next_offset` 为 null。
+
+`list_tools` 可按 `group` 筛选，`detail` 为 `summary`（默认）或 `full`。完整模式返回全部描述、输入/返回 schema 和来源指令，不进行相关性过滤。列表受数量和字节限制；无法单独放入一页的完整定义会明确报错，而不是截断。分页针对当前目录，目录变化可能改变页边界。
+
 ## 配置名称与发现限制
 
 ```python
@@ -132,6 +125,8 @@ proxy = ToolSearchCapability(
         search_name="find_operations",
         describe_name="describe_operation",
         call_name="invoke_operation",
+        list_name="list_operations",
+        groups_name="list_domains",
         max_results=10,
         max_search_bytes=32_768,
     )
@@ -184,8 +179,6 @@ Host 提供 `tenant_id` 身份声明。每次逻辑 Run 解析一次 headers；�
 选择 `native=False, local=True`。提供方原生执行，包括自动原生回退，不是代理目标。不要将分组来源与 `defer_loading=True` 组合；代理发现和原生延迟加载是不同接口。
 
 ## 与 CodeAct 配合
-
-原生模式下，先在 CodeAct 外发现工具。具有使用资格且已发现的工具随后会出现在两个 runner 的目录中，可直接调用，例如 `await crm__customer_name(customer_id=42)`。尚未发现的工具保持隐藏且不可调用。来源必须声明类型化 CodeAct 策略；发现本身不会授予使用资格。
 
 以下示例使用代理模式。
 

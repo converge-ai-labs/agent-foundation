@@ -15,6 +15,8 @@ import type { Schema } from "../../shared/api";
 import { TraceDetail } from "./detail";
 import { TracesPage } from "./page";
 import { UNKNOWN } from "../../shared/unknown";
+import { mockIntersections } from "../../../tests/intersection-observer";
+const intersect = mockIntersections();
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({
@@ -208,6 +210,52 @@ it("loads the overview alongside the root and fetches full content only for the 
     expect(screen.queryByText("Private child input")).toBeNull(),
   );
   expect(http.GET.mock.calls.filter(([path]) => isSpan(path))).toHaveLength(1);
+});
+
+it("resets visible content and raw mode when switching cached observations", async () => {
+  const user = userEvent.setup();
+  const input = Array.from({ length: 12 }, (_, index) => ({
+    role: "user",
+    content: `Retained message ${index}`,
+  }));
+  const children = ["first-child", "second-child"].map((id) => ({
+    ...observation(id, "root"),
+    input,
+  }));
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return overviewResponse(children);
+    if (isSpan(path))
+      return response(
+        children.find((child) => child.id === options.params.path.span_id),
+      );
+    return response(trace());
+  });
+  const cache = mount(<TraceDetail traceId="trace-1" />);
+  cache.setQueryDefaults(["trace-observation"], { staleTime: Infinity });
+  await user.click(
+    await screen.findByRole("treeitem", { name: /^first-child/ }),
+  );
+  await screen.findByText("Retained message 0");
+  intersect(document.querySelector('[data-content-chunk="11"]')!, true);
+  intersect(document.querySelector('[data-content-chunk="0"]')!, false);
+  expect(screen.getByText("Retained message 11")).toBeTruthy();
+  const scroll = screen
+    .getByText("Retained message 11")
+    .closest("aside")!
+    .querySelector<HTMLElement>(".a13n-scrollbar")!;
+  scroll.style.overflowY = "auto";
+  scroll.scrollTop = 2000;
+  await user.click(screen.getByRole("treeitem", { name: /^second-child/ }));
+  await screen.findByText("Retained message 0");
+  expect(screen.queryByText("Retained message 11")).toBeNull();
+  expect(scroll.scrollTop).toBe(0);
+  await user.click(screen.getByRole("button", { name: "Raw JSON" }));
+  expect(screen.getByRole("button", { name: "Preview" })).toBeTruthy();
+  await user.click(screen.getByRole("treeitem", { name: /^first-child/ }));
+  await screen.findByText("Retained message 0");
+  expect(screen.getByRole("button", { name: "Raw JSON" })).toBeTruthy();
+  expect(http.GET.mock.calls.filter(([path]) => isSpan(path))).toHaveLength(2);
 });
 
 it("retries a selected observation failure without losing the loaded call tree", async () => {

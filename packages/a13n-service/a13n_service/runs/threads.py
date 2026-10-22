@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import conflict, not_found
@@ -52,6 +53,7 @@ def new_thread(
     session_row: SessionRow,
     *,
     mcp_headers: McpHeaders,
+    execution: ExecutionOverride | None = None,
     message_history: MessageHistory | None = None,
     origin: str = "new",
     origin_thread_id: str | None = None,
@@ -73,6 +75,7 @@ def new_thread(
         subagent=subagent,
         message_history=HISTORY.dump_python(message_history or [], mode="json"),
         mcp_headers=dict(mcp_headers),
+        execution=execution.model_dump(exclude_none=True) if execution is not None else None,
         labels={},
     )
 
@@ -142,6 +145,10 @@ async def update(
         require_match(if_match, thread.id, thread.version)
         if body.labels is not None:
             thread.labels = dict(body.labels)
+        if "execution" in body.model_fields_set:
+            require_open(thread)
+            current = ExecutionOverride.model_validate(thread.execution or {})
+            thread.execution = current.patch(body.execution).model_dump(exclude_none=True) if body.execution else None
         if body.mcp_headers is not None:
             require_open(thread)
             await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)

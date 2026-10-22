@@ -3315,6 +3315,91 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/threads/{thread_id}/tool-executions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Tool Executions */
+    get: operations["list_tool_executions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Tool Execution */
+    get: operations["get_tool_execution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Tool Execution */
+    post: operations["cancel_tool_execution"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Observe Tool Execution */
+    get: operations["observe_tool_execution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Tool Execution Result */
+    get: operations["get_tool_execution_result"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/toolsets": {
     parameters: {
       query?: never;
@@ -4249,6 +4334,7 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
        * @default
@@ -4330,6 +4416,7 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
        * @default
@@ -5476,16 +5563,11 @@ export interface components {
     };
     /**
      * ConnectionSelection
-     * @description An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.
+     * @description An agent's selected tools and permissions.
      */
     ConnectionSelection: {
       /** Connection Id */
       connection_id: string;
-      /**
-       * Defer Loading
-       * @default false
-       */
-      defer_loading?: boolean;
       /** @default inherit */
       permission?: components["schemas"]["ToolPermissionSetting"];
       /** Permissions */
@@ -6230,7 +6312,7 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "message" | "child_result";
+      kind: "message" | "child_result" | "tool_result";
       options: components["schemas"]["RunOptions-Output"];
       /** Origin Run Id */
       origin_run_id: string | null;
@@ -6563,6 +6645,88 @@ export interface components {
       span_ids?: string[];
       /** Trace Id */
       trace_id: string;
+    };
+    /** ExecutionObservation */
+    ExecutionObservation: {
+      execution: components["schemas"]["ExecutionView"];
+      shell?: components["schemas"]["ShellPreview"] | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "live" | "retained" | "unavailable";
+    };
+    /**
+     * ExecutionOverride
+     * @description Sparse choices: null inherits; Thread PATCH distinguishes omission from null.
+     */
+    ExecutionOverride: {
+      steering?: components["schemas"]["Steering"] | null;
+      tools?: components["schemas"]["ToolExecutionOverride"] | null;
+    };
+    /** ExecutionPage */
+    ExecutionPage: {
+      /** Items */
+      items: components["schemas"]["ExecutionView"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /**
+     * ExecutionView
+     * @description Run identity is the Service Run; attempt and worker identify the retained owner.
+     */
+    ExecutionView: {
+      /** Attempt Id */
+      attempt_id: string;
+      /** Cancel Requested At */
+      cancel_requested_at: string | null;
+      /** Completed At */
+      completed_at?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Delivery Acknowledged
+       * @default false
+       */
+      delivery_acknowledged?: boolean;
+      /** Error */
+      error?: string | null;
+      /** Execution Id */
+      execution_id: string;
+      /** Expires At */
+      expires_at: string | null;
+      /** First Delivered At */
+      first_delivered_at: string | null;
+      /**
+       * Foreground Released
+       * @default false
+       */
+      foreground_released?: boolean;
+      /**
+       * Result Available
+       * @default false
+       */
+      result_available?: boolean;
+      /** Run Id */
+      run_id: string;
+      /**
+       * Status
+       * @default queued
+       * @enum {string}
+       */
+      status?:
+        "queued" | "running" | "succeeded" | "failed" | "cancelled" | "lost";
+      /** Thread Id */
+      thread_id: string;
+      /** Tool Call Id */
+      tool_call_id: string;
+      /** Tool Name */
+      tool_name: string;
+      /** Worker Id */
+      worker_id: string;
     };
     /** Export */
     Export: {
@@ -8486,19 +8650,6 @@ export interface components {
       /** Working Directory */
       working_directory: string | null;
     };
-    /**
-     * NativeToolSearchConfig
-     * @description Provider-native discovery; omitted strategy uses the provider default.
-     */
-    NativeToolSearchConfig: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      mode: "native";
-      /** Strategy */
-      strategy?: ("bm25" | "regex") | null;
-    };
     /** NetworkInterfaceMetrics */
     NetworkInterfaceMetrics: {
       /** Identity */
@@ -8539,6 +8690,7 @@ export interface components {
       delivery?: components["schemas"]["Delivery"];
       /** @default [] */
       environments?: components["schemas"]["InitialMounts"];
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Kind
        * @default message
@@ -8843,6 +8995,17 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** OutputPreview */
+    OutputPreview: {
+      /** Observation Closed */
+      observation_closed: boolean;
+      /** Produced Bytes */
+      produced_bytes: number | null;
+      /** Text */
+      text: string;
+      /** Truncated */
+      truncated: boolean;
+    };
     /**
      * OutputSpec
      * @description Plain text without a schema, one structured output, or at least two named variants.
@@ -9142,6 +9305,19 @@ export interface components {
       /** Status */
       status: string;
     };
+    /** ProcessStatusProjection */
+    ProcessStatusProjection: {
+      /** Cleanup */
+      cleanup: string | null;
+      /** Exit Code */
+      exit_code: number | null;
+      /** Phase */
+      phase: string;
+      /** Signal */
+      signal: string | null;
+      /** Termination Reason */
+      termination_reason: string | null;
+    };
     /** Profile */
     Profile: {
       /**
@@ -9383,42 +9559,6 @@ export interface components {
       };
       /** Name */
       name?: string | null;
-    };
-    /**
-     * ProxyToolSearchConfig
-     * @description Names and bounded discovery settings for one Agent's proxy surface.
-     */
-    ProxyToolSearchConfig: {
-      /**
-       * Call Name
-       * @default call_tool
-       */
-      call_name?: string;
-      /**
-       * Describe Name
-       * @default describe_tool
-       */
-      describe_name?: string;
-      /**
-       * Max Results
-       * @default 10
-       */
-      max_results?: number;
-      /**
-       * Max Search Bytes
-       * @default 32768
-       */
-      max_search_bytes?: number;
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      mode: "proxy";
-      /**
-       * Search Name
-       * @default discover_tools
-       */
-      search_name?: string;
     };
     /** Query */
     Query: {
@@ -9741,6 +9881,7 @@ export interface components {
      */
     "RunOptions-Input": {
       configuration?: components["schemas"]["RunConfiguration-Input"] | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -9754,6 +9895,7 @@ export interface components {
      */
     "RunOptions-Output": {
       configuration?: components["schemas"]["RunConfiguration-Output"] | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -10393,6 +10535,12 @@ export interface components {
        */
       overwrite?: boolean;
     };
+    /** ShellPreview */
+    ShellPreview: {
+      status: components["schemas"]["ProcessStatusProjection"];
+      stderr: components["schemas"]["OutputPreview"];
+      stdout: components["schemas"]["OutputPreview"];
+    };
     /** Skill */
     Skill: {
       /** Archived At */
@@ -10844,6 +10992,8 @@ export interface components {
       | "unsupported"
       | "not_ready"
       | "capacity";
+    /** @enum {string} */
+    Steering: "boundary" | "immediate";
     /**
      * SubagentOverride
      * @description Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.
@@ -11197,6 +11347,7 @@ export interface components {
     };
     /** ThreadUpdate */
     ThreadUpdate: {
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -11214,6 +11365,7 @@ export interface components {
       created_at: string;
       /** Current Run Id */
       current_run_id: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Id */
       id: string;
       /** Labels */
@@ -11292,6 +11444,13 @@ export interface components {
         "inherit" | "allow" | "ask" | "deny" | "review"
       )[];
     };
+    /** ToolExecutionOverride */
+    ToolExecutionOverride: {
+      /** Foreground Wait Seconds */
+      foreground_wait_seconds?: number | null;
+      /** Mode */
+      mode?: ("inline" | "auto") | null;
+    };
     /** ToolInfo */
     ToolInfo: {
       /** Annotations */
@@ -11361,11 +11520,60 @@ export interface components {
         [key: string]: components["schemas"]["ToolSearchGroup"];
       };
     };
-    ToolSearchConfig:
-      | components["schemas"]["ProxyToolSearchConfig"]
-      | components["schemas"]["NativeToolSearchConfig"];
+    /**
+     * ProxyToolSearchConfig
+     * @description Names and bounded discovery settings for one Agent's proxy surface.
+     */
+    ToolSearchConfig: {
+      /**
+       * Call Name
+       * @default call_tool
+       */
+      call_name?: string;
+      /**
+       * Describe Name
+       * @default describe_tool
+       */
+      describe_name?: string;
+      /**
+       * Groups Name
+       * @default list_tool_groups
+       */
+      groups_name?: string;
+      /**
+       * List Name
+       * @default list_tools
+       */
+      list_name?: string;
+      /**
+       * Max Results
+       * @default 10
+       */
+      max_results?: number;
+      /**
+       * Max Search Bytes
+       * @default 32768
+       */
+      max_search_bytes?: number;
+      /**
+       * Mode
+       * @default proxy
+       * @constant
+       */
+      mode?: "proxy";
+      /**
+       * Search Name
+       * @default discover_tools
+       */
+      search_name?: string;
+    };
     /** ToolSearchGroup */
     ToolSearchGroup: {
+      /**
+       * Capabilities
+       * @default []
+       */
+      capabilities?: ("environment" | "web")[];
       /**
        * Connections
        * @default []
@@ -11457,7 +11665,13 @@ export interface components {
       type: ("langfuse" | "logfire") | null;
     };
     /** @enum {string} */
-    Trigger: "input" | "queued" | "resume" | "child_result" | "spawned";
+    Trigger:
+      | "input"
+      | "queued"
+      | "resume"
+      | "child_result"
+      | "tool_result"
+      | "spawned";
     /** TypedQuery */
     TypedQuery: {
       /**
@@ -19690,6 +19904,157 @@ export interface operations {
         };
         content: {
           "text/event-stream": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_tool_executions: {
+    parameters: {
+      query?: {
+        run_id?: string | null;
+        active?: boolean | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  cancel_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  observe_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionObservation"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_tool_execution_result: {
+    parameters: {
+      query?: {
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];

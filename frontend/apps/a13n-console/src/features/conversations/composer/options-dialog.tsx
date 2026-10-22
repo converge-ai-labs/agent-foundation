@@ -18,7 +18,13 @@ import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { allPages, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
-import { jsonObject, runOverride, TextAreaField } from "../../../shared/forms";
+import {
+  ExecutionFields,
+  executionOverride,
+  jsonObject,
+  runOverride,
+  TextAreaField,
+} from "../../../shared/forms";
 import { environmentTemplates } from "../../environments/api";
 import { WorkingDirectory } from "../../environments/working-directory";
 import { modelApi } from "../../models/api";
@@ -95,7 +101,9 @@ export function useRunOptions() {
     media?: Partial<Record<MediaKind, string>>;
   }>({});
   const [advanced, setAdvanced] = useState("{}");
+  const [execution, setExecution] = useState<Schema["ExecutionOverride"]>({});
   const values = {
+    execution,
     agent,
     revision,
     model,
@@ -125,7 +133,10 @@ export function useRunOptions() {
       setMemories(saved.memories);
       setLabels(saved.labels);
       setAdvanced(saved.advanced);
+      setExecution(saved.execution);
     },
+    execution,
+    setExecution,
     mediaUnderstanding,
     setMediaUnderstanding,
     overrideInstructions,
@@ -169,12 +180,15 @@ export function useRunOptions() {
           : {}),
         ...(overrideInstructions ? { instructions } : {}),
       });
+      const policy = executionOverride(execution);
+      const runOptions = {
+        ...(Object.keys(override).length ? { overrides: override } : {}),
+        ...(policy ? { execution: policy } : {}),
+      };
       return {
         agent_id: agent || undefined,
         agent_revision_id: revision || undefined,
-        ...(Object.keys(override).length
-          ? { options: { overrides: override } }
-          : {}),
+        ...(Object.keys(runOptions).length ? { options: runOptions } : {}),
         ...(memories.length ? { memories } : {}),
         ...(environment === "inherit"
           ? {}
@@ -383,6 +397,12 @@ export function RunOptionsDialog({
             rows={4}
           />
         )}
+        <DisclosureSection title={t("Execution policy")}>
+          <ExecutionFields
+            value={options.execution}
+            onChange={options.setExecution}
+          />
+        </DisclosureSection>
         <DisclosureSection title={<>{t("Advanced")}</>}>
           <div className={styles.optionFields}>
             <TextAreaField

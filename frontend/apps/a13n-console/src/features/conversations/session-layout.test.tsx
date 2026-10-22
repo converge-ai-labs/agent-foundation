@@ -91,7 +91,7 @@ it("continues the unique root in Chat even when child activity is listed first",
   show([child, fork, root], "/sessions/ses_1?view=chat");
   expect(
     await screen.findByText(
-      "/sessions/ses_1/threads/thr_root/runs/run_root?view=chat",
+      "/sessions/ses_1/threads/thr_root/runs/run_root?view=chat&follow=latest",
     ),
   ).toBeTruthy();
 });
@@ -105,7 +105,7 @@ it("asks which history to open when more than one root exists", async () => {
     .click(screen.getByRole("link", { name: /thr_other/ }));
   expect(
     await screen.findByText(
-      "/sessions/ses_1/threads/thr_other/runs/run_other?view=chat",
+      "/sessions/ses_1/threads/thr_other/runs/run_other?view=chat&follow=latest",
     ),
   ).toBeTruthy();
 });
@@ -121,11 +121,11 @@ it("offers explicit histories instead of guessing when no root is available", as
 it.each([
   [
     "/sessions/ses_1?view=debug",
-    "/sessions/ses_1/threads/thr_child/runs/run_child?view=debug",
+    "/sessions/ses_1/threads/thr_child/runs/run_child?view=debug&follow=latest",
   ],
   [
     "/sessions/ses_1/threads/thr_fork?view=chat",
-    "/sessions/ses_1/threads/thr_fork/runs/run_fork?view=chat",
+    "/sessions/ses_1/threads/thr_fork/runs/run_fork?view=chat&follow=latest",
   ],
   [
     "/sessions/ses_1/threads/thr_root/runs/run_old?view=debug",
@@ -152,7 +152,9 @@ it("loads only the selected Schedule Thread when opening historical output", asy
     "sch_1",
   );
   expect(
-    await screen.findByText("/sessions/ses_1/threads/thr_root/runs/run_root"),
+    await screen.findByText(
+      "/sessions/ses_1/threads/thr_root/runs/run_root?follow=latest",
+    ),
   ).toBeTruthy();
   expect(requested).toContain("/api/v1/threads/thr_root");
   expect(requested).not.toContain("/api/v1/threads");

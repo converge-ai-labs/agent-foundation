@@ -251,7 +251,7 @@ export function NewConversation() {
                     session_id: run.session_id,
                     thread_id: run.thread_id,
                     run_id: run.id,
-                  })
+                  }) + "?follow=latest"
                 : `${basePath}/sessions/${thread.session_id}/threads/${thread.id}`,
             );
           }}
@@ -417,7 +417,10 @@ export function ThreadLayout() {
       ) : runId ? (
         <Outlet />
       ) : selected ? (
-        <Navigate to={`runs/${selected}${search}`} replace />
+        <Navigate
+          to={`runs/${selected}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
+          replace
+        />
       ) : (
         thread.data && (
           <div className={styles.emptyThread}>

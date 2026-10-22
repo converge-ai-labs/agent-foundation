@@ -236,14 +236,11 @@ async def validate_selection(
 ) -> str:
     """The type of a connection an agent revision of the workspace may select with these tools.
 
-    The connection must be enabled. Deferred loading is tool search over an MCP server's listing; connector
-    actions are always loaded.
+    The connection must be enabled.
     """
     row = await find_row(session, actor, ConnectionRow, scope, selection.connection_id, "read")
     if not row.enabled:
         raise disabled("connection", row.id)
-    if selection.defer_loading and row.type != "mcp":
-        raise invalid("defer_loading", "applies only to MCP connections")
     exposed = exposed_tools(parse_config(row.type, row.config))
     if selection.tools is not None and exposed is not None and not set(selection.tools) <= set(exposed):
         raise invalid("connections", f"{row.id} does not expose every selected tool")

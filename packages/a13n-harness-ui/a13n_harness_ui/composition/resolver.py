@@ -34,7 +34,12 @@ from a13n_harness_ui.configuration import (
     ModelResource,
     canonical_digest,
 )
-from a13n_harness_ui.configuration.models import CapabilitySelection, MarkdownSubagentSelection, SidekickConfiguration
+from a13n_harness_ui.configuration.models import (
+    DEFAULT_CAPABILITY_KEYS,
+    CapabilitySelection,
+    MarkdownSubagentSelection,
+    SidekickConfiguration,
+)
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
@@ -421,7 +426,9 @@ class AgentCompositionResolver:
             tools=agent.tools,
             tool_search=(
                 agent.tool_search.selected(
-                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
+                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids),
+                    harness_plugins=plugin_ids,
+                    capabilities=tuple(item.capability for item in capabilities),
                 )
                 if agent.tool_search is not None
                 else None
@@ -540,7 +547,9 @@ class AgentCompositionResolver:
             tools=parent.tools if child.tools is None else child.tools,
             tool_search=(
                 parent.tool_search.selected(
-                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
+                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids),
+                    harness_plugins=plugin_ids,
+                    capabilities=tuple(item.capability for item in capabilities),
                 )
                 if parent.tool_search is not None
                 else None
@@ -725,7 +734,7 @@ class AgentCompositionResolver:
                     guardian_credits=guardian_credits,
                 )
             )
-        for default in ("file_context", "working_state", "user_interaction", "codeact"):
+        for default in DEFAULT_CAPABILITY_KEYS:
             # An invalid explicit selection is skipped, never replaced with broader defaults.
             if default not in disabled and not any(item.capability == default for item in agent.capabilities):
                 recipes.append(

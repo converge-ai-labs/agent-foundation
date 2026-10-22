@@ -371,3 +371,35 @@ async def test_completion_migration_preserves_submission_and_refuses_lossy_downg
         with migration_connection(database, OSS) as config:
             command.downgrade(config, "63a5d892fc55")
     check(database, OSS)
+
+
+@pytest.mark.anyio
+async def test_retained_execution_revision_roundtrip_and_refuses_data_loss(database, runtime, tenant):
+    from a13n_service.runs.tables import ThreadCodeActRow
+
+    before_rules, before_objects = rows(database, RULES), rows(database, OBJECTS)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "82c26d512c94")
+    assert rows(database, "SELECT to_regclass('public.tool_executions')::text") == [(None,)]
+    upgrade(database, OSS)
+    assert rows(database, RULES) == before_rules
+    assert rows(database, OBJECTS) == before_objects
+    async with transaction(runtime.storage) as session:
+        parent = SessionRow(
+            id="ses_retained_migration",
+            organization_id=tenant.organization_id,
+            workspace_id=tenant.workspace_id,
+            created_by_id=tenant.principal_id,
+            labels={},
+        )
+        session.add(parent)
+        await session.flush()
+        thread = new_thread(parent, mcp_headers={}, message_history=[])
+        session.add(thread)
+        await session.flush()
+        session.add(ThreadCodeActRow(thread_id=thread.id, values={"saved": 42}))
+    with pytest.raises(RuntimeError, match="Retained execution data prevents downgrade"):
+        with migration_connection(database, OSS) as config:
+            command.downgrade(config, "82c26d512c94")
+    assert rows(database, "SELECT values::text FROM thread_codeact") == [('{"saved": 42}',)]
+    check(database, OSS)

@@ -9,7 +9,7 @@ import ipaddress
 import json
 import os
 import secrets
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -531,7 +531,7 @@ def create_webui(
     file_transfers = FileTransfers()
 
     @asynccontextmanager
-    async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
         nonlocal owner, allowed_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             source = await opened.current_configuration()

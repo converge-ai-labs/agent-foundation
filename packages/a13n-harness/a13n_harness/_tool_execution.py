@@ -139,13 +139,7 @@ class RunToolExecutions:
         return await observe(0)
 
     def receipt(self, record: ToolExecutionRecord) -> dict[str, Any]:
-        value = {
-            "type": "tool_execution_receipt",
-            "execution_id": record.execution_id,
-            "tool_name": record.tool_name,
-            "status": record.status,
-            "message": "The original invocation is owned by the runtime. Use tool_execution_result or tool_execution_wait; do not reissue it.",
-        }
+        value = record.receipt()
         self.returns[record.tool_call_id] = value
         return value
 

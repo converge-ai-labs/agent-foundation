@@ -54,7 +54,7 @@ from a13n_service.runs.environments.monitoring import launch
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import RunRow, ToolExecutionRow
 from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
@@ -116,6 +116,12 @@ def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool
         exists().where(
             text("runs.status IN ('accepted', 'running')"),
             RunRow.environment_mounts.contains(
+                func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
+            ),
+        )
+        | exists().where(
+            ToolExecutionRow.completed_at.is_(None),
+            ToolExecutionRow.environment_mounts.contains(
                 func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
             ),
         )

@@ -1,4 +1,4 @@
-import { Button } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import {
   GitBranchIcon,
   LockSimpleIcon,
@@ -11,6 +11,8 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
+import { useIdempotency } from "../../../shared/idempotency";
+import { ExecutionFields, executionOverride } from "../../../shared/forms";
 import { ErrorNotice, ErrorToast } from "../../../shared/feedback";
 import {
   conversationQueries,
@@ -73,10 +75,16 @@ export function RunDock({
     { search } = useLocation(),
     { workspace, can, basePath } = useWorkspace();
   // The Thread's latest Run: the active one, else the one sealed last.
+  const idempotency = useIdempotency();
+  const [execution, setExecution] = useState<Schema["ExecutionOverride"]>({});
+  const [executionOpen, setExecutionOpen] = useState(false);
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
+  const following = new URLSearchParams(search).get("follow") === "latest";
   const current =
-    latest === run.id || (!!pendingRunId && latest === pendingRunId);
+    following ||
+    latest === run.id ||
+    (!!pendingRunId && latest === pendingRunId);
   const active = isActiveRun(run.status);
   // Only the Thread's last Run can wait; show its exact questions.
   const last = latest === run.id ? run : latestRun.data;
@@ -198,7 +206,7 @@ export function RunDock({
                   session_id: thread.session_id,
                   thread_id: thread.id,
                   run_id: latest,
-                })}${search}`}
+                })}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
               >
                 {t(
                   level === "debug"
@@ -231,12 +239,57 @@ export function RunDock({
                         ? t("Message {{agent}}…", { agent: agentName })
                         : t("Message your agent…")
                 }
-                disabled={!can("run")}
+                disabled={!can("run") || (following && latest !== run.id)}
+                options={
+                  !active &&
+                  !resubmit && (
+                    <ModalFrame
+                      open={executionOpen}
+                      onOpenChange={setExecutionOpen}
+                      title={t("Run execution policy")}
+                      description={t("Changes apply to the next run only.")}
+                      closeLabel={t("Close")}
+                      trigger={
+                        <Button type="button" variant="ghost" size="sm">
+                          {t("Execution policy")}
+                        </Button>
+                      }
+                      footer={
+                        <Button
+                          type="button"
+                          onClick={() => setExecutionOpen(false)}
+                        >
+                          {t("Apply")}
+                        </Button>
+                      }
+                    >
+                      <ExecutionFields
+                        value={execution}
+                        onChange={setExecution}
+                      />
+                    </ModalFrame>
+                  )
+                }
                 stop={canStop ? () => interrupt.mutate() : undefined}
                 stopping={interrupt.isPending}
-                submit={async (payload, key) => {
+                submit={async (payload) => {
                   if (!active) onSubmissionChange?.({ payload });
                   try {
+                    const policy =
+                      !active && !resubmit
+                        ? executionOverride(execution)
+                        : undefined;
+                    const body: Schema["Message"] = {
+                      kind: "message",
+                      delivery: active ? "steer" : "next_run",
+                      payload,
+                      agent_id: run.agent_id,
+                      ...(policy ? { options: { execution: policy } } : {}),
+                      ...(resubmit && {
+                        agent_revision_id: resubmit.agent_revision_id,
+                        options: resubmit.options,
+                      }),
+                    };
                     // Guidance joins the active run; a next step never joins
                     // a run another caller started meanwhile.
                     const receipt = data(
@@ -247,20 +300,18 @@ export function RunDock({
                             path: {
                               thread_id: thread.id,
                             },
-                            header: commandHeaders(key),
+                            header: commandHeaders(
+                              idempotency.forBody({
+                                threadId: thread.id,
+                                body,
+                              }),
+                            ),
                           },
-                          body: {
-                            kind: "message",
-                            delivery: active ? "steer" : "next_run",
-                            payload,
-                            agent_id: run.agent_id,
-                            ...(resubmit && {
-                              agent_revision_id: resubmit.agent_revision_id,
-                              options: resubmit.options,
-                            }),
-                          },
+                          body,
                         }),
                     );
+                    idempotency.reset();
+                    if (!active) setExecution({});
                     if (resubmit) onResubmitted?.();
                     if (receipt.run) {
                       if (!active)

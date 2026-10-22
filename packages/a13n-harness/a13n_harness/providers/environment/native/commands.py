@@ -1,13 +1,12 @@
 """Bounded foreground shell and file helpers over each provider's native exec."""
 
-import asyncio
 import base64
 import itertools
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from importlib.resources import files
 from pathlib import PurePosixPath
-from typing import BinaryIO
+from typing import BinaryIO, Protocol
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -20,7 +19,7 @@ from a13n_harness.environment.commands import (
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import EnvironmentOutputCapture
-from a13n_harness.providers.environment._guest_commands import file_helper_source
+from a13n_harness.providers.environment._guest_commands import collect_range, file_helper_source
 from a13n_harness.providers.environment.native.configuration import CommandConfiguration
 
 # Native exec returns the bounded stdout of one helper, with no retry after dispatch.
@@ -28,8 +27,22 @@ type Execute = Callable[[list[str], float], Awaitable[str]]
 _OBJECT = TypeAdapter(dict[str, JsonValue])
 
 
+class FileTransfer(Protocol):
+    def read_stream(self, path: str) -> AsyncIterator[bytes]: ...
+    async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None: ...
+
+
 class NativeCommands:
-    def __init__(self, execute: Execute, configuration: CommandConfiguration, generation: str, execution_id: str):
+    def __init__(
+        self,
+        execute: Execute,
+        configuration: CommandConfiguration,
+        generation: str,
+        execution_id: str,
+        *,
+        transfer: FileTransfer | None = None,
+    ):
+        self.transfer = transfer
         self.execute = execute
         self.configuration = configuration
         self.generation = generation
@@ -63,29 +76,43 @@ class NativeCommands:
             {"configuration": self.configuration.model_dump(mode="json"), "action": action, "arguments": arguments},
         )
 
-    async def read_stream(self, path: str) -> AsyncIterator[bytes]:
-        offset = 0
-        while True:
-            value = await self.helper(
-                "import base64,json,sys\nr=json.loads(sys.argv[1])\nwith open(r['path'],'rb') as f:\n f.seek(r['offset'])\n print(json.dumps({'data':base64.b64encode(f.read(65536)).decode()}))",
-                {"path": path, "offset": offset},
-            )
-            from a13n_harness.providers.environment._guest_commands import decoded_bytes
+    def require_transfer(self) -> FileTransfer:
+        if self.closed:
+            raise EnvironmentError("Native operations are closed.", code="environment_closed")
+        if self.transfer is None:
+            raise EnvironmentError("Native file transport is unavailable.", code="environment_unsupported")
+        return self.transfer
 
-            chunk = decoded_bytes(value)
-            if not chunk:
-                return
-            offset += len(chunk)
-            yield chunk
+    async def read_stream(self, path: str) -> AsyncIterator[bytes]:
+        from a13n_harness.environment._streams import closing_stream
+
+        async with closing_stream(self.require_transfer().read_stream(path)) as stream:
+            async for chunk in stream:
+                yield chunk
+
+    async def read_range(self, path: str, offset: int, length: int) -> bytes:
+        value = await self.files("resolve", {"path": path, "regular_file": True})
+        native = TypeAdapter(str).validate_python(value["path"])
+        return await collect_range(self.read_stream(native), offset, length)
 
     async def write_stream(self, path: str, source: BinaryIO) -> None:
-        offset = 0
-        while chunk := await asyncio.to_thread(source.read, 32768):
-            await self.helper(
-                "import base64,json,sys\nr=json.loads(sys.argv[1])\nwith open(r['path'],'r+b') as f:\n f.seek(r['offset'])\n f.write(base64.b64decode(r['data']))\nprint('{}')",
-                {"path": path, "offset": offset, "data": base64.b64encode(chunk).decode()},
-            )
-            offset += len(chunk)
+        transfer = self.require_transfer()
+        # Preserve the guest-created candidate's permissions when an upload API
+        # replaces its inode. Never publish a candidate owned by another user.
+        before = await self.helper(
+            "import json,os,stat,sys; p=json.loads(sys.argv[1])['path']; s=os.lstat(p); "
+            "assert stat.S_ISREG(s.st_mode) and s.st_uid==os.geteuid(); "
+            "print(json.dumps({'mode':stat.S_IMODE(s.st_mode),'uid':s.st_uid}))",
+            {"path": path},
+        )
+        mode = TypeAdapter(int).validate_python(before["mode"])
+        await transfer.write_stream(path, source, mode=mode)
+        await self.helper(
+            "import json,os,stat,sys; r=json.loads(sys.argv[1]); s=os.lstat(r['path']); "
+            "assert stat.S_ISREG(s.st_mode) and s.st_uid==r['uid']; "
+            "os.chmod(r['path'],r['mode']); print('{}')",
+            {"path": path, "mode": mode, "uid": before["uid"]},
+        )
 
     def receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(

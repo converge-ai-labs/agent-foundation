@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,7 +71,7 @@ def _mount(root: Path, path: str) -> EnvironmentMount:
 
 
 @asynccontextmanager
-async def open_platform_mounts(registry: Registry, settings: Settings) -> AsyncIterator[dict[str, EnvironmentMount]]:
+async def open_platform_mounts(registry: Registry, settings: Settings) -> AsyncGenerator[dict[str, EnvironmentMount]]:
     """Prepare deployment-specific references once for the process, outside individual attempts."""
     instance = {
         "providers": {

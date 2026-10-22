@@ -130,3 +130,39 @@ it("labels organizer input as maintenance and excludes conversation controls", (
   expect(runRequest(run({}), organizer).kind).toBe("memory_organization");
   expect(isInteractive(organizer)).toBe(false);
 });
+
+it.each(["succeeded", "failed", "cancelled", "lost"])(
+  "classifies %s retained tool completion as a system request",
+  (status) => {
+    expect(
+      runRequest(
+        run({
+          trigger: "tool_result",
+          input: {
+            execution_id: "exec_shell",
+            tool_name: "shell_exec",
+            status,
+            error: "not a message",
+          },
+        }),
+        thread("child"),
+      ),
+    ).toEqual({
+      kind: "tool_result",
+      executionId: "exec_shell",
+      toolName: "shell_exec",
+      status,
+      text: `shell_exec · ${status} · exec_shell`,
+    });
+  },
+);
+
+it("keeps an incomplete tool notification out of the user-message fallback", () => {
+  expect(runRequest(run({ trigger: "tool_result", input: null }))).toEqual({
+    kind: "tool_result",
+    executionId: null,
+    toolName: null,
+    status: null,
+    text: "",
+  });
+});

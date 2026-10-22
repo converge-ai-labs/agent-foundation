@@ -169,7 +169,13 @@ async def test_auto_expansion_budget_counts_complete_utf8_response(budget):
 @pytest.mark.parametrize("detail,default_count", [("auto", 10), ("summary", 10), ("full", 5)])
 async def test_default_page_sizes_and_no_legacy_tool_aliases(detail, default_count):
     def inspect(_step, info):
-        assert {x.name for x in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
+        assert {x.name for x in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
         assert all("proxy" not in x.description.lower() for x in info.function_tools)
 
     _, results = await _run(

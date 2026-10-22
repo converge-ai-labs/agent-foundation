@@ -1,7 +1,7 @@
 """Attempt-owned web clients reuse real connections and close on every exit path."""
 
 import base64
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any, Literal
@@ -43,7 +43,7 @@ def clients(monkeypatch: pytest.MonkeyPatch) -> list[httpx2.AsyncClient]:
 @asynccontextmanager
 async def backend(
     operation: Literal["search", "scrape"], url: str, *, account: str = "account-a"
-) -> AsyncIterator[Callable[..., Awaitable[bytes]]]:
+) -> AsyncGenerator[Callable[..., Awaitable[bytes]]]:
     provider = ResolvedProvider(
         id=account,
         version=1,

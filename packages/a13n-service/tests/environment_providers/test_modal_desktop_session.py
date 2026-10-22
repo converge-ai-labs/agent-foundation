@@ -205,7 +205,7 @@ def continuation(cloud, monkeypatch):
 
     cloud.lookup.side_effect = lookup
     monkeypatch.setattr(service, "transaction", transaction)
-    monkeypatch.setattr(service, "lock_lease", AsyncMock())
+    monkeypatch.setattr(service, "lock_owner", AsyncMock())
     monkeypatch.setattr(service, "lock", AsyncMock(return_value=SimpleNamespace(holder_id="dassist-test")))
     return SimpleNamespace(
         row=row, runtime=SimpleNamespace(storage=None), lease=SimpleNamespace(run_id="run-successor")

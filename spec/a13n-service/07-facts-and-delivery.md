@@ -233,7 +233,7 @@ outbox   (obx_)
   id  organization_id NULL  workspace_id NULL  kind  dedupe_key  target  payload  subscription_id NULL
   status  available_at  attempts  lease_owner NULL  lease_token_hash NULL  lease_expires_at NULL
   last_error NULL  created_at  delivered_at NULL  settled_at NULL
-  kind IN ('webhook', 'child_result', 'email', 'memory_purge', 'checkpoint_cleanup')
+  kind IN ('webhook', 'child_result', 'tool_result', 'email', 'memory_purge', 'checkpoint_cleanup')
   status IN ('pending', 'delivered', 'dead')
   CHECK (organization_id IS NOT NULL OR kind = 'email')
   CHECK ((status = 'delivered') = (delivered_at IS NOT NULL))
@@ -241,7 +241,9 @@ outbox   (obx_)
   UNIQUE (kind, dedupe_key)
 ```
 
-The outbox is durable at-least-once delivery of what a transaction committed. The five kinds are closed by the CHECK; it is not a general job system. Only account mail has no organization. `target` and `payload` hold everything delivery needs; `subscription_id` is diagnostic provenance, not a foreign key.
+The outbox is durable at-least-once delivery of what a transaction committed. The six kinds are closed by the CHECK; it is not a general job system. Only account mail has no organization. `target` and `payload` hold everything delivery needs; `subscription_id` is diagnostic provenance, not a foreign key.
+
+`tool_result` delivers one bounded completion hint for a retained invocation. Its origin suppression, inbox capacity, deduplication and result-retention rules are owned by [retained tool executions](05-runs.md#results-and-delivery). The result payload stays in its immutable object and late usage follows the existing original-attempt attribution.
 
 **Staging** happens in the transaction of the change that needs the delivery. A row without an explicit dedupe key uses its own ID. A row keyed by a durable fact, such as one sealed child run, is staged at most once. A delivery that can never be sent is staged already `dead` with its reason.
 

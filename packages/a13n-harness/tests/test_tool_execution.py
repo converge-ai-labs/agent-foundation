@@ -927,3 +927,40 @@ async def test_early_close_observes_all_settled_returns_without_filling_public_q
         assert all(part.content["type"] == "tool_execution_receipt" for part in returns)
     finally:
         await runtime.close()
+
+
+async def test_definite_admission_rejection_releases_capacity_without_poisoning_runtime(monkeypatch):
+    from a13n_harness.tool_execution import ToolExecutionAdmissionRejected
+
+    store = MemoryToolExecutionStore()
+    original = store.save
+    saves, effects, releases = [], [], []
+
+    async def save(value):
+        saves.append(value.record.status)
+        if len(saves) == 1:
+            raise ToolExecutionAdmissionRejected("Origin stopped before admission.")
+        await original(value)
+
+    monkeypatch.setattr(store, "save", save)
+    runtime = ToolExecutionRuntime(store=store, max_active=1)
+
+    async def operation():
+        effects.append(True)
+        return 42
+
+    async def release():
+        releases.append(True)
+
+    rejected = admit(runtime, operation, release=release)
+    result = await runtime.wait("thread-a", rejected.execution_id)
+    assert result.record.status == "failed"
+    assert "Origin stopped" in result.record.error
+    assert saves == ["queued"] and effects == [] and releases == [True]
+    assert await store.get("thread-a", rejected.execution_id) is None
+    assert await runtime.result("other-thread", rejected.execution_id) is None
+    assert runtime.accepting and not runtime.active
+    accepted = admit(runtime, operation)
+    assert (await runtime.wait("thread-a", accepted.execution_id)).result == 42
+    assert effects == [True]
+    await runtime.close()

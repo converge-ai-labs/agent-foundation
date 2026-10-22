@@ -78,7 +78,10 @@ async def test_original_explicit_reference_works_without_listing_and_is_not_shar
         update={"content": [ResourceLink(type="resource_link", name="Selected", uri="data://counter/selected")]}
     )
     linked = await operations.snapshots.capture(
-        CapturedCall(connection, tool, {}, result), thread_id="thread-1", run_id="run-link", call_id="call-link"
+        CapturedCall(connection, tool, {}, result.model_dump(mode="json", by_alias=True, exclude_none=True)),
+        thread_id="thread-1",
+        run_id="run-link",
+        call_id="call-link",
     )
     first = await operations.activate(linked)
     second = await operations.activate(reference)

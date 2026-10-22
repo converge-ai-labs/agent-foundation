@@ -27,7 +27,11 @@ async def settled(api: httpx.AsyncClient, receipt: str) -> dict:
             assert response.status_code == 200, response.text
             value = response.json()
             if value["status"] not in {"preparing", "running"}:
-                return value
+                # Terminal status precedes persistence and release of the Thread's admission slot.
+                thread = await api.get(f"/api/threads/{value['receipt']['thread_id']}")
+                assert thread.status_code == 200, thread.text
+                if thread.json()["thread"]["root_activity"]["state"] == "inactive":
+                    return value
             await sleep(0.01)
 
 

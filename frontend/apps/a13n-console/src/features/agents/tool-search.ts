@@ -5,31 +5,21 @@ export type SearchGroup = NonNullable<ToolSearch["groups"]>[string] & {
   name: string;
 };
 export interface ToolSearchDraft {
-  mode: "direct" | "proxy" | "native";
+  mode: "direct" | "proxy";
   groups: SearchGroup[];
   config?: ToolSearch["config"];
-  strategy?: "bm25" | "regex";
 }
 
 export function toolSearchDraft(
   value: AgentConfig["tool_search"],
 ): ToolSearchDraft {
   return {
-    mode:
-      value == null
-        ? "direct"
-        : value.config?.mode === "native"
-          ? "native"
-          : "proxy",
+    mode: value == null ? "direct" : "proxy",
     groups: Object.entries(value?.groups ?? {}).map(([name, group]) => ({
       name,
       ...group,
     })),
     config: value?.config,
-    strategy:
-      value?.config?.mode === "native"
-        ? (value.config.strategy ?? undefined)
-        : undefined,
   };
 }
 
@@ -55,16 +45,7 @@ export function toolSearchConfig(
     names.add(group.name);
   }
   return {
-    config:
-      draft.mode === "native"
-        ? {
-            mode: "native",
-            ...(draft.strategy ? { strategy: draft.strategy } : {}),
-          }
-        : {
-            ...(draft.config?.mode !== "native" ? draft.config : {}),
-            mode: "proxy",
-          },
+    config: { ...draft.config, mode: "proxy" },
     groups: Object.fromEntries(
       draft.groups.map(({ name, ...group }) => [
         name,
