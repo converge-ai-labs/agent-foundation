@@ -23,6 +23,7 @@ from a13n_service.providers.traces import (
 
 _OBSERVATIONS = "/api/public/v2/observations"
 _FIELDS = "core,basic,io,metadata,model,usage,metrics"
+_OVERVIEW_FIELDS = "core,basic,metadata,model,usage"
 # The metadata namespaces holding the span's OTel attributes, resource attributes and instrumentation scope.
 _EXPANDED = "attributes,resourceAttributes,scope"
 
@@ -91,14 +92,16 @@ class Langfuse:
             )
         if query.roots:
             filters.append({"type": "boolean", "column": "isRootObservation", "operator": "=", "value": True})
+        # Structured filters take precedence over fixed query parameters in v2.
+        for column, value in (("traceId", query.trace_id), ("id", query.span_id)):
+            if value is not None:
+                filters.append({"type": "string", "column": column, "operator": "=", "value": value})
         params = {
-            "fields": _FIELDS,
-            "expandMetadata": _EXPANDED,
+            "fields": _FIELDS if query.include_content else _OVERVIEW_FIELDS,
+            "expandMetadata": _EXPANDED if query.include_content else "attributes",
             "limit": str(query.limit),
             "filter": json.dumps(filters, separators=(",", ":")),
         }
-        if query.trace_id is not None:
-            params["traceId"] = query.trace_id
         if query.cursor is not None:
             params["cursor"] = query.cursor
         # The key pair that ingests spans also reads them.

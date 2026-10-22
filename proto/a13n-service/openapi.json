@@ -19237,6 +19237,118 @@
         "title": "SpanLink",
         "type": "object"
       },
+      "SpanOverview": {
+        "description": "Exact timeline and cost fields; payloads are read from the individual span.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "view": {
+            "const": "overview",
+            "default": "overview",
+            "title": "View",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "id",
+          "parent_id",
+          "name",
+          "kind",
+          "status",
+          "level",
+          "started_at",
+          "ended_at",
+          "model",
+          "cost_usd"
+        ],
+        "title": "SpanOverview",
+        "type": "object"
+      },
       "SpanPage": {
         "properties": {
           "items": {
@@ -19272,6 +19384,9 @@
               "anyOf": [
                 {
                   "$ref": "#/components/schemas/SpanSummary"
+                },
+                {
+                  "$ref": "#/components/schemas/SpanOverview"
                 },
                 {
                   "$ref": "#/components/schemas/Span"
@@ -46291,14 +46406,20 @@
             }
           },
           {
-            "description": "Use compact for discovery; detailed preserves the original response.",
+            "description": "Overview keeps exact timeline and cost fields without observation payloads.",
             "in": "query",
             "name": "view",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/ReadView",
               "default": "detailed",
-              "description": "Use compact for discovery; detailed preserves the original response."
+              "description": "Overview keeps exact timeline and cost fields without observation payloads.",
+              "enum": [
+                "detailed",
+                "compact",
+                "overview"
+              ],
+              "title": "View",
+              "type": "string"
             }
           },
           {
@@ -46445,6 +46566,89 @@
           }
         ],
         "summary": "List Trace Spans",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
+    "/api/v1/traces/{trace_id}/spans/{span_id}": {
+      "get": {
+        "description": "One complete observation, including redacted input, output and diagnostic metadata.",
+        "operationId": "get_trace_span",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "trace_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "span_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{16}$",
+              "title": "Span Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Span"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Trace Span",
         "tags": [
           "runs"
         ],

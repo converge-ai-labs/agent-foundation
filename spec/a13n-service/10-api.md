@@ -385,6 +385,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 | `/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}/spans`                | GET     | [07](07-facts-and-delivery.md#trace-query)              |
+| `/traces/{trace}/spans/{span}`         | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}/spans/{span}/content` | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/trace-backend`                       | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 

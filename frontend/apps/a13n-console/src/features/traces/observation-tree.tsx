@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
-import type { Schema } from "../../shared/api";
+import type { Observation } from "./overview";
 import {
   isFailed,
   kindLabel,
@@ -254,7 +254,7 @@ function Bar({
   start,
   duration,
 }: {
-  observation: Schema["Span"];
+  observation: Observation;
   start: number;
   duration: number;
 }) {

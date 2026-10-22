@@ -428,7 +428,9 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
 
     trace = await api.client.get(f"{api.api}/traces/{TRACE}")
     assert (trace.status_code, trace.json()["id"]) == (200, "obs-root")
-    assert backend.requests[2].url.params["traceId"] == TRACE
+    assert {"type": "string", "column": "traceId", "operator": "=", "value": TRACE} in json.loads(
+        backend.requests[2].url.params["filter"]
+    )
     missing = await api.client.get(f"{api.api}/traces/{'f' * 32}")
     assert (missing.status_code, missing.json()["error"]["details"]["kind"]) == (404, "trace")
     spans = (await api.client.get(f"{api.api}/traces/{TRACE}/spans")).json()
@@ -589,6 +591,46 @@ async def test_trace_backend_names_the_configured_backend(api: SimpleNamespace, 
     since = datetime.fromisoformat(described["queryable_since"])
     assert abs(since - (datetime.now(UTC) - traces.MAX_WINDOW)) < timedelta(minutes=1)
     assert backend.requests == []
+
+
+@pytest.mark.parametrize("provider", ["langfuse", "logfire"])
+async def test_overview_and_single_span_queries_preserve_display_and_select_content(
+    api: SimpleNamespace, backend: Backend, provider: str
+) -> None:
+    identity = "b" * 16
+    own = {**scope(api), "a13n.input": "x" * 1_850_000, "api_key": "private"}
+    if provider == "langfuse":
+        row = langfuse_row(identity, {"attributes": own})
+        body = {"data": [row], "meta": {}}
+        configured = backend.langfuse()
+    else:
+        row = logfire_row(identity, own)
+        body = {"data": [row]}
+        configured = backend.logfire()
+    backend.answer(httpx2.Response(200, json=body), httpx2.Response(200, json=body))
+    query_through(api, configured)
+    listing = await api.client.get(f"{api.api}/traces/{TRACE}/spans", params={"view": "overview"})
+    assert listing.status_code == 200, listing.text
+    (item,) = listing.json()["items"]
+    assert len(listing.content) < 1000 and item["view"] == "overview"
+    detail = await api.client.get(f"{api.api}/traces/{TRACE}/spans/{identity}")
+    assert detail.status_code == 200, detail.text[:1000]
+    full = detail.json()
+    assert full["attributes"]["a13n.input"] == own["a13n.input"]
+    assert full["attributes"]["api_key"] == "[REDACTED]"
+    assert all(full[key] == value for key, value in item.items() if key != "view")
+    first, second = backend.requests
+    if provider == "langfuse":
+        assert "io" not in first.url.params["fields"].split(",")
+        assert first.url.params["expandMetadata"] == "attributes"
+        assert "io" in second.url.params["fields"].split(",")
+        filters = json.loads(second.url.params["filter"])
+        for column, value in (("traceId", TRACE), ("id", identity)):
+            assert {"type": "string", "column": column, "operator": "=", "value": value} in filters
+    else:
+        first_sql, second_sql = (json.loads(request.content)["sql"] for request in (first, second))
+        assert "otel_events" not in first_sql and "otel_events" in second_sql
+        assert f"trace_id = '{TRACE}'" in second_sql and f"span_id = '{identity}'" in second_sql
 
 
 async def test_logfire_pages_continue_after_the_last_row(api: SimpleNamespace, backend: Backend) -> None:

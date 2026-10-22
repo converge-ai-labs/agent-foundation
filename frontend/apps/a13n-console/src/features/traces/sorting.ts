@@ -1,5 +1,5 @@
 import Decimal from "decimal.js-light";
-import type { Schema } from "../../shared/api";
+import type { Observation } from "./overview";
 import { durationMs } from "./values";
 
 export type ObservationSort = {
@@ -23,11 +23,11 @@ export function compareValues(
 }
 
 export function compareObservations(
-  left: Schema["Span"],
-  right: Schema["Span"],
+  left: Observation,
+  right: Observation,
   sort: ObservationSort,
 ): number {
-  const value = (observation: Schema["Span"]) =>
+  const value = (observation: Observation) =>
     sort.field === "cost"
       ? observation.cost_usd
       : sort.field === "duration"

@@ -730,6 +730,14 @@
   {
     "effect": "read",
     "group": "execution",
+    "key": "get_trace_span",
+    "method": "GET",
+    "path": "/api/v1/traces/{trace_id}/spans/{span_id}",
+    "summary": "Get Trace Span"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
     "key": "read_span_content",
     "method": "GET",
     "path": "/api/v1/traces/{trace_id}/spans/{span_id}/content",

@@ -3401,6 +3401,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/traces/{trace_id}/spans/{span_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Trace Span
+     * @description One complete observation, including redacted input, output and diagnostic metadata.
+     */
+    get: operations["get_trace_span"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/traces/{trace_id}/spans/{span_id}/content": {
     parameters: {
       query?: never;
@@ -10621,6 +10641,46 @@ export interface components {
       /** Trace Id */
       trace_id: string;
     };
+    /**
+     * SpanOverview
+     * @description Exact timeline and cost fields; payloads are read from the individual span.
+     */
+    SpanOverview: {
+      /** Cost Usd */
+      cost_usd: string | null;
+      /** Ended At */
+      ended_at: string | null;
+      /** Id */
+      id: string;
+      /** Kind */
+      kind: string;
+      /** Level */
+      level: string | null;
+      /** Model */
+      model: string | null;
+      /** Name */
+      name: string;
+      /** Parent Id */
+      parent_id: string | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ok" | "error";
+      /** Trace Id */
+      trace_id: string;
+      /**
+       * View
+       * @default overview
+       * @constant
+       */
+      view?: "overview";
+    };
     /** SpanPage */
     SpanPage: {
       /** Items */
@@ -10632,7 +10692,9 @@ export interface components {
     SpanReadPage: {
       /** Items */
       items: (
-        components["schemas"]["SpanSummary"] | components["schemas"]["Span"]
+        | components["schemas"]["SpanSummary"]
+        | components["schemas"]["SpanOverview"]
+        | components["schemas"]["Span"]
       )[];
       /** Next Cursor */
       next_cursor: string | null;
@@ -19687,8 +19749,8 @@ export interface operations {
   list_trace_spans: {
     parameters: {
       query?: {
-        /** @description Use compact for discovery; detailed preserves the original response. */
-        view?: components["schemas"]["ReadView"];
+        /** @description Overview keeps exact timeline and cost fields without observation payloads. */
+        view?: "detailed" | "compact" | "overview";
         status?: ("ok" | "error") | null;
         kind?: string | null;
         tool_name?: string | null;
@@ -19715,6 +19777,34 @@ export interface operations {
           "application/json":
             | components["schemas"]["SpanPage"]
             | components["schemas"]["SpanReadPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_trace_span: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        trace_id: string;
+        span_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Span"];
         };
       };
       400: components["responses"]["Error"];

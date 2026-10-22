@@ -112,6 +112,153 @@ const descriptor: Schema["TraceBackend"] = {
 };
 const isBackend = (path: string) => path.endsWith("/trace-backend");
 const isSpans = (path: string) => path.endsWith("/spans");
+const isSpan = (path: string) => path.endsWith("/spans/{span_id}");
+
+function overview(value: Schema["Span"]): Schema["SpanOverview"] {
+  const {
+    trace_id,
+    id,
+    parent_id,
+    name,
+    kind,
+    status,
+    level,
+    started_at,
+    ended_at,
+    model,
+    cost_usd,
+  } = value;
+  return {
+    view: "overview",
+    trace_id,
+    id,
+    parent_id,
+    name,
+    kind,
+    status,
+    level,
+    started_at,
+    ended_at,
+    model,
+    cost_usd,
+  };
+}
+
+function overviewResponse(
+  items: Schema["Span"][],
+  next_cursor: string | null = null,
+) {
+  return response({ items: items.map(overview), next_cursor });
+}
+
+it("loads the overview alongside the root and fetches full content only for the selected child", async () => {
+  const user = userEvent.setup();
+  let releaseRoot = () => {};
+  let releaseChild = () => {};
+  const rootReady = new Promise<void>((resolve) => (releaseRoot = resolve));
+  const childReady = new Promise<void>((resolve) => (releaseChild = resolve));
+  const child = {
+    ...observation("child", "root"),
+    name: "Full observation name ".repeat(20),
+    input: "Private child input",
+    output: "Private child output",
+  };
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) {
+      expect(options.params.query).toMatchObject({
+        view: "overview",
+        limit: 50,
+      });
+      return overviewResponse([child]);
+    }
+    if (isSpan(path)) {
+      await childReady;
+      return response(child);
+    }
+    await rootReady;
+    return response(trace());
+  });
+  mount(<TraceDetail traceId="trace-1" />);
+  await waitFor(() =>
+    expect(http.GET.mock.calls.some(([path]) => isSpans(path))).toBe(true),
+  );
+  expect(screen.queryByRole("treeitem")).toBeNull();
+  expect(http.GET.mock.calls.some(([path]) => isSpan(path))).toBe(false);
+  releaseRoot();
+  await user.click(
+    await screen.findByRole("treeitem", { name: /Full observation name/ }),
+  );
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      "/api/v1/traces/{trace_id}/spans/{span_id}",
+      expect.objectContaining({
+        params: { path: { trace_id: "trace-1", span_id: "child" } },
+      }),
+    ),
+  );
+  const panel = within(await screen.findByRole("complementary"));
+  expect(panel.getByText(child.name.trim())).toBeTruthy();
+  expect(panel.queryByText("Private child input")).toBeNull();
+  releaseChild();
+  expect(await panel.findByText("Private child input")).toBeTruthy();
+  expect(panel.getByText("Private child output")).toBeTruthy();
+  await user.click(screen.getByRole("treeitem", { name: /^root/ }));
+  await waitFor(() =>
+    expect(screen.queryByText("Private child input")).toBeNull(),
+  );
+  expect(http.GET.mock.calls.filter(([path]) => isSpan(path))).toHaveLength(1);
+});
+
+it("retries a selected observation failure without losing the loaded call tree", async () => {
+  const user = userEvent.setup();
+  let fail = true;
+  const child = { ...observation("child", "root"), input: "Recovered input" };
+  http.GET.mockImplementation(async (path) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return overviewResponse([child]);
+    if (isSpan(path)) {
+      if (fail) throw new Error("Observation temporarily unavailable");
+      return response(child);
+    }
+    return response(trace());
+  });
+  mount(<TraceDetail traceId="trace-1" />);
+  await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
+  await screen.findByText("Observation temporarily unavailable");
+  expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+  fail = false;
+  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByText("Recovered input");
+});
+
+it("hides cached observation content and the trace when detail access is revoked", async () => {
+  const user = userEvent.setup();
+  let revoked = false;
+  const child = {
+    ...observation("child", "root"),
+    input: "Private cached input",
+  };
+  http.GET.mockImplementation(async (path) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return overviewResponse([child]);
+    if (isSpan(path)) {
+      if (revoked)
+        throw new ApiError(403, "forbidden", "Access revoked", {}, null);
+      return response(child);
+    }
+    return response(trace());
+  });
+  const cache = mount(<TraceDetail traceId="trace-1" />);
+  await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
+  await screen.findByText("Private cached input");
+  revoked = true;
+  await act(() => cache.invalidateQueries({ queryKey: ["trace-observation"] }));
+  await screen.findByText("Access revoked");
+  expect(screen.queryByText("Private cached input")).toBeNull();
+  expect(screen.queryByRole("treeitem")).toBeNull();
+  expect(screen.queryByRole("link", { name: "View run" })).toBeNull();
+});
 
 it("searches identifiers automatically and preserves empty-page continuation", async () => {
   const user = typingUser();
@@ -385,23 +532,22 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   let fail = true;
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
+    if (isSpan(path)) return response(observation("child", "parent"));
     if (!isSpans(path)) return response(trace());
+    expect(options.params.query.view).toBe("overview");
     const cursor = options.params.query.cursor;
     if (!cursor)
-      return response({
-        items: [observation("child", "parent"), observation("root")],
-        next_cursor: "empty",
-      });
+      return overviewResponse(
+        [observation("child", "parent"), observation("root")],
+        "empty",
+      );
     if (cursor === "empty")
       return response({ items: [], next_cursor: "parent" });
     if (fail) {
       fail = false;
       throw new Error("Temporary page failure");
     }
-    return response({
-      items: [observation("parent", "root")],
-      next_cursor: null,
-    });
+    return overviewResponse([observation("parent", "root")]);
   });
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("treeitem", { name: /child/ });
@@ -440,7 +586,7 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   );
   await user.click(screen.getByRole("treeitem", { name: /^child/ }));
   const panel = within(await screen.findByRole("complementary"));
-  expect(panel.getByText("Diagnostic reason")).toBeTruthy();
+  expect(await panel.findByText("Diagnostic reason")).toBeTruthy();
   expect(panel.getByText("Model")).toBeTruthy();
   expect(panel.getAllByText(/model-version/).length).toBeGreaterThan(0);
   expect(panel.getByText("Error")).toBeTruthy();
@@ -561,10 +707,7 @@ it("hides cached detail after observation authorization is revoked", async () =>
     if (!isSpans(path)) return response(trace());
     if (options.params.query.cursor)
       throw new ApiError(404, "trace_not_found", "Trace not found", {}, null);
-    return response({
-      items: [observation("private-child")],
-      next_cursor: "next",
-    });
+    return overviewResponse([observation("private-child")], "next");
   });
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByRole("treeitem", { name: /private-child/ });
@@ -584,21 +727,18 @@ it("shows a loaded cost subtotal until pagination succeeds, without counting the
     if (isBackend(path)) return response(descriptor);
     if (!isSpans(path)) return response(root);
     if (!options.params.query.cursor)
-      return response({
-        items: [root, { ...observation("chat", "root"), cost_usd: "0.2" }],
-        next_cursor: "next",
-      });
+      return overviewResponse(
+        [root, { ...observation("chat", "root"), cost_usd: "0.2" }],
+        "next",
+      );
     if (fail) {
       fail = false;
       throw new Error("Cost page failed");
     }
-    return response({
-      items: [
-        { ...observation("chat", "root"), cost_usd: "0.2" },
-        { ...observation("later", "root"), cost_usd: "0.05" },
-      ],
-      next_cursor: null,
-    });
+    return overviewResponse([
+      { ...observation("chat", "root"), cost_usd: "0.2" },
+      { ...observation("later", "root"), cost_usd: "0.05" },
+    ]);
   });
   mount(<TraceDetail traceId="trace-1" />);
   await screen.findByText("$0.30");
@@ -627,21 +767,21 @@ it("shows seconds, normalized levels and paginated aggregate cost in the list", 
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
     if (!isSpans(path)) return response({ items: [root], next_cursor: null });
-    expect(options.params.query).toMatchObject({ limit: 100 });
+    expect(options.params.query).toMatchObject({
+      view: "overview",
+      limit: 100,
+    });
     if (!options.params.query.cursor)
-      return response({
-        items: [root, { ...observation("chat"), cost_usd: "0.2" }],
-        next_cursor: "empty",
-      });
+      return overviewResponse(
+        [root, { ...observation("chat"), cost_usd: "0.2" }],
+        "empty",
+      );
     if (options.params.query.cursor === "empty")
       return response({ items: [], next_cursor: "last" });
-    return response({
-      items: [
-        { ...observation("chat"), cost_usd: "0.2" },
-        { ...observation("tool"), cost_usd: "0.05" },
-      ],
-      next_cursor: null,
-    });
+    return overviewResponse([
+      { ...observation("chat"), cost_usd: "0.2" },
+      { ...observation("tool"), cost_usd: "0.05" },
+    ]);
   });
   mount(<TracesPage />);
   await screen.findByText("$0.35");
@@ -679,9 +819,9 @@ it("does not expose root-only or partial list costs when a later page fails or r
         next_cursor: null,
       });
     if (options.params.path.trace_id === "repeated")
-      return response({ items: [root], next_cursor: "same" });
+      return overviewResponse([root], "same");
     if (options.params.query.cursor) throw new Error("Cost read failed");
-    return response({ items: [root], next_cursor: "next" });
+    return overviewResponse([root], "next");
   });
   const cache = mount(<TracesPage />);
   await screen.findByRole("columnheader", { name: "Trace" });
@@ -742,10 +882,10 @@ it("caps advancing cost pagination without exposing a partial total", async () =
     if (!isSpans(path))
       return response({ items: [trace()], next_cursor: null });
     reads++;
-    return response({
-      items: [{ ...observation(`part-${reads}`), cost_usd: "1" }],
-      next_cursor: `cursor-${reads}`,
-    });
+    return overviewResponse(
+      [{ ...observation(`part-${reads}`), cost_usd: "1" }],
+      `cursor-${reads}`,
+    );
   });
   const cache = mount(<TracesPage />);
   await screen.findByRole("columnheader", { name: "Cost" });
@@ -764,7 +904,7 @@ it("uses one duration format in the detail overview, timeline and observation pa
       isBackend(path)
         ? descriptor
         : isSpans(path)
-          ? { items: [root], next_cursor: null }
+          ? { items: [overview(root)], next_cursor: null }
           : root,
     ),
   );
@@ -872,12 +1012,9 @@ it("shows a placeholder while costs load, then one decimal count for the page", 
     if (isSpans(path)) {
       await loaded;
       const id = options.params.path.trace_id;
-      return response({
-        items: [
-          { ...makeTrace(id), cost_usd: id === "small" ? "0.0035" : "0.03" },
-        ],
-        next_cursor: null,
-      });
+      return overviewResponse([
+        { ...makeTrace(id), cost_usd: id === "small" ? "0.0035" : "0.03" },
+      ]);
     }
     return response({
       items: [makeTrace("small"), makeTrace("large")],
@@ -904,21 +1041,22 @@ it("shows a placeholder while costs load, then one decimal count for the page", 
 
 it("opens the root content tab without substituting child output", async () => {
   const user = userEvent.setup();
+  const child = {
+    ...observation("child", "root"),
+    output: "Child only output",
+  };
   http.GET.mockImplementation(async (path) =>
     response(
       isBackend(path)
         ? descriptor
-        : isSpans(path)
-          ? {
-              items: [
-                {
-                  ...observation("child", "root"),
-                  output: "Child only output",
-                },
-              ],
-              next_cursor: null,
-            }
-          : { ...trace(), input: "Root input" },
+        : isSpan(path)
+          ? child
+          : isSpans(path)
+            ? {
+                items: [overview(child)],
+                next_cursor: null,
+              }
+            : { ...trace(), input: "Root input" },
     ),
   );
   mount(<TraceDetail traceId="trace-1" />, "/?tab=content");
@@ -932,6 +1070,6 @@ it("opens the root content tab without substituting child output", async () => {
   await user.click(screen.getByRole("tab", { name: "Observations" }));
   await user.click(await screen.findByRole("treeitem", { name: /^child/ }));
   const childPanel = within(await screen.findByRole("complementary"));
+  expect(await childPanel.findByText("Child only output")).toBeTruthy();
   expect(childPanel.getByRole("heading", { name: "Output" })).toBeTruthy();
-  expect(childPanel.getByText("Child only output")).toBeTruthy();
 });

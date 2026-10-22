@@ -35,6 +35,7 @@ import { ObservationTree } from "./observation-tree";
 import { compareObservations, type ObservationSort } from "./sorting";
 import { CopyableId, IconTile } from "../../shared/identity";
 import { observationRows, type TimelineRow } from "./timeline";
+import { overviewData, type Observation } from "./overview";
 import { Duration, Fact, LevelPill } from "./values";
 import styles from "./traces.module.css";
 
@@ -71,23 +72,41 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const observationsQuery = useInfiniteQuery({
     queryKey: ["trace-observations", workspace.id, traceId],
     initialPageParam: undefined as string | undefined,
-    enabled: query.isSuccess,
+    enabled: !query.isError,
     queryFn: ({ pageParam, signal }) =>
       client
         .workspace(workspace.id)
         .GET("/api/v1/traces/{trace_id}/spans", {
-          params: { path, query: { limit: 50, cursor: pageParam } },
+          params: {
+            path,
+            query: { view: "overview", limit: 50, cursor: pageParam },
+          },
+          signal,
+        })
+        .then(overviewData),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+  const selectedQuery = useQuery({
+    queryKey: ["trace-observation", workspace.id, traceId, selectedId],
+    enabled:
+      query.isSuccess &&
+      tab === "observations" &&
+      selectedId !== null &&
+      selectedId !== query.data.id,
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/traces/{trace_id}/spans/{span_id}", {
+          params: { path: { ...path, span_id: selectedId! } },
           signal,
         })
         .then(data),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   // Do not display cached content after an authorization/not-found response.
-  const accessError =
-    observationsQuery.error instanceof ApiError &&
-    [401, 403, 404].includes(observationsQuery.error.status)
-      ? observationsQuery.error
-      : undefined;
+  const accessError = [observationsQuery.error, selectedQuery.error].find(
+    (error) =>
+      error instanceof ApiError && [401, 403, 404].includes(error.status),
+  );
   if (query.error || accessError)
     return (
       <Page
@@ -101,6 +120,8 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           retry={() => {
             void query.refetch();
             void observationsQuery.refetch();
+            if (selectedId && selectedId !== query.data?.id)
+              void selectedQuery.refetch();
           }}
         />
       </Page>
@@ -108,7 +129,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   if (!query.data) return <Loading variant="detail" page />;
   const root = query.data,
     correlation = traceCorrelation(root);
-  const byId = new Map(
+  const byId = new Map<string, Observation>(
     observationsQuery.data?.pages
       .flatMap((page) => page.items)
       .map((item) => [item.id, item]),
@@ -148,7 +169,18 @@ export function TraceDetail({ traceId }: { traceId: string }) {
       title={<ObservationTitle observation={selected} />}
       onClose={() => setSelectedId(null)}
     >
-      <ObservationPanelBody observation={selected} />
+      {selected.id === root.id ? (
+        <ObservationPanelBody observation={root} />
+      ) : selectedQuery.error ? (
+        <ErrorNotice
+          error={selectedQuery.error}
+          retry={() => void selectedQuery.refetch()}
+        />
+      ) : selectedQuery.data ? (
+        <ObservationPanelBody observation={selectedQuery.data} />
+      ) : (
+        <Loading variant="detail" />
+      )}
     </Panel>
   );
   const provider = backend.data?.type && backendName(backend.data.type);
