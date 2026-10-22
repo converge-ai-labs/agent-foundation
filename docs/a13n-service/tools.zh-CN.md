@@ -165,7 +165,8 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
     {
       "connection_id": "conn_...",
       "tools": null,
-      "defer_loading": true,
+      "exposure": "progressive",
+      "description": "Search and manage project documentation",
       "permission": "ask",
       "permissions": { "delete_page": "deny" }
     }
@@ -174,46 +175,38 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```
 
 - `tools: null` 选择连接暴露的全部工具；列表最多选择 128 个。
-- `defer_loading`（仅 MCP）提供 `load_capability`，让模型在需要时加载该连接的整组工具。
+- `exposure` 选择直接或渐进式 schema，`tool_exposure` 按最终名称精确覆盖。渐进式来源需要在 `description` 中说明用途。
 - `permission` 应用于连接的所有工具，`permissions` 按工具覆盖。
 - 修订版本最多选择 128 个连接。保存时检查每个连接已启用，并暴露所选工具。
 
 执行时每个连接必须为 `ready`。每次调用前，Service 检查连接仍启用且已授权，以及运行仍有可用额度；否则不会发送调用。调用受 `providers.tool_call_seconds` 限制，永不自动重试。
 
-### 分组工具发现
+### 渐进式工具发现
 
-在 Console 中打开 agent 的**工具发现**区域，选择**原生工具搜索**，添加命名分组并选择来源。模型需要支持原生工具搜索。API 使用相同的 `tool_search` 配置：
+在 Console 的**工具发现**区域选择 Harness 或原生发现，再为相应内置工具集、连接或插件设置暴露方式。各来源共用 `exposure`、`tool_exposure` 和 `description`；客户端声明在 `client_toolsets` 中使用相同字段，并包含 `toolset_id` 和 `tools`。
 
 ```json
 {
+  "progressive_search": "harness",
   "connection_tools": [
     {
       "connection_id": "conn_...",
       "permission": "allow",
-      "defer_loading": true
+      "exposure": "progressive",
+      "description": "Search the team handbook and project documentation",
+      "tool_exposure": {"search_docs": "direct"}
     }
-  ],
-  "tool_search": {
-    "config": { "mode": "native", "strategy": "bm25" },
-    "groups": {
-      "knowledge": {
-        "description": "Search the team handbook and project documentation",
-        "connections": ["conn_..."]
-      }
-    }
-  }
+  ]
 }
 ```
 
-模型通过提供商的原生搜索发现单个工具，再调用 `knowledge__search_docs` 等名称。Service 沿用已有连接执行，保留凭据、调用方请求头和工具权限。不支持的模型会在发送模型请求前以 `native_tool_search_unsupported` 失败。
+逐工具覆盖优先于来源默认值。来源使用原生 Toolset ID，工具名称保持不变。Exposure 不改变启用状态、连接权限、凭据或调用者请求头。内置来源默认使用 `GET /toolsets` 提供的用途。
 
-分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已启用的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
+Harness 模式提供 `list_toolsets`、`list_tools`、`search_tools`、`describe_tools` 和 `execute_tool`。搜索返回摘要，描述返回完整 schema 和指令；执行保留原生验证、审批和客户端恢复。
 
-- **原生工具搜索**（`config.mode: native`）使用提供商原生发现和普通工具调用。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。
-- **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `discover_tools`、`describe_tool` 和 `call_tool`。发现保留关键词候选并优先排序精确名称命中，默认返回简短摘要；仅当整个候选集只有一个精确名称命中且定义较小时自动展开；详情查询读取单个完整定义。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
-- **使用来源的加载设置**（省略 `tool_search`）沿用各来源现有的加载方式。
+设置 `progressive_search: native` 使用 provider 原生搜索。仅原生模式可选 `progressive_search_strategy`：`bm25`、`regex` 或 null（provider 默认值）。不支持的模型在请求前以 `native_tool_search_unsupported` 失败。每个子 Agent 使用自己的修订；Run 覆盖替换提交的来源选择和发现字段，显式 null 清除策略。
 
-分组成员关系决定 agent 已有工具的呈现方式。分组内的连接使用分组发现模式，同时保留已保存的 `defer_loading`；移出分组后恢复该设置。未分组的来源保持现有行为。每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。
+限制和执行语义见 [Harness 发现](../a13n-harness/tool-search.md)。
 
 ### 调用方请求头
 

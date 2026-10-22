@@ -211,7 +211,8 @@ class AgentResource(BaseModel):
     harness_plugins: tuple[PluginId, ...] | None
     mcp_servers: tuple[McpServerId, ...] | None
     tools: tuple[str, ...] | None
-    tool_search: AgentToolSearch | None = None
+    progressive_search: Literal["harness", "native"] = "harness"
+    progressive_search_strategy: Literal["bm25", "regex"] | None = None
     subagents: tuple[SubagentSelection, ...]
 ```
 
@@ -235,21 +236,13 @@ Agent `harness_plugins` and `mcp_servers` provide defaults when a new Thread is 
 
 Once initialized, a Thread stores exact lists. Later Agent or global-default selection changes do not silently rewrite that Thread's lists; an explicit Thread patch does.
 
-### Tool Search Groups
+### Toolset Exposure
 
-`tool_search.config.mode` selects `proxy` or `native` for captured groups. Native configuration accepts `strategy` omitted/null, `bm25`, or `regex`; proxy configuration accepts the Harness proxy control names and limits. The selection is captured, inherited by Markdown children, and reconstructed with the groups. Native mode retains canonical target allowlists and local MCP execution. Unsupported native models fail explicitly without fallback.
+Capability selections, MCP resources and Harness Plugin resources carry the same `exposure`, `tool_exposure` and `description` policy. Per-tool overrides use exact final names and take precedence over the source default. Built-in selections resolve to their native Toolset IDs; catalog entries expose those IDs so editors offer exposure only for supported tool-bearing Capabilities. MCP resources use their native MCP Toolset identity. Plugin factories describe their native IDs and purposes through `describe_toolsets(context)` without constructing another plugin or opening a connection. Duplicate or blank IDs and progressive sources without a purpose fail preparation.
 
-Authored configuration and captured compositions use `tool_search` with a discriminated `config`. The selected mode accepts only its own fields.
+Agent `progressive_search` selects `harness` (default) or `native`; `progressive_search_strategy` accepts omitted/null, `bm25` or `regex` only in native mode. The resolver captures these values and each selected source's policy in the Run composition. Markdown children inherit the settings; independently configured Agent children use their own. Reconstruction uses only captured values and constructs sources once through their existing owners. Native mode requires provider support and fails explicitly without fallback.
 
-An Agent may declare `tool_search.groups`, a mapping from group names to `description`, `mcp_servers`, and `harness_plugins`, plus optional `tool_search.config` matching Harness `ProxyToolSearchConfig` or `NativeToolSearchConfig`. These are presentation selections, not reusable resource definitions or source activation. There is no global, Project, or Thread grouping override. Content Plugins contribute skills/subagents, not Harness Plugin tool sources.
-
-Each referenced source must exist in the configured catalog with the specified kind and may belong to at most one group. At capture time, membership intersects the node's enabled source IDs. Configured but disabled sources remain dormant and are never enabled by grouping. Unlisted enabled sources remain direct. A group can mix MCP sources and several exact Harness Plugin instances. An absent or empty mapping preserves direct behavior; groups with no surviving prepared tools expose no controls. Duplicate local tools in a group fail rather than gaining implicit aliases.
-
-The resolver captures the selected plan on each `ResolvedAgentNode`, containing only IDs, descriptions, and discovery settings. Independent Agent children own their own plan; Markdown children inherit the parent plan intersected with their selected sources. Reconstruction uses the captured plan, resolves MCP IDs to the same inert `HarnessUiMCP` instances already selected, and passes a typed Harness build plan with exact plugin IDs. It neither calls plugin contribution methods nor extracts Toolsets early. Native binding, middleware, credentials, recovery, and concurrent Run isolation retain their owners.
-
-Exact `tools` filtering applies to the actual callable target directory before proxy controls are generated. Grouped names are `group__tool`; renaming a group requires explicit allowlist updates. Listing `call_tool` or `discover_tools` alone grants no member access. Source CodeAct eligibility is unchanged. [Harness ToolSearch](../a13n-harness/07-tool-execution.md#grouped-toolsearch-discovery) owns discovery, target restrictions, and native execution semantics.
-
-Legacy nodes missing `tool_search` mean direct presentation. Reading them does not insert a serialized field, replace their stored composition digest/reference, or rewrite history. Changes affect subsequent Runs only.
+Source selection remains independent. Disabled resources stay disabled regardless of policy. Exact `tools` filtering applies to actual callable names before discovery controls are added. A controls-only allowlist grants no target access. Exposure never renames tools, changes permission identities or grants CodeAct eligibility. [Harness Toolset Exposure](../a13n-harness/07-tool-execution.md#toolset-exposure-and-progressive-discovery) owns the discovery and execution contract. Changes affect subsequent Runs.
 
 ## Application File Memory
 

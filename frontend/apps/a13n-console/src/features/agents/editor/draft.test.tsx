@@ -291,60 +291,39 @@ it("preserves reviewer fields and rules, and includes only intentional edits", (
   expect(draft.current.dirty).toBe(false);
 });
 
-it("edits native discovery while preserving source loading and proxy settings", () => {
-  const id = "con_0123456789abcdef0123";
-  const draft = draftFor({
-    connection_tools: [{ connection_id: id, defer_loading: true }],
-    tool_search: {
-      groups: { knowledge: { description: "Lookup", connections: [id] } },
-      config: { mode: "proxy", max_results: 3 },
+it("edits discovery independently of source policies and clears native strategy", () => {
+  const connection = {
+    connection_id: "con_0123456789abcdef0123",
+    exposure: "progressive" as const,
+    description: "Lookup knowledge",
+    tool_exposure: { lookup: "direct" as const },
+  };
+  const draft = draftFor({ connection_tools: [connection] });
+  expect(draft.current.dirty).toBe(false);
+  act(() => {
+    draft.current.setProgressiveSearch("native");
+    draft.current.setProgressiveSearchStrategy("regex");
+  });
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: {
+      progressive_search: "native",
+      progressive_search_strategy: "regex",
+      connection_tools: [connection],
     },
   });
-  expect(draft.current.dirty).toBe(false);
-  act(() =>
-    draft.current.setToolSearch((current) => ({
-      ...current,
-      mode: "native",
-      strategy: "regex",
-    })),
-  );
-  const native = buildDraftConfig(draft.current, undefined, asIs);
-  expect(native.ok && native.config.tool_search?.config).toEqual({
-    mode: "native",
-    strategy: "regex",
+  act(() => draft.current.setProgressiveSearch("harness"));
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: {
+      progressive_search: "harness",
+      progressive_search_strategy: null,
+      connection_tools: [connection],
+    },
   });
-  act(() =>
-    draft.current.setToolSearch((current) => ({ ...current, mode: "proxy" })),
-  );
-  expect(draft.current.dirty).toBe(true);
-  const built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok && built.config.tool_search).toMatchObject({
-    config: { mode: "proxy", max_results: 3 },
-  });
-  expect(built.ok && built.config.connection_tools?.[0].defer_loading).toBe(
-    true,
-  );
   act(() => draft.current.setConnections([]));
-  const removed = buildDraftConfig(draft.current, undefined, asIs);
-  expect(
-    removed.ok && removed.config.tool_search?.groups?.knowledge.connections,
-  ).toEqual([]);
-  act(() =>
-    draft.current.setToolSearch((current) => ({ ...current, mode: "direct" })),
-  );
-  const direct = buildDraftConfig(draft.current, undefined, asIs);
-  expect(direct.ok && direct.config.tool_search).toBeUndefined();
-});
-
-it("reports invalid group names in the discovery section", () => {
-  const draft = draftFor();
-  act(() =>
-    draft.current.setToolSearch({
-      mode: "native",
-      groups: [{ name: "bad__group", description: "Lookup" }],
-    }),
-  );
-  const built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok).toBe(false);
-  expect(!built.ok && built.stage).toBe("toolSearch");
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { connection_tools: [] },
+  });
 });

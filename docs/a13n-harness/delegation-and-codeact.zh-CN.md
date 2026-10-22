@@ -168,9 +168,9 @@ capabilities = (
 
 嵌套调用可能已产生外部副作用时，不能只因后续 Python 程序失败就宣称可安全重试。只有嵌套调用开始后，失败元数据才将副作用标为不确定；已完成工作不回滚或自动重放。
 
-### 通过 ToolSearch 使用大型工具集合
+### 通过渐进式发现使用大型工具集合
 
-[ToolSearch 分组](tool-search.md#use-with-codeact)避免预先将大型集合填入 runner 目录。CodeAct 接收代理搜索/调用函数，按需发现确切 schema，并通过已有 `ToolManager` 桥接派发解析的目标。分组不授予 CodeAct 使用资格：先在来源工具发布类型化策略。`run_code` 和 `run_program` 都支持；代理调用保守地顺序执行，在 `asyncio.gather` 中也如此。
+[渐进式发现](tool-search.md#use-with-codeact)避免将大型集合预先放入 runner 目录。五个控制工具发现、描述当前定义，并通过现有 manager 桥接执行目标。目标保留自己的类型化 CodeAct 策略。两个 runner 都支持这条路径，包括审批和客户端延迟；发现不授予使用资格。
 
 ### 运行时状态
 

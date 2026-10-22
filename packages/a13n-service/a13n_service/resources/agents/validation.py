@@ -74,6 +74,10 @@ async def validate_config(
             ),
         }
     )
+    try:
+        definition.tool_exposure(config, plugins)
+    except (HarnessError, ValidationError) as error:
+        raise invalid("plugins", str(error)) from None
     with at_field("model"):
         model = await resolve_model(session, actor, scope, config.model, verb=verb, authority=authority)
     model_settings(model.config, model.provider, config.model_settings, registry=registry, field="model_settings")
@@ -126,11 +130,13 @@ def _check_rules(config: AgentConfig) -> None:
         if tool.provider_id is None:
             raise invalid(f"toolsets.web.tools.{operation}.config.provider_id", "required while the tool is enabled")
     reserved = toolsets.model_names(config.toolsets) | ({definition.QUESTION_TOOL} if config.user_questions else set())
-    for index, tool in enumerate(config.client_tools):
-        if tool.name in reserved:
-            raise invalid(f"client_tools.{index}.name", "is the name of a built-in tool")
-        if error := _schema_error(tool.parameters_json_schema):
-            raise invalid(f"client_tools.{index}.parameters_json_schema", error)
+    for source_index, source in enumerate(config.client_toolsets):
+        for index, tool in enumerate(source.tools):
+            path = f"client_toolsets.{source_index}.tools.{index}"
+            if tool.name in reserved:
+                raise invalid(f"{path}.name", "is the name of a built-in tool")
+            if error := _schema_error(tool.parameters_json_schema):
+                raise invalid(f"{path}.parameters_json_schema", error)
     if config.reviewer is None and "review" in definition.declared_permissions(config):
         raise invalid("reviewer", "required by the review permission")
     if config.subagent_mode == "async":

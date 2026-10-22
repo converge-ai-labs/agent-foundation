@@ -150,8 +150,9 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 @pytest.mark.anyio
 @pytest.mark.parametrize("timeout", [False, True])
 @pytest.mark.parametrize("mode", ["normal", "goal"])
+@pytest.mark.parametrize("progressive", [False, True])
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
-    tmp_path: Path, monkeypatch, timeout: bool, mode
+    tmp_path: Path, monkeypatch, timeout: bool, mode, progressive: bool
 ) -> None:
     import a13n_harness.models.codex as runtime
     import yaml
@@ -162,10 +163,17 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     root = yaml.safe_load(path.read_text())
     root["tools"]["interaction_timeout_seconds"] = 30
     path.write_text(yaml.safe_dump(root))
+    if progressive:
+        agent_path = path.parent / "agents/codex.yaml"
+        agent = yaml.safe_load(agent_path.read_text())
+        agent.setdefault("capabilities", []).append({"capability": "user_interaction", "exposure": "progressive"})
+        agent_path.write_text(yaml.safe_dump(agent))
 
     async def stream(messages, info):
         names = {tool.name for tool in info.function_tools}
-        assert {"task_create", "task_update", "task_list", "ask_user_question"} <= names
+        assert {"task_create", "task_update", "task_list"} <= names
+        assert ("ask_user_question" in names) is not progressive
+        assert ("execute_tool" in names) is progressive
         assert {"run_code", "run_program", "store", "load", "forget"} <= names
         assert "note" not in names
         returned = [
@@ -185,25 +193,24 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
                     ),
                 )
             }
-        elif "ask_user_question" not in returned:
+        elif ("execute_tool" if progressive else "ask_user_question") not in returned:
+            args = {
+                "questions": [
+                    {
+                        "header": "Option",
+                        "question": "Which option?",
+                        "options": [
+                            {"label": "One", "description": "First"},
+                            {"label": "Two", "description": "Second"},
+                        ],
+                    }
+                ],
+            }
             yield {
                 0: DeltaToolCall(
-                    name="ask_user_question",
+                    name="execute_tool" if progressive else "ask_user_question",
                     tool_call_id="question-one",
-                    json_args=json.dumps(
-                        {
-                            "questions": [
-                                {
-                                    "header": "Option",
-                                    "question": "Which option?",
-                                    "options": [
-                                        {"label": "One", "description": "First"},
-                                        {"label": "Two", "description": "Second"},
-                                    ],
-                                }
-                            ]
-                        }
-                    ),
+                    json_args=json.dumps({"name": "ask_user_question", "arguments": args} if progressive else args),
                 )
             }
         else:
@@ -227,6 +234,10 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         interaction = await backend.interaction()
         assert interaction is not None and interaction.title() == "Option"
         assert interaction.timeout_seconds == 30
+        detail = await app.get_thread(backend.thread_id)
+        assert detail.deferred_requests[0].tool_name == "ask_user_question"
+        assert detail.deferred_requests[0].request_id == "question-one"
+        assert "execute_tool" not in await backend.pending()
         if timeout:
             interaction.request_started -= interaction.timeout_seconds
             assert interaction.expired

@@ -3169,10 +3169,10 @@
         }
       }
     },
-    "/api/agents/{agent_id}/tool-search": {
+    "/api/agents/{agent_id}/tool-exposure": {
       "get": {
-        "summary": "Agent Tool Search",
-        "operationId": "agent_tool_search_api_agents__agent_id__tool_search_get",
+        "summary": "Agent Tool Exposure",
+        "operationId": "agent_tool_exposure_api_agents__agent_id__tool_exposure_get",
         "parameters": [
           {
             "name": "agent_id",
@@ -3190,7 +3190,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentToolSearchView"
+                  "$ref": "#/components/schemas/AgentToolExposureView"
                 }
               }
             }
@@ -7541,71 +7541,38 @@
         ],
         "title": "AgentSummary"
       },
-      "AgentToolSearch": {
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/ToolSearchConfig"
-          },
-          "groups": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/AgentToolSearchGroup"
-            },
-            "type": "object",
-            "title": "Groups"
-          }
-        },
-        "additionalProperties": {
-          "$ref": "#/components/schemas/JsonValue"
-        },
-        "type": "object",
-        "title": "AgentToolSearch"
-      },
-      "AgentToolSearchGroup": {
-        "properties": {
-          "description": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Description"
-          },
-          "mcp_servers": {
-            "items": {
-              "$ref": "#/components/schemas/ResourceId"
-            },
-            "type": "array",
-            "title": "Mcp Servers",
-            "default": []
-          },
-          "harness_plugins": {
-            "items": {
-              "$ref": "#/components/schemas/ResourceId"
-            },
-            "type": "array",
-            "title": "Harness Plugins",
-            "default": []
-          }
-        },
-        "additionalProperties": {
-          "$ref": "#/components/schemas/JsonValue"
-        },
-        "type": "object",
-        "required": [
-          "description"
-        ],
-        "title": "AgentToolSearchGroup"
-      },
-      "AgentToolSearchView": {
+      "AgentToolExposureView": {
         "properties": {
           "agent_id": {
             "type": "string",
             "title": "Agent Id"
           },
-          "tool_search": {
-            "$ref": "#/components/schemas/AgentToolSearch"
+          "progressive_search": {
+            "type": "string",
+            "enum": [
+              "harness",
+              "native"
+            ],
+            "title": "Progressive Search"
+          },
+          "progressive_search_strategy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bm25",
+                  "regex"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progressive Search Strategy"
           },
           "sources": {
             "items": {
-              "$ref": "#/components/schemas/ToolSearchSourceView"
+              "$ref": "#/components/schemas/ToolExposureSourceView"
             },
             "type": "array",
             "title": "Sources"
@@ -7615,11 +7582,12 @@
         "type": "object",
         "required": [
           "agent_id",
-          "tool_search",
+          "progressive_search",
+          "progressive_search_strategy",
           "sources"
         ],
-        "title": "AgentToolSearchView",
-        "description": "Static source membership; never connects to MCP or discovers tools."
+        "title": "AgentToolExposureView",
+        "description": "Static presentation declarations; never connects to MCP or enumerates tools."
       },
       "AllowlistDestinations": {
         "additionalProperties": false,
@@ -8478,6 +8446,30 @@
       },
       "CapabilitySelection": {
         "properties": {
+          "exposure": {
+            "$ref": "#/components/schemas/Exposure",
+            "default": "direct"
+          },
+          "tool_exposure": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Exposure"
+            },
+            "type": "object",
+            "title": "Tool Exposure"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "capability": {
             "$ref": "#/components/schemas/CatalogKey"
           },
@@ -8704,15 +8696,8 @@
             ],
             "title": "Tools"
           },
-          "tool_search": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgentToolSearch"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "tool_exposure": {
+            "$ref": "#/components/schemas/AgentToolExposureView"
           },
           "children": {
             "items": {
@@ -8766,7 +8751,7 @@
           "environment_adapter",
           "environment_run_extension_ids",
           "tools",
-          "tool_search",
+          "tool_exposure",
           "children",
           "omitted_children"
         ],
@@ -8923,6 +8908,14 @@
           "configurable": {
             "type": "boolean",
             "title": "Configurable"
+          },
+          "toolset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Toolset Ids",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -11763,6 +11756,13 @@
         ],
         "title": "ExpiryStatus"
       },
+      "Exposure": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "progressive"
+        ]
+      },
       "ExternalRequestView": {
         "properties": {
           "request_id": {
@@ -14485,38 +14485,6 @@
           "audio"
         ]
       },
-      "NativeToolSearchConfig": {
-        "properties": {
-          "strategy": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "bm25",
-                  "regex"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strategy"
-          },
-          "mode": {
-            "type": "string",
-            "const": "native",
-            "title": "Mode",
-            "default": "native"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "title": "NativeToolSearchConfig",
-        "description": "Provider-native discovery; omitted strategy uses the provider default."
-      },
       "NetworkInterfaceMetrics": {
         "properties": {
           "identity": {
@@ -15600,48 +15568,6 @@
           "chatgpt"
         ],
         "title": "Provider"
-      },
-      "ProxyToolSearchConfig": {
-        "properties": {
-          "search_name": {
-            "type": "string",
-            "title": "Search Name",
-            "default": "discover_tools"
-          },
-          "call_name": {
-            "type": "string",
-            "title": "Call Name",
-            "default": "call_tool"
-          },
-          "max_results": {
-            "type": "integer",
-            "title": "Max Results",
-            "default": 10
-          },
-          "max_search_bytes": {
-            "type": "integer",
-            "title": "Max Search Bytes",
-            "default": 32768
-          },
-          "describe_name": {
-            "type": "string",
-            "title": "Describe Name",
-            "default": "describe_tool"
-          },
-          "mode": {
-            "type": "string",
-            "const": "proxy",
-            "title": "Mode",
-            "default": "proxy"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "title": "ProxyToolSearchConfig",
-        "description": "Names and bounded discovery settings for one Agent's proxy surface."
       },
       "PublicDestinations": {
         "additionalProperties": false,
@@ -18393,10 +18319,10 @@
             "type": "array",
             "title": "Next Capability Ids"
           },
-          "next_tool_search": {
+          "next_tool_exposure": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AgentToolSearchView"
+                "$ref": "#/components/schemas/AgentToolExposureView"
               },
               {
                 "type": "null"
@@ -18464,7 +18390,7 @@
           "next_generation_digest",
           "next_model_id",
           "next_capability_ids",
-          "next_tool_search",
+          "next_tool_exposure",
           "captured",
           "capture_source"
         ],
@@ -19351,6 +19277,73 @@
         "title": "ToolExecutionView",
         "type": "object"
       },
+      "ToolExposureSourceView": {
+        "properties": {
+          "exposure": {
+            "$ref": "#/components/schemas/Exposure",
+            "default": "direct"
+          },
+          "tool_exposure": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Exposure"
+            },
+            "type": "object",
+            "title": "Tool Exposure"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "capability",
+              "mcp_server",
+              "harness_plugin"
+            ],
+            "title": "Kind"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "toolset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Toolset Ids",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resource_id",
+          "name",
+          "kind",
+          "enabled"
+        ],
+        "title": "ToolExposureSourceView",
+        "description": "Source declarations only; counts and tools are discovered during a Run."
+      },
       "ToolImageView": {
         "properties": {
           "thread_id": {
@@ -19369,79 +19362,6 @@
         ],
         "title": "ToolImageView",
         "description": "Host-retained tool image, served through authenticated Thread attachment access."
-      },
-      "ToolSearchConfig": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/ProxyToolSearchConfig"
-          },
-          {
-            "$ref": "#/components/schemas/NativeToolSearchConfig"
-          }
-        ],
-        "discriminator": {
-          "propertyName": "mode",
-          "mapping": {
-            "native": "#/components/schemas/NativeToolSearchConfig",
-            "proxy": "#/components/schemas/ProxyToolSearchConfig"
-          }
-        }
-      },
-      "ToolSearchSourceView": {
-        "properties": {
-          "resource_id": {
-            "type": "string",
-            "title": "Resource Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "mcp_server",
-              "harness_plugin"
-            ],
-            "title": "Kind"
-          },
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          },
-          "group": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Group"
-          },
-          "presentation": {
-            "type": "string",
-            "enum": [
-              "active",
-              "dormant",
-              "direct",
-              "disabled"
-            ],
-            "title": "Presentation"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "resource_id",
-          "name",
-          "kind",
-          "enabled",
-          "group",
-          "presentation"
-        ],
-        "title": "ToolSearchSourceView"
       },
       "TranscriptEntry": {
         "properties": {

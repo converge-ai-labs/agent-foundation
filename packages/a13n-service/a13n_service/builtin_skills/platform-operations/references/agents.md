@@ -22,9 +22,9 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 ## Configure tool discovery
 
-`tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, and optionally `platform: true` for the enabled platform tools. Each source belongs to one group. Set `config.mode: native` for provider-native discovery, or `config.mode: proxy` for Harness proxy search and invocation (the default). Native configuration accepts `strategy: bm25`, `strategy: regex`, or omitted/null for the provider default. Proxy configuration accepts only control names and discovery limits. The calling model's actual profile is checked at execution.
+Built-in toolsets, connections, plugins and client Toolset declarations share `exposure` (`direct` or `progressive`), exact-final-name `tool_exposure` overrides, and `description`. Overrides win over source defaults. Progressive sources need a purpose; built-ins default from the toolset catalog. Client declarations use `client_toolsets`, with `toolset_id` and `tools` on each entry.
 
-Grouped connections use the group's discovery mode while retaining their saved `defer_loading` setting. Outside a group, MCP `defer_loading: true` exposes `load_capability` to load the connection's tools together. Keep source selections and permissions intact when changing presentation. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan.
+Agent `progressive_search` selects `harness` (default) or `native`. Harness provides five fixed controls: `list_toolsets`, `list_tools`, `search_tools`, `describe_tools` and `execute_tool`. Native mode optionally accepts `progressive_search_strategy` of `bm25`, `regex`, or null for the provider default; unsupported models fail explicitly. Native source IDs and tool names remain unchanged. Preserve source selections and permissions when changing visibility. Each child uses its own Revision. Run overrides replace submitted discovery fields; an explicit null strategy clears it.
 
 ## Configure desktop coordinates
 

@@ -7,8 +7,9 @@ from typing import Literal
 from pydantic import Field
 
 from a13n_harness_ui.composition import ResolvedRunComposition
-from a13n_harness_ui.configuration.models import AgentToolSearch, SidekickConfiguration
-from a13n_harness_ui.configuration.views import AgentToolSearchView
+from a13n_harness_ui.configuration.exposure import CAPABILITY_TOOLSETS, source_exposure
+from a13n_harness_ui.configuration.models import SidekickConfiguration
+from a13n_harness_ui.configuration.views import AgentToolExposureView, ToolExposureSourceView
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.model_fast import FastState, fast_state
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeState, reasoning_mode_state
@@ -46,7 +47,7 @@ class CapturedConfiguration(SurfaceModel):
     default_environment: str | None = None
     environment_run_extension_ids: tuple[str, ...]
     tools: tuple[str, ...] | None
-    tool_search: AgentToolSearch | None
+    tool_exposure: AgentToolExposureView
     children: tuple[CapturedAgentSelection, ...] = Field(max_length=100)
     omitted_children: int = Field(ge=0)
     omitted_fields: tuple[str, ...] = (
@@ -101,7 +102,47 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         default_environment=value.default_environment,
         environment_run_extension_ids=tuple(item.extension_id for item in value.environment_run_extensions),
         tools=root.tools,
-        tool_search=root.tool_search,
+        tool_exposure=AgentToolExposureView(
+            agent_id=root.source_id,
+            progressive_search=root.progressive_search,
+            progressive_search_strategy=root.progressive_search_strategy,
+            sources=tuple(
+                [
+                    *(
+                        ToolExposureSourceView(
+                            resource_id=item.capability,
+                            name=item.capability,
+                            kind="capability",
+                            enabled=True,
+                            toolset_ids=CAPABILITY_TOOLSETS.get(item.capability, ()),
+                            **source_exposure(item).model_dump(),
+                        )
+                        for item in root.capabilities
+                    ),
+                    *(
+                        ToolExposureSourceView(
+                            resource_id=item.server_id,
+                            name=item.server_id,
+                            kind="mcp_server",
+                            enabled=True,
+                            toolset_ids=(item.server_id,),
+                            **source_exposure(item).model_dump(),
+                        )
+                        for item in root.mcp_servers
+                    ),
+                    *(
+                        ToolExposureSourceView(
+                            resource_id=item.plugin_id,
+                            name=item.plugin_id,
+                            kind="harness_plugin",
+                            enabled=True,
+                            **source_exposure(item).model_dump(),
+                        )
+                        for item in root.harness_plugins
+                    ),
+                ]
+            ),
+        ),
         children=tuple(
             CapturedAgentSelection(
                 name=child.name,
@@ -124,7 +165,7 @@ class ThreadConfigurationInspection(SurfaceModel):
     next_generation_digest: str | None
     next_model_id: str | None
     next_capability_ids: tuple[str, ...]
-    next_tool_search: AgentToolSearchView | None
+    next_tool_exposure: AgentToolExposureView | None
     captured: CapturedConfiguration | None
     capture_source: Literal["active_operation", "selected_continuation", "none"]
     receipt_id: str | None = None

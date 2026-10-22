@@ -50,6 +50,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, Valid
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
 from pydantic_ai.native_tools import ImageGenerationTool
 
+from a13n_harness_ui.configuration.exposure import CAPABILITY_TOOLSETS
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError
 
@@ -117,6 +118,7 @@ class CatalogReference(BaseModel):
     distribution_version: str | None = None
     import_target: str | None = None
     configurable: bool
+    toolset_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,7 +378,15 @@ class HarnessUiExtensionCatalog:
     ) -> tuple[CatalogReference, ...]:
         values: list[CatalogReference] = []
         for key in sorted(_BUILTIN_CAPABILITIES):
-            values.append(CatalogReference(kind="capability", key=key, source=_builtin_source(key), configurable=True))
+            values.append(
+                CatalogReference(
+                    kind="capability",
+                    key=key,
+                    source=_builtin_source(key),
+                    configurable=True,
+                    toolset_ids=CAPABILITY_TOOLSETS.get(key, ()),
+                )
+            )
         for key in sorted(self._host_capabilities):
             values.append(CatalogReference(kind="capability", key=key, source="host", configurable=True))
         for key, entries in sorted(capability_entry_points.items()):

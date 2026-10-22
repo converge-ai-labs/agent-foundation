@@ -369,34 +369,24 @@ it("checks default memory mounts and remaps only the memory", async () => {
   ]);
 });
 
-it("remaps grouped membership together with its selected connection", () => {
+it("remaps a connection while preserving its source policy", () => {
+  const policy = {
+    exposure: "progressive" as const,
+    description: "Lookup",
+    tool_exposure: { lookup: "direct" as const },
+  };
   const config = {
     model: "test",
-    connection_tools: [{ connection_id: "con_source", defer_loading: true }],
-    tool_search: {
-      config: { mode: "native" as const },
-      groups: {
-        knowledge: {
-          description: "Lookup",
-          connections: ["con_source"],
-          plugins: ["audit"],
-        },
-      },
-    },
+    progressive_search: "native" as const,
+    connection_tools: [{ connection_id: "con_source", ...policy }],
   };
   const dependency = agentDependencies(config).find(
     (item) => item.kind === "connection",
   )!;
   const replaced = dependency.replace("con_target");
   expect(replaced.connection_tools).toEqual([
-    { connection_id: "con_target", defer_loading: true },
+    { connection_id: "con_target", ...policy },
   ]);
-  expect(replaced.tool_search?.groups?.knowledge).toEqual({
-    description: "Lookup",
-    connections: ["con_target"],
-    plugins: ["audit"],
-  });
-  expect(config.tool_search.groups.knowledge.connections).toEqual([
-    "con_source",
-  ]);
+  expect(replaced.progressive_search).toBe("native");
+  expect(config.connection_tools[0].connection_id).toBe("con_source");
 });

@@ -71,7 +71,7 @@ async def test_http_session_preserves_original_capture_and_stays_usable_between_
     from fastmcp.client.transports import StreamableHttpTransport
     from mcp.types import TextContent
 
-    from .test_tool_search_integration import _http_mcp
+    from .test_tool_exposure_integration import _http_mcp
 
     server = FastMCP("HTTP Apps")
     count = 0
@@ -237,7 +237,8 @@ async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Pa
     import json
     from dataclasses import dataclass
 
-    from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
+    from a13n_harness.capabilities import CodeActCapability
+    from a13n_harness.tools import ToolExposure, ToolsetExposure
     from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
     from pydantic_ai.capabilities import WrapperCapability
 
@@ -268,25 +269,27 @@ async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Pa
             yield "done"
         else:
             args = (
-                {"code": "[await call_tool(group='apps', tool='counter', arguments={}) for _ in range(2)]"}
+                {"code": "[await execute_tool(name='counter', arguments={}) for _ in range(2)]"}
                 if codeact
-                else {"group": "apps", "tool": "counter", "arguments": {}}
+                else {"name": "counter", "arguments": {}}
             )
             yield {
                 0: DeltaToolCall(
-                    name="run_code" if codeact else "call_tool",
+                    name="run_code" if codeact else "execute_tool",
                     json_args=json.dumps(args),
                     tool_call_id="outer-call",
                 )
             }
 
-    capabilities = [
-        ToolSearchCapability(groups={"apps": ToolSearchGroup(Eligible(HarnessUiMCP(recipe, apps=connections)), "Apps")})
-    ]
+    capabilities = [Eligible(HarnessUiMCP(recipe, apps=connections))]
     if codeact:
         capabilities.append(CodeActCapability())
     executable = HarnessBuilder().build(
-        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=capabilities
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=capabilities,
+        tool_exposure=ToolExposure(toolsets={"counter": ToolsetExposure(exposure="progressive", description="Apps")}),
     )
     try:
         result = await executable.run("Show the counter", bindings=RunBindings.embedded())

@@ -155,12 +155,17 @@ def test_permissions_compile_from_each_selection() -> None:
                 "permissions": {"pulls": "allow"},
             },
         ],
-        client_tools=[
+        client_toolsets=[
             {
-                "name": "lookup",
-                "description": "Look up",
-                "parameters_json_schema": {"type": "object"},
-                "permission": "deny",
+                "toolset_id": "test-client",
+                "tools": [
+                    {
+                        "name": "lookup",
+                        "description": "Look up",
+                        "parameters_json_schema": {"type": "object"},
+                        "permission": "deny",
+                    }
+                ],
             }
         ],
     )
@@ -171,7 +176,7 @@ def test_permissions_compile_from_each_selection() -> None:
     assert rules[f"mcp/platform/{finding}"] == "allow" and "mcp/platform/list_agents" not in rules
     assert rules[f"mcp/{MCP}/*"] == "review" and rules[f"mcp/{MCP}/drop"] == "deny"
     assert rules[f"tool/{GITHUB}/issues"] == "ask" and rules[f"tool/{GITHUB}/pulls"] == "allow"
-    assert rules["tool/a13n-service-client/lookup"] == "deny"
+    assert rules["tool/test-client/lookup"] == "deny"
     assert definition.declared_permissions(selected) >= {"ask", "review", "deny", "allow"}
     with pytest.raises(ValidationError):
         ConnectionSelection.model_validate({"connection_id": GITHUB, "tools": ["issues"], "permissions": {"x": "deny"}})
@@ -315,7 +320,12 @@ def test_build_composes_the_definition_without_io() -> None:
         instructions="Help.",
         toolsets={"web": {"tools": {"fetch": {}}}, "shell": {"tools": {"exec": {"permission": "review"}}}},
         user_questions=True,
-        client_tools=[{"name": "lookup", "description": "Look up", "parameters_json_schema": {"type": "object"}}],
+        client_toolsets=[
+            {
+                "toolset_id": "test-client",
+                "tools": [{"name": "lookup", "description": "Look up", "parameters_json_schema": {"type": "object"}}],
+            }
+        ],
         reviewer={"model": MODEL},
         plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
         subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
@@ -519,8 +529,17 @@ async def test_references_are_checked_at_their_field_path(service) -> None:  # t
         ),
         ({"toolsets": {"shell": {"tools": {"exec": {"permission": "review"}}}}}, "reviewer"),
         (
-            {"client_tools": [{"name": "view", "description": "View", "parameters_json_schema": {"type": "object"}}]},
-            "client_tools.0.name",
+            {
+                "client_toolsets": [
+                    {
+                        "toolset_id": "test-client",
+                        "tools": [
+                            {"name": "view", "description": "View", "parameters_json_schema": {"type": "object"}}
+                        ],
+                    }
+                ]
+            },
+            "client_toolsets.0.tools.0.name",
         ),
         ({"plugins": [{"instance_name": "audit", "plugin_key": "test.audit"}]}, "plugins.0"),
         ({"default_environment_template_id": missing["et"]}, "default_environment_template_id"),

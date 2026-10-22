@@ -5,12 +5,13 @@ from types import SimpleNamespace
 
 import pytest
 from a13n_harness.capabilities import HandoffCapability
+from a13n_harness.tools.exposure import ToolExposure, ToolsetExposure
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.storage.continuations import read_continuation
 from a13n_harness_ui.surfaces import DecisionResponseBatch, ExternalToolResult, RootOperationStatus
 from pydantic_ai import Tool
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import ModelRequest, ModelResponse, ToolReturnPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets.external import ExternalToolset
@@ -20,9 +21,10 @@ from .test_app import _reconstructed, _settings, _write_configuration
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("progressive", [False, True])
 @pytest.mark.parametrize("submission", ["prompt", "partial", "empty"])
 @pytest.mark.parametrize("fail_after_handoff", [False, True])
-async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submission, fail_after_handoff):
+async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submission, fail_after_handoff, progressive):
     calls = 0
     effects = []
     returns = []
@@ -38,8 +40,12 @@ async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submi
         provider_messages.append(messages)
         if calls == 1:
             yield {
-                0: DeltaToolCall(name="external", json_args="{}", tool_call_id="external-1"),
-                1: DeltaToolCall(name="change", json_args="{}", tool_call_id="approval-1"),
+                index: DeltaToolCall(
+                    name="execute_tool" if progressive else name,
+                    json_args=json.dumps({"name": name, "arguments": {}}) if progressive else "{}",
+                    tool_call_id=call_id,
+                )
+                for index, (name, call_id) in enumerate((("external", "external-1"), ("change", "approval-1")))
             }
         elif calls == 2:
             returns.extend(
@@ -73,6 +79,11 @@ async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submi
                     ],
                 ),
             ),
+            tool_exposure=ToolExposure(
+                toolsets={"external": ToolsetExposure(exposure="progressive", description="External work")}
+            )
+            if progressive
+            else None,
         )
 
     settings = _settings(tmp_path / "state")
@@ -123,7 +134,14 @@ async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submi
             if isinstance(part, ToolReturnPart)
         )
         if fail_after_handoff:
-            assert not any(isinstance(message, ModelResponse) for message in saved.harness_state.message_history)
+            retained_calls = [
+                part.tool_name
+                for message in saved.harness_state.message_history
+                if isinstance(message, ModelResponse)
+                for part in message.parts
+                if isinstance(part, ToolCallPart)
+            ]
+            assert retained_calls == (["describe_tools"] if progressive and submission == "partial" else [])
         assert "Continue safely" in json.dumps(saved.harness_state.model_dump(mode="json"))
     async with open_harness_ui_app(settings, configuration_path=root) as app:
         app._root_runs._executor._agents = SimpleNamespace(reconstruct=reconstruct)

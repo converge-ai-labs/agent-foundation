@@ -181,47 +181,24 @@ subagents:
 
 A referenced Agent can have its own explicit children. Cycles such as `agent-coder → agent-reviewer → agent-coder` are invalid. The same immediate roster name cannot appear twice. Child work stays within the application's existing Project, Environment, lifecycle, and authorization rules; an Agent reference is not an escalation mechanism.
 
-## Tool search groups
+## Toolset exposure
 
-Group large MCP and Harness Plugin tool collections without loading every tool schema into the model context. Edit **the Agent file**, not root defaults or a separate group resource:
+In WebUI, expand a tool-bearing Capability to set its default exposure, purpose and exact-name overrides. MCP and Harness Plugin resource editors offer the same fields. `direct` exposes schemas immediately; `progressive` discovers them when needed. Built-in sources supply default purposes; author a nonblank purpose for other progressive sources.
 
 ```yaml
-# In agents/coder.yaml; referenced resources must already exist.
-tool_search:
-  groups:
-    knowledge:
-      description: Search project documents and organizational memory
-      mcp_servers: [mcp-docs]
-      harness_plugins: [plugin-memory]
-  config:
-    mode: proxy
-    search_name: discover_tools
-    describe_name: describe_tool
-    call_name: call_tool
-    max_results: 10
-    max_search_bytes: 32768
+progressive_search: harness
+capabilities:
+  - capability: dynamic_environment
+    exposure: progressive
+    tool_exposure:
+      shell_exec: direct
 ```
 
-`config.mode: proxy` is the default and uses Harness discovery, description, and call tools. Discovery keeps all keyword candidates, ranks exact names first, and defaults to summaries; it automatically expands a small exact match only when it is the sole candidate. Description loads a selected tool's complete schema and instructions. To use native discovery and direct local calls, replace `config` with `{mode: native, strategy: bm25}`. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default. Native mode rejects proxy control names and limits; proxy mode rejects native strategy settings. Both modes retain grouped tool names and local execution.
+The policy belongs to each source; Agent `progressive_search` chooses `harness` (default) or `native`. Native mode optionally accepts `progressive_search_strategy: bm25` or `regex`; omit it for the provider default. Switching to Harness discovery clears the native strategy. Native mode requires a supported Model and fails without fallback.
 
-For native mode, select a Model that supports native tool search. Unsupported Models fail before the model request, without fallback. See [native tool search](../a13n-harness/tool-search.md#select-native-tool-search) for execution details.
+Exposure does not enable sources or rename tools. Existing Thread source selections and exact `tools` allowlists remain authoritative. A discovery-control-only allowlist grants no target access. Independent Agent children own their settings; Markdown children inherit the parent's settings and source restrictions.
 
-`config` is optional. Group names start with a letter, contain up to 32 letters, digits, underscores or hyphens, and cannot contain `__`. Descriptions must be nonblank and at most 512 characters. Select exact resource IDs, including distinct IDs for multiple instances of the same plugin. A source belongs to one group only. Different sources in a group must have distinct tool names; collisions fail rather than inventing aliases.
-
-**Grouping does not enable sources.** Agent `mcp_servers` and `harness_plugins` remain creation defaults, and existing Threads retain their sticky source selections. A referenced disabled source is dormant. Enabled sources not listed in a group remain direct. Empty groups produce no discovery controls. Content Plugins provide Skills and subagents; they are not Harness Plugin tool sources.
-
-Configure groups in the Agent YAML file, then validate and inspect the result with the CLI. Changes apply to subsequent Runs, never the active Run. WebUI group editing is not available.
-
-```console
-a13n-harness-ui config validate
-a13n-harness-ui config show --format json
-```
-
-`config show` includes `tool_search_previews` for configured Agents. Preview and validation do not connect to MCP or discover tools.
-
-When using an exact `tools` allowlist, list the canonical target names such as `knowledge__lookup`, not just `call_tool`. Proxy controls do not authorize every member. Renaming a group changes those canonical names, so update any affected allowlists. Existing CodeAct policy is preserved; grouping does not make an ineligible tool CodeAct-callable. See [ToolSearch discovery and execution](../a13n-harness/tool-search.md).
-
-Independent Agent children use their own groups. Markdown subagents inherit the parent's grouping plan and their existing source/tool restrictions. Older saved Runs without a grouping plan retain direct presentation.
+The editor's source preview and `config show` expose captured policy without connecting to MCP. Changes apply to subsequent Runs. Validate YAML with `a13n-harness-ui config validate`. See [discovery and execution](../a13n-harness/tool-search.md) for controls, CodeAct, approvals and client-tool continuation.
 
 ## Names and references at a glance
 

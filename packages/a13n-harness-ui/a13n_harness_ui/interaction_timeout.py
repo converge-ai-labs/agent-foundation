@@ -1,5 +1,6 @@
 """Explicit failed responses for Host-owned interaction expiry."""
 
+from a13n_harness.tools import project_tool_call
 from pydantic_ai import DeferredToolRequests
 
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, ThreadDeferredResponse
@@ -23,7 +24,8 @@ def timeout_response(continuation_id: str, requests: DeferredToolRequests) -> Th
                 request_id=request.tool_call_id,
                 denied=True,
                 denial_message=QUESTION_TIMEOUT_MESSAGE
-                if request.tool_name == "ask_user_question"
+                if project_tool_call(request, requests.metadata.get(request.tool_call_id, {})).tool_name
+                == "ask_user_question"
                 else INTERACTION_TIMEOUT_MESSAGE,
             )
             for request in requests.calls

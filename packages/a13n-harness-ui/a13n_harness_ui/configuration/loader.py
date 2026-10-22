@@ -522,6 +522,9 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
             if not isinstance(name, str) or not name or not isinstance(server, dict):
                 raise _error("configuration_resource_invalid", "MCP server entries must be named objects.", path)
             transport = dict(server)
+            exposure = {
+                key: transport.pop(key) for key in ("exposure", "tool_exposure", "description") if key in transport
+            }
             transport_type = transport.pop("type", None)
             expected_type = "stdio" if "command" in transport else "http"
             if transport_type == "streamable-http":
@@ -545,6 +548,7 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
                         "id": resource_id,
                         "name": name,
                         "transport": transport,
+                        **exposure,
                     },
                     ("mcpServers", name),
                 )
@@ -874,7 +878,7 @@ _UniqueSafeLoader.add_constructor(
 def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
     # These authored diagnostics contain source IDs and group/configuration names,
     # not arbitrary resource payloads or credential validation inputs.
-    from .models import _MissingModelReferenceError, _ToolSearchConfigurationError
+    from .models import _MissingModelReferenceError
 
     for error in exc.errors(include_input=False, include_url=False):
         cause = error.get("ctx", {}).get("error")
@@ -888,10 +892,6 @@ def _validation_error(code: str, message: str, path: Path, exc: ValidationError)
                     "model_id": cause.model_id,
                 },
             )
-        if isinstance(cause, _ToolSearchConfigurationError):
-            code = "tool_search_invalid"
-            message = str(cause)
-            break
     return ConfigurationError(
         message,
         code=code,

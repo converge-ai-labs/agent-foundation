@@ -148,6 +148,9 @@ class AgentCompositionResolver:
             ResolvedMcpRecipe(
                 server_id=item,
                 transport=source.mcp_servers[item].transport,
+                exposure=source.mcp_servers[item].exposure,
+                tool_exposure=source.mcp_servers[item].tool_exposure,
+                description=source.mcp_servers[item].description,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
                 generic_selected=item in generic_ids,
                 host_owned=item in source.document.mcp.host_owned_servers,
@@ -419,13 +422,8 @@ class AgentCompositionResolver:
             harness_plugins=plugins,
             mcp_servers=mcp,
             tools=agent.tools,
-            tool_search=(
-                agent.tool_search.selected(
-                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
-                )
-                if agent.tool_search is not None
-                else None
-            ),
+            progressive_search=agent.progressive_search,
+            progressive_search_strategy=agent.progressive_search_strategy,
             children=(),
         )
         edges = list(agent.subagents)
@@ -538,13 +536,8 @@ class AgentCompositionResolver:
             ),
             mcp_servers=self._mcp_recipes(source, mcp_ids),
             tools=parent.tools if child.tools is None else child.tools,
-            tool_search=(
-                parent.tool_search.selected(
-                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
-                )
-                if parent.tool_search is not None
-                else None
-            ),
+            progressive_search=parent.progressive_search,
+            progressive_search_strategy=parent.progressive_search_strategy,
             children=(),
         )
 
@@ -720,6 +713,9 @@ class AgentCompositionResolver:
             recipes.append(
                 ResolvedCapabilityRecipe(
                     capability=item.capability,
+                    exposure=item.exposure,
+                    tool_exposure=item.tool_exposure,
+                    description=item.description,
                     configuration=configuration,
                     model=model,
                     guardian_credits=guardian_credits,
@@ -827,6 +823,9 @@ class AgentCompositionResolver:
                 ) from exc
             result.append(
                 ResolvedPluginRecipe(
+                    exposure=resource.exposure,
+                    tool_exposure=resource.tool_exposure,
+                    description=resource.description,
                     plugin_id=resource.id,
                     plugin_key=resource.plugin_key,
                     configuration=dict(normalized),

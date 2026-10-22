@@ -44,7 +44,7 @@
     },
     "AgentOverride": {
       "additionalProperties": false,
-      "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it; every other field replaces the revision's value.",
+      "description": "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null\nedge removes it. An explicit null `progressive_search_strategy` resets the provider strategy;\nevery other field replaces the revision's value when non-null.",
       "properties": {
         "builtin_skills": {
           "anyOf": [
@@ -63,13 +63,13 @@
           "default": null,
           "title": "Builtin Skills"
         },
-        "client_tools": {
+        "client_toolsets": {
           "anyOf": [
             {
               "items": {
-                "$ref": "#/$defs/ClientToolDefinition"
+                "$ref": "#/$defs/ClientToolsetDefinition"
               },
-              "maxItems": 128,
+              "maxItems": 32,
               "type": "array"
             },
             {
@@ -77,7 +77,7 @@
             }
           ],
           "default": null,
-          "title": "Client Tools"
+          "title": "Client Toolsets"
         },
         "connection_tools": {
           "anyOf": [
@@ -197,6 +197,38 @@
           "default": null,
           "title": "Plugins"
         },
+        "progressive_search": {
+          "anyOf": [
+            {
+              "enum": [
+                "harness",
+                "native"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progressive Search"
+        },
+        "progressive_search_strategy": {
+          "anyOf": [
+            {
+              "enum": [
+                "bm25",
+                "regex"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Progressive Search Strategy"
+        },
         "retries": {
           "anyOf": [
             {
@@ -285,17 +317,6 @@
           ],
           "default": null,
           "title": "Subagents"
-        },
-        "tool_search": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
         },
         "toolsets": {
           "anyOf": [
@@ -581,6 +602,56 @@
       "title": "ClientToolDefinition",
       "type": "object"
     },
+    "ClientToolsetDefinition": {
+      "additionalProperties": false,
+      "description": "One stable grouping of external client declarations.",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "exposure": {
+          "$ref": "#/$defs/Exposure",
+          "default": "direct"
+        },
+        "tool_exposure": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Exposure"
+          },
+          "title": "Tool Exposure",
+          "type": "object"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ClientToolDefinition"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "toolset_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Toolset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "toolset_id",
+        "tools"
+      ],
+      "title": "ClientToolsetDefinition",
+      "type": "object"
+    },
     "Configuration": {
       "properties": {
         "id": {
@@ -649,10 +720,23 @@
           "title": "Connection Id",
           "type": "string"
         },
-        "defer_loading": {
-          "default": false,
-          "title": "Defer Loading",
-          "type": "boolean"
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "exposure": {
+          "$ref": "#/$defs/Exposure",
+          "default": "direct"
         },
         "permission": {
           "$ref": "#/$defs/ToolPermissionSetting",
@@ -668,6 +752,13 @@
             "minLength": 1
           },
           "title": "Permissions",
+          "type": "object"
+        },
+        "tool_exposure": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Exposure"
+          },
+          "title": "Tool Exposure",
           "type": "object"
         },
         "tools": {
@@ -1240,6 +1331,13 @@
       },
       "title": "EnvironmentPermissionSet",
       "type": "object"
+    },
+    "Exposure": {
+      "enum": [
+        "direct",
+        "progressive"
+      ],
+      "type": "string"
     },
     "Failed": {
       "additionalProperties": false,
@@ -1840,39 +1938,6 @@
         "content"
       ],
       "title": "MessagePayload",
-      "type": "object"
-    },
-    "NativeToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Provider-native discovery; omitted strategy uses the provider default.",
-      "properties": {
-        "mode": {
-          "const": "native",
-          "default": "native",
-          "title": "Mode",
-          "type": "string"
-        },
-        "strategy": {
-          "anyOf": [
-            {
-              "enum": [
-                "bm25",
-                "regex"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Strategy"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "NativeToolSearchConfig",
       "type": "object"
     },
     "ObserverContinuation": {
@@ -2481,6 +2546,24 @@
           "title": "Config",
           "type": "object"
         },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "exposure": {
+          "$ref": "#/$defs/Exposure",
+          "default": "direct"
+        },
         "instance_name": {
           "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
           "title": "Instance Name",
@@ -2490,6 +2573,13 @@
           "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
           "title": "Plugin Key",
           "type": "string"
+        },
+        "tool_exposure": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Exposure"
+          },
+          "title": "Tool Exposure",
+          "type": "object"
         }
       },
       "required": [
@@ -2542,48 +2632,6 @@
         "last_occurrence_id"
       ],
       "title": "Progress",
-      "type": "object"
-    },
-    "ProxyToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
-      "properties": {
-        "call_name": {
-          "default": "call_tool",
-          "title": "Call Name",
-          "type": "string"
-        },
-        "describe_name": {
-          "default": "describe_tool",
-          "title": "Describe Name",
-          "type": "string"
-        },
-        "max_results": {
-          "default": 10,
-          "title": "Max Results",
-          "type": "integer"
-        },
-        "max_search_bytes": {
-          "default": 32768,
-          "title": "Max Search Bytes",
-          "type": "integer"
-        },
-        "mode": {
-          "const": "proxy",
-          "default": "proxy",
-          "title": "Mode",
-          "type": "string"
-        },
-        "search_name": {
-          "default": "discover_tools",
-          "title": "Search Name",
-          "type": "string"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "ProxyToolSearchConfig",
       "type": "object"
     },
     "RecordSource": {
@@ -3694,84 +3742,6 @@
       "title": "ToolRiskLevel",
       "type": "string"
     },
-    "ToolSearch": {
-      "additionalProperties": false,
-      "description": "Presentation of already-selected sources, composed by Harness once per agent.",
-      "properties": {
-        "config": {
-          "$ref": "#/$defs/ToolSearchConfig"
-        },
-        "groups": {
-          "additionalProperties": {
-            "$ref": "#/$defs/ToolSearchGroup"
-          },
-          "maxProperties": 128,
-          "title": "Groups",
-          "type": "object"
-        }
-      },
-      "title": "ToolSearch",
-      "type": "object"
-    },
-    "ToolSearchConfig": {
-      "discriminator": {
-        "mapping": {
-          "native": "#/$defs/NativeToolSearchConfig",
-          "proxy": "#/$defs/ProxyToolSearchConfig"
-        },
-        "propertyName": "mode"
-      },
-      "oneOf": [
-        {
-          "$ref": "#/$defs/ProxyToolSearchConfig"
-        },
-        {
-          "$ref": "#/$defs/NativeToolSearchConfig"
-        }
-      ]
-    },
-    "ToolSearchGroup": {
-      "additionalProperties": false,
-      "properties": {
-        "connections": {
-          "default": [],
-          "items": {
-            "maxLength": 41,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-            "type": "string"
-          },
-          "maxItems": 128,
-          "title": "Connections",
-          "type": "array"
-        },
-        "description": {
-          "maxLength": 512,
-          "minLength": 1,
-          "title": "Description",
-          "type": "string"
-        },
-        "platform": {
-          "default": false,
-          "title": "Platform",
-          "type": "boolean"
-        },
-        "plugins": {
-          "default": [],
-          "items": {
-            "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
-            "type": "string"
-          },
-          "maxItems": 128,
-          "title": "Plugins",
-          "type": "array"
-        }
-      },
-      "required": [
-        "description"
-      ],
-      "title": "ToolSearchGroup",
-      "type": "object"
-    },
     "ToolSelection": {
       "additionalProperties": false,
       "properties": {
@@ -3823,10 +3793,35 @@
           "title": "Config",
           "type": "object"
         },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
         "enabled": {
           "default": true,
           "title": "Enabled",
           "type": "boolean"
+        },
+        "exposure": {
+          "$ref": "#/$defs/Exposure",
+          "default": "direct"
+        },
+        "tool_exposure": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Exposure"
+          },
+          "title": "Tool Exposure",
+          "type": "object"
         },
         "tools": {
           "maxProperties": 64,

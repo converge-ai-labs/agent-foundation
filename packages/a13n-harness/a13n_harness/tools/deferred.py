@@ -44,6 +44,20 @@ class DeferredToolResume:
         except Exception as exc:
             raise TypeError("Deferred tool values must be detachable") from exc
 
+    def native_results(self) -> DeferredToolResults:
+        """Translate target argument edits to the original native invocation envelope."""
+        from a13n_harness.tools.exposure import invocation_target
+
+        results = deepcopy(self.results)
+        for call in self.requests.approvals:
+            target = invocation_target(call, self.requests.metadata.get(call.tool_call_id, {}))
+            approval = results.approvals.get(call.tool_call_id)
+            if target is not None and isinstance(approval, ToolApproved) and approval.override_args is not None:
+                results.approvals[call.tool_call_id] = replace(
+                    approval, override_args={"name": target.name, "arguments": approval.override_args}
+                )
+        return results
+
     def remaining(self, messages: Sequence[ModelMessage]) -> DeferredToolResume | None:
         """Keep only this batch's unanswered calls at the continuation tail.
 
@@ -131,7 +145,9 @@ def preflight_deferred_resume(
     try:
         pending_calls = {request.tool_call_id: request for request in detached.requests.calls}
         for call_id, call_result in tuple(detached.results.calls.items()):
-            request = pending_calls[call_id]
+            from a13n_harness.tools.exposure import project_tool_call
+
+            request = project_tool_call(pending_calls[call_id], detached.requests.metadata.get(call_id, {}))
             if isinstance(call_result, ToolFailed):
                 require_finite_json(call_result.message)
                 continue

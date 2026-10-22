@@ -46,7 +46,9 @@ async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_mod
         "description": "Look a value up",
         "parameters_json_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
     }
-    agent = await runs_kit.create_agent(executing, scripted_model, client_tools=[lookup])
+    agent = await runs_kit.create_agent(
+        executing, scripted_model, client_toolsets=[{"toolset_id": "test-client", "tools": [lookup]}]
+    )
     scripted_model.call("lookup", {"q": "answer"}, call_id="call_lookup")
     submitted = await runs_kit.start_thread(executing, agent, "look it up")
     waiting = await runs_kit.sealed(executing, submitted["run"]["id"])
@@ -75,7 +77,12 @@ async def test_a_client_tool_waits_and_resume_answers_it(executing, scripted_mod
 
 async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     lookup = {"name": "lookup", "description": "Look a value up", "parameters_json_schema": {"type": "object"}}
-    agent = await runs_kit.create_agent(executing, scripted_model, instructions="Role: default", client_tools=[lookup])
+    agent = await runs_kit.create_agent(
+        executing,
+        scripted_model,
+        instructions="Role: default",
+        client_toolsets=[{"toolset_id": "test-client", "tools": [lookup]}],
+    )
     scripted_model.call("lookup", {}, call_id="call_lookup")
     overridden = runs_kit.message(agent, "look", options={"overrides": {"instructions": "Role: stand-in"}})
     response = await executing.client.post(f"{executing.api}/threads", json=overridden, headers=runs_kit.fresh_key())
@@ -91,7 +98,7 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
     revision, config = executed.json()["revision"], executed.json()["config"]
     assert revision["id"] == waiting["agent_revision_id"]
     assert (revision["config"]["instructions"], config["instructions"]) == ("Role: default", "Role: stand-in")
-    assert config["client_tools"] == revision["config"]["client_tools"]
+    assert config["client_toolsets"] == revision["config"]["client_toolsets"]
 
     scripted_model.say("Done")
     answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}

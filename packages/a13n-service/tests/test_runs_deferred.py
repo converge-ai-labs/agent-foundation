@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
-async def mixed_wait(service, scripted_model, runs_kit, *, options=None):  # type: ignore[no-untyped-def]
+async def mixed_wait(service, scripted_model, runs_kit, *, options=None, progressive=False):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     model = await runs_kit.create_model(service, scripted_model)
     agent = await runs_kit.add_agent(
@@ -15,21 +15,33 @@ async def mixed_wait(service, scripted_model, runs_kit, *, options=None):  # typ
         "mixed",
         model,
         user_questions=True,
-        client_tools=[
+        client_toolsets=[
             {
-                "name": "review_invoice",
-                "description": "Ask a human to check the invoice",
-                "parameters_json_schema": {"type": "object"},
+                "toolset_id": "test-client",
+                "description": "Review invoices with a human.",
+                "exposure": "progressive" if progressive else "direct",
+                "tools": [
+                    {
+                        "name": "review_invoice",
+                        "description": "Ask a human to check the invoice",
+                        "parameters_json_schema": {"type": "object"},
+                    }
+                ],
             }
         ],
         builtin_skills=["platform-operations"],
-        toolsets={"files": {"tools": {"view": {"permission": "ask"}}}, "shell": {"enabled": False}},
+        toolsets={
+            "files": {"exposure": "progressive" if progressive else "direct", "tools": {"view": {"permission": "ask"}}},
+            "shell": {"enabled": False},
+        },
     )
     calls = [
         ("view", {"file_path": runs_kit.GUIDE}, "approve"),
         ("review_invoice", {}, "review"),
         ("ask_user_question", {"questions": [runs_kit.QUESTION]}, "question"),
     ]
+    if progressive:
+        calls = [("execute_tool", {"name": name, "arguments": args}, cid) for name, args, cid in calls]
     scripted_model._script(
         {
             "deltas": [
@@ -99,10 +111,13 @@ async def test_incomplete_or_misclassified_batches_leave_no_successor(service, s
 
 
 @pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("progressive", [False, True])
 async def test_custom_human_results_and_native_failures_share_the_same_resume(
-    service, scripted_model, runs_kit, failed
+    service, scripted_model, runs_kit, failed, progressive
 ):  # type: ignore[no-untyped-def]
-    _, waiting = await mixed_wait(service, scripted_model, runs_kit)
+    _, waiting = await mixed_wait(service, scripted_model, runs_kit, progressive=progressive)
+    assert waiting["pending"]["approvals"][0]["tool_name"] == "view"
+    assert {call["tool_name"] for call in waiting["pending"]["calls"]} == {"review_invoice", "ask_user_question"}
     body = results()
     if failed:
         body["calls"]["review"] = {"status": "failed", "message": "Reviewer unavailable"}

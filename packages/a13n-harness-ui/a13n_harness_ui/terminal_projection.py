@@ -12,6 +12,7 @@ from typing import Literal
 
 import yaml
 from a13n_harness.capabilities import AskUserQuestionRequest
+from a13n_harness.tools.exposure import project_tool_call
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
@@ -417,6 +418,7 @@ class TerminalProjectionService:
             return None
         projected = []
         for request in requests.calls:
+            request = project_tool_call(request, requests.metadata.get(request.tool_call_id, {}))
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
             metadata_omitted = raw_metadata is not None and metadata is None
@@ -461,6 +463,7 @@ class TerminalProjectionService:
                     )
                 )
         for request in requests.approvals:
+            request = project_tool_call(request, requests.metadata.get(request.tool_call_id, {}))
             value, omitted = _bounded_json(request.args)
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
@@ -873,6 +876,7 @@ def _pending_summary(value: DeferredToolRequests | None) -> PendingDecisionSumma
         return None
     kinds: set[Literal["question", "approval", "external"]] = set()
     for request in value.calls:
+        request = project_tool_call(request, value.metadata.get(request.tool_call_id, {}))
         kinds.add("question" if request.tool_name == "ask_user_question" else "external")
     if value.approvals:
         kinds.add("approval")

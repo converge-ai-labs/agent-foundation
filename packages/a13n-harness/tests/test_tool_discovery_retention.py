@@ -11,12 +11,11 @@ from a13n_harness.capabilities import (
     CompactionCapability,
     CompactionPolicy,
     HandoffCapability,
-    ToolSearchCapability,
-    ToolSearchGroup,
 )
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.content import request_input_content
 from a13n_harness.tools import discovery
+from a13n_harness.tools.exposure import ToolExposure, ToolsetExposure
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
 from pydantic_ai import FunctionToolset, Tool
 from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
@@ -40,6 +39,13 @@ from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.anyio
 
+_PROGRESSIVE = ToolExposure(
+    toolsets={
+        name: ToolsetExposure(exposure="progressive", description="Available operations")
+        for name in ("math", "source", "different-source", "lookup-source")
+    }
+)
+
 
 def _scripted_model(function):
     async def stream(messages, info):
@@ -59,7 +65,7 @@ def _scripted_model(function):
     return FunctionModel(stream_function=stream)
 
 
-def _source(effects, *, proxy=False):
+def _source(effects, *, progressive=False):
     def double(value: int) -> int:
         effects.append(value)
         return value * 2
@@ -68,11 +74,11 @@ def _source(effects, *, proxy=False):
         return value * 3
 
     tools = CodeActPolicyToolset(
-        FunctionToolset([Tool(double, defer_loading=not proxy), Tool(triple, defer_loading=not proxy)], id="math"),
+        FunctionToolset(
+            [Tool(double, defer_loading=not progressive), Tool(triple, defer_loading=not progressive)], id="math"
+        ),
         CodeActToolPolicy(default=True),
     )
-    if proxy:
-        return ToolSearchCapability(groups={"math": ToolSearchGroup(tools, "Arithmetic")})
     return Capability(toolsets=[tools])
 
 
@@ -165,16 +171,16 @@ async def test_native_discovery_retains_lru_and_immediate_codeact_directory(monk
 
 
 @pytest.mark.parametrize("nested", [False, True])
-async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
+async def test_progressive_discovery_survives_summary_and_state_roundtrip(nested):
     effects = []
     index = 0
     observed = []
-    search = ("discover_tools", {"query": "double"})
+    search = ("search_tools", {"query": "double"})
     if nested:
-        search = ("run_code", {"code": "await discover_tools(query='double')"})
+        search = ("run_code", {"code": "await search_tools(query='double')"})
     calls = [
         search,
-        ("run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 20})"}),
+        ("run_code", {"code": "await execute_tool(name='double', arguments={'value': 20})"}),
         ("summarize", {"content": "Continue arithmetic"}),
     ]
 
@@ -187,16 +193,20 @@ async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
         index += 1
         return _call(name, args, index)
 
-    capabilities = (_source(effects, proxy=True), CodeActCapability(), HandoffCapability())
+    capabilities = (_source(effects, progressive=True), CodeActCapability(), HandoffCapability())
     executable = HarnessBuilder().build(
-        AgentSpec(), model=_scripted_model(model), output_type=str, capabilities=capabilities
+        AgentSpec(),
+        model=_scripted_model(model),
+        output_type=str,
+        capabilities=capabilities,
+        tool_exposure=_PROGRESSIVE,
     )
     result = await executable.run("Find arithmetic tools", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "saved"
     text = ModelMessagesTypeAdapter.dump_json(observed[-1]).decode()
     assert "parameters_json_schema" in text and "double" in text
     assert "retained-tool-discovery" in text
-    assert "no search was executed" in text
+    assert "no discovery was executed" in text
     assert "Search again" in text
     assert not any(
         isinstance(part, ToolCallPart) and part.tool_name == "run_code" for msg in observed[-1] for part in msg.parts
@@ -211,20 +221,22 @@ async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
             return _call("summarize", {"content": "Continue once more"}, 10)
         if resumed == 2:
             assert "parameters_json_schema" in ModelMessagesTypeAdapter.dump_json(messages).decode()
-            return _call(
-                "run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 21})"}, 11
-            )
+            return _call("run_code", {"code": "await execute_tool(name='double', arguments={'value': 21})"}, 11)
         return ModelResponse(parts=[TextPart("done")])
 
     executable = HarnessBuilder().build(
-        AgentSpec(), model=_scripted_model(resume), output_type=str, capabilities=capabilities
+        AgentSpec(),
+        model=_scripted_model(resume),
+        output_type=str,
+        capabilities=capabilities,
+        tool_exposure=_PROGRESSIVE,
     )
     result = await executable.run("Continue", previous_state=state, bindings=RunBindings.embedded())
     assert result.output_or_raise() == "done"
     assert effects == [20, 21]
 
 
-async def _run_calls(capabilities, calls, *, previous_state=None):
+async def _run_calls(capabilities, calls, *, previous_state=None, progressive=False):
     snapshots = []
     index = 0
 
@@ -242,18 +254,30 @@ async def _run_calls(capabilities, calls, *, previous_state=None):
         model=_scripted_model(model),
         output_type=str,
         capabilities=capabilities,
+        tool_exposure=_PROGRESSIVE if progressive else None,
     )
     result = await executable.run("Continue", previous_state=previous_state, bindings=RunBindings.embedded())
     assert result.output_or_raise() == "done"
     return result, snapshots
 
 
-@pytest.mark.parametrize("proxy", [False, True])
-async def test_search_without_target_calls_retains_nothing(monkeypatch, proxy):
+@pytest.mark.parametrize("progressive", [False, True])
+async def test_search_without_target_calls_retains_nothing(monkeypatch, progressive):
     monkeypatch.setattr(discovery, "_MAX_TOOLS", 1)
-    capabilities = (_source([], proxy=proxy), ToolSearch(strategy="keywords"), CodeActCapability(), HandoffCapability())
-    search = ("discover_tools", {"query": ""}) if proxy else ("search_tools", {"queries": ["double triple"]})
-    _, snapshots = await _run_calls(capabilities, [search, ("summarize", {"content": "Continue"})])
+    capabilities = (
+        _source([], progressive=progressive),
+        *((ToolSearch(strategy="keywords"),) if not progressive else ()),
+        CodeActCapability(),
+        HandoffCapability(),
+    )
+    search = (
+        ("search_tools", {"query": "double triple"})
+        if progressive
+        else ("search_tools", {"queries": ["double triple"]})
+    )
+    _, snapshots = await _run_calls(
+        capabilities, [search, ("summarize", {"content": "Continue"})], progressive=progressive
+    )
     messages, info = snapshots[-1]
     assert not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts)
     for tool in info.function_tools:
@@ -297,26 +321,22 @@ async def test_byte_budget_counts_native_schema_and_both_codeact_directories(mon
 
 
 @pytest.mark.parametrize("change", ["removed", "identity", "schema", "instructions"])
-async def test_proxy_revalidation_drops_stale_evidence(change):
+async def test_progressive_revalidation_drops_stale_evidence(change):
     def lookup(value: int) -> int:
         return value
 
     def grouped(*, source_id="source", description="Lookup an integer", instructions="Original guidance"):
-        return ToolSearchCapability(
-            groups={
-                "db": ToolSearchGroup(
-                    FunctionToolset([Tool(lookup, description=description)], id=source_id, instructions=instructions),
-                    "Database",
-                )
-            }
+        return Capability(
+            toolsets=[FunctionToolset([Tool(lookup, description=description)], id=source_id, instructions=instructions)]
         )
 
     first, _ = await _run_calls(
         (grouped(), HandoffCapability()),
         [
-            ("discover_tools", {"query": "lookup"}),
-            ("call_tool", {"group": "db", "tool": "lookup", "arguments": {"value": 1}}),
+            ("search_tools", {"query": "lookup"}),
+            ("execute_tool", {"name": "lookup", "arguments": {"value": 1}}),
         ],
+        progressive=True,
     )
     state = HarnessState.model_validate_json(first.state.model_dump_json())
     updated = {
@@ -326,7 +346,7 @@ async def test_proxy_revalidation_drops_stale_evidence(change):
         "instructions": grouped(instructions="New guidance"),
     }[change]
     _, snapshots = await _run_calls(
-        (updated, HandoffCapability()), [("summarize", {"content": "Continue"})], previous_state=state
+        (updated, HandoffCapability()), [("summarize", {"content": "Continue"})], previous_state=state, progressive=True
     )
     results = [part for message in snapshots[-1][0] for part in message.parts if isinstance(part, ToolReturnPart)]
     if change in {"removed", "identity"}:
@@ -421,7 +441,10 @@ async def test_provider_native_discovery_final_answer_roundtrip_and_wire_project
         )
 
     executable = HarnessBuilder().build(
-        AgentSpec(), model=_scripted_model(discover), output_type=str, capabilities=capabilities
+        AgentSpec(),
+        model=_scripted_model(discover),
+        output_type=str,
+        capabilities=capabilities,
     )
     first = await executable.run("Find arithmetic", bindings=RunBindings.embedded())
     assert first.output_or_raise() == "Found arithmetic"
@@ -495,32 +518,33 @@ async def test_provider_native_discovery_final_answer_roundtrip_and_wire_project
         responses._get_native_tools(prepared)
 
 
-async def test_nested_proxy_state_deduplicates_calls_and_eviction_does_not_resurrect(monkeypatch):
+async def test_nested_progressive_state_deduplicates_calls_and_eviction_does_not_resurrect(monkeypatch):
     monkeypatch.setattr(discovery, "_MAX_STATE_BYTES", 1200)
-    capabilities = (_source([], proxy=True), CodeActCapability(), HandoffCapability())
+    capabilities = (_source([], progressive=True), CodeActCapability(), HandoffCapability())
     first, _ = await _run_calls(
         capabilities,
         [
-            ("run_code", {"code": "await discover_tools(query='double')"}),
+            ("run_code", {"code": "await search_tools(query='double')"}),
             (
                 "run_code",
-                {
-                    "code": "for i in range(40):\n    await call_tool(group='math', tool='double', arguments={'value': i})"
-                },
+                {"code": "for i in range(40):\n    await execute_tool(name='double', arguments={'value': i})"},
             ),
         ],
+        progressive=True,
     )
     data = first.state.agent_context_state.get(discovery._DISCOVERY_ID).data
-    assert data == {"called": [{"name": "math__double", "tool_id": "tool/math/double"}]}
+    assert data == {"called": [{"name": "double", "tool_id": "tool/math/double"}]}
     assert len(json.dumps(data).encode()) < 1200
     monkeypatch.setattr(discovery, "_MAX_CONTEXT_BYTES", 1)
     second, snapshots = await _run_calls(
-        capabilities, [("summarize", {"content": "Continue"})], previous_state=first.state
+        capabilities, [("summarize", {"content": "Continue"})], previous_state=first.state, progressive=True
     )
     assert not any(isinstance(p, ToolReturnPart) for msg in snapshots[-1][0] for p in msg.parts)
     assert second.state.agent_context_state.get(discovery._DISCOVERY_ID).data == {"called": []}
     monkeypatch.setattr(discovery, "_MAX_CONTEXT_BYTES", 65536)
-    _, snapshots = await _run_calls(capabilities, [("summarize", {"content": "Continue"})], previous_state=second.state)
+    _, snapshots = await _run_calls(
+        capabilities, [("summarize", {"content": "Continue"})], previous_state=second.state, progressive=True
+    )
     assert not any(isinstance(p, ToolReturnPart) for msg in snapshots[-1][0] for p in msg.parts)
 
 
@@ -568,44 +592,53 @@ async def test_overlapping_native_searches_rebuild_each_called_schema_once():
     assert len(json.dumps(outputs).encode()) < discovery._MAX_CONTEXT_BYTES
 
 
-@pytest.mark.parametrize("mode", ["native", "proxy", "nested"])
+@pytest.mark.parametrize("mode", ["native", "progressive", "nested"])
 async def test_multi_tool_search_retains_only_called_member(monkeypatch, mode):
     monkeypatch.setattr(discovery, "_MAX_TOOLS", 1)
-    proxy = mode != "native"
-    capabilities = (_source([], proxy=proxy), ToolSearch(strategy="keywords"), CodeActCapability(), HandoffCapability())
+    progressive = mode != "native"
+    capabilities = (
+        _source([], progressive=progressive),
+        *((ToolSearch(strategy="keywords"),) if not progressive else ()),
+        CodeActCapability(),
+        HandoffCapability(),
+    )
     if mode == "native":
         calls = [("search_tools", {"queries": ["double triple"]}), ("double", {"value": 1})]
-    elif mode == "proxy":
+    elif mode == "progressive":
         calls = [
-            ("discover_tools", {"query": ""}),
-            ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
+            ("search_tools", {"query": "double triple"}),
+            ("execute_tool", {"name": "double", "arguments": {"value": 1}}),
         ]
     else:
         calls = [
             (
                 "run_code",
                 {
-                    "code": "await discover_tools(query='')\nawait call_tool(group='math', tool='double', arguments={'value': 1})"
+                    "code": "await search_tools(query='double triple')\nawait execute_tool(name='double', arguments={'value': 1})"
                 },
             )
         ]
     calls.append(("summarize", {"content": "Continue"}))
-    _, snapshots = await _run_calls(capabilities, calls)
+    _, snapshots = await _run_calls(capabilities, calls, progressive=progressive)
     messages, info = snapshots[-1]
     results = [p for msg in messages for p in msg.parts if isinstance(p, ToolReturnPart)]
     assert len(results) == 1
     retained_calls = [p for msg in messages for p in msg.parts if isinstance(p, ToolCallPart)]
     assert len(retained_calls) == 1
     marker = "[query omitted during context replacement]"
-    assert retained_calls[0].args_as_dict() == ({"query": marker, "detail": "full"} if proxy else {"queries": [marker]})
+    assert retained_calls[0].args_as_dict() == ({"names": ["double"]} if progressive else {"queries": [marker]})
     assert "Original search queries were not retained" in ModelMessagesTypeAdapter.dump_json(messages).decode()
-    if proxy:
-        assert [entry["tool"] for entry in results[0].content["tools"]] == ["double"]
+    if progressive:
+        assert [entry["name"] for entry in results[0].content["tools"]] == ["double"]
         assert results[0].content["partial"] is True
         assert not info.model_request_parameters.revealed_tool_names
     else:
         assert info.model_request_parameters.revealed_tool_names == {"double"}
-    assert "triple" not in ModelMessagesTypeAdapter.dump_json(messages).decode()
+    assert (
+        all(entry["name"] != "triple" for entry in results[0].content["tools"])
+        if progressive
+        else "triple" not in ModelMessagesTypeAdapter.dump_json(messages).decode()
+    )
 
 
 async def test_search_noise_cannot_evict_a_called_tool(monkeypatch):
@@ -641,7 +674,7 @@ async def test_call_recency_controls_eviction(monkeypatch):
 
 
 @pytest.mark.parametrize("nested", [False, True])
-async def test_wrapped_proxy_search_does_not_break_called_tool_retention(nested):
+async def test_wrapped_progressive_search_does_not_break_called_tool_retention(nested):
     def lookup() -> int:
         return 42
 
@@ -651,20 +684,21 @@ async def test_wrapped_proxy_search_does_not_break_called_tool_retention(nested)
         CodeActToolPolicy(default=True),
     )
     capabilities = (
-        ToolSearchCapability(groups={"db": ToolSearchGroup(source, "Database")}),
+        Capability(toolsets=[source]),
         CodeActCapability(),
         HandoffCapability(),
     )
-    search = ("discover_tools", {"query": "lookup", "detail": "full"})
+    search = ("describe_tools", {"names": ["lookup"]})
     if nested:
-        search = ("run_code", {"code": "await discover_tools(query='lookup', detail='full')"})
+        search = ("run_code", {"code": "await describe_tools(names=['lookup'])"})
     result, snapshots = await _run_calls(
         capabilities,
         [
             search,
-            ("call_tool", {"group": "db", "tool": "lookup", "arguments": {}}),
+            ("execute_tool", {"name": "lookup", "arguments": {}}),
             ("summarize", {"content": "Continue"}),
         ],
+        progressive=True,
     )
     if not nested:
         original = next(p for msg in snapshots[1][0] for p in msg.parts if isinstance(p, ToolReturnPart))
@@ -779,27 +813,29 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
         assert [item["name"] for item in saved.data["called"]] == ["lookup"]
 
 
-async def test_proxy_call_without_search_reconstructs_current_schema():
+async def test_progressive_call_without_search_reconstructs_current_schema():
     _, snapshots = await _run_calls(
-        (_source([], proxy=True), HandoffCapability()),
+        (_source([], progressive=True), HandoffCapability()),
         [
-            ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
+            ("execute_tool", {"name": "double", "arguments": {"value": 1}}),
             ("summarize", {"content": "Continue"}),
         ],
+        progressive=True,
     )
     retained = next(p for msg in snapshots[-1][0] for p in msg.parts if isinstance(p, ToolReturnPart))
-    assert [entry["tool"] for entry in retained.content["tools"]] == ["double"]
+    assert [entry["name"] for entry in retained.content["tools"]] == ["double"]
     assert retained.content["tools"][0]["parameters_json_schema"]["required"] == ["value"]
 
 
 @pytest.mark.parametrize("nested", [False, True])
 async def test_describe_without_execution_retains_nothing(nested):
-    describe = ("describe_tool", {"group": "math", "tool": "double"})
+    describe = ("describe_tools", {"names": ["double"]})
     if nested:
-        describe = ("run_code", {"code": "await describe_tool(group='math', tool='double')"})
+        describe = ("run_code", {"code": "await describe_tools(names=['double'])"})
     result, snapshots = await _run_calls(
-        (_source([], proxy=True), CodeActCapability(), HandoffCapability()),
+        (_source([], progressive=True), CodeActCapability(), HandoffCapability()),
         [describe, ("summarize", {"content": "Continue"})],
+        progressive=True,
     )
     assert not any(isinstance(p, ToolReturnPart) for msg in snapshots[-1][0] for p in msg.parts)
     assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None

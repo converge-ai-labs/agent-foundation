@@ -10,8 +10,9 @@ from dataclasses import dataclass
 import pytest
 import uvicorn
 from a13n_harness import AgentSpec, HarnessBuilder, ModelRecoveryPolicy, RunBindings
-from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
+from a13n_harness.capabilities import CodeActCapability
 from a13n_harness.mcp import ContextualMCP
+from a13n_harness.tools.exposure import CONTROL_NAMES, ToolExposure, ToolsetExposure
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
@@ -46,10 +47,10 @@ async def _http_mcp(server: FastMCP):
 
 
 @pytest.mark.parametrize("codeact", [False, True])
-async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuses_recovery_headers(
+async def test_contextual_mcp_progressive_real_http_isolates_concurrent_runs_and_reuses_recovery_headers(
     codeact: bool,
 ) -> None:
-    server = FastMCP("proxy-context")
+    server = FastMCP("progressive-context")
     invocations: list[dict[str, str]] = []
     discoveries: list[tuple[str, str]] = []
     headers_calls: list[tuple[str, str]] = []
@@ -103,7 +104,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             if isinstance(text, str) and text in {"alpha", "beta"}
         )
         # Inspect the live projection, while the server genuinely discovers and executes MCP tools.
-        expected = {"discover_tools", "describe_tool", "call_tool"}
+        expected = set(CONTROL_NAMES)
         if codeact:
             expected |= {"run_code", "run_program", "store", "load", "forget"}
         assert {tool.name for tool in info.function_tools} == expected
@@ -115,19 +116,19 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
         if attempt == 1:
             yield {
                 0: DeltaToolCall(
-                    name="discover_tools",
-                    json_args='{"query":"","group":"context","detail":"full"}',
+                    name="describe_tools",
+                    json_args=json.dumps({"names": ["identity", f"{tenant}_identity"]}),
                     tool_call_id="discover",
                 )
             }
         elif attempt == 2:
             yield {
                 0: DeltaToolCall(
-                    name="run_code" if codeact else "call_tool",
+                    name="run_code" if codeact else "execute_tool",
                     json_args=(
-                        json.dumps({"code": "await call_tool(group='context', tool='identity', arguments={})"})
+                        json.dumps({"code": "await execute_tool(name='identity', arguments={})"})
                         if codeact
-                        else '{"group":"context","tool":"identity","arguments":{}}'
+                        else '{"name":"identity","arguments":{}}'
                     ),
                     tool_call_id="invoke",
                 )
@@ -160,7 +161,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             local=True,
         )
         source = MCPCodeActPolicy(capability) if codeact else capability
-        capabilities = (ToolSearchCapability(groups={"context": ToolSearchGroup(source, "Current identity")}),)
+        capabilities = (source,)
         if codeact:
             capabilities += (CodeActCapability(),)
         executable = HarnessBuilder().build(
@@ -168,6 +169,9 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
             output_type=str,
             model=FunctionModel(stream_function=model),
             capabilities=capabilities,
+            tool_exposure=ToolExposure(
+                toolsets={"context-mcp": ToolsetExposure(exposure="progressive", description="Current identity")}
+            ),
             model_recovery=ModelRecoveryPolicy(
                 enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
             ),
@@ -185,17 +189,30 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
     assert set(discoveries) == set(headers_calls)
     assert set(results) == {"alpha", "beta"}
     for tenant, returned in results.items():
-        tools = {tool["tool"]: tool for tool in returned[0]["tools"]}
+        tools = {tool["name"]: tool for tool in returned[0]["tools"]}
         assert set(tools) == {"identity", f"{tenant}_identity"}
         assert tools["identity"]["parameters_json_schema"]["type"] == "object"
         assert tools["identity"]["codeact_eligible"] is codeact
 
 
-async def test_contextual_mcp_native_path_is_rejected_by_proxy() -> None:
-    from .test_tool_search import _run
-
+async def test_native_only_mcp_does_not_create_local_progressive_targets() -> None:
     contextual = ContextualMCP(
         "https://example.invalid/mcp", id="native", headers_factory=lambda ctx: {}, native=True, local=False
     )
-    with pytest.raises(ValueError, match="provider-native"):
-        await _run((ToolSearchCapability(groups={"native": ToolSearchGroup(contextual, "Native MCP")}),), [])
+
+    async def model(messages, info):
+        assert not info.function_tools
+        assert any(tool.kind == "mcp_server" for tool in info.model_request_parameters.native_tools)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(contextual,),
+        tool_exposure=ToolExposure(
+            toolsets={"native": ToolsetExposure(exposure="progressive", description="Native MCP")}
+        ),
+    )
+    result = await executable.run("inspect")
+    assert result.output_or_raise() == "done"

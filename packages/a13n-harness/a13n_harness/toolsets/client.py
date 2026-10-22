@@ -9,6 +9,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, ExternalToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.tools.exposure import TOOLSET_EXPOSURE_KEY, ToolsetExposure
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity, source_tool_id
 
 from ._instructions import InstructionExternalToolset
@@ -31,6 +32,11 @@ class ClientToolsToolset:
             definitions: list[ToolDefinition] = []
             for tool in toolset.tools:
                 metadata: dict[str, Any] = deepcopy(tool.metadata)
+                metadata[TOOLSET_EXPOSURE_KEY] = ToolsetExposure(
+                    exposure=toolset.exposure,
+                    tool_exposure=toolset.tool_exposure,
+                    description=toolset.description,
+                ).model_dump()
                 metadata[TOOL_IDENTITY_KEY] = ToolIdentity(
                     source_tool_id(toolset.toolset_id, tool.name),
                     "allow" if tool.permission == "inherit" else tool.permission,

@@ -6,7 +6,6 @@ import pytest
 from a13n_harness import DeferredToolResume, HarnessBuilder, RunBindings
 from a13n_harness.tools import ClientToolsCapability, ClientToolsSpec
 from a13n_service.resources.agents.composer import configuration
-from a13n_service.resources.agents.definition import client_toolset
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -33,13 +32,12 @@ async def test_provider_configuration_suspends_and_accepts_only_the_client_resul
             assert [tool.name for tool in info.function_tools] == ["configure_provider"]
             yield {0: DeltaToolCall(name="configure_provider", json_args=json.dumps(arguments), tool_call_id="card")}
 
-    toolset = client_toolset(configuration("model"))
-    assert toolset is not None
+    toolsets = configuration("model").client_toolsets
     executable = HarnessBuilder(configured_plugins_enabled=False).build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(ClientToolsCapability(spec=ClientToolsSpec(default_toolsets=(toolset,))),),
+        capabilities=(ClientToolsCapability(spec=ClientToolsSpec(default_toolsets=toolsets)),),
     )
     waiting = await executable.run("Configure a provider", bindings=RunBindings.embedded())
     assert waiting.status == "suspended"

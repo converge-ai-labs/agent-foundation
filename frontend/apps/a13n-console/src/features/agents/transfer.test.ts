@@ -25,7 +25,8 @@ const config = {
     {
       connection_id: "conn_0123456789abcdef0123",
       tools: ["search"],
-      defer_loading: true,
+      exposure: "progressive" as const,
+      description: "Search knowledge",
     },
   ],
   plugins: [
@@ -168,18 +169,18 @@ it("remaps Web search and scrape independently while retaining complete toolset 
   );
 });
 
-it("rejects mixed search selectors when importing", () => {
-  for (const search of [
-    { config: { mode: "native" }, native_search: true },
-    { config: { mode: "native", max_results: 3 } },
-    { config: { mode: "proxy", strategy: "bm25" } },
+it("rejects removed search groups and invalid exposure when importing", () => {
+  for (const fields of [
+    { tool_search: { groups: {} } },
+    { progressive_search: "proxy" },
+    { toolsets: { files: { exposure: "hidden" } } },
   ]) {
     expect(() =>
       parseAgentFile(
         JSON.stringify({
           schema_version: 1,
           name: "Invalid agent",
-          config: { model: "test", tool_search: search },
+          config: { model: "test", ...fields },
         }),
       ),
     ).toThrow();

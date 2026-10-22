@@ -20,7 +20,7 @@ from a13n_harness.environment import DynamicEnvironmentConfiguration
 from a13n_harness.environment.configuration import ComputerConfiguration
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
-from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissionSetting, source_tool_id
+from a13n_harness.tools import ToolIdentity, ToolPermissionMode, ToolPermissionSetting, ToolsetExposure, source_tool_id
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from a13n_service.infra.ids import ObjectId
@@ -73,7 +73,7 @@ class ToolSelection(_Frozen):
     config: JsonObject = Field(default_factory=dict)
 
 
-class ToolsetSelection(_Frozen):
+class ToolsetSelection(ToolsetExposure):
     enabled: bool = True
     config: JsonObject = Field(default_factory=dict)
     tools: dict[ToolKey, ToolSelection] = Field(default_factory=dict, max_length=64)
@@ -508,7 +508,7 @@ def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetS
         submitted = selected.tools.get(tool.key) or ToolSelection(enabled=tool.default_enabled)
         config = tool.config.model_validate(submitted.config).model_dump(mode="json", exclude_none=True)
         tools[tool.key] = submitted.model_copy(update={"config": config})
-    return ToolsetSelection(enabled=selected.enabled, config=configuration, tools=tools)
+    return selected.model_copy(update={"config": configuration, "tools": tools})
 
 
 Toolsets = Annotated[dict[ToolsetKey, ToolsetSelection], AfterValidator(normalize_toolsets)]
@@ -547,6 +547,41 @@ def model_names(toolsets: dict[ToolsetKey, ToolsetSelection]) -> frozenset[str]:
 
 def permission_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolPermissionSetting]:
     return {tool.execution_id: selected.permission for tool, selected in _enabled(toolsets)}
+
+
+def exposure_rules(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolsetExposure]:
+    """Map catalog selections to existing native Toolsets and final model names."""
+    native_ids = {
+        "files": ("a13n-file-tools",),
+        "shell": ("a13n-shell-tools",),
+        "computer": ("a13n-computer-tools",),
+        "web": ("a13n-web-tool-functions",),
+        "memory": ("a13n-memory-file-tools", "a13n-memory-record-tools"),
+        "assets": ("a13n-service-assets",),
+    }
+    policies: dict[str, ToolsetExposure] = {}
+    platform_exposure: dict[str, Literal["direct", "progressive"]] = {}
+    for catalog_entry in _TOOLSETS:
+        selected = toolsets[catalog_entry.key]
+        if not selected.enabled:
+            continue
+        if catalog_entry.platform:
+            platform_exposure.update(
+                (tool.model_name, selected.resolve(tool.model_name)) for tool in catalog_entry.tools
+            )
+        else:
+            for native_id in native_ids[catalog_entry.key]:
+                policies[native_id] = ToolsetExposure(
+                    exposure=selected.exposure,
+                    tool_exposure=selected.tool_exposure,
+                    description=selected.description or catalog_entry.description,
+                )
+    if platform_exposure:
+        policies[PLATFORM_SOURCE] = ToolsetExposure(
+            tool_exposure=platform_exposure,
+            description="Inspect and manage Service agents, models, connections, skills, environments, execution, and schedules.",
+        )
+    return policies
 
 
 def platform_tools(toolsets: dict[ToolsetKey, ToolsetSelection]) -> dict[str, ToolIdentity]:

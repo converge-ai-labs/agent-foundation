@@ -498,7 +498,6 @@ class _Attempt:
                     if node is root
                     else host.capabilities(node)
                 ),
-                tool_sources=host.sources,
                 child_bindings=host.bindings,
                 operators=self._operator,
                 plugins=runtime.plugins,

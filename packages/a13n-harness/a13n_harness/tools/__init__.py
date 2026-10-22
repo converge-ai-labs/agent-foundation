@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         ClientToolsSpec,
     )
     from a13n_harness.tools.deferred import DeferredToolResume
+    from a13n_harness.tools.exposure import ToolExposure, ToolsetExposure, project_tool_call
     from a13n_harness.tools.identity import (
         ToolIdentity,
         ToolIdentityToolset,
@@ -64,6 +65,7 @@ _EXPORTS = {
         "ClientToolsetDefinition",
     ),
     "a13n_harness.tools.deferred": ("DeferredToolResume",),
+    "a13n_harness.tools.exposure": ("ToolExposure", "ToolsetExposure", "project_tool_call"),
     "a13n_harness.tools.identity": (
         "ToolIdentity",
         "ToolIdentityToolset",

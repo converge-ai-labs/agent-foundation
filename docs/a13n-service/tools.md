@@ -165,7 +165,8 @@ A revision lists connections in `connection_tools`:
     {
       "connection_id": "conn_...",
       "tools": null,
-      "defer_loading": true,
+      "exposure": "progressive",
+      "description": "Search and manage project documentation",
       "permission": "ask",
       "permissions": { "delete_page": "deny" }
     }
@@ -174,46 +175,38 @@ A revision lists connections in `connection_tools`:
 ```
 
 - `tools: null` selects every tool the connection exposes; a list selects up to 128 of them.
-- `defer_loading` (MCP only) offers `load_capability` so the model can load the connection's tools together when needed.
+- `exposure` selects direct or progressive schemas; `tool_exposure` overrides exact final names. Progressive sources require a purpose in `description`.
 - `permission` applies to the connection's tools, and `permissions` overrides it per tool.
 - A revision can select up to 128 connections. Saving it checks that each connection is enabled and exposes the selected tools.
 
 At execution, each connection must be `ready`. Before every call the Service checks that the connection is still enabled and authorized and that the run may still spend; otherwise the call is not sent. Calls are bounded by `providers.tool_call_seconds` and are never retried automatically.
 
-### Grouped tool discovery
+### Progressive tool discovery
 
-In Console, open an agent's **Tool discovery** section, choose **Native tool search**, add a named group and select its sources. Use a model that supports native tool search. The same configuration is available through `tool_search`:
+In Console, choose Harness or native discovery in **Tool discovery**, then set exposure on the relevant built-in toolset, connection or plugin. All sources share `exposure`, `tool_exposure` and `description`; client declarations use the same fields within `client_toolsets`, alongside `toolset_id` and `tools`.
 
 ```json
 {
+  "progressive_search": "harness",
   "connection_tools": [
     {
       "connection_id": "conn_...",
       "permission": "allow",
-      "defer_loading": true
+      "exposure": "progressive",
+      "description": "Search the team handbook and project documentation",
+      "tool_exposure": {"search_docs": "direct"}
     }
-  ],
-  "tool_search": {
-    "config": { "mode": "native", "strategy": "bm25" },
-    "groups": {
-      "knowledge": {
-        "description": "Search the team handbook and project documentation",
-        "connections": ["conn_..."]
-      }
-    }
-  }
+  ]
 }
 ```
 
-The model discovers individual tools through its provider's native search, then calls names such as `knowledge__search_docs`. Service executes them through the existing connection, with its credentials, caller headers and tool permissions. An unsupported model fails before a model request with `native_tool_search_unsupported`.
+Per-tool overrides win over the source default. Native Toolset IDs identify sources and tool names remain unchanged. Exposure does not alter enabled tools, connection permissions, credentials or caller headers. Built-in source purposes default from `GET /toolsets`.
 
-Groups can contain selected MCP or connector `connections`, installed `plugins` by instance name, and `platform: true` for the agent's enabled platform tools. Each source belongs to one group. Group names begin with a letter and use up to 32 letters, digits, underscores or hyphens, without `__`; descriptions explain when the model should use the tools.
+Harness mode provides `list_toolsets`, `list_tools`, `search_tools`, `describe_tools` and `execute_tool`. Search returns compact summaries; description returns complete schemas and instructions. Execution retains native validation, approvals and client-tool resume.
 
-- **Native tool search** (`config.mode: native`) uses provider-native discovery and ordinary tool calls. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default.
-- **Grouped proxy search** (`config.mode: proxy`) uses Harness's `discover_tools`, `describe_tool`, and `call_tool`. Discovery keeps keyword candidates with exact names ranked first and defaults to compact summaries, automatically expanding a small exact match only when it is the sole candidate; description loads one complete definition. Optional `config` settings follow [Harness ToolSearch](../a13n-harness/tool-search.md).
-- **Source defaults** (omit `tool_search`) uses each source's existing loading settings.
+Set `progressive_search: native` for provider-native search. Optional `progressive_search_strategy` accepts `bm25`, `regex`, or null for the provider default, only in native mode. Unsupported models fail before a request with `native_tool_search_unsupported`. Each child Agent uses its own revision. Run overrides replace supplied source selections and discovery fields; an explicit null strategy clears it.
 
-Group membership selects presentation for tools the agent already has. A grouped connection uses the group's discovery mode while preserving its saved `defer_loading`; leaving the group restores that setting. Sources outside the groups keep their current behavior. Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` turns grouping off for that run.
+See [Harness discovery](../a13n-harness/tool-search.md) for limits and execution semantics.
 
 ### Caller headers
 

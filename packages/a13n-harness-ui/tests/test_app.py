@@ -2043,13 +2043,16 @@ class _SlowReconstructor:
         return _reconstructed(model, root_capabilities)
 
 
-def _reconstructed(model, root_capabilities) -> ReconstructedAgent:
+def _reconstructed(model, root_capabilities, *, tool_exposure=None) -> ReconstructedAgent:
+    from a13n_harness.tools.exposure import ToolExposure
+
     definition = AgentDefinition(
         agent=AgentSpec(),
         output_type=str,
         definition_id="a13n-harness-ui:agent:agent-assistant",
         model=FunctionModel(stream_function=model),
         capabilities=tuple(root_capabilities),
+        tool_exposure=tool_exposure or ToolExposure(),
     )
     executable = HarnessBuilder().build(definition)
     return ReconstructedAgent(

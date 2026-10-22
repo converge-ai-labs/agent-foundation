@@ -41,7 +41,7 @@ from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
-    AgentToolSearchView,
+    AgentToolExposureView,
     ConfigurationPublication,
     ConfigurationSourceCatalog,
     ConfigurationSourceView,
@@ -1403,9 +1403,9 @@ def create_webui(
     async def implementation_catalog() -> tuple[CatalogReference, ...]:
         return await app().list_catalog()
 
-    @server.get("/api/agents/{agent_id}/tool-search", response_model=AgentToolSearchView)
-    async def agent_tool_search(agent_id: str) -> AgentToolSearchView:
-        return await app().inspect_agent_tool_search(agent_id)
+    @server.get("/api/agents/{agent_id}/tool-exposure", response_model=AgentToolExposureView)
+    async def agent_tool_exposure(agent_id: str) -> AgentToolExposureView:
+        return await app().inspect_agent_tool_exposure(agent_id)
 
     @server.get("/api/auth/keys", response_model=tuple[ApiKeyStatus, ...])
     async def api_keys() -> tuple[ApiKeyStatus, ...]:

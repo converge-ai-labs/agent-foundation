@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button, FormField, SettingsSection, Textarea } from "a13n-ui";
+import { ToolExposureFields, ProgressiveSearchFields } from "./tool-exposure";
 import { ResourceChoice } from "./resource-choice";
 import { AgentNativeTools } from "./native-tools";
 import { useSources, useTransport } from "../transport/context";
@@ -47,11 +48,11 @@ export function AgentFields({
       item.resource_kind === "agent" && item.resource_ids.includes(raw.id),
   );
   const proxy = useQuery({
-    queryKey: ["agent-tool-search", raw.id],
+    queryKey: ["agent-tool-exposure", raw.id],
     enabled: !!accepted,
     queryFn: ({ signal }) =>
       result(
-        client.GET("/api/agents/{agent_id}/tool-search", {
+        client.GET("/api/agents/{agent_id}/tool-exposure", {
           params: { path: { agent_id: raw.id } },
           signal,
         }),
@@ -92,18 +93,38 @@ export function AgentFields({
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
       <AgentNativeTools source={source} onChange={onChange} />
+      <SettingsSection title="Tool discovery">
+        <ProgressiveSearchFields source={source} onChange={onChange} />
+      </SettingsSection>
       <SettingsSection title="Capabilities">
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
           {capabilities.map((item, index) => (
-            <div className={styles.actions} key={index}>
-              <span>{item.capability}</span>
-              <Button
-                variant="ghost"
-                aria-label={`Remove capability ${item.capability}`}
-                onClick={() => remove("capabilities", index)}
-              >
-                Remove
-              </Button>
+            <div className={styles.stack} key={index}>
+              <div className={styles.actions}>
+                <span>{item.capability}</span>
+                <Button
+                  variant="ghost"
+                  aria-label={`Remove capability ${item.capability}`}
+                  onClick={() => remove("capabilities", index)}
+                >
+                  Remove
+                </Button>
+              </div>
+              {catalog.data?.some(
+                (entry) =>
+                  entry.kind === "capability" &&
+                  entry.key === item.capability &&
+                  entry.toolset_ids?.length,
+              ) && (
+                <details className={styles.details}>
+                  <summary>Tool exposure</summary>
+                  <ToolExposureFields
+                    source={source}
+                    onChange={onChange}
+                    path={["capabilities", String(index)]}
+                  />
+                </details>
+              )}
             </div>
           ))}
           <ResourceChoice
@@ -231,24 +252,20 @@ export function AgentFields({
         </div>
       </details>
       <details className={styles.details}>
-        <summary>Saved tool groups</summary>
-        <p>
-          Saved configuration, not unsaved edits. Edit groups in Advanced
-          configuration.
-        </p>
+        <summary>Saved tool exposure</summary>
+        <p>Saved source policies. Unsaved edits appear after saving.</p>
         {!accepted ? (
-          <p>Save this agent to inspect its tool groups.</p>
+          <p>Save this agent to inspect its tool exposure.</p>
         ) : proxy.isPending ? (
           <p>Loading composition…</p>
         ) : (
           <>
-            {!proxy.data?.sources.length && (
-              <p>No configured plugin or MCP sources.</p>
-            )}
+            {!proxy.data?.sources.length && <p>No configured tool sources.</p>}
             {proxy.data?.sources.map((item) => (
               <p key={item.resource_id}>
-                <span>{item.resource_id}</span> · {item.presentation}
-                {item.group ? ` · ${item.group}` : ""}
+                <span>{item.name}</span> · {item.exposure} ·{" "}
+                {item.enabled ? "Enabled" : "Disabled"}
+                <small>{item.toolset_ids?.join(", ")}</small>
               </p>
             ))}
           </>

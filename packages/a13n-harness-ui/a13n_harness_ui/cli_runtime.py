@@ -233,13 +233,12 @@ async def _run_management(
             return 0
         if request.action == "show":
             configuration = await _require_configuration(app)
-            from a13n_harness_ui.configuration.views import agent_tool_search_view
+            from a13n_harness_ui.configuration.views import agent_tool_exposure_view
 
             payload = configuration.model_dump(mode="json")
-            payload["tool_search_previews"] = [
-                agent_tool_search_view(configuration, agent).model_dump(mode="json")
+            payload["tool_exposure_previews"] = [
+                agent_tool_exposure_view(configuration, agent).model_dump(mode="json")
                 for agent in configuration.agents.values()
-                if agent.tool_search is not None
             ]
             _print_projection(payload, request.output_format)
             return 0

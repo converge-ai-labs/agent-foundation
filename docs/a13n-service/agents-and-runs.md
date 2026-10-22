@@ -64,28 +64,28 @@ Review requires a model before saving. Defaults deny extra-high risk and ask a p
 
 A revision's `config` holds:
 
-| Field                             | Meaning                                                                                                                                                                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`                           | The model's key. See [Models](models.md).                                                                                                                                                                                             |
-| `model_settings`                  | Model-API-specific settings, such as reasoning effort.                                                                                                                                                                                |
-| `model_characteristics`           | The context window and context-management thresholds.                                                                                                                                                                                 |
-| `instructions`                    | The system instructions, up to 256 KiB.                                                                                                                                                                                               |
-| `toolsets`                        | Built-in toolsets and each tool's enablement, configuration and permission. See [Tools and connections](tools.md#built-in-toolsets).                                                                                                  |
-| `skills`                          | Skills and the revisions they pin, `[{skill_id, revision_id}]`. See [Skills](skills.md).                                                                                                                                              |
-| `tool_search`                     | Grouped proxy or native tool discovery for selected connections, plugins and platform tools. See [Grouped tool discovery](tools.md#grouped-tool-discovery).                                                                           |
-| `connection_tools`                | Connections and their tools. See [Use a connection in an agent](tools.md#use-a-connection-in-an-agent).                                                                                                                               |
-| `client_tools`                    | Tools your application executes; see [client tools](#client-tools-and-questions).                                                                                                                                                     |
-| `user_questions`                  | Offers the `ask_user_question` tool.                                                                                                                                                                                                  |
-| `subagents`, `subagent_mode`      | Other agents this agent can delegate to; see [subagents](#subagents).                                                                                                                                                                 |
-| `reviewer`                        | The model, by key, that decides calls whose permission is `review`.                                                                                                                                                                   |
-| `media_understanding`             | Models, by key, that read images, video or audio for this agent; see [media understanding](models.md#media-understanding).                                                                                                            |
-| `plugins`                         | Instances of Harness plugins the deployment installed (`plugins.keys`).                                                                                                                                                               |
-| `output_spec`                     | Structured output: one JSON Schema, or 2–32 named `variants`. Without it the result is text.                                                                                                                                          |
-| `retries`                         | How many times the model may retry failed tool calls (`tools`) and invalid output (`output`), 0–100 each.                                                                                                                             |
-| `default_environment_template_id` | An [environment template](environments.md#templates) from which each new thread gets its own primary environment.                                                                                                                     |
-| `lazy_environment`                | Defaults to `true`: create/start instances on first use. Set `false` to prepare instances before entering Harness; execution connections still open on first use; see [environments](environments.md#mount-environments-on-a-thread). |
-| `memory`                          | [Memory Space defaults](memory.md#select-spaces): `enabled` and `spaces[{name, space_id, access}]`. New sessions snapshot omitted fields at first acceptance; explicit choices override them.                                         |
-| `memory_mounts`                   | [Memories](memory.md#mount-a-memory-on-a-thread) each new thread mounts when its first run is accepted, `[{name, memory_id, access}]`.                                                                                                |
+| Field                                               | Meaning                                                                                                                                                                                                                               |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                                             | The model's key. See [Models](models.md).                                                                                                                                                                                             |
+| `model_settings`                                    | Model-API-specific settings, such as reasoning effort.                                                                                                                                                                                |
+| `model_characteristics`                             | The context window and context-management thresholds.                                                                                                                                                                                 |
+| `instructions`                                      | The system instructions, up to 256 KiB.                                                                                                                                                                                               |
+| `toolsets`                                          | Built-in toolsets and each tool's enablement, configuration and permission. See [Tools and connections](tools.md#built-in-toolsets).                                                                                                  |
+| `skills`                                            | Skills and the revisions they pin, `[{skill_id, revision_id}]`. See [Skills](skills.md).                                                                                                                                              |
+| `progressive_search`, `progressive_search_strategy` | Harness or native discovery for progressive sources. See [Progressive tool discovery](tools.md#progressive-tool-discovery).                                                                                                           |
+| `connection_tools`                                  | Connections and their tools. See [Use a connection in an agent](tools.md#use-a-connection-in-an-agent).                                                                                                                               |
+| `client_toolsets`                                   | Tools your application executes; see [client tools](#client-tools-and-questions).                                                                                                                                                     |
+| `user_questions`                                    | Offers the `ask_user_question` tool.                                                                                                                                                                                                  |
+| `subagents`, `subagent_mode`                        | Other agents this agent can delegate to; see [subagents](#subagents).                                                                                                                                                                 |
+| `reviewer`                                          | The model, by key, that decides calls whose permission is `review`.                                                                                                                                                                   |
+| `media_understanding`                               | Models, by key, that read images, video or audio for this agent; see [media understanding](models.md#media-understanding).                                                                                                            |
+| `plugins`                                           | Instances of Harness plugins the deployment installed (`plugins.keys`).                                                                                                                                                               |
+| `output_spec`                                       | Structured output: one JSON Schema, or 2–32 named `variants`. Without it the result is text.                                                                                                                                          |
+| `retries`                                           | How many times the model may retry failed tool calls (`tools`) and invalid output (`output`), 0–100 each.                                                                                                                             |
+| `default_environment_template_id`                   | An [environment template](environments.md#templates) from which each new thread gets its own primary environment.                                                                                                                     |
+| `lazy_environment`                                  | Defaults to `true`: create/start instances on first use. Set `false` to prepare instances before entering Harness; execution connections still open on first use; see [environments](environments.md#mount-environments-on-a-thread). |
+| `memory`                                            | [Memory Space defaults](memory.md#select-spaces): `enabled` and `spaces[{name, space_id, access}]`. New sessions snapshot omitted fields at first acceptance; explicit choices override them.                                         |
+| `memory_mounts`                                     | [Memories](memory.md#mount-a-memory-on-a-thread) each new thread mounts when its first run is accepted, `[{name, memory_id, access}]`.                                                                                                |
 
 Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, or saving fails with `invalid_argument` on that field, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore keeps its configuration and its skill and subagent pins; the models, connections, providers and templates it names are live and are resolved again at each use.
 
@@ -120,7 +120,7 @@ flowchart TB
     class Reviewer ext
 ```
 
-Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_tools[].permission` (`inherit`, `allow` or `deny`). [Platform tools](tools.md#platform-tools) are toolsets too, and use the same field.
+Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_toolsets[].tools[].permission` (`inherit`, `allow` or `deny`). [Platform tools](tools.md#platform-tools) are toolsets too, and use the same field.
 
 ### Client tools and questions
 
@@ -128,11 +128,27 @@ A client tool is declared in the revision and executed by your application:
 
 ```json
 {
-  "client_tools": [
+  "client_toolsets": [
     {
-      "name": "open_ticket",
-      "description": "Open a support ticket in the customer's CRM.",
-      "parameters_json_schema": {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
+      "toolset_id": "customer-crm",
+      "description": "Support ticket operations",
+      "tools": [
+        {
+          "name": "open_ticket",
+          "description": "Open a support ticket in the customer's CRM.",
+          "parameters_json_schema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ]
+          }
+        }
+      ]
     }
   ]
 }
@@ -283,7 +299,7 @@ Anyone with `run` may withdraw and reorder. A thread holds at most `control.inbo
 
 - `labels` become the run's labels, which `PATCH …/runs/{run_id}` can change later.
 - `max_usage.requests` (1–10,000) limits the run's model requests; the run fails with `usage_limit_exceeded` when it needs more.
-- `overrides` change the revision's configuration for this run only. `toolsets` replaces whole toolsets; `retries` and each `subagents` edge change only the fields they set, and a `null` edge removes it; `model`, `model_settings`, `model_characteristics`, `instructions`, `lazy_environment`, `skills`, `connection_tools`, `tool_search`, `client_tools`, `plugins`, `reviewer`, `media_understanding` and `output_spec` replace the revision's value. The result is validated like a saved configuration, when you submit and again when the run starts, and frozen into the run.
+- `overrides` change the revision's configuration for this run only. `toolsets` replaces whole toolsets; `retries` and each `subagents` edge change only the fields they set, and a `null` edge removes it; `model`, `model_settings`, `model_characteristics`, `instructions`, `lazy_environment`, `skills`, `connection_tools`, `progressive_search`, `progressive_search_strategy`, `client_toolsets`, `plugins`, `reviewer`, `media_understanding` and `output_spec` replace the revision's value. The result is validated like a saved configuration, when you submit and again when the run starts, and frozen into the run.
 
 ```json
 {"options": {"max_usage": {"requests": 40},

@@ -9,8 +9,8 @@ from datetime import datetime
 from typing import Annotated, Literal, Self
 
 from a13n_harness.capabilities import ToolReviewConfig
-from a13n_harness.tools.client import ClientToolDefinition
-from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
+from a13n_harness.tools.client import ClientToolsetDefinition, ClientToolsSpec
+from a13n_harness.tools.exposure import ToolExposure, ToolsetExposure
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
@@ -18,7 +18,7 @@ from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
-from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets, platform_tools
+from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
@@ -149,45 +149,12 @@ class AgentReviewer(ToolReviewConfig):
     model_settings: ModelSettings | None = None
 
 
-class PluginSelection(_Frozen):
+class PluginSelection(ToolsetExposure):
     """One instance of a Harness plugin factory the deployment installed."""
 
     instance_name: BoundedKey
     plugin_key: PluginKey
     config: JsonObject = Field(default_factory=dict)
-
-
-class ToolSearchGroup(_Frozen):
-    description: str = Field(min_length=1, max_length=512)
-    connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
-    plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
-    platform: bool = False
-
-
-class ToolSearch(ToolSearchConfiguration):
-    """Presentation of already-selected sources, composed by Harness once per agent."""
-
-    groups: dict[str, ToolSearchGroup] = Field(default_factory=dict, max_length=128)
-
-    @model_validator(mode="after")
-    def unique_sources(self) -> Self:
-        owners: set[tuple[str, str]] = set()
-        for name, group in self.groups.items():
-            validate_group(name, group.description)
-            sources = [
-                *(("connection", source) for source in group.connections),
-                *(("plugin", source) for source in group.plugins),
-                *([("platform", "platform")] if group.platform else []),
-            ]
-            for source in sources:
-                if source in owners:
-                    raise ValueError(f"ToolSearch source {source[0]} {source[1]!r} belongs to multiple groups")
-                owners.add(source)
-        return self
-
-    @property
-    def connection_ids(self) -> frozenset[str]:
-        return frozenset(source for group in self.groups.values() for source in group.connections)
 
 
 class AgentConfig(_Frozen):
@@ -200,9 +167,10 @@ class AgentConfig(_Frozen):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
-    tool_search: ToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
+    progressive_search: Literal["harness", "native"] = "harness"
+    progressive_search_strategy: Literal["bm25", "regex"] | None = None
     builtin_skills: frozenset[Literal["platform-operations"]] = frozenset()
-    client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
+    client_toolsets: tuple[ClientToolsetDefinition, ...] = Field(default=(), max_length=32)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
     user_questions: bool = False
     # Inline children run inside the parent's run; async children run as child runs of their own.
@@ -227,21 +195,12 @@ class AgentConfig(_Frozen):
         for label, values in (
             ("Skills", [item.skill_id for item in self.skills]),
             ("Connections", [item.connection_id for item in self.connection_tools]),
-            ("Client tool names", [item.name for item in self.client_tools]),
             ("Plugin instance names", [item.instance_name for item in self.plugins]),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
-        if self.tool_search is not None:
-            connections = {item.connection_id for item in self.connection_tools}
-            plugins = {item.instance_name for item in self.plugins}
-            for name, group in self.tool_search.groups.items():
-                if set(group.connections) - connections:
-                    raise ValueError(f"ToolSearch group {name!r} references an unselected connection")
-                if set(group.plugins) - plugins:
-                    raise ValueError(f"ToolSearch group {name!r} references an unselected plugin instance")
-                if group.platform and not platform_tools(self.toolsets):
-                    raise ValueError(f"ToolSearch group {name!r} requires an enabled platform tool")
+        ToolExposure(progressive_search=self.progressive_search, strategy=self.progressive_search_strategy)
+        ClientToolsSpec(default_toolsets=self.client_toolsets)
         return self
 
 
@@ -265,7 +224,8 @@ class AgentOverride(_Frozen):
     """What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
 
     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
-    edge removes it; every other field replaces the revision's value.
+    edge removes it. An explicit null `progressive_search_strategy` resets the provider strategy;
+    every other field replaces the revision's value when non-null.
     """
 
     toolsets: ToolsetOverrides | None = None
@@ -280,10 +240,11 @@ class AgentOverride(_Frozen):
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
     skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
-    tool_search: ToolSearch | None = None
+    progressive_search: Literal["harness", "native"] | None = None
+    progressive_search_strategy: Literal["bm25", "regex"] | None = None
     builtin_skills: frozenset[Literal["platform-operations"]] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
-    client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
+    client_toolsets: tuple[ClientToolsetDefinition, ...] | None = Field(default=None, max_length=32)
     output_spec: OutputSpec | None = None
     retries: RetryOverride | None = None
 
@@ -300,9 +261,10 @@ _REPLACED = (
     "skills",
     "skill_sync",
     "connection_tools",
-    "tool_search",
+    "progressive_search",
+    "progressive_search_strategy",
     "builtin_skills",
-    "client_tools",
+    "client_toolsets",
     "output_spec",
 )
 
@@ -311,6 +273,8 @@ def apply_override(config: AgentConfig, override: AgentOverride) -> AgentConfig:
     """The configuration a run executes: its revision's with the override applied, validated as a whole."""
     fields: dict[str, object] = dict(config)
     fields.update((name, value) for name in _REPLACED if (value := getattr(override, name)) is not None)
+    if "progressive_search_strategy" in override.model_fields_set:
+        fields["progressive_search_strategy"] = override.progressive_search_strategy
     if override.toolsets is not None:
         fields["toolsets"] = {**config.toolsets, **override.toolsets}
     if override.retries is not None:

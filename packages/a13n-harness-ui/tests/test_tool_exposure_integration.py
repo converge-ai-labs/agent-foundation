@@ -12,7 +12,8 @@ import pytest
 import uvicorn
 import yaml
 from a13n_harness import RunBindings
-from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
+from a13n_harness.tools import ToolExposure, ToolsetExposure
+from a13n_harness.toolsets.progressive import CONTROL_NAMES
 from a13n_harness_ui.composition import AgentCompositionResolver, AgentReconstructor
 from a13n_harness_ui.composition.reconstruction import _ToolAllowlistCapability
 from a13n_harness_ui.configuration import (
@@ -20,12 +21,18 @@ from a13n_harness_ui.configuration import (
     load_harness_ui_configuration,
     mutate_configuration_source,
 )
-from a13n_harness_ui.configuration.views import agent_tool_search_view
+from a13n_harness_ui.configuration.views import agent_tool_exposure_view
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from fastmcp import FastMCP
-from pydantic_ai.capabilities import Capability, ToolSearch
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    NativeToolSearchCallPart,
+    NativeToolSearchReturnPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -61,7 +68,7 @@ async def _http_mcp(server: FastMCP):
 
 
 @pytest.mark.parametrize("native_search", [False, True])
-async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle(
+async def test_yaml_to_run_mixed_exposure_uses_real_mcp_and_native_plugin_lifecycle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_search: bool
 ) -> None:
     server = FastMCP("ui-proxy")
@@ -86,13 +93,16 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
                 calls.append("plugin")
                 return "memory"
 
-            return (Capability(id="memory-tools", toolsets=[FunctionToolset([remember])]),)
+            return (Capability(id="memory-tools", toolsets=[FunctionToolset([remember], id="memory-tools")]),)
 
         async def for_run(self, ctx):
             plugin_events.append("run")
             return self
 
     class Factory(_MemoryFactory):
+        def describe_toolsets(self, context):
+            return {"memory-tools": "Remember useful information"}
+
         def create_plugin(self, context):
             return Plugin(context.plugin_id)
 
@@ -107,17 +117,12 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
-    agent.update(subagents=[], capabilities=[], tools=["knowledge__lookup", "knowledge__remember", "status"])
-    agent["tool_search"] = {
-        "config": {"mode": "native" if native_search else "proxy"},
-        "groups": {
-            "knowledge": {
-                "description": "Documents and memory",
-                "mcp_servers": ["mcp-docs"],
-                "harness_plugins": ["plugin-memory"],
-            }
-        },
-    }
+    agent.update(subagents=[], capabilities=[], tools=["lookup", "remember", "status"])
+    agent["progressive_search"] = "native" if native_search else "harness"
+    plugin_path = tmp_path / "extensions/memory.yaml"
+    plugin = yaml.safe_load(plugin_path.read_text())
+    plugin["exposure"] = "progressive"
+    plugin_path.write_text(yaml.safe_dump(plugin))
     agent_path.write_text(yaml.safe_dump(agent))
     # This reconstruction test supplies RunBindings directly, without an App-owned runtime.
     path.write_text(
@@ -131,14 +136,14 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
     async with _http_mcp(server) as url:
         mcp_path = tmp_path / "mcp/docs.yaml"
         mcp = yaml.safe_load(mcp_path.read_text())
-        mcp["transport"] = {"url": url}
+        mcp.update(transport={"url": url}, exposure="progressive", description="Search documents")
         mcp_path.write_text(yaml.safe_dump(mcp))
         source = await load_harness_ui_configuration(path)
         composition = AgentCompositionResolver(catalog).resolve_run(source, _selection())
         reconstructed = AgentReconstructor(catalog, configuration_root=tmp_path).reconstruct(
             composition,
             subagent_operator=None,
-            root_capabilities=(Capability(toolsets=[FunctionToolset([status])]), ToolSearch(strategy="keywords")),
+            root_capabilities=(Capability(toolsets=[FunctionToolset([status])]),),
         )
         assert binds == []
         assert plugin_events == ["agent", "collect"]
@@ -149,28 +154,35 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
             async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
                 nonlocal step
                 assert {tool.name for tool in info.function_tools} == (
-                    {"status", "search_tools", "knowledge__lookup", "knowledge__remember"}
-                    if native_search
-                    else {"status", "discover_tools", "describe_tool", "call_tool"}
+                    {"status", "lookup", "remember"} if native_search else {"status", *CONTROL_NAMES}
                 )
                 commands = [
-                    ("discover_tools", {"query": "", "group": "knowledge"}),
-                    ("call_tool", {"group": "knowledge", "tool": "lookup", "arguments": {}}),
-                    ("call_tool", {"group": "knowledge", "tool": "remember", "arguments": {}}),
+                    ("search_tools", {"query": "lookup remember"}),
+                    ("execute_tool", {"name": "lookup", "arguments": {}}),
+                    ("execute_tool", {"name": "remember", "arguments": {}}),
                     ("status", {}),
                 ]
                 if native_search:
                     commands = [
-                        ("search_tools", {"queries": ["lookup remember"]}),
-                        ("knowledge__lookup", {}),
-                        ("knowledge__remember", {}),
+                        ("lookup", {}),
+                        ("remember", {}),
                         ("status", {}),
                     ]
                 current = step
                 step += 1
                 if current < len(commands):
                     name, args = commands[current]
-                    yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"call-{current}")}
+                    if native_search and current == 0:
+                        yield {
+                            0: NativeToolSearchCallPart(args={"queries": ["lookup remember"]}, tool_call_id="search")
+                        }
+                        yield {
+                            1: NativeToolSearchReturnPart(
+                                content={"discovered_tools": [{"name": "lookup"}, {"name": "remember"}]},
+                                tool_call_id="search",
+                            )
+                        }
+                    yield {2: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"call-{current}")}
                 else:
                     yield "done"
 
@@ -194,15 +206,15 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
             for part in message.parts
             if isinstance(part, ToolReturnPart)
         ]
-        assert returns[1:] == ["document", "memory", "ready"]
+        assert returns[-3:] == ["document", "memory", "ready"]
         if not native_search:
-            assert {item["tool"] for item in returns[0]["tools"]} == {"lookup", "remember"}
+            assert {item["name"] for item in returns[0]["tools"]} == {"lookup", "remember"}
 
 
 @pytest.mark.parametrize(
-    "names,visible", [(frozenset({"call_tool"}), False), (frozenset({"group__allowed", "call_tool"}), True)]
+    "names,visible", [(frozenset({"execute_tool"}), False), (frozenset({"allowed", "execute_tool"}), True)]
 )
-async def test_exact_target_allowlist_never_grants_all_group_members(names: frozenset[str], visible: bool) -> None:
+async def test_exact_target_allowlist_never_grants_all_toolset_members(names: frozenset[str], visible: bool) -> None:
     from a13n_harness import AgentSpec, HarnessBuilder
 
     def allowed() -> str:
@@ -211,13 +223,11 @@ async def test_exact_target_allowlist_never_grants_all_group_members(names: froz
     def denied() -> str:
         raise AssertionError("denied member must not execute")
 
-    source = Capability(toolsets=[FunctionToolset([allowed, denied])])
-    allowlist = _ToolAllowlistCapability(names, optional_controls=frozenset({"call_tool", "discover_tools"}))
+    source = Capability(toolsets=[FunctionToolset([allowed, denied], id="selected")])
+    allowlist = _ToolAllowlistCapability(names, optional_controls=frozenset(CONTROL_NAMES))
 
     async def model(messages, info):
-        assert {tool.name for tool in info.function_tools} == (
-            {"discover_tools", "describe_tool", "call_tool"} if visible else set()
-        )
+        assert {tool.name for tool in info.function_tools} == (set(CONTROL_NAMES) if visible else set())
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -225,7 +235,9 @@ async def test_exact_target_allowlist_never_grants_all_group_members(names: froz
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(source, allowlist),
-        tool_search=ToolSearchPlan(groups={"group": ToolSearchSelection("Selected tools", capabilities=(source,))}),
+        tool_exposure=ToolExposure(
+            toolsets={"selected": ToolsetExposure(exposure="progressive", description="Selected tools")}
+        ),
     )
     assert (await executable.run("test", bindings=RunBindings.embedded())).output_or_raise() == "done"
 
@@ -270,33 +282,29 @@ async def test_allowlist_filters_bound_execution_controls_without_resurrecting_u
         await runtime.close()
 
 
-async def test_configuration_mutation_reads_back_static_active_dormant_direct_sources(tmp_path: Path) -> None:
+async def test_configuration_mutation_reads_back_selected_source_exposure(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent["mcp_servers"] = []
-    agent["tool_search"] = {"groups": {"knowledge": {"description": "Documents", "mcp_servers": ["mcp-docs"]}}}
+    agent["progressive_search"] = "native"
     result = await mutate_configuration_source(
         path, "agents/assistant.yaml", ResourceMutationRequest(content=yaml.safe_dump(agent))
     )
     saved_agent = result.configuration.agents["agent-assistant"]
-    preview = agent_tool_search_view(result.configuration, saved_agent)
-    states = {item.resource_id: item.presentation for item in preview.sources}
-    assert states == {"mcp-docs": "dormant", "plugin-memory": "direct"}
-    assert saved_agent.tool_search is not None
+    preview = agent_tool_exposure_view(result.configuration, saved_agent)
+    states = {item.resource_id: item.enabled for item in preview.sources}
+    assert states == {"dynamic_environment": True, "mcp-docs": False, "plugin-memory": True}
+    assert all(item.exposure == "direct" for item in preview.sources)
+    assert saved_agent.progressive_search == "native"
     assert saved_agent.instructions == "Root authored instructions."
 
 
-@pytest.mark.parametrize("dormant", [False, True])
-async def test_inactive_plan_preserves_direct_tool_matching_control_name(tmp_path: Path, dormant: bool) -> None:
+async def test_direct_source_preserves_original_tool_name(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent.update(subagents=[], capabilities=[], mcp_servers=[], harness_plugins=[], tools=["search"])
-    agent["tool_search"] = {
-        "groups": {"docs": {"description": "Documents", "mcp_servers": ["mcp-docs"]}} if dormant else {},
-        "config": {"mode": "proxy", "search_name": "search"},
-    }
     agent_path.write_text(yaml.safe_dump(agent))
     # This reconstruction test supplies RunBindings directly, without an App-owned runtime.
     path.write_text(

@@ -49,7 +49,7 @@ from a13n_harness.events import (
     CodeActToolCallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.tools.tool_search import proxy_control, proxy_membership, resolve_proxy_call
+from a13n_harness.tools.exposure import discovery_control, is_progressive, resolve_tool_call
 
 from ._instructions import tool_instruction
 
@@ -118,6 +118,10 @@ class CodeActPolicyToolset(WrapperToolset[Any]):
 
     policy: CodeActToolPolicy
     reject_unknown_tools: bool = False
+
+    @property
+    def id(self) -> str | None:
+        return self.wrapped.id
 
     @property
     def codeact_policy(self) -> CodeActToolPolicy:
@@ -423,8 +427,8 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         async def dispatch(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
             canonical_name = catalog.sandbox_to_canonical.get(sandbox_name, sandbox_name)
             prepared = catalog.prepared_tools[canonical_name]
-            if proxy_control(prepared.tool_def) == "call":
-                canonical_name, kwargs = resolve_proxy_call(active_tools, kwargs)
+            if discovery_control(prepared.tool_def) == "execute_tool":
+                canonical_name, kwargs = resolve_tool_call(active_tools, kwargs)
                 prepared = active_tools[canonical_name]
                 if not is_codeact_tool_eligible(canonical_name, prepared):
                     raise RuntimeError(
@@ -627,7 +631,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
 
 
 def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool:
-    """Apply the same owner policy and category exclusions to direct and proxy targets."""
+    """Apply owner policy and category exclusions to the actual invocation target."""
     definition = tool.tool_def
     return (
         resolve_codeact_eligibility(name, tool)
@@ -649,7 +653,9 @@ def _build_catalog(
     prepared_tools: dict[str, ToolsetTool[AgentContext]] = {}
     for canonical_name, tool in tools.items():
         definition = tool.tool_def
-        if not is_codeact_tool_eligible(canonical_name, tool) or proxy_membership(definition) is not None:
+        if not is_codeact_tool_eligible(canonical_name, tool) or (
+            is_progressive(definition) and not definition.defer_loading
+        ):
             continue
         if ctx is not None and not ctx.is_tool_available(definition):
             continue

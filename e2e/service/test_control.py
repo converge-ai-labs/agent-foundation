@@ -124,7 +124,11 @@ async def test_a_steer_joins_the_running_run(stack) -> None:  # type: ignore[no-
 async def test_messages_queue_behind_a_client_tool_wait(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     lookup = {"name": "lookup", "description": "Look a value up", "parameters_json_schema": {"type": "object"}}
-    agent = await api.create_agent("Helper", await api.create_model(model.base_url), client_tools=[lookup])
+    agent = await api.create_agent(
+        "Helper",
+        await api.create_model(model.base_url),
+        client_toolsets=[{"toolset_id": "lookup-client", "tools": [lookup]}],
+    )
     await model.call("lookup", {}, call_id="call_lookup", to="[wait]")
     receipt = await api.start(agent, "[wait] Look it up")
     thread_id = receipt["thread"]["id"]

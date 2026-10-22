@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { toolSearchConfig, toolSearchDraft } from "../tool-search";
 import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
@@ -68,14 +67,20 @@ export function useAgentDraft(initial: AgentConfig) {
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
-    [toolSearch, setToolSearch] = useState(
-      toolSearchDraft(initial.tool_search),
+    [progressiveSearch, setProgressiveSearch] = useState(
+      initial.progressive_search ?? "harness",
     ),
+    [progressiveSearchStrategy, setProgressiveSearchStrategy] = useState(
+      initial.progressive_search_strategy ?? null,
+    ),
+    [plugins, setPlugins] = useState(initial.plugins ?? []),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
     [memory, setMemory] = useState(initial.memory ?? {});
   const dirty =
-    JSON.stringify(toolSearch) !==
-      JSON.stringify(toolSearchDraft(initial.tool_search)) ||
+    progressiveSearch !== (initial.progressive_search ?? "harness") ||
+    progressiveSearchStrategy !==
+      (initial.progressive_search_strategy ?? null) ||
+    JSON.stringify(plugins) !== JSON.stringify(initial.plugins ?? []) ||
     JSON.stringify(reviewer) !== JSON.stringify(initial.reviewer) ||
     mediaKinds.some(
       ({ kind }) =>
@@ -124,8 +129,12 @@ export function useAgentDraft(initial: AgentConfig) {
     setSkills,
     connections,
     setConnections,
-    toolSearch,
-    setToolSearch,
+    progressiveSearch,
+    setProgressiveSearch,
+    progressiveSearchStrategy,
+    setProgressiveSearchStrategy,
+    plugins,
+    setPlugins,
     memoryMounts,
     setMemoryMounts,
     memory,
@@ -138,7 +147,7 @@ export type DraftBuild =
   | { ok: true; config: AgentConfig }
   | {
       ok: false;
-      stage: "model" | "reviewer" | "toolSearch" | "advanced";
+      stage: "model" | "reviewer" | "advanced";
       error: Error;
     };
 
@@ -196,19 +205,6 @@ export function buildDraftConfig(
         error instanceof Error ? error : new Error(t("Invalid configuration")),
     };
   }
-  let proxy: AgentConfig["tool_search"];
-  try {
-    proxy = toolSearchConfig(draft.toolSearch, draft.connections);
-  } catch (error) {
-    return {
-      ok: false,
-      stage: "toolSearch",
-      error:
-        error instanceof Error
-          ? new Error(t(error.message))
-          : new Error(t("Invalid configuration")),
-    };
-  }
   try {
     if (!validSpaceSelection(draft.memory))
       throw new Error(
@@ -232,7 +228,12 @@ export function buildDraftConfig(
             ? { media_understanding: draft.mediaUnderstanding }
             : {}),
           connection_tools: draft.connections,
-          tool_search: proxy,
+          progressive_search: draft.progressiveSearch,
+          progressive_search_strategy:
+            draft.progressiveSearch === "native"
+              ? draft.progressiveSearchStrategy
+              : null,
+          plugins: draft.plugins,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,

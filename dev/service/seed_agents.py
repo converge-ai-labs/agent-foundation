@@ -86,7 +86,7 @@ def seed_agents(api: Api, local: Local, connection: Json, search: Json, skills: 
             "Release reviewer",
             "Asks the user to review drafts before publishing.",
             {"team": "docs"},
-            client_tools=[REVIEW_TOOL],
+            client_toolsets=[{"toolset_id": "release-review", "tools": [REVIEW_TOOL]}],
             user_questions=True,
         ),
         lookup=agent(

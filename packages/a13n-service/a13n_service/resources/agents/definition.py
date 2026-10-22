@@ -8,12 +8,16 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from a13n_harness import AgentContext
-from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
 from a13n_harness.output_schema import structured_output_type
-from a13n_harness.tools import ToolPermissions, ToolPermissionSetting, source_tool_id, source_tool_prefix
-from a13n_harness.tools.client import ClientToolsetDefinition
-from pydantic_ai.capabilities import AbstractCapability
+from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
+from a13n_harness.tools import (
+    ToolExposure,
+    ToolPermissions,
+    ToolPermissionSetting,
+    ToolsetExposure,
+    source_tool_id,
+    source_tool_prefix,
+)
 from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
@@ -22,7 +26,6 @@ from a13n_service.infra.errors import invalid
 from a13n_service.resources.agents import toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, JsonObject, OutputSpec
 
-CLIENT_TOOLSET_ID = "a13n-service-client"
 QUESTION_TOOL = "ask_user_question"
 _MAX_REFERENCE_EXPANSIONS = 1024
 
@@ -90,12 +93,6 @@ def _expand(value: Any, resolver: Any, active: frozenset[int], expansions: list[
     return {key: _expand(item, nested, active, expansions) for key, item in value.items()}
 
 
-def client_toolset(config: AgentConfig) -> ClientToolsetDefinition | None:
-    if not config.client_tools:
-        return None
-    return ClientToolsetDefinition(toolset_id=CLIENT_TOOLSET_ID, tools=config.client_tools)
-
-
 def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -> ToolPermissions:
     """Every permission the configuration sets, as rules keyed by the tool identities the Harness assigns.
 
@@ -115,26 +112,52 @@ def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -
                 (source_tool_id(source, name, kind=kind), selection.permissions.get(name, selection.permission))
                 for name in selection.tools
             )
-    rules.update((source_tool_id(CLIENT_TOOLSET_ID, tool.name), tool.permission) for tool in config.client_tools)
+    rules.update(
+        (source_tool_id(source.toolset_id, tool.name), tool.permission)
+        for source in config.client_toolsets
+        for tool in source.tools
+    )
     return ToolPermissions(rules=rules)
 
 
-def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[AgentContext]]) -> ToolSearchPlan | None:
-    """Bind presentation to the same source instances the host contributes to this agent."""
-    selected = config.tool_search
-    if selected is None:
-        return None
-    return ToolSearchPlan(
-        config=selected.config,
-        groups={
-            name: ToolSearchSelection(
-                description=group.description,
-                capabilities=tuple(sources[source] for source in group.connections)
-                + ((sources["platform"],) if group.platform else ()),
-                plugins=group.plugins,
-            )
-            for name, group in selected.groups.items()
-        },
+def tool_exposure(config: AgentConfig, plugins: HarnessPluginFactoryCatalog) -> ToolExposure:
+    """Compile source selections to native Toolset identities without changing their tools."""
+    sources = toolsets.exposure_rules(config.toolsets)
+
+    def add(toolset_id: str, policy: ToolsetExposure, path: str) -> None:
+        if not toolset_id.strip() or toolset_id in sources:
+            raise invalid(path, f"native Toolset ID {toolset_id!r} must be nonblank and unique across sources")
+        if policy.description is None and (
+            policy.exposure == "progressive" or "progressive" in policy.tool_exposure.values()
+        ):
+            raise invalid(f"{path}.description", "required for progressive exposure")
+        sources[toolset_id] = policy
+
+    for index, selection in enumerate(config.connection_tools):
+        add(selection.connection_id, _exposure(selection), f"connection_tools.{index}")
+    for index, source in enumerate(config.client_toolsets):
+        add(source.toolset_id, _exposure(source), f"client_toolsets.{index}")
+    for index, selected in enumerate(config.plugins):
+        context = HarnessPluginFactoryContext(
+            plugin_key=selected.plugin_key,
+            plugin_id=selected.instance_name,
+            configuration=selected.config,
+            extensions={},
+        )
+        for toolset_id, policy in plugins.tool_exposure(context, _exposure(selected)).items():
+            add(toolset_id, policy, f"plugins.{index}")
+    return ToolExposure(
+        toolsets=sources,
+        progressive_search=config.progressive_search,
+        strategy=config.progressive_search_strategy,
+    )
+
+
+def _exposure(selection: ToolsetExposure) -> ToolsetExposure:
+    return ToolsetExposure(
+        exposure=selection.exposure,
+        tool_exposure=selection.tool_exposure,
+        description=selection.description,
     )
 
 

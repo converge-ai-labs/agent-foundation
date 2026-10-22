@@ -212,12 +212,12 @@ export function ConversationConfiguration({
               />
               <p>Model: {data.next_model_id || "Not configured"}</p>
               <details className={styles.activity}>
-                <summary>Selection origins and tool proxy</summary>
+                <summary>Selection origins and tool exposure</summary>
                 <pre className={styles.code}>
                   {JSON.stringify(
                     {
                       provenance: data.next_run.provenance,
-                      tool_search: data.next_tool_search,
+                      tool_exposure: data.next_tool_exposure,
                     },
                     null,
                     2,

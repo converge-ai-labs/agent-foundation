@@ -51,7 +51,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
     )
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
-    agent.update(mcp_servers=[], tool_search={"groups": {"docs": {"description": "Docs", "mcp_servers": ["mcp-docs"]}}})
+    agent.update(mcp_servers=[])
     agent_path.write_text(yaml.safe_dump(agent))
     started, release, publishing, publish_release = Event(), Event(), Event(), Event()
     calls = 0
@@ -100,16 +100,16 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert set(before["next_run"]["provenance"].values()) == {"thread", "agent"}
             assert before["next_run"]["provenance"]["environment_bindings"] == "thread"
             assert before["next_run"]["provenance"]["default_environment"] == "thread"
-            static = await api.get("/api/agents/agent-assistant/tool-search")
+            static = await api.get("/api/agents/agent-assistant/tool-exposure")
             assert static.status_code == 200, static.text
-            assert static.json()["sources"][0]["presentation"] == "dormant"
+            assert not next(item for item in static.json()["sources"] if item["resource_id"] == "mcp-docs")["enabled"]
             assert (await api.get("/api/catalog")).json()
             first = (await api.post(prefix + "/submit", json={"parts": ["first"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
             captured = (await api.get(prefix + "/configuration")).json()["captured"]
             assert captured["agent"]["model_id"] == "model-primary"
-            assert captured["mcp_server_ids"] == [] and captured["tool_search"]["groups"] == {}
+            assert captured["mcp_server_ids"] == [] and captured["tool_exposure"]["progressive_search"] == "harness"
             assert "private-" not in json.dumps(captured) and "authentication" in captured["omitted_fields"]
             agent["model"] = "model-second"
             saved = await api.put(

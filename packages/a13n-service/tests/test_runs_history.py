@@ -29,7 +29,9 @@ async def _waiting(service, scripted_model, runs_kit, **config) -> dict:  # type
 
 async def test_a_resume_replays_its_key_and_answers_a_wait_once(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     scripted_model.call("lookup", {}, call_id="call_lookup")
-    waiting = await _waiting(service, scripted_model, runs_kit, client_tools=[LOOKUP])
+    waiting = await _waiting(
+        service, scripted_model, runs_kit, client_toolsets=[{"toolset_id": "test-client", "tools": [LOOKUP]}]
+    )
     resume = f"{service.api}/runs/{waiting['id']}/resume"
     stray = {"approvals": {}, "calls": {"call_other": {"status": "returned", "value": {"value": 1}}}}
     refused = await service.client.post(resume, json=stray, headers={"idempotency-key": "resume-0"})

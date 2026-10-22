@@ -5,6 +5,7 @@ metadata on resume. The public `Pending` projection is derived from them once, w
 """
 
 from a13n_harness import DeferredToolResume
+from a13n_harness.tools import project_tool_call
 from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import ToolDenied, ToolFailed
@@ -29,6 +30,7 @@ def pending(requests: DeferredToolRequests) -> Pending:
 
     def project(part: ToolCallPart, *, approval: bool = False) -> PendingCall:
         metadata = requests.metadata.get(part.tool_call_id, {})
+        part = project_tool_call(part, metadata)
         presentation = metadata.get(APPROVAL_PRESENTATION_KEY) if approval else None
         return PendingCall.model_validate(
             {

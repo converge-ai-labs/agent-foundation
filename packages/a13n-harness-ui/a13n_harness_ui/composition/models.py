@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Literal, Self, get_args, get_origin
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
+from a13n_harness.tools.exposure import ToolExposure, ToolsetExposure
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
-    AgentToolSearch,
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
@@ -61,20 +61,20 @@ class ResolvedModelRecipe(CompositionModel):
     thinking_override: ThinkingSelection | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
-class ResolvedCapabilityRecipe(CompositionModel):
+class ResolvedCapabilityRecipe(ToolsetExposure, CompositionModel):
     capability: str = Field(min_length=1, max_length=200)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
     model: ResolvedModelRecipe | None = None
     guardian_credits: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
-class ResolvedPluginRecipe(CompositionModel):
+class ResolvedPluginRecipe(ToolsetExposure, CompositionModel):
     plugin_id: str = Field(min_length=1, max_length=128)
     plugin_key: str = Field(min_length=1, max_length=200)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
 
-class ResolvedMcpRecipe(CompositionModel):
+class ResolvedMcpRecipe(ToolsetExposure, CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
@@ -132,7 +132,8 @@ class ResolvedAgentNode(CompositionModel):
     # Up to 128 generic servers plus 128 independently selected WebUI Apps.
     mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
     tools: tuple[str, ...] | None = Field(default=None, max_length=256)
-    tool_search: AgentToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
+    progressive_search: Literal["harness", "native"] = "harness"
+    progressive_search_strategy: Literal["bm25", "regex"] | None = None
     children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="before")
@@ -146,6 +147,7 @@ class ResolvedAgentNode(CompositionModel):
 
     @model_validator(mode="after")
     def _unique_members(self) -> Self:
+        ToolExposure(progressive_search=self.progressive_search, strategy=self.progressive_search_strategy)
         names = tuple(item.name for item in self.children)
         if len(names) != len(set(names)):
             raise ValueError("resolved immediate roster names must be unique")

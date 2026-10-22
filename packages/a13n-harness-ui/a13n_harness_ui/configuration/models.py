@@ -19,7 +19,7 @@ from a13n_harness.providers.environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
 )
 from a13n_harness.spec import HarnessModelCharacteristics
-from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_group
+from a13n_harness.tools.exposure import ToolExposure, ToolsetExposure
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import (
     AliasChoices,
@@ -514,7 +514,7 @@ class DeviceResource(StrictModel):
         return self
 
 
-class HarnessPluginResource(ConfigurationModel):
+class HarnessPluginResource(ToolsetExposure, ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["harness_plugin"]
     id: ResourceId
@@ -618,7 +618,7 @@ class McpRemoteTransport(StrictModel):
 type McpTransport = McpCommandTransport | McpRemoteTransport
 
 
-class McpServerResource(ConfigurationModel):
+class McpServerResource(ToolsetExposure, ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["mcp_server"]
     id: ResourceId
@@ -628,10 +628,14 @@ class McpServerResource(ConfigurationModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "mcp-")
+        if (
+            self.exposure == "progressive" or "progressive" in self.tool_exposure.values()
+        ) and self.description is None:
+            raise ValueError("Progressive MCP Toolsets require a description")
         return self
 
 
-class CapabilitySelection(ConfigurationModel):
+class CapabilitySelection(ToolsetExposure, ConfigurationModel):
     capability: CatalogKey
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -669,52 +673,6 @@ class _MissingModelReferenceError(ValueError):
         super().__init__(f"{path}: {field} references unavailable Model {model_id!r}.")
 
 
-class _ToolSearchConfigurationError(ValueError):
-    """Authored source/group diagnostic safe to expose without resource inputs."""
-
-
-class AgentToolSearchGroup(ConfigurationModel):
-    description: str = Field(min_length=1, max_length=512)
-    mcp_servers: tuple[ResourceId, ...] = ()
-    harness_plugins: tuple[ResourceId, ...] = ()
-
-
-class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
-    groups: dict[str, AgentToolSearchGroup] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def _valid_groups(self) -> Self:
-        owners: dict[str, str] = {}
-        for name, group in self.groups.items():
-            try:
-                validate_group(name, group.description)
-            except ValueError as exc:
-                raise _ToolSearchConfigurationError(f"Invalid tool_search group {name!r}: {exc}") from exc
-            for source in (*group.mcp_servers, *group.harness_plugins):
-                if source in owners:
-                    raise _ToolSearchConfigurationError(
-                        f"ToolSearch source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
-                    )
-                owners[source] = name
-        return self
-
-    def selected(self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...]) -> AgentToolSearch:
-        """Capture only enabled membership, without activating dormant references."""
-        return AgentToolSearch(
-            groups={
-                name: AgentToolSearchGroup(
-                    description=group.description,
-                    mcp_servers=tuple(source for source in group.mcp_servers if source in mcp_servers),
-                    harness_plugins=tuple(source for source in group.harness_plugins if source in harness_plugins),
-                )
-                for name, group in self.groups.items()
-                if any(source in mcp_servers for source in group.mcp_servers)
-                or any(source in harness_plugins for source in group.harness_plugins)
-            },
-            config=self.config,
-        )
-
-
 class AgentResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["agent"]
@@ -726,8 +684,18 @@ class AgentResource(ConfigurationModel):
     harness_plugins: tuple[ResourceId, ...] | None = None
     mcp_servers: tuple[ResourceId, ...] | None = None
     tools: tuple[ToolName, ...] | None = None
-    tool_search: AgentToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
+    progressive_search: Literal["harness", "native"] = "harness"
+    progressive_search_strategy: Literal["bm25", "regex"] | None = None
     subagents: tuple[SubagentSelection, ...] = Field(default=(), max_length=256)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_tool_search(cls, value: object) -> object:
+        if isinstance(value, dict) and "tool_search" in value:
+            raise ValueError(
+                "tool_search was removed; configure exposure on each source and progressive_search on the Agent"
+            )
+        return value
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
@@ -737,6 +705,7 @@ class AgentResource(ConfigurationModel):
         for values in (self.harness_plugins, self.mcp_servers, self.tools):
             if values is not None and len(values) != len(set(values)):
                 raise ValueError("Agent selections must be unique and ordered")
+        ToolExposure(progressive_search=self.progressive_search, strategy=self.progressive_search_strategy)
         # NativeTool registers one tool per entry; different native tools compose.
         capability_names = tuple(item.capability for item in self.capabilities if item.capability != "NativeTool")
         if len(capability_names) != len(set(capability_names)):
@@ -954,17 +923,6 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                 _require_reference(item, self.harness_plugins, f"{agent.id}.harness_plugins")
             for item in agent.mcp_servers or ():
                 _require_reference(item, self.mcp_servers, f"{agent.id}.mcp_servers")
-            if agent.tool_search is not None:
-                for name, group in agent.tool_search.groups.items():
-                    for values, resources, kind in (
-                        (group.mcp_servers, self.mcp_servers, "mcp_servers"),
-                        (group.harness_plugins, self.harness_plugins, "harness_plugins"),
-                    ):
-                        for item in values:
-                            if item not in resources:
-                                raise _ToolSearchConfigurationError(
-                                    f"{agent.id}.tool_search.groups.{name}.{kind} references unknown source {item!r}"
-                                )
             roster_names: list[str] = []
             for selection in agent.subagents:
                 if isinstance(selection, AgentSubagentSelection):

@@ -12,6 +12,7 @@ from typing import Literal
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
+from a13n_harness.tools import project_tool_call
 from a13n_harness.tools._output import tool_execution_value
 from a13n_stream_protocol import tool_result_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
@@ -1130,6 +1131,7 @@ def _deferred_request(
     *,
     kind: Literal["approval", "external"],
 ) -> DeferredRequestView:
+    request = project_tool_call(request, requests.metadata.get(request.tool_call_id, {}))
     arguments, arguments_omitted = _bounded_json(request.args)
     metadata, metadata_omitted = _bounded_metadata(requests.metadata.get(request.tool_call_id))
     return DeferredRequestView(

@@ -18,6 +18,7 @@ from a13n_harness.plugin_configuration import (
     _validate_identifier,
 )
 from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.tools.exposure import ToolsetExposure
 
 HARNESS_PLUGIN_ENTRY_POINT_GROUP = "a13n_harness.plugins"
 _MAX_PLUGIN_KEY_LENGTH = 200
@@ -84,6 +85,14 @@ class HarnessPluginFactory(ABC):
     def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
         """Validate and normalize credential-free plugin configuration without I/O."""
 
+    def describe_toolsets(self, context: HarnessPluginFactoryContext) -> Mapping[str, str]:
+        """Describe native Toolset IDs produced by this configured instance, without I/O.
+
+        Middleware-only factories return an empty mapping. Tool factories declare
+        their actual IDs and short purposes so Hosts can compile exposure policy.
+        """
+        return {}
+
     @abstractmethod
     def create_plugin(
         self,
@@ -138,6 +147,28 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
                 details={"plugin_key": key},
             )
         return factory
+
+    def tool_exposure(
+        self, context: HarnessPluginFactoryContext, selection: ToolsetExposure
+    ) -> dict[str, ToolsetExposure]:
+        """Compile one factory selection against its declared native Toolsets."""
+        descriptions = self.require(context.plugin_key).describe_toolsets(context)
+        if not descriptions and (
+            selection.exposure == "progressive" or "progressive" in selection.tool_exposure.values()
+        ):
+            raise PluginError(
+                "Progressive plugin exposure requires native Toolset descriptions.",
+                code="plugin_toolsets_missing",
+                details={"plugin_key": context.plugin_key},
+            )
+        return {
+            toolset_id: ToolsetExposure(
+                exposure=selection.exposure,
+                tool_exposure=selection.tool_exposure,
+                description=selection.description or description,
+            )
+            for toolset_id, description in descriptions.items()
+        }
 
     def validate_configuration(
         self,

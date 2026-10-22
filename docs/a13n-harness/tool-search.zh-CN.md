@@ -1,40 +1,18 @@
 ---
-title: ToolSearch 工具分组
-description: 通过搜索工具和调用工具提供大型工具集合，让模型只需查看简短的工具分组列表。
+title: Toolset 暴露与发现
+description: 为原生 Toolset 选择直接或渐进式 schema，同时保持唯一执行路径。
 ---
 
-ToolSearch 将本地工具分组，支持原生或代理发现。代理模式提供三个面向模型的工具：`discover_tools`、`describe_tool` 和 `call_tool`。模型先浏览简短候选，按需读取所选工具的完整定义，再用参数对象调用工具。
+Toolset exposure 决定模型如何看到已选中的工具。`direct` 直接提供 schema；`progressive` 先提供简短目录，按需发现完整定义。来源使用原生 Toolset ID，最终工具名保持不变。选择、权限、凭据和执行仍由原有组件负责。
 
-工具通过当前 `ToolManager`、原 Toolset 和 Harness 执行边界执行，由这条路径处理验证、策略、凭据、钩子、结果和用量。
+## 配置 Toolset
 
-## 选择原生工具搜索
-
-通过 `ToolSearchCapability` 或 `ToolSearchPlan` 的 `config` 选择模型发现和调用分组工具的方式：
-
-- `ProxyToolSearchConfig()`（默认）：使用 `discover_tools`、`describe_tool` 和 `call_tool`。在此分支配置控制工具名称和发现限制。
-- `NativeToolSearchConfig(strategy=None)`：使用提供商原生工具搜索。省略 `strategy` 或设为 `None` 时使用提供商默认值，也可选择 `"bm25"` 或 `"regex"`。提供商适配器验证所选策略的支持情况。分组工具标记为 `defer_loading=True`，保留 `crm__customer_name` 等名称。模型发现工具后直接调用，采用标准用量统计和审批/恢复流程。来源 Toolset 指令保持原有行为。
-
-```python
-from a13n_harness.capabilities import NativeToolSearchConfig, ToolSearchCapability
-
-search = ToolSearchCapability(groups=groups, config=NativeToolSearchConfig(strategy="bm25"))
-```
-
-Host 配置使用 `tool_search.config.mode: native|proxy`。每个分支只接受自己的设置。
-
-原生模式要求模型及协议支持原生工具搜索。不支持的模型会触发 `native_tool_search_unsupported` 错误；Harness 不会回退到其他搜索模式。工具在本地执行，并遵循已有权限。两种模式下，MCP 来源均配置为 `native=False, local=True`。
-
-两种模式均支持 [CodeAct 编排](#use-with-codeact)。原生模式的工具在发现后可调用；代理模式还允许在一次 runner 调用中完成搜索和调用。两种模式都要求来源声明类型化 CodeAct 策略。
-
-以下示例使用默认代理模式。
-
-## 为 Toolset 分组
-
-添加一个 `ToolSearchCapability`，显式将领域名称映射到来源。每个 `ToolSearchGroup` 是被动配置值，不是独立安装的 Capability：
+将不可变 `ToolExposure` 传给 `AgentDefinition.tool_exposure` 或 `HarnessBuilder.build(tool_exposure=...)`。映射键是来源的原生 `ToolDefinition.toolset_id`：
 
 ```python
 from a13n_harness import AgentSpec, HarnessBuilder
-from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
+from a13n_harness.tools import ToolExposure, ToolsetExposure
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.toolsets import FunctionToolset
 
 
@@ -45,309 +23,107 @@ def customer_name(customer_id: int) -> str:
 
 source = FunctionToolset(
     [customer_name],
+    id="crm",
     instructions="Use numeric customer IDs, not display names.",
-)
-proxy = ToolSearchCapability(
-    groups={
-        "crm": ToolSearchGroup(
-            source=source,
-            description="Customer records and account operations",
-        )
-    },
 )
 agent = HarnessBuilder().build(
     AgentSpec(),
     output_type=str,
-    model=model,  # Supply your configured Pydantic AI Model.
-    capabilities=(proxy,),
-)
-```
-
-模型的发现调用为：
-
-```json
-{"query": "customer name", "group": "crm"}
-```
-
-结果包含实际 `detail`（`summary` 或 `full`）、`tools`、`total` 和 `next_offset`。这个关键词查询返回摘要，包含 `group`、本地 `tool` 名、简短描述和 `codeact_eligible`。模型用 `describe_tool` 获取选中的工具定义：
-
-```json
-{"group": "crm", "tool": "customer_name"}
-```
-
-详情返回 `{"detail": "full", "tool": ...}`，包含完整描述、`parameters_json_schema`、`return_schema`、来源 `instructions` 和 `codeact_eligible`。读完调用契约后，模型调用 `call_tool`：
-
-```json
-{
-  "group": "crm",
-  "tool": "customer_name",
-  "arguments": {"customer_id": 42}
-}
-```
-
-原来准备好的验证器检查并转换 `arguments`。工具仍以组内规范名称 `crm__customer_name` 注册，但不直接向模型公开成员 schema。未分组工具仍直接可见。受管理工具 ID 不变。
-
-按 `crm`、`knowledge`、`billing` 等领域分组，不要每个工具一组。组标识以字母开头，最多 32 个字母、数字、连字符或下划线，不得含 `__`。描述非空，最多 512 字符。不同组可含相同本地工具名。同组多个来源可用原生 `CombinedToolset`、`Capability(toolsets=[...])` 或 `CombinedCapability` 作为来源。成员本地名必须唯一；重复会使准备失败。名称可能冲突时，先为来源添加前缀，再分组。
-
-## 指令与动态参数
-
-控制工具描述只放当前组摘要。来源 Toolset 指令随完整定义返回，不提前填满每个模型请求。摘要搜索不读取这些指令，也不复制 schema。独立的 Capability 级指令保留原生行为。
-
-准备后的控制工具包含当前 `group` 枚举。完整发现和详情查询在来源准备和 Harness 工具集合解析后返回当前成员 schema，使不可用或被替代工具不能通过旧索引继续调用。`call_tool` 的 schema 保持简洁，不包含所有成员参数的联合类型。
-
-生成的指令告诉模型：
-
-1. 选择领域并发现候选；检查 `detail`，若返回摘要且尚无完整有效定义，先读取所选工具详情；
-2. 使用返回的本地名称和匹配完整 schema 的参数对象；
-3. 复用已知且当前有效的 schema，不必每次调用前都搜索；
-4. 分页读取，工具不可用时刷新发现结果；
-5. 核查不确定副作用，不盲目重试修改。
-
-空查询或纯空白查询浏览一个或所有组。显式 `group` 先限定候选范围。精确本地名称或 `group__tool` 名称排在最前，忽略大小写和首尾空白，但保留分隔符差异。其他关键词候选仍然保留：即使存在 `payment`，搜索 `payment` 也能找到 `payment_lookup` 和 `refund_payment`。规范名称查询不会隐式限定组；使用返回的 group 和本地名称查询目标工具详情。
-
-查询按空白、标点、下划线、连字符和 camelCase 边界拆分关键词，任一关键词不区分大小写的子串命中即可召回。检索字段包括本地名称、完整工具描述、组标识、输入属性名和输入 schema 描述。会扫描嵌套参数和本地 schema 定义，但不展开引用。默认值、示例、枚举值、返回 schema、来源指令和组描述不参与匹配。
-
-结果先按精确名称匹配排序，其次按命中的不同关键词数量，再按相关性，最后按规范名称稳定排序。每个关键词只计最强的一次匹配：完整词优于子串；每一档内的字段优先级为本地名称、工具描述、组标识、参数名、参数描述。重复关键词或重复文本不增加权重。摘要默认每页 10 条，受配置条数和字节上限约束。使用简短关键词；非空纯标点查询必须精确命中工具名。camelCase 会影响拆词，因此不同大小写的查询可能拆分不同，但精确名称和关键词比较均忽略大小写。这是确定性本地搜索，不提供语义检索或中文语义分词。
-
-每次发现可选择详情模式：
-
-| `detail`       | 行为                                                                                                           |
-| -------------- | -------------------------------------------------------------------------------------------------------------- |
-| `auto`（默认） | 返回摘要；仅当整个候选集只有一个精确名称命中、offset 为 0、完整响应不超过 8 KiB 且在配置字节上限内时自动展开。 |
-| `summary`      | 始终返回候选；描述压缩空白，最多 256 字符，包含截断时的省略号。                                                |
-| `full`         | 返回完整定义，不静默降级为摘要。                                                                               |
-
-唯一性在分页前按整个候选集判断。单个模糊结果、`limit=1` 或字节限制导致的一页单条结果不触发自动展开。响应标记实际表示，一页不混合摘要和完整定义。已知工具身份时，可直接调用 `describe_tool(group=..., tool=...)`，无需先搜索。发现和详情查询都不执行业务操作。
-
-使用相同 query、group 和 detail 跟随 `next_offset`；字节预算可能让一页少于请求条数。offset 基于当前目录，不是快照或持久游标；目录变化可能使分页位置移动。关闭 Toolset 指令也会关闭生成的引导和完整定义中的来源指令。
-
-## 配置名称与发现限制
-
-```python
-from a13n_harness.capabilities import ToolSearchCapability, ProxyToolSearchConfig, ToolSearchGroup
-
-proxy = ToolSearchCapability(
-    groups={"crm": ToolSearchGroup(source=source, description="Customer records")},
-    config=ProxyToolSearchConfig(
-        search_name="find_operations",
-        describe_name="describe_operation",
-        call_name="invoke_operation",
-        max_results=10,
-        max_search_bytes=32_768,
-    )
-)
-```
-
-生成描述和指令使用配置名称。名称必须不同，不能与其他工具冲突。默认值避免与原生 `ToolSearch` 的 `search_tools` 冲突；原生搜索可为独立的未分组工具并存。
-
-`max_results` 接受 1–100。`limit` 省略或 null 时，摘要默认 `min(10, max_results)`，完整定义默认 `min(5, max_results)`。UTF-8 JSON 响应预算为 1024–32,768 字节，约束整个发现或详情响应。放不下的条目移到下一页，schema 和指令不截断。单个完整条目也放不下时，完整发现或详情查询明确失败，但仍可展示摘要。应直接公开该工具或简化定义来读取完整契约。
-
-旧默认名称 `search_proxy_tools` 和 `call_proxy_tool` 不注册为别名。需更新模型指令和保存的程序；依赖搜索直接返回 schema 的程序应显式请求 `detail="full"`。
-
-准备后没有剩余分组工具时，不公开代理控制工具或生成的代理指令。分组减少模型上下文，但来源仍正常初始化和准备工具。它不会消除 MCP 工具列表流量，也不会让构造一千个 Toolset 不产生开销。
-
-## 为绑定 Run 的 MCP Capability 分组
-
-将 Capability 实例作为组 `source`，尤其是绑定 Run 时会替换自身的 Capability。不要在定义时提取 `ContextualMCP` Toolset：
-
-```python
-from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
-from a13n_harness.mcp import (
-    ContextualMCP,
-    MCPContextHeaderBinding,
-    MCPContextHeaders,
-    MCPContextHeadersConfig,
-)
-
-knowledge = ToolSearchGroup(
-    source=ContextualMCP(
-        "https://mcp.example.com/mcp",
-        id="knowledge-server",
-        native=False,
-        local=True,
-        headers_factory=MCPContextHeaders(
-            MCPContextHeadersConfig(
-                headers={
-                    "X-Run-ID": MCPContextHeaderBinding("context.run_id"),
-                    "X-Tenant-ID": MCPContextHeaderBinding("identity.tenant_id"),
-                }
-            )
-        ),
+    model=model,
+    capabilities=(Capability(toolsets=[source]),),
+    tool_exposure=ToolExposure(
+        toolsets={
+            "crm": ToolsetExposure(
+                exposure="progressive",
+                description="Customer records and account operations",
+            ),
+        },
     ),
-    description="Search and read the tenant's knowledge base",
 )
-capabilities = (ToolSearchCapability(groups={"knowledge": knowledge}),)
 ```
 
-Host 提供 `tenant_id` 身份声明。每次逻辑 Run 解析一次 headers；模型恢复尝试复用该 Run 的上游 MCP，并发 Run 分别替换。分组保留原生 MCP 传输和生命周期。headers 和执行选择见 [MCP 工具](mcp.md)。
+`ToolsetExposure` 包含三个字段：
 
-选择 `native=False, local=True`。提供方原生执行，包括自动原生回退，不是代理目标。不要将分组来源与 `defer_loading=True` 组合；代理发现和原生延迟加载是不同接口。
+- `exposure`：默认为 `direct`，也可选择 `progressive`。
+- `tool_exposure`：按最终工具名精确匹配的覆盖值，优先于来源默认值。
+- `description`：来源用途，不能为空，最多 512 字符。有效的渐进式来源必须有用途；Harness 为内置 Toolset 提供默认描述。
+
+例如，`tool_exposure={"customer_name": "direct"}` 可在渐进式来源中直接暴露一个工具。没有原生 ID 的工具保持直接暴露。Exposure 不添加前缀或别名，已有名称冲突仍会失败。
+
+## 发现、描述与执行
+
+默认使用 Harness 发现。有可用渐进式工具时，模型获得五个固定控制工具：
+
+| 控制工具                            | 用途                                  |
+| ----------------------------------- | ------------------------------------- |
+| `list_toolsets(offset=0)`           | 浏览原生来源 ID、用途、数量和名称预览 |
+| `list_tools(toolset, offset=0)`     | 分页浏览一个来源的工具摘要            |
+| `search_tools(query, toolset=None)` | 搜索当前名称、描述和参数描述          |
+| `describe_tools(names)`             | 按精确名称读取完整定义和来源指令      |
+| `execute_tool(name, arguments)`     | 通过原生 manager 调用启用的目标       |
+
+搜索始终返回摘要，即使名称精确匹配。构造不熟悉的参数前应读取完整定义：
+
+```python
+found = await search_tools(query="customer name", toolset="crm")
+definitions = await describe_tools(names=["customer_name"])
+result = await execute_tool(name="customer_name", arguments={"customer_id": 42})
+result
+```
+
+这是 CodeAct 程序示例；普通模型调用使用相同名称和参数对象。已知精确名称时可以直接执行，无须重复搜索。`execute_tool` 也支持直接暴露的可调用工具。
+
+列表每页最多 20 项，使用 `next_offset` 继续。搜索要求非空查询，最多返回 20 个摘要，以及总数和部分结果标记；结果不完整时缩小查询或浏览来源。描述接受 1–20 个名称。响应限制为 32 KiB UTF-8 JSON。完整定义不会被截断，超限时明确要求减少定义数量或简化来源 schema。
+
+精确名称匹配忽略大小写并优先排序，之后按关键词覆盖与相关性排序。关键词按标点和驼峰拆分。搜索读取当前 schema，不展开引用、不获取外部资源；默认值、示例和枚举值不参与匹配。这是确定性本地匹配，不是语义检索。
+
+不含 schema 的来源目录最多 8 KiB，每个来源最多预览五个名称。目录变化时在一个逻辑 Run 中注入一次；保留的摘要值可阻止后续 Run 重复注入相同目录。渐进式来源指令随完整描述返回。禁用 Toolset 指令时也会隐藏这部分指导。
+
+## 选择原生工具搜索
+
+使用相同来源策略，切换到 provider 原生发现：
+
+```python
+policy = ToolExposure(
+    progressive_search="native",
+    progressive_search_strategy="bm25",
+    toolsets={
+        "crm": ToolsetExposure(
+            exposure="progressive",
+            description="Customer records and account operations",
+        ),
+    },
+)
+```
+
+省略 `progressive_search_strategy` 使用 provider 默认值，也可选择 `bm25` 或 `regex`。策略字段仅适用于原生模式，由 provider 验证支持情况。不支持的模型在请求发出前以 `native_tool_search_unsupported` 失败，不自动回退。
+
+原生模式使用上游延迟工具搜索，不提供上述五个控制工具。发现后按不变的工具名直接调用，沿用普通验证、用量和延迟反馈。这是对本地执行工具的原生发现，不是 provider 侧 MCP 执行。
+
+## MCP 与插件来源
+
+保留 MCP Capability 的普通贡献路径。使用 `native=False, local=True`、稳定原生 ID，并在 `ToolExposure.toolsets` 中引用该 ID。`ContextualMCP` 等绑定 Run 的来源应保留 Capability 本身，不提前提取 Toolset。请求头每个逻辑 Run 解析一次，并在并发 Run 之间隔离。见 [MCP 工具](mcp.md)。
+
+插件保留普通的 `for_agent()`、`get_capabilities()`、中间件和 Run 绑定。Exposure 不重复构造来源。Host 插件 factory 可以通过 `describe_toolsets(context)` 提供原生 ID 和用途。保存稳定 ID 和策略，不保存 Python 对象或凭据；Host 验证拒绝空白或重复 ID。
+
+渐进式暴露减少模型上下文，不减少来源初始化或 MCP 工具列举成本。来源仍通过原有选择控制启停。
 
 ## 与 CodeAct 配合
 
-原生模式下，先在 CodeAct 外发现工具。具有使用资格且已发现的工具随后会出现在两个 runner 的目录中，可直接调用，例如 `await crm__customer_name(customer_id=42)`。尚未发现的工具保持隐藏且不可调用。来源必须声明类型化 CodeAct 策略；发现本身不会授予使用资格。
+来源所有者必须声明类型化 CodeAct 资格。Harness 模式下，五个控制工具可在 runner 中调用，渐进式目标 schema 不进入初始 runner 目录。桥接层将 `execute_tool` 解析到实际目标，并检查目标自己的资格、策略和参数。控制工具的资格不会赋予目标资格。
 
-以下示例使用代理模式。
+原生模式先在 CodeAct 外发现工具。符合资格的已发现工具随后进入 runner 目录，使用普通 sandbox 名称调用。见 [CodeAct](delegation-and-codeact.md#codeact)。
 
-分组前发布来源的类型化 CodeAct 策略：
+程序中每个 Host 函数调用都需要 `await`。普通成功的 `execute_tool` 消耗两次成功调用：外层封装和目标。CodeAct 直接分派目标，不额外执行封装，因此一次 runner 加一个目标也消耗两次。搜索和描述各消耗一次；分派前检查限额。
 
-```python
-from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
-from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
-from pydantic_ai.toolsets import FunctionToolset
+## 审批、客户端工具与续接
 
-source = CodeActPolicyToolset(
-    wrapped=FunctionToolset([customer_name]),
-    policy=CodeActToolPolicy(tools={"customer_name": True}),
-    reject_unknown_tools=True,
-)
-proxy = ToolSearchCapability(
-    groups={"crm": ToolSearchGroup(source=source, description="Customer records")},
-)
-capabilities = (proxy, CodeActCapability())
-```
+`execute_tool` 支持本地函数、审批工具、外部客户端工具和结构化用户问题。验证、权限、钩子、凭据、超时、原生重试和结果边界保持有效。发现控制、输出工具、CodeAct runner 和 provider 原生工具不能作为目标；执行控制工具仍可调用。
 
-runner 目录包含代理控制工具，不包含每个分组工具声明。受限 Python 可在一次 `run_code` 中发现并调用工具：
+原生审批和外部延迟会正常挂起。Pending metadata 保存验证后的实际目标，原生历史保留外层调用 ID。Host 使用 `project_tool_call` 展示审批、投递外部调用和解释答案，同时保留原始 pending 事实供恢复使用。审批参数覆盖由 Harness 转换一次，不新增 pending store 或恢复协议。
 
-```python
-found = await discover_tools(query="customer name", group="crm", detail="full")
-match = found["tools"][0]
-name = await call_tool(
-    group=match["group"],
-    tool=match["tool"],
-    arguments={"customer_id": 42},
-)
-name
-```
+首次参数验证失败会在预算允许时返回当前完整定义。取消和意外错误不会回滚副作用；重试修改操作前应检查不确定结果。
 
-可复用的 `lookup.codeact.py` 程序使用同一桥接：
+交接和压缩保留已调用工具的有界定义工作集及当前目录。仅搜索或描述不会将工具加入工作集。重建发现使用当前定义，不授予新权限。
 
-```python
-async def main(inputs):
-    return await call_tool(
-        group="crm",
-        tool="customer_name",
-        arguments={"customer_id": inputs["customer_id"]},
-    )
-```
-
-模型调用 `run_program(path="lookup.codeact.py", inputs={"customer_id": 42})`；该文件必须可通过当前 Environment 访问。受限 Python 中的每次宿主函数调用都需 await。代理调用保守地形成顺序执行屏障，在 `asyncio.gather` 中也如此。
-
-分组不授予 CodeAct 使用资格。桥接先解析目标并检查其自己的类型化策略，再派发。没有显式所有者策略的 MCP 来源可通过普通模型代理调用，但不自动允许 CodeAct 调用。策略和运行时边界见 [CodeAct](delegation-and-codeact.md#codeact)。
-
-## Host 集成
-
-Host 在构造 Agent 定义时决定展示方式。已构造来源使用 `ToolSearchCapability`。要将普通 Harness 插件提供的工具与选中 Capability 一起分组，将类型化 `ToolSearchPlan` 传给 `AgentDefinition.tool_search` 或 `HarnessBuilder.build(tool_search=...)`。Harness 在普通的一次性绑定中保留插件归属，无须插件扫描或特殊来源工厂 API。
-
-```python
-from a13n_harness import AgentDefinition, AgentSpec
-from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
-from pydantic_ai.capabilities import MCP
-
-source = MCP("https://mcp.example.com/mcp", native=False, local=True)
-definition = AgentDefinition(
-    agent=AgentSpec(model="openai:gpt-5"),
-    output_type=str,
-    capabilities=(source,),
-    tool_search=ToolSearchPlan(
-        groups={
-            "knowledge": ToolSearchSelection(
-                description="Find project documentation",
-                capabilities=(source,),
-            )
-        }
-    ),
-)
-```
-
-要包含插件提供的内容，在选择中添加 `plugins=("plugin-docs",)`，并通过定义 `plugins` 提供该确切实例。同一插件类的多个实例按不同 ID 选择。所选 Capability 必须已在定义中，所选插件必须在 builder 中可用。未列来源直接展示。不要既通过具体来源代理，又通过构建方案安装同一来源。
-
-分组保留原生同级顺序、显式 ID、状态、钩子和自定义容器指令；不会将独立来源变成一个原子排序节点。方案不可变，在构造时使用。
-
-提供 JSON、YAML、API 或配置 UI 的 Host 应负责：
-
-| Host 输入          | Host 职责                                                                                                |
-| ------------------ | -------------------------------------------------------------------------------------------------------- |
-| 来源 ID 和专用选项 | 通过可信来源工厂解析 ID；每个执行对象只构造一次所选来源。                                                |
-| 直接或分组展示     | 每个来源选择直接安装或组内安装，不能重复。无关工具直接展示。                                             |
-| 组名和描述         | 将所选来源汇总到每个 Agent 的一个 `ToolSearchCapability(groups=...)`。多个来源属于同领域时使用原生组合。 |
-| 可选发现设置       | 验证并构造 `ProxyToolSearchConfig`；无须自定义时使用默认值。                                             |
-
-例如 Host 自有文档可包含：
-
-```yaml
-tool_sources:
-  - source_id: customer-tools
-    presentation: proxy
-    group: crm
-    description: Customer records and account operations
-  - source_id: host-status
-    presentation: direct
-```
-
-这是 **Host schema 示例**，不是内置 Harness 或 Harness UI 资源。保存稳定 ID 和经验证选项，不保存序列化 Python 对象、导入目标或字面凭据。来源工厂和凭据解析仍由可信 Host/插件代码负责。组描述指导发现，不授予授权或 CodeAct 使用资格。
-
-来源构造一次，再选择放置位置。第三方 `AbstractCapability` 可直接用作 `ToolSearchGroup(source=capability, description=...)`，无须 ToolSearch 专用实现。原生组合保留 Agent/Run 绑定、钩子和 Capability 级指令。`ContextualMCP` 等绑定 Run 的来源应提供 Capability 本身，不提前调用 `get_toolset()`。
-
-groups 映射在构造时使用。改变展示应构建替代执行对象；修改原映射不重新配置已有 Agent。空映射不公开代理控制工具，直接工具不变。
-
-### 插件提供的来源
-
-`AbstractHarnessPlugin.get_capabilities()` 是内容提供边界，不是通用来源查询 API。优先用 `ToolSearchPlan` 为已有插件分组，无须改动插件。Harness 对各插件的 `for_agent()` 和 `get_capabilities()` 恰好调用一次，先验证原来源再分组。中间件仍安装；分组不授权保留的 Capability。
-
-插件也可用以下 `ToolSearchCapability` 自行管理展示。在一个组合点汇总分组，不要安装互相竞争的代理界面。
-
-以下 Host 自有插件展示该边界。其 `source_factory` 可调用对象在 `for_agent()` 中为每个执行对象只构造一次来源 Capability；`get_capabilities()` 选择直接或分组展示。来源 Run 绑定仍是原生流程：
-
-```python
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-
-from a13n_harness import AbstractHarnessPlugin, AgentContext
-from a13n_harness.capabilities import ToolSearchCapability, ToolSearchGroup
-from pydantic_ai.capabilities import AbstractCapability
-
-
-@dataclass
-class HostToolsPlugin(AbstractHarnessPlugin):
-    source_factory: Callable[[], Mapping[str, AbstractCapability[AgentContext]]]
-    group_descriptions: Mapping[str, str]
-    sources: Mapping[str, AbstractCapability[AgentContext]] = field(default_factory=dict)
-
-    @property
-    def plugin_id(self) -> str:
-        return "host-tools"
-
-    def for_agent(self):
-        return replace(self, sources=dict(self.source_factory()))
-
-    def get_capabilities(self) -> Sequence[AbstractCapability[AgentContext]]:
-        direct = []
-        groups = {}
-        for name, source in self.sources.items():
-            if name in self.group_descriptions:
-                groups[name] = ToolSearchGroup(
-                    source=source, description=self.group_descriptions[name]
-                )
-            else:
-                direct.append(source)
-        if groups:
-            direct.append(ToolSearchCapability(groups=groups))
-        return tuple(direct)
-```
-
-这里来源名也用作组名；Host 的来源 ID 和领域名称不同时，可先组合来源，再构造各描述对象。在 Host 配置层根据可用来源验证名称。
-
-通过 `HarnessBuilder.build(plugins=(plugin,))` 传入 `HostToolsPlugin(source_factory=build_sources, group_descriptions={"crm": "Customer records"})`；`build_sources` 是返回具名 Capability 的可信工厂。空 `group_descriptions` 保持所有来源直接展示。不要再通过 `capabilities=` 传入这些来源。
-
-对于已有第三方中间件插件，`ToolSearchPlan` 按确切插件 ID 选择其普通贡献。不要手动调用 `get_capabilities()`、再次实例化来源，或在仍需要中间件时移除插件。见[插件生命周期](plugins.md#plugin-lifecycle)和[托管](hosting.md#reconstruct-trusted-definitions)。Harness UI 通过 [Agent 工具代理分组](../a13n-harness-ui/agents-and-subagents.md#tool-search-groups)提供此构建方案。
-
-## 执行、用量与限制
-
-- **统一执行路径：** 目标验证、Capability 钩子、受管理授权、凭据、超时、结果限制和 Toolset 派发仍使用原生机制。搜索用于发现，不是授权。
-- **原生统计：** 成功的普通代理调用计算 `call_tool` 调用和目标，共两次成功工具调用。CodeAct 解析 `call_tool` 调用时不执行额外代理层：runner 加一个目标也算两次；再搜索一次则算三次。用量限制在目标派发前检查。
-- **重试：** 普通目标验证和 `ModelRetry` 保留目标原生重试状态。ToolSearch 不重放副作用，也不维护重试引擎。CodeAct 保留有上限的 runner 失败语义。
-- **仅内联审批：** 原生处理器可在当前调用内批准或拒绝。未解决审批或外部延迟会使代理调用失败，不会挂起嵌套续接。需要跨轮次 Host 交互的工具应直接公开。
-- **支持的目标：** 本地函数工具，包括本地执行 MCP 和内联审批控制工具。不支持将外部/客户端工具、提供方原生工具、控制/输出工具、CodeAct runner 和延迟加载工具作为分组目标。
-- **不确定副作用：** 取消和意外失败不回滚工作。重试修改前检查提供方状态。
-- **组合范围：** API 通过 `HarnessBuilder` 或 `AgentDefinition` 组合，不是内置 `AgentSpec` 序列化名称。Harness UI 定义自己的每 Agent YAML 选择 schema，不创建独立代理分组资源。
+Host 配置示例见 [Harness UI 来源暴露](../a13n-harness-ui/agents-and-subagents.md#toolset-exposure)和 [Service 工具](../a13n-service/tools.md#progressive-tool-discovery)。

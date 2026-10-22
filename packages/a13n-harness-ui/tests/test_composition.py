@@ -1203,42 +1203,28 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
 
 
 @pytest.mark.parametrize("native_search", [False, True])
-async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(
-    tmp_path: Path, native_search: bool
-) -> None:
+async def test_exposure_captures_enabled_sources_and_markdown_inheritance(tmp_path: Path, native_search: bool) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
     agent_path.write_text(
-        agent_path.read_text()
-        + """
-tool_search:
-  groups:
-    knowledge:
-      description: Search documents and memory.
-      mcp_servers: [mcp-docs]
-      harness_plugins: [plugin-memory]
-"""
-        + ("  config: {mode: native}\n" if native_search else "  config: {mode: proxy, max_results: 5}\n")
+        agent_path.read_text() + ("progressive_search: native\n" if native_search else "progressive_search: harness\n")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     selection = replace(_selection(), mcp_server_ids=())
     composition = resolver.resolve_run(source, selection)
-    proxy = composition.root.tool_search
-    assert proxy is not None
-    if not native_search:
-        assert proxy.config.max_results == 5
-    assert (proxy.config.mode == "native") is native_search
+    mode = composition.root.progressive_search
+    assert (mode == "native") is native_search
     payload = composition.model_dump_json()
     assert '"native_search"' not in payload
     assert type(composition).model_validate_json(payload).model_dump_json() == payload
-    assert proxy.groups["knowledge"].mcp_servers == ()
-    assert proxy.groups["knowledge"].harness_plugins == ("plugin-memory",)
-    assert composition.root.children[0].definition.tool_search == proxy
-    assert composition.root.children[1].definition.tool_search is None
+    assert composition.root.mcp_servers == ()
+    assert composition.root.harness_plugins[0].plugin_id == "plugin-memory"
+    assert composition.root.children[0].definition.progressive_search == mode
+    assert composition.root.children[1].definition.progressive_search == "harness"
     assert type(composition).model_validate_json(composition.model_dump_json()) == composition
     AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
-    assert source.agents["agent-assistant"].tool_search.groups["knowledge"].mcp_servers == ("mcp-docs",)
+    assert source.agents["agent-assistant"].progressive_search == mode
 
 
 @pytest.mark.parametrize("host_mode", ["local", "webui"])
@@ -1257,11 +1243,7 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     path.write_text(yaml.safe_dump(document))
     (tmp_path / "mcp/app.yaml").write_text(
         "schema_version: '1'\nkind: mcp_server\nid: mcp-app\nname: App\ntransport: {url: 'https://example.test/app'}\n"
-    )
-    agent_path = tmp_path / "agents/assistant.yaml"
-    agent_path.write_text(
-        agent_path.read_text()
-        + "tool_search:\n  groups:\n    apps:\n      description: App tools\n      mcp_servers: [mcp-app]\n"
+        "exposure: progressive\ndescription: App tools\n"
     )
     # Exercise nested Agent-resource children as well as root Markdown inheritance.
     reviewer_path = tmp_path / "agents/reviewer.yaml"
@@ -1277,12 +1259,9 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     assert tuple(item.server_id for item in root.mcp_servers) == expected
     assert tuple(item.server_id for item in root.mcp_servers if item.generic_selected) == generic_ids
     assert all(item.apps_enabled == injected for item in root.mcp_servers)
-    assert root.tool_search is not None
     if injected:
-        assert root.tool_search.groups["apps"].mcp_servers == ("mcp-app",)
-    else:
-        assert root.tool_search.groups == {}
-    assert root.children[0].definition.tool_search == root.tool_search
+        assert next(item for item in root.mcp_servers if item.server_id == "mcp-app").exposure == "progressive"
+    assert root.children[0].definition.progressive_search == root.progressive_search
     assert root.children[0].definition.tools == ("glob", "grep")
     assert source.agents["agent-assistant"].mcp_servers is None
     assert source.agents["agent-reviewer"].mcp_servers == ()
@@ -1356,13 +1335,13 @@ async def test_legacy_mcp_recipes_preserve_generic_child_selection(tmp_path: Pat
     assert _initial_child_configuration(restored, restored.root.children[0]).mcp_server_ids == ("mcp-docs",)
 
 
-async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payload(tmp_path: Path) -> None:
+async def test_direct_composition_exposure_roundtrips(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
     payload = composition.model_dump_json()
-    assert '"tool_search"' not in payload
     restored = type(composition).model_validate_json(payload)
-    assert restored.root.tool_search is None
+    assert restored.root.progressive_search == "harness"
+    assert all(item.exposure == "direct" for item in restored.root.mcp_servers)
     assert restored.model_dump_json() == payload
 
 

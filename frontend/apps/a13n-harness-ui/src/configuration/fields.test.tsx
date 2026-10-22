@@ -35,7 +35,16 @@ const get = vi.hoisted(() =>
             }
           : path === "/api/models/catalog"
             ? { items: [], status: "unavailable" }
-            : [],
+            : path === "/api/catalog"
+              ? [
+                  {
+                    kind: "capability",
+                    key: "web",
+                    toolset_ids: ["a13n-web-tool-functions"],
+                  },
+                  { kind: "capability", key: "skills", toolset_ids: [] },
+                ]
+              : [],
   })),
 );
 vi.mock("../transport/context", () => ({
@@ -85,6 +94,19 @@ function renderFields(initial: string) {
     </MemoryRouter>,
   );
 }
+
+it("offers exposure only for cataloged tool-bearing capabilities", async () => {
+  renderFields(
+    "kind: agent\nid: test\nname: Test\ncapabilities:\n  - capability: web\n  - capability: skills\n",
+  );
+  await waitFor(() =>
+    expect(screen.getAllByText("Tool exposure")).toHaveLength(1),
+  );
+  await userEvent.setup().click(screen.getByText("Tool exposure"));
+  expect(
+    screen.getAllByRole("combobox", { name: "Default tool exposure" }),
+  ).toHaveLength(1);
+});
 
 it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enabled", async () => {
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';

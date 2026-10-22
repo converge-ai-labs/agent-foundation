@@ -28,8 +28,8 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness.context import AgentContext
+from a13n_harness.tools.exposure import discovery_control, invocation_target, is_progressive
 from a13n_harness.tools.identity import tool_identity
-from a13n_harness.tools.tool_search import proxy_control, proxy_membership
 
 _DISCOVERY_ID = "a13n.tool-discovery"
 _MAX_TOOLS = 32
@@ -38,8 +38,8 @@ _MAX_STATE_BYTES = 128 * 1024
 _OMITTED_QUERY = "[query omitted during context replacement]"
 _NOTICE = (
     "<retained-tool-discovery>\n"
-    "Tool discovery was pruned during context replacement. The following synthetic search results were "
-    "rebuilt from current definitions for a bounded subset of previously called tools; no search was executed. "
+    "Tool discovery was pruned during context replacement. The following synthetic discovery results were "
+    "rebuilt from current definitions for a bounded subset of previously called tools; no discovery was executed. "
     "Original search queries were not retained and are replaced with an omission marker. "
     "Only the listed tools were retained. Search again if you need another tool. Each retained tool's schema "
     "is complete. Ordinary tool permissions and approvals still apply.\n"
@@ -107,8 +107,13 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         args: ValidatedToolArgs,
         result: Any,
     ) -> Any:
-        del call, args
-        await self._record_call(ctx, tool_def)
+        del call
+        if discovery_control(tool_def) == "execute_tool":
+            target = ctx.tools.get(args["name"])
+            if target is not None:
+                await self._record_call(ctx, target)
+        else:
+            await self._record_call(ctx, tool_def)
         return result
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: Any) -> None:
@@ -118,11 +123,20 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
             and isinstance(event.part, ToolReturnPart)
             and event.part.outcome == "success"
         ):
-            definition = ctx.tools.get(event.part.tool_name)
+            name = event.part.tool_name
+            resume = ctx.deps.deferred_resume
+            if name == "execute_tool" and resume is not None:
+                for call in resume.requests.calls:
+                    if call.tool_call_id == event.part.tool_call_id:
+                        target = invocation_target(call, resume.requests.metadata.get(call.tool_call_id, {}))
+                        if target is not None:
+                            name = target.name
+                        break
+            definition = ctx.tools.get(name)
             if definition is None:
                 # Resumed external results can settle before tools are prepared.
-                self._unprepared_completions.append(event.part.tool_name)
-            elif definition.kind == "external":
+                self._unprepared_completions.append(name)
+            elif definition.kind == "external" or name != event.part.tool_name:
                 await self._record_call(ctx, definition)
 
     async def before_model_request(
@@ -130,14 +144,14 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
     ) -> ModelRequestContext:
         for name in self._unprepared_completions:
             definition = ctx.tools.get(name)
-            if definition is not None and definition.kind == "external":
+            if definition is not None:
                 await self._record_call(ctx, definition)
         self._unprepared_completions.clear()
         return request_context
 
     async def _record_call(self, ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> None:
         if not (
-            tool_def.defer_loading or tool_def.with_native == "tool_search" or proxy_membership(tool_def) is not None
+            tool_def.defer_loading or tool_def.with_native == "tool_search" or is_progressive(tool_def)
         ) or not _survives_replacement(ctx, tool_def):
             return
         async with self._lock:
@@ -148,14 +162,24 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
     async def retain(
         self, ctx: RunContext[AgentContext], request: ModelRequestContext
     ) -> tuple[list[ModelMessage], set[str]]:
-        from a13n_harness.toolsets.tool_search import proxy_discovery_entry
+        from a13n_harness.capabilities.exposure import ToolExposureCapability, directory_message
+        from a13n_harness.tools.exposure import EXPOSURE_CAPABILITY_ID
+        from a13n_harness.toolsets.progressive import directory, discovery_entry
 
         tools = _tools(ctx)
-        proxy_search = next((name for name, tool in tools.items() if proxy_control(tool.tool_def) == "search"), None)
+        exposure = ctx.deps._run_capability(EXPOSURE_CAPABILITY_ID)
+        directory_messages = (
+            [directory_message(directory(tools, exposure.policy))]
+            if isinstance(exposure, ToolExposureCapability)
+            else []
+        )
+        describe_name = next(
+            (name for name, tool in tools.items() if discovery_control(tool.tool_def) == "describe_tools"), None
+        )
         call_id = f"retained-{token_urlsafe(9)}"
         selected: list[_CalledTool] = []
         native: set[str] = set()
-        proxy: list[dict[str, Any]] = []
+        described: list[dict[str, Any]] = []
         for item in reversed(self._state.called):
             tool = tools.get(item.name)
             if (
@@ -164,26 +188,29 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
                 or not _survives_replacement(ctx, tool.tool_def)
             ):
                 continue
-            if proxy_membership(tool.tool_def) is not None:
-                if proxy_search is None:
+            if is_progressive(tool.tool_def) and not tool.tool_def.defer_loading:
+                if describe_name is None:
                     continue
                 proposed_native = native
-                proposed_proxy = [*proxy, await proxy_discovery_entry(ctx, tool)]
+                proposed_described = [*described, await discovery_entry(ctx, tool)]
             else:
                 proposed_native = native | {item.name}
-                proposed_proxy = proxy
-            history = _discovery_messages(proposed_native, proposed_proxy, proxy_search, call_id)
+                proposed_described = described
+            history = [
+                *directory_messages,
+                *_discovery_messages(proposed_native, proposed_described, describe_name, call_id),
+            ]
             if _context_bytes(ctx, request, history, proposed_native) > _MAX_CONTEXT_BYTES:
                 continue
             selected.append(item)
-            native, proxy = proposed_native, proposed_proxy
+            native, described = proposed_native, proposed_described
         # Commit eviction only after the owning context capability installs history.
         self._retained = list(reversed(selected))
-        return _discovery_messages(native, proxy, proxy_search, call_id), native
+        return [*directory_messages, *_discovery_messages(native, described, describe_name, call_id)], native
 
 
 def _discovery_messages(
-    native: set[str], proxy: list[dict[str, Any]], proxy_search: str | None, call_id: str
+    native: set[str], described: list[dict[str, Any]], describe_name: str | None, call_id: str
 ) -> list[ModelMessage]:
     messages: list[ModelMessage] = [
         ModelRequest(
@@ -205,23 +232,25 @@ def _discovery_messages(
                 ),
             ]
         )
-    if proxy:
-        assert proxy_search is not None
-        entries = sorted(proxy, key=lambda entry: (entry["group"], entry["tool"]))
-        proxy_id = f"{call_id}-proxy"
+    if described:
+        assert describe_name is not None
+        entries = sorted(described, key=lambda entry: entry["name"])
+        describe_id = f"{call_id}-described"
         messages.extend(
             [
                 ModelResponse(
                     parts=[
-                        ToolCallPart(proxy_search, {"query": _OMITTED_QUERY, "detail": "full"}, tool_call_id=proxy_id)
+                        ToolCallPart(
+                            describe_name, {"names": [entry["name"] for entry in entries]}, tool_call_id=describe_id
+                        )
                     ]
                 ),
                 ModelRequest(
                     parts=[
                         ToolReturnPart(
-                            proxy_search,
-                            {"detail": "full", "tools": entries, "retained": True, "partial": True},
-                            tool_call_id=proxy_id,
+                            describe_name,
+                            {"tools": entries, "retained": True, "partial": True},
+                            tool_call_id=describe_id,
                         )
                     ]
                 ),

@@ -118,13 +118,13 @@ Select `HandoffCapability()` when you also want the `summarize` tool for explici
 
 ### Retain called tools
 
-Both `summarize` and automatic compaction retain a bounded set of previously called [ToolSearch](tool-search.md) tools. Only completed target calls enter the working set, including calls through CodeAct and proxy dispatch. Searching alone adds nothing; repeated calls refresh one entry. Ordinary business-tool results are summarized instead of replayed.
+Both `summarize` and automatic compaction retain a bounded set of previously called [progressive discovery](tool-search.md) tools. Only completed target calls enter the working set, including calls through CodeAct and progressive dispatch. Searching alone adds nothing; repeated calls refresh one entry. Ordinary business-tool results are summarized instead of replayed.
 
 Retention selects the most recently called tools, up to 32 distinct tools within a 64 KiB estimated discovery-context budget. The estimate includes native schema expansion and both CodeAct runner directories, excluding recovery metadata. This is a UTF-8 byte estimate, not a token limit. Each selected tool keeps its complete current schema. Removed, unavailable or changed-source tools are dropped. Deferred Capability activation through `load_capability` is outside this retention policy.
 
-Harness rebuilds a compact synthetic search result from current definitions. A notice explicitly identifies the reconstruction, explains that the retained set is partial, and tells the Agent to search again for other tools. No search is executed. Original queries are not retained: native `queries` and proxy `query` use the explicit placeholder `[query omitted during context replacement]`. Searching for A and B and then calling only A retains only A; B does not consume the retention budget.
+Harness reconstructs current definitions with a notice and bounded source directory. Native mode uses a synthetic search exchange with an explicit query-omission marker; Harness mode uses `describe_tools` for exact retained names. No search or business operation is executed. Calling only A after discovering A and B retains A, not B.
 
-For example, after discovering `crm__customer_name` and looking up customer 42, the replacement has this order:
+For example, after discovering `customer_name` and looking up customer 42, the replacement has this order:
 
 | Position | Explicit `summarize`                                             | Automatic compaction                                                |
 | -------- | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
@@ -133,7 +133,7 @@ For example, after discovering `crm__customer_name` and looking up customer 42, 
 | 3        | Current user input and delivered steering                        | Reconstruction notice and synthetic discovery for called tools      |
 | 4        |                                                                  | Restored-context marker, current user input, and delivered steering |
 
-Current notes, tasks, and runtime context are projected again through their normal providers. The customer lookup result belongs in the summary; the retained discovery lets the Agent call `crm__customer_name` again without another search. Both CodeAct directories reflect the retained tools on the first request after replacement.
+Current notes, tasks, and runtime context are projected again through their normal providers. The customer lookup result belongs in the summary; the retained discovery lets the Agent call `customer_name` again without another search. Both CodeAct directories reflect the retained tools on the first request after replacement.
 
 Portable retention state contains only called tool names and source identities in call-recency order, capped at 128 KiB. It stores neither search results nor schemas. A target called inside CodeAct follows the same policy as a direct target call. Persist the returned `HarnessState` to carry this working set and the replacement history into another Run.
 

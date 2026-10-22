@@ -6,6 +6,7 @@ import re
 from html import unescape
 
 from a13n_harness.capabilities import AskUserQuestionRequest
+from a13n_harness.tools import project_tool_call
 from pydantic import ValidationError
 from pydantic_ai.tools import DeferredToolRequests
 
@@ -46,6 +47,7 @@ def root_operation_notice(
             brief = excerpt_text(failure.message.partition("\n")[0], 320)
     elif deferred is not None:
         for request in deferred.calls:
+            request = project_tool_call(request, deferred.metadata.get(request.tool_call_id, {}))
             if request.tool_name == "ask_user_question":
                 try:
                     questions = AskUserQuestionRequest.model_validate(request.args_as_dict())
@@ -56,12 +58,15 @@ def root_operation_notice(
         if not brief and deferred.approvals:
             request = deferred.approvals[0]
             metadata = deferred.metadata.get(request.tool_call_id, {})
+            request = project_tool_call(request, metadata)
             reason = metadata.get("reason") if isinstance(metadata, dict) else None
             brief = excerpt_text(
                 f"Approve {request.tool_name}" + (f": {reason}" if isinstance(reason, str) else ""), 320
             )
         if not brief and deferred.calls:
-            brief = excerpt_text(f"Provide a result for {deferred.calls[0].tool_name}.", 320)
+            request = deferred.calls[0]
+            request = project_tool_call(request, deferred.metadata.get(request.tool_call_id, {}))
+            brief = excerpt_text(f"Provide a result for {request.tool_name}.", 320)
     fallback = {
         RootOperationStatus.completed: "The agent finished this turn. Open the conversation to review the result.",
         RootOperationStatus.failed: "The operation could not complete. Open the conversation for details.",

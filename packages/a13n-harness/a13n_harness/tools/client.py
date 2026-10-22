@@ -14,6 +14,7 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.tools.exposure import TOOLSET_EXPOSURE_KEY, ToolsetExposure
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
 
@@ -58,7 +59,9 @@ class ClientToolDefinition(BaseModel):
     @field_validator("metadata")
     @classmethod
     def _validate_metadata(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        if _metadata_contains_key(value, {HARNESS_TOOL_METADATA_KEY, CLIENT_TOOL_MARKER_KEY, TOOL_IDENTITY_KEY}):
+        if _metadata_contains_key(
+            value, {HARNESS_TOOL_METADATA_KEY, CLIENT_TOOL_MARKER_KEY, TOOL_IDENTITY_KEY, TOOLSET_EXPOSURE_KEY}
+        ):
             raise ValueError("client metadata contains a reserved Harness key")
         if _metadata_contains_key(value, _FORBIDDEN_METADATA_KEYS, case_insensitive=True):
             raise ValueError("client metadata contains an authority-bearing key")
@@ -66,7 +69,7 @@ class ClientToolDefinition(BaseModel):
         return deepcopy(value)
 
 
-class ClientToolsetDefinition(BaseModel):
+class ClientToolsetDefinition(ToolsetExposure):
     """One stable grouping of external client declarations."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)

@@ -8,7 +8,6 @@ import {
   CollapsibleTrigger,
   Label,
   Spinner,
-  Switch,
 } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -22,6 +21,7 @@ import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import { connectionReviewTarget, type ReviewTarget } from "./reviewer";
 import styles from "./agents.module.css";
+import { ToolExposureFields } from "./editor/tool-exposure";
 
 type Connections = NonNullable<AgentConfig["connection_tools"]>;
 type Selection = Connections[number];
@@ -66,9 +66,7 @@ export function ConnectionGroup({
   onRemove,
   onReview,
   onRequireReviewer,
-  discovery,
 }: {
-  discovery?: "proxy" | "native";
   onReview?: (target?: ReviewTarget) => void;
   onRequireReviewer?: () => void;
   connection?: Connection;
@@ -214,42 +212,13 @@ export function ConnectionGroup({
         <CollapsiblePanel>
           <div className={styles.toolsetGroupBody}>
             <div className={styles.connectionOptions}>
-              <div className={styles.connectionOption}>
-                <span>
-                  <strong>
-                    {t(
-                      discovery === "native"
-                        ? "Native tool search"
-                        : discovery === "proxy"
-                          ? "Grouped proxy search"
-                          : "Load tools on demand",
-                    )}
-                  </strong>
-                  <small>
-                    {t(
-                      discovery
-                        ? "This connection uses its tool discovery group. Its saved loading setting applies when it leaves the group."
-                        : "Load this Connection's tools only when the agent needs them.",
-                    )}
-                  </small>
-                </span>
-                {!discovery && (
-                  <Switch
-                    aria-label={t("Load tools on demand")}
-                    disabled={
-                      editingDisabled ||
-                      (!!connection && "app" in connection.config)
-                    }
-                    checked={selection.defer_loading ?? false}
-                    onCheckedChange={(checked) =>
-                      onChange((current) => ({
-                        ...current,
-                        defer_loading: checked,
-                      }))
-                    }
-                  />
-                )}
-              </div>
+              <ToolExposureFields
+                value={selection}
+                readOnly={editingDisabled}
+                onChange={(patch) =>
+                  onChange((current) => ({ ...current, ...patch }))
+                }
+              />
               <div className={styles.connectionOption}>
                 <span>
                   <strong>{t("Default tool permission")}</strong>

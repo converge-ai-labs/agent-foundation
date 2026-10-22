@@ -1,15 +1,11 @@
-"""Service selects presentation; Harness owns discovery and local invocation."""
-
-from typing import Any
+"""Service compilation preserves native discovery, invocation, and connection authority."""
 
 import pytest
 from a13n_harness import RunBindings
 from a13n_harness.errors import DefinitionError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.resources.agents import definition
-from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
+from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.runs.agent import build
-from pydantic import ValidationError
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import NativeToolSearchCallPart, NativeToolSearchReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -17,101 +13,10 @@ from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles.anthropic import anthropic_model_profile
 from pydantic_ai.toolsets import FunctionToolset
 
-from .test_agents import HELPER, HELPER_REVISION, PLUGINS, config, resolved
+from .test_agents import PLUGINS, config, resolved
 
 pytestmark = pytest.mark.anyio
 CONNECTION = new_object_id("con")
-
-
-def selection(**changes: Any) -> AgentConfig:
-    return config(
-        connection_tools=[{"connection_id": CONNECTION, "defer_loading": True}],
-        tool_search={
-            "config": {"mode": "native"},
-            "groups": {"knowledge": {"description": "Knowledge lookup", "connections": [CONNECTION]}},
-        },
-        **changes,
-    )
-
-
-def test_configuration_preserves_defaults_and_validates_membership() -> None:
-    assert "tool_search" not in config().model_dump(mode="json")
-    selected = selection()
-    assert AgentConfig.model_validate_json(selected.model_dump_json()) == selected
-    assert selected.connection_tools[0].defer_loading
-    assert selected.tool_search is not None
-    assert selected.tool_search.connection_ids == {CONNECTION}
-    for groups, message in (
-        ({"bad__name": {"description": "Tools"}}, "ToolSearch group"),
-        ({"tools": {"description": " "}}, "non-blank"),
-        ({"tools": {"description": "Tools", "connections": [new_object_id("con")]}}, "unselected connection"),
-        ({"tools": {"description": "Tools", "plugins": ["missing"]}}, "unselected plugin"),
-        ({"tools": {"description": "Tools", "platform": True}}, "enabled platform tool"),
-        (
-            {name: {"description": "Tools", "connections": [CONNECTION]} for name in ("one", "two")},
-            "multiple groups",
-        ),
-    ):
-        with pytest.raises(ValidationError, match=message):
-            AgentConfig.model_validate({**selected.model_dump(), "tool_search": {"groups": groups}})
-
-
-def test_override_replaces_the_plan_and_validates_the_result() -> None:
-    selected = selection()
-    for override in ({}, {"tool_search": None}):
-        assert apply_override(selected, AgentOverride.model_validate(override)).tool_search == selected.tool_search
-    disabled = apply_override(selected, AgentOverride.model_validate({"tool_search": {"groups": {}}}))
-    assert disabled.tool_search is not None and not disabled.tool_search.groups
-    with pytest.raises(ValidationError, match="unselected connection"):
-        apply_override(selected, AgentOverride(connection_tools=()))
-    cleared = apply_override(selected, AgentOverride.model_validate({"connection_tools": [], "tool_search": {}}))
-    assert not cleared.connection_tools
-
-
-def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> None:
-    from a13n_service.runs.agent import ResolvedSubagent
-
-    connection = Capability(tools=[lambda: "connection"])
-    platform = Capability(tools=[lambda: "platform"])
-    selected = config(
-        connection_tools=[{"connection_id": CONNECTION}],
-        plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
-        toolsets={"agents": {"enabled": True}},
-        tool_search={
-            "config": {"mode": "native"},
-            "groups": {
-                "tools": {
-                    "description": "Selected tools",
-                    "connections": [CONNECTION],
-                    "plugins": ["audit"],
-                    "platform": True,
-                }
-            },
-        },
-        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
-    )
-    sources = {CONNECTION: connection, "platform": platform}
-    plan = definition.tool_search(selected, sources)
-    assert plan is not None and plan.config.mode == "native"
-    assert plan.groups["tools"].capabilities == (connection, platform)
-    assert plan.groups["tools"].plugins == ("audit",)
-    child = resolved(HELPER, HELPER_REVISION, config())
-    root = resolved(
-        new_object_id("ap"),
-        new_object_id("apr"),
-        selected,
-        connection_types={CONNECTION: "mcp"},
-        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], HELPER_REVISION, "Help", child)},
-    )
-    executable = build(
-        root,
-        capabilities=lambda node: list(sources.values()) if node is root else [],
-        tool_sources=lambda node: sources if node is root else {},
-        plugins=PLUGINS,
-        instrumentation=None,
-    )
-    assert executable.definition.tool_search == plan
-    assert executable.definition.subagents[0].agent.tool_search is None
 
 
 @pytest.mark.parametrize("permission", ["allow", "ask", "deny"])
@@ -125,8 +30,15 @@ async def test_native_discovery_restores_history_and_keeps_connection_permission
     source = Capability(toolsets=[FunctionToolset([lookup], id=CONNECTION)])
     selected = config(
         toolsets={},
-        connection_tools=[{"connection_id": CONNECTION, "permission": permission}],
-        tool_search=selection().tool_search,
+        connection_tools=[
+            {
+                "connection_id": CONNECTION,
+                "permission": permission,
+                "exposure": "progressive",
+                "description": "Knowledge lookup",
+            }
+        ],
+        progressive_search="native",
     )
     root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={CONNECTION: "connector"})
     phase = "discover"
@@ -137,21 +49,19 @@ async def test_native_discovery_restores_history_and_keeps_connection_permission
         tools = {tool.name: tool for tool in info.function_tools}
         assert "load_capability" not in tools
         assert "call_tool" not in tools and "search_tools" not in tools
-        assert tools["knowledge__lookup"].defer_loading
+        assert tools["lookup"].defer_loading
         assert any(
             tool.kind == "tool_search" and not tool.optional for tool in info.model_request_parameters.native_tools
         )
         if phase == "discover":
             yield {0: NativeToolSearchCallPart(args={"queries": ["lookup"]}, tool_call_id="search")}
             yield {
-                1: NativeToolSearchReturnPart(
-                    content={"discovered_tools": [{"name": "knowledge__lookup"}]}, tool_call_id="search"
-                )
+                1: NativeToolSearchReturnPart(content={"discovered_tools": [{"name": "lookup"}]}, tool_call_id="search")
             }
             yield "found"
         elif calls == 0:
             calls += 1
-            yield {0: DeltaToolCall(name="knowledge__lookup", json_args='{"value":4}', tool_call_id="invoke")}
+            yield {0: DeltaToolCall(name="lookup", json_args='{"value":4}', tool_call_id="invoke")}
         else:
             yield "done"
 
@@ -161,7 +71,6 @@ async def test_native_discovery_restores_history_and_keeps_connection_permission
     executable = build(
         root,
         capabilities=lambda _: [source],
-        tool_sources=lambda _: {CONNECTION: source},
         plugins=PLUGINS,
         instrumentation=None,
     )
@@ -177,7 +86,12 @@ async def test_native_discovery_restores_history_and_keeps_connection_permission
 
 async def test_unsupported_model_fails_before_a_request() -> None:
     source = Capability(tools=[lambda: "hidden"])
-    root = resolved(new_object_id("ap"), new_object_id("apr"), selection(), connection_types={CONNECTION: "mcp"})
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        config(progressive_search="native"),
+        connection_types={CONNECTION: "mcp"},
+    )
 
     async def stream(messages, info):
         raise AssertionError("unsupported model must not receive a request")
@@ -189,7 +103,6 @@ async def test_unsupported_model_fails_before_a_request() -> None:
     executable = build(
         root,
         capabilities=lambda _: [source],
-        tool_sources=lambda _: {CONNECTION: source},
         plugins=PLUGINS,
         instrumentation=None,
     )
@@ -224,19 +137,18 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
             "Native search",
             model_key,
             toolsets={},
-            connection_tools=[{"connection_id": connection_id, "defer_loading": True, "permission": "allow"}],
-            tool_search={
-                "config": {"mode": "native"},
-                "groups": {
-                    "knowledge": {
-                        "description": "Knowledge tools",
-                        "connections": [connection_id],
-                    }
-                },
-            },
+            connection_tools=[
+                {
+                    "connection_id": connection_id,
+                    "exposure": "progressive",
+                    "description": "Knowledge tools",
+                    "permission": "allow",
+                }
+            ],
+            progressive_search="native",
         )
         selected = AgentConfig.model_validate(await revision_config(service, agent))
-        assert selected.connection_tools[0].defer_loading
+        assert selected.connection_tools[0].exposure == "progressive"
         root = resolved(agent["id"], agent["default_revision_id"], selected, connection_types={connection_id: "mcp"})
         actor, workspace = admin(service), scope(service)
         run = RunRow(memory_mounts=[], mcp_headers={connection_id: {"x-trace": "native-search"}})
@@ -245,9 +157,6 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
                 session, run, actor, workspace, root, authority=execution_authority(actor, workspace)
             )
         [planned] = plan.parts[root.revision_id].connections
-        assert not planned.defer_loading
-        # The stored configuration still controls capability loading outside these groups.
-        assert selected.connection_tools[0].defer_loading
         dispatches = []
 
         async def check(dispatch: ToolDispatch) -> None:
@@ -270,21 +179,19 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
             async def stream(messages, info):
                 nonlocal called
                 tools = {tool.name: tool for tool in info.function_tools}
-                assert set(tools) == {"knowledge__echo"}
-                assert tools["knowledge__echo"].defer_loading
+                assert set(tools) == {"echo"}
+                assert tools["echo"].defer_loading
                 if phase == "discover":
                     yield {0: NativeToolSearchCallPart(args={"queries": ["echo"]}, tool_call_id="search")}
                     yield {
                         1: NativeToolSearchReturnPart(
-                            content={"discovered_tools": [{"name": "knowledge__echo"}]}, tool_call_id="search"
+                            content={"discovered_tools": [{"name": "echo"}]}, tool_call_id="search"
                         )
                     }
                     yield "found"
                 elif not called:
                     called = True
-                    yield {
-                        0: DeltaToolCall(name="knowledge__echo", json_args='{"text":"hello"}', tool_call_id="invoke")
-                    }
+                    yield {0: DeltaToolCall(name="echo", json_args='{"text":"hello"}', tool_call_id="invoke")}
                 else:
                     yield "done"
 
@@ -294,7 +201,6 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
             executable = build(
                 root,
                 capabilities=lambda _: capabilities,
-                tool_sources=lambda _: {connection_id: capabilities[0]},
                 plugins=PLUGINS,
                 instrumentation=None,
             )
@@ -317,7 +223,7 @@ async def test_revision_and_host_native_mcp_keep_dispatch_and_live_connection_ch
 
 @pytest.mark.parametrize("native", [False, True])
 async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeypatch) -> None:
-    from .test_agents import _Plugin
+    from .test_agents import _Factory, _Plugin
 
     contributions = []
     effects = []
@@ -328,21 +234,14 @@ async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeyp
 
     def get_capabilities(self):
         contributions.append(self.plugin_id)
-        return [Capability(tools=[lookup])]
+        return [Capability(toolsets=[FunctionToolset([lookup], id="audit-tools")])]
 
     monkeypatch.setattr(_Plugin, "get_capabilities", get_capabilities)
+    monkeypatch.setattr(_Factory, "describe_toolsets", lambda self, context: {"audit-tools": "Look up audit facts."})
     selected = config(
         toolsets={},
-        plugins=[{"instance_name": "audit", "plugin_key": "test.audit"}],
-        tool_search={
-            "config": {"mode": "native" if native else "proxy"},
-            "groups": {
-                "knowledge": {
-                    "description": "Knowledge",
-                    "plugins": ["audit"],
-                }
-            },
-        },
+        plugins=[{"instance_name": "audit", "plugin_key": "test.audit", "exposure": "progressive"}],
+        progressive_search="native" if native else "harness",
     )
     root = resolved(new_object_id("ap"), new_object_id("apr"), selected)
     step = 0
@@ -355,16 +254,22 @@ async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeyp
                 yield {0: NativeToolSearchCallPart(args={"queries": ["lookup"]}, tool_call_id="search")}
                 yield {
                     1: NativeToolSearchReturnPart(
-                        content={"discovered_tools": [{"name": "knowledge__lookup"}]}, tool_call_id="search"
+                        content={"discovered_tools": [{"name": "lookup"}]}, tool_call_id="search"
                     )
                 }
-                yield {2: DeltaToolCall(name="knowledge__lookup", json_args="{}", tool_call_id="call")}
+                yield {2: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="call")}
             else:
-                assert {tool.name for tool in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
+                assert {tool.name for tool in info.function_tools} == {
+                    "list_toolsets",
+                    "list_tools",
+                    "search_tools",
+                    "describe_tools",
+                    "execute_tool",
+                }
                 yield {
                     0: DeltaToolCall(
-                        name="call_tool",
-                        json_args='{"group":"knowledge","tool":"lookup","arguments":{}}',
+                        name="execute_tool",
+                        json_args='{"name":"lookup","arguments":{}}',
                         tool_call_id="call",
                     )
                 }
@@ -378,25 +283,3 @@ async def test_plugin_tools_compose_once_for_each_discovery_mode(native, monkeyp
     result = await executable.run("go", bindings=RunBindings.embedded(model_resolver=model_resolver))
     assert result.output_or_raise() == "done"
     assert contributions == ["audit"] and effects == ["called"]
-
-
-@pytest.mark.parametrize("strategy", [None, "bm25", "regex"])
-def test_native_config_roundtrip_and_plan_strategy(strategy) -> None:
-    selected = config(tool_search={"config": {"mode": "native", "strategy": strategy}, "groups": {}})
-    restored = AgentConfig.model_validate_json(selected.model_dump_json())
-    assert restored.tool_search.config.strategy == strategy
-    plan = definition.tool_search(restored, {})
-    assert plan is not None and plan.config.strategy == strategy
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        {"native_search": False, "config": {"mode": "native"}},
-        {"config": {"mode": "native", "max_search_bytes": 4096}},
-        {"config": {"mode": "proxy", "strategy": "regex"}},
-    ],
-)
-def test_search_config_rejects_conflicting_branches(value) -> None:
-    with pytest.raises(ValidationError):
-        config(tool_search=value)

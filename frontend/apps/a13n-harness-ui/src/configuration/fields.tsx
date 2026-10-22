@@ -19,6 +19,7 @@ import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
+import { ToolExposureFields } from "./tool-exposure";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
 import { type EnvironmentBinding } from "./environment-bindings";
@@ -648,6 +649,11 @@ export function ResourceFields({
               Provider and adapter settings vary by plugin.
             </p>
           </div>
+        </SettingsSection>
+      )}
+      {["mcp_server", "harness_plugin"].includes(kind) && (
+        <SettingsSection title="Tool exposure">
+          <ToolExposureFields source={source} onChange={onChange} />
         </SettingsSection>
       )}
       {kind === "mcp_server" && (

@@ -700,7 +700,14 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
         "mixed",
         model,
         user_questions=question,
-        client_tools=[{"name": "lookup", "description": "External fact", "parameters_json_schema": {"type": "object"}}],
+        client_toolsets=[
+            {
+                "toolset_id": "test-client",
+                "tools": [
+                    {"name": "lookup", "description": "External fact", "parameters_json_schema": {"type": "object"}}
+                ],
+            }
+        ],
         builtin_skills=["platform-operations"],
         toolsets={"files": {"tools": {"view": {"permission": "ask"}}}, "shell": {"enabled": False}},
     )

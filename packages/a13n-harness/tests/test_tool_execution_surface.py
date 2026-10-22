@@ -5,19 +5,15 @@ import json
 
 import pytest
 from a13n_harness import AgentSpec, CodeActStateOwner, HarnessBuilder, HarnessState, RunBindings
-from a13n_harness.capabilities import (
-    CodeActCapability,
-    NativeToolSearchConfig,
-    ProxyToolSearchConfig,
-    ToolSearchPlan,
-    ToolSearchSelection,
-)
+from a13n_harness.capabilities import CodeActCapability
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
-from pydantic_ai.capabilities import Capability, ToolSearch
+from a13n_harness.tools import ToolExposure, ToolsetExposure
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.profiles.anthropic import anthropic_model_profile
+from pydantic_ai.toolsets import FunctionToolset
 
 pytestmark = pytest.mark.anyio
 
@@ -154,42 +150,42 @@ async def test_reused_executable_resolves_binding_independently_in_concurrent_ru
 
 @pytest.mark.parametrize("bound", [False, True])
 @pytest.mark.parametrize("native", [False, True])
-async def test_grouped_tool_search_cannot_discover_unbound_execution_controls(bound, native):
+async def test_progressive_search_keeps_execution_controls_direct(bound, native):
     runtime = ToolExecutionRuntime()
     capability = ToolExecutionCapability()
 
     def status() -> str:
         return "ready"
 
-    ordinary = Capability(tools=[status])
+    ordinary = Capability(toolsets=[FunctionToolset([status], id="ordinary")])
     requests = 0
 
     async def model(messages, info):
         nonlocal requests
         requests += 1
-        if requests == 1:
+        definitions = {tool.name: tool for tool in info.model_request_parameters.function_tools}
+        assert CONTROLS.intersection(definitions) == (CONTROLS if bound else set())
+        assert all(not definitions[name].defer_loading for name in CONTROLS if name in definitions)
+        if not native and requests == 1:
             yield {
                 0: DeltaToolCall(
-                    name="search_tools" if native else "discover_tools",
-                    json_args=json.dumps(
-                        {"queries": ["tool_execution_info"]} if native else {"query": "tool_execution_info"}
-                    ),
-                    tool_call_id="search",
+                    name="search_tools", json_args='{"query":"tool_execution_info"}', tool_call_id="search"
                 )
             }
         else:
-            returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
-            assert ("tool_execution_info" in str(returns[-1].content)) is bound
+            if not native:
+                returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+                assert returns[-1].content["tools"] == []
             yield "done"
 
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model, profile=anthropic_model_profile("claude-sonnet-4-6")),
-        capabilities=(capability, ordinary, *((ToolSearch(strategy="keywords"),) if native else ())),
-        tool_search=ToolSearchPlan(
-            groups={"execution": ToolSearchSelection("Execution controls", capabilities=(capability, ordinary))},
-            config=NativeToolSearchConfig() if native else ProxyToolSearchConfig(),
+        capabilities=(capability, ordinary),
+        tool_exposure=ToolExposure(
+            progressive_search="native" if native else "harness",
+            toolsets={"ordinary": ToolsetExposure(exposure="progressive", description="Status tools")},
         ),
     )
     try:

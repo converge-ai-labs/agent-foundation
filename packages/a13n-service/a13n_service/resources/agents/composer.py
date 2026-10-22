@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import Literal
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
-from a13n_harness.tools.client import ClientToolDefinition
+from a13n_harness.tools.client import ClientToolDefinition, ClientToolsetDefinition
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_service.infra.db import Storage
@@ -94,7 +94,13 @@ def configuration(model: str) -> AgentConfig:
         },
         builtin_skills=frozenset({"platform-operations"}),
         user_questions=True,
-        client_tools=(provider_tool(),),
+        client_toolsets=(
+            ClientToolsetDefinition(
+                toolset_id="a13n-service-composer",
+                description="Open provider setup in the Console.",
+                tools=(provider_tool(),),
+            ),
+        ),
     )
 
 

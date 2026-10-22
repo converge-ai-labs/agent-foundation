@@ -3,11 +3,13 @@
 from pathlib import Path
 from typing import Literal
 
+from a13n_harness.tools.exposure import ToolsetExposure
 from pydantic import BaseModel, ConfigDict
 
 from a13n_harness_ui.errors import ConfigurationError
 
-from .models import AgentResource, AgentToolSearch, LoadedHarnessUiConfiguration
+from .exposure import CAPABILITY_TOOLSETS, source_exposure
+from .models import AgentResource, LoadedHarnessUiConfiguration
 from .mutation import ConfigurationMutationResult, _select_target
 
 
@@ -29,25 +31,25 @@ class ConfigurationSourceCatalog(BaseModel):
     sources: tuple[ConfigurationSourceInfo, ...]
 
 
-class ToolSearchSourceView(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+class ToolExposureSourceView(ToolsetExposure):
+    """Source declarations only; counts and tools are discovered during a Run."""
 
     resource_id: str
     name: str
-    kind: Literal["mcp_server", "harness_plugin"]
+    kind: Literal["capability", "mcp_server", "harness_plugin"]
     enabled: bool
-    group: str | None
-    presentation: Literal["active", "dormant", "direct", "disabled"]
+    toolset_ids: tuple[str, ...] = ()
 
 
-class AgentToolSearchView(BaseModel):
-    """Static source membership; never connects to MCP or discovers tools."""
+class AgentToolExposureView(BaseModel):
+    """Static presentation declarations; never connects to MCP or enumerates tools."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     agent_id: str
-    tool_search: AgentToolSearch
-    sources: tuple[ToolSearchSourceView, ...]
+    progressive_search: Literal["harness", "native"]
+    progressive_search_strategy: Literal["bm25", "regex"] | None
+    sources: tuple[ToolExposureSourceView, ...]
 
 
 class ConfigurationSourceView(ConfigurationSourceInfo):
@@ -117,35 +119,42 @@ def source_view(
     raise ConfigurationError("The accepted configuration source does not exist.", code="configuration_source_not_found")
 
 
-def agent_tool_search_view(
+def agent_tool_exposure_view(
     source: LoadedHarnessUiConfiguration,
     agent: AgentResource,
     *,
     mcp_server_ids: tuple[str, ...] | None = None,
     harness_plugin_ids: tuple[str, ...] | None = None,
-) -> AgentToolSearchView:
-    proxy = agent.tool_search or AgentToolSearch()
-    owners = {
-        resource_id: name
-        for name, group in proxy.groups.items()
-        for resource_id in (*group.mcp_servers, *group.harness_plugins)
-    }
+) -> AgentToolExposureView:
     selected = {
         *(source.selected_mcp_servers(agent) if mcp_server_ids is None else mcp_server_ids),
         *(source.selected_plugins(agent) if harness_plugin_ids is None else harness_plugin_ids),
     }
-    sources = []
+    sources = [
+        ToolExposureSourceView(
+            resource_id=item.capability,
+            name=item.capability,
+            kind="capability",
+            enabled=True,
+            toolset_ids=CAPABILITY_TOOLSETS.get(item.capability, ()),
+            **source_exposure(item).model_dump(),
+        )
+        for item in agent.capabilities
+    ]
     for resource in (*source.mcp_servers.values(), *source.harness_plugins.values()):
-        group = owners.get(resource.id)
-        enabled = resource.id in selected
         sources.append(
-            ToolSearchSourceView(
+            ToolExposureSourceView(
                 resource_id=resource.id,
                 name=resource.name,
                 kind=resource.kind,
-                enabled=enabled,
-                group=group,
-                presentation=("active" if enabled else "dormant") if group else ("direct" if enabled else "disabled"),
+                enabled=resource.id in selected,
+                toolset_ids=(resource.id,) if resource.kind == "mcp_server" else (),
+                **source_exposure(resource).model_dump(),
             )
         )
-    return AgentToolSearchView(agent_id=agent.id, tool_search=proxy, sources=tuple(sources))
+    return AgentToolExposureView(
+        agent_id=agent.id,
+        progressive_search=agent.progressive_search,
+        progressive_search_strategy=agent.progressive_search_strategy,
+        sources=tuple(sources),
+    )

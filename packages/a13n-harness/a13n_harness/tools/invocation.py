@@ -222,6 +222,9 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         tool_def: ToolDefinition,
         args: ValidatedToolArgs,
     ) -> ValidatedToolArgs:
+        from a13n_harness.tools.exposure import capture_target_arguments
+
+        capture_target_arguments(call, args)
         recovery = ctx.deps._tool_recovery
         if recovery is not None and call.tool_call_id in recovery.pending:
             if tool_def.kind == "unapproved":
@@ -425,6 +428,12 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             try:
                 return await self._call_tool(name, tool_args, ctx, tool)
             except ApprovalRequired as exc:
+                from a13n_harness.tools.exposure import INVOCATION_TARGET_KEY
+
+                if INVOCATION_TARGET_KEY in (exc.metadata or {}):
+                    # The nested target already supplied its own permission identity
+                    # and presentation; the invocation envelope must not replace it.
+                    raise
                 raise approval_required(
                     ctx,
                     check.approval,
@@ -597,12 +606,23 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         tool: ToolsetTool[AgentContext],
         tool_args: dict[str, Any],
     ) -> Any:
+        from a13n_harness.tools.exposure import TARGET_VALIDATION, discovery_control
+
+        # The envelope never owns execution or acquires a runtime gate. Its
+        # validated, authorized target enters this boundary independently.
+        if discovery_control(tool.tool_def) == "execute_tool":
+            return await operation()
         runtime = ctx.deps.tool_execution
         state = ctx.deps._tool_executions
+        capture = TARGET_VALIDATION.get()
+        call_id = (
+            capture.outer_call_id if capture is not None and capture.call_id == ctx.tool_call_id else ctx.tool_call_id
+        )
         mode = (tool.tool_def.metadata or {}).get(TOOL_EXECUTION_METADATA_KEY)
         if callable(mode):
             mode = mode(tool_args)
         if mode in {"control", "process"}:
+            state.unblock_handoff(call_id or tool.tool_def.name)
             state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
         sequential = tool.tool_def.sequential or (
             ctx.tool_manager is not None and ctx.tool_manager.get_parallel_execution_mode() == "sequential"
@@ -619,7 +639,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             return await operation()
         if self._scope is None or mode not in {"owned", "owned_auto"}:
             return await runtime.inline(operation, thread_id=ctx.deps.thread_id, sequential=sequential)
-        assert ctx.tool_call_id is not None
+        assert call_id is not None
         resources = AsyncExitStack()
         resources.push_async_callback(state.retain())
         try:
@@ -637,7 +657,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 operation,
                 thread_id=ctx.deps.thread_id,
                 run_id=ctx.deps.run_id,
-                tool_call_id=ctx.tool_call_id,
+                tool_call_id=call_id,
                 tool_name=tool.tool_def.name,
                 release=release,
                 sequential=sequential,
@@ -645,8 +665,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         except BaseException:
             await release()
             raise
-        state.calls[ctx.tool_call_id] = record
-        state.unblock_handoff(ctx.tool_call_id)
+        state.calls[call_id] = record
+        state.unblock_handoff(call_id)
+        state.unblock_handoff(ctx.tool_call_id or tool.tool_def.name)
         try:
             result = await state.wait_foreground(
                 runtime, ctx.deps.thread_id, record.execution_id, automatic=mode == "owned_auto"
@@ -654,7 +675,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         except asyncio.CancelledError:
             result = await runtime.result(ctx.deps.thread_id, record.execution_id)
         if result is not None and result.record.result_available:
-            return state.delivered_result(ctx.tool_call_id, result.record, result.result)
+            return state.delivered_result(call_id, result.record, result.result)
         if result is not None and result.retry_prompt is not None:
             raise ModelRetry(result.retry_prompt)
         if result is not None and result.record.terminal:
@@ -874,16 +895,16 @@ async def _emit_best_effort(
 def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]) -> None:
     from a13n_harness.tools.surface import ToolSurfaceToolset
     from a13n_harness.toolsets.codeact import CodeActToolset
-    from a13n_harness.toolsets.tool_search import ToolSearchSurfaceToolset
+    from a13n_harness.toolsets.progressive import ProgressiveToolset
 
     current = toolset
     if isinstance(current, CodeActToolset):
         current = current.wrapped
-    if isinstance(current, ToolSearchSurfaceToolset):
+    if isinstance(current, ProgressiveToolset):
         current = current.wrapped
     if not isinstance(current, ToolSurfaceToolset):
         raise DefinitionError(
-            "Only CodeAct and ToolSearch may wrap the mandatory tool surface inside the execution boundary.",
+            "Only CodeAct and progressive discovery may wrap the mandatory tool surface inside the execution boundary.",
             code="tool_surface_order_invalid",
             details={"toolset_type": type(current).__name__},
         )
@@ -940,8 +961,31 @@ def _validate_resume_surface(
     requests = resume.requests if resume is not None else recovery.retained_requests if recovery is not None else None
     if requests is None or ctx.run_step != 0 or ctx.run_id != ctx.deps._model_recovery.attempt_id:
         return
+    from a13n_harness.tools.exposure import executable_target, invocation_target
+
     results = resume.results if resume is not None else recovery.results if recovery is not None else None
+    closed_invocations: set[str] = set()
+    for call in [*requests.calls, *requests.approvals]:
+        target = invocation_target(call, requests.metadata.get(call.tool_call_id, {}))
+        if target is not None:
+            current = tools.get(target.name)
+            if (
+                current is None
+                and target.kind == "external"
+                and results is not None
+                and isinstance(results.calls.get(call.tool_call_id), ToolFailed)
+            ):
+                closed_invocations.add(call.tool_call_id)
+                continue
+            if current is None or not executable_target(current.tool_def) or current.tool_def.kind != target.kind:
+                raise DefinitionError(
+                    "The current target does not match the pending invocation.",
+                    code="deferred_surface_mismatch",
+                    details={"tool_name": target.name},
+                )
     for call in requests.calls:
+        if call.tool_call_id in closed_invocations:
+            continue
         name = call.tool_name
         tool = tools.get(name)
         function_id = requests.metadata.get(call.tool_call_id, {}).get("a13n.harness.deferred-function-id")

@@ -544,8 +544,7 @@ async def test_long_markdown_filename_has_bounded_file_diagnostic(tmp_path: Path
     assert len(invalid.value.details["path"]) <= 4096
 
 
-@pytest.mark.parametrize("reference", ["mcp-missing", "plugin-memory"])
-async def test_proxy_group_references_require_the_configured_resource_kind(tmp_path: Path, reference: str) -> None:
+async def test_removed_group_configuration_is_rejected(tmp_path: Path) -> None:
     path = _write_source_tree(
         tmp_path,
         resources={
@@ -555,7 +554,7 @@ id: plugin-memory
 name: Memory
 plugin_key: vendor.memory
 """,
-            "agents/main.yaml": f"""schema_version: "1"
+            "agents/main.yaml": """schema_version: "1"
 kind: agent
 id: agent-main
 name: Main
@@ -563,40 +562,39 @@ tool_search:
   groups:
     knowledge:
       description: Knowledge tools
-      mcp_servers: [{reference}]
+      mcp_servers: [mcp-docs]
 """,
         },
     )
-    with pytest.raises(ConfigurationError, match=r"tool_search\.groups\.knowledge\.mcp_servers"):
+    with pytest.raises(ConfigurationError):
         await load_harness_ui_configuration(path)
 
 
 @pytest.mark.parametrize(
     "config",
     [
-        {"mode": "proxy", "max_results": True},
-        {"mode": "proxy", "search_name": "invalid name"},
-        {"mode": "proxy", "unexpected": 1},
+        {"progressive_search": "proxy"},
+        {"progressive_search": "harness", "progressive_search_strategy": "bm25"},
+        {"progressive_search": "native", "progressive_search_strategy": "keywords"},
     ],
 )
-def test_proxy_config_uses_native_validation(config: dict) -> None:
-    from a13n_harness_ui.configuration.models import AgentToolSearch
+def test_progressive_search_configuration_uses_native_validation(config: dict) -> None:
+    from a13n_harness_ui.configuration.models import AgentResource
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        AgentToolSearch.model_validate({"config": config})
+        AgentResource.model_validate(
+            {"schema_version": "1", "kind": "agent", "id": "agent-test", "name": "Test", **config}
+        )
 
 
-def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
-    from a13n_harness_ui.configuration.models import AgentToolSearch
-    from pydantic import ValidationError
+def test_source_exposure_preserves_exact_final_names_and_copies_overrides() -> None:
+    from a13n_harness_ui.configuration.models import CapabilitySelection
 
-    group = {"description": "Knowledge tools", "mcp_servers": ["mcp-docs"]}
-    with pytest.raises(ValidationError, match="selected more than once"):
-        AgentToolSearch.model_validate({"groups": {"first": group, "second": group}})
-    proxy = AgentToolSearch.model_validate({"groups": {"knowledge": group}})
-    group["mcp_servers"].clear()
-    assert proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+    overrides = {"shell_exec": "direct", "view": "progressive"}
+    selection = CapabilitySelection(capability="dynamic_environment", exposure="progressive", tool_exposure=overrides)
+    overrides.clear()
+    assert selection.tool_exposure == {"shell_exec": "direct", "view": "progressive"}
 
 
 @pytest.mark.parametrize(

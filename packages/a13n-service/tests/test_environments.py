@@ -689,7 +689,10 @@ async def test_a_resume_after_an_idle_delete_reads_the_change_with_its_results(e
     """Waiting is not use: the resume's calls run in a new primary sandbox, and the model reads why beside them."""
     review = {"name": "review", "description": "Ask a person to review", "parameters_json_schema": {"type": "object"}}
     agent = await runs_kit.create_agent(
-        env, scripted_model, client_tools=[review], default_environment_template_id=env.template["id"]
+        env,
+        scripted_model,
+        client_toolsets=[{"toolset_id": "test-client", "tools": [review]}],
+        default_environment_template_id=env.template["id"],
     )
     started = await runs_kit.start_thread(env, agent, "Review it")
     [mount] = started["run"]["environment_mounts"]

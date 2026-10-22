@@ -70,11 +70,11 @@ from a13n_harness_ui.configuration.setup import (
     publish_setup,
 )
 from a13n_harness_ui.configuration.views import (
-    AgentToolSearchView,
+    AgentToolExposureView,
     ConfigurationSourceCatalog,
     ConfigurationSourceView,
     ConfigurationValidation,
-    agent_tool_search_view,
+    agent_tool_exposure_view,
     source_catalog,
     source_view,
 )
@@ -1177,13 +1177,13 @@ class HarnessUiApp:
             )
             return await self._threads.explain_creation(selected)
 
-    async def inspect_agent_tool_search(self, agent_id: str) -> AgentToolSearchView:
+    async def inspect_agent_tool_exposure(self, agent_id: str) -> AgentToolExposureView:
         async with self._operation():
             source = await self._configurations.current()
             if source is None or agent_id not in source.agents:
                 raise HarnessUiError("The accepted Agent does not exist.", code="agent_not_found")
             agent = source.agents[agent_id]
-            return agent_tool_search_view(
+            return agent_tool_exposure_view(
                 source,
                 agent,
                 mcp_server_ids=self._mcp_app_owners.resolver.effective_mcp_server_ids(
@@ -1259,10 +1259,10 @@ class HarnessUiApp:
                     if agent is None
                     else tuple(item.capability for item in agent.capabilities)
                 ),
-                next_tool_search=(
+                next_tool_exposure=(
                     None
                     if agent is None or source is None
-                    else agent_tool_search_view(
+                    else agent_tool_exposure_view(
                         source,
                         agent,
                         mcp_server_ids=self._mcp_app_owners.resolver.effective_mcp_server_ids(

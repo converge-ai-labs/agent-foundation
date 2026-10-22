@@ -47,6 +47,15 @@ class _PluginFactory(HarnessPluginFactory):
         raise AssertionError("ambiguous factory must not be selected")
 
 
+def test_catalog_exposes_native_ids_only_for_supported_tool_sources() -> None:
+    catalog = HarnessUiExtensionCatalog()
+    capabilities = {item.key: item for item in catalog.references if item.kind == "capability"}
+
+    assert capabilities["web"].toolset_ids == ("a13n-web-tool-functions",)
+    assert "a13n-shell-tools" in capabilities["dynamic_environment"].toolset_ids
+    assert capabilities["skills"].toolset_ids == ()
+
+
 def test_catalog_marks_builtin_and_host_collision_ambiguous() -> None:
     catalog = HarnessUiExtensionCatalog(host_capabilities={"web": WebCapability})
 

@@ -4167,10 +4167,10 @@ export interface components {
        */
       builtin_skills?: "platform-operations"[];
       /**
-       * Client Tools
+       * Client Toolsets
        * @default []
        */
-      client_tools?: components["schemas"]["ClientToolDefinition"][];
+      client_toolsets?: components["schemas"]["ClientToolsetDefinition"][];
       /**
        * Connection Tools
        * @default []
@@ -4208,6 +4208,14 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Progressive Search
+       * @default harness
+       * @enum {string}
+       */
+      progressive_search?: "harness" | "native";
+      /** Progressive Search Strategy */
+      progressive_search_strategy?: ("bm25" | "regex") | null;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -4229,7 +4237,6 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
       };
-      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -4248,10 +4255,10 @@ export interface components {
        */
       builtin_skills?: "platform-operations"[];
       /**
-       * Client Tools
+       * Client Toolsets
        * @default []
        */
-      client_tools?: components["schemas"]["ClientToolDefinition"][];
+      client_toolsets?: components["schemas"]["ClientToolsetDefinition"][];
       /**
        * Connection Tools
        * @default []
@@ -4289,6 +4296,14 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Progressive Search
+       * @default harness
+       * @enum {string}
+       */
+      progressive_search?: "harness" | "native";
+      /** Progressive Search Strategy */
+      progressive_search_strategy?: ("bm25" | "regex") | null;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -4310,7 +4325,6 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
       };
-      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -4378,13 +4392,15 @@ export interface components {
      * @description What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
      *
      *     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
-     *     edge removes it; every other field replaces the revision's value.
+     *     edge removes it. An explicit null `progressive_search_strategy` resets the provider strategy;
+     *     every other field replaces the revision's value when non-null.
      */
     "AgentOverride-Input": {
       /** Builtin Skills */
       builtin_skills?: "platform-operations"[] | null;
-      /** Client Tools */
-      client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
+      /** Client Toolsets */
+      client_toolsets?:
+        components["schemas"]["ClientToolsetDefinition"][] | null;
       /** Connection Tools */
       connection_tools?: components["schemas"]["ConnectionSelection"][] | null;
       /** Instructions */
@@ -4404,6 +4420,10 @@ export interface components {
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
+      /** Progressive Search */
+      progressive_search?: ("harness" | "native") | null;
+      /** Progressive Search Strategy */
+      progressive_search_strategy?: ("bm25" | "regex") | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -4419,7 +4439,6 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Input"] | null;
       } | null;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -4430,13 +4449,15 @@ export interface components {
      * @description What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
      *
      *     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
-     *     edge removes it; every other field replaces the revision's value.
+     *     edge removes it. An explicit null `progressive_search_strategy` resets the provider strategy;
+     *     every other field replaces the revision's value when non-null.
      */
     "AgentOverride-Output": {
       /** Builtin Skills */
       builtin_skills?: "platform-operations"[] | null;
-      /** Client Tools */
-      client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
+      /** Client Toolsets */
+      client_toolsets?:
+        components["schemas"]["ClientToolsetDefinition"][] | null;
       /** Connection Tools */
       connection_tools?: components["schemas"]["ConnectionSelection"][] | null;
       /** Instructions */
@@ -4456,6 +4477,10 @@ export interface components {
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
+      /** Progressive Search */
+      progressive_search?: ("harness" | "native") | null;
+      /** Progressive Search Strategy */
+      progressive_search_strategy?: ("bm25" | "regex") | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -4471,7 +4496,6 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Output"] | null;
       } | null;
-      tool_search?: components["schemas"]["ToolSearch"] | null;
       /** Toolsets */
       toolsets?: {
         [key: string]: components["schemas"]["ToolsetSelection"];
@@ -5177,6 +5201,24 @@ export interface components {
        */
       permission?: "inherit" | "allow" | "deny";
     };
+    /**
+     * ClientToolsetDefinition
+     * @description One stable grouping of external client declarations.
+     */
+    ClientToolsetDefinition: {
+      /** Description */
+      description?: string | null;
+      /** @default direct */
+      exposure?: components["schemas"]["Exposure"];
+      /** Tool Exposure */
+      tool_exposure?: {
+        [key: string]: components["schemas"]["Exposure"];
+      };
+      /** Tools */
+      tools: components["schemas"]["ClientToolDefinition"][];
+      /** Toolset Id */
+      toolset_id: string;
+    };
     /** @enum {string} */
     Collection: "native" | "pull" | "proxy" | "external";
     /** @enum {string} */
@@ -5263,9 +5305,10 @@ export interface components {
       | "skills"
       | "skill_sync"
       | "connection_tools"
-      | "tool_search"
+      | "progressive_search"
+      | "progressive_search_strategy"
       | "builtin_skills"
-      | "client_tools"
+      | "client_toolsets"
       | "user_questions"
       | "subagent_mode"
       | "subagents"
@@ -5410,16 +5453,19 @@ export interface components {
     ConnectionSelection: {
       /** Connection Id */
       connection_id: string;
-      /**
-       * Defer Loading
-       * @default false
-       */
-      defer_loading?: boolean;
+      /** Description */
+      description?: string | null;
+      /** @default direct */
+      exposure?: components["schemas"]["Exposure"];
       /** @default inherit */
       permission?: components["schemas"]["ToolPermissionSetting"];
       /** Permissions */
       permissions?: {
         [key: string]: components["schemas"]["ToolPermissionSetting"];
+      };
+      /** Tool Exposure */
+      tool_exposure?: {
+        [key: string]: components["schemas"]["Exposure"];
       };
       /** Tools */
       tools?: string[] | null;
@@ -6508,6 +6554,8 @@ export interface components {
        */
       queued?: number;
     };
+    /** @enum {string} */
+    Exposure: "direct" | "progressive";
     /**
      * ExternalTargetCreate
      * @description An envd daemon someone runs, registered by its endpoint and the token it accepts.
@@ -8389,19 +8437,6 @@ export interface components {
       /** Working Directory */
       working_directory: string | null;
     };
-    /**
-     * NativeToolSearchConfig
-     * @description Provider-native discovery; omitted strategy uses the provider default.
-     */
-    NativeToolSearchConfig: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      mode: "native";
-      /** Strategy */
-      strategy?: ("bm25" | "regex") | null;
-    };
     /** NetworkInterfaceMetrics */
     NetworkInterfaceMetrics: {
       /** Identity */
@@ -8910,10 +8945,18 @@ export interface components {
       config?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      /** Description */
+      description?: string | null;
+      /** @default direct */
+      exposure?: components["schemas"]["Exposure"];
       /** Instance Name */
       instance_name: string;
       /** Plugin Key */
       plugin_key: string;
+      /** Tool Exposure */
+      tool_exposure?: {
+        [key: string]: components["schemas"]["Exposure"];
+      };
     };
     /** Position */
     Position: {
@@ -9286,42 +9329,6 @@ export interface components {
       };
       /** Name */
       name?: string | null;
-    };
-    /**
-     * ProxyToolSearchConfig
-     * @description Names and bounded discovery settings for one Agent's proxy surface.
-     */
-    ProxyToolSearchConfig: {
-      /**
-       * Call Name
-       * @default call_tool
-       */
-      call_name?: string;
-      /**
-       * Describe Name
-       * @default describe_tool
-       */
-      describe_name?: string;
-      /**
-       * Max Results
-       * @default 10
-       */
-      max_results?: number;
-      /**
-       * Max Search Bytes
-       * @default 32768
-       */
-      max_search_bytes?: number;
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      mode: "proxy";
-      /**
-       * Search Name
-       * @default discover_tools
-       */
-      search_name?: string;
     };
     /** Query */
     Query: {
@@ -11211,40 +11218,6 @@ export interface components {
      * @enum {string}
      */
     ToolRiskLevel: "low" | "medium" | "high" | "extra_high";
-    /**
-     * ToolSearch
-     * @description Presentation of already-selected sources, composed by Harness once per agent.
-     */
-    ToolSearch: {
-      config?: components["schemas"]["ToolSearchConfig"];
-      /** Groups */
-      groups?: {
-        [key: string]: components["schemas"]["ToolSearchGroup"];
-      };
-    };
-    ToolSearchConfig:
-      | components["schemas"]["ProxyToolSearchConfig"]
-      | components["schemas"]["NativeToolSearchConfig"];
-    /** ToolSearchGroup */
-    ToolSearchGroup: {
-      /**
-       * Connections
-       * @default []
-       */
-      connections?: string[];
-      /** Description */
-      description: string;
-      /**
-       * Platform
-       * @default false
-       */
-      platform?: boolean;
-      /**
-       * Plugins
-       * @default []
-       */
-      plugins?: string[];
-    };
     /** ToolSelection */
     ToolSelection: {
       /** Config */
@@ -11297,11 +11270,19 @@ export interface components {
       config?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      /** Description */
+      description?: string | null;
       /**
        * Enabled
        * @default true
        */
       enabled?: boolean;
+      /** @default direct */
+      exposure?: components["schemas"]["Exposure"];
+      /** Tool Exposure */
+      tool_exposure?: {
+        [key: string]: components["schemas"]["Exposure"];
+      };
       /** Tools */
       tools?: {
         [key: string]: components["schemas"]["ToolSelection"];
@@ -12162,9 +12143,10 @@ export interface operations {
           | "skills"
           | "skill_sync"
           | "connection_tools"
-          | "tool_search"
+          | "progressive_search"
+          | "progressive_search_strategy"
           | "builtin_skills"
-          | "client_tools"
+          | "client_toolsets"
           | "user_questions"
           | "subagent_mode"
           | "subagents"
@@ -17081,9 +17063,10 @@ export interface operations {
           | "skills"
           | "skill_sync"
           | "connection_tools"
-          | "tool_search"
+          | "progressive_search"
+          | "progressive_search_strategy"
           | "builtin_skills"
-          | "client_tools"
+          | "client_toolsets"
           | "user_questions"
           | "subagent_mode"
           | "subagents"

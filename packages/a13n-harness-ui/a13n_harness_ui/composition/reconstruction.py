@@ -19,12 +19,9 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
-    ProxyToolSearchConfig,
     SubagentCapability,
     SubagentOperator,
     ToolExecutionCapability,
-    ToolSearchPlan,
-    ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
 from a13n_harness.errors import HarnessError, PluginError
@@ -41,6 +38,7 @@ from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPl
 from a13n_harness.pricing import PricingCatalog
 from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
+from a13n_harness.tools.exposure import CONTROL_NAMES, ToolExposure, ToolsetExposure
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic_ai import RunContext
@@ -49,6 +47,7 @@ from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness_ui.configuration.exposure import capability_exposure, source_exposure
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
@@ -387,21 +386,21 @@ class AgentReconstructor:
             for item in node.mcp_servers
         }
         capabilities.extend(mcp_sources.values())
-        tool_search = (
-            ToolSearchPlan(
-                groups={
-                    name: ToolSearchSelection(
-                        description=group.description,
-                        capabilities=tuple(mcp_sources[source] for source in group.mcp_servers),
-                        plugins=group.harness_plugins,
+        policies: dict[str, ToolsetExposure] = {}
+
+        def add_sources(sources: Mapping[str, ToolsetExposure]) -> None:
+            for native_id, policy in sources.items():
+                if native_id in policies:
+                    raise CompositionError(
+                        "Selected sources declare the same native Toolset ID.",
+                        code="toolset_identity_collision",
+                        details={"toolset_id": native_id},
                     )
-                    for name, group in node.tool_search.groups.items()
-                },
-                config=node.tool_search.config,
-            )
-            if node.tool_search is not None
-            else None
-        )
+                policies[native_id] = policy
+
+        for recipe in node.capabilities:
+            add_sources(capability_exposure(recipe.capability, recipe))
+        add_sources({item.server_id: source_exposure(item) for item in node.mcp_servers})
         if node.children:
             if not isinstance(subagent_operator, SubagentOperator):
                 raise CompositionError(
@@ -412,29 +411,28 @@ class AgentReconstructor:
         if node.tools is not None:
             # Controls are derived presentation, not authority for every member.
             # Filter the actual canonical target directory before generating them.
-            controls = (
-                frozenset(
-                    {tool_search.config.search_name, tool_search.config.describe_name, tool_search.config.call_name}
-                )
-                if tool_search is not None and isinstance(tool_search.config, ProxyToolSearchConfig)
-                else frozenset()
+            capabilities.append(
+                _ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=frozenset(CONTROL_NAMES))
             )
-            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())
         if root:
             capabilities.extend(root_capabilities)
 
-        plugins = tuple(
-            plugin_catalog.create_plugin(
-                HarnessPluginFactoryContext(
-                    plugin_key=item.plugin_key,
-                    plugin_id=item.plugin_id,
-                    configuration=item.configuration,
-                    extensions={},
-                )
+        plugins = []
+        for item in node.harness_plugins:
+            context = HarnessPluginFactoryContext(
+                plugin_key=item.plugin_key,
+                plugin_id=item.plugin_id,
+                configuration=item.configuration,
+                extensions={},
             )
-            for item in node.harness_plugins
+            add_sources(plugin_catalog.tool_exposure(context, source_exposure(item)))
+            plugins.append(plugin_catalog.create_plugin(context))
+        tool_exposure = ToolExposure(
+            toolsets=policies,
+            progressive_search=node.progressive_search,
+            strategy=node.progressive_search_strategy,
         )
         children = tuple(
             SubagentDefinition(
@@ -467,8 +465,8 @@ class AgentReconstructor:
             output_type=str,
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
-            plugins=plugins,
-            tool_search=tool_search,
+            plugins=tuple(plugins),
+            tool_exposure=tool_exposure,
             subagents=children,
             model_recovery=ModelRecoveryPolicy(
                 enabled=True,

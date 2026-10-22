@@ -12,7 +12,7 @@ const sectionFields = {
   instructions: ["instructions"],
   skills: ["skills"],
   connections: ["connection_tools"],
-  toolSearch: ["tool_search"],
+  exposure: ["progressive_search", "progressive_search_strategy", "plugins"],
   memory: ["memory_mounts", "memory"],
   toolsets: ["toolsets"],
   reviewer: ["reviewer"],
@@ -20,7 +20,7 @@ const sectionFields = {
 } as const;
 export type EditorSection = keyof typeof sectionFields | "advanced";
 /** Shown by no section and kept verbatim by a save. */
-const retainedFields = ["plugins"];
+const retainedFields: string[] = [];
 const commonFields = new Set<string>([
   ...Object.values(sectionFields).flat(),
   ...retainedFields,
@@ -64,7 +64,9 @@ export function buildConfig(
     | "instructions"
     | "skills"
     | "connection_tools"
-    | "tool_search"
+    | "progressive_search"
+    | "progressive_search_strategy"
+    | "plugins"
     | "memory_mounts"
     | "memory"
     | "toolsets"
@@ -77,11 +79,10 @@ export function buildConfig(
   for (const key of Object.keys(extra))
     if (commonFields.has(key))
       throw new Error(`Edit ${key} through its dedicated field.`);
-  // Plugins are retained verbatim; only the exposed advanced slice is replaced.
   const value = {
     ...extra,
     ...common,
-    plugins: original.plugins,
+    plugins: common.plugins ?? original.plugins,
   };
   if (!validateAgentConfig(value)) throw new Error(schemaErrors());
   return value;

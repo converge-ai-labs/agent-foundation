@@ -64,28 +64,28 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 
 修订版本的 `config` 包含：
 
-| 字段                              | 含义                                                                                                                                                                          |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`                           | 模型 key。参阅[模型](models.md)。                                                                                                                                             |
-| `model_settings`                  | 模型 API 专属设置，例如推理强度。                                                                                                                                             |
-| `model_characteristics`           | 上下文窗口和上下文管理阈值。                                                                                                                                                  |
-| `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
-| `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
-| `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
-| `tool_search`                     | 为已选连接、插件和平台工具配置分组代理搜索或原生工具搜索。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                               |
-| `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
-| `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
-| `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                                                               |
-| `subagents`, `subagent_mode`      | 可委派的其他 agent；参阅[子 agent](#subagents)。                                                                                                                              |
-| `reviewer`                        | 按 key 指定 reviewer 模型，决定权限为 `review` 的调用。                                                                                                                       |
-| `media_understanding`             | 按 key 指定为 agent 读取图片、视频或音频的模型；参阅[媒体理解](models.md#media-understanding)。                                                                               |
-| `plugins`                         | 部署已安装的 Harness 插件实例（`plugins.keys`）。                                                                                                                             |
-| `output_spec`                     | 结构化输出：一个 JSON Schema，或 2–32 个命名 `variants`。未设置时结果为文本。                                                                                                 |
-| `retries`                         | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                                                     |
-| `default_environment_template_id` | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                                                       |
-| `lazy_environment`                | 默认 `true`：首次使用时创建或启动实例。设为 `false` 可在进入 Harness 前准备全部实例；执行连接仍在首次使用时打开，参见[环境](environments.md#mount-environments-on-a-thread)。 |
-| `memory`                          | [记忆空间默认设置](memory.md#select-spaces)：`enabled` 和 `spaces[{name, space_id, access}]`。新会话在首次接收运行时保存省略字段的默认值；显式选择覆盖默认值。                |
-| `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
+| 字段                                                | 含义                                                                                                                                                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`                                             | 模型 key。参阅[模型](models.md)。                                                                                                                                             |
+| `model_settings`                                    | 模型 API 专属设置，例如推理强度。                                                                                                                                             |
+| `model_characteristics`                             | 上下文窗口和上下文管理阈值。                                                                                                                                                  |
+| `instructions`                                      | 系统指令，最多 256 KiB。                                                                                                                                                      |
+| `toolsets`                                          | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
+| `skills`                                            | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
+| `progressive_search`, `progressive_search_strategy` | 为渐进式来源选择 Harness 或原生发现。参阅[渐进式工具发现](tools.md#progressive-tool-discovery)。                                                                              |
+| `connection_tools`                                  | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
+| `client_toolsets`                                   | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
+| `user_questions`                                    | 提供 `ask_user_question` 工具。                                                                                                                                               |
+| `subagents`, `subagent_mode`                        | 可委派的其他 agent；参阅[子 agent](#subagents)。                                                                                                                              |
+| `reviewer`                                          | 按 key 指定 reviewer 模型，决定权限为 `review` 的调用。                                                                                                                       |
+| `media_understanding`                               | 按 key 指定为 agent 读取图片、视频或音频的模型；参阅[媒体理解](models.md#media-understanding)。                                                                               |
+| `plugins`                                           | 部署已安装的 Harness 插件实例（`plugins.keys`）。                                                                                                                             |
+| `output_spec`                                       | 结构化输出：一个 JSON Schema，或 2–32 个命名 `variants`。未设置时结果为文本。                                                                                                 |
+| `retries`                                           | 模型重试失败工具调用（`tools`）和无效输出（`output`）的次数，各为 0–100。                                                                                                     |
+| `default_environment_template_id`                   | 用于为每个新线程创建独立主环境的[环境模板](environments.md#templates)。                                                                                                       |
+| `lazy_environment`                                  | 默认 `true`：首次使用时创建或启动实例。设为 `false` 可在进入 Harness 前准备全部实例；执行连接仍在首次使用时打开，参见[环境](environments.md#mount-environments-on-a-thread)。 |
+| `memory`                                            | [记忆空间默认设置](memory.md#select-spaces)：`enabled` 和 `spaces[{name, space_id, access}]`。新会话在首次接收运行时保存省略字段的默认值；显式选择覆盖默认值。                |
+| `memory_mounts`                                     | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
 
 保存时按工作空间验证完整配置：每个引用的模型、skill、连接、provider 和 agent 必须存在且可由你使用，否则对应字段以 `invalid_argument` 拒绝；没有 `revision_id` 的 skill 和子 agent 引用会固定到当前默认修订版本。因此修订版本保留其配置以及 skill 和子 agent 的固定修订版本；它引用的模型、连接、provider 和模板是实时资源，每次使用时重新解析。
 
@@ -120,7 +120,7 @@ flowchart TB
     class Reviewer ext
 ```
 
-内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。[平台工具](tools.md#platform-tools)也是工具集，使用同一个字段。
+内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_toolsets[].tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。[平台工具](tools.md#platform-tools)也是工具集，使用同一个字段。
 
 ### 客户端工具与问题
 
@@ -128,11 +128,27 @@ flowchart TB
 
 ```json
 {
-  "client_tools": [
+  "client_toolsets": [
     {
-      "name": "open_ticket",
-      "description": "Open a support ticket in the customer's CRM.",
-      "parameters_json_schema": {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
+      "toolset_id": "customer-crm",
+      "description": "Support ticket operations",
+      "tools": [
+        {
+          "name": "open_ticket",
+          "description": "Open a support ticket in the customer's CRM.",
+          "parameters_json_schema": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ]
+          }
+        }
+      ]
     }
   ]
 }
@@ -283,7 +299,7 @@ def history_json(messages: list[ModelMessage]) -> list[dict]:
 
 - `labels` 成为运行标签，之后可用 `PATCH …/runs/{run_id}` 修改。
 - `max_usage.requests`（1–10,000）限制运行模型请求数；需要更多时以 `usage_limit_exceeded` 失败。
-- `overrides` 只覆盖本次运行的修订配置。`toolsets` 替换整个工具集；`retries` 和每条 `subagents` 调用边只修改指定字段，`null` 调用边会移除；`model`、`model_settings`、`model_characteristics`、`instructions`、`lazy_environment`、`skills`、`connection_tools`、`tool_search`、`client_tools`、`plugins`、`reviewer`、`media_understanding` 和 `output_spec` 替换修订版本值。提交时和运行启动时按保存配置的规则验证结果，再固定到运行中。
+- `overrides` 只覆盖本次运行的修订配置。`toolsets` 替换整个工具集；`retries` 和每条 `subagents` 调用边只修改指定字段，`null` 调用边会移除；`model`、`model_settings`、`model_characteristics`、`instructions`、`lazy_environment`、`skills`、`connection_tools`、`progressive_search`, `progressive_search_strategy`、`client_toolsets`、`plugins`、`reviewer`、`media_understanding` 和 `output_spec` 替换修订版本值。提交时和运行启动时按保存配置的规则验证结果，再固定到运行中。
 
 ```json
 {"options": {"max_usage": {"requests": 40},

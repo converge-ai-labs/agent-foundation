@@ -29,6 +29,7 @@ import type { ReviewTarget } from "./reviewer";
 import type { AgentConfig } from "./configuration";
 import { toolState } from "./toolset-state";
 import { ToolPermissions } from "./tool-permissions";
+import { ToolExposureFields } from "./editor/tool-exposure";
 import { WebToolSettings, WebLocalSettings } from "./web-tool-settings";
 import styles from "./agents.module.css";
 
@@ -259,6 +260,19 @@ export function AgentToolsets({
           </div>
           <CollapsiblePanel>
             <div className={styles.toolsetGroupBody}>
+              <div className="p-4">
+                <ToolExposureFields
+                  value={value[group.key] ?? {}}
+                  readOnly={readOnly}
+                  purpose={group.description ?? undefined}
+                  onChange={(patch) =>
+                    onChange((current) => ({
+                      ...current,
+                      [group.key]: { ...current[group.key], ...patch },
+                    }))
+                  }
+                />
+              </div>
               {group.tools.map((tool) => {
                 const selection = value[group.key]?.tools?.[tool.key];
                 const selectedPermission =

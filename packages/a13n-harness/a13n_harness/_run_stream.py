@@ -1244,7 +1244,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._tool_recovery.messages if self._tool_recovery is not None else self._initial_history
         )
         deferred_results = (
-            self._deferred_resume.results
+            self._deferred_resume.native_results()
             if self._deferred_resume is not None
             else self._tool_recovery.results
             if self._tool_recovery is not None

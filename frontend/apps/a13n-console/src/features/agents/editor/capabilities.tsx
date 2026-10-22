@@ -235,10 +235,7 @@ export function ConnectionsSection({
                       {
                         connection_id: id,
                         tools: null,
-                        defer_loading: !!available.find(
-                          (connection) =>
-                            connection.id === id && "url" in connection.config,
-                        ),
+                        exposure: "direct",
                       },
                     ]
                   : previous.filter((item) => item.connection_id !== id),
@@ -257,14 +254,6 @@ export function ConnectionsSection({
                 (item) => item.id === selection.connection_id,
               )}
               selection={selection}
-              discovery={
-                draft.toolSearch.mode !== "direct" &&
-                draft.toolSearch.groups.some((group) =>
-                  group.connections?.includes(selection.connection_id),
-                )
-                  ? draft.toolSearch.mode
-                  : undefined
-              }
               readOnly={readOnly}
               onReview={onReview}
               onRequireReviewer={onRequireReviewer}

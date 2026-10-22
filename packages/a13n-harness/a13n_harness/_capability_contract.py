@@ -27,6 +27,7 @@ from a13n_harness.capabilities.context import (
     _FileContextRunCapability,
 )
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID, DocumentsCapability
+from a13n_harness.capabilities.exposure import ToolExposureCapability
 from a13n_harness.capabilities.input import INPUT_CAPABILITY_ID, InputCapability
 from a13n_harness.capabilities.interaction import USER_INTERACTION_CAPABILITY_ID, UserInteractionCapability
 from a13n_harness.capabilities.lifecycle import (
@@ -43,12 +44,6 @@ from a13n_harness.capabilities.subagents import (
     _InlineSubagentCapability,
 )
 from a13n_harness.capabilities.tool_execution import TOOL_EXECUTION_CAPABILITY_ID, ToolExecutionCapability
-from a13n_harness.capabilities.tool_search import (
-    TOOL_SEARCH_CAPABILITY_ID,
-    ToolSearchCapability,
-    _ToolSearchGroupCapability,
-    _ToolSearchSurfaceCapability,
-)
 from a13n_harness.capabilities.video_url import VIDEO_URL_CAPABILITY_ID, VideoUrlCapability
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID, WebCapability
 from a13n_harness.capabilities.working_state import (
@@ -73,6 +68,7 @@ from a13n_harness.models.structured_output import (
 )
 from a13n_harness.pricing import MODEL_COST_CAPABILITY_ID, AbstractModelCostCapability
 from a13n_harness.tools.client import CLIENT_TOOLS_CAPABILITY_ID, ClientToolsCapability
+from a13n_harness.tools.exposure import EXPOSURE_CAPABILITY_ID
 from a13n_harness.tools.invocation import TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID, ToolExecutionBoundaryCapability
 from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
 from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
@@ -81,7 +77,7 @@ from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _RunUsageCa
 
 _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]] = {
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
-    TOOL_SEARCH_CAPABILITY_ID: (_ToolSearchSurfaceCapability,),
+    EXPOSURE_CAPABILITY_ID: (ToolExposureCapability,),
     CODEACT_CAPABILITY_ID: (CodeActCapability,),
     TOOL_EXECUTION_CAPABILITY_ID: (ToolExecutionCapability,),
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID: (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
@@ -154,8 +150,7 @@ def _reserved_harness_capability_contract() -> tuple[
         AbstractModelCostCapability,
         ClientToolsCapability,
         CodeActCapability,
-        ToolSearchCapability,
-        _ToolSearchSurfaceCapability,
+        ToolExposureCapability,
         DynamicEnvironmentCapability,
         SubagentCapability,
     )
@@ -262,17 +257,11 @@ def _validate_built_capability_tree(
     )
     if surface_index is not None:
         for capability in leaves[:surface_index]:
-            # Membership adds no global wrapper; its original nodes are visited
-            # separately below and retain the same surface-order validation.
-            if type(capability) is _ToolSearchGroupCapability:
-                continue
-            if isinstance(
-                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolSearchSurfaceCapability
-            ):
+            if isinstance(capability, ToolExecutionBoundaryCapability | CodeActCapability | ToolExposureCapability):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
-                    "Only ToolSearch, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
+                    "Only progressive discovery, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
                     code="tool_surface_order_invalid",
                     details={"capability_type": type(capability).__name__},
                 )
@@ -355,7 +344,7 @@ def _validate_capability_source(
                 source == "definition"
                 and (isinstance(capability, AbstractModelCostCapability) or type(capability) in _DEFINITION_TYPES)
             )
-            or (source == "plugin" and type(capability) is _ToolSearchSurfaceCapability)
+            or (source == "plugin" and type(capability) is ToolExposureCapability)
             or (source == "run" and type(capability) in _RUN_TYPES)
         )
         reserved_type = isinstance(capability, _SOURCE_RESERVED_TYPES)

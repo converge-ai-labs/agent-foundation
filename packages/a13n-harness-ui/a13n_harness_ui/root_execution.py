@@ -28,6 +28,7 @@ from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
 from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_harness.tools import project_tool_call
 from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
@@ -1025,9 +1026,10 @@ def _deferred_resume(
                 continue
             pending = next(request for request in requests.calls if request.tool_call_id == item.request_id)
             metadata = requests.metadata.get(item.request_id)
-            if isinstance(metadata, dict) and metadata.get("kind") == "ask_user_question":
+            pending = project_tool_call(pending, metadata or {})
+            if pending.tool_name == "ask_user_question":
                 try:
-                    calls[item.request_id] = _validate_question_result(pending.args, item.result)
+                    calls[item.request_id] = _validate_question_result(pending.args_as_dict(), item.result)
                 except (TypeError, ValueError) as exc:
                     raise RunCoordinationError(
                         "A structured question response is invalid.",
