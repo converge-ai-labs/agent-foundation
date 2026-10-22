@@ -95,8 +95,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                 validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
-            # Client executors address the declared name; grouping is presentation.
-            canonical = name if definition.kind == "external" else f"{self.group}__{name}"
+            canonical = f"{self.group}__{name}"
             result[canonical] = _GroupTool(
                 toolset=self,
                 tool_def=replace(

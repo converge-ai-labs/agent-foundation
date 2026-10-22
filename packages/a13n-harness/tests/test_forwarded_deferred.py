@@ -119,16 +119,21 @@ async def test_approval_roundtrip_resumes_the_target_once(proxy, decision):
 
 
 @pytest.mark.parametrize("value", ["A123", ToolFailed("Client cancelled")])
-async def test_external_result_resumes_original_call_without_dispatch(value):
-    source = ExternalToolset(
-        [ToolDefinition(name="change", description="Read selection", parameters_json_schema={"type": "object"})],
-        id="editor",
-    )
+async def test_runtime_deferred_result_resumes_original_call_without_dispatch(value):
+    from pydantic_ai import CallDeferred
+
+    effects = []
+
+    def change(value: int):
+        effects.append(value)
+        raise CallDeferred()
+
+    source = FunctionToolset([change], id="operations")
     first = await _build(source).run("go")
     assert first.status == "suspended" and first.deferred is not None
     requests = _roundtrip(first.deferred)
     item = requests.calls[0]
-    assert item.target_call.tool_name == "change"
+    assert item.target_call.tool_name == "tools__change"
     assert item.model_call.tool_name == "invoke"
     assert item.target_call.tool_call_id != item.model_call.tool_call_id
     resumed = await _build(source).run(
@@ -139,6 +144,7 @@ async def test_external_result_resumes_original_call_without_dispatch(value):
     )
     assert resumed.output_or_raise() == "done"
     assert resumed.usage.tool_calls == 0
+    assert effects == [3]
     result = next(
         part
         for message in resumed.all_messages()
@@ -209,7 +215,7 @@ async def test_wrong_reply_id_and_consumed_reply_are_rejected():
         executable.stream(previous_state=second.state, deferred_resume=resume)
 
 
-async def test_grouped_client_declaration_preserves_name_and_resumes():
+async def test_grouped_client_declaration_is_rejected_before_model_execution():
     from a13n_harness.tools.client import (
         ClientToolDefinition,
         ClientToolsCapability,
@@ -231,17 +237,39 @@ async def test_grouped_client_declaration_preserves_name_and_resumes():
             )
         )
     )
-    first = await _build(source, plan=True).run("go")
-    assert first.deferred is not None
-    item = first.deferred.calls[0]
-    assert item.target_call.tool_name == "change"
-    resumed = await _build(source, plan=True).run(
-        previous_state=first.state,
-        deferred_resume=DeferredToolResume(
-            first.deferred, first.deferred.build_results(calls={item.target_call.tool_call_id: "selected"})
-        ),
-    )
-    assert resumed.output_or_raise() == "done"
+    model_calls = []
+
+    async def model(messages, info):
+        model_calls.append(info)
+        yield "unexpected"
+
+    result = await _build(source, plan=True, model_override=model).run("go")
+    assert result.status == "failed" and result.deferred is None
+    assert model_calls == []
+
+
+@pytest.mark.parametrize("external_first", [False, True])
+async def test_proxy_rejects_external_targets_before_group_name_mapping(external_first):
+    from pydantic_ai.toolsets import CombinedToolset
+
+    def change(value: int):
+        raise AssertionError("Unsupported groups must fail before tool execution")
+
+    sources = [
+        FunctionToolset([change], id="operations"),
+        ExternalToolset([ToolDefinition(name="tools__change")], id="editor"),
+    ]
+    if external_first:
+        sources.reverse()
+    model_calls = []
+
+    async def model(messages, info):
+        model_calls.append(info)
+        yield "unexpected"
+
+    result = await _build(CombinedToolset(sources), model_override=model).run("go")
+    assert result.status == "failed" and result.deferred is None
+    assert model_calls == []
 
 
 async def test_forwarded_approval_rechecks_current_permission():
@@ -331,9 +359,11 @@ async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_e
     assert len(approvals) == 1 and approvals[0].approvals == [item.target_call]
 
 
-@pytest.mark.parametrize("proxy", [False, True])
 @pytest.mark.parametrize("recovery", [False, True])
-@pytest.mark.parametrize("scenario", ["external-failure", "external-success", "function-failure"])
+@pytest.mark.parametrize(
+    ("proxy", "scenario"),
+    [(False, "external-failure"), (False, "external-success"), (False, "function-failure"), (True, "function-failure")],
+)
 async def test_missing_target_only_accepts_external_failure(proxy, recovery, scenario):
     from pydantic_ai import CallDeferred
 
@@ -381,19 +411,14 @@ async def test_missing_target_only_accepts_external_failure(proxy, recovery, sce
 @pytest.mark.parametrize("damage", ["partial", "duplicate", "category", "direct-mismatch"])
 async def test_mixed_batch_rejects_invalid_correlations(damage):
     from a13n_harness import DeferredToolResults
-    from pydantic_ai.toolsets import CombinedToolset
 
     def change(value: int):
         raise AssertionError("Unapproved effect")
 
-    source = CombinedToolset(
-        [
-            FunctionToolset([Tool(change, requires_approval=True)], id="operations"),
-            ExternalToolset([ToolDefinition(name="select")], id="editor"),
-        ]
-    )
-    calls = [("invoke", {"group": "tools", "tool": name, "arguments": {"value": 3}}) for name in ("change", "select")]
-    executable = _build(source, calls=calls)
+    source = FunctionToolset([Tool(change, requires_approval=True)], id="operations")
+    external = Capability(toolsets=[ExternalToolset([ToolDefinition(name="select")], id="editor")])
+    calls = [("invoke", {"group": "tools", "tool": "change", "arguments": {"value": 3}}), ("select", {})]
+    executable = _build(source, calls=calls, extra=(external,))
     first = await executable.run("go")
     assert first.deferred is not None
     requests = first.deferred
@@ -408,9 +433,7 @@ async def test_mixed_batch_rejects_invalid_correlations(damage):
     elif damage == "category":
         requests.approvals.append(call)
     else:
-        requests.calls[0] = replace(
-            call, target_call=replace(call.target_call, tool_call_id=call.model_call.tool_call_id)
-        )
+        requests.calls[0] = replace(call, target_call=replace(call.target_call, args={"changed": True}))
     with pytest.raises(RunError):
         executable.stream(previous_state=first.state, deferred_resume=DeferredToolResume(requests, results))
 
@@ -421,7 +444,6 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
 
     from a13n_harness import HarnessEvent, HarnessState
     from pydantic_ai.capabilities import AbstractCapability
-    from pydantic_ai.toolsets import CombinedToolset
 
     started = asyncio.Event()
     effects = []
@@ -437,14 +459,10 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
         effects.append(value)
         return value
 
-    source = CombinedToolset(
-        [
-            FunctionToolset([Tool(change, requires_approval=True)], id="operations"),
-            ExternalToolset([ToolDefinition(name="select")], id="editor"),
-        ]
-    )
-    calls = [("invoke", {"group": "tools", "tool": name, "arguments": {"value": 3}}) for name in ("change", "select")]
-    first = await _build(source, calls=calls).run("go")
+    source = FunctionToolset([Tool(change, requires_approval=True)], id="operations")
+    external = Capability(toolsets=[ExternalToolset([ToolDefinition(name="select")], id="editor")])
+    calls = [("invoke", {"group": "tools", "tool": "change", "arguments": {"value": 3}}), ("select", {})]
+    first = await _build(source, calls=calls, extra=(external,)).run("go")
     assert first.deferred is not None
     requests = _roundtrip(first.deferred)
     external_result = ToolFailed("Client disconnected") if external_disconnected else "selected once"
@@ -452,7 +470,7 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
         requests,
         requests.build_results(approve_all=True, calls={requests.calls[0].target_call.tool_call_id: external_result}),
     )
-    async with _build(source, calls=calls, extra=(Pause(),)).stream(
+    async with _build(source, calls=calls, extra=(external, Pause())).stream(
         previous_state=first.state, deferred_resume=accepted
     ) as stream:
 
@@ -469,10 +487,7 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
         pending = stream.pending_deferred_input
     assert cancelled.status == "cancelled" and cancelled.state is not None and pending is not None
     restored = HarnessState.model_validate_json(cancelled.state.model_dump_json())
-    restored_source = (
-        FunctionToolset([Tool(change, requires_approval=True)], id="operations") if external_disconnected else source
-    )
-    recovered = await _build(restored_source, calls=calls).run(
+    recovered = await _build(source, calls=calls, extra=() if external_disconnected else (external,)).run(
         previous_state=restored, deferred_resume=replace(pending, recovery=True)
     )
     assert recovered.output_or_raise() == "done" and effects == []
