@@ -3,7 +3,6 @@
 import json
 import math
 from collections.abc import AsyncIterator
-from pathlib import PurePosixPath
 from typing import BinaryIO
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
@@ -54,7 +53,7 @@ class VercelExecution(VercelReference, NativeExecution[VercelEnvironmentConfigur
         async with self.transport().stream(
             "POST",
             f"/v2/sandboxes/sessions/{self.session.id}/fs/write",
-            headers={"Content-Type": "application/gzip", "x-cwd": str(PurePosixPath(path).parent)},
+            headers={"Content-Type": "application/gzip", "x-cwd": "/"},
             content=gzip_file(path, source, mode),
         ):
             pass

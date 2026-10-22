@@ -38,8 +38,8 @@ async def file_chunks(source: BinaryIO) -> AsyncIterator[bytes]:
 
 
 async def gzip_file(path: str, source: BinaryIO, mode: int) -> AsyncIterator[bytes]:
-    # Exactly one file, relative to x-cwd. PAX handles long/unicode basenames.
-    entry = tarfile.TarInfo(PurePosixPath(path).name)
+    # Extract from / so the HTTP cwd stays ASCII; PAX carries the full Unicode path.
+    entry = tarfile.TarInfo(PurePosixPath(path).relative_to("/").as_posix())
     entry.size = remaining_bytes(source)
     entry.mode = mode & 0o777
     compressor = zlib.compressobj(wbits=31)

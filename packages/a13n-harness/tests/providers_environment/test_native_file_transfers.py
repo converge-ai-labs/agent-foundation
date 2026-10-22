@@ -69,13 +69,15 @@ class ResponseStream(httpx2.AsyncByteStream):
 
 @pytest.fixture(params=["sprites", "vercel", "runloop"])
 async def peer(request, tmp_path):
-    kind = request.param
+    kind, root_name = request.param if isinstance(request.param, tuple) else (request.param, "")
+    root = tmp_path / root_name
+    root.mkdir(exist_ok=True)
     config_type, connection_type, execution_type = {
         "sprites": (SpritesEnvironmentConfiguration, SpritesConnectionConfiguration, SpritesExecution),
         "vercel": (VercelEnvironmentConfiguration, VercelConnectionConfiguration, VercelExecution),
         "runloop": (RunloopEnvironmentConfiguration, RunloopConnectionConfiguration, RunloopExecution),
     }[kind]
-    config = config_type(root=str(tmp_path), python=sys.executable)
+    config = config_type(root=str(root), python=sys.executable)
     connection = connection_type(
         **({"team_id": "team", "project_id": "project"} if kind == "vercel" else {"organization": "test"})
     )
@@ -122,7 +124,7 @@ async def peer(request, tmp_path):
             body.seek(0)
             if kind == "sprites":
                 path = Path(request.url.params["path"])
-                assert request.url.params["workingDir"] == str(tmp_path)
+                assert request.url.params["workingDir"] == str(root)
                 assert request.headers["content-type"] == "application/octet-stream"
                 with path.open("wb") as destination:
                     shutil.copyfileobj(body, destination, CHUNK_BYTES)
@@ -131,8 +133,9 @@ async def peer(request, tmp_path):
                 with tarfile.open(fileobj=body, mode="r:gz") as archive:
                     members = archive.getmembers()
                     assert len(members) == 1 and members[0].isfile()
-                    assert "/" not in members[0].name
+                    assert not Path(members[0].name).is_absolute()
                     path = Path(request.headers["x-cwd"]) / members[0].name
+                    assert path.is_relative_to(root)
                     with archive.extractfile(members[0]) as content, path.open("wb") as destination:
                         shutil.copyfileobj(content, destination, CHUNK_BYTES)
                     path.chmod(members[0].mode)
@@ -206,6 +209,26 @@ async def test_roundtrip_uses_one_binary_request_each_way(peer, tmp_path, size):
     assert not list(tmp_path.glob(".a13n-*"))
     # File bytes never appear in the argv/control channel.
     assert all(len(arg) < 100_000 for argv in peer.controls for arg in argv)
+
+
+@pytest.mark.parametrize(
+    ("peer", "path"),
+    [
+        pytest.param(("vercel", "workspace"), "/nested/资料/file.bin", id="unicode-parent"),
+        pytest.param(("vercel", "工作区"), "/nested/file.bin", id="unicode-root"),
+        pytest.param(("vercel", "工作区"), "/资料/文件.bin", id="unicode-root-and-parent"),
+    ],
+    indirect=["peer"],
+)
+async def test_vercel_unicode_paths_roundtrip(peer, path):
+    destination = Path(peer.execution.config.root) / path.lstrip("/")
+    destination.parent.mkdir(parents=True)
+    await peer.files.write_bytes_stream(path, content(256), mode="create")
+    assert await peer.files.read_bytes(path) == bytes(range(256))
+    assert destination.read_bytes() == bytes(range(256))
+    assert len(peer.calls) == 2
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o640
+    assert not list(destination.parent.glob(".a13n-*"))
 
 
 @pytest.mark.parametrize("mode", ["create", "replace", "upsert", "append"])
