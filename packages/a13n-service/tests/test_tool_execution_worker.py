@@ -11,11 +11,21 @@ from a13n_service.runs import worker as worker_module
 from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
+from a13n_service.runs.tool_executions import authority
 from a13n_service.runs.tool_executions.delivery import tool_results
 from a13n_service.runs.tool_executions.store import ORIGIN
 from a13n_service.runs.worker import Worker
 
 pytestmark = pytest.mark.anyio
+
+
+async def test_idle_tool_heartbeat_needs_no_database(runtime, monkeypatch):
+    def unavailable(*args):
+        pytest.fail("An idle tool heartbeat must not acquire a database connection")
+
+    monkeypatch.setattr(authority, "transaction", unavailable)
+    assert not runtime.executions.active
+    assert await authority.heartbeat(runtime, "worker-idle") == ((), set())
 
 
 async def _setup(service, scripted_model, runs_kit, *, grace=0.01, lease_seconds=30):

@@ -118,6 +118,8 @@ async def authorize_control(
 async def heartbeat(runtime: Runtime, worker_id: str) -> tuple[tuple[tuple[str, str], ...], set[str]]:
     """Renew locally active calls through cleanup/publication; report only confirmed renewals."""
     active = {record.execution_id for record in runtime.executions.active}
+    if not active:
+        return (), set()
     async with transaction(runtime.storage) as session:
         rows = list(
             await session.scalars(
