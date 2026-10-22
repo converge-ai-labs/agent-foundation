@@ -10,6 +10,27 @@ from a13n_service.infra import reads
 from a13n_service.providers.traces import Span
 
 
+class SpanOverview(BaseModel):
+    """Exact timeline and cost fields; payloads are read from the individual span."""
+
+    view: Literal["overview"] = "overview"
+    trace_id: str
+    id: str
+    parent_id: str | None
+    name: str
+    kind: str
+    status: Literal["ok", "error"]
+    level: str | None
+    started_at: datetime
+    ended_at: datetime | None
+    model: str | None
+    cost_usd: Decimal | None
+
+
+def overview(span: Span) -> SpanOverview:
+    return SpanOverview.model_validate(span, from_attributes=True)
+
+
 class SpanSummary(BaseModel):
     view: Literal["compact"] = "compact"
     trace_id: str
@@ -37,7 +58,7 @@ class SpanSummary(BaseModel):
 
 
 class SpanReadPage(BaseModel):
-    items: list[SpanSummary | Span]
+    items: list[SpanSummary | SpanOverview | Span]
     next_cursor: str | None
 
 
@@ -49,7 +70,7 @@ class SpanContentPage(BaseModel):
 
 
 class Selection(BaseModel):
-    view: reads.ReadView = "detailed"
+    view: Literal["detailed", "compact", "overview"] = "detailed"
     status: Literal["ok", "error"] | None = None
     kind: str | None = None
     tool_name: str | None = None

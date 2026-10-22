@@ -274,6 +274,8 @@ uv run --locked python examples/environment-provider/modal_desktop_image.py \
 
 `desktop` 要求创建和恢复时验证桌面可观察且可输入。`desktop_assistance` 是 Service 的额外开关，要求桌面访问 supervisor；它通过独立的 6081 TLS 通道提供只读查看、独占控制、撤销和归还。8888 TLS 通道承载 Envd，使用独立的客体令牌；浏览器不接收 Modal 或 Envd 凭据。Agent Computer 工具和挂载权限仍需单独开启。
 
+Service 在进程内有界缓存 Modal Client 和 Sandbox，用于桌面请求和执行连接。每次请求仍检查当前归属和存活状态，桌面 generation／epoch、凭据版本与端点策略校验保持生效。失败或取消会淘汰连接，不自动重放命令。成功请求归还独占 SDK 借用，同时保留本地连接；Envd 执行在运行 Agent 前归还该借用。空闲连接在 120 秒后过期，所有连接最多保留 10 分钟，每个进程最多缓存 32 项。停止／恢复／销毁环境及进程退出会淘汰对应本地连接。独立部署的 control 和 worker 进程分别预热自己的缓存。
+
 停止先保存文件系统快照再终止沙箱；显式启动从快照创建新沙箱并重新启动桌面进程。成功就绪后才清理快照。文件保留，旧截图引用和人工授权失效。运行沙箱 TTL 不能超过已知期限，最多 24 小时；执行连接不恢复沙箱或续期。
 
 `test_modal_desktop_live.py` 与 `test_modal_access_live.py` 分别验证 EIP／桌面／恢复和人工端点权限／撤销／过期。`test_modal_takeover_live.py` 使用脚本模型和预置的就绪生命周期记录，验证 Service HTTP 准入、安全暂停、真实 RFB 控制、撤销及后续运行重新观察，不覆盖 Console 浏览器界面。设置 `A13N_TEST_MODAL_DESKTOP=1`、`A13N_TEST_MODAL_IMAGE`、`A13N_TEST_MODAL_BACKEND_JSON` 与 `A13N_TEST_MODAL_CREDENTIAL_JSON` 后运行。这些测试会创建付费沙箱并尝试清理。

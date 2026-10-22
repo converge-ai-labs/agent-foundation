@@ -183,6 +183,70 @@ async def start_live(runtime, root, *, environment=None):
     return first, execution_id, runtime.resource(first.thread_id, execution_id)
 
 
+@pytest.mark.parametrize("wait_tool", ["shell_wait", "tool_execution_wait"])
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_steering_releases_control_wait_without_stopping_original_shell(
+    tmp_path, monkeypatch, wait_tool, immediate
+):
+    from a13n_harness.capabilities.steering import steering_input_ids
+    from a13n_harness.toolsets.process_manager import _ProcessController
+
+    runtime = ToolExecutionRuntime()
+    waiting = asyncio.Event()
+    original_wait = _ProcessController.wait if wait_tool == "shell_wait" else runtime.wait
+
+    async def observe(*args, **kwargs):
+        if kwargs.get("timeout_seconds") == 30:
+            waiting.set()
+        return await original_wait(*args, **kwargs)
+
+    try:
+        async with asyncio.timeout(10):
+            first, execution_id, resource = await start_live(runtime, tmp_path)
+            if wait_tool == "shell_wait":
+                monkeypatch.setattr(_ProcessController, "wait", observe)
+            else:
+                monkeypatch.setattr(runtime, "wait", observe)
+            arguments = {
+                "process_id" if wait_tool == "shell_wait" else "execution_id": execution_id,
+                "timeout_seconds": 30,
+            }
+            results = []
+            async with executable([(wait_tool, arguments)], results, mode="inline").stream(
+                "wait", previous_state=first.state, environment=source(tmp_path), bindings=bindings(runtime)
+            ) as stream:
+
+                async def consume():
+                    return [event async for event in stream]
+
+                consumer = asyncio.create_task(consume())
+                try:
+                    await waiting.wait()
+                    await stream.steer("continue now", input_id="guidance", immediate=immediate, best_effort=True)
+                    if immediate:
+                        await asyncio.wait_for(asyncio.shield(consumer), timeout=2)
+                        assert steering_input_ids(stream.result.state.message_history) == ("guidance",)
+                        status = results[0]["status"]
+                        assert (status["phase"] if wait_tool == "shell_wait" else status) == "running"
+                    else:
+                        assert not consumer.done()
+                    assert (await runtime.info(first.thread_id, execution_id)).status == "running"
+                    await resource.controller.write_input(resource.process_id, "finished\n", close_stdin=False)
+                    await consumer
+                    if not immediate:
+                        assert results[0]["status"]["phase"] == "exited"
+                        assert results[0]["stdout"]["text"] == "readyfinished"
+                    settled = await runtime.wait(first.thread_id, execution_id)
+                    assert settled.record.status == "succeeded"
+                    assert settled.result["stdout"]["text"] == "readyfinished"
+                    assert len(await runtime.summarize(first.thread_id)) == 1
+                finally:
+                    consumer.cancel()
+                    await asyncio.gather(consumer, return_exceptions=True)
+    finally:
+        await runtime.close()
+
+
 async def test_retained_controls_use_current_guard_and_ceiling(tmp_path, monkeypatch):
     from contextlib import asynccontextmanager
 

@@ -1,8 +1,9 @@
 import { ApiError } from "../../service-client";
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
-import { data, type Schema } from "../../shared/api";
+import type { Schema } from "../../shared/api";
 import { observationCost } from "./cost";
+import { overviewData, type Observation } from "./overview";
 
 /** Bound background reads; an incomplete trace is never presented as a total. */
 export function useListCosts(
@@ -25,7 +26,7 @@ export function useListCosts(
       async function worker() {
         while (next < traces.length && !signal.aborted && !accessError) {
           const root = traces[next++];
-          const observations = new Map<string, Schema["Span"]>();
+          const observations = new Map<string, Observation>();
           const cursors = new Set<string>();
           let cursor: string | undefined;
           results[root.trace_id] = null;
@@ -33,7 +34,7 @@ export function useListCosts(
             // At most 2,000 observations per trace. Larger traces stay unknown.
             for (let page = 0; page < 20 && !accessError; page++) {
               signal.throwIfAborted();
-              const collection = data(
+              const collection = overviewData(
                 await client
                   .workspace(workspace)
                   .GET("/api/v1/traces/{trace_id}/spans", {
@@ -41,7 +42,7 @@ export function useListCosts(
                       path: {
                         trace_id: root.trace_id,
                       },
-                      query: { limit: 100, cursor },
+                      query: { view: "overview", limit: 100, cursor },
                     },
                     signal,
                   }),

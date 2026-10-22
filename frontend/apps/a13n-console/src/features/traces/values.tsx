@@ -6,6 +6,7 @@ import { StatePill } from "../../shared/feedback";
 import { formatDuration } from "../../shared/time-range";
 import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
+import type { Observation } from "./overview";
 
 /** Label above value, the one fact anatomy the traces surfaces share. */
 export function Fact({
@@ -24,14 +25,14 @@ export function Fact({
 }
 
 /** Presentation only: missing end time does not imply running execution. */
-export function durationMs(observation: Schema["Span"]): number | null {
+export function durationMs(observation: Observation): number | null {
   if (!observation.ended_at) return null;
   const value =
     Date.parse(observation.ended_at) - Date.parse(observation.started_at);
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-export function Duration({ observation }: { observation: Schema["Span"] }) {
+export function Duration({ observation }: { observation: Observation }) {
   const { i18n } = useTranslation();
   const value = durationMs(observation);
   return (

@@ -149,7 +149,10 @@ async def list_trace_spans(
     trace_id: TraceId,
     actor: Actor,
     origin: OriginRun,
-    view: reads.View = "detailed",
+    view: Annotated[
+        Literal["detailed", "compact", "overview"],
+        Query(description="Overview keeps exact timeline and cost fields without observation payloads."),
+    ] = "detailed",
     status: Literal["ok", "error"] | None = None,
     kind: Annotated[str | None, Query(max_length=64)] = None,
     tool_name: Annotated[str | None, Query(max_length=256)] = None,
@@ -164,15 +167,35 @@ async def list_trace_spans(
         actor,
         workspace_id,
         trace_id,
-        limit=reads.page_limit(view, limit),
+        limit=reads.page_limit("detailed" if view == "overview" else view, limit),
         cursor=cursor,
         selection=trace_reads.Selection(view=view, status=status, kind=kind, tool_name=tool_name)
-        if view == "compact" or any((status, kind, tool_name))
+        if view != "detailed" or any((status, kind, tool_name))
         else None,
     )
     if page.items:
         await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     return page
+
+
+@router.get(
+    "/traces/{trace_id}/spans/{span_id}",
+    response_model=Span,
+    openapi_extra=platform_operation("execution", "read"),
+)
+async def get_trace_span(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    trace_id: TraceId,
+    span_id: Annotated[str, Path(pattern=r"^[0-9a-f]{16}$")],
+    actor: Actor,
+    origin: OriginRun,
+) -> Span:
+    """One complete observation, including redacted input, output and diagnostic metadata."""
+    await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
+    span = await traces.get_trace_span(runtime.storage, runtime.traces, actor, workspace_id, trace_id, span_id)
+    await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
+    return span
 
 
 @router.get("/trace-backend", response_model=traces.TraceBackend, openapi_extra=platform_operation("execution", "read"))

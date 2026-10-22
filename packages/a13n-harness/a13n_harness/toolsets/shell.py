@@ -369,7 +369,12 @@ class ShellToolset:
                 timeout_seconds=timeout_seconds,
             )
             try:
-                result = await self._control(ctx.deps, process_id, control)
+                result = await ctx.deps._tool_executions.wait_control(
+                    lambda timeout: self._control(
+                        ctx.deps, process_id, control.model_copy(update={"timeout_seconds": timeout})
+                    ),
+                    timeout_seconds=timeout_seconds,
+                )
             except asyncio.CancelledError:
                 if _OWNED_TOOL_EXECUTION.get():
                     raise

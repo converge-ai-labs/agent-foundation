@@ -10,6 +10,7 @@ import {
 import type { TFunction } from "i18next";
 import type { Schema } from "../../shared/api";
 import styles from "./traces.module.css";
+import type { Observation } from "./overview";
 
 const kindLabels: Record<string, string> = {
   agent: "Agent",
@@ -57,7 +58,7 @@ const icons = {
   span: StackIcon,
 };
 
-export function isFailed(observation: Schema["Span"]) {
+export function isFailed(observation: Observation) {
   return (
     observation.status === "error" ||
     ["error", "fatal", "critical"].includes(observation.level ?? "")
@@ -77,11 +78,7 @@ export function ObservationGlyph({
 }
 
 /** The 22px kind tile that leads a timeline row. */
-export function ObservationIcon({
-  observation,
-}: {
-  observation: Schema["Span"];
-}) {
+export function ObservationIcon({ observation }: { observation: Observation }) {
   return (
     <span
       className={styles.observationIcon}

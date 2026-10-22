@@ -48,6 +48,24 @@ export class ProcessObservations {
     }
     return item;
   }
+  command(runId: string, name: string, args: unknown): string | undefined {
+    if (
+      !name.startsWith("shell_") &&
+      !["tool_execution_result", "tool_execution_wait"].includes(name)
+    )
+      return;
+    const input = parsed(args);
+    if (!object(input)) return;
+    if (["shell_exec", "shell_start"].includes(name))
+      return typeof input.command === "string" ? input.command : undefined;
+    const reference = name.startsWith("shell_")
+      ? input.process_id
+      : ["tool_execution_result", "tool_execution_wait"].includes(name)
+        ? input.execution_id
+        : undefined;
+    if (typeof reference !== "string") return;
+    return this.entries.get(`${runId}:${reference}`)?.command || undefined;
+  }
   result(
     runId: string,
     name: string | undefined,
@@ -56,7 +74,25 @@ export class ProcessObservations {
   ) {
     if (
       !name ||
-      !["shell_exec", "shell_start", "shell_wait", "shell_info"].includes(name)
+      ![
+        "shell_exec",
+        "shell_start",
+        "shell_wait",
+        "shell_info",
+        "tool_execution_result",
+        "tool_execution_wait",
+      ].includes(name)
+    )
+      return;
+    const input = parsed(args);
+    const retrievesShell =
+      (name === "tool_execution_result" || name === "tool_execution_wait") &&
+      object(input) &&
+      typeof input.execution_id === "string" &&
+      this.entries.has(`${runId}:${input.execution_id}`);
+    if (
+      !retrievesShell &&
+      ["tool_execution_result", "tool_execution_wait"].includes(name)
     )
       return;
     const value = parsed(content);
@@ -64,13 +100,15 @@ export class ProcessObservations {
     const startsProcess = name === "shell_exec" || name === "shell_start";
     // Host-owned starts return an execution receipt; later Shell observations
     // use that same execution ID as their process handle.
-    const processId =
-      startsProcess && value.type === "tool_execution_receipt"
+    const processId = retrievesShell
+      ? input.execution_id
+      : startsProcess &&
+          value.type === "tool_execution_receipt" &&
+          value.tool_name === "shell_exec"
         ? value.execution_id
         : value.process_id;
     if (typeof processId !== "string") return;
     const item = this.observe(runId, processId);
-    const input = parsed(args);
     if (startsProcess && object(input) && typeof input.command === "string")
       item.command = input.command.replace(/\s+/g, " ").trim().slice(0, 500);
     if (!object(value.status) || typeof value.status.phase !== "string") return;

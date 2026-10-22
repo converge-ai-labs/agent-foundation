@@ -15,12 +15,13 @@ import {
   TelemetryStatus,
 } from "./values";
 import styles from "./traces.module.css";
+import type { Observation } from "./overview";
 
 /** Panel header identity: kind mark, name, and the facts that fit one line. */
 export function ObservationTitle({
   observation,
 }: {
-  observation: Schema["Span"];
+  observation: Observation;
 }) {
   const { t } = useTranslation();
   const model = observation.model;

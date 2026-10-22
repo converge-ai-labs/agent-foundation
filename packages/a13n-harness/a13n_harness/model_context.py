@@ -19,6 +19,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     TextContent,
     ToolAvailabilityDeltaPart,
+    ToolCallPart,
     UserContent,
     UserPromptPart,
 )
@@ -370,9 +371,18 @@ def _requires_exact_history(messages: list[ModelMessage]) -> bool:
     if messages and isinstance(messages[-1], ModelResponse) and messages[-1].state == "suspended":
         return True
     pending: set[str] = set()
+    previous_response_calls: set[str] = set()
     for message in messages:
         if isinstance(message, ModelResponse):
             pending.update(part.tool_call_id for part in message.parts if isinstance(part, BaseToolCallPart))
+            previous_response_calls = {part.tool_call_id for part in message.parts if isinstance(part, ToolCallPart)}
+        else:
+            if any(isinstance(part, RetryPromptPart) and part.tool_name is None for part in message.parts):
+                # A model-level retry rejects the preceding response before function-tool dispatch.
+                # Its generated ID does not match those calls. Older and provider-native calls
+                # still need their own results; a retry before a response retires no calls.
+                pending.difference_update(previous_response_calls)
+            previous_response_calls.clear()
         # Provider-executed native tools return inside ModelResponse, not ModelRequest.
         pending.difference_update(
             part.tool_call_id for part in message.parts if isinstance(part, BaseToolReturnPart | RetryPromptPart)

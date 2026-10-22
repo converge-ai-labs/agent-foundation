@@ -2,6 +2,7 @@ import type { ContentPart } from "@ag-ui/core";
 import { readContentParts } from "a13n-ui";
 import { toolExecutionReceipt } from "a13n-ui/display";
 import type { Schema } from "../transport/client";
+import { ProcessObservations } from "./process-observations";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
@@ -25,6 +26,7 @@ export type ToolView = {
   editOmitted?: boolean;
   editPath?: string;
   provider?: string;
+  shellCommand?: string;
 };
 export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -89,6 +91,11 @@ export function describeTool(tool: ToolView) {
     tool.editPath ||
     text(result.file_path) ||
     text(args.file_path);
+  const shell =
+    tool.name.startsWith("shell_") ||
+    (!!tool.shellCommand &&
+      ["tool_execution_result", "tool_execution_wait"].includes(tool.name));
+  const command = shell ? text(args.command) || tool.shellCommand || "" : "";
   const status = record(result.status) ? result.status : {};
   const error = record(result.error) ? result.error : {};
   const failed =
@@ -100,7 +107,7 @@ export function describeTool(tool: ToolView) {
     (tool.provider === "openai" &&
       tool.name === "web_search" &&
       result.status === "failed") ||
-    (tool.name.startsWith("shell") &&
+    (shell &&
       ((typeof status.exit_code === "number" && status.exit_code !== 0) ||
         ["failed", "signaled", "timed_out", "cancelled"].includes(
           text(status.phase),
@@ -362,6 +369,8 @@ export function describeTool(tool: ToolView) {
       }
       break;
   }
+  if (shell && command && tool.name !== "shell_exec")
+    summary = [summary, command].filter(Boolean).join(" · ");
   // An unfinished or omitted argument object cannot establish default targets.
   if (!record(input) && !hasResult && !tool.edit && !tool.editOmitted)
     summary = "";
@@ -406,6 +415,15 @@ export function describeTool(tool: ToolView) {
     else if (phase === "Result received" && !tool.resultOmitted)
       phase = executionPhase(tool.name, output) ?? phase;
   }
+  if (
+    shell &&
+    phase === "Result received" &&
+    typeof status.phase === "string" &&
+    status.phase &&
+    (status.phase === "running" ||
+      !["shell_exec", "shell_start"].includes(tool.name))
+  )
+    phase = `${status.phase[0].toUpperCase()}${status.phase.slice(1).replaceAll("_", " ")} at last check`;
   const detail = record(result.thread) ? result.thread : {};
   const thread = record(detail.thread) ? detail.thread : detail;
   const receipt = record(result.receipt) ? result.receipt : {};
@@ -443,6 +461,8 @@ export function describeTool(tool: ToolView) {
     threadId,
     threadTitle,
     executionReceipt,
+    shell,
+    command,
   };
 }
 
@@ -570,6 +590,17 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
         } else views.set(part, completed);
       }
     }
+  // Saved history has no Run scope for native process handles. Only correlate
+  // Host execution IDs backed by a visible receipt, never process-* handles.
+  const processes = new ProcessObservations();
+  for (const [part, tool] of views) {
+    if (!tool || tool.provider) continue;
+    const receipt = toolExecutionReceipt(parsed(tool.result));
+    if (receipt?.tool_name === "shell_exec")
+      processes.result("saved", tool.name, tool.input, tool.result);
+    const shellCommand = processes.command("saved", tool.name, tool.input);
+    if (shellCommand) views.set(part, { ...tool, shellCommand });
+  }
   return views;
 }
 
@@ -652,9 +683,36 @@ export function savedToolGroups(entries: Schema<"TranscriptEntry">[]) {
   return groups;
 }
 
+/** Summarize the latest observation per handle without rewriting earlier receipts. */
+function shellGroupStatus(
+  tools: ToolView[],
+  infos: ReturnType<typeof describeTool>[],
+) {
+  const latest = new Map<string, string>();
+  tools.forEach((tool, index) => {
+    const info = infos[index];
+    const status = record(info.result.status) ? info.result.status : {};
+    if (!info.executionReceipt && !text(status.phase)) return;
+    const reference =
+      text(info.result.execution_id) ||
+      text(info.args.process_id) ||
+      text(info.args.execution_id) ||
+      text(info.result.process_id);
+    const key = reference
+      ? JSON.stringify([tool.subagentRunId ?? "", reference])
+      : `unlinked:${index}`;
+    latest.set(key, info.phase);
+  });
+  const phases = [...latest.values()];
+  if (phases.includes("Execution handed off")) return "Execution handed off";
+  if (phases.includes("Running at last check")) return "Running at last check";
+  return "";
+}
+
 export function activitySummary(tools: ToolView[]) {
   const infos = tools.map(describeTool);
   const kind = activityKind(tools[0]);
+  const shellStatus = kind === "shell" ? shellGroupStatus(tools, infos) : "";
   const count = (n: number, noun: string) =>
     `${n} ${noun}${n === 1 ? "" : "s"}`;
   const files = new Set(infos.map((info) => info.path).filter(Boolean)).size;
@@ -691,7 +749,7 @@ export function activitySummary(tools: ToolView[]) {
   else if (kind === "shell") {
     const commands = tools.filter((tool) => tool.name === "shell_exec").length;
     title = `${pending ? "Running" : "Ran"} ${commands ? count(commands, "command") : count(tools.length, "process operation")}`;
-    if (issues.length && !pending)
+    if (!pending && (issues.length || shellStatus))
       title = `Shell · ${count(tools.length, "operation")}`;
   } else if (kind === "web")
     title = `${pending ? "Browsing" : "Browsed"} the web · ${count(tools.length, "action")}`;
@@ -714,6 +772,7 @@ export function activitySummary(tools: ToolView[]) {
     title,
     issue: issues.length > 0,
     status: [
+      !pending && !issues.length ? shellStatus : "",
       waiting ? `${waiting} waiting` : "",
       pending > waiting ? `${pending - waiting} running` : "",
       kind === "executions" && cancellations

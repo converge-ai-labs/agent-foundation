@@ -111,6 +111,9 @@ class SpanQuery:
     # Only trace roots: one per attempt, since every attempt's Harness run starts its own trace.
     roots: bool = False
     cursor: str | None = None
+    span_id: str | None = None
+    # Overview reads still need full correlation attributes for independent tenancy checks.
+    include_content: bool = True
 
 
 class TraceProvider(Protocol):

@@ -39,6 +39,8 @@ def tunnel_connection(url: str, timeout: float = 120) -> HttpEnvdConnectionConfi
 
 
 class HttpReference(ModalReference):
+    reuse_transport = True
+
     def observe(self, state: ModalState) -> None:
         if state != self.target:
             raise failure(self.provider_key, "provider_target_changed", Category.CONFLICT)
@@ -95,7 +97,14 @@ async def http_session(
                 required_methods=REQUIRED_METHODS
                 | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
             ) as session:
+                # EIP uses its own HTTP transport. Return the SDK lease before Agent
+                # execution so desktop requests can borrow the same Sandbox safely.
+                if reference._lease is not None:
+                    await reference.close_transport()
                 yield session
+    except BaseException:
+        reference.discard_transport()
+        raise
     finally:
         await reference.close_transport()
 

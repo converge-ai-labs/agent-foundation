@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
@@ -16,6 +17,7 @@ from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty 
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.modal.diagnostics import measure
+from a13n_harness.providers.environment.modal.pool import Transport, TransportKey, TransportPool
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
@@ -123,7 +125,15 @@ async def execute_command(sandbox: modal.Sandbox, argv: list[str], timeout: floa
             return stdout
 
 
+@dataclass(frozen=True, slots=True)
+class ModalRuntime(NativeRuntime):
+    pool: TransportPool | None = None
+    account: tuple[str, int, str | None] | None = None
+
+
 class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState]):
+    reuse_transport = False
+
     def __init__(
         self,
         config: ModalEnvironmentConfiguration,
@@ -138,46 +148,63 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
         self.credential = runtime.credential
         self.client: modal.Client | None = None
         self.sandbox: modal.Sandbox | None = None
+        self._pool = runtime.pool if isinstance(runtime, ModalRuntime) else None
+        self._account = runtime.account if isinstance(runtime, ModalRuntime) else None
+        self._lease: Transport | None = None
+        self._discard = False
 
     async def lookup(self) -> modal.Sandbox | None:
         import modal
 
         client = await self.connection()
-        with sdk_errors():
-            sandbox = None
-            if self.target:
-                try:
-                    with measure("sandbox_from_id"):
-                        candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
-                    with measure("sandbox_get_tags"):
-                        self.validate_labels(await candidate.get_tags.aio())
-                    with measure("sandbox_poll"):
-                        status = await candidate.poll.aio()
-                    if status is None:
-                        sandbox = candidate
-                except modal.exception.NotFoundError:
-                    pass
-            if self.target is None:
-                try:
-                    sandbox = await modal.Sandbox.from_name.aio(
-                        self.backend.app_name, self.name, environment_name=self.backend.environment_name, client=client
-                    )
-                except modal.exception.NotFoundError:
+        try:
+            with sdk_errors():
+                sandbox = None
+                if self.target:
+                    try:
+                        candidate = self._lease.sandbox if self._lease is not None else None
+                        if candidate is None:
+                            with measure("sandbox_from_id"):
+                                candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
+                            if self._lease is not None:
+                                self._lease.sandbox = candidate
+                        self.sandbox = candidate
+                        with measure("sandbox_get_tags"):
+                            self.validate_labels(await candidate.get_tags.aio())
+                        with measure("sandbox_poll"):
+                            status = await candidate.poll.aio()
+                        if status is None:
+                            sandbox = candidate
+                    except modal.exception.NotFoundError:
+                        self.discard_transport()
+                if self.target is None:
+                    try:
+                        sandbox = await modal.Sandbox.from_name.aio(
+                            self.backend.app_name,
+                            self.name,
+                            environment_name=self.backend.environment_name,
+                            client=client,
+                        )
+                    except modal.exception.NotFoundError:
+                        return None
+                    self.validate_labels(await sandbox.get_tags.aio())
+                if sandbox is None:
+                    self.discard_transport()
                     return None
-                self.validate_labels(await sandbox.get_tags.aio())
-            if sandbox is None:
-                return None
-            if self.target:
-                self.observe(self.target.model_copy(update={"target_id": sandbox.object_id}))
-            else:
-                self.observe(
-                    ModalState(
-                        target_id=sandbox.object_id,
-                        environment_id=self.owner,
-                        configuration_fingerprint=self.config.fingerprint,
+                if self.target:
+                    self.observe(self.target.model_copy(update={"target_id": sandbox.object_id}))
+                else:
+                    self.observe(
+                        ModalState(
+                            target_id=sandbox.object_id,
+                            environment_id=self.owner,
+                            configuration_fingerprint=self.config.fingerprint,
+                        )
                     )
-                )
-            return sandbox
+                return sandbox
+        except BaseException:
+            self.discard_transport()
+            raise
 
     async def connection(self) -> modal.Client:
         import modal
@@ -185,15 +212,26 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
         from modal_proto import api_pb2
 
         if self.client is None:
+            if self.reuse_transport and self._pool is not None and self.target is not None:
+                self._lease = await self._pool.acquire(self.transport_key())
+                self.client = self._lease.client
+            if self.client is not None:
+                return self.client
             with measure("client_open"), sdk_errors():
-                # from_credentials registers a process-lifetime shutdown task that retains each short-lived client.
-                # This reference owns the client and releases it in close_transport.
+                # Avoid from_credentials' implicit process-lifetime shutdown registry.
+                # The explicit pool, or this reference when unpooled, owns cleanup.
                 self.client = modal.Client(
                     modal_config["server_url"],
                     api_pb2.CLIENT_TYPE_CLIENT,
                     (self.credential.token_id.get_secret_value(), self.credential.token_secret.get_secret_value()),
                 )
-                await self.client.__aenter__()
+                if self._lease is not None:
+                    self._lease.client = self.client
+                try:
+                    await self.client.__aenter__()
+                except BaseException:
+                    self.discard_transport()
+                    raise
         return self.client
 
     async def status(self) -> Literal["running", "stopped", "absent"]:
@@ -202,12 +240,39 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
                 return "running"
             return "stopped" if self.target and self.target.snapshot_id else "absent"
 
+    def transport_key(self) -> TransportKey:
+        from modal.config import config as modal_config
+
+        assert self._account is not None and self.target is not None
+        return TransportKey(
+            self._account,
+            self.backend.model_dump_json(),
+            modal_config["server_url"],
+            self.owner,
+            self.config.fingerprint,
+            self.target.target_id,
+        )
+
+    def discard_transport(self) -> None:
+        self._discard = True
+
+    async def invalidate_cached_transport(self) -> None:
+        if self._pool is not None and self.target is not None:
+            await self._pool.invalidate(self.transport_key())
+
     async def close_transport(self) -> None:
+        lease, self._lease = self._lease, None
+        sandbox, client = self.sandbox, self.client
+        self.sandbox = self.client = None
+        if lease is not None:
+            assert self._pool is not None
+            await self._pool.release(lease, discard=self._discard)
+            return
         try:
-            if self.sandbox:
+            if sandbox is not None:
                 with measure("sandbox_detach"):
-                    await self.sandbox.detach.aio()
+                    await sandbox.detach.aio()
         finally:
-            if self.client:
+            if client is not None:
                 with measure("client_close"):
-                    await self.client.__aexit__(None, None, None)
+                    await client.__aexit__(None, None, None)

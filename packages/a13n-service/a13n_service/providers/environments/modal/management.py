@@ -178,33 +178,41 @@ else: raise RuntimeError('a13n-envd did not become ready')
                 await asyncio.sleep(0.1)
 
     async def desktop_access(self, request: access.Request) -> access.Reply:
-        if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:
-            raise failure(self.provider_key, "desktop_access_unavailable", Category.UNSUPPORTED)
-        sandbox = self._desktop_sandbox
-        if sandbox is None:
-            sandbox = await self.lookup()
-            if sandbox is None:
-                raise failure(self.provider_key, "desktop_target_unavailable", Category.CONFLICT)
-            # The authorization scope pins this validated target. Each guest
-            # command still enforces generation/epoch; never rediscover a replacement.
-            self._desktop_sandbox = self.sandbox = sandbox
-        reply = access.decode(self.provider_key, request, await execute_command(sandbox, access.command(request), 25))
-        if isinstance(reply, access.Description):
-            with measure("sandbox_tunnels"), sdk_errors():
-                tunnels = await sandbox.tunnels.aio(timeout=int(self.config.request_timeout_seconds))
-            tunnel = tunnels.get(access.PORT)
-            if tunnel is None:
+        self.reuse_transport = True
+        try:
+            if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:
                 raise failure(self.provider_key, "desktop_access_unavailable", Category.UNSUPPORTED)
-            # The TLS tunnel carries the per-grant supervisor credentials only.
-            # Never send Modal account or Envd credentials to the browser.
-            connection = tunnel_connection(tunnel.url)
-            return reply.model_copy(
-                update={"websocket_url": connection.endpoint.replace("https://", "wss://", 1) + "/websockify"}
+            sandbox = self._desktop_sandbox
+            if sandbox is None:
+                sandbox = await self.lookup()
+                if sandbox is None:
+                    raise failure(self.provider_key, "desktop_target_unavailable", Category.CONFLICT)
+                # The authorization scope pins this validated target. Each guest
+                # command still enforces generation/epoch; never rediscover a replacement.
+                self._desktop_sandbox = self.sandbox = sandbox
+            reply = access.decode(
+                self.provider_key, request, await execute_command(sandbox, access.command(request), 25)
             )
-        return reply
+            if isinstance(reply, access.Description):
+                with measure("sandbox_tunnels"), sdk_errors():
+                    tunnels = await sandbox.tunnels.aio(timeout=int(self.config.request_timeout_seconds))
+                tunnel = tunnels.get(access.PORT)
+                if tunnel is None:
+                    raise failure(self.provider_key, "desktop_access_unavailable", Category.UNSUPPORTED)
+                # The TLS tunnel carries the per-grant supervisor credentials only.
+                # Never send Modal account or Envd credentials to the browser.
+                connection = tunnel_connection(tunnel.url)
+                return reply.model_copy(
+                    update={"websocket_url": connection.endpoint.replace("https://", "wss://", 1) + "/websockify"}
+                )
+            return reply
+        except BaseException:
+            self.discard_transport()
+            raise
 
     async def create(self) -> None:
         async with asyncio.timeout(self.config.request_timeout_seconds):
+            await self.invalidate_cached_transport()
             sandbox = await self.lookup()
             if sandbox is None:
                 if self.target is not None:
@@ -216,6 +224,7 @@ else: raise RuntimeError('a13n-envd did not become ready')
         import modal
 
         async with asyncio.timeout(self.config.request_timeout_seconds):
+            await self.invalidate_cached_transport()
             sandbox = await self.lookup()
             if sandbox is None:
                 await self.adopt_snapshot()
@@ -249,6 +258,7 @@ else: raise RuntimeError('a13n-envd did not become ready')
 
     async def stop(self) -> None:
         async with asyncio.timeout(self.config.request_timeout_seconds):
+            await self.invalidate_cached_transport()
             sandbox = await self.lookup()
             if sandbox is None:
                 await self.adopt_snapshot()
@@ -352,6 +362,7 @@ else: raise RuntimeError('a13n-envd did not become ready')
 
     async def destroy(self) -> None:
         async with asyncio.timeout(self.config.request_timeout_seconds):
+            await self.invalidate_cached_transport()
             sandbox = await self.lookup()
             if sandbox is not None:
                 with sdk_errors(mutation=True):

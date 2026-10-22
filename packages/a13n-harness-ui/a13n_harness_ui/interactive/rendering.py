@@ -20,6 +20,7 @@ from .tool_rows import (
     ToolActivityGroup,
     ToolActivityMember,
     activity_kind,
+    arguments_object,
     execution_result_row,
     failure_reason,
     semantic_tool_row,
@@ -270,6 +271,7 @@ class _ToolPreview:
     truncated: bool = False
     block_id: int | None = None
     summary: str = ""
+    shell_reference: str = ""
     edit_applied: bool = False
     native_result_seen: bool = False
     protocol_result_seen: bool = False
@@ -504,20 +506,27 @@ class StreamRenderer:
         if name in {"shell_exec", "shell_start"}:
             command = value.get("command")
             return " ".join(command.split())[:500] if isinstance(command, str) else ""
-        process_id = value.get("process_id")
+        process_id = value.get(
+            "execution_id" if name in {"tool_execution_result", "tool_execution_wait"} else "process_id"
+        )
         if isinstance(process_id, str):
             observation = self._shell_processes.get((run_id, process_id))
             return observation.command if observation else ""
         return ""
 
-    def _observe_shell_result(self, text: str, command: str, run_id: str) -> None:
+    def _observe_shell_result(self, text: str, command: str, run_id: str, *, reference: str = "") -> None:
         try:
             result = json.loads(text)
         except ValueError:
             return
-        if not isinstance(result, dict) or not isinstance(result.get("process_id"), str):
+        if not isinstance(result, dict):
             return
-        observation = self._shell_observation(run_id, result["process_id"])
+        observed_reference = reference or result.get("process_id")
+        if result.get("type") == "tool_execution_receipt" and result.get("tool_name") == "shell_exec":
+            observed_reference = result.get("execution_id")
+        if not isinstance(observed_reference, str):
+            return
+        observation = self._shell_observation(run_id, observed_reference)
         if command:
             observation.command = " ".join(command.split())[:500]
         status = result.get("status")
@@ -1142,14 +1151,22 @@ class StreamRenderer:
                     if native_state is not None
                     else text
                 )
-                if name.startswith("shell"):
+                retrieved_shell = bool(
+                    preview
+                    and preview.shell_reference
+                    and isinstance(arguments_object(result_text).get("status"), dict)
+                )
+                if name.startswith("shell") or retrieved_shell:
                     command = preview.summary if preview else ""
                     self._observe_shell_result(
-                        result_text, command if name in {"shell_exec", "shell_start"} else "", run_id
+                        result_text,
+                        command if name in {"shell_exec", "shell_start"} else "",
+                        run_id,
+                        reference=preview.shell_reference if retrieved_shell and preview else "",
                     )
                 if not child or detailed:
                     elapsed = f" | {time.monotonic() - preview.started:.1f}s" if preview else ""
-                    state = tool_result(name, result_text).partition("\n")[0]
+                    state = tool_result("shell_exec" if retrieved_shell else name, result_text).partition("\n")[0]
                     if native_state is not None and native_state != "returned":
                         state = native_state
                     # Interpret the value, retaining the native envelope in details.
@@ -1159,7 +1176,10 @@ class StreamRenderer:
                     summary = preview.summary if preview else ""
                     brief = header + (f" | {' '.join(summary.split())}" if summary else "") + elapsed
                     shell_preview = None
-                    if name in {"shell_exec", "shell_start", "shell_wait"} and native_state in {None, "returned"}:
+                    if (name in {"shell_exec", "shell_start", "shell_wait"} or retrieved_shell) and native_state in {
+                        None,
+                        "returned",
+                    }:
                         shell_preview = shell_result_preview(result_text, summary, separator=" · ")
                     if shell_preview is not None:
                         brief = f"{name} | {shell_preview}"
@@ -1171,7 +1191,9 @@ class StreamRenderer:
                             preview.semantic if preview else semantic_tool_row(name, "", self.status.directory)[0]
                         )
                         if shell_preview is not None:
-                            brief = "Run " + shell_preview
+                            brief = (
+                                preview.semantic + " · " if retrieved_shell and preview else "Run "
+                            ) + shell_preview
                         elif failed:
                             brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(result_text, state)} — {semantic}"
                         else:
@@ -1275,6 +1297,12 @@ class StreamRenderer:
                     preview.summary = tool_preview(
                         preview.arguments, name=preview.name, directory=self.status.directory
                     )
+                    if preview.name in {"tool_execution_result", "tool_execution_wait"}:
+                        command = self._shell_command(preview.name, preview.arguments, run_id)
+                        if command:
+                            preview.summary = command
+                            value = json.loads(preview.arguments)
+                            preview.shell_reference = value["execution_id"]
                     if preview.name.startswith("shell"):
                         preview.summary = self._shell_command(preview.name, preview.arguments, run_id)
                         if preview.name in {"shell_info", "shell_input", "shell_signal"} and preview.summary:

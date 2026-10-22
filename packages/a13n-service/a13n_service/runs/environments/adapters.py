@@ -11,7 +11,7 @@ from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
-from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration
+from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential, ModalRuntime
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -76,9 +76,11 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
         ),
     ):
         connection._endpoint_policy = runtime.endpoint_policy
+    borrowed = _modal_runtime(runtime, account, connection)
     return await definition.open_provider(
         configuration=connection,
-        credential=account.reveal_credential(runtime.keys),
+        credential=account.reveal_credential(runtime.keys) if borrowed is None else None,
+        runtime=borrowed,
     )
 
 
@@ -114,13 +116,27 @@ async def execution_connector(
         ),
     ):
         connection._endpoint_policy = policy
+    borrowed = _modal_runtime(runtime, account, connection)
     return definition.execution.execution_connector(
         definition.execution_environment(dict(target.recipe)),
         configuration=connection,
-        credential=account.reveal_credential(runtime.keys),
+        credential=account.reveal_credential(runtime.keys) if borrowed is None else None,
+        runtime=borrowed,
         environment_id=target.environment_id,
         state=target.state,
         session_recovery=session_recovery,
+    )
+
+
+def _modal_runtime(runtime: Runtime, account: ResolvedProvider, connection: object) -> ModalRuntime | None:
+    pool = getattr(runtime, "modal_transports", None)
+    if not isinstance(connection, ModalConnectionConfiguration) or pool is None:
+        return None
+    return ModalRuntime(
+        connection,
+        ModalCredential.model_validate(account.reveal_credential(runtime.keys)),
+        pool=pool,
+        account=(account.id, account.version, credential_version(account)),
     )
 
 

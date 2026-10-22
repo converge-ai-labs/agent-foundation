@@ -556,3 +556,195 @@ it("keeps execution failures and cancellation requests visible without interpret
     activitySummary([{ ...waiting, result: { status: "unavailable" } }]),
   ).toMatchObject({ issue: true, status: "Unavailable" });
 });
+
+it.each(["queued", "running"])(
+  "does not label a %s receipt as a finished command",
+  (status) => {
+    const tool = {
+      ...completed("shell_exec", { command: "pytest -q" }),
+      result: {
+        type: "tool_execution_receipt",
+        execution_id: "exec-one",
+        tool_name: "shell_exec",
+        status,
+      },
+    };
+    expect(activitySummary([tool])).toMatchObject({
+      title: "Shell · 1 operation",
+      status: "Execution handed off",
+    });
+    expect(
+      activitySummary([{ ...tool, result: { status: { phase: "running" } } }]),
+    ).toMatchObject({
+      title: "Shell · 1 operation",
+      status: "Running at last check",
+    });
+  },
+);
+
+it("renders saved Shell retrieval failures and output with exact receipt provenance", () => {
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_name: "shell_exec",
+          tool_call_id: "start",
+          value: { command: "pytest -q" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "shell_exec",
+          tool_call_id: "start",
+          value: {
+            type: "tool_execution_receipt",
+            tool_name: "shell_exec",
+            execution_id: "exec-one",
+            status: "running",
+          },
+        },
+        {
+          kind: "tool_call",
+          tool_name: "shell_wait",
+          tool_call_id: "wait",
+          value: { process_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "shell_wait",
+          tool_call_id: "wait",
+          value: { process_id: "exec-one", status: { phase: "running" } },
+        },
+        {
+          kind: "tool_call",
+          tool_name: "tool_execution_result",
+          tool_call_id: "result",
+          value: { execution_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "tool_execution_result",
+          tool_call_id: "result",
+          value: {
+            ok: true,
+            status: { phase: "exited", exit_code: 7 },
+            stderr: { text: "test failed", coverage: "partial" },
+          },
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const groups = savedToolGroups(entries);
+  expect(describeTool(groups.get(entries[0].parts[0])![1]).summary).toBe(
+    "exec-one · pytest -q",
+  );
+  const result = groups.get(entries[0].parts[4])![0];
+  expect(describeTool(result)).toMatchObject({
+    failed: true,
+    command: "pytest -q",
+    label: "Retrieve tool result",
+  });
+  render(<ToolActivity tools={[result]} />);
+  fireEvent.click(screen.getByRole("button", { name: /Tool executions/ }));
+  expect(screen.getByText("test failed")).toBeTruthy();
+  expect(screen.getByText(/Exit 7/)).toBeTruthy();
+  expect(screen.getByText(/Partial process output/)).toBeTruthy();
+  // A page-edge result with no visible receipt must remain generic.
+  const orphan = savedToolGroups([
+    { ...entries[0], parts: entries[0].parts.slice(4) },
+  ]).get(entries[0].parts[4])![0];
+  expect(describeTool(orphan)).toMatchObject({ shell: false, failed: false });
+});
+
+it.each([false, true])(
+  "uses later Shell observations instead of stale launch state (receipt: %s)",
+  (receipt) => {
+    const reference = receipt ? "exec-one" : "process-one";
+    const start: ToolView = {
+      ...completed("shell_exec", { command: "pytest -q" }),
+      result: receipt
+        ? {
+            type: "tool_execution_receipt",
+            execution_id: reference,
+            tool_name: "shell_exec",
+            status: "running",
+          }
+        : { process_id: reference, status: { phase: "running" } },
+    };
+    const wait: ToolView = {
+      ...completed("shell_wait", { process_id: reference }),
+      // Retained native results need not repeat the control reference.
+      result: { ok: true, status: { phase: "exited", exit_code: 0 } },
+    };
+    expect(activitySummary([start, wait])).toMatchObject({
+      title: "Ran 1 command",
+      status: "",
+      issue: false,
+    });
+    expect(
+      activitySummary([
+        start,
+        { ...wait, result: { status: { phase: "running" } } },
+      ]).status,
+    ).toBe("Running at last check");
+    // Another handle or child cannot settle the launch observation.
+    expect(
+      activitySummary([start, { ...wait, input: { process_id: "other" } }])
+        .status,
+    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    expect(
+      activitySummary([start, { ...wait, subagentRunId: "child" }]).status,
+    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    expect(
+      activitySummary([start, { ...wait, result: { ok: true } }]).status,
+    ).toBe(receipt ? "Execution handed off" : "Running at last check");
+    const failed = {
+      ...wait,
+      result: { status: { phase: "exited", exit_code: 7 } },
+    };
+    expect(activitySummary([start, failed])).toMatchObject({
+      issue: true,
+      status: "",
+    });
+    expect(describeTool(start).phase).toBe(
+      receipt ? "Execution handed off" : "Running at last check",
+    );
+  },
+);
+
+it("retains another active command after one Shell reference completes", () => {
+  const start = (id: string): ToolView => ({
+    ...completed("shell_exec", { command: id }),
+    id,
+    result: { process_id: id, status: { phase: "running" } },
+  });
+  const wait = (id: string): ToolView => ({
+    ...completed("shell_wait", { process_id: id }),
+    id: `wait-${id}`,
+    result: { status: { phase: "exited", exit_code: 0 } },
+  });
+  expect(
+    activitySummary([start("one"), start("two"), wait("one")]),
+  ).toMatchObject({
+    title: "Shell · 3 operations",
+    status: "Running at last check",
+  });
+  expect(
+    activitySummary([start("one"), start("two"), wait("one"), wait("two")]),
+  ).toMatchObject({ title: "Ran 2 commands", status: "" });
+});
+
+it("keeps successful foreground Shell completion distinct from an observation", () => {
+  const result = { ok: true, status: { phase: "exited", exit_code: 0 } };
+  expect(
+    describeTool({ ...completed("shell_exec", { command: "true" }), result })
+      .phase,
+  ).toBe("Result received");
+  expect(
+    describeTool({
+      ...completed("shell_wait", { process_id: "process-one" }),
+      result,
+    }).phase,
+  ).toBe("Exited at last check");
+});

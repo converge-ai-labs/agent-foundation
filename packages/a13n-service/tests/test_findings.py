@@ -341,7 +341,13 @@ async def test_analysis_credential_lists_no_traces_and_reads_only_selected_ones(
         assert "an analysis reads its selected traces by ID" in listed["body"]["error"]["message"]
         unselected = await call(http, service, "GET", "/traces/{trace_id}", trace_id="c" * 32)
         assert "outside the analysis selection" in unselected["body"]["error"]["message"]
-        selected = await call(http, service, "GET", "/traces/{trace_id}", trace_id=TRACE)
+        unselected_span = await call(
+            http, service, "GET", "/traces/{trace_id}/spans/{span_id}", trace_id="c" * 32, span_id="b" * 16
+        )
+        assert "outside the analysis selection" in unselected_span["body"]["error"]["message"]
+        selected = await call(
+            http, service, "GET", "/traces/{trace_id}/spans/{span_id}", trace_id=TRACE, span_id="b" * 16
+        )
         assert selected["status"] == 200, selected
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
     assert status["read_trace_ids"] == [TRACE]

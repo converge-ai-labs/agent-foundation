@@ -148,10 +148,12 @@ def test_modal_aliases_share_target_lock_and_resume_gets_new_lock():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("operation", ["management", "execution"])
-async def test_service_policy_denies_discovered_envd_before_reading_token(monkeypatch, operation):
+@pytest.mark.parametrize("pooled", [False, True])
+async def test_service_policy_denies_discovered_envd_before_reading_token(monkeypatch, operation, pooled):
     from a13n_harness.configuration import RunConfiguration
     from a13n_harness.providers.endpoint_policy import EndpointPolicy
     from a13n_harness.providers.environment.modal import http
+    from a13n_harness.providers.environment.modal.pool import TransportPool
     from a13n_harness.providers.environment.modal.shared import ModalReference
     from a13n_service.providers.environments.modal import MODAL
     from a13n_service.runs.environments import adapters
@@ -168,11 +170,15 @@ async def test_service_policy_denies_discovered_envd_before_reading_token(monkey
     configuration = RunConfiguration(allowed_hosts=frozenset({"allowed.example"}))
     runtime = SimpleNamespace(
         keys=None,
+        modal_transports=TransportPool() if pooled else None,
         endpoint_policy=EndpointPolicy(configuration=configuration),
         registry=SimpleNamespace(check_environment_endpoint=AsyncMock(), get=lambda *args: MODAL),
     )
     account = SimpleNamespace(
         type="modal",
+        id="provider-test",
+        version=1,
+        credential=None,
         config={"workspace": "test", "app_name": "test"},
         reveal_credential=lambda keys: {"token_id": "id", "token_secret": "secret"},
     )

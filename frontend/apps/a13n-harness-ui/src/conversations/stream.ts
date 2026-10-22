@@ -18,6 +18,7 @@ import {
 
 export type DisplayBlock = {
   id: string;
+  shellCommand?: string;
   toolCallId?: string;
   kind:
     "assistant" | "user" | "thinking" | "tool" | "activity" | "media" | "task";
@@ -482,7 +483,16 @@ export class FocusDisplay {
       type === "TOOL_CALL_END"
     ) {
       const block = this.blocks.get(key);
-      if (block) this.blocks.set(key, { ...block, done: true });
+      if (block)
+        this.blocks.set(key, {
+          ...block,
+          done: true,
+          shellCommand: this.processes.command(
+            scope ?? "",
+            block.name ?? "",
+            block.text,
+          ),
+        });
     } else if (type === "TOOL_CALL_START") {
       this.blocks.set(key, {
         id: key,
@@ -511,6 +521,11 @@ export class FocusDisplay {
       };
       this.blocks.set(key, {
         ...block,
+        shellCommand: this.processes.command(
+          scope ?? "",
+          block.name ?? "",
+          block.text,
+        ),
         result:
           typeof payload.content === "string" ? payload.content : undefined,
         resultParts: readContentParts(payload.content),
@@ -672,6 +687,14 @@ export class FocusDisplay {
       block.edit = content.applied_edit as AppliedEdit | undefined;
       block.imageUnavailable = content.tool_image_unavailable === true;
       block.provider = string(content.provider) || undefined;
+      if (!block.provider)
+        block.shellCommand = this.processes.command(
+          block.subagentRunId
+            ? `${this.runId}:${block.subagentRunId}`
+            : (this.runId ?? ""),
+          block.name,
+          block.text,
+        );
       if (this.runId && item.state !== "in_progress")
         this.processes.result(
           block.subagentRunId
@@ -723,6 +746,11 @@ export class FocusDisplay {
     const setBlock = (key: string, block: DisplayBlock) =>
       this.blocks.set(key, {
         ...block,
+        shellCommand: this.processes.command(
+          scope ?? "",
+          block.name ?? "",
+          block.text,
+        ),
         ...(subagentRunId ? { subagentRunId } : {}),
       });
     const value = object(event.value) ? event.value : {};

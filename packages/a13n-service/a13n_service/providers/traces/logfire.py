@@ -31,6 +31,10 @@ _COLUMNS = (
     " otel_status_code, otel_status_message, level_name(level) AS level, attributes, otel_resource_attributes,"
     " otel_scope_name, otel_scope_version, otel_events, otel_links"
 )
+_OVERVIEW_COLUMNS = (
+    "trace_id, span_id, parent_span_id, span_name, start_timestamp, end_timestamp,"
+    " otel_status_code, level_name(level) AS level, attributes"
+)
 _ORDER = "start_timestamp DESC, trace_id DESC, span_id DESC"
 _TRACE_ID = re.compile(r"^[0-9a-f]{32}$")
 _SPAN_ID = re.compile(r"^[0-9a-f]{16}$")
@@ -84,12 +88,15 @@ class Logfire:
             conditions.append("parent_span_id IS NULL")
         if query.trace_id is not None:
             conditions.append(f"trace_id = {_literal(query.trace_id)}")
+        if query.span_id is not None:
+            conditions.append(f"span_id = {_literal(query.span_id)}")
         if query.cursor is not None:
             conditions.append(_after(query.cursor))
         # One extra row tells whether another page follows.
         limit = query.limit + 1
         where = " AND ".join(conditions)
-        sql = f"SELECT {_COLUMNS} FROM records WHERE {where} ORDER BY {_ORDER} LIMIT {limit}"
+        columns = _COLUMNS if query.include_content else _OVERVIEW_COLUMNS
+        sql = f"SELECT {columns} FROM records WHERE {where} ORDER BY {_ORDER} LIMIT {limit}"
         body = {"sql": sql, "min_timestamp": start, "max_timestamp": end, "limit": limit}
         response = await read_json(
             self.type,
