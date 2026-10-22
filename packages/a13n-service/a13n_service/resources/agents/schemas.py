@@ -159,6 +159,7 @@ class PluginSelection(_Frozen):
 
 class ToolSearchGroup(_Frozen):
     description: str = Field(min_length=1, max_length=512)
+    capabilities: tuple[Literal["environment", "web"], ...] = ()
     connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
     plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
     platform: bool = False
@@ -175,6 +176,7 @@ class ToolSearch(ToolSearchConfiguration):
         for name, group in self.groups.items():
             validate_group(name, group.description)
             sources = [
+                *(("capability", source) for source in group.capabilities),
                 *(("connection", source) for source in group.connections),
                 *(("plugin", source) for source in group.plugins),
                 *([("platform", "platform")] if group.platform else []),

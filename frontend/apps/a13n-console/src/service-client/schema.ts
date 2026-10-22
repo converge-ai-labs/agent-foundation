@@ -5430,11 +5430,6 @@ export interface components {
     ConnectionSelection: {
       /** Connection Id */
       connection_id: string;
-      /**
-       * Defer Loading
-       * @default false
-       */
-      defer_loading?: boolean;
       /** @default inherit */
       permission?: components["schemas"]["ToolPermissionSetting"];
       /** Permissions */
@@ -8409,19 +8404,6 @@ export interface components {
       /** Working Directory */
       working_directory: string | null;
     };
-    /**
-     * NativeToolSearchConfig
-     * @description Provider-native discovery; omitted strategy uses the provider default.
-     */
-    NativeToolSearchConfig: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      mode: "native";
-      /** Strategy */
-      strategy?: ("bm25" | "regex") | null;
-    };
     /** NetworkInterfaceMetrics */
     NetworkInterfaceMetrics: {
       /** Identity */
@@ -9306,42 +9288,6 @@ export interface components {
       };
       /** Name */
       name?: string | null;
-    };
-    /**
-     * ProxyToolSearchConfig
-     * @description Names and bounded discovery settings for one Agent's proxy surface.
-     */
-    ProxyToolSearchConfig: {
-      /**
-       * Call Name
-       * @default call_tool
-       */
-      call_name?: string;
-      /**
-       * Describe Name
-       * @default describe_tool
-       */
-      describe_name?: string;
-      /**
-       * Max Results
-       * @default 10
-       */
-      max_results?: number;
-      /**
-       * Max Search Bytes
-       * @default 32768
-       */
-      max_search_bytes?: number;
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      mode: "proxy";
-      /**
-       * Search Name
-       * @default discover_tools
-       */
-      search_name?: string;
     };
     /** Query */
     Query: {
@@ -11284,11 +11230,60 @@ export interface components {
         [key: string]: components["schemas"]["ToolSearchGroup"];
       };
     };
-    ToolSearchConfig:
-      | components["schemas"]["ProxyToolSearchConfig"]
-      | components["schemas"]["NativeToolSearchConfig"];
+    /**
+     * ProxyToolSearchConfig
+     * @description Names and bounded discovery settings for one Agent's proxy surface.
+     */
+    ToolSearchConfig: {
+      /**
+       * Call Name
+       * @default call_tool
+       */
+      call_name?: string;
+      /**
+       * Describe Name
+       * @default describe_tool
+       */
+      describe_name?: string;
+      /**
+       * Groups Name
+       * @default list_tool_groups
+       */
+      groups_name?: string;
+      /**
+       * List Name
+       * @default list_tools
+       */
+      list_name?: string;
+      /**
+       * Max Results
+       * @default 10
+       */
+      max_results?: number;
+      /**
+       * Max Search Bytes
+       * @default 32768
+       */
+      max_search_bytes?: number;
+      /**
+       * Mode
+       * @default proxy
+       * @constant
+       */
+      mode?: "proxy";
+      /**
+       * Search Name
+       * @default discover_tools
+       */
+      search_name?: string;
+    };
     /** ToolSearchGroup */
     ToolSearchGroup: {
+      /**
+       * Capabilities
+       * @default []
+       */
+      capabilities?: ("environment" | "web")[];
       /**
        * Connections
        * @default []

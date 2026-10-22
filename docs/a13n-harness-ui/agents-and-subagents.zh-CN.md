@@ -198,13 +198,15 @@ tool_search:
     search_name: discover_tools
     describe_name: describe_tool
     call_name: call_tool
+    list_name: list_tools
+    groups_name: list_tool_groups
     max_results: 10
     max_search_bytes: 32768
 ```
 
-`config.mode: proxy` 为默认模式，使用 Harness 的发现、详情和调用工具。发现保留所有关键词候选，精确名称命中优先排序，默认返回摘要；仅当整个候选集只有一个精确名称命中且定义较小时自动展开；详情查询读取所选工具的完整 schema 和指令。要使用原生发现和直接本地调用，将 `config` 替换为 `{mode: native, strategy: bm25}`。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。原生模式不接受代理控制工具名称和限制；代理模式不接受原生策略设置。两种模式均保留分组工具名称，并在本地执行。
+`config.mode` 可省略或设为 `proxy`。模型通过固定的 `discover_tools`、`describe_tool`、`call_tool`、`list_tools` 和 `list_tool_groups` 使用分组工具。`list_tools(detail="full")` 配合 `next_offset` 可分页读取完整目录；发现和列表不会把成员 schema 加入后续模型请求。旧 `mode: native` 配置应改为 `proxy` 并删除 `strategy`。
 
-使用原生模式时，选择支持原生工具搜索的 Model。不支持的 Model 会在发送模型请求前报错，不会回退。执行细节见[原生工具搜索](../a13n-harness/tool-search.md#select-native-tool-search)。
+分组的 `capabilities` 可选择 Agent 已启用的本地 Capability，例如 `capabilities: [dynamic_environment]`。这些来源与 MCP 和插件共用代理及原执行路径。详情见[固定代理](../a13n-harness/tool-search.md#use-the-fixed-proxy)。
 
 `config` 可选。组名以字母开头，最多 32 个字母、数字、下划线或连字符，不得包含 `__`。描述不得为空，最多 512 字符。选择确切资源 ID，同一插件的多个实例需使用不同 ID。一个来源只能属于一组。同组不同来源必须有不同工具名；冲突会失败，不会编造别名。
 

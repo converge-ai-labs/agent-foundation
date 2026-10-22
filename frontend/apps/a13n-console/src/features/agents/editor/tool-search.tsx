@@ -38,6 +38,12 @@ export function ToolSearchSection({
       ),
   );
   const sources = [
+    ...(["environment", "web"] as const).map((id) => ({
+      kind: "capabilities" as const,
+      id,
+      label: id === "environment" ? t("Environment tools") : t("Web tools"),
+      available: true,
+    })),
     ...draft.connections.map(({ connection_id }) => {
       const connection = choices.data?.connections.find(
         (item) => item.id === connection_id,
@@ -73,7 +79,9 @@ export function ToolSearchSection({
   function selected(group: SearchGroup, source: (typeof sources)[number]) {
     return source.kind === "platform"
       ? group.platform === true
-      : group[source.kind]?.includes(source.id) === true;
+      : (group[source.kind] as readonly string[] | undefined)?.includes(
+          source.id,
+        ) === true;
   }
   return (
     <Section
@@ -91,7 +99,6 @@ export function ToolSearchSection({
           options={[
             { value: "direct", label: t("Source defaults") },
             { value: "proxy", label: t("Grouped proxy search") },
-            { value: "native", label: t("Native tool search") },
           ]}
           onValueChange={(mode) =>
             draft.setToolSearch((current) => ({
@@ -100,37 +107,11 @@ export function ToolSearchSection({
             }))
           }
           description={t(
-            value.mode === "native"
-              ? "Requires a model with native tool search. Discovered tools run through the Service's existing permissions and connections."
-              : value.mode === "proxy"
-                ? "Harness provides grouped search and invocation. Ungrouped sources keep their own loading settings."
-                : "Each source keeps its own loading settings.",
+            value.mode === "proxy"
+              ? "Discover and list selected tools, then execute through a stable proxy. Other tools remain directly callable."
+              : "Tools are directly callable by default.",
           )}
         />
-        {value.mode === "native" && (
-          <ChoiceField
-            label={t("Native search strategy")}
-            readOnly={readOnly}
-            value={value.strategy ?? "default"}
-            options={[
-              { value: "default", label: t("Provider default") },
-              { value: "bm25", label: "BM25" },
-              { value: "regex", label: t("Regex") },
-            ]}
-            onValueChange={(strategy) =>
-              draft.setToolSearch((current) => ({
-                ...current,
-                strategy:
-                  strategy === "default"
-                    ? undefined
-                    : (strategy as "bm25" | "regex"),
-              }))
-            }
-            description={t(
-              "Named strategies require provider support. Leave the provider default selected for automatic strategy selection.",
-            )}
-          />
-        )}
         {value.mode !== "direct" && (
           <>
             {groups.map((group, index) => (

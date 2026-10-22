@@ -72,7 +72,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
 | `toolsets`                        | 内置工具集及各工具的启用状态、配置和权限。参阅[工具与连接](tools.md#built-in-toolsets)。                                                                                      |
 | `skills`                          | Skill 及其固定修订版本，`[{skill_id, revision_id}]`。参阅 [Skill](skills.md)。                                                                                                |
-| `tool_search`                     | 为已选连接、插件和平台工具配置分组代理搜索或原生工具搜索。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                               |
+| `tool_search`                     | 为已选本地能力、连接、插件和平台工具配置固定代理发现。参阅[分组工具发现](tools.md#grouped-tool-discovery)。                                                                   |
 | `connection_tools`                | 连接及其工具。参阅[在 agent 中使用连接](tools.md#use-a-connection-in-an-agent)。                                                                                              |
 | `client_tools`                    | 应用执行的工具；参阅[客户端工具](#client-tools-and-questions)。                                                                                                               |
 | `user_questions`                  | 提供 `ask_user_question` 工具。                                                                                                                                               |

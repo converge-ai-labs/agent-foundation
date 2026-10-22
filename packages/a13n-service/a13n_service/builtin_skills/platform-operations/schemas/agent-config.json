@@ -243,11 +243,6 @@
           "title": "Connection Id",
           "type": "string"
         },
-        "defer_loading": {
-          "default": false,
-          "title": "Defer Loading",
-          "type": "boolean"
-        },
         "permission": {
           "$ref": "#/$defs/ToolPermissionSetting",
           "default": "inherit"
@@ -428,39 +423,6 @@
       "title": "MemoryMount",
       "type": "object"
     },
-    "NativeToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Provider-native discovery; omitted strategy uses the provider default.",
-      "properties": {
-        "mode": {
-          "const": "native",
-          "default": "native",
-          "title": "Mode",
-          "type": "string"
-        },
-        "strategy": {
-          "anyOf": [
-            {
-              "enum": [
-                "bm25",
-                "regex"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Strategy"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "NativeToolSearchConfig",
-      "type": "object"
-    },
     "OutputSpec": {
       "additionalProperties": false,
       "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
@@ -629,48 +591,6 @@
         "plugin_key"
       ],
       "title": "PluginSelection",
-      "type": "object"
-    },
-    "ProxyToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
-      "properties": {
-        "call_name": {
-          "default": "call_tool",
-          "title": "Call Name",
-          "type": "string"
-        },
-        "describe_name": {
-          "default": "describe_tool",
-          "title": "Describe Name",
-          "type": "string"
-        },
-        "max_results": {
-          "default": 10,
-          "title": "Max Results",
-          "type": "integer"
-        },
-        "max_search_bytes": {
-          "default": 32768,
-          "title": "Max Search Bytes",
-          "type": "integer"
-        },
-        "mode": {
-          "const": "proxy",
-          "default": "proxy",
-          "title": "Mode",
-          "type": "string"
-        },
-        "search_name": {
-          "default": "discover_tools",
-          "title": "Search Name",
-          "type": "string"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "ProxyToolSearchConfig",
       "type": "object"
     },
     "RetryConfig": {
@@ -942,25 +862,69 @@
       "type": "object"
     },
     "ToolSearchConfig": {
-      "discriminator": {
-        "mapping": {
-          "native": "#/$defs/NativeToolSearchConfig",
-          "proxy": "#/$defs/ProxyToolSearchConfig"
+      "additionalProperties": false,
+      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
+      "properties": {
+        "call_name": {
+          "default": "call_tool",
+          "title": "Call Name",
+          "type": "string"
         },
-        "propertyName": "mode"
-      },
-      "oneOf": [
-        {
-          "$ref": "#/$defs/ProxyToolSearchConfig"
+        "describe_name": {
+          "default": "describe_tool",
+          "title": "Describe Name",
+          "type": "string"
         },
-        {
-          "$ref": "#/$defs/NativeToolSearchConfig"
+        "groups_name": {
+          "default": "list_tool_groups",
+          "title": "Groups Name",
+          "type": "string"
+        },
+        "list_name": {
+          "default": "list_tools",
+          "title": "List Name",
+          "type": "string"
+        },
+        "max_results": {
+          "default": 10,
+          "title": "Max Results",
+          "type": "integer"
+        },
+        "max_search_bytes": {
+          "default": 32768,
+          "title": "Max Search Bytes",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "proxy",
+          "default": "proxy",
+          "title": "Mode",
+          "type": "string"
+        },
+        "search_name": {
+          "default": "discover_tools",
+          "title": "Search Name",
+          "type": "string"
         }
-      ]
+      },
+      "title": "ProxyToolSearchConfig",
+      "type": "object"
     },
     "ToolSearchGroup": {
       "additionalProperties": false,
       "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "enum": [
+              "environment",
+              "web"
+            ],
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
         "connections": {
           "default": [],
           "items": {

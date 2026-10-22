@@ -60,9 +60,8 @@ async def _http_mcp(server: FastMCP):
                 await task
 
 
-@pytest.mark.parametrize("native_search", [False, True])
 async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_search: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     server = FastMCP("ui-proxy")
     calls: list[str] = []
@@ -109,7 +108,7 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
     agent = yaml.safe_load(agent_path.read_text())
     agent.update(subagents=[], capabilities=[], tools=["knowledge__lookup", "knowledge__remember", "status"])
     agent["tool_search"] = {
-        "config": {"mode": "native" if native_search else "proxy"},
+        "config": {"mode": "proxy"},
         "groups": {
             "knowledge": {
                 "description": "Documents and memory",
@@ -148,24 +147,20 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
 
             async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
                 nonlocal step
-                assert {tool.name for tool in info.function_tools} == (
-                    {"status", "search_tools", "knowledge__lookup", "knowledge__remember"}
-                    if native_search
-                    else {"status", "discover_tools", "describe_tool", "call_tool"}
-                )
+                assert {tool.name for tool in info.function_tools} == {
+                    "status",
+                    "discover_tools",
+                    "describe_tool",
+                    "call_tool",
+                    "list_tools",
+                    "list_tool_groups",
+                }
                 commands = [
                     ("discover_tools", {"query": "", "group": "knowledge"}),
                     ("call_tool", {"group": "knowledge", "tool": "lookup", "arguments": {}}),
                     ("call_tool", {"group": "knowledge", "tool": "remember", "arguments": {}}),
                     ("status", {}),
                 ]
-                if native_search:
-                    commands = [
-                        ("search_tools", {"queries": ["lookup remember"]}),
-                        ("knowledge__lookup", {}),
-                        ("knowledge__remember", {}),
-                        ("status", {}),
-                    ]
                 current = step
                 step += 1
                 if current < len(commands):
@@ -195,8 +190,7 @@ async def test_yaml_to_run_mixed_proxy_uses_real_mcp_and_native_plugin_lifecycle
             if isinstance(part, ToolReturnPart)
         ]
         assert returns[1:] == ["document", "memory", "ready"]
-        if not native_search:
-            assert {item["tool"] for item in returns[0]["tools"]} == {"lookup", "remember"}
+        assert {item["tool"] for item in returns[0]["tools"]} == {"lookup", "remember"}
 
 
 @pytest.mark.parametrize(
@@ -216,7 +210,7 @@ async def test_exact_target_allowlist_never_grants_all_group_members(names: froz
 
     async def model(messages, info):
         assert {tool.name for tool in info.function_tools} == (
-            {"discover_tools", "describe_tool", "call_tool"} if visible else set()
+            {"discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"} if visible else set()
         )
         yield "done"
 
@@ -282,7 +276,7 @@ async def test_configuration_mutation_reads_back_static_active_dormant_direct_so
     saved_agent = result.configuration.agents["agent-assistant"]
     preview = agent_tool_search_view(result.configuration, saved_agent)
     states = {item.resource_id: item.presentation for item in preview.sources}
-    assert states == {"mcp-docs": "dormant", "plugin-memory": "direct"}
+    assert states == {"mcp-docs": "dormant", "plugin-memory": "direct", "dynamic_environment": "direct"}
     assert saved_agent.tool_search is not None
     assert saved_agent.instructions == "Root authored instructions."
 
@@ -326,3 +320,73 @@ async def test_inactive_plan_preserves_direct_tool_matching_control_name(tmp_pat
 
     result = await reconstructed.executable.run("test", bindings=RunBindings.embedded(model_resolver=resolve))
     assert result.output_or_raise() == "done"
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_local_capability_group_uses_selected_source_without_activation(tmp_path: Path, enabled: bool) -> None:
+    path = _write_source(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent.update(
+        subagents=[],
+        mcp_servers=[],
+        harness_plugins=[],
+        tools=None,
+        capabilities=[{"capability": "working_state"}] if enabled else [],
+    )
+    agent["tool_search"] = {
+        "groups": {"state": {"description": "Notes and tasks", "capabilities": ["working_state" if enabled else "web"]}}
+    }
+    agent_path.write_text(yaml.safe_dump(agent))
+    path.write_text(
+        path.read_text()
+        + "tools: {enable_codeact: false, enable_ask_user_question: false, execution: {mode: inline}}\n"
+    )
+    configuration = await load_harness_ui_configuration(path)
+    preview = agent_tool_search_view(configuration, configuration.agents["agent-assistant"])
+    [source] = [item for item in preview.sources if item.resource_id == ("working_state" if enabled else "web")]
+    assert source.kind == "capability"
+    assert source.presentation == ("active" if enabled else "dormant")
+    catalog = HarnessUiExtensionCatalog(host_plugin_factories=(_MemoryFactory(),))
+    composition = AgentCompositionResolver(catalog).resolve_run(
+        configuration, replace(_selection(), mcp_server_ids=(), harness_plugin_ids=())
+    )
+    reconstructed = AgentReconstructor(catalog, configuration_root=tmp_path).reconstruct(
+        composition, subagent_operator=None
+    )
+    step = 0
+
+    async def model(messages, info):
+        nonlocal step
+        names = {tool.name for tool in info.function_tools}
+        assert ("call_tool" in names) is enabled
+        assert ("note_write" not in names) is enabled
+        if enabled and step == 0:
+            step += 1
+            yield {
+                0: DeltaToolCall(
+                    name="call_tool",
+                    json_args=json.dumps(
+                        {"group": "state", "tool": "note_write", "arguments": {"key": "topic", "value": "saved"}}
+                    ),
+                    tool_call_id="write",
+                )
+            }
+        else:
+            yield "done"
+
+    async def resolve(ctx, model_id):
+        return FunctionModel(stream_function=model)
+
+    result = await reconstructed.executable.run("test", bindings=RunBindings.embedded(model_resolver=resolve))
+    assert result.output_or_raise() == "done"
+    if enabled:
+        returns = [
+            part
+            for message in result.all_messages()
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        assert len(returns) == 1
+        assert "error" not in str(returns[0].content).lower()

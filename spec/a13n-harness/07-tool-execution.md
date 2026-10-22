@@ -160,11 +160,7 @@ When installed, permission declaration overrides consume the complete candidate 
 
 ### Grouped ToolSearch Discovery
 
-Grouped tool discovery is configured through `ToolSearchPlan.config` and `ToolSearchCapability.config`. `ProxyToolSearchConfig(mode="proxy")` selects the local search/call surface described below and is the default. `NativeToolSearchConfig(mode="native", strategy=None)` selects upstream `ToolSearch`: selected local tools keep their `group__local_name` names, use `defer_loading=True`, and are called directly after discovery. Native mode installs no proxy controls or proxy membership metadata. Source Toolset instructions retain upstream behavior.
-
-The configuration is discriminated by `mode`. Native `strategy` is omitted or null for the provider default, or explicitly `bm25` or `regex`. Harness forwards the chosen strategy to upstream `ToolSearch`; provider adapters validate strategy support. Proxy control names and result limits belong only to proxy mode; a native strategy belongs only to native mode. Branch-inappropriate settings fail validation. Proxy search uses its fixed keyword algorithm and exposes no strategy selector.
-
-Native mode requires native tool-search support from the current model. Unsupported models fail with `native_tool_search_unsupported` before a model request; native search is required in the provider request and its local fallback is omitted. There is no automatic switch to ToolSearch. Provider adapters own discovery wire formats and history-based discovery state. Both branches retain local execution, source binding, credentials, permissions, and mandatory surface resolution. Native discovery does not select provider-side MCP execution. Direct discovered calls use normal tool-call usage and deferred-feedback semantics, rather than the proxy envelope's nested-call semantics.
+Grouped tool discovery uses one fixed local proxy surface, configured through `ToolSearchPlan.config` or `ToolSearchCapability.config`. `ToolSearchConfig` aliases `ProxyToolSearchConfig`; `mode` may be omitted or set to `proxy`. Discovered tools always execute through `call_tool` and never enter the model-facing schema. Control schemas, descriptions, and generated guidance contain no inventory-dependent group enum or directory text. This keeps the proxy surface stable as members change and supports model prompt caching.
 
 ToolSearch is an optional code-first discovery and call presentation for large collections of locally executable tools. It changes what the model sees, not who executes tools. `ToolSearchCapability(groups=..., config=...)` is the concrete-source installation entry: its mapping assigns each group name to a passive `ToolSearchGroup(source=..., description=...)` value. A source is a concrete native Toolset or Capability instance. The Capability assembles selected sources and one search/call surface through native composition; the descriptors are not independently installed Capabilities. Ungrouped tools remain directly exposed.
 
@@ -178,19 +174,23 @@ Membership is passive presentation metadata. The current prepared `ToolManager` 
 
 Grouped sources retain native Capability Agent/run binding before their local Toolset contributions are read. In particular, a wrapped `ContextualMCP` resolves its fresh headers and upstream replacement once per logical Run under the [MCP context-header contract](04-capability-model.md#mcp-context-headers). Grouping never captures a pre-binding authenticated client or changes native transport ownership.
 
-#### Configuration and Dynamic Schemas
+#### Configuration and Stable Schemas
 
 `ProxyToolSearchConfig` is an immutable code-first value with these defaults and bounds:
 
-| Field              | Default          | Contract                        |
-| ------------------ | ---------------- | ------------------------------- |
-| `search_name`      | `discover_tools` | 1-64 character tool identifier  |
-| `describe_name`    | `describe_tool`  | Distinct control tool name      |
-| `call_name`        | `call_tool`      | Distinct control tool name      |
-| `max_results`      | `10`             | Integer from 1 through 100      |
-| `max_search_bytes` | `32768`          | Integer from 1024 through 32768 |
+| Field              | Default            | Contract                        |
+| ------------------ | ------------------ | ------------------------------- |
+| `search_name`      | `discover_tools`   | 1-64 character tool identifier  |
+| `describe_name`    | `describe_tool`    | Distinct control tool name      |
+| `call_name`        | `call_tool`        | Distinct control tool name      |
+| `list_name`        | `list_tools`       | Distinct control tool name      |
+| `groups_name`      | `list_tool_groups` | Distinct control tool name      |
+| `max_results`      | `10`               | Integer from 1 through 100      |
+| `max_search_bytes` | `32768`            | Integer from 1024 through 32768 |
 
-The three distinct control names match `[A-Za-z_][A-Za-z0-9_-]{0,63}`. Their descriptions list only currently available group names and descriptions, not every member schema. All controls and their generated Toolset instructions are absent when no grouped members survive preparation. The default names are `discover_tools`, `describe_tool`, and `call_tool`; old default names have no compatibility aliases. These names do not conflict with upstream native `search_tools`. The current group enum is prepared anew for each step; configuration names are reflected consistently in schemas, descriptions, and instructions.
+The five distinct control names match `[A-Za-z_][A-Za-z0-9_-]{0,63}`. All controls and their generated Toolset instructions are absent when no grouped members survive preparation. Their schemas and descriptions remain independent of group names, descriptions, and member counts. Configured names are reflected consistently in descriptions and instructions. The default names coexist with upstream `search_tools` for separate ungrouped tools.
+
+`list_tool_groups(limit, offset)` returns current groups in identifier order with `group`, `description`, and available member `count`, plus `total` and nullable `next_offset`. `list_tools(group?, detail="summary"|"full", limit?, offset=0)` enumerates every available member in canonical-name order without relevance filtering, using the same projection and budgets as discovery. Following `next_offset` to null retrieves the complete current list, subject to directory changes and explicit oversized-entry errors. Listing does not promote member schemas into subsequent model requests.
 
 Discovery accepts `query` (at most 2048 characters), optional `group`, `detail="auto"|"summary"|"full"` (default `auto`), optional positive `limit` bounded by `max_results`, and nonnegative `offset`. It returns the actual `detail` (`summary` or `full`), `tools`, `total`, and nullable `next_offset`. A page has one representation; `total` counts all matches, not just the page. Omitted or null `limit` uses `min(10, max_results)` for summaries and `min(5, max_results)` for full definitions.
 

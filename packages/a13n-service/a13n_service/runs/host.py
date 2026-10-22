@@ -90,12 +90,7 @@ async def resolve_host(
                 session,
                 principal,
                 scope,
-                tuple(
-                    selection.model_copy(update={"defer_loading": False})
-                    if config.tool_search is not None and selection.connection_id in config.tool_search.connection_ids
-                    else selection
-                    for selection in config.connection_tools
-                ),
+                config.connection_tools,
                 run.mcp_headers,
                 authority=authority,
             ),

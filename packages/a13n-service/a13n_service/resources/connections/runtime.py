@@ -46,8 +46,6 @@ class SelectedConnection:
     tools: tuple[str, ...] | None
     # The run's frozen caller headers for this connection; empty for connectors.
     caller_headers: Mapping[str, str]
-    # MCP only: the model finds the tools through tool search instead of seeing every definition upfront.
-    defer_loading: bool
 
 
 async def resolve_connections(
@@ -78,7 +76,7 @@ async def resolve_connections(
             tools = exposed
         elif exposed is not None:
             tools = tuple(name for name in tools if name in exposed)
-        selected.append(SelectedConnection(connection, tools, headers, selection.defer_loading))
+        selected.append(SelectedConnection(connection, tools, headers))
     return tuple(selected)
 
 
@@ -129,7 +127,6 @@ async def open_connections(
                         connection.id,
                         client_source(connection, selected.caller_headers),
                         tools=selected.tools,
-                        defer_loading=selected.defer_loading,
                         check=checked,
                     )
                 )

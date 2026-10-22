@@ -109,7 +109,6 @@ if TYPE_CHECKING:
         ToolRiskLevel,
     )
     from .tool_search import (
-        NativeToolSearchConfig,
         ProxyToolSearchConfig,
         ToolSearchCapability,
         ToolSearchGroup,
@@ -264,7 +263,6 @@ _EXPORTS = {
     "a13n_harness.capabilities.tool_search": (
         "ToolSearchCapability",
         "ProxyToolSearchConfig",
-        "NativeToolSearchConfig",
         "ToolSearchGroup",
         "ToolSearchPlan",
         "ToolSearchSelection",

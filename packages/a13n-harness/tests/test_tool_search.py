@@ -10,7 +10,6 @@ import pytest
 from a13n_harness import AbstractHarnessPlugin, AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
-    NativeToolSearchConfig,
     ProxyToolSearchConfig,
     ToolSearchCapability,
     ToolSearchGroup,
@@ -119,9 +118,9 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
 
     def inspect(_step: int, info: AgentInfo) -> None:
         definitions = {tool.name: tool for tool in info.function_tools}
-        assert set(definitions) == {"discover_tools", "describe_tool", "call_tool"}
-        assert definitions["call_tool"].parameters_json_schema["properties"]["group"]["enum"] == ["crm"]
-        assert "crm operations" in definitions["discover_tools"].description
+        assert set(definitions) == {"discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"}
+        assert "enum" not in definitions["call_tool"].parameters_json_schema["properties"]["group"]
+        assert "crm operations" not in definitions["discover_tools"].description
         assert "Double a customer" not in definitions["discover_tools"].description
         assert "Grouped tool discovery" in info.instructions
         assert "Use exact customer IDs." not in info.instructions
@@ -1237,7 +1236,13 @@ async def test_grouped_custom_container_retains_native_binding_hooks_and_state(u
 
     async def model(messages, info):
         assert "Container-owned instructions." in info.instructions
-        assert {tool.name for tool in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -1272,7 +1277,13 @@ async def test_build_plan_survives_model_recovery_without_replaying_completed_ta
     async def model(messages, info):
         nonlocal requests
         requests += 1
-        assert {tool.name for tool in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
         if requests == 1:
             yield {
                 0: DeltaToolCall(
@@ -1352,221 +1363,6 @@ async def test_proxy_and_codeact_use_capability_approval_override(codeact: bool,
     assert effects == ([False] if mode == "allow" else [])
 
 
-@pytest.mark.parametrize("use_plan", [False, True])
-async def test_native_search_requires_support_without_local_fallback(use_plan: bool) -> None:
-    def hidden() -> str:
-        raise AssertionError("unsupported model must never execute tools")
-
-    source = Capability(toolsets=[FunctionToolset([hidden])])
-    plan = ToolSearchPlan(
-        groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))}, config=NativeToolSearchConfig()
-    )
-    capability = ToolSearchCapability(
-        groups={"crm": ToolSearchGroup(source, "Customer data")}, config=NativeToolSearchConfig()
-    )
-    requests = []
-    from a13n_harness.errors import DefinitionError
-
-    with pytest.raises(DefinitionError, match="native tool search") as exc:
-        await _run(
-            (source,) if use_plan else (capability,),
-            [],
-            tool_search=plan if use_plan else None,
-            inspect=lambda step, info: requests.append(step),
-            profile=ModelProfile(supported_native_tools=frozenset()),
-        )
-    assert exc.value.code == "native_tool_search_unsupported"
-    assert requests == []
-
-
-async def test_native_search_preserves_group_names_and_direct_local_dispatch() -> None:
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    calls = []
-
-    def lookup(ctx: RunContext, value: int) -> int:
-        calls.append(ctx.tool_name)
-        return value * 2
-
-    def direct() -> str:
-        return "direct"
-
-    source = Capability(toolsets=[FunctionToolset([lookup])])
-
-    def inspect(step: int, info: AgentInfo) -> None:
-        tools = {tool.name: tool for tool in info.function_tools}
-        assert "discover_tools" not in tools
-        assert "call_tool" not in tools
-        assert tools["crm__lookup"].defer_loading
-        assert tools["crm__lookup"].with_native == "tool_search"
-        assert not tools["direct"].defer_loading
-
-    result, returns = await _run(
-        (source, Capability(tools=[direct]), ToolSearch(strategy="keywords")),
-        [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {"value": 4})],
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
-            config=NativeToolSearchConfig(),
-        ),
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-        inspect=inspect,
-    )
-    assert result.output_or_raise() == "done"
-    assert calls == ["lookup"]
-    assert returns[-1].content == 8
-
-
-@pytest.mark.parametrize("provider", ["anthropic", "openai-responses", "openai-chat"])
-async def test_native_server_search_profile_and_history_restore(provider: str) -> None:
-    from a13n_harness.errors import DefinitionError
-    from pydantic_ai.messages import NativeToolSearchCallPart, NativeToolSearchReturnPart
-    from pydantic_ai.models.anthropic import AnthropicModel
-    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-    from pydantic_ai.providers.anthropic import AnthropicProvider
-    from pydantic_ai.providers.openai import OpenAIProvider
-
-    if provider == "anthropic":
-        adapter = AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(api_key="test"))
-    elif provider == "openai-responses":
-        adapter = OpenAIResponsesModel("gpt-5.4", provider=OpenAIProvider(api_key="test"))
-    else:
-        adapter = OpenAIChatModel("gpt-5.4", provider=OpenAIProvider(api_key="test"))
-    effects = []
-    phase = "discover"
-    step = 0
-
-    def lookup() -> str:
-        effects.append("called")
-        return "found"
-
-    async def model(messages, info):
-        nonlocal step
-        parameters = info.model_request_parameters
-        _, prepared = adapter.prepare_request(None, parameters)
-        assert {tool.name for tool in prepared.function_tools} == {"crm__lookup"}
-        assert len(prepared.native_tools) == 1
-        assert prepared.native_tools[0].kind == "tool_search"
-        assert prepared.native_tools[0].optional is False
-        if phase == "discover":
-            yield {0: NativeToolSearchCallPart(args={"queries": ["lookup"]}, tool_call_id="search-1")}
-            yield {
-                1: NativeToolSearchReturnPart(
-                    content={"discovered_tools": [{"name": "crm__lookup"}]}, tool_call_id="search-1"
-                )
-            }
-            yield "discovered"
-        elif step == 0:
-            step += 1
-            yield {0: DeltaToolCall(name="crm__lookup", json_args="{}", tool_call_id="lookup-1")}
-        else:
-            yield "done"
-
-    source = Capability(tools=[lookup])
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=model, profile=adapter.profile),
-        capabilities=(source,),
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
-            config=NativeToolSearchConfig(),
-        ),
-    )
-    if provider == "openai-chat":
-        with pytest.raises(DefinitionError, match="native tool search"):
-            await executable.run("find", bindings=RunBindings.embedded())
-        assert effects == []
-        return
-    discovered = await executable.run("find", bindings=RunBindings.embedded())
-    assert discovered.output_or_raise() == "discovered"
-    state = type(discovered.state).model_validate_json(discovered.state.model_dump_json())
-    phase = "invoke"
-    resumed = await executable.run("invoke", previous_state=state, bindings=RunBindings.embedded())
-    assert resumed.output_or_raise() == "done"
-    assert effects == ["called"]
-    assert _returns(resumed.all_messages())[-1].content == "found"
-
-
-@pytest.mark.parametrize("mode", ["deny", "ask"])
-async def test_native_search_preserves_named_source_permission_identity(mode: str) -> None:
-    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    effects = []
-
-    def forbidden() -> str:
-        effects.append(True)
-        return "must not run"
-
-    source = Capability(toolsets=[FunctionToolset([forbidden], id="secure")])
-    result, returns = await _run(
-        (
-            source,
-            ToolSearch(strategy="keywords"),
-            ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/secure/forbidden": mode})),
-        ),
-        [("search_tools", {"queries": ["forbidden"]}), ("crm__forbidden", {})],
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Secure tools", capabilities=(source,))}, config=NativeToolSearchConfig()
-        ),
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-    )
-    assert effects == []
-    if mode == "ask":
-        assert result.status == "suspended"
-        assert result.deferred is not None
-    else:
-        assert result.output_or_raise() == "done"
-        assert returns[-1].outcome == "failed"
-        assert returns[-1].content == "Tool invocation is denied by its permission configuration."
-
-
-@pytest.mark.parametrize("discovered", [False, True])
-@pytest.mark.parametrize("eligible", [False, True])
-async def test_codeact_native_search_requires_discovery_and_owner_policy(discovered: bool, eligible: bool) -> None:
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    effects = []
-
-    def lookup() -> str:
-        effects.append(True)
-        return "found"
-
-    source = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([lookup]), CodeActToolPolicy(default=eligible))])
-
-    def inspect(step: int, info: AgentInfo) -> None:
-        definitions = {tool.name: tool for tool in info.function_tools}
-        assert definitions["crm__lookup"].defer_loading
-        for runner in ("run_code", "run_program"):
-            assert ("crm__lookup" in (definitions[runner].description or "")) is (discovered and eligible and step > 0)
-
-    calls = [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {})] if discovered else []
-    calls.append(("run_code", {"code": "await crm__lookup()"}))
-    result, returns = await _run(
-        (source, CodeActCapability(), ToolSearch(strategy="keywords")),
-        calls,
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
-            config=NativeToolSearchConfig(),
-        ),
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-        inspect=inspect,
-    )
-    assert result.output_or_raise() == "done"
-    assert effects == [True] * (int(discovered) + int(discovered and eligible))
-    assert returns[-1].tool_name == "run_code"
-    if discovered and eligible:
-        assert returns[-1].content == "found"
-    else:
-        assert returns[-1].outcome == "failed"
-        failure = json.loads(returns[-1].content)
-        assert failure["codeact"]["tool_call_count"] == 0
-        assert failure["codeact"]["side_effect_uncertain"] is False
-    if discovered:
-        assert returns[-2].tool_name == "crm__lookup"
-        assert returns[-2].content == "found"
-
-
 @pytest.mark.parametrize("resolution", ["approve", "deny", "permission-deny"])
 async def test_discovered_codeact_tool_preserves_permissions_and_inline_approval(resolution: str) -> None:
     from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
@@ -1616,39 +1412,6 @@ async def test_discovered_codeact_tool_preserves_permissions_and_inline_approval
     assert returns[-1].outcome == ("success" if resolution == "approve" else "failed")
 
 
-@pytest.mark.parametrize("strategy", [None, "bm25", "regex"])
-@pytest.mark.parametrize("use_plan", [False, True])
-async def test_native_strategy_reaches_required_provider_tool(strategy, use_plan: bool) -> None:
-    from pydantic_ai.native_tools._tool_search import ToolSearchTool
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    source = Capability(tools=[lambda: "found"])
-    config = NativeToolSearchConfig(strategy=strategy)
-    plan = ToolSearchPlan(groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))}, config=config)
-    grouped = ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Customer data")}, config=config)
-    requests = []
-
-    def inspect(step: int, info: AgentInfo) -> None:
-        tools = info.model_request_parameters.native_tools
-        assert len(tools) == 1
-        tool = tools[0]
-        assert isinstance(tool, ToolSearchTool)
-        assert tool.strategy == strategy
-        assert tool.optional is False
-        assert all(item.unless_native != "tool_search" for item in info.function_tools)
-        requests.append(step)
-
-    result, _ = await _run(
-        (source,) if use_plan else (grouped,),
-        [],
-        tool_search=plan if use_plan else None,
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-        inspect=inspect,
-    )
-    assert result.output_or_raise() == "done"
-    assert requests
-
-
 @pytest.mark.parametrize(
     "value",
     [
@@ -1668,17 +1431,110 @@ def test_search_configuration_rejects_inapplicable_settings(value) -> None:
         TypeAdapter(ToolSearchConfig).validate_python(value)
 
 
-@pytest.mark.parametrize("value", [{}, {"strategy": "regex"}, {"max_results": 5}])
-def test_search_configuration_requires_mode_in_runtime_and_schema(value) -> None:
+@pytest.mark.parametrize("detail", ["summary", "full"])
+async def test_list_pages_enumerate_every_tool_without_expanding_model_schema(detail: str) -> None:
+    effects = []
+
+    def lookup(value: int) -> int:
+        effects.append(value)
+        return value
+
+    definitions = []
+
+    def inspect(step: int, info: AgentInfo) -> None:
+        definitions.append(info.function_tools)
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
+
+    tools = [Tool(lookup, name=f"lookup_{index:02}") for index in range(23)]
+    result, returns = await _run(
+        (_group(*tools, config=ProxyToolSearchConfig(max_results=5)),),
+        [("list_tools", {"detail": detail, "offset": offset}) for offset in range(0, 23, 5)]
+        + [("call_tool", {"group": "crm", "tool": "lookup_22", "arguments": {"value": 42}})],
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+    assert all(page.content["total"] == 23 for page in returns[:-1])
+    assert [page.content["next_offset"] for page in returns[:-1]] == [5, 10, 15, 20, None]
+    entries = [entry for page in returns[:-1] for entry in page.content["tools"]]
+    assert [entry["tool"] for entry in entries] == [f"lookup_{index:02}" for index in range(23)]
+    assert all(("parameters_json_schema" in entry) == (detail == "full") for entry in entries)
+    assert all(current == definitions[0] for current in definitions)
+    assert effects == [42]
+
+
+async def test_proxy_schemas_stay_identical_across_different_group_inventories() -> None:
+    def lookup() -> str:
+        return "found"
+
+    definitions = []
+
+    def inspect(step: int, info: AgentInfo) -> None:
+        definitions.append(info.function_tools)
+
+    for group, count in (("alpha", 1), ("beta", 12)):
+        result, returns = await _run(
+            (_group(*(Tool(lookup, name=f"lookup_{i}") for i in range(count)), group=group),),
+            [("list_tool_groups", {})],
+            inspect=inspect,
+        )
+        assert result.output_or_raise() == "done"
+        assert returns[0].content["groups"] == [{"group": group, "description": f"{group} operations", "count": count}]
+    assert all(current == definitions[0] for current in definitions)
+
+
+async def test_group_listing_paginates_and_custom_names_work_in_codeact() -> None:
+    def lookup() -> str:
+        return "found"
+
+    groups = {
+        name: ToolSearchGroup(
+            CodeActPolicyToolset(FunctionToolset([lookup], id=name), CodeActToolPolicy(default=True)),
+            f"{name} operations",
+        )
+        for name in ("alpha", "beta", "gamma")
+    }
+    code = """first = await domains()
+second = await domains(offset=first['next_offset'])
+items = await inventory(group=second['groups'][0]['group'], detail='full')
+{'first': first, 'second': second, 'items': items}"""
+    result, returns = await _run(
+        (
+            CodeActCapability(),
+            ToolSearchCapability(
+                groups=groups,
+                config=ProxyToolSearchConfig(
+                    groups_name="domains",
+                    list_name="inventory",
+                    max_results=2,
+                ),
+            ),
+        ),
+        [("run_code", {"code": code})],
+    )
+    assert result.output_or_raise() == "done"
+    content = returns[-1].content
+    assert content["first"]["total"] == 3
+    assert content["first"]["next_offset"] == 2
+    assert content["second"]["next_offset"] is None
+    assert content["second"]["groups"] == [{"group": "gamma", "description": "gamma operations", "count": 1}]
+    assert content["items"]["tools"][0]["tool"] == "lookup"
+
+
+def test_search_configuration_defaults_to_proxy_and_roundtrips() -> None:
     from a13n_harness.tools.tool_search import ToolSearchConfig
     from jsonschema import Draft202012Validator
-    from pydantic import TypeAdapter, ValidationError
+    from pydantic import TypeAdapter
 
     adapter = TypeAdapter(ToolSearchConfig)
-    assert not Draft202012Validator(adapter.json_schema()).is_valid(value)
-    with pytest.raises(ValidationError, match="union_tag_not_found"):
-        adapter.validate_python(value)
-    for config in (NativeToolSearchConfig(), ProxyToolSearchConfig()):
+    for value in ({}, {"max_results": 5}, {"mode": "proxy"}):
+        config = adapter.validate_python(value)
+        assert config.mode == "proxy"
         encoded = adapter.dump_python(config, mode="json")
         Draft202012Validator(adapter.json_schema()).validate(encoded)
         assert adapter.validate_python(encoded) == config
