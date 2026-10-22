@@ -549,6 +549,18 @@
   gap: 16px;
   min-width: 0;
 }
+.contentPagination,
+.contentPagination > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.contentPagination {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
 .contentEmpty {
   margin: 4px 0;
   color: var(--a13n-secondary);

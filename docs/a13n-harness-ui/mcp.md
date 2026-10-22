@@ -51,7 +51,7 @@ Empty literal strings and whitespace are preserved. References require non-empty
 
 Literal tokens and environment references are both supported. Keep credential-bearing files private and out of version control. Harness UI stores source locations and digests rather than literal environment/header values in configuration and Run captures. Keep a captured source unchanged until its client is constructed; otherwise an older Run or child continuation can fail with `mcp_source_changed`. New Runs use current configuration. Environment references can rotate without editing the source file.
 
-After editing, run `a13n-harness-ui config validate` and start a new conversation (a new root Thread) if you changed default MCP selections. Validation does not connect to servers or verify credentials.
+After editing, run `a13n-harness-ui config validate`. In the TUI, resume the conversation again (`/resume <id>` or restart with `--resume <id>`) to apply current MCP selections, or start a new conversation. WebUI and headless runs retain saved selections until explicitly changed. Validation does not connect to servers or verify credentials. A missing or empty environment reference fails the Run with `runtime_credential_missing`, naming the variable to set in the Harness UI process environment.
 
 ## Command transport
 
@@ -105,7 +105,7 @@ defaults:
   mcp_servers: [mcp-github]
 ```
 
-An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing conversations retain exact sticky selections. By default, clients/processes are constructed fresh for logical Runs. Root lifetime policy can retain selected clients, and enabled [MCP Apps](mcp-apps.md) automatically retain theirs. Neither client state nor pending MCP input is serialized into continuations. Selecting the Sandbox Environment mode does not sandbox an external MCP command or remote service.
+An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. TUI resume refreshes the saved MCP list using current Project defaults, then Agent defaults, then global defaults, including an explicitly empty list. This replaces any previous conversation-specific MCP selection; it does not connect to the server until a Run needs it. Other surfaces retain exact sticky selections. By default, clients/processes are constructed fresh for logical Runs. Root lifetime policy can retain selected clients, and enabled [MCP Apps](mcp-apps.md) automatically retain theirs. Neither client state nor pending MCP input is serialized into continuations. Selecting the Sandbox Environment mode does not sandbox an external MCP command or remote service.
 
 ## Connection lifetime and protocol
 

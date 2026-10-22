@@ -165,7 +165,6 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
     {
       "connection_id": "conn_...",
       "tools": null,
-      "defer_loading": true,
       "permission": "ask",
       "permissions": { "delete_page": "deny" }
     }
@@ -174,7 +173,6 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 ```
 
 - `tools: null` 选择连接暴露的全部工具；列表最多选择 128 个。
-- `defer_loading`（仅 MCP）提供 `load_capability`，让模型在需要时加载该连接的整组工具。
 - `permission` 应用于连接的所有工具，`permissions` 按工具覆盖。
 - 修订版本最多选择 128 个连接。保存时检查每个连接已启用，并暴露所选工具。
 
@@ -182,38 +180,33 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 ### 分组工具发现
 
-在 Console 中打开 agent 的**工具发现**区域，选择**原生工具搜索**，添加命名分组并选择来源。模型需要支持原生工具搜索。API 使用相同的 `tool_search` 配置：
+在 Console 的**工具发现**区域选择**分组代理搜索**，添加分组并选择来源。普通工具默认直接暴露，只有选中的来源进入固定代理。API 使用相同的 `tool_search` 配置：
 
 ```json
 {
-  "connection_tools": [
-    {
-      "connection_id": "conn_...",
-      "permission": "allow",
-      "defer_loading": true
-    }
-  ],
+  "connection_tools": [{"connection_id": "conn_...", "permission": "allow"}],
   "tool_search": {
-    "config": { "mode": "native", "strategy": "bm25" },
     "groups": {
       "knowledge": {
         "description": "Search the team handbook and project documentation",
         "connections": ["conn_..."]
+      },
+      "workspace": {
+        "description": "Read and edit workspace files",
+        "capabilities": ["environment"]
       }
     }
   }
 }
 ```
 
-模型通过提供商的原生搜索发现单个工具，再调用 `knowledge__search_docs` 等名称。Service 沿用已有连接执行，保留凭据、调用方请求头和工具权限。不支持的模型会在发送模型请求前以 `native_tool_search_unsupported` 失败。
+模型通过 `discover_tools` 搜索，使用 `describe_tool` 读取完整定义，并始终通过 `call_tool` 调用成员。`list_tool_groups` 列出分组；`list_tools(detail="full")` 配合 `next_offset` 可读取完整工具列表。发现不会把成员 schema 加入后续模型请求，有利于提示缓存。Service 沿用原执行路径，保留凭据、调用方请求头和工具权限。
 
-分组可以包含已选的 MCP 或 connector `connections`、按实例名称引用的已安装 `plugins`，以及通过 `platform: true` 引用 agent 已启用的平台工具。每个来源属于一个分组。分组名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`；描述用于说明何时使用这些工具。
+分组可包含已选的 MCP 或 connector `connections`、按实例名称引用的 `plugins`、本地 `capabilities`（`environment`、`web`），以及 `platform: true` 引用的已启用平台工具。分组不会启用尚未启用的来源。每个来源只能属于一个分组；名称以字母开头，最多 32 个字母、数字、下划线或连字符，且不包含 `__`。
 
-- **原生工具搜索**（`config.mode: native`）使用提供商原生发现和普通工具调用。原生 `strategy` 接受 `bm25`、`regex`，省略或设为 null 时使用提供商默认值。
-- **分组代理搜索**（`config.mode: proxy`）使用 Harness 的 `discover_tools`、`describe_tool` 和 `call_tool`。发现保留关键词候选并优先排序精确名称命中，默认返回简短摘要；仅当整个候选集只有一个精确名称命中且定义较小时自动展开；详情查询读取单个完整定义。可选的 `config` 设置参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
-- **使用来源的加载设置**（省略 `tool_search`）沿用各来源现有的加载方式。
+`config` 可省略，也可设置 `mode: proxy`、控制工具名称及分页限制，详见 [Harness ToolSearch](../a13n-harness/tool-search.md)。未分组来源保持直接暴露，`client_tools` 保留原有平铺调用与客户端恢复协议。需要审批后恢复的工具也应保持直接暴露。
 
-分组成员关系决定 agent 已有工具的呈现方式。分组内的连接使用分组发现模式，同时保留已保存的 `defer_loading`；移出分组后恢复该设置。未分组的来源保持现有行为。每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。
+每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。迁移旧配置时，将 `mode: native` 改为 `proxy`，删除 `strategy` 和连接级 `defer_loading`；需要代理发现的连接加入 `groups`。使用这些已删除字段的旧修订和保存的运行配置不会自动转换：升级前创建替代修订，完成旧运行后再切换。
 
 ### 调用方请求头
 

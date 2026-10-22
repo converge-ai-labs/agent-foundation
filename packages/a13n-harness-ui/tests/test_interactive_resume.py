@@ -793,3 +793,158 @@ async def test_resume_saved_default_preserves_session_controls(tmp_path, monkeyp
         assert backend.overrides.reasoning_mode == "standard"
         assert backend.status.reasoning_mode == "standard"
         assert backend.overrides.fast is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cross_directory", [False, True])
+async def test_resume_refreshes_mcp_defaults_without_connecting(tmp_path, monkeypatch, cross_directory):
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        original = SessionBackend(app, CliRequest(), tmp_path, Status())
+        thread_id = await original.ensure_session()
+        before = await app.get_thread(thread_id)
+        mcp = path.parent / "mcp" / "test.json"
+        mcp.parent.mkdir(exist_ok=True)
+        mcp.write_text(json.dumps({"mcpServers": {"test": {"url": "https://mcp.invalid/mcp"}}}))
+        document = yaml.safe_load(path.read_text())
+        document["defaults"]["mcp_servers"] = ["mcp-test"]
+        path.write_text(yaml.safe_dump(document))
+        assert await app.reload_configuration() is not None
+        # Reading through the App does not rewrite saved selections.
+        assert (await app.get_thread(thread_id)).thread.configuration == before.thread.configuration
+        directory = tmp_path / "other" if cross_directory else tmp_path
+        directory.mkdir(exist_ok=True)
+        backend = SessionBackend(app, CliRequest(thread_id=thread_id), directory, Status())
+        assert await backend.initialize()
+        after = await app.get_thread(thread_id)
+        assert after.thread.configuration.mcp_server_ids == ("mcp-test",)
+        assert after.thread.configuration.version == before.thread.configuration.version + 1
+        assert after.continuation_id == before.continuation_id
+        assert after.thread.configuration.agent_source == before.thread.configuration.agent_source
+        assert after.thread.configuration.harness_plugin_ids == before.thread.configuration.harness_plugin_ids
+        await backend.resume(thread_id)
+        assert (await app.get_thread(thread_id)).thread.configuration == after.thread.configuration
+        # Removing a server must repair its stale saved ID before configuration validation.
+        document["defaults"]["mcp_servers"] = []
+        path.write_text(yaml.safe_dump(document))
+        mcp.unlink()
+        assert await app.reload_configuration() is not None
+        await backend.resume(thread_id)
+        assert (await app.get_thread(thread_id)).thread.configuration.mcp_server_ids == ()
+
+
+@pytest.mark.anyio
+async def test_resume_allows_replacing_a_removed_agent(tmp_path, monkeypatch):
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        original = SessionBackend(app, CliRequest(), tmp_path, Status())
+        thread_id = await original.ensure_session()
+        before = await app.get_thread(thread_id)
+        agent_path = path.parent / "agents/codex.yaml"
+        agent = yaml.safe_load(agent_path.read_text())
+        agent["id"] = "agent-replacement"
+        agent_path.write_text(yaml.safe_dump(agent))
+        document = yaml.safe_load(path.read_text())
+        document["defaults"]["agent"] = "agent-replacement"
+        path.write_text(yaml.safe_dump(document))
+        assert await app.reload_configuration() is not None
+        assert "agent-codex" not in (await app.current_configuration()).agents
+
+        resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        assert not await resumed.initialize()  # No model is available until the Agent is replaced.
+        assert resumed.thread_id == thread_id
+        after = await app.get_thread(thread_id)
+        assert after.thread.configuration == before.thread.configuration
+        assert after.continuation_id == before.continuation_id
+        await resumed.agents("agent-replacement")
+        assert (await app.get_thread(thread_id)).thread.configuration.agent_source.id == "agent-replacement"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("owner", ["agent", "project", "headless"])
+async def test_resume_respects_mcp_overrides_and_headless_selection(tmp_path, monkeypatch, owner):
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        thread_id = await backend.ensure_session()
+        before = (await app.get_thread(thread_id)).thread.configuration
+        mcp = path.parent / "mcp" / "test.json"
+        mcp.parent.mkdir(exist_ok=True)
+        mcp.write_text(json.dumps({"mcpServers": {"test": {"url": "https://mcp.invalid/mcp"}}}))
+        document = yaml.safe_load(path.read_text())
+        document["defaults"]["mcp_servers"] = ["mcp-test"]
+        path.write_text(yaml.safe_dump(document))
+        if owner != "headless":
+            resource = (
+                path.parent / "agents/codex.yaml"
+                if owner == "agent"
+                else next((path.parent / "projects").glob("*.yaml"))
+            )
+            document = yaml.safe_load(resource.read_text())
+            target = document if owner == "agent" else document.setdefault("defaults", {})
+            target["mcp_servers"] = []
+            resource.write_text(yaml.safe_dump(document))
+        assert await app.reload_configuration() is not None
+        request = (
+            CliRequest(command="run", thread_id=thread_id) if owner == "headless" else CliRequest(thread_id=thread_id)
+        )
+        resumed = SessionBackend(app, request, tmp_path, Status())
+        assert await resumed.initialize()
+        assert (await app.get_thread(thread_id)).thread.configuration == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("header", [{"env": "MISSING_MCP_TOKEN"}, "Bearer ${MISSING_MCP_TOKEN}"])
+async def test_missing_mcp_credential_reports_actionable_root_failure(tmp_path, monkeypatch, header):
+    import a13n_harness.models.codex as runtime
+    import yaml
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    path = await _seed(tmp_path, monkeypatch)
+    monkeypatch.delenv("MISSING_MCP_TOKEN", raising=False)
+
+    async def stream(messages, info):
+        pytest.fail("Missing MCP credentials must fail before model dispatch")
+        yield "unreachable"
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    mcp = path.parent / "mcp" / "test.yaml"
+    mcp.parent.mkdir(exist_ok=True)
+    mcp.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "kind": "mcp_server",
+                "id": "mcp-test",
+                "name": "Test MCP",
+                "transport": {"url": "https://mcp.invalid/mcp", "headers": {"Authorization": header}},
+            }
+        )
+    )
+    document = yaml.safe_load(path.read_text())
+    document["defaults"]["mcp_servers"] = ["mcp-test"]
+    path.write_text(yaml.safe_dump(document))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        thread_id = await backend.ensure_session()
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="List MCP tools")
+        operation = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        assert operation.status is RootOperationStatus.failed
+        assert operation.failure.code == "runtime_credential_missing"
+        assert operation.failure.details == {"environment_variable": "MISSING_MCP_TOKEN"}
+        assert "MISSING_MCP_TOKEN" in operation.failure.message
+        assert "process environment" in operation.failure.message
+        assert "Unexpected" not in operation.failure.message
+        assert "Diagnostic report" in operation.failure.message
+        detail = await app.get_thread(thread_id)
+        assert detail.thread.last_execution.error_message == operation.failure.message

@@ -72,23 +72,6 @@ class HostClient(Client[ClientTransport]):
         async with self.connection.operation():
             return await super().get_prompt_mcp(name, arguments, meta)
 
-    async def call_app_tool(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        *,
-        authorize: Callable[[], Awaitable[None]],
-        operation: Operation | None = None,
-    ) -> CallToolResult:
-        async with self.app_dispatch(authorize, operation):
-            return await super().call_tool_mcp(name, arguments)
-
-    async def read_app_resource(
-        self, uri: str, *, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
-    ) -> ReadResourceResult:
-        async with self.app_dispatch(authorize, operation):
-            return await super().read_resource_mcp(uri)
-
     @asynccontextmanager
     async def app_dispatch(
         self, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None

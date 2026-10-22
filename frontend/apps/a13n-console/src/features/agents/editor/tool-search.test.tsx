@@ -32,12 +32,12 @@ const choices = {
   },
 } as ReturnType<typeof useAgentChoices>;
 
-it("selects native discovery, edits a group, and preserves the connection's loading setting", async () => {
+it("selects proxy discovery and groups local tools with a connection", async () => {
   const submit = vi.fn();
   function Editor() {
     const draft = useAgentDraft({
       model: "test",
-      connection_tools: [{ connection_id: id, defer_loading: true }],
+      connection_tools: [{ connection_id: id }],
     });
     return (
       <>
@@ -57,12 +57,8 @@ it("selects native discovery, edits a group, and preserves the connection's load
   render(<Editor />);
   await user.click(screen.getByRole("combobox", { name: "Discovery mode" }));
   await user.click(
-    await screen.findByRole("option", { name: "Native tool search" }),
+    await screen.findByRole("option", { name: "Grouped proxy search" }),
   );
-  await user.click(
-    screen.getByRole("combobox", { name: "Native search strategy" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "BM25" }));
   await user.click(screen.getByRole("button", { name: "Add group" }));
   await user.clear(screen.getByLabelText("Group name"));
   await user.type(screen.getByLabelText("Group name"), "knowledge");
@@ -71,16 +67,18 @@ it("selects native discovery, edits a group, and preserves the connection's load
     "Search team knowledge",
   );
   await user.click(screen.getByRole("checkbox", { name: "Knowledge" }));
+  await user.click(screen.getByRole("checkbox", { name: "Environment tools" }));
   await user.click(screen.getByRole("button", { name: "Save" }));
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
-      connection_tools: [{ connection_id: id, defer_loading: true }],
+      connection_tools: [{ connection_id: id }],
       tool_search: {
-        config: { mode: "native", strategy: "bm25" },
+        config: { mode: "proxy" },
         groups: {
           knowledge: {
             description: "Search team knowledge",
             connections: [id],
+            capabilities: ["environment"],
             plugins: [],
             platform: false,
           },
@@ -96,7 +94,7 @@ it("offers platform tools as a source only while one is enabled", async () => {
       model: "test",
       toolsets: { execution: { enabled } },
       tool_search: {
-        config: { mode: "native" },
+        config: { mode: "proxy" },
         groups: { tools: { description: "Tools" } },
       },
     });

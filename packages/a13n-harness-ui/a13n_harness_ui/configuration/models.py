@@ -631,6 +631,9 @@ class McpServerResource(ConfigurationModel):
         return self
 
 
+DEFAULT_CAPABILITY_KEYS = ("file_context", "working_state", "user_interaction", "codeact")
+
+
 class CapabilitySelection(ConfigurationModel):
     capability: CatalogKey
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
@@ -675,6 +678,7 @@ class _ToolSearchConfigurationError(ValueError):
 
 class AgentToolSearchGroup(ConfigurationModel):
     description: str = Field(min_length=1, max_length=512)
+    capabilities: tuple[str, ...] = ()
     mcp_servers: tuple[ResourceId, ...] = ()
     harness_plugins: tuple[ResourceId, ...] = ()
 
@@ -690,7 +694,7 @@ class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
                 validate_group(name, group.description)
             except ValueError as exc:
                 raise _ToolSearchConfigurationError(f"Invalid tool_search group {name!r}: {exc}") from exc
-            for source in (*group.mcp_servers, *group.harness_plugins):
+            for source in (*group.mcp_servers, *group.harness_plugins, *group.capabilities):
                 if source in owners:
                     raise _ToolSearchConfigurationError(
                         f"ToolSearch source {source!r} is selected more than once ({owners[source]!r}, {name!r})"
@@ -698,18 +702,22 @@ class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
                 owners[source] = name
         return self
 
-    def selected(self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...]) -> AgentToolSearch:
+    def selected(
+        self, *, mcp_servers: tuple[str, ...], harness_plugins: tuple[str, ...], capabilities: tuple[str, ...] = ()
+    ) -> AgentToolSearch:
         """Capture only enabled membership, without activating dormant references."""
         return AgentToolSearch(
             groups={
                 name: AgentToolSearchGroup(
                     description=group.description,
+                    capabilities=tuple(source for source in group.capabilities if source in capabilities),
                     mcp_servers=tuple(source for source in group.mcp_servers if source in mcp_servers),
                     harness_plugins=tuple(source for source in group.harness_plugins if source in harness_plugins),
                 )
                 for name, group in self.groups.items()
                 if any(source in mcp_servers for source in group.mcp_servers)
                 or any(source in harness_plugins for source in group.harness_plugins)
+                or any(source in capabilities for source in group.capabilities)
             },
             config=self.config,
         )

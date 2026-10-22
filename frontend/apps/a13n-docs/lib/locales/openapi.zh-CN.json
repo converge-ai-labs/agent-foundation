@@ -2,6 +2,7 @@
   "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.": "按需覆盖：null 表示继承；Thread PATCH 区分省略字段与 null。",
   "List Tool Executions": "列出工具执行",
   "Get Tool Execution": "获取工具执行",
+  "Observe Tool Execution": "观测工具执行",
   "Get Tool Execution Result": "获取工具执行结果",
   "Cancel Tool Execution": "取消工具执行",
   "Run identity is the Service Run; attempt and worker identify the retained owner.": "Run 标识指 Service Run；attempt 和 worker 标识保留执行的所有者。",

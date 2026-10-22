@@ -7568,6 +7568,14 @@
             "minLength": 1,
             "title": "Description"
           },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Capabilities",
+            "default": []
+          },
           "mcp_servers": {
             "items": {
               "$ref": "#/components/schemas/ResourceId"
@@ -14485,38 +14493,6 @@
           "audio"
         ]
       },
-      "NativeToolSearchConfig": {
-        "properties": {
-          "strategy": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "bm25",
-                  "regex"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Strategy"
-          },
-          "mode": {
-            "type": "string",
-            "const": "native",
-            "title": "Mode",
-            "default": "native"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "title": "NativeToolSearchConfig",
-        "description": "Provider-native discovery; omitted strategy uses the provider default."
-      },
       "NetworkInterfaceMetrics": {
         "properties": {
           "identity": {
@@ -15600,48 +15576,6 @@
           "chatgpt"
         ],
         "title": "Provider"
-      },
-      "ProxyToolSearchConfig": {
-        "properties": {
-          "search_name": {
-            "type": "string",
-            "title": "Search Name",
-            "default": "discover_tools"
-          },
-          "call_name": {
-            "type": "string",
-            "title": "Call Name",
-            "default": "call_tool"
-          },
-          "max_results": {
-            "type": "integer",
-            "title": "Max Results",
-            "default": 10
-          },
-          "max_search_bytes": {
-            "type": "integer",
-            "title": "Max Search Bytes",
-            "default": 32768
-          },
-          "describe_name": {
-            "type": "string",
-            "title": "Describe Name",
-            "default": "describe_tool"
-          },
-          "mode": {
-            "type": "string",
-            "const": "proxy",
-            "title": "Mode",
-            "default": "proxy"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "mode"
-        ],
-        "title": "ProxyToolSearchConfig",
-        "description": "Names and bounded discovery settings for one Agent's proxy surface."
       },
       "PublicDestinations": {
         "additionalProperties": false,
@@ -19371,21 +19305,53 @@
         "description": "Host-retained tool image, served through authenticated Thread attachment access."
       },
       "ToolSearchConfig": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/ProxyToolSearchConfig"
+        "properties": {
+          "search_name": {
+            "type": "string",
+            "title": "Search Name",
+            "default": "discover_tools"
           },
-          {
-            "$ref": "#/components/schemas/NativeToolSearchConfig"
+          "call_name": {
+            "type": "string",
+            "title": "Call Name",
+            "default": "call_tool"
+          },
+          "max_results": {
+            "type": "integer",
+            "title": "Max Results",
+            "default": 10
+          },
+          "max_search_bytes": {
+            "type": "integer",
+            "title": "Max Search Bytes",
+            "default": 32768
+          },
+          "describe_name": {
+            "type": "string",
+            "title": "Describe Name",
+            "default": "describe_tool"
+          },
+          "list_name": {
+            "type": "string",
+            "title": "List Name",
+            "default": "list_tools"
+          },
+          "groups_name": {
+            "type": "string",
+            "title": "Groups Name",
+            "default": "list_tool_groups"
+          },
+          "mode": {
+            "type": "string",
+            "const": "proxy",
+            "title": "Mode",
+            "default": "proxy"
           }
-        ],
-        "discriminator": {
-          "propertyName": "mode",
-          "mapping": {
-            "native": "#/components/schemas/NativeToolSearchConfig",
-            "proxy": "#/components/schemas/ProxyToolSearchConfig"
-          }
-        }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProxyToolSearchConfig",
+        "description": "Names and bounded discovery settings for one Agent's proxy surface."
       },
       "ToolSearchSourceView": {
         "properties": {
@@ -19401,7 +19367,8 @@
             "type": "string",
             "enum": [
               "mcp_server",
-              "harness_plugin"
+              "harness_plugin",
+              "capability"
             ],
             "title": "Kind"
           },

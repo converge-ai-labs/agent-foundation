@@ -73,7 +73,6 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     group: str
     group_description: str
     source_label: str
-    native_search: bool = False
 
     @property
     def label(self) -> str:
@@ -93,8 +92,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
 
             tool = identify_tool(tool)
             definition = tool.tool_def
-            if not self.native_search:
-                validate_proxy_target(definition)
+            validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
             canonical = f"{self.group}__{name}"
@@ -103,16 +101,9 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                 tool_def=replace(
                     definition,
                     name=canonical,
-                    defer_loading=True if self.native_search else definition.defer_loading,
                     metadata={
                         **(definition.metadata or {}),
-                        **(
-                            {}
-                            if self.native_search
-                            else {
-                                PROXY_MEMBERSHIP_KEY: ToolSearchMembership(self.group, self.group_description, name),
-                            }
-                        ),
+                        PROXY_MEMBERSHIP_KEY: ToolSearchMembership(self.group, self.group_description, name),
                     },
                 ),
                 max_retries=tool.max_retries,
@@ -128,8 +119,6 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     async def get_instructions(
         self, ctx: RunContext[AgentContext]
     ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
-        if self.native_search:
-            return await self.wrapped.get_instructions(ctx)
         # Proxy source guidance is returned with discovery, not eagerly for every tool.
         return None
 
@@ -154,21 +143,26 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
         directory = proxy_directory(tools)
         if not directory:
             return tools
-        for name in (self.config.search_name, self.config.describe_name, self.config.call_name):
+        for name in (
+            self.config.search_name,
+            self.config.describe_name,
+            self.config.call_name,
+            self.config.list_name,
+            self.config.groups_name,
+        ):
             if name in tools:
                 raise UserError(
                     f"ToolSearch entry name {name!r} conflicts with an existing tool; configure another name"
                 )
-        summary = _group_summary(tools)
         search = Tool(
             self._search,
             name=self.config.search_name,
             description=(
                 "Discover tools without executing them. Any keyword can match names, descriptions, groups, or input parameters; use short keywords, "
-                "or an exact tool name. Omit group to search all groups; use an empty query to browse. "
+                f"or an exact tool name. Omit group to search all groups; use {self.config.list_name} to browse. "
                 "Exact names rank first without hiding other matches. Auto expands only a sole exact candidate with a small definition. "
                 f"For summaries, use {self.config.describe_name} before {self.config.call_name} unless the schema "
-                "is already known. Pagination applies to the current directory.\n" + summary
+                "is already known. Pagination applies to the current directory."
             ),
             metadata={PROXY_CONTROL_KEY: "search"},
         )
@@ -178,7 +172,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             description=(
                 "Get one tool's complete current argument schema and instructions without executing it. "
                 "Supply its exact group and local tool name; prior discovery is not required. "
-                f"Then use {self.config.call_name} with matching arguments.\n" + summary
+                f"Then use {self.config.call_name} with matching arguments."
             ),
             metadata={PROXY_CONTROL_KEY: "describe"},
         )
@@ -188,27 +182,39 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             description=(
                 f"Execute one tool discovered with {self.config.search_name}. Copy its exact group and tool name, "
                 "and supply an arguments object matching its schema. Already-known current schemas can be reused. "
-                "This call can have side effects; after uncertain failure inspect the outcome before retrying.\n"
-                + summary
+                "This call can have side effects; after uncertain failure inspect the outcome before retrying."
             ),
             sequential=True,
             metadata={PROXY_CONTROL_KEY: "call"},
         )
+        listing = Tool(
+            self._list,
+            name=self.config.list_name,
+            description=(
+                "List all available Tool Search tools, optionally within a group, without keyword filtering. "
+                "Follow next_offset until null to retrieve the complete current directory. "
+                f"Use {self.config.describe_name} for full schemas or request detail='full'."
+            ),
+            metadata={PROXY_CONTROL_KEY: "list"},
+        )
+        groups = Tool(
+            self._groups,
+            name=self.config.groups_name,
+            description=(
+                "List available Tool Search groups, their purposes and tool counts. "
+                f"Follow next_offset until null; use {self.config.list_name} to browse their tools."
+            ),
+            metadata={PROXY_CONTROL_KEY: "groups"},
+        )
         controls = await CodeActPolicyToolset(
-            FunctionToolset([search, describe, call], id="tool-search-controls"), CodeActToolPolicy(default=True)
+            FunctionToolset([search, describe, call, listing, groups], id="tool-search-controls"),
+            CodeActToolPolicy(default=True),
         ).get_tools(ctx)
-        groups = sorted({group for group, _tool in directory})
-        for name, prepared in controls.items():
+        # Inventory belongs in tool results, never in cached control definitions.
+        for name in (self.config.search_name, self.config.list_name):
+            prepared = controls[name]
             schema = deepcopy(prepared.tool_def.parameters_json_schema)
-            if name == self.config.search_name:
-                schema["properties"]["group"] = {
-                    "anyOf": [{"type": "string", "enum": groups}, {"type": "null"}],
-                    "default": None,
-                    "description": "Limit discovery to one current group; omit to search all groups.",
-                }
-                schema["properties"]["limit"]["anyOf"][0]["maximum"] = self.config.max_results
-            else:
-                schema["properties"]["group"]["enum"] = groups
+            schema["properties"]["limit"]["anyOf"][0]["maximum"] = self.config.max_results
             controls[name] = replace(prepared, tool_def=replace(prepared.tool_def, parameters_json_schema=schema))
         return {**tools, **controls}
 
@@ -230,6 +236,8 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
                 search_name=self.config.search_name,
                 describe_name=self.config.describe_name,
                 call_name=self.config.call_name,
+                list_name=self.config.list_name,
+                groups_name=self.config.groups_name,
             )
         )
         return parts
@@ -238,6 +246,10 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
     ) -> Any:
         role = proxy_control(tool.tool_def)
+        if role == "list":
+            return await self._list(ctx, **tool_args)
+        if role == "groups":
+            return await self._groups(ctx, **tool_args)
         if role == "search":
             return await self._search(ctx, **tool_args)
         if role == "describe":
@@ -302,6 +314,44 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
                 entries.pop()
                 if not entries:
                     raise _entry_too_large(prepared, detail)
+                result["next_offset"] = index
+                break
+        return result
+
+    async def _list(
+        self,
+        ctx: RunContext[AgentContext],
+        group: Annotated[str | None, Field(description="Optional group; omit to list all tools.")] = None,
+        detail: Literal["summary", "full"] = "summary",
+        limit: Annotated[int | None, Field(ge=1, le=100)] = None,
+        offset: Annotated[int, Field(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        return await self._search(ctx, query="", group=group, detail=detail, limit=limit, offset=offset)
+
+    async def _groups(self, ctx: RunContext[AgentContext], offset: Annotated[int, Field(ge=0)] = 0) -> dict[str, Any]:
+        groups: dict[str, dict[str, Any]] = {}
+        for tool in active_proxy_tools(ctx).values():
+            member = proxy_membership(tool.tool_def)
+            if member is not None:
+                entry = groups.setdefault(
+                    member.group,
+                    {
+                        "group": member.group,
+                        "description": member.description,
+                        "count": 0,
+                    },
+                )
+                entry["count"] += 1
+        entries = [entry for _, entry in sorted(groups.items())]
+        page: list[dict[str, Any]] = []
+        result = {"groups": page, "total": len(entries), "next_offset": None}
+        for index, entry in enumerate(entries[offset : offset + self.config.max_results], offset):
+            page.append(entry)
+            result["next_offset"] = index + 1 if index + 1 < len(entries) else None
+            if _json_bytes(result) > self.config.max_search_bytes:
+                page.pop()
+                if not page:
+                    raise ToolFailed(f"Group {entry['group']!r} exceeds the discovery byte budget.")
                 result["next_offset"] = index
                 break
         return result

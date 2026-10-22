@@ -222,7 +222,6 @@ def mcp_capability(
     open_client: Callable[[], Awaitable[Client[ClientTransport]]],
     *,
     tools: tuple[str, ...] | None,
-    defer_loading: bool,
     check: DispatchCheck,
 ) -> MCP[AgentContext]:
     """Fresh native projections borrow one entered client from the worker attempt.
@@ -254,5 +253,5 @@ def mcp_capability(
     return MCP(
         id=connection_id,
         local=DynamicToolset(local, per_run_step=False),
-        defer_loading=defer_loading,
+        defer_loading=False,
     )

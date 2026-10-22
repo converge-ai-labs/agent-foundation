@@ -236,7 +236,8 @@ def _required_environment(name: str, *, purpose: str) -> str:
     value = os.environ.get(name)
     if not value:
         raise RunError(
-            f"A required {purpose} source is unavailable.",
+            f"A required {purpose} source is unavailable: environment variable {name!r} is missing or empty. "
+            "Set it in the Harness UI process environment or update the MCP configuration.",
             code="runtime_credential_missing",
             details={"environment_variable": name},
         )

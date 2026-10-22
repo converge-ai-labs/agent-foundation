@@ -206,8 +206,6 @@ class ConnectionSelection(BaseModel):
     tools: Annotated[tuple[ToolName, ...], Field(min_length=1, max_length=MAX_TOOLS), AfterValidator(unique)] | None = (
         None
     )
-    # MCP only: the model discovers the tools through tool search instead of seeing every definition upfront.
-    defer_loading: bool = False
     # The permission of every tool of the connection without its own entry in `permissions`.
     permission: ToolPermissionSetting = "inherit"
     permissions: dict[ToolName, ToolPermissionSetting] = Field(default_factory=dict, max_length=MAX_TOOLS)

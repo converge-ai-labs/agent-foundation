@@ -11,6 +11,7 @@ from a13n_harness_ui.surfaces import (
     ExternalToolResult,
     RootActivityState,
     RootOperationStatus,
+    RootOperationView,
     ThreadDeferredResponse,
 )
 from anyio import CancelScope, Event, fail_after, sleep, sleep_forever
@@ -161,6 +162,54 @@ async def test_usage_delivery_failure_retains_its_code_and_diagnostic_report(tmp
         assert operation.failure.message.startswith("Host usage delivery timed out.")
         assert "Diagnostic report:" in operation.failure.message
         assert list(tmp_path.glob("a13n-harness-ui-error-*.json"))
+    finally:
+        await coordinator.close(timeout_seconds=1)
+
+
+@pytest.mark.parametrize(
+    "message_length",
+    [64, 32 * 1024 - len("\nDiagnostic report: test-report.json"), 32 * 1024, 64 * 1024],
+    ids=["short", "combined-limit", "message-limit", "oversized"],
+)
+async def test_harness_failure_bounds_message_and_preserves_diagnostics(message_length, monkeypatch):
+    from a13n_harness.errors import RunError
+
+    message = "é" * message_length
+    error = RunError(message, code="test_failure", details={"stage": "prepare"}, retry_hint="new_run")
+    feedback = "Diagnostic report: test-report.json"
+    reported = []
+
+    def report_failure(value, **kwargs):
+        reported.append(value)
+        return feedback
+
+    async def failing_execute(admission, **kwargs):
+        raise error
+
+    monkeypatch.setattr("a13n_harness_ui.root_run.exception_feedback", report_failure)
+    executor = _PreparingExecutor()
+    monkeypatch.setattr(executor, "execute", failing_execute)
+    coordinator = RootRunCoordinator(cast(Any, executor))
+    await coordinator.start()
+    try:
+        receipt = await coordinator.submit_prompt(thread_id="thread-1", prompt="run")
+        with fail_after(1):
+            operation = await coordinator.wait(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.failed
+        failure = operation.failure
+        assert failure is not None
+        assert len(failure.message) <= 32 * 1024
+        assert failure.message.endswith(f"\n{feedback}")
+        assert failure.code == error.code
+        assert failure.details == error.details
+        assert failure.retry_hint == error.retry_hint
+        assert reported == [error]
+        if len(message) + 1 + len(feedback) <= 32 * 1024:
+            assert failure.message == f"{message}\n{feedback}"
+        else:
+            assert failure.message.startswith(message[:64])
+            assert "...[message truncated]" in failure.message
+        assert RootOperationView.model_validate_json(operation.model_dump_json()) == operation
     finally:
         await coordinator.close(timeout_seconds=1)
 
