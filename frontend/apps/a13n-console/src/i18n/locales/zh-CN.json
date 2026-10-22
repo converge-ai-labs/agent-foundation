@@ -3314,8 +3314,6 @@
   "Read result": "读取结果",
   "Next fragment": "下一片段",
   "trigger.tool_result": "工具完成",
-  "Content pages": "内容分页",
-  "Items {{start}}–{{end}} of {{total}}": "第 {{start}}–{{end}} 项，共 {{total}} 项",
-  "Plain text · {{start}}–{{end}} of {{total}} characters": "纯文本 · 第 {{start}}–{{end}} 个字符，共 {{total}} 个字符",
-  "Copy full text": "复制完整文本"
+  "Copy full text": "复制完整文本",
+  "Plain text · {{total}} characters": "纯文本 · 共 {{total}} 个字符"
 }

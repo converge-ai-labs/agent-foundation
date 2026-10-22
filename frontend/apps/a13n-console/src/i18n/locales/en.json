@@ -3314,8 +3314,6 @@
   "Read result": "Read result",
   "Next fragment": "Next fragment",
   "trigger.tool_result": "tool completion",
-  "Content pages": "Content pages",
-  "Items {{start}}–{{end}} of {{total}}": "Items {{start}}–{{end}} of {{total}}",
-  "Plain text · {{start}}–{{end}} of {{total}} characters": "Plain text · {{start}}–{{end}} of {{total}} characters",
-  "Copy full text": "Copy full text"
+  "Copy full text": "Copy full text",
+  "Plain text · {{total}} characters": "Plain text · {{total}} characters"
 }
