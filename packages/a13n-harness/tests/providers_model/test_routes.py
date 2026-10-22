@@ -20,8 +20,11 @@ async def test_google_routes_preserve_developer_and_cloud_transports(provider):
     async with model:
         assert isinstance(model, GoogleModel)
         assert model.client.vertexai is (provider != "google")
-        # The SDK deadline follows the shared model transport, not httpx's five-second default.
-        assert model.client._api_client.get_read_only_http_options()["timeout"] == 600_000
+        # Declared routes use the Host transport; inferred routes use Pydantic AI's transport.
+        options = model.client._api_client.get_read_only_http_options()
+        assert options["timeout"] == int(options["httpx_async_client"].timeout.read * 1000)
+        if provider == "google":
+            assert options["timeout"] == 600_000
 
 
 def test_routes_share_inference_aliases_without_conflating_calling_apis():
