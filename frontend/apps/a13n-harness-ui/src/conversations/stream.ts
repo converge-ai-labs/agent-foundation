@@ -511,11 +511,6 @@ export class FocusDisplay {
       this.blocks.set(key, {
         ...block,
         text: block.text + string(payload.delta),
-        shellCommand: this.processes.command(
-          scope ?? "",
-          block.name ?? "",
-          block.text + string(payload.delta),
-        ),
       });
     } else if (type === "TOOL_CALL_RESULT") {
       const block = this.blocks.get(key) ?? {

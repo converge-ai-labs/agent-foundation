@@ -1983,3 +1983,36 @@ it.each([
     }
   },
 );
+
+it("resolves Shell command context at argument completion rather than each delta", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 101;
+  const emit = (event_type: string, payload: unknown) => {
+    const frame = event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    display.accept(
+      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
+    );
+  };
+  const lookup = vi.spyOn(display.processes, "command");
+  try {
+    emit("TOOL_CALL_START", {
+      toolCallId: "start",
+      toolCallName: "shell_exec",
+    });
+    const input = JSON.stringify({ command: "echo done" });
+    for (const delta of input)
+      emit("TOOL_CALL_ARGS", { toolCallId: "start", delta });
+    expect(lookup).not.toHaveBeenCalled();
+    emit("TOOL_CALL_END", { toolCallId: "start" });
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(
+      [...display.blocks.values()].find((block) => block.toolCallId === "start")
+        ?.shellCommand,
+    ).toBe("echo done");
+  } finally {
+    lookup.mockRestore();
+  }
+});

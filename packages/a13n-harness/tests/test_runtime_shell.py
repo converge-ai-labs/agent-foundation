@@ -233,6 +233,9 @@ async def test_steering_releases_control_wait_without_stopping_original_shell(
                     assert (await runtime.info(first.thread_id, execution_id)).status == "running"
                     await resource.controller.write_input(resource.process_id, "finished\n", close_stdin=False)
                     await consumer
+                    if not immediate:
+                        assert results[0]["status"]["phase"] == "exited"
+                        assert results[0]["stdout"]["text"] == "readyfinished"
                     settled = await runtime.wait(first.thread_id, execution_id)
                     assert settled.record.status == "succeeded"
                     assert settled.result["stdout"]["text"] == "readyfinished"

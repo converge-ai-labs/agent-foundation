@@ -419,7 +419,9 @@ export function describeTool(tool: ToolView) {
     shell &&
     phase === "Result received" &&
     typeof status.phase === "string" &&
-    status.phase
+    status.phase &&
+    (status.phase === "running" ||
+      !["shell_exec", "shell_start"].includes(tool.name))
   )
     phase = `${status.phase[0].toUpperCase()}${status.phase.slice(1).replaceAll("_", " ")} at last check`;
   const detail = record(result.thread) ? result.thread : {};
@@ -681,9 +683,36 @@ export function savedToolGroups(entries: Schema<"TranscriptEntry">[]) {
   return groups;
 }
 
+/** Summarize the latest observation per handle without rewriting earlier receipts. */
+function shellGroupStatus(
+  tools: ToolView[],
+  infos: ReturnType<typeof describeTool>[],
+) {
+  const latest = new Map<string, string>();
+  tools.forEach((tool, index) => {
+    const info = infos[index];
+    const status = record(info.result.status) ? info.result.status : {};
+    if (!info.executionReceipt && !text(status.phase)) return;
+    const reference =
+      text(info.result.execution_id) ||
+      text(info.args.process_id) ||
+      text(info.args.execution_id) ||
+      text(info.result.process_id);
+    const key = reference
+      ? JSON.stringify([tool.subagentRunId ?? "", reference])
+      : `unlinked:${index}`;
+    latest.set(key, info.phase);
+  });
+  const phases = [...latest.values()];
+  if (phases.includes("Execution handed off")) return "Execution handed off";
+  if (phases.includes("Running at last check")) return "Running at last check";
+  return "";
+}
+
 export function activitySummary(tools: ToolView[]) {
   const infos = tools.map(describeTool);
   const kind = activityKind(tools[0]);
+  const shellStatus = kind === "shell" ? shellGroupStatus(tools, infos) : "";
   const count = (n: number, noun: string) =>
     `${n} ${noun}${n === 1 ? "" : "s"}`;
   const files = new Set(infos.map((info) => info.path).filter(Boolean)).size;
@@ -720,14 +749,7 @@ export function activitySummary(tools: ToolView[]) {
   else if (kind === "shell") {
     const commands = tools.filter((tool) => tool.name === "shell_exec").length;
     title = `${pending ? "Running" : "Ran"} ${commands ? count(commands, "command") : count(tools.length, "process operation")}`;
-    if (
-      !pending &&
-      (issues.length ||
-        infos.some(
-          (info) =>
-            info.executionReceipt || info.phase === "Running at last check",
-        ))
-    )
+    if (!pending && (issues.length || shellStatus))
       title = `Shell · ${count(tools.length, "operation")}`;
   } else if (kind === "web")
     title = `${pending ? "Browsing" : "Browsed"} the web · ${count(tools.length, "action")}`;
@@ -750,17 +772,7 @@ export function activitySummary(tools: ToolView[]) {
     title,
     issue: issues.length > 0,
     status: [
-      kind === "shell" &&
-      !pending &&
-      !issues.length &&
-      infos.some((info) => info.executionReceipt)
-        ? "Execution handed off"
-        : kind === "shell" &&
-            !pending &&
-            !issues.length &&
-            infos.some((info) => info.phase === "Running at last check")
-          ? "Running at last check"
-          : "",
+      !pending && !issues.length ? shellStatus : "",
       waiting ? `${waiting} waiting` : "",
       pending > waiting ? `${pending - waiting} running` : "",
       kind === "executions" && cancellations

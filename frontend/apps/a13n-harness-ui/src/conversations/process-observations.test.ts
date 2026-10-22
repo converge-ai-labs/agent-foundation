@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { ProcessObservations } from "./process-observations";
 
 it("counts returned running shell handles, not foreground statuses or unrelated results", () => {
@@ -201,3 +201,19 @@ it.each(["tool_execution_result", "tool_execution_wait"])(
     expect(processes.entries.size).toBe(1);
   },
 );
+
+it("skips parsing arguments and results of unrelated tools", () => {
+  const processes = new ProcessObservations();
+  const input = JSON.stringify({
+    file_path: "large.txt",
+    content: "x".repeat(10000),
+  });
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    expect(processes.command("run", "write", input)).toBeUndefined();
+    processes.result("run", "write", input, "{}");
+    expect(parse).not.toHaveBeenCalled();
+  } finally {
+    parse.mockRestore();
+  }
+});

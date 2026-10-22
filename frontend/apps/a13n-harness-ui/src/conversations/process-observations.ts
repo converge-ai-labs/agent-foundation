@@ -49,6 +49,11 @@ export class ProcessObservations {
     return item;
   }
   command(runId: string, name: string, args: unknown): string | undefined {
+    if (
+      !name.startsWith("shell_") &&
+      !["tool_execution_result", "tool_execution_wait"].includes(name)
+    )
+      return;
     const input = parsed(args);
     if (!object(input)) return;
     if (["shell_exec", "shell_start"].includes(name))
@@ -67,6 +72,18 @@ export class ProcessObservations {
     args: unknown,
     content: unknown,
   ) {
+    if (
+      !name ||
+      ![
+        "shell_exec",
+        "shell_start",
+        "shell_wait",
+        "shell_info",
+        "tool_execution_result",
+        "tool_execution_wait",
+      ].includes(name)
+    )
+      return;
     const input = parsed(args);
     const retrievesShell =
       (name === "tool_execution_result" || name === "tool_execution_wait") &&
@@ -74,11 +91,8 @@ export class ProcessObservations {
       typeof input.execution_id === "string" &&
       this.entries.has(`${runId}:${input.execution_id}`);
     if (
-      !name ||
-      (!retrievesShell &&
-        !["shell_exec", "shell_start", "shell_wait", "shell_info"].includes(
-          name,
-        ))
+      !retrievesShell &&
+      ["tool_execution_result", "tool_execution_wait"].includes(name)
     )
       return;
     const value = parsed(content);
