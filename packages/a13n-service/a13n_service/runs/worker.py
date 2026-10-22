@@ -51,7 +51,16 @@ class Worker:
 
     async def run(self) -> None:
         with log_context(worker_id=self.id):
-            await self._run()
+            try:
+                await self._run()
+            except Exception as error:
+                # A dead worker loop cannot renew or fence its retained invocations.
+                # This also covers failures from TaskGroup children and shutdown drain.
+                logger.error(
+                    "Worker failed; forcing process exit",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
+                os._exit(1)
 
     async def _run(self) -> None:
         settings = self.runtime.settings.worker

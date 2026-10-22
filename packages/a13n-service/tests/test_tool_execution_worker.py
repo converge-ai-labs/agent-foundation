@@ -260,3 +260,64 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
         if process.returncode is None:
             process.kill()
             await process.wait()
+
+
+@pytest.mark.parametrize("cause", ["output", "routing", "supervisor", "drain", "shutdown"])
+async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
+    script = textwrap.dedent("""
+        import asyncio
+        import sys
+        from types import SimpleNamespace
+        from a13n_harness.tool_execution import ToolExecutionRuntime
+        from a13n_service.runs.worker import Worker
+
+        async def main():
+            cause = sys.argv[1]
+            entered = asyncio.Event()
+            drained = asyncio.Event()
+            async def idle(*args):
+                entered.set()
+                await asyncio.Event().wait()
+            async def fail(*args):
+                await entered.wait()
+                raise RuntimeError("injected worker failure")
+            executions = ToolExecutionRuntime()
+            executions.routing = SimpleNamespace(run=fail if cause == "routing" else idle)
+            executions.output = SimpleNamespace(run=fail if cause == "output" else idle)
+            runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
+                worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30),
+                tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
+            ))
+            worker = Worker(runtime, None)
+            worker.free = 0
+            worker._supervise = fail if cause == "supervisor" else idle
+            original = worker._drain
+            async def drain():
+                if cause == "drain":
+                    raise RuntimeError("injected drain failure")
+                await original()
+                drained.set()
+            worker._drain = drain
+            task = asyncio.create_task(worker.run())
+            await entered.wait()
+            if cause in {"drain", "shutdown"}:
+                task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                assert cause == "shutdown"
+                assert drained.is_set() and not executions.accepting
+                return
+            raise AssertionError("failed worker stayed alive")
+        asyncio.run(main())
+    """)
+    process = await asyncio.create_subprocess_exec(sys.executable, "-c", script, cause, stderr=asyncio.subprocess.PIPE)
+    try:
+        async with asyncio.timeout(10):
+            _, stderr = await process.communicate()
+        assert process.returncode == (0 if cause == "shutdown" else 1), stderr.decode()
+        assert (b"Worker failed; forcing process exit" in stderr) == (cause != "shutdown")
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()

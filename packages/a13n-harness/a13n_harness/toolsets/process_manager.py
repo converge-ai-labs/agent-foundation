@@ -277,7 +277,7 @@ class _ProcessController:
                 raise asyncio.CancelledError
             stdout_offset = stderr_offset = 0
             while True:
-                observation = await self._observe(
+                observation = await self._observe_owned(
                     entry,
                     stdout_offset=stdout_offset,
                     stderr_offset=stderr_offset,
@@ -312,7 +312,7 @@ class _ProcessController:
                     and output.stderr.capture.observation_closed
                 ):
                     # Final disclosure is the provider's bounded result, not the last delta.
-                    final = await self._observe(
+                    final = await self._observe_owned(
                         entry,
                         stdout_offset=0,
                         stderr_offset=0,
@@ -336,6 +336,33 @@ class _ProcessController:
         finally:
             with execution_cleanup():
                 await _await_cleanup_shielded(resource.close())
+
+    async def _observe_owned(
+        self,
+        entry: _ProcessEntry,
+        *,
+        stdout_offset: int,
+        stderr_offset: int,
+        wait_seconds: float,
+        max_inline_bytes: int,
+    ) -> tuple[ProcessInfo, ProcessReadOutputResult]:
+        # Retry only read-only transport observations, keeping the original handle
+        # and offsets. Cancellation interrupts backoff and follows native cleanup.
+        retries = 0
+        while True:
+            try:
+                return await self._observe(
+                    entry,
+                    stdout_offset=stdout_offset,
+                    stderr_offset=stderr_offset,
+                    wait_seconds=wait_seconds,
+                    max_inline_bytes=max_inline_bytes,
+                )
+            except EnvironmentError as exc:
+                if exc.code not in {"environment_unavailable", "environment_timeout"} or retries == 3:
+                    raise
+                await asyncio.sleep(0.1 * 2**retries)
+                retries += 1
 
     async def _cancel_owned(self, entry: _ProcessEntry) -> None:
         if not _is_final(entry.latest):
