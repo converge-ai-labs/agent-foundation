@@ -81,7 +81,7 @@
   "What a child run mounts: no environment, the parent's, or a new one from `template_id`.": "子运行挂载的环境：无环境、父运行环境，或根据 `template_id` 新建的环境。",
   "Portable model guidance for one externally executed client tool.": "为一个外部执行的客户端工具提供可移植的模型指导。",
   "Why the last remote operation failed; `outcome_unknown` means it may have taken effect.": "上次远程操作失败的原因；`outcome_unknown` 表示可能已经生效。",
-  "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.": "Agent 对一个连接的使用配置：全部工具或选定子集，以及工具权限。",
+  "An agent's selected tools and permissions.": "Agent 选择的工具及其权限。",
   "What a test found for the connection version it tested.": "针对所测试连接版本得到的测试结果。",
   "One app of a connector provider and the actions it exposes; `setup` is validated by the provider type.": "Connector provider 的一个应用及其提供的操作；`setup` 按 provider 类型校验。",
   "Pending entries only; the original request digest never changes.": "仅适用于 pending 条目；原始请求摘要永不改变。",
