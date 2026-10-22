@@ -52,6 +52,8 @@ export function ProviderConfiguration({
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
   const [custom, setCustom] = useState(false);
+  const [modalCustom, setModalCustom] = useState(false);
+  const modalDraft = useRef<string | undefined>(undefined);
   const [e2bCustom, setE2bCustom] = useState(false);
   const e2bCustomDraft = useRef<string | undefined>(undefined);
   const customDraft = useRef<Record<string, unknown> | undefined>(undefined);
@@ -69,6 +71,8 @@ export function ProviderConfiguration({
     e2bCustom ||
     (typeof value?.template === "string" &&
       value.template !== e2bDefaultTemplate);
+  const modalUsesCustom =
+    modalCustom || (typeof value?.image === "string" && value.image !== "auto");
   const presets = variant === "docker" ? dockerPresets(schema) : undefined;
   const selected: DockerMode =
     presets && value && schema && !custom
@@ -116,6 +120,7 @@ export function ProviderConfiguration({
     )
       continue;
     if (variant === "e2b" && key === "template") continue;
+    if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
     if (
       (variant === "e2b" || variant === "daytona" || variant === "modal") &&
       key.startsWith("desktop_") &&
@@ -195,6 +200,8 @@ export function ProviderConfiguration({
                 onChange("{}");
                 setCustom(false);
                 setE2bCustom(false);
+                setModalCustom(false);
+                modalDraft.current = undefined;
                 e2bCustomDraft.current = undefined;
                 customDraft.current = undefined;
                 setMode("fields");
@@ -255,6 +262,89 @@ export function ProviderConfiguration({
       ) : (
         <Fragment key={reset}>
           <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
+            {variant === "modal" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        desktop_assistance: enabled,
+                        ...(enabled && !modalUsesCustom
+                          ? {
+                              image: "auto",
+                              cpu: value.cpu ?? 2,
+                              memory: value.memory ?? 4096,
+                              timeout_seconds: value.timeout_seconds ?? 3600,
+                            }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <SegmentedControl
+                    label={t("Modal image")}
+                    value={modalUsesCustom ? "custom" : "automatic"}
+                    options={[
+                      {
+                        value: "automatic",
+                        label: t("Automatic desktop"),
+                        disabled: readOnly,
+                      },
+                      {
+                        value: "custom",
+                        label: t("Custom image"),
+                        disabled: readOnly,
+                      },
+                    ]}
+                    onValueChange={(next) => {
+                      if (modalUsesCustom && typeof value.image === "string")
+                        modalDraft.current = value.image;
+                      setModalCustom(next === "custom");
+                      change({
+                        ...value,
+                        image:
+                          next === "custom"
+                            ? (modalDraft.current ?? "")
+                            : "auto",
+                      });
+                    }}
+                  />
+                )}
+                {(value.desktop !== true || modalUsesCustom) && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: {
+                        image: (schema?.properties as Record<string, unknown>)
+                          ?.image,
+                      },
+                    }}
+                    value={value}
+                    onChange={change}
+                  />
+                )}
+                {value.desktop === true && !modalUsesCustom && (
+                  <p role="note">
+                    {t(
+                      "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
             {!builtIn && image.length > 0 && (
               <SchemaFields
                 schema={{ ...schema, properties: Object.fromEntries(image) }}
@@ -390,6 +480,8 @@ export function ProviderConfiguration({
                           if (typeof value.template === "string")
                             e2bCustomDraft.current = value.template;
                           setE2bCustom(false);
+                          setModalCustom(false);
+                          modalDraft.current = undefined;
                           change({
                             ...value,
                             template: e2bDefaultTemplate,

@@ -248,6 +248,7 @@ class Operation:
     credential_changed: bool
     metrics: MetricsLaunch | None = field(default=None, repr=False)
     e2b_desktop_template: str | None = None
+    modal_desktop_image: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,9 +337,19 @@ async def _refusal(
                 preparation = await bind(runtime, session, environment, provider)
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
-        environment.handle = Handle(recipe=recipe.model_dump(mode="json"), e2b_desktop_template=preparation).model_dump(
-            mode="json"
-        )
+        modal_preparation = None
+        if provider.type == "modal" and getattr(recipe, "image", None) == "auto":
+            from a13n_service.runs.environments.modal_images import bind
+
+            try:
+                modal_preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        environment.handle = Handle(
+            recipe=recipe.model_dump(mode="json"),
+            e2b_desktop_template=preparation,
+            modal_desktop_image=modal_preparation,
+        ).model_dump(mode="json")
         environment.provider_identity = identity
     elif environment.provider_identity != identity:
         message = "The provider now points at another account or endpoint; restore it or delete this environment"
@@ -381,6 +392,12 @@ async def claim_locked(
             if build is not None and build.phase == "failed":
                 # Preserve the original actionable failure until explicit retry. Cleanup still advances.
                 return None
+        if handle.recipe.get("image") == "auto" and handle.modal_desktop_image:
+            from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
+
+            build = await session.get(ModalDesktopImageRow, handle.modal_desktop_image)
+            if build is not None and build.phase == "failed":
+                return None
     # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
     if provider is None:
         provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
@@ -408,6 +425,7 @@ async def claim_locked(
         credential_changed=changed,
         metrics=launch.restore(runtime.keys, environment) if phase == "creating" else None,
         e2b_desktop_template=handle.e2b_desktop_template,
+        modal_desktop_image=handle.modal_desktop_image,
     )
 
 
@@ -488,6 +506,19 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
                     if template is None:
                         return Outcome(None, pending=True)
                     operation = await _pin_e2b_template(runtime, operation, template)
+            if operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto":
+                if operation.phase == "deleting":
+                    return Outcome(None)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.modal_images import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    image = await prepare(runtime, operation.modal_desktop_image, operation.target.account)
+                    if image is None:
+                        return Outcome(None, pending=True)
+                    await _pin_modal_image(runtime, operation, image)
+                    # Persist first; the next claim gets a full operation deadline for sandbox startup.
+                    return Outcome(None, pending=True)
             if operation.metrics is not None:
                 endpoint = operation.metrics.environment.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
                 if endpoint is not None:
@@ -513,7 +544,9 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
             and error.category == EnvironmentProviderErrorCategory.MISSING
             else fault_of(error, dispatched=dispatched)
         )
-        if operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto":
+        if (operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto") or (
+            operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto"
+        ):
             # Build uncertainty is retained by its own ledger; no sandbox allocation was dispatched yet.
             fault = replace(fault, certainty="not_dispatched")
         return Outcome(observed_environment_state(error, operation.target.state), fault)
@@ -543,7 +576,9 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             return
         if outcome.fault is not None:
             environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
-            preparing = handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto"
+            preparing = (handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto") or (
+                handle.modal_desktop_image is not None and handle.recipe.get("image") == "auto"
+            )
             fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
             record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
             return
@@ -593,6 +628,26 @@ async def _pin_e2b_template(runtime: Runtime, operation: Operation, template: st
         if handle.state is not None or handle.recipe.get("template") not in {"auto", template}:
             raise conflict("environment", row.id, "desktop_template_changed")
         recipe = {**handle.recipe, "template": template}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
+
+
+async def _pin_modal_image(runtime: Runtime, operation: Operation, image: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("image") not in {"auto", image}:
+            raise conflict("environment", row.id, "desktop_image_changed")
+        recipe = {**handle.recipe, "image": image}
         row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
     return replace(operation, target=replace(operation.target, recipe=recipe))
 

@@ -29,8 +29,18 @@ if TYPE_CHECKING:
 class ModalConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
-    workspace: str = Field(min_length=1, max_length=128, description="Modal workspace owning the credentials and App.")
-    app_name: str = Field(min_length=1, max_length=128, description="Existing deployed Modal App for named sandboxes.")
+    workspace: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="Optional workspace label; credentials select the Modal account.",
+    )
+    app_name: str = Field(
+        default="a13n-sandboxes",
+        min_length=1,
+        max_length=128,
+        description="Modal App for named sandboxes. Automatic desktop preparation creates it if missing.",
+    )
     environment_name: str = Field(default="main", min_length=1, max_length=128)
 
 

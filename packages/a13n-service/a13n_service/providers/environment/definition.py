@@ -15,6 +15,7 @@ from pydantic import BaseModel, JsonValue
 
 from .e2b_build import E2BDesktopPreparation
 from .management import EnvironmentProvider
+from .modal_build import ModalDesktopPreparation
 
 
 class ProviderFactory[C: BaseModel, K: BaseModel, E: BaseModel, R](Protocol):
@@ -34,6 +35,7 @@ class EnvironmentManagementDefinition[C: BaseModel, K: BaseModel, E: BaseModel, 
     requires_keepalive: bool = False
     metrics_launch: Callable[[E], bool] | None = None
     e2b_desktop_preparation: E2BDesktopPreparation | None = None
+    modal_desktop_preparation: ModalDesktopPreparation | None = None
 
     def validate_domain(self) -> None:
         if not isinstance(self.execution, EnvironmentProviderDefinition):

@@ -87,6 +87,7 @@ from a13n_service.runs.devices.routes import router as devices_router
 from a13n_service.runs.devices.tables import DeviceRow
 from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
+from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
 from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
@@ -367,6 +368,7 @@ OSS = Distribution(
         ToolExecutionRow,
         EnvironmentRow,
         E2BDesktopTemplateRow,
+        ModalDesktopImageRow,
         DesktopExecutionRow,
         DesktopTargetRow,
         DesktopAssistanceRow,

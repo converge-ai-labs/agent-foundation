@@ -133,16 +133,16 @@ With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the 
 
 E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. Daytona and Modal use Envd. E2B and Vercel retain Native Files & Shell and offer an explicit Envd path for advanced capabilities. Sprites and Runloop currently expose Native Files & Shell only. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
 
-| Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                                |
-| -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------- |
-| E2B            | `domain`, optional `api_url`                                                   | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                |
-| Daytona        | `organization_id`, `target` (default `us`)                                     | `api_key`                       | `snapshot`, which sets the sandbox's resources                                        |
-| Modal          | `workspace`, existing deployed `app_name`, `environment_name` (default `main`) | `token_id`, `token_secret`      | required Envd-compatible `image`, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`             |
-| Fly.io Sprites | `organization`                                                                 | `api_key` (Sprites token)       | `region`                                                                              |
-| Runloop        | `organization`                                                                 | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                               |
+| Provider       | Backend settings                                                                                 | Credential fields               | Common recipe settings                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| E2B            | `domain`, optional `api_url`                                                                     | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                                        |
+| Daytona        | `organization_id`, `target` (default `us`)                                                       | `api_key`                       | `snapshot`, which sets the sandbox's resources                                                                                |
+| Modal          | optional `workspace`, `app_name` (default `a13n-sandboxes`), `environment_name` (default `main`) | `token_id`, `token_secret`      | Service automatic desktop `image="auto"` or custom Envd-compatible image, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                                          | `api_key` (Vercel access token) | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                                     |
+| Fly.io Sprites | `organization`                                                                                   | `api_key` (Sprites token)       | `region`                                                                                                                      |
+| Runloop        | `organization`                                                                                   | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                                       |
 
-Use the organization, team, or Modal `workspace` that owns the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a recipe or reconnect state.
+Organization and team settings describe backend namespaces, not permission grants. Modal credentials select the workspace; its optional `workspace` field is a descriptive label. Credentials are never part of a recipe or reconnect state.
 
 Daytona, Modal and explicitly configured Vercel Envd management providers prepare the target, compatible Envd runtime, and authorized connection. Sprites and Runloop do not yet prepare Envd. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
 
@@ -261,7 +261,13 @@ New Daytona organizations must choose a default region in the dashboard before c
 
 ### Modal
 
-Supply an explicit Envd-compatible `image`: a registry image or a Modal image ID (`im-...`) in the same account. Use an existing deployed App. Agent file, shell, process and Computer operations use Envd/EIP with `/workspace` as the default working directory and UID/GID 1000. Migrate old plain-Python images and native settings such as `root` and `python`, then create a new environment.
+In Service / Console, configure only the Modal Token ID and Token Secret, then enable Desktop. Connection configuration may be empty: it defaults to the `a13n-sandboxes` App in `main`, creating the App on first preparation if absent. `workspace` is an optional label; credentials select the account. Saving a template does not start a build.
+
+A desktop recipe with no `image` uses `auto`: first creation builds Envd, desktop dependencies and human access components from pinned public artifacts; later creations reuse the recorded immutable image ID. No local binary download or build script is needed. Console warns that first creation can take several minutes, shows real stages and elapsed time, continues in the background after leaving, offers a desktop preview when ready, and allows retry after a confirmed failure. Automatic desktops default to 2 CPUs, 4096 MiB, 3600 seconds and human assistance enabled; explicit overrides are retained.
+
+Build records are isolated by workspace, Provider, credential version and manifest. Reuse still validates image access with current credentials. Interrupted waits rejoin the same content-addressed build without allocating temporary sandboxes. Reusable images and the App remain account assets; allocated sandboxes retain ownership checks and failure cleanup.
+
+Custom images and headless environments still require an explicit compatible `image` and an existing App. Agent operations use Envd/EIP, `/workspace` and UID/GID 1000. The script below is an optional custom-image workflow:
 
 Authenticate with `modal token new` and prepare a compatible Linux amd64 Envd binary before running the image builder. The builder does not embed runtime credentials:
 

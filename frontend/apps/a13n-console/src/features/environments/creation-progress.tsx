@@ -11,6 +11,9 @@ import styles from "./environments.module.css";
 export const FIRST_DESKTOP_NOTICE =
   "The first desktop creation usually takes 1–2 minutes to prepare a private template; it may take longer. Later creations reuse it. You can leave this page while creation continues.";
 
+export const MODAL_FIRST_DESKTOP_NOTICE =
+  "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
+
 const STAGES = {
   preparing: "Preparing desktop template",
   building: "Building desktop template in E2B",
@@ -23,9 +26,11 @@ const STAGES = {
 export function CreationProgress({
   environment,
   etag,
+  providerType,
 }: {
   environment: Schema["EnvironmentView"];
   etag?: string;
+  providerType?: string;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
@@ -85,7 +90,13 @@ export function CreationProgress({
   const seconds = Math.max(0, Math.floor((end - Date.parse(start)) / 1000));
   return (
     <section className={styles.factGroup}>
-      <h3 aria-live="polite">{t(STAGES[stage])}</h3>
+      <h3 aria-live="polite">
+        {t(
+          stage === "building" && providerType === "modal"
+            ? "Building desktop image in Modal"
+            : STAGES[stage],
+        )}
+      </h3>
       {environment.status === "creating" && (
         <>
           <p>

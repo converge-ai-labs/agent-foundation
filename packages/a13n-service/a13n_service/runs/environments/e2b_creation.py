@@ -1,4 +1,4 @@
-"""User-visible automatic E2B creation progress and fenced retry; no cloud I/O on reads."""
+"""User-visible automatic E2B/Modal creation progress and fenced retry; no cloud I/O on reads."""
 
 from datetime import datetime
 from typing import Literal
@@ -11,7 +11,7 @@ from a13n_service.infra.errors import conflict
 from a13n_service.infra.http import require_match
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import e2b_templates, lifecycle
+from a13n_service.runs.environments import e2b_templates, lifecycle, modal_images
 from a13n_service.runs.environments.adapters import provider_identity
 from a13n_service.runs.environments.schemas import EnvironmentView, Handle
 from a13n_service.runs.environments.service import _audit, _find
@@ -34,10 +34,13 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
         handle
         and (
             handle.e2b_desktop_template
+            or handle.modal_desktop_image
             or (
                 row.provider_identity
-                and row.provider_identity.get("type") == "e2b"
-                and handle.recipe.get("template") == "auto"
+                and (
+                    (row.provider_identity.get("type") == "e2b" and handle.recipe.get("template") == "auto")
+                    or (row.provider_identity.get("type") == "modal" and handle.recipe.get("image") == "auto")
+                )
                 and handle.recipe.get("desktop")
             )
         )
@@ -64,6 +67,15 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             stage = "inactive"
         elif row.failure and row.failure["permanent"]:
             stage, ended = "failed", row.failure["at"]
+        elif handle.modal_desktop_image:
+            image = await session.get(modal_images.ModalDesktopImageRow, handle.modal_desktop_image)
+            if image and image.workspace_id == row.workspace_id and image.provider_id == row.provider_id:
+                if handle.recipe.get("image") != "auto" or image.phase == "ready":
+                    stage = "starting"
+                elif image.phase == "building":
+                    stage = "building"
+                elif image.phase == "failed":
+                    stage, ended = "failed", image.updated_at
         elif handle.recipe.get("template") != "auto":
             stage = "starting"
         elif handle.e2b_desktop_template:
@@ -107,6 +119,11 @@ async def retry(
                 # Only a confirmed failed/cleaned build may be replaced. Ambiguous calls keep their identity.
                 key = await e2b_templates.bind(runtime, session, row, provider)
                 row.handle = handle.model_copy(update={"e2b_desktop_template": key}).model_dump(mode="json")
+        if handle.recipe.get("image") == "auto" and handle.modal_desktop_image:
+            image = await session.get(modal_images.ModalDesktopImageRow, handle.modal_desktop_image)
+            if image is not None and image.phase == "failed":
+                key = await modal_images.bind(runtime, session, row, provider)
+                row.handle = handle.model_copy(update={"modal_desktop_image": key}).model_dump(mode="json")
         await lifecycle.begin(session, row, "creating")
         await session.flush()
         _audit(session, actor, row, "retry_creation")

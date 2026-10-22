@@ -143,3 +143,21 @@ it("captures only on explicit view/refresh and releases preview URLs when closed
   expect(revoke).toHaveBeenCalledWith("blob:second");
   vi.unstubAllGlobals();
 });
+
+it("labels Modal build progress without changing the durable progress endpoint", async () => {
+  http.GET.mockResolvedValue({
+    data: {
+      stage: "building",
+      started_at: environment.created_at,
+      observed_at: environment.created_at,
+      retryable: false,
+    },
+  });
+  const view = mount(
+    <CreationProgress environment={environment} providerType="modal" />,
+  );
+  await screen.findByText("Building desktop image in Modal");
+  expect(screen.queryByText("Building desktop template in E2B")).toBeNull();
+  view.unmount();
+  view.cache.clear();
+});

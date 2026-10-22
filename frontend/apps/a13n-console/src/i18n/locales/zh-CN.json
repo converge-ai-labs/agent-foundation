@@ -3333,5 +3333,9 @@
   "Loading desktop preview…": "正在加载桌面预览…",
   "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.": "这是只读快照，可刷新查看最新画面；需要操作桌面时，请从会话中接管。",
   "Desktop preview": "桌面预览",
-  "Creation failed": "创建失败"
+  "Creation failed": "创建失败",
+  "Modal image": "Modal 镜像",
+  "Building desktop image in Modal": "正在 Modal 构建桌面镜像",
+  "Automatically prepare Envd, desktop dependencies and human control on first creation.": "首次创建时自动准备 Envd、桌面依赖和人工控制组件。",
+  "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "首次创建 Modal 桌面需要构建镜像，可能耗时数分钟。后续创建会复用镜像。创建会在后台继续，可以离开此页面。"
 }

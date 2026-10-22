@@ -87,7 +87,7 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 ### Modal
 
-`ModalEnvironmentConfiguration` 选择镜像、资源和有限生命周期。`ModalConnectionConfiguration` 指定 Modal `workspace` 和已部署的现有 App；`ModalCredential` 包含 token ID 和 secret。基于文件系统快照的停止/恢复仅用于托管目标。
+`ModalEnvironmentConfiguration` 选择镜像、资源和有限生命周期。`ModalConnectionConfiguration` 可选填写 Modal `workspace`，并指定 App（默认 `a13n-sandboxes`）；Service 自动桌面在首次创建时准备 App 和镜像；`ModalCredential` 包含 token ID 和 secret。基于文件系统快照的停止/恢复仅用于托管目标。
 
 ### Vercel Sandbox
 

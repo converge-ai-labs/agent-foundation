@@ -45,7 +45,10 @@ import {
   environmentTemplates,
 } from "./api";
 import instanceStyles from "./environments.module.css";
-import { FIRST_DESKTOP_NOTICE } from "./creation-progress";
+import {
+  FIRST_DESKTOP_NOTICE,
+  MODAL_FIRST_DESKTOP_NOTICE,
+} from "./creation-progress";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
 import { MetricsSourcePicker } from "../monitoring/environment";
@@ -461,6 +464,11 @@ function EnvironmentForm({
       {kind === "managed" &&
         templates.data?.find((item) => item.id === templateId)?.config?.recipe
           ?.template === "auto" && <p role="note">{t(FIRST_DESKTOP_NOTICE)}</p>}
+      {kind === "managed" &&
+        templates.data?.find((item) => item.id === templateId)?.config?.recipe
+          ?.image === "auto" && (
+          <p role="note">{t(MODAL_FIRST_DESKTOP_NOTICE)}</p>
+        )}
       <MetricsSourcePicker
         value={metricsSource}
         onChange={setMetricsSource}

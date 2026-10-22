@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.modal.diagnostics import desktop_operation
@@ -9,8 +10,10 @@ from a13n_harness.providers.environment.native.environment import NativeRuntime
 
 from a13n_service.providers.environment._backend_factory import BackendProvider, ManagementBackendFactory
 from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.modal_build import ModalDesktopPreparation
 
 from .configuration import ModalRecipe
+from .desktop_build import DesktopBuildAPI, locator, revision, specification
 from .management import ModalManagement
 
 
@@ -60,4 +63,8 @@ MODAL = management_definition(
     supports_stop=True,
     supports_destroy=True,
     requires_keepalive=True,
+)
+
+MODAL = replace(
+    MODAL, modal_desktop_preparation=ModalDesktopPreparation(specification, revision, locator, DesktopBuildAPI)
 )

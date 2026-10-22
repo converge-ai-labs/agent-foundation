@@ -39,7 +39,7 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 | `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
 | `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
 | `daytona` | Daytona 沙箱                      | `organization_id`、可选 `target` 区域；凭据为 `{"api_key": ...}`                                                                     | 停止，保留文件             |
-| `modal`   | Modal 沙箱                        | `workspace`、`app_name`（托管沙箱的已部署 App）、可选 `environment_name`；凭据为 `{"token_id", "token_secret"}`                      | 保存文件快照后终止         |
+| `modal`   | Modal 沙箱                        | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`）；凭据为 `{"token_id", "token_secret"}`      | 保存文件快照后终止         |
 | `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
 | `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
 | `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
@@ -242,7 +242,7 @@ Agent 可以主动暂停并请人操作桌面。Console 的协助卡片提供“
 | E2B      | 预装桌面访问端点的自定义模板。普通官方 `desktop` 模板需要补充查看端点；Agent Computer use 还需要兼容的 Envd 执行。                                                                                                    |
 | Docker   | 兼容的桌面镜像及 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，由部署方将路由转发到各容器的 6081 端口。连接 Docker Engine 或 Envd 不能替代浏览器访问路由；仅回环地址允许明文 WS。     |
 | Daytona  | 自定义 `snapshot`，预装并在启动时运行桌面访问 supervisor。Service 通过签名预览路由访问 6081 端口；supervisor 负责只读权限及强制断开已撤销的控制连接。参见 [snapshot 构建说明](../environments/providers.md#daytona)。 |
-| Modal    | 兼容 Envd 的 `image`，预装桌面访问 supervisor。Service 使用独立的 6081 TLS 通道与短期授权，参见 [Modal 构建说明](../environments/providers.md#modal)。                                                                |
+| Modal    | 桌面配方默认 `image="auto"` 自动构建，或使用预装 Envd 与桌面访问 supervisor 的自定义镜像。Service 使用独立的 6081 TLS 通道与短期授权，参见 [Modal 构建说明](../environments/providers.md#modal)。                     |
 
 Agent 主动请求协助和用户主动接管使用相同的 Provider 前提。凭据和桌面地址不会授予 Agent 电脑权限；仍需单独配置工具集和挂载。
 

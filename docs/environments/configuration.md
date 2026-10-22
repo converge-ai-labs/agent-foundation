@@ -87,7 +87,7 @@ The first automatic E2B desktop creation usually takes 1–2 minutes and can tak
 
 ### Modal
 
-`ModalEnvironmentConfiguration` selects image, resources and bounded lifetime. `ModalConnectionConfiguration` names the Modal `workspace` and existing deployed App; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
+`ModalEnvironmentConfiguration` selects image, resources and bounded lifetime. `ModalConnectionConfiguration` optionally labels the Modal `workspace` and selects an App (default `a13n-sandboxes`); Service automatic desktops prepare that App and image on first creation; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
 
 ### Vercel Sandbox
 

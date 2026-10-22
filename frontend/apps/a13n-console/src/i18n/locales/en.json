@@ -3333,5 +3333,9 @@
   "Loading desktop preview…": "Loading desktop preview…",
   "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.": "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.",
   "Desktop preview": "Desktop preview",
-  "Creation failed": "Creation failed"
+  "Creation failed": "Creation failed",
+  "Modal image": "Modal image",
+  "Building desktop image in Modal": "Building desktop image in Modal",
+  "Automatically prepare Envd, desktop dependencies and human control on first creation.": "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+  "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues."
 }

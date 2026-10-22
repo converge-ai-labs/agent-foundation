@@ -133,16 +133,16 @@ Native Docker 提供 Files & Shell，包括进程控制和输出观察。端口�
 
 E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。Daytona 和 Modal 使用 Envd。E2B 和 Vercel 保留 Native Files & Shell，并通过显式的 Envd 路径提供进阶能力。Sprites 和 Runloop 当前仅提供 Native Files & Shell。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
 
-| Provider       | 后端设置                                                              | 凭据字段                         | 常用目标配置设置                                                               |
-| -------------- | --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
-| E2B            | `domain`、可选 `api_url`                                              | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`         |
-| Daytona        | `organization_id`、`target`（默认 `us`）                              | `api_key`                        | `snapshot`，决定沙箱资源                                                       |
-| Modal          | `workspace`、已有已部署 `app_name`、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | 兼容 Envd 的必填 `image`、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                               | `api_key`（Vercel access token） | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`      |
-| Fly.io Sprites | `organization`                                                        | `api_key`（Sprites token）       | `region`                                                                       |
-| Runloop        | `organization`                                                        | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                        |
+| Provider       | 后端设置                                                                                 | 凭据字段                         | 常用目标配置设置                                                                                               |
+| -------------- | ---------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| E2B            | `domain`、可选 `api_url`                                                                 | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                         |
+| Daytona        | `organization_id`、`target`（默认 `us`）                                                 | `api_key`                        | `snapshot`，决定沙箱资源                                                                                       |
+| Modal          | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | Service 自动桌面 `image="auto"` 或兼容 Envd 的自定义镜像、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                                  | `api_key`（Vercel access token） | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                      |
+| Fly.io Sprites | `organization`                                                                           | `api_key`（Sprites token）       | `region`                                                                                                       |
+| Runloop        | `organization`                                                                           | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                        |
 
-使用拥有所提供凭据的组织、团队或 Modal `workspace`；这些字段描述后端命名空间，不授予权限。凭据绝不属于目标配置或重连状态。
+组织和团队配置描述后端命名空间，不授予权限。Modal 账号由凭据决定，可选的 `workspace` 字段仅作说明。凭据绝不属于目标配置或重连状态。
 
 Daytona、Modal 和显式选择 Envd 路径的 Vercel 管理 provider 负责准备目标、兼容的 Envd 运行时和授权连接。Sprites 和 Runloop 尚未实现 Envd 准备流程。镜像和快照可预装守护进程。文件路径、命令、进程和输出语义由 EIP 提供；OS sandbox 和 Egress 按 Host 选择的策略执行。能力以实际协商结果为准。现有目标引用与配置的迁移必须显式进行，不能将旧的原生执行配置静默解释为 Envd 配置。
 
@@ -261,7 +261,13 @@ Agent 的 EIP 操作通过私有 HTTP 端口 8888。Daytona 代理认证与客�
 
 ### Modal
 
-必须显式提供兼容 Envd 的 `image`，可以是镜像仓库地址或同一账号的 Modal 镜像 ID（`im-...`）。使用已部署的现有 App。Agent 文件、Shell、进程和 Computer 操作通过 Envd/EIP 执行，默认工作目录为 `/workspace`，执行用户 UID/GID 为 1000。旧的纯 Python 镜像和 `root`、`python` 等原生配置需要迁移并创建新环境。
+在 Service / Console 中，只需配置 Modal Token ID 和 Token Secret，再勾选桌面。连接配置可留空：默认使用 `main` 环境中的 `a13n-sandboxes` App，首次创建时若不存在则自动创建。`workspace` 仅为可选说明，账号由凭据决定。保存模板不会触发构建。
+
+桌面配方省略 `image` 时使用 `auto`：首次创建从固定版本和校验和的公开文件构建 Envd、桌面与人工接管组件，后续复用已记录的镜像 ID。无需本地下载二进制或运行构建脚本。Console 提示首次可能耗时数分钟，展示真实阶段与等待时间；离开页面后后台继续，就绪后可查看桌面，确认失败后可修正凭据再重试。自动桌面默认 2 CPU、4096 MiB、3600 秒及人工协助开启，可显式修改。
+
+构建记录按工作区、连接、凭据版本及配方隔离，复用仍验证当前凭据的镜像访问权。超时继续等待相同内容的构建，不新建临时沙箱。可复用镜像与 App 保留；分配出的沙箱仍执行原有归属校验和异常清理。
+
+自定义镜像和无桌面环境仍需显式提供兼容 Envd 的 `image`，使用已有 App。Agent 操作通过 Envd/EIP 执行，工作目录 `/workspace`，UID/GID 为 1000。下面脚本是可选的自定义镜像构建方式：
 
 运行以下构建脚本前，使用 `modal token new` 登录，并准备兼容的 Linux amd64 Envd 二进制。脚本只构建镜像，不写入运行时凭据：
 
