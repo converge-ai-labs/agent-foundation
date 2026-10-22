@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -177,6 +178,15 @@ _INVALID_PROVIDER_ITEM_ID_PATTERN = re.compile(
     r"invalid\s+['\"]input\[\d+\]\.id['\"]:\s*['\"][^'\"]+['\"]\.\s*"
     r"expected an id that begins with\s+['\"`][a-z][a-z0-9_-]*['\"`]"
 )
+_INVALID_THINKING_SIGNATURE_PATTERN = re.compile(
+    r"\binvalid\s+[`'\"]?signature[`'\"]?\s+in\s+[`'\"]?thinking[`'\"]?\s+block\b"
+)
+# Preserve the previously supported block-first provider error forms without
+# treating unrelated occurrences of "invalid" and "signature" as a rejection.
+_INVALID_THINKING_BLOCK_SIGNATURE_PATTERN = re.compile(
+    r"\b(?:thinking|redacted_thinking)[`'\"]?\s+block\s+"
+    r"(?:has\s+an\s+invalid\s+signature\b|signature\s+is\s+invalid\b)"
+)
 _ANTHROPIC_INCOMPLETE_THINKING_PATTERN = re.compile(
     r"messages\.\d+\.content\.\d+\.thinking\.thinking:\s*field required\b"
 )
@@ -203,26 +213,43 @@ def _is_anthropic_incomplete_thinking(error: Exception) -> bool:
     )
 
 
+def _has_invalid_thinking_signature(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(_has_invalid_thinking_signature(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_has_invalid_thinking_signature(item) for item in value)
+    if not isinstance(value, str):
+        return False
+    text = value.lower()
+    if (
+        _INVALID_THINKING_SIGNATURE_PATTERN.search(text) is not None
+        or _INVALID_THINKING_BLOCK_SIGNATURE_PATTERN.search(text) is not None
+    ):
+        return True
+    # Gateways can put serialized upstream JSON inside an error field. Decode
+    # it before matching so escaped quotation marks retain their meaning.
+    try:
+        nested = json.loads(value)
+    except ValueError:
+        return False
+    return _has_invalid_thinking_signature(nested)
+
+
+def _is_anthropic_invalid_thinking_signature(error: Exception) -> bool:
+    return isinstance(error, ModelAPIError) and (
+        _has_invalid_thinking_signature(error.message) or _has_invalid_thinking_signature(error.body)
+    )
+
+
 def _is_anthropic_modified_thinking(error: Exception) -> bool:
     if not isinstance(error, ModelAPIError):
         return False
     text = _error_text(error)
-    modified_block = (
+    return (
         "thinking" in text
         and "redacted_thinking" in text
         and ("cannot be modified" in text or "must remain as they were" in text)
     )
-    thinking_block = any(
-        marker in text
-        for marker in (
-            "thinking block",
-            "`thinking` block",
-            "redacted_thinking block",
-            "`redacted_thinking` block",
-        )
-    )
-    invalid_signature = thinking_block and "invalid" in text and "signature" in text
-    return modified_block or invalid_signature
 
 
 def _is_stale_reasoning(error: Exception) -> bool:
@@ -340,6 +367,9 @@ DEFAULT_MODEL_RECOVERY_RULES: tuple[ModelRecoveryRule, ...] = (
     ModelRecoveryRule("oversized_payload", _is_oversized_payload, _drop_inline_media),
     ModelRecoveryRule("invalid_provider_item_id", _is_invalid_provider_item_id, strip_provider_native_state),
     ModelRecoveryRule("anthropic_incomplete_thinking", _is_anthropic_incomplete_thinking, strip_thinking_parts),
+    ModelRecoveryRule(
+        "anthropic_invalid_thinking_signature", _is_anthropic_invalid_thinking_signature, strip_thinking_parts
+    ),
     ModelRecoveryRule("anthropic_modified_thinking", _is_anthropic_modified_thinking, strip_thinking_parts),
     ModelRecoveryRule("stale_reasoning", _is_stale_reasoning, strip_thinking_parts),
 )
