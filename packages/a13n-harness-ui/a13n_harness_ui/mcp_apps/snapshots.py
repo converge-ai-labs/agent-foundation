@@ -7,12 +7,13 @@ import base64
 from a13n_harness import AgentContext, HarnessEvent
 from ag_ui.core import CustomEvent
 from anyio import fail_after
-from mcp.types import BlobResourceContents, TextResourceContents
+from mcp.types import BlobResourceContents, ReadResourceResult, TextResourceContents
 from pydantic import ValidationError
 from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
 
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_runtime.connections import Connection
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.storage.objects import ImmutableObjectStore, ObjectKind
 
 from .connections import MIME_TYPE, CapturedCall, Connections, resource_uri
@@ -130,7 +131,7 @@ class AppSnapshots:
             server_id=reference.server_id,
             tool=call.tool.model_dump(mode="json", by_alias=True, exclude_none=True),
             arguments=call.arguments,
-            result=call.result.model_dump(mode="json", by_alias=True, exclude_none=True),
+            result=call.result,
             resource=resource,
             unavailable=unavailable,
         )
@@ -142,7 +143,7 @@ class AppSnapshots:
 
 
 async def read_app_resource(connection: Connection, uri: str) -> AppResource:
-    result = await connection.client.read_resource_mcp(uri)
+    result = ReadResourceResult.model_validate(await HostToolset(connection).read_resource_for_app(uri))
     contents = [item for item in result.contents if str(item.uri) == uri and item.mime_type == MIME_TYPE]
     if len(contents) != 1:
         raise ValueError("Expected exactly one MCP App HTML resource")

@@ -18,6 +18,7 @@ from a13n_harness_ui.mcp_apps.operations import AppOperations, AppToolRequest
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import AgentResourceSource, ObjectKind, ThreadConfiguration, open_local_store
 from a13n_harness_ui.surfaces import RootRunReceipt
@@ -100,7 +101,7 @@ async def apps(tmp_path: Path, request: pytest.FixtureRequest, app_transport):
             tool = next(tool for tool in await connection.client.list_tools() if tool.name == "counter")
             result = await connection.client.call_tool_mcp("counter", {})
             reference = await snapshots.capture(
-                CapturedCall(connection, tool, {}, result),
+                CapturedCall(connection, tool, {}, result.model_dump(mode="json", by_alias=True, exclude_none=True)),
                 thread_id="thread-1",
                 run_id="run-original",
                 call_id="call-original",
@@ -500,13 +501,13 @@ async def test_queued_app_rechecks_policy_but_ignores_model_review_settings(apps
     view = await operations.activate(reference)
     connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
     queued = asyncio.Event()
-    call_app_tool = connection.client.call_app_tool
+    call_app_tool = HostToolset.call_app_tool
 
     async def notify_queued(*args, **kwargs):
         queued.set()
         return await call_app_tool(*args, **kwargs)
 
-    monkeypatch.setattr(connection.client, "call_app_tool", notify_queued)
+    monkeypatch.setattr(HostToolset, "call_app_tool", notify_queued)
     async with connection.dispatch:
         await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="queued", name="counter"))
         async with asyncio.timeout(10):
@@ -568,7 +569,10 @@ async def test_child_message_is_attributed_to_root_and_rechecks_route_before_sub
     tool = next(item for item in await connection.client.list_tools() if item.name == "counter")
     result = await connection.client.call_tool_mcp("counter", {})
     reference = await operations.snapshots.capture(
-        CapturedCall(connection, tool, {}, result), thread_id="child", run_id="run-child", call_id="child-call"
+        CapturedCall(connection, tool, {}, result.model_dump(mode="json", by_alias=True, exclude_none=True)),
+        thread_id="child",
+        run_id="run-child",
+        call_id="child-call",
     )
     view = await operations.activate(reference)
     submitted = []

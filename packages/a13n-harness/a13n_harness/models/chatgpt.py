@@ -26,7 +26,7 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.settings import ModelSettings
 
 if TYPE_CHECKING:
-    from pydantic_ai.models.openai import _ResponsesRequestParams
+    from pydantic_ai.models.openai import _Hasher, _ResponsesRequestParams
 
 _UNSUPPORTED_SETTINGS = frozenset(
     {
@@ -144,6 +144,7 @@ class OpenAIChatGPTResponsesModel(OpenAIResponsesModel):
         *,
         expected_model_name: OpenAIModelName | None = None,
         expected_response_id: str | None = None,
+        history: _Hasher | None = None,
     ) -> OpenAIResponsesStreamedResponse:
         checked = cast(AsyncStream[responses.ResponseStreamEvent], _CompletedStream(response, self.model_name))
         return await super()._process_streamed_response(
@@ -152,4 +153,5 @@ class OpenAIChatGPTResponsesModel(OpenAIResponsesModel):
             model_request_parameters,
             expected_model_name=expected_model_name,
             expected_response_id=expected_response_id,
+            history=history,
         )
