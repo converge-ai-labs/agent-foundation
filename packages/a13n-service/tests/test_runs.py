@@ -468,7 +468,9 @@ async def test_the_agent_composer_creates_an_agent_once_approved(service, script
             json={"config": {"model": model}},
             headers={"if-match": f'"{composer["id"]}:{composer["version"]}"'},
         )
-        assert edited.status_code == 409 and edited.json()["error"]["details"]["reason"] == "builtin"
+        assert edited.status_code == 400, edited.text
+        assert edited.json()["error"]["code"] == "invalid_argument"
+        assert edited.json()["error"]["details"]["field"] == "preset"
 
         async def custom() -> list[dict[str, Any]]:
             return (await service.client.get(agents, params={"source": "custom"})).json()["items"]
@@ -629,7 +631,7 @@ async def test_the_agent_composer_reads_the_revision_it_starts_from(service, scr
         assert "Version one." in read["content"] and "Version two." not in read["content"]
 
 
-async def test_the_agent_composer_follows_the_usable_models(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_the_agent_composer_keeps_its_selected_model(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     prepare = f"{service.api}/agent-composer"
     refused = await service.client.post(prepare)
     assert refused.status_code == 409 and refused.json()["error"]["details"]["reason"] == "model_required"
@@ -638,7 +640,7 @@ async def test_the_agent_composer_follows_the_usable_models(service, scripted_mo
     revision = f"{service.api}/agents/{composer['id']}/revisions/{composer['default_revision_id']}"
     assert (await service.client.get(revision)).json()["config"]["model"] == first
 
-    # Disabling the model it runs on moves it to another usable model with a new revision.
+    # An available backup never replaces the selected model, even after it is disabled.
     second = await service.client.post(
         f"{service.api}/models",
         json={
@@ -657,7 +659,8 @@ async def test_the_agent_composer_follows_the_usable_models(service, scripted_mo
         headers={"if-match": f'"{model["key"]}:{model["version"]}"'},
     )
     assert disabled.status_code == 200, disabled.text
-    moved = (await service.client.post(prepare)).json()
-    assert moved["default_revision_id"] != composer["default_revision_id"]
-    revision = f"{service.api}/agents/{moved['id']}/revisions/{moved['default_revision_id']}"
-    assert (await service.client.get(revision)).json()["config"]["model"] == second.json()["key"] == "backup"
+    kept = await service.client.post(prepare)
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["default_revision_id"] == composer["default_revision_id"]
+    assert kept.json()["version"] == composer["version"]
+    assert (await service.client.get(revision)).json()["config"]["model"] == first
