@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
-from .test_connections import create, patch, serve
+from .test_connections import admin, create, patch, serve
 
 pytestmark = pytest.mark.anyio
 URI = "ui://counter/app.html"
@@ -20,7 +20,7 @@ MIME = "text/html;profile=mcp-app"
 @pytest.fixture
 async def app_run(service, scripted_model, runs_kit, request):
     server = FastMCP("App counter")
-    calls = SimpleNamespace(show=0, increment=0, resource=0, html="<p>First version</p>", slow=False)
+    calls = SimpleNamespace(show=0, increment=0, resource=0, html="<p>First version</p>", slow=False, failed=False)
 
     @server.tool(meta={"ui": {"resourceUri": URI}})
     def show_counter(label: str) -> ToolResult:
@@ -37,7 +37,12 @@ async def app_run(service, scripted_model, runs_kit, request):
         calls.increment += 1
         if calls.slow:
             await anyio.sleep(5)
-        return ToolResult(content="incremented", structured_content={"count": calls.increment}, meta={"action": True})
+        return ToolResult(
+            content="incremented",
+            structured_content={"count": calls.increment},
+            meta={"action": True},
+            is_error=calls.failed,
+        )
 
     @server.tool(meta={"ui": {"visibility": ["model"]}})
     def hidden() -> str:
@@ -122,6 +127,24 @@ async def test_worker_saves_original_and_control_reopens_fresh_html_without_repl
     assert (calls.show, calls.increment, calls.resource) == (1, 1, 3)
     assert (await runs_kit.get_run(service, app_run.run_id))["usage_at_seal"]["requests"] == 2
     assert await runs_kit.items(service, app_run.run_id) == app_run.history
+    from a13n_service.runs.mcp_apps.service import original as load_original
+
+    saved = await load_original(
+        service.runtime, admin(service), service.tenant.workspace_id, app_run.run_id, app_run.reference["app_id"]
+    )
+    assert "resource" not in saved.model_dump() and "html" not in saved.model_dump()
+    assert calls.html not in saved.model_dump_json()
+
+
+async def test_app_button_preserves_raw_error_result_without_retry(service, app_run):
+    app_run.calls.failed = True
+    response = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
+    assert response.status_code == 200, response.text
+    result = response.json()["result"]
+    assert result["isError"] is True
+    assert result["structuredContent"] == {"count": 1}
+    assert result["_meta"]["action"] is True
+    assert app_run.calls.increment == 1 and app_run.calls.show == 1
 
 
 async def test_control_rejects_wrong_run_hidden_tools_permissions_and_disabled_connection(service, runs_kit, app_run):

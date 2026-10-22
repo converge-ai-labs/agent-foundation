@@ -5,10 +5,11 @@ from typing import Any
 
 from a13n_harness import AgentContext, HarnessEvent, HarnessStreamEvent
 from a13n_logging import get_logger
+from mcp.types import Tool
+from pydantic_ai.mcp import MCPAppToolResult
 from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
 
 from a13n_service.infra.ids import new_object_id
-from a13n_service.providers.tools.mcp_apps import Original, resource_uri
 from a13n_service.resources.connections.access import McpConnection
 from a13n_service.resources.connections.runtime import SelectedConnection
 from a13n_service.runs.contents import MAX_APP_BYTES, MAX_PENDING_APP_BYTES, MAX_PENDING_APPS, Contents
@@ -30,39 +31,45 @@ class Captures:
         self.pending: list[_Pending] = []
         self.size = 0
 
-    def add(self, revision_id: str, selected: SelectedConnection, original: Original) -> None:
+    def add(
+        self,
+        revision_id: str,
+        selected: SelectedConnection,
+        context: AgentContext,
+        call_id: str,
+        tool: Tool,
+        app: MCPAppToolResult,
+    ) -> None:
         if len(self.pending) >= MAX_PENDING_APPS:
             return
         connection = selected.connection
         assert isinstance(connection, McpConnection)
         if selected.selection is None:
             raise ValueError("App capture requires the authorized connection selection")
-        uri = resource_uri(original.tool)
-        assert uri is not None
         reference = AppReference(
             app_id=new_object_id("app"),
             connection_id=connection.id,
             agent_revision_id=revision_id,
-            source_run_id=original.context.run_id,
-            tool_call_id=original.tool_call_id,
-            tool_name=original.tool.name,
-            resource_uri=uri,
+            source_run_id=context.run_id,
+            tool_call_id=call_id,
+            tool_name=tool.name,
+            resource_uri=app["resource_uri"],
         )
         saved = SavedApp(
             reference=reference,
             run_id=self.run_id,
             connection_url=connection.config.url,
             selection=selected.selection,
-            tool=original.tool.model_dump(mode="json", by_alias=True, exclude_none=True),
-            arguments=original.arguments,
-            result=original.result.model_dump(mode="json", by_alias=True, exclude_none=True),
+            tool=tool.model_dump(mode="json", by_alias=True, exclude_none=True),
+            arguments=app["tool_input"],
+            result=app["result"],
         )
         data = saved.model_dump_json().encode()
         if len(data) > MAX_APP_BYTES or self.size + len(data) > MAX_PENDING_APP_BYTES:
             data = None
             reference = reference.model_copy(update={"unavailable": True})
             logger.warning("MCP App original exceeded capture limit", extra={"app_id": reference.app_id})
-        self.pending.append(_Pending(original.context, reference, data))
+        self.pending.append(_Pending(context, reference, data))
         self.size += len(data or b"")
 
     def observe(self, source: HarnessStreamEvent[Any], *, root_run_id: str | None, contents: Contents) -> dict | None:

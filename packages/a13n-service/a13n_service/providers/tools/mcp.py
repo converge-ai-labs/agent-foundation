@@ -19,7 +19,8 @@ from fastmcp.client.transports import ClientTransport
 from fastmcp.client.transports.base import SessionKwargs, TransportOptions
 from mcp import ClientSession
 from mcp.client.extension import advertise
-from mcp.types import CallToolRequest, CallToolResult
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
+from mcp.types import CallToolRequest
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
@@ -28,7 +29,7 @@ from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset, ToolsetTool
 
 from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolDispatch, ToolInfo, unique
-from a13n_service.providers.tools.mcp_apps import MIME_TYPE, AppClient, AppMCP, AppToolset, Capture
+from a13n_service.providers.tools.mcp_apps import AppClient, AppMCP, AppToolset, Capture
 
 MAX_HEADERS = 32
 
@@ -201,7 +202,7 @@ def mcp_client(
             client.transport,
             timeout=timeout,
             init_timeout=timeout,
-            extensions=[advertise("io.modelcontextprotocol/ui", {"mimeTypes": [MIME_TYPE]})],
+            extensions=[advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})],
         )
     client.transport = DispatchTransport(client.transport, connection_id)
     return client
@@ -223,12 +224,12 @@ class DispatchToolset(CheckedToolset):
 
 
 async def call_app_tool(
-    client: Client[ClientTransport], dispatch: ToolDispatch, check: DispatchCheck, arguments: dict[str, Any]
-) -> CallToolResult:
+    toolset: MCPToolset[AgentContext], dispatch: ToolDispatch, check: DispatchCheck, arguments: dict[str, Any]
+) -> dict[str, Any]:
     """Direct control dispatch, with the same per-round authorization seam and no replay."""
     token = _dispatch.set((dispatch, check))
     try:
-        return await client.call_tool_mcp(dispatch.tool_name, arguments)
+        return await toolset.call_tool_for_app(dispatch.tool_name, arguments)
     finally:
         _dispatch.reset(token)
 
