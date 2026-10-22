@@ -291,6 +291,93 @@ async def test_runtime_deferred_target_retains_function_identity():
     assert resumed.output_or_raise() == "done"
 
 
+@pytest.mark.parametrize("proxy", [False, True])
+async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_effect(proxy):
+    from pydantic_ai import CallDeferred
+
+    effects, approvals = [], []
+
+    def change(value: int):
+        effects.append(value)
+        raise CallDeferred(metadata={"receipt": "job-1"})
+
+    async def handler(ctx, requests):
+        approvals.append(requests)
+        return requests.build_results(approve_all=True)
+
+    def build():
+        return _build(
+            FunctionToolset([Tool(change, requires_approval=True)], id="operations"),
+            proxy=proxy,
+            handler=handler,
+        )
+
+    first = await build().run("go")
+    assert first.status == "suspended" and first.deferred is not None
+    requests = _roundtrip(first.deferred)
+    item = requests.calls[0]
+    assert requests.metadata[item.target_call.tool_call_id]["receipt"] == "job-1"
+    assert requests.metadata[item.target_call.tool_call_id]["a13n.harness.deferred-function-id"] == (
+        "tool/operations/change"
+    )
+    resumed = await build().run(
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(
+            requests, requests.build_results(calls={item.target_call.tool_call_id: "job finished"})
+        ),
+    )
+    assert resumed.output_or_raise() == "done"
+    assert effects == [3]
+    assert len(approvals) == 1 and approvals[0].approvals == [item.target_call]
+
+
+@pytest.mark.parametrize("proxy", [False, True])
+@pytest.mark.parametrize("recovery", [False, True])
+@pytest.mark.parametrize("scenario", ["external-failure", "external-success", "function-failure"])
+async def test_missing_target_only_accepts_external_failure(proxy, recovery, scenario):
+    from pydantic_ai import CallDeferred
+
+    effects = []
+
+    def change(value: int):
+        effects.append(value)
+        raise CallDeferred()
+
+    source = (
+        FunctionToolset([change], id="operations")
+        if scenario == "function-failure"
+        else ExternalToolset([ToolDefinition(name="change")], id="editor")
+    )
+    first = await _build(source, proxy=proxy).run("go")
+    assert first.deferred is not None
+    requests = _roundtrip(first.deferred)
+    item = requests.calls[0]
+    value = "finished" if scenario == "external-success" else ToolFailed("Client disconnected")
+    resume = DeferredToolResume(
+        requests, requests.build_results(calls={item.target_call.tool_call_id: value}), recovery=recovery
+    )
+    rebuilt = _build(FunctionToolset([], id="empty"), proxy=proxy)
+    if scenario != "external-failure":
+        with pytest.raises(DefinitionError) as error:
+            await rebuilt.run(previous_state=first.state, deferred_resume=resume)
+        assert error.value.code == "deferred_surface_mismatch"
+    else:
+        resumed = await rebuilt.run(previous_state=first.state, deferred_resume=resume)
+        assert resumed.output_or_raise() == "done"
+        returns = [
+            part
+            for message in resumed.all_messages()
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        assert len(returns) == 1
+        assert returns[0].tool_call_id == item.model_call.tool_call_id
+        assert returns[0].outcome == "failed" and returns[0].content == "Client disconnected"
+        assert resumed.usage.tool_calls == 0
+    assert effects == ([3] if scenario == "function-failure" else [])
+
+
 @pytest.mark.parametrize("damage", ["partial", "duplicate", "category", "direct-mismatch"])
 async def test_mixed_batch_rejects_invalid_correlations(damage):
     from a13n_harness import DeferredToolResults
@@ -328,7 +415,8 @@ async def test_mixed_batch_rejects_invalid_correlations(damage):
         executable.stream(previous_state=first.state, deferred_resume=DeferredToolResume(requests, results))
 
 
-async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_approval():
+@pytest.mark.parametrize("external_disconnected", [False, True])
+async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_approval(external_disconnected):
     import asyncio
 
     from a13n_harness import HarnessEvent, HarnessState
@@ -359,9 +447,10 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
     first = await _build(source, calls=calls).run("go")
     assert first.deferred is not None
     requests = _roundtrip(first.deferred)
+    external_result = ToolFailed("Client disconnected") if external_disconnected else "selected once"
     accepted = DeferredToolResume(
         requests,
-        requests.build_results(approve_all=True, calls={requests.calls[0].target_call.tool_call_id: "selected once"}),
+        requests.build_results(approve_all=True, calls={requests.calls[0].target_call.tool_call_id: external_result}),
     )
     async with _build(source, calls=calls, extra=(Pause(),)).stream(
         previous_state=first.state, deferred_resume=accepted
@@ -380,7 +469,10 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
         pending = stream.pending_deferred_input
     assert cancelled.status == "cancelled" and cancelled.state is not None and pending is not None
     restored = HarnessState.model_validate_json(cancelled.state.model_dump_json())
-    recovered = await _build(source, calls=calls).run(
+    restored_source = (
+        FunctionToolset([Tool(change, requires_approval=True)], id="operations") if external_disconnected else source
+    )
+    recovered = await _build(restored_source, calls=calls).run(
         previous_state=restored, deferred_resume=replace(pending, recovery=True)
     )
     assert recovered.output_or_raise() == "done" and effects == []
@@ -392,7 +484,9 @@ async def test_cancelled_mixed_resume_retains_external_fact_without_replaying_ap
         if isinstance(part, ToolReturnPart)
     ]
     assert len(returns) == 2
-    assert next(part for part in returns if part.tool_call_id == "model-1").content == "selected once"
+    external_return = next(part for part in returns if part.tool_call_id == "model-1")
+    assert external_return.content == ("Client disconnected" if external_disconnected else "selected once")
+    assert external_return.outcome == ("failed" if external_disconnected else "success")
 
 
 async def test_approved_target_can_defer_a_result_without_changing_its_association():

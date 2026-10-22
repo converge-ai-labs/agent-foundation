@@ -16,7 +16,13 @@ from uuid import uuid4
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import CallToolsNode, RunContext, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, AgentNode, CapabilityOrdering, ValidatedToolArgs
+from pydantic_ai.capabilities import (
+    AbstractCapability,
+    AgentNode,
+    CapabilityOrdering,
+    ValidatedToolArgs,
+    WrapToolExecuteHandler,
+)
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
@@ -36,7 +42,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
-from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
+from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
@@ -246,6 +252,28 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         # The final native settlement owns model rendering. Nested CodeAct calls
         # retain their structured values until the outer runner returns.
         return _render_tool_return(result) if isinstance(result, ToolReturn) else result
+
+    async def wrap_tool_execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: ValidatedToolArgs,
+        handler: WrapToolExecuteHandler,
+    ) -> Any:
+        try:
+            return await handler(args)
+        except CallDeferred as exc:
+            # Inline approval executes without another deferred-handler pass.
+            # Capture the actual function here; a forwarding envelope must not
+            # replace its target's identity as the exception propagates outward.
+            if tool_def.kind in {"function", "unapproved"} and FORWARDED_TOOL_KEY not in (tool_def.metadata or {}):
+                exc.metadata = {
+                    **(exc.metadata or {}),
+                    "a13n.harness.deferred-function-id": tool_identity(tool_def).tool_id,
+                }
+            raise
 
     async def handle_deferred_tool_calls(
         self,
@@ -945,11 +973,6 @@ def _validate_resume_surface(
     if requests is None or ctx.run_step != 0 or ctx.run_id != ctx.deps._model_recovery.attempt_id:
         return
     results = resume.results if resume is not None else recovery.results if recovery is not None else None
-    for item in (*requests.calls, *requests.approvals):
-        validate_forwarded_call(item, tools)
-        tool = tools.get(item.target_call.tool_name)
-        if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
-            raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
     for item in requests.calls:
         call = item.target_call
         name = call.tool_name
@@ -963,15 +986,19 @@ def _validate_resume_surface(
                 results.calls.get(call.tool_call_id if resume is not None else item.model_call.tool_call_id), ToolFailed
             )
         )
-        matches = negative_closure or (
-            tool is not None
-            and (
-                (tool.tool_def.kind == "external" and function_id is None)
-                or (
-                    function_id is not None
-                    and tool.tool_def.kind in {"function", "unapproved"}
-                    and tool_identity(tool.tool_def).tool_id == function_id
-                )
+        if negative_closure:
+            # Recording an absent external target's failure needs no current
+            # dispatcher, including when its caller was a proxy.
+            continue
+        validate_forwarded_call(item, tools)
+        if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
+            raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
+        matches = tool is not None and (
+            (tool.tool_def.kind == "external" and function_id is None)
+            or (
+                function_id is not None
+                and tool.tool_def.kind in {"function", "unapproved"}
+                and tool_identity(tool.tool_def).tool_id == function_id
             )
         )
         if not matches:
@@ -982,8 +1009,11 @@ def _validate_resume_surface(
             )
 
     for item in requests.approvals:
+        validate_forwarded_call(item, tools)
         request = item.target_call
         tool = tools.get(request.tool_name)
+        if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
+            raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
         if tool is None or tool.tool_def.kind not in {"function", "unapproved"}:
             raise DefinitionError(
                 "The current tool surface does not match the pending approval.",
