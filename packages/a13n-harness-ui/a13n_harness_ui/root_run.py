@@ -650,7 +650,7 @@ class RootRunCoordinator:
         except cancelled_class:
             cancelled = True
         except BaseException as exc:
-            if isinstance(exc, (HarnessUiError, HarnessError)):
+            if isinstance(exc, (HarnessUiError, HarnessError)) and not isinstance(exc, UsageReportError):
                 failure = _exception_failure(exc, code="root_operation_failed")
             else:
                 with CancelScope(shield=True):
