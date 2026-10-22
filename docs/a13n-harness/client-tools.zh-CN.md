@@ -76,7 +76,7 @@ async def main():
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call = requests.calls[0]
+    call = requests.calls[0].target_call
     assert call.tool_name == "open_document"
 
     # A real Host authenticates the client and validates/persists its result here.

@@ -13,6 +13,7 @@ from uuid import uuid4
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+    DeferredToolRequests,
     DeferredToolResume,
     HarnessEvent,
     HarnessRunResult,
@@ -35,7 +36,7 @@ from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
-from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
+from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
 from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
@@ -987,8 +988,8 @@ def _deferred_resume(
             "The selected Thread continuation changed before deferred response admission.",
             code="thread_continuation_conflict",
         )
-    approval_ids = {request.tool_call_id for request in requests.approvals}
-    external_ids = {request.tool_call_id for request in requests.calls}
+    approval_ids = {request.tool_call_id for request in (entry.target_call for entry in requests.approvals)}
+    external_ids = {request.tool_call_id for request in (entry.target_call for entry in requests.calls)}
     expected_ids = approval_ids | external_ids
     supplied_ids = {item.request_id for item in response.responses}
     if not supplied_ids <= expected_ids:
@@ -1023,7 +1024,11 @@ def _deferred_resume(
             if item.denied:
                 calls[item.request_id] = ToolFailed(item.denial_message or "The external tool call was denied.")
                 continue
-            pending = next(request for request in requests.calls if request.tool_call_id == item.request_id)
+            pending = next(
+                request
+                for request in (entry.target_call for entry in requests.calls)
+                if request.tool_call_id == item.request_id
+            )
             metadata = requests.metadata.get(item.request_id)
             if isinstance(metadata, dict) and metadata.get("kind") == "ask_user_question":
                 try:

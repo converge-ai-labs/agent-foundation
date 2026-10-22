@@ -2,21 +2,29 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_harness import DeferredToolCall, DeferredToolRequests
 from a13n_harness_ui.surfaces import ApprovalRequestView
 from a13n_harness_ui.terminal_projection import TerminalProjectionService
-from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("bound", [False, True])
+@pytest.mark.parametrize("forwarded", [False, True])
 @pytest.mark.parametrize("oversized", ["none", "arguments", "metadata"])
-async def test_approval_projection_preserves_omission_and_override_capabilities(bound, oversized):
+async def test_approval_projection_preserves_omission_and_override_capabilities(bound, oversized, forwarded):
     metadata = {"note": "x" * (70_000 if oversized == "metadata" else 5)}
     if bound:
         metadata["a13n.harness.tool-approval"] = {"tool_id": "custom.publish", "binding": "captured"}
     request = ToolCallPart("publish", {"value": "x" * (70_000 if oversized == "arguments" else 5)}, "approval")
-    pending = DeferredToolRequests(approvals=[request], metadata={"approval": metadata})
+    model = (
+        ToolCallPart("call_tool", {"group": "tools", "tool": "publish", "arguments": request.args}, "model")
+        if forwarded
+        else request
+    )
+    pending = DeferredToolRequests(
+        approvals=[DeferredToolCall(model, request, "tool/test/publish")], metadata={"approval": metadata}
+    )
     thread = SimpleNamespace(
         continuation=SimpleNamespace(logical_digest="a" * 64), read_model=SimpleNamespace(deferred_requests=pending)
     )
@@ -32,6 +40,7 @@ async def test_approval_projection_preserves_omission_and_override_capabilities(
     assert batch is not None
     approval = batch.requests[0]
     assert isinstance(approval, ApprovalRequestView)
+    assert approval.tool_name == "publish" and approval.request_id == "approval"
     assert approval.arguments_omitted is (oversized == "arguments")
     assert approval.metadata_omitted is (oversized == "metadata")
     assert approval.override_allowed is (oversized != "arguments")
@@ -58,7 +67,10 @@ async def test_external_and_question_projection_disclose_metadata_omissions(ques
         else {}
     )
     request = ToolCallPart("ask_user_question" if question else "lookup", args, "call")
-    pending = DeferredToolRequests(calls=[request], metadata={"call": {"note": "x" * 70_000}})
+    pending = DeferredToolRequests(
+        calls=[DeferredToolCall(request, request, "tool/test/" + request.tool_name)],
+        metadata={"call": {"note": "x" * 70_000}},
+    )
     thread = SimpleNamespace(
         continuation=SimpleNamespace(logical_digest="a" * 64), read_model=SimpleNamespace(deferred_requests=pending)
     )

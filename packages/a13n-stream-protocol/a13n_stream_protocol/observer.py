@@ -355,17 +355,17 @@ class HarnessAguiObserver:
                 outcome=RunFinishedInterruptOutcome(
                     interrupts=[
                         Interrupt(
-                            id=call.tool_call_id,
-                            tool_call_id=call.tool_call_id,
+                            id=entry.target_call.tool_call_id,
+                            tool_call_id=entry.model_call.tool_call_id,
                             reason=reason,
                             metadata={
-                                "tool_name": call.tool_name,
-                                "args": call.args,
-                                "tool_metadata": deferred.metadata.get(call.tool_call_id),
+                                "tool_name": entry.target_call.tool_name,
+                                "args": entry.target_call.args,
+                                "tool_metadata": deferred.metadata.get(entry.target_call.tool_call_id),
                             },
                         )
                         for reason, calls in (("approval", deferred.approvals), ("external", deferred.calls))
-                        for call in calls
+                        for entry in calls
                     ]
                 ),
                 usage=usage,

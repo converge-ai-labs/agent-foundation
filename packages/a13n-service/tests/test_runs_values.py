@@ -96,16 +96,31 @@ def test_resume_rejects_invalid_envelopes_and_limits(value):
         Resume.model_validate(value)
 
 
-def test_public_pending_preserves_approval_details_without_exposing_call_metadata():
+@pytest.mark.parametrize("forwarded", [False, True])
+def test_public_pending_preserves_approval_details_without_exposing_call_metadata(forwarded):
+    from a13n_harness import DeferredToolCall, DeferredToolRequests
     from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
-    from a13n_service.runs.deferred import pending
+    from a13n_service.runs.deferred import dump, load, pending
     from pydantic_ai.messages import ToolCallPart
-    from pydantic_ai.tools import DeferredToolRequests
 
     details = {"target": "report.txt", "risk": "high"}
     native = DeferredToolRequests(
-        approvals=[ToolCallPart("delete_file", {"path": "report.txt"}, "approval")],
-        calls=[ToolCallPart("review_invoice", {"invoice": 7}, "review")],
+        approvals=[
+            DeferredToolCall(
+                ToolCallPart("call_tool", {}, "model-" + call.tool_call_id) if forwarded else call,
+                call,
+                "tool/test/" + call.tool_name,
+            )
+            for call in [ToolCallPart("delete_file", {"path": "report.txt"}, "approval")]
+        ],
+        calls=[
+            DeferredToolCall(
+                ToolCallPart("call_tool", {}, "model-" + call.tool_call_id) if forwarded else call,
+                call,
+                "tool/test/" + call.tool_name,
+            )
+            for call in [ToolCallPart("review_invoice", {"invoice": 7}, "review")]
+        ],
         metadata={
             "approval": {APPROVAL_PRESENTATION_KEY: details, "internal": "private approval"},
             "review": {
@@ -115,7 +130,12 @@ def test_public_pending_preserves_approval_details_without_exposing_call_metadat
             },
         },
     )
-    public = pending(native)
+    restored = load(dump(native))
+    assert restored == native
+    public = pending(restored)
+    assert public.approvals[0].tool_call_id == "approval"
+    assert public.approvals[0].tool_name == "delete_file"
+    assert public.calls[0].tool_call_id == "review"
     assert public.approvals[0].presentation == details
     assert public.calls[0].presentation is None
     assert public.calls[0].arguments == {"invoice": 7}

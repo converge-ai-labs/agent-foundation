@@ -36,6 +36,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
@@ -169,7 +170,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         accepted = ctx.deps._deferred_input
         resume = accepted.pending if accepted is not None else None
         if isinstance(node, CallToolsNode) and resume is not None and not resume.recovery:
-            await record_approval_denials(resume.requests, resume.results, context=ctx.deps)
+            await record_approval_denials(resume.requests.target_requests(), resume.results, context=ctx.deps)
         recovery = ctx.deps._tool_recovery
         if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
             recovery.native_results = node.tool_call_results
@@ -193,6 +194,8 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         # before any context Capability can replace that history.
         if ctx.deps._deferred_input is not None:
             ctx.deps._deferred_input.reconcile(ctx.messages)
+            ctx.deps._deferred_input.calls.clear()
+            ctx.deps._deferred_input.metadata.clear()
         await ctx.deps._tool_executions.reconcile(ctx.deps.tool_execution, ctx.deps.thread_id, ctx.messages)
         ctx.deps._tool_permission_checks.clear()
         ctx.deps._tool_pending_approvals.clear()
@@ -210,6 +213,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         tool_def: ToolDefinition,
         args: str | dict[str, Any],
     ) -> str | dict[str, Any]:
+        capture_tool_call(ctx, call, tool_def)
         if permission_mode(ctx, tool_def) == "deny":
             raise ToolFailed("Tool invocation is denied by its permission configuration.")
         return args
@@ -941,7 +945,13 @@ def _validate_resume_surface(
     if requests is None or ctx.run_step != 0 or ctx.run_id != ctx.deps._model_recovery.attempt_id:
         return
     results = resume.results if resume is not None else recovery.results if recovery is not None else None
-    for call in requests.calls:
+    for item in (*requests.calls, *requests.approvals):
+        validate_forwarded_call(item, tools)
+        tool = tools.get(item.target_call.tool_name)
+        if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
+            raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
+    for item in requests.calls:
+        call = item.target_call
         name = call.tool_name
         tool = tools.get(name)
         function_id = requests.metadata.get(call.tool_call_id, {}).get("a13n.harness.deferred-function-id")
@@ -949,7 +959,9 @@ def _validate_resume_surface(
             tool is None
             and function_id is None
             and results is not None
-            and isinstance(results.calls.get(call.tool_call_id), ToolFailed)
+            and isinstance(
+                results.calls.get(call.tool_call_id if resume is not None else item.model_call.tool_call_id), ToolFailed
+            )
         )
         matches = negative_closure or (
             tool is not None
@@ -969,7 +981,8 @@ def _validate_resume_surface(
                 details={"tool_name": name},
             )
 
-    for request in requests.approvals:
+    for item in requests.approvals:
+        request = item.target_call
         tool = tools.get(request.tool_name)
         if tool is None or tool.tool_def.kind not in {"function", "unapproved"}:
             raise DefinitionError(

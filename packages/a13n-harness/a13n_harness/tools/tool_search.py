@@ -130,13 +130,13 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
             f"Tool {definition.name!r} is a provider-native fallback; select native=False, local=True for grouped MCP tools."
         )
     if (
-        definition.kind not in {"function", "unapproved"}
+        definition.kind not in {"function", "unapproved", "external"}
         or definition.tool_kind is not None
         or proxy_control(definition) is not None
         or (definition.metadata or {}).get("a13n.codeact.runner") is True
     ):
         raise UserError(
-            f"Tool {definition.name!r} is not a local function tool supported by ToolSearch. Leave control, output, external, and provider-native tools directly exposed."
+            f"Tool {definition.name!r} is not supported by ToolSearch. Leave control, output, and provider-native tools directly exposed."
         )
 
 

@@ -19,6 +19,7 @@ from uuid import uuid4
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+    DeferredToolRequests,
     DeferredToolResume,
     HarnessRunResult,
     HarnessRunResultEvent,
@@ -75,7 +76,7 @@ from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import ToolDenied
 from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -2143,11 +2144,11 @@ def _async_view(
 def _deny_deferred(requests: DeferredToolRequests) -> DeferredToolResume:
     calls: dict[str, Any] = {
         request.tool_call_id: ToolFailed("Deferred interaction is unavailable to an asynchronous child execution.")
-        for request in requests.calls
+        for request in (entry.target_call for entry in requests.calls)
     }
     approvals: dict[str, bool | DeferredToolApprovalResult] = {
         request.tool_call_id: ToolDenied("Approval is unavailable to an asynchronous child execution.")
-        for request in requests.approvals
+        for request in (entry.target_call for entry in requests.approvals)
     }
     return DeferredToolResume(
         requests=requests,

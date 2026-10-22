@@ -9,11 +9,11 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
 from pydantic_ai.messages import ModelMessage
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness._json import project_json
 from a13n_harness.errors import RetryHint, RunError
 from a13n_harness.state import HarnessState, decode_messages, encode_messages
+from a13n_harness.tools.deferred import DeferredToolRequests
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, RunUsageSummary, UsageRecord
 
 RunStatus = Literal["completed", "suspended", "failed", "cancelled"]

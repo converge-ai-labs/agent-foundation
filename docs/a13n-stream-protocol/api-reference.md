@@ -84,7 +84,7 @@ This is one-way observation, not a codec for restoring model input or a media-st
 ## Terminal events
 
 - Completed output becomes `RUN_FINISHED` with success outcome and usage. Non-JSON-safe output is omitted and marked `result_omitted` in `rawEvent` rather than serialized as arbitrary Python.
-- Suspended output becomes `RUN_FINISHED` with `outcome.type="interrupt"` and one interrupt per deferred call or approval. `id` and `toolCallId` preserve the native call ID; Host pending-answer policy remains authoritative.
+- Suspended output becomes `RUN_FINISHED` with `outcome.type="interrupt"` and one interrupt per deferred call or approval. `id` identifies the target call for answers, while `toolCallId` identifies the model call for transcript correlation (equal for direct calls); Host pending-answer policy remains authoritative.
 - Cancellation becomes `RUN_FINISHED` with `outcome.type="cancelled"`.
 - Failure becomes `RUN_ERROR` with safe failure code/message and usage.
 - Inline children use `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR`; their content carries `subagentRunId` rather than nested root lifecycles.

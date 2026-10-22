@@ -85,7 +85,12 @@ if TYPE_CHECKING:
         ToolExecutionRuntime,
         ToolExecutionStore,
     )
-    from a13n_harness.tools.deferred import DeferredToolResume
+    from a13n_harness.tools.deferred import (
+        DeferredToolCall,
+        DeferredToolRequests,
+        DeferredToolResults,
+        DeferredToolResume,
+    )
 
 _EXPORTS = {
     "a13n_harness.codeact.state": ("CodeActStateOwner",),
@@ -185,7 +190,12 @@ _EXPORTS = {
         "VideoUrlType",
     ),
     "a13n_harness.state": ("HarnessState", "StateStore", "StoredRef"),
-    "a13n_harness.tools.deferred": ("DeferredToolResume",),
+    "a13n_harness.tools.deferred": (
+        "DeferredToolCall",
+        "DeferredToolRequests",
+        "DeferredToolResults",
+        "DeferredToolResume",
+    ),
 }
 
 

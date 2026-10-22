@@ -40,11 +40,11 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResult, DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_ai.tools import DeferredToolResult, DeferredToolResults, ToolApproved, ToolDenied
 
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.tools.deferred import DeferredToolResume
+from a13n_harness.tools.deferred import DeferredToolRequests, DeferredToolResume
 
 RecoveryPromptFactory = Callable[
     [BaseException, int, Sequence[ModelMessage]],
@@ -93,9 +93,11 @@ def prepare_tool_recovery(
     messages: Sequence[ModelMessage], mode: ToolRecoveryMode, accepted: DeferredToolResume | None = None
 ) -> ToolRecoveryPlan:
     """Retain recorded results and resume only unanswered calls through native dispatch."""
-    supplied = dict(accepted.results.calls) if accepted is not None else {}
+    model_results = accepted.model_results() if accepted is not None else None
+    supplied = dict(model_results.calls) if model_results is not None else {}
     if accepted is not None:
-        for call_id, decision in accepted.results.approvals.items():
+        assert model_results is not None
+        for call_id, decision in model_results.approvals.items():
             if decision is False or isinstance(decision, ToolDenied):
                 supplied[call_id] = ToolDenied() if decision is False else decision
     close_pending = mode == "never" and not supplied
@@ -138,7 +140,8 @@ def prepare_tool_recovery(
                 plan.results.calls[call_id] = ToolFailed(INTERRUPTED_TOOL_RESULT)
             plan.pending.clear()
         if accepted is not None:
-            plan.results.metadata = deepcopy(accepted.results.metadata)
+            assert model_results is not None
+            plan.results.metadata = deepcopy(model_results.metadata)
     return plan
 
 

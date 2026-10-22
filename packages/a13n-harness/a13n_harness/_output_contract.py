@@ -13,8 +13,10 @@ from typing import Any, cast, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel, ConfigDict, PydanticSchemaGenerationError, TypeAdapter
 from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, TextOutput, ToolOutput
-from pydantic_ai.tools import DeferredToolRequests
+from pydantic_ai.tools import DeferredToolRequests as NativeDeferredToolRequests
 from typing_extensions import is_typeddict
+
+from a13n_harness.tools.deferred import DeferredToolRequests
 
 
 def _uses_tool_based_output(value: Any) -> bool:
@@ -123,7 +125,7 @@ def _business_output_contains_deferred_value(value: Any) -> bool:
     seen: set[int] = set()
 
     def contains(item: Any) -> bool:
-        if isinstance(item, DeferredToolRequests):
+        if isinstance(item, DeferredToolRequests | NativeDeferredToolRequests):
             return True
         if isinstance(item, dict):
             nested = list(item.values())
@@ -156,7 +158,7 @@ def _output_spec_contains_deferred_requests(output_spec: OutputSpec[Any]) -> boo
             return False
         seen.add(value_id)
 
-        if isinstance(value, type) and issubclass(value, DeferredToolRequests):
+        if isinstance(value, type) and issubclass(value, DeferredToolRequests | NativeDeferredToolRequests):
             return True
         if isinstance(value, type) and issubclass(value, BaseModel):
             return any(contains(model_field.annotation) for model_field in value.model_fields.values())

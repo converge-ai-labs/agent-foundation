@@ -7,9 +7,7 @@ import re
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from functools import partial
 from typing import Annotated, Any, Literal
-from uuid import uuid4
 
 from pydantic import Field
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool
@@ -23,13 +21,13 @@ from pydantic_ai.exceptions import (
     UsageLimitExceeded,
     UserError,
 )
-from pydantic_ai.messages import InstructionPart, ToolCallPart
+from pydantic_ai.messages import InstructionPart
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
-from a13n_harness._review_context import record_approval_denials
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
+from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder, forward_tool_call
 from a13n_harness.tools.tool_search import (
     PROXY_CONTROL_KEY,
     PROXY_MEMBERSHIP_KEY,
@@ -97,7 +95,8 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                 validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
-            canonical = f"{self.group}__{name}"
+            # Client executors address the declared name; grouping is presentation.
+            canonical = name if definition.kind == "external" else f"{self.group}__{name}"
             result[canonical] = _GroupTool(
                 toolset=self,
                 tool_def=replace(
@@ -192,7 +191,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
                 + summary
             ),
             sequential=True,
-            metadata={PROXY_CONTROL_KEY: "call"},
+            metadata={PROXY_CONTROL_KEY: "call", FORWARDED_TOOL_KEY: ToolCallForwarder(resolve_proxy_call)},
         )
         controls = await CodeActPolicyToolset(
             FunctionToolset([search, describe, call], id="tool-search-controls"), CodeActToolPolicy(default=True)
@@ -336,11 +335,8 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             projected = deepcopy(ctx.usage)
             projected.tool_calls += 2  # This outer envelope and one native target call.
             ctx.usage_limits.check_before_tool_call(projected)
-        call = ToolCallPart(name, values, tool_call_id=f"proxy-{uuid4().hex}")
         try:
-            result = await manager.handle_call(
-                call, on_inline_deferred=partial(record_approval_denials, context=ctx.deps)
-            )
+            result = await forward_tool_call(ctx, name, values)
         except ToolRetryError as exc:
             # Native target retries remain keyed by the original prepared name.
             # Re-correlate only the model-facing message; rethrowing ModelRetry
@@ -355,10 +351,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
                 )
             ) from exc
         except (ApprovalRequired, CallDeferred):
-            raise ToolFailed(
-                f"Tool {group}/{tool} requires unresolved Host interaction. Expose it directly for cross-turn approval "
-                "or external execution. Do not assume completion or blindly retry."
-            ) from None
+            raise
         except (ModelRetry, ToolFailed, UsageLimitExceeded, UnexpectedModelBehavior, EnvironmentActivationError):
             raise
         except Exception as exc:

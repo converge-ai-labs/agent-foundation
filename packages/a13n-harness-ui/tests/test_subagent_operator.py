@@ -335,6 +335,8 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
 
     from a13n_harness import (
         AgentIdentityRef,
+        DeferredToolCall,
+        DeferredToolRequests,
         DeferredToolResume,
         HarnessBuilder,
         HarnessRunResultEvent,
@@ -347,7 +349,7 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
     from pydantic_ai.exceptions import ToolFailed
     from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, UserPromptPart
     from pydantic_ai.models.function import FunctionModel
-    from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+    from pydantic_ai.tools import DeferredToolResults
 
     observed = []
 
@@ -364,7 +366,7 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
     call = ToolCallPart("lookup", {}, "call_external")
     state = HarnessState.new(message_history=[ModelResponse(parts=[call])])
     accepted = DeferredToolResume(
-        DeferredToolRequests(calls=[call]),
+        DeferredToolRequests(calls=[DeferredToolCall(call, call, "tool/test/" + call.tool_name) for call in [call]]),
         DeferredToolResults(calls={call.tool_call_id: ToolFailed("external input unavailable")}),
         recovery=recovery,
     )

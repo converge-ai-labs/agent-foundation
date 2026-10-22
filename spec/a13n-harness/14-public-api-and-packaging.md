@@ -390,6 +390,8 @@ class HarnessRunResult[OutputT]:
     def output_json(self) -> JsonValue: ...
 ```
 
+`DeferredToolRequests` and `DeferredToolCall` are Harness public types; `DeferredToolResults` is a native re-export. Each pending entry contains `model_call`, `target_call`, and `target_identity`; see [Approval and Deferred Calls](07-tool-execution.md#approval-and-deferred-calls) for correlation, overrides, and compatibility.
+
 All mutable values are copied on construction and access, including the complete nested `RunUsageSummary` and mixed-source usage records. `all_messages()` and `new_messages()` decode detached copies. `replace()` preserves Thread and Run correlation and message views while allowing trusted middleware to replace terminal fields.
 
 Valid field combinations are:

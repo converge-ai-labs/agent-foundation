@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities import AskUserQuestionRequest
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
@@ -416,7 +416,7 @@ class TerminalProjectionService:
         if requests is None or (not requests.calls and not requests.approvals):
             return None
         projected = []
-        for request in requests.calls:
+        for request in (entry.target_call for entry in requests.calls):
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
             metadata_omitted = raw_metadata is not None and metadata is None
@@ -460,7 +460,7 @@ class TerminalProjectionService:
                         metadata_omitted=metadata_omitted,
                     )
                 )
-        for request in requests.approvals:
+        for request in (entry.target_call for entry in requests.approvals):
             value, omitted = _bounded_json(request.args)
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
@@ -872,7 +872,7 @@ def _pending_summary(value: DeferredToolRequests | None) -> PendingDecisionSumma
     if value is None:
         return None
     kinds: set[Literal["question", "approval", "external"]] = set()
-    for request in value.calls:
+    for request in (entry.target_call for entry in value.calls):
         kinds.add("question" if request.tool_name == "ask_user_question" else "external")
     if value.approvals:
         kinds.add("approval")
