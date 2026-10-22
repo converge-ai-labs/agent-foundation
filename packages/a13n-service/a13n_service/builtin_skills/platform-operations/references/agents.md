@@ -24,7 +24,9 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 `tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, local `capabilities` (`environment`, `web`), and optionally `platform: true`. Each source belongs to one group. Omit `config.mode` or set it to `proxy`; control names and discovery limits are configurable. The model uses fixed discovery, description, invocation, tool-list, and group-list controls. It can enumerate the complete directory with `list_tools(detail="full")` and `next_offset` without promoting member schemas into model requests.
 
-Ungrouped sources remain direct. Grouping preserves source selection, permissions, credentials, and execution checks; it does not activate disabled capabilities. `client_tools` keep their flat external-call contract. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan. For proxy discovery, omit `config.mode` or set it to `proxy`, remove `strategy`, and put selected connections into groups. Native mode and `strategy` are rejected. Connection selections preserve unknown fields when read and published, but extras never affect execution. This includes `defer_loading` with either boolean value. Preserve unrelated extras when editing a configuration.
+Ungrouped sources remain direct. Grouping preserves source selection, permissions, credentials, and execution checks; it does not activate disabled capabilities. `client_tools` keep their flat external-call contract. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan.
+
+Connection selections configure execution through `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored.
 
 ## Configure desktop coordinates
 

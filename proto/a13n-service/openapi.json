@@ -3976,8 +3976,7 @@
         "type": "object"
       },
       "ConnectionSelection": {
-        "additionalProperties": true,
-        "description": "An agent's selected tools and permissions; extra fields round-trip without affecting execution.",
+        "description": "An agent's selected tools and permissions.",
         "properties": {
           "connection_id": {
             "maxLength": 41,

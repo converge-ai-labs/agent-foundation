@@ -198,9 +198,9 @@ class CallbackOutcome(BaseModel):
 
 
 class ConnectionSelection(BaseModel):
-    """An agent's selected tools and permissions; extra fields round-trip without affecting execution."""
+    """An agent's selected tools and permissions."""
 
-    model_config = ConfigDict(extra="allow", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     connection_id: ObjectId
     tools: Annotated[tuple[ToolName, ...], Field(min_length=1, max_length=MAX_TOOLS), AfterValidator(unique)] | None = (

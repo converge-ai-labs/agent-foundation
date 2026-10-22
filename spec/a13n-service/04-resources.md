@@ -88,7 +88,7 @@ agent_revisions   revision columns; config: AgentConfig
 
 Tool permissions live on each selection and compile into one Harness tool-permission table.
 
-Connection selections validate `connection_id`, `tools`, `permission`, and `permissions` and preserve unknown fields as inert JSON data. These extra fields round-trip through Agent revisions, duplication, republication, and Run/inbox overrides; new revision digests cover the full persisted configuration, including extras. Runtime and provider projections use only declared fields. In particular, `defer_loading` has no execution effect for either boolean value: ungrouped connections remain direct and grouped connections follow `tool_search`. Other configuration models retain their own validation rules, including rejection of native ToolSearch mode and `strategy`.
+Connection selections validate `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored during parsing.
 
 `GET /toolsets` owns the default English `display_name` and short `description` for each built-in toolset and tool. Descriptions default to an empty string when omitted. Tool entries also identify their model-facing `model_name` and permission `execution_id`; presentation text is separate from these identities.
 

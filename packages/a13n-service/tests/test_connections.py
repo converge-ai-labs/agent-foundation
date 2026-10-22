@@ -508,8 +508,7 @@ async def test_caller_headers_and_selections_name_usable_connections(service) ->
             await validate_selection(session, admin(service), scope(service), selected)
 
 
-@pytest.mark.parametrize("extras", [{}, {"defer_loading": False}, {"defer_loading": True}])
-async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_headers(service, extras) -> None:  # type: ignore[no-untyped-def]
+async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_headers(service) -> None:  # type: ignore[no-untyped-def]
     async with remote() as server:
         created = await create(
             service,
@@ -528,14 +527,7 @@ async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_he
         assert all(request.get("x-api-key") == SECRET for request in server.requests)
 
         dispatches: list[ToolDispatch] = []
-        selection = ConnectionSelection.model_validate(
-            {
-                "connection_id": created["id"],
-                "url": "http://127.0.0.1:9/unused",
-                "headers": {"x-api-key": "unused", "x-trace": "unused"},
-                **extras,
-            }
-        )
+        selection = ConnectionSelection(connection_id=created["id"])
         async with opened(service, [selection], {created["id"]: {"x-trace": "t1"}}, dispatches) as capabilities:
             seen = await run_tool(capabilities, "echo", {"text": "hello"})
         assert seen["tools"] == ["echo"]

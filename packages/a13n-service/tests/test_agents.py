@@ -177,51 +177,13 @@ def test_permissions_compile_from_each_selection() -> None:
         ConnectionSelection.model_validate({"connection_id": GITHUB, "tools": ["issues"], "permissions": {"x": "deny"}})
 
 
-@pytest.mark.parametrize("defer_loading", [False, True])
-def test_connection_extras_round_trip_without_changing_permissions(defer_loading: bool) -> None:
-    from a13n_service.runs.schemas import RunOptions
-
-    known = {"connection_id": MCP, "tools": ["echo"], "permission": "deny", "permissions": {"echo": "ask"}}
-    extra = {"defer_loading": defer_loading, "unset": None, "custom": {"items": [1, None, {"enabled": True}]}}
-    value = {**known, **extra}
+def test_connection_selection_ignores_unknown_fields() -> None:
+    known = {"connection_id": MCP, "tools": ["echo"], "permission": "ask", "permissions": {}}
+    value = {**known, "unknown": {"value": True}}
     selected = ConnectionSelection.model_validate(value)
-    assert ConnectionSelection.model_validate_json(selected.model_dump_json()).model_dump(mode="json") == value
-    with pytest.raises(ValidationError, match="frozen_instance"):
-        selected.permission = "allow"
-
-    agent = config(connection_tools=[value])
-    assert AgentConfig.model_validate_json(agent.model_dump_json()).connection_tools == (selected,)
-    override = AgentOverride.model_validate({"connection_tools": [value]})
-    assert apply_override(config(), override).connection_tools == (selected,)
-    options = RunOptions(overrides=override)
-    assert RunOptions.model_validate_json(options.model_dump_json()).overrides == override
-    assert (
-        definition.tool_permissions(agent, {MCP: "mcp"}).rules
-        == definition.tool_permissions(config(connection_tools=[known]), {MCP: "mcp"}).rules
-    )
-    assert definition.declared_permissions(agent) == definition.declared_permissions(config(connection_tools=[known]))
-
-
-@pytest.mark.parametrize(
-    "invalid",
-    [
-        {"connection_id": "not-an-id"},
-        {"tools": "echo"},
-        {"tools": ["echo", "echo"]},
-        {"permission": "unrestricted"},
-        {"permissions": {"echo": "unrestricted"}},
-        {"tools": ["echo"], "permissions": {"other": "allow"}},
-    ],
-)
-def test_connection_extras_do_not_relax_known_fields(invalid) -> None:
-    with pytest.raises(ValidationError):
-        ConnectionSelection.model_validate({"connection_id": MCP, "custom": {"kept": True}, **invalid})
-
-
-def test_connection_extras_do_not_relax_agent_or_override_fields() -> None:
-    for schema, value in ((AgentConfig, {"model": MODEL}), (AgentOverride, {})):
-        with pytest.raises(ValidationError, match="extra_forbidden"):
-            schema.model_validate({**value, "unknown": True})
+    assert selected.model_dump(mode="json") == known
+    assert config(connection_tools=[value]).connection_tools == (selected,)
+    assert AgentOverride.model_validate({"connection_tools": [value]}).connection_tools == (selected,)
 
 
 def test_output_schemas_inline_their_references() -> None:
@@ -981,48 +943,6 @@ async def test_overrides_are_validated_and_pinned_as_the_run_freezes_them(servic
         with pytest.raises(ServiceError) as archived_pin:
             await validate(override)
         assert (archived_pin.value.details["field"], archived_pin.value.details["reason"]) == (field, "archived")
-
-
-@pytest.mark.parametrize("defer_loading", [False, True])
-async def test_connection_extras_survive_revision_publication_and_copy(service, defer_loading) -> None:
-    from a13n_service.resources.agents.tables import AgentRevisionRow
-    from a13n_service.resources.revisions import config_digest
-
-    from .test_connections import create
-
-    connection = await create(service, {"config": {"url": "http://127.0.0.1:9/mcp"}, "auth": "none"})
-    selection = {
-        "connection_id": connection["id"],
-        "defer_loading": defer_loading,
-        "custom": {"items": [1, None, {"enabled": True}]},
-        "unset": None,
-    }
-    model = await create_model(service)
-    agent = await create_agent(service, "extras", model, connection_tools=[selection])
-    stored = await revision_config(service, agent)
-    assert stored["connection_tools"][0] == {"tools": None, "permission": "inherit", "permissions": {}, **selection}
-    async with short_session(service.runtime.storage) as session:
-        row = await session.get_one(AgentRevisionRow, agent["default_revision_id"])
-        assert row.config == stored and row.digest == config_digest(stored)
-
-    item = f"{service.api}/agents/{agent['id']}"
-    same = await service.client.post(f"{item}/revisions", json={"config": stored}, headers={"if-match": etag(agent)})
-    assert same.status_code == 201, same.text
-    assert same.json()["id"] == agent["default_revision_id"]
-    copied = await service.client.post(f"{item}/duplicate", json={"name": "Copied extras"})
-    assert copied.status_code == 201, copied.text
-    assert await revision_config(service, copied.json()) == stored
-
-    changed = {**stored, "connection_tools": [{**stored["connection_tools"][0], "custom": {"items": [2]}}]}
-    published = await service.client.post(
-        f"{item}/revisions", json={"config": changed}, headers={"if-match": etag(agent)}
-    )
-    assert published.status_code == 201, published.text
-    assert published.json()["id"] != agent["default_revision_id"]
-    async with short_session(service.runtime.storage) as session:
-        row = await session.get_one(AgentRevisionRow, published.json()["id"])
-        assert row.config == changed and row.digest == config_digest(changed)
-        assert row.digest != config_digest(stored)
 
 
 async def test_publishing_the_default_configuration_again_changes_nothing(service) -> None:  # type: ignore[no-untyped-def]

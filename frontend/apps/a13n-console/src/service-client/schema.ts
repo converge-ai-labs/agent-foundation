@@ -5425,7 +5425,7 @@ export interface components {
     };
     /**
      * ConnectionSelection
-     * @description An agent's selected tools and permissions; extra fields round-trip without affecting execution.
+     * @description An agent's selected tools and permissions.
      */
     ConnectionSelection: {
       /** Connection Id */
@@ -5438,8 +5438,6 @@ export interface components {
       };
       /** Tools */
       tools?: string[] | null;
-    } & {
-      [key: string]: unknown;
     };
     /** @enum {string} */
     ConnectionStatus: "pending" | "ready" | "reauthorization_required";

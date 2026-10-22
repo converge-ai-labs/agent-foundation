@@ -81,52 +81,6 @@ async def test_a_refused_entry_fails_alone_and_the_next_one_starts(service, scri
     assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] == entries[2]["assigned_run_id"]
 
 
-@pytest.mark.parametrize("defer_loading", [False, True])
-async def test_connection_extras_survive_inbox_and_run_overrides(service, scripted_model, runs_kit, defer_loading):
-    from a13n_service.infra.db import short_session
-    from a13n_service.runs.schemas import RunOptions
-    from a13n_service.runs.tables import InboxEntryRow
-
-    from .test_connections import create, remote
-
-    await runs_kit.pause_sweeps(service)
-    async with remote() as server:
-        connection = await create(service, {"config": {"url": f"{server.url}/mcp"}, "auth": "none"})
-        agent = await runs_kit.create_agent(service, scripted_model)
-        selection = {
-            "connection_id": connection["id"],
-            "defer_loading": defer_loading,
-            "custom": {"items": [None, {"version": 1}]},
-            "unset": None,
-        }
-        options = {"overrides": {"connection_tools": [selection]}, "configuration": {}}
-        expected = RunOptions.model_validate(options).model_dump(mode="json")
-        started = await runs_kit.start_thread(service, agent, "first", options=options)
-        thread_id = started["thread"]["id"]
-        assert started["run"]["options"] == expected
-        queued = await runs_kit.submit(
-            service, thread_id, runs_kit.message(agent, "next", delivery="next_run", options=options)
-        )
-        assert queued.status_code == 201, queued.text
-        entry_id = queued.json()["entry"]["id"]
-        async with short_session(service.runtime.storage) as session:
-            entry = await session.get_one(InboxEntryRow, entry_id)
-            assert entry.options == expected
-            run = await session.get_one(RunRow, started["run"]["id"])
-            assert run.options["overrides"]["connection_tools"] == expected["overrides"]["connection_tools"]
-            assert RunOptions.model_validate(run.options).model_dump(mode="json") == expected
-        scripted_model.say("Done")
-        await (await runs_kit.attempt(service))
-        entries = await runs_kit.inbox(service, thread_id)
-        entry = next(item for item in entries if item["id"] == entry_id)
-        assert entry["status"] == "assigned"
-        accepted = await runs_kit.get_run(service, entry["assigned_run_id"])
-        assert accepted["options"] == expected
-        scripted_model.say("Done again")
-        await (await runs_kit.attempt(service))
-        assert (await runs_kit.get_run(service, accepted["id"]))["status"] == "completed"
-
-
 async def test_an_unavailable_admission_stores_nothing(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     body, key = runs_kit.message(agent, "hi"), runs_kit.fresh_key()
