@@ -22,9 +22,9 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 ## Configure tool discovery
 
-`tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, and optionally `platform: true` for the enabled platform tools. Each source belongs to one group. Set `config.mode: native` for provider-native discovery, or `config.mode: proxy` for Harness proxy search and invocation (the default). Native configuration accepts `strategy: bm25`, `strategy: regex`, or omitted/null for the provider default. Proxy configuration accepts only control names and discovery limits. The calling model's actual profile is checked at execution.
+`tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, local `capabilities` (`environment`, `web`), and optionally `platform: true`. Each source belongs to one group. Omit `config.mode` or set it to `proxy`; control names and discovery limits are configurable. The model uses fixed discovery, description, invocation, tool-list, and group-list controls. It can enumerate the complete directory with `list_tools(detail="full")` and `next_offset` without promoting member schemas into model requests.
 
-Grouped connections use the group's discovery mode while retaining their saved `defer_loading` setting. Outside a group, MCP `defer_loading: true` exposes `load_capability` to load the connection's tools together. Keep source selections and permissions intact when changing presentation. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan.
+Ungrouped sources remain direct. Grouping preserves source selection, permissions, credentials, and execution checks; it does not activate disabled capabilities. `client_tools` keep their flat external-call contract. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan. Migrate old native configurations to `mode: proxy`, remove `strategy` and connection-level `defer_loading`, and put selected connections into groups when proxy discovery is wanted.
 
 ## Configure desktop coordinates
 

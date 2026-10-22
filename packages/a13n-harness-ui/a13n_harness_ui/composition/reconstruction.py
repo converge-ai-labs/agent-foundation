@@ -19,7 +19,6 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
-    ProxyToolSearchConfig,
     SubagentCapability,
     SubagentOperator,
     ToolExecutionCapability,
@@ -365,6 +364,7 @@ class AgentReconstructor:
         selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
         capabilities: list[AbstractCapability[Any]] = []
+        local_sources: dict[str, AbstractCapability[Any]] = {}
         for recipe, item in zip(node.capabilities, selected, strict=True):
             capability = item.capability
             if recipe.guardian_credits and isinstance(capability, ToolPermissionsCapability):
@@ -375,6 +375,7 @@ class AgentReconstructor:
                 )
                 capabilities.append(GuardianParentCapability())
             capabilities.append(capability)
+            local_sources[recipe.capability] = capability
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
         mcp_sources = {
@@ -392,7 +393,8 @@ class AgentReconstructor:
                 groups={
                     name: ToolSearchSelection(
                         description=group.description,
-                        capabilities=tuple(mcp_sources[source] for source in group.mcp_servers),
+                        capabilities=tuple(mcp_sources[source] for source in group.mcp_servers)
+                        + tuple(local_sources[source] for source in group.capabilities),
                         plugins=group.harness_plugins,
                     )
                     for name, group in node.tool_search.groups.items()
@@ -414,9 +416,15 @@ class AgentReconstructor:
             # Filter the actual canonical target directory before generating them.
             controls = (
                 frozenset(
-                    {tool_search.config.search_name, tool_search.config.describe_name, tool_search.config.call_name}
+                    {
+                        tool_search.config.search_name,
+                        tool_search.config.describe_name,
+                        tool_search.config.call_name,
+                        tool_search.config.list_name,
+                        tool_search.config.groups_name,
+                    }
                 )
-                if tool_search is not None and isinstance(tool_search.config, ProxyToolSearchConfig)
+                if tool_search is not None
                 else frozenset()
             )
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))

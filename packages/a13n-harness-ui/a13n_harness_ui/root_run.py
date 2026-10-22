@@ -14,8 +14,9 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.usage import RunUsageSummary, UsageReportError
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
@@ -663,8 +664,8 @@ class RootRunCoordinator:
                         )
                     )
                     failure = (
-                        FailureView(code=exc.code, message=f"{exc}\n{feedback}")
-                        if isinstance(exc, UsageReportError)
+                        _exception_failure(exc, code="root_operation_failed", feedback=feedback)
+                        if isinstance(exc, HarnessError)
                         else FailureView(
                             code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                         )
@@ -978,20 +979,24 @@ def _safe_failure(value: SafeFailure) -> FailureView:
     )
 
 
-def _exception_failure(value: BaseException, *, code: str) -> FailureView:
-    if isinstance(value, HarnessUiError):
+def _exception_failure(value: BaseException, *, code: str, feedback: str = "") -> FailureView:
+    if isinstance(value, (HarnessUiError, HarnessError)):
         return FailureView(
             code=value.code[:256],
-            message=_bounded_message(str(value)),
+            message=_bounded_message(str(value), suffix=f"\n{feedback}" if feedback else ""),
             details=_json_mapping(value.details),
+            retry_hint=value.retry_hint if isinstance(value, HarnessError) else None,
         )
     return FailureView(code=code, message=_bounded_message(str(value) or type(value).__name__))
 
 
-def _bounded_message(value: str) -> str:
-    if len(value) <= 32 * 1024:
-        return value
-    return value[: 32 * 1024 - 23] + "\n...[message truncated]"
+def _bounded_message(value: str, *, suffix: str = "") -> str:
+    # Reserve room for diagnostic feedback before truncating the error text.
+    budget = 32 * 1024 - len(suffix)
+    if len(value) <= budget:
+        return value + suffix
+    marker = "\n...[message truncated]"
+    return value[: budget - len(marker)] + marker + suffix
 
 
 def _bounded_json(value: object) -> tuple[JsonValue | None, bool]:

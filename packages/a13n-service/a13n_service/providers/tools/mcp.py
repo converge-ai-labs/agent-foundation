@@ -245,7 +245,6 @@ def mcp_capability(
     open_client: Callable[[], Awaitable[Client[ClientTransport]]],
     *,
     tools: tuple[str, ...] | None,
-    defer_loading: bool,
     check: DispatchCheck,
     capture: Capture | None = None,
 ) -> MCP[AgentContext]:
@@ -280,5 +279,5 @@ def mcp_capability(
     return AppMCP(
         id=connection_id,
         local=DynamicToolset(local, per_run_step=False),
-        defer_loading=defer_loading,
+        defer_loading=False,
     )

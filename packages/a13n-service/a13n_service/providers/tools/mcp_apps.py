@@ -12,7 +12,7 @@ from fastmcp import Client
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.transports import ClientTransport
 from mcp.types import CallToolResult, Tool
-from pydantic_ai import RunContext, ToolDefinition
+from pydantic_ai import RunContext, ToolDefinition, ToolReturn
 from pydantic_ai.capabilities import MCP, ValidatedToolArgs, WrapToolExecuteHandler
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPToolset
@@ -80,6 +80,18 @@ class AppToolset(MCPToolset[AgentContext]):
     capture: Capture | None = None
 
     async def call_tool(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
+        result = await self._capture_tool(name, tool_args, ctx, tool)
+        if isinstance(result, ToolReturn) and isinstance(result.metadata, dict):
+            # Upstream also retains the raw App payload. Service stores it separately;
+            # only the opaque App reference may enter model history and display state.
+            metadata = dict(result.metadata)
+            metadata.pop("mcp_app", None)
+            result.metadata = metadata or None
+        return result
+
+    async def _capture_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
     ) -> Any:
         meta = (tool.tool_def.metadata or {}).get("meta")

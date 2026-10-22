@@ -235,10 +235,6 @@ export function ConnectionsSection({
                       {
                         connection_id: id,
                         tools: null,
-                        defer_loading: !!available.find(
-                          (connection) =>
-                            connection.id === id && "url" in connection.config,
-                        ),
                       },
                     ]
                   : previous.filter((item) => item.connection_id !== id),

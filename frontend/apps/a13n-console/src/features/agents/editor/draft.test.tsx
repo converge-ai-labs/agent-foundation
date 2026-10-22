@@ -291,10 +291,10 @@ it("preserves reviewer fields and rules, and includes only intentional edits", (
   expect(draft.current.dirty).toBe(false);
 });
 
-it("edits native discovery while preserving source loading and proxy settings", () => {
+it("toggles discovery while preserving proxy settings", () => {
   const id = "con_0123456789abcdef0123";
   const draft = draftFor({
-    connection_tools: [{ connection_id: id, defer_loading: true }],
+    connection_tools: [{ connection_id: id }],
     tool_search: {
       groups: { knowledge: { description: "Lookup", connections: [id] } },
       config: { mode: "proxy", max_results: 3 },
@@ -302,28 +302,17 @@ it("edits native discovery while preserving source loading and proxy settings", 
   });
   expect(draft.current.dirty).toBe(false);
   act(() =>
-    draft.current.setToolSearch((current) => ({
-      ...current,
-      mode: "native",
-      strategy: "regex",
-    })),
+    draft.current.setToolSearch((current) => ({ ...current, mode: "direct" })),
   );
-  const native = buildDraftConfig(draft.current, undefined, asIs);
-  expect(native.ok && native.config.tool_search?.config).toEqual({
-    mode: "native",
-    strategy: "regex",
-  });
+  const directConfig = buildDraftConfig(draft.current, undefined, asIs);
+  expect(directConfig.ok && directConfig.config.tool_search).toBeUndefined();
   act(() =>
     draft.current.setToolSearch((current) => ({ ...current, mode: "proxy" })),
   );
-  expect(draft.current.dirty).toBe(true);
   const built = buildDraftConfig(draft.current, undefined, asIs);
   expect(built.ok && built.config.tool_search).toMatchObject({
     config: { mode: "proxy", max_results: 3 },
   });
-  expect(built.ok && built.config.connection_tools?.[0].defer_loading).toBe(
-    true,
-  );
   act(() => draft.current.setConnections([]));
   const removed = buildDraftConfig(draft.current, undefined, asIs);
   expect(
@@ -340,7 +329,7 @@ it("reports invalid group names in the discovery section", () => {
   const draft = draftFor();
   act(() =>
     draft.current.setToolSearch({
-      mode: "native",
+      mode: "proxy",
       groups: [{ name: "bad__group", description: "Lookup" }],
     }),
   );

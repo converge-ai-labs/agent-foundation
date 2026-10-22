@@ -68,7 +68,7 @@ export function ConnectionGroup({
   onRequireReviewer,
   discovery,
 }: {
-  discovery?: "proxy" | "native";
+  discovery?: "proxy";
   onReview?: (target?: ReviewTarget) => void;
   onRequireReviewer?: () => void;
   connection?: Connection;
@@ -214,42 +214,9 @@ export function ConnectionGroup({
         <CollapsiblePanel>
           <div className={styles.toolsetGroupBody}>
             <div className={styles.connectionOptions}>
-              <div className={styles.connectionOption}>
-                <span>
-                  <strong>
-                    {t(
-                      discovery === "native"
-                        ? "Native tool search"
-                        : discovery === "proxy"
-                          ? "Grouped proxy search"
-                          : "Load tools on demand",
-                    )}
-                  </strong>
-                  <small>
-                    {t(
-                      discovery
-                        ? "This connection uses its tool discovery group. Its saved loading setting applies when it leaves the group."
-                        : "Load this Connection's tools only when the agent needs them.",
-                    )}
-                  </small>
-                </span>
-                {!discovery && (
-                  <Switch
-                    aria-label={t("Load tools on demand")}
-                    disabled={
-                      editingDisabled ||
-                      (!!connection && "app" in connection.config)
-                    }
-                    checked={selection.defer_loading ?? false}
-                    onCheckedChange={(checked) =>
-                      onChange((current) => ({
-                        ...current,
-                        defer_loading: checked,
-                      }))
-                    }
-                  />
-                )}
-              </div>
+              {discovery && (
+                <p>{t("This connection uses grouped proxy search.")}</p>
+              )}
               <div className={styles.connectionOption}>
                 <span>
                   <strong>{t("Default tool permission")}</strong>

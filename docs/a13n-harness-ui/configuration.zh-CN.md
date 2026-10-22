@@ -347,7 +347,7 @@ tools:
 4. 根 YAML 默认值。
 5. 内置 Environment 回退。
 
-列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改；修改 Project 默认值不重新应用。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
+列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改。TUI 恢复会话时会重新应用当前 MCP 默认值（依次为 Project、Agent、全局）；其他选择和界面继续保留已保存的设置。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
 
 | 修改内容                                                          | 生效时间                                                     | 保持不变的内容                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |

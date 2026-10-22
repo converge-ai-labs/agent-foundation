@@ -376,7 +376,7 @@ A review projection is either embedded in a deferred request or queried through 
 
 Thread title and archive state share a metadata head independent from sticky configuration. A metadata mutation supplies its exact expected metadata version and changes title, archive state, or both atomically. Archiving an active root Thread is rejected. Unarchiving is valid, and a title can be explicitly cleared. Child metadata is managed only through parent-scoped child operations.
 
-Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
+Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Typed Harness failures raised during root preparation retain these safe fields and include a diagnostic report reference; missing MCP environment references identify the variable and how to repair it without including credential values. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
 
 ### Configuration Sources and Defaults
 

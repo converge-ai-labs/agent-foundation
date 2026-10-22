@@ -524,20 +524,33 @@ class SessionBackend:
         totals = await self.app.thread_usage(thread_id=selected)
         usage = await self.app.context_usage(selected)
         thread = detail.thread
-        if thread.configuration.project_id not in matches:
+        project_id = thread.configuration.project_id
+        patch = ThreadConfigurationPatch()
+        if project_id not in matches:
             project_id = await self.app.ensure_cwd_project(self.directory)
             source = await self.app.current_configuration()
             assert source is not None
-            local_roots = tuple(root.path for root in source.projects[project_id].roots)
+            patch = ThreadConfigurationPatch(
+                project_id=project_id,
+                local_roots=tuple(root.path for root in source.projects[project_id].roots),
+                default_environment="workspace",
+            )
+        # Keep same-directory recovery available when the saved Agent was removed;
+        # the user must be able to select a replacement with /agent first.
+        if self.request.command is None and thread.configuration.agent_source.id in configuration.agents:
+            # TUI resume follows current MCP defaults, not the creation-time list.
+            # Use the same Project > Agent > global resolver as new sessions.
+            defaults = await self.app.preview_thread_configuration(
+                defaults=NewThreadDefaults(project_id=project_id, agent_id=thread.configuration.agent_source.id)
+            )
+            if defaults.mcp_server_ids != thread.configuration.mcp_server_ids:
+                patch = patch.model_copy(update={"mcp_server_ids": defaults.mcp_server_ids})
+        if patch.model_fields_set:
             thread = await self.app.update_thread_configuration(
                 thread_id=selected,
                 mutation=ThreadConfigurationMutation(
                     expected_version=thread.configuration.version,
-                    patch=ThreadConfigurationPatch(
-                        project_id=project_id,
-                        local_roots=local_roots,
-                        default_environment="workspace",
-                    ),
+                    patch=patch,
                 ),
             )
         if thread.configuration.default_model_id is None:
