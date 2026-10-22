@@ -3263,5 +3263,9 @@
   "Try a title, source, external ID, or words from the conversation.": "Try a title, source, external ID, or words from the conversation.",
   "What is this session about?": "What is this session about?",
   "Your edits are preserved. Reload the saved details before making further changes.": "Your edits are preserved. Reload the saved details before making further changes.",
-  "Drop a file here or choose one to upload.": "Drop a file here or choose one to upload."
+  "Drop a file here or choose one to upload.": "Drop a file here or choose one to upload.",
+  "Content pages": "Content pages",
+  "Items {{start}}–{{end}} of {{total}}": "Items {{start}}–{{end}} of {{total}}",
+  "Plain text · {{start}}–{{end}} of {{total}} characters": "Plain text · {{start}}–{{end}} of {{total}} characters",
+  "Copy full text": "Copy full text"
 }

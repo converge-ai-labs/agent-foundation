@@ -6,7 +6,7 @@ import {
   WrenchIcon,
   GearSixIcon,
 } from "@phosphor-icons/react";
-import { useState } from "react";
+import { createContext, memo, useContext, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { isRecord } from "../../service-client";
 import type { Schema } from "../../shared/api";
@@ -14,6 +14,10 @@ import { CopyButton } from "../../shared/identity";
 import { MarkdownContent } from "../../shared/markdown";
 import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
+import { canHighlightContent } from "./content-budget";
+import { ContentSequence, PagedSource, TEXT_PAGE_SIZE } from "./content-pages";
+
+const HighlightContent = createContext(true);
 
 /** Decode JSON containers without losing large integers in retained content. */
 export function decodeContent(value: unknown): unknown {
@@ -36,14 +40,19 @@ export function decodeContent(value: unknown): unknown {
 }
 
 function CodeText({ text, language }: { text: string; language: string }) {
-  if (text.length > 100_000)
-    return <pre className={`${styles.rawContent} a13n-scrollbar`}>{text}</pre>;
+  const highlight = useContext(HighlightContent);
+  if (text.length > TEXT_PAGE_SIZE) return <PagedSource text={text} />;
   // A longer fence keeps embedded Markdown fences inert inside source text.
   let fenceLength = 3;
   for (const match of text.matchAll(/`+/g))
     fenceLength = Math.max(fenceLength, match[0].length + 1);
   const fence = "`".repeat(fenceLength);
-  return <MarkdownContent text={`${fence}${language}\n${text}\n${fence}`} />;
+  return (
+    <MarkdownContent
+      text={`${fence}${language}\n${text}\n${fence}`}
+      highlight={highlight}
+    />
+  );
 }
 
 export function TraceJson({ value }: { value: unknown }) {
@@ -53,6 +62,8 @@ export function TraceJson({ value }: { value: unknown }) {
 }
 
 function TraceText({ text }: { text: string }) {
+  const highlight = useContext(HighlightContent);
+  if (text.length > TEXT_PAGE_SIZE) return <PagedSource text={text} />;
   const trimmed = text.trim();
   // Producer context envelopes are source, not HTML to hide or execute.
   if (/^<([a-z][\w-]*)(?:\s[^>]*)?>[\s\S]*<\/\1>$/i.test(trimmed))
@@ -65,22 +76,27 @@ function TraceText({ text }: { text: string }) {
     if (typeof parsed !== "string")
       return (
         <div className={styles.contentSequence}>
-          <MarkdownContent text={text.slice(0, newline)} literalHtml />
+          <MarkdownContent
+            text={text.slice(0, newline)}
+            literalHtml
+            highlight={highlight}
+          />
           <TraceJson value={parsed} />
         </div>
       );
   }
-  return <MarkdownContent text={text} literalHtml />;
+  return <MarkdownContent text={text} literalHtml highlight={highlight} />;
 }
 
 /** A span's retained input or output; null when the span recorded none. */
-export function TraceContent({
+export const TraceContent = memo(function TraceContent({
   content,
 }: {
   content: Schema["Span"]["input"];
 }) {
   const { t } = useTranslation();
   const [raw, setRaw] = useState(false);
+  const highlight = useMemo(() => canHighlightContent(content), [content]);
   if (content === null) return <p className={styles.contentEmpty}>{UNKNOWN}</p>;
   return (
     <div className={styles.content}>
@@ -96,18 +112,20 @@ export function TraceContent({
             {t(raw ? "Preview" : "Raw JSON")}
           </Button>
           <CopyButton
-            value={JSON.stringify(content, null, 2)}
+            value={() => JSON.stringify(content, null, 2)}
             iconOnly
             copyLabel={t("Copy retained content")}
           />
         </div>
       </div>
       <div className={`${styles.contentBody} a13n-scrollbar`}>
-        {raw ? <TraceJson value={content} /> : <RichValue value={content} />}
+        <HighlightContent value={highlight}>
+          {raw ? <TraceJson value={content} /> : <RichValue value={content} />}
+        </HighlightContent>
       </div>
     </div>
   );
-}
+});
 
 function ExtraFields({
   value,
@@ -151,7 +169,7 @@ function RichValue({
   depth?: number;
 }) {
   const { t } = useTranslation();
-  const value = decodeContent(source);
+  const value = useMemo(() => decodeContent(source), [source]);
   if (depth > 8) return <TraceJson value={value} />;
   if (typeof value === "string")
     return value ? (
@@ -170,11 +188,12 @@ function RichValue({
       )
     )
       return (
-        <div className={styles.contentSequence}>
-          {value.map((item, index) => (
+        <ContentSequence
+          items={value}
+          render={(item, index) => (
             <RichValue key={index} value={item} depth={depth + 1} />
-          ))}
-        </div>
+          )}
+        />
       );
     return <TraceJson value={value} />;
   }
@@ -222,10 +241,14 @@ function RichValue({
             : "content" in value
               ? next(value.content)
               : null}
-          {Array.isArray(value.tool_calls) &&
-            value.tool_calls.map((call, index) => (
-              <ToolContent key={index} value={call} depth={depth + 1} />
-            ))}
+          {Array.isArray(value.tool_calls) && (
+            <ContentSequence
+              items={value.tool_calls}
+              render={(call, index) => (
+                <ToolContent key={index} value={call} depth={depth + 1} />
+              )}
+            />
+          )}
           <ExtraFields
             value={value}
             omit={[
