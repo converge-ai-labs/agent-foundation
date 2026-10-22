@@ -308,14 +308,10 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             )}
           </section>
         )}
-      {info.kind === "shell" && (
+      {info.shell && (
         <>
-          {typeof info.args.command === "string" && (
-            <CodeContent
-              title="Command"
-              value={info.args.command}
-              language="bash"
-            />
+          {info.command && (
+            <CodeContent title="Command" value={info.command} language="bash" />
           )}
           {record(info.result.status) && (
             <small>

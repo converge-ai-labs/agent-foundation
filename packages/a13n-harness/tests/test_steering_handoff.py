@@ -295,3 +295,73 @@ async def test_completion_during_waiter_cleanup_returns_final_result(monkeypatch
     finally:
         finish.set()
         await runtime.close()
+
+
+@pytest.mark.parametrize("owned", [False, True])
+async def test_control_wait_handoff_does_not_change_nested_runner_results(owned):
+    from a13n_harness._tool_execution import RunToolExecutions
+    from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+
+    state = RunToolExecutions()
+    state.handoff_requested.set()
+    timeouts = []
+
+    async def observe(timeout):
+        timeouts.append(timeout)
+        return "observed"
+
+    token = _OWNED_TOOL_EXECUTION.set(owned)
+    try:
+        assert await state.wait_control(observe, timeout_seconds=30) == "observed"
+    finally:
+        _OWNED_TOOL_EXECUTION.reset(token)
+    assert timeouts == ([30] if owned else [0])
+
+
+async def test_control_wait_polls_after_handoff_drains_observer():
+    from a13n_harness._tool_execution import RunToolExecutions
+
+    state = RunToolExecutions()
+    waiting = asyncio.Event()
+    drained = False
+
+    async def observe(timeout):
+        nonlocal drained
+        if timeout == 0:
+            assert drained
+            return "final output"
+        waiting.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            drained = True
+
+    async with asyncio.timeout(5):
+        task = asyncio.create_task(state.wait_control(observe, timeout_seconds=30))
+        await waiting.wait()
+        state.handoff_requested.set()
+        assert await task == "final output"
+
+
+async def test_control_wait_cancellation_drains_observer_and_propagates():
+    from a13n_harness._tool_execution import RunToolExecutions
+
+    state = RunToolExecutions()
+    waiting = asyncio.Event()
+    drained = asyncio.Event()
+
+    async def observe(timeout):
+        assert timeout == 30
+        waiting.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            drained.set()
+
+    async with asyncio.timeout(5):
+        task = asyncio.create_task(state.wait_control(observe, timeout_seconds=30))
+        await waiting.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert drained.is_set()

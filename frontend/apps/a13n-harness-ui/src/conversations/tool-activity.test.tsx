@@ -556,3 +556,103 @@ it("keeps execution failures and cancellation requests visible without interpret
     activitySummary([{ ...waiting, result: { status: "unavailable" } }]),
   ).toMatchObject({ issue: true, status: "Unavailable" });
 });
+
+it.each(["queued", "running"])(
+  "does not label a %s receipt as a finished command",
+  (status) => {
+    const tool = {
+      ...completed("shell_exec", { command: "pytest -q" }),
+      result: {
+        type: "tool_execution_receipt",
+        execution_id: "exec-one",
+        tool_name: "shell_exec",
+        status,
+      },
+    };
+    expect(activitySummary([tool])).toMatchObject({
+      title: "Shell · 1 operation",
+      status: "Execution handed off",
+    });
+    expect(
+      activitySummary([{ ...tool, result: { status: { phase: "running" } } }]),
+    ).toMatchObject({
+      title: "Shell · 1 operation",
+      status: "Running at last check",
+    });
+  },
+);
+
+it("renders saved Shell retrieval failures and output with exact receipt provenance", () => {
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_name: "shell_exec",
+          tool_call_id: "start",
+          value: { command: "pytest -q" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "shell_exec",
+          tool_call_id: "start",
+          value: {
+            type: "tool_execution_receipt",
+            tool_name: "shell_exec",
+            execution_id: "exec-one",
+            status: "running",
+          },
+        },
+        {
+          kind: "tool_call",
+          tool_name: "shell_wait",
+          tool_call_id: "wait",
+          value: { process_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "shell_wait",
+          tool_call_id: "wait",
+          value: { process_id: "exec-one", status: { phase: "running" } },
+        },
+        {
+          kind: "tool_call",
+          tool_name: "tool_execution_result",
+          tool_call_id: "result",
+          value: { execution_id: "exec-one" },
+        },
+        {
+          kind: "tool_result",
+          tool_name: "tool_execution_result",
+          tool_call_id: "result",
+          value: {
+            ok: true,
+            status: { phase: "exited", exit_code: 7 },
+            stderr: { text: "test failed", coverage: "partial" },
+          },
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  const groups = savedToolGroups(entries);
+  expect(describeTool(groups.get(entries[0].parts[0])![1]).summary).toBe(
+    "exec-one · pytest -q",
+  );
+  const result = groups.get(entries[0].parts[4])![0];
+  expect(describeTool(result)).toMatchObject({
+    failed: true,
+    command: "pytest -q",
+    label: "Retrieve tool result",
+  });
+  render(<ToolActivity tools={[result]} />);
+  fireEvent.click(screen.getByRole("button", { name: /Tool executions/ }));
+  expect(screen.getByText("test failed")).toBeTruthy();
+  expect(screen.getByText(/Exit 7/)).toBeTruthy();
+  expect(screen.getByText(/Partial process output/)).toBeTruthy();
+  // A page-edge result with no visible receipt must remain generic.
+  const orphan = savedToolGroups([
+    { ...entries[0], parts: entries[0].parts.slice(4) },
+  ]).get(entries[0].parts[4])![0];
+  expect(describeTool(orphan)).toMatchObject({ shell: false, failed: false });
+});

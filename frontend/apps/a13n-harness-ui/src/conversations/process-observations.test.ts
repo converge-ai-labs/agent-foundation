@@ -161,3 +161,43 @@ it("bounds retained observations and ignores malformed results", () => {
   expect(processes.background).toEqual([]);
   expect(processes.omitted).toBe(false);
 });
+
+it.each(["tool_execution_result", "tool_execution_wait"])(
+  "associates %s only with known same-Run Shell executions",
+  (name) => {
+    const processes = new ProcessObservations();
+    processes.result(
+      "root",
+      "shell_exec",
+      { command: "pytest -q" },
+      {
+        type: "tool_execution_receipt",
+        tool_name: "shell_exec",
+        execution_id: "exec-one",
+        status: "running",
+      },
+    );
+    const args = { execution_id: "exec-one" };
+    expect(processes.command("root", name, args)).toBe("pytest -q");
+    expect(processes.command("other", name, args)).toBeUndefined();
+    expect(processes.command("root", "other_tool", args)).toBeUndefined();
+    processes.result(
+      "root",
+      "shell_wait",
+      { process_id: "exec-one" },
+      {
+        process_id: "exec-one",
+        status: { phase: "running" },
+      },
+    );
+    const result = { ok: true, status: { phase: "exited", exit_code: 7 } };
+    processes.result("other", name, args, result);
+    expect(processes.background[0].phase).toBe("running");
+    processes.result("root", name, args, result);
+    expect(processes.background[0]).toMatchObject({
+      phase: "exited",
+      exitCode: 7,
+    });
+    expect(processes.entries.size).toBe(1);
+  },
+);

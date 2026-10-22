@@ -1954,5 +1954,32 @@ it.each([
     expect(display.processes.background).toMatchObject([
       { command: "server", processId, phase: "running" },
     ]);
+    if (owned) {
+      expect(display.blocks.get("wait-item")?.shellCommand).toBe("server");
+      display.accept(
+        compactFrame(107, [
+          compactItem(
+            "retrieval",
+            7,
+            {
+              toolCallId: "retrieval-call",
+              toolCallName: "tool_execution_result",
+              arguments: JSON.stringify({ execution_id: processId }),
+              value: {
+                ok: true,
+                status: { phase: "exited", exit_code: 7 },
+                stderr: { text: "failed" },
+              },
+            },
+            "tool_call",
+          ),
+        ]),
+      );
+      expect(display.blocks.get("retrieval")?.shellCommand).toBe("server");
+      expect(display.processes.background[0]).toMatchObject({
+        phase: "exited",
+        exitCode: 7,
+      });
+    }
   },
 );

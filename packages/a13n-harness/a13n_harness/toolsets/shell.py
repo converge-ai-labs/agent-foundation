@@ -373,12 +373,15 @@ class ShellToolset:
                 ctx.deps, process_id, actions=frozenset(actions), timeout_seconds=timeout_seconds
             ) as (controller, reference, processes):
                 try:
-                    result = await controller.wait(
-                        reference,
-                        stdout_offset=stdout_offset,
-                        stderr_offset=stderr_offset,
+                    result = await ctx.deps._tool_executions.wait_control(
+                        lambda timeout: controller.wait(
+                            reference,
+                            stdout_offset=stdout_offset,
+                            stderr_offset=stderr_offset,
+                            timeout_seconds=timeout,
+                            processes=processes,
+                        ),
                         timeout_seconds=timeout_seconds,
-                        processes=processes,
                     )
                 except asyncio.CancelledError:
                     if _OWNED_TOOL_EXECUTION.get():

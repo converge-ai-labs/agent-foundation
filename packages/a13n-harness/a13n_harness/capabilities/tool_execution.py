@@ -162,9 +162,12 @@ async def tool_execution_wait(
     timeout_seconds: Annotated[float, Field(ge=0, le=30, allow_inf_nan=False)] = 1.0,
 ) -> Any:
     """Wait boundedly without cancelling the execution when this wait is interrupted."""
-    return await _result(
-        ctx, await _runtime(ctx).wait(ctx.deps.thread_id, execution_id, timeout_seconds=timeout_seconds)
+    runtime = _runtime(ctx)
+    execution = await ctx.deps._tool_executions.wait_control(
+        lambda timeout: runtime.wait(ctx.deps.thread_id, execution_id, timeout_seconds=timeout),
+        timeout_seconds=timeout_seconds,
     )
+    return await _result(ctx, execution)
 
 
 async def tool_execution_cancel(ctx: RunContext[AgentContext], execution_id: str) -> Any:

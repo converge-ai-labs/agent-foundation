@@ -280,6 +280,25 @@ def test_shell_wait_uses_retained_launch_command_without_overwriting_it() -> Non
     renderer.transcript.close()
 
 
+@pytest.mark.parametrize("status", ["queued", "running"])
+def test_shell_wait_uses_runtime_receipt_launch_command(status: str) -> None:
+    renderer = StreamRenderer(Status())
+    try:
+        command = "pytest -q > tests.log 2>&1"
+        _start(renderer, name="shell_exec", command=command)
+        _capture(
+            renderer,
+            {"type": "tool_execution_receipt", "execution_id": "exec-one", "tool_name": "shell_exec", "status": status},
+        )
+        _wait(renderer, process_id="exec-one")
+        assert _visible(renderer).splitlines()[-1] == f"Run waiting · {command}"
+        _capture(renderer, {"process_id": "exec-one", "status": {"phase": "running"}})
+        assert _visible(renderer).splitlines()[-1] == f"Run running · {command}"
+        assert renderer._shell_processes[("root", "exec-one")].command == command
+    finally:
+        renderer.transcript.close()
+
+
 @pytest.mark.parametrize("unavailable", ["other-run", "other-process", "evicted"])
 def test_shell_wait_does_not_guess_missing_or_cross_run_commands(unavailable: str) -> None:
     renderer = StreamRenderer(Status())
@@ -474,3 +493,65 @@ def test_unified_review_timeout_renders_without_local_timer() -> None:
     )
     assert panel is not None and panel.title == "Shell review · timed out"
     assert "Automatically denied" in panel.body and "call-one" in panel.body
+
+
+@pytest.mark.parametrize("name", ["tool_execution_result", "tool_execution_wait"])
+@pytest.mark.parametrize("run", ["root", "other"])
+def test_execution_control_renders_known_shell_result_without_crossing_runs(name: str, run: str) -> None:
+    renderer = StreamRenderer(Status(mode="concise"))
+    try:
+        _start(renderer, name="shell_exec")
+        renderer.ingest(
+            "TOOL_CALL_RESULT",
+            {
+                "toolCallId": "call-one",
+                "content": json.dumps(
+                    {
+                        "type": "tool_execution_receipt",
+                        "execution_id": "exec-one",
+                        "tool_name": "shell_exec",
+                        "status": "running",
+                    }
+                ),
+            },
+            run_id="root",
+        )
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": "observe", "toolCallName": "shell_wait"}, run_id="root")
+        renderer.ingest(
+            "TOOL_CALL_RESULT",
+            {
+                "toolCallId": "observe",
+                "content": json.dumps(
+                    {
+                        "process_id": "exec-one",
+                        "status": {"phase": "running"},
+                    }
+                ),
+            },
+            run_id="root",
+        )
+        for event, payload in [
+            ("TOOL_CALL_START", {"toolCallId": "retrieve", "toolCallName": name}),
+            ("TOOL_CALL_ARGS", {"toolCallId": "retrieve", "delta": json.dumps({"execution_id": "exec-one"})}),
+            ("TOOL_CALL_END", {"toolCallId": "retrieve"}),
+            (
+                "TOOL_CALL_RESULT",
+                {
+                    "toolCallId": "retrieve",
+                    "content": json.dumps(
+                        {
+                            "ok": True,
+                            "status": {"phase": "exited", "exit_code": 7},
+                            "stderr": {"text": "test failed", "coverage": "partial"},
+                        }
+                    ),
+                },
+            ),
+        ]:
+            renderer.ingest(event, payload, run_id=run)
+        visible = _visible(renderer, width=200)
+        assert ("failed · exit 7 · output partial · pytest -q" in visible) is (run == "root")
+        assert ("exec-one · failed (exit 7) · pytest -q" in renderer.process_details()) is (run == "root")
+        assert "test failed" in _visible(renderer, detailed=True)
+    finally:
+        renderer.transcript.close()

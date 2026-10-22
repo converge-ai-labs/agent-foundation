@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
 )
 
 from a13n_harness.tool_execution import (
+    _OWNED_TOOL_EXECUTION,
     StoredToolExecution,
     ToolExecutionConfig,
     ToolExecutionRecord,
@@ -110,6 +111,32 @@ class RunToolExecutions:
         # Completion can win while waiter cleanup yields. Read pending state
         # only afterward, keeping receipt settlement synchronous with this view.
         return await runtime.result(thread_id, execution_id)
+
+    async def wait_control[T](self, observe: Callable[[float], Awaitable[T]], *, timeout_seconds: float) -> T:
+        """Release a top-level observation wait, never its underlying operation."""
+        # Nested controls belong to the retained runner. Only its outer waiter
+        # yields to steering; changing nested results would alter that program.
+        if _OWNED_TOOL_EXECUTION.get() or timeout_seconds == 0:
+            return await observe(timeout_seconds)
+        if self.handoff_requested.is_set():
+            return await observe(0)
+
+        async def wait() -> T:
+            return await observe(timeout_seconds)
+
+        waiter = asyncio.create_task(wait())
+        handoff = asyncio.create_task(self.handoff_requested.wait())
+        try:
+            await asyncio.wait((waiter, handoff), return_when=asyncio.FIRST_COMPLETED)
+            if waiter.done():
+                return waiter.result()
+        finally:
+            waiter.cancel()
+            handoff.cancel()
+            await asyncio.gather(waiter, handoff, return_exceptions=True)
+        # Poll after draining the cancelled observer so final output and a
+        # completion racing with handoff are not replaced by a stale snapshot.
+        return await observe(0)
 
     def receipt(self, record: ToolExecutionRecord) -> dict[str, Any]:
         value = {
