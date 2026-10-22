@@ -535,7 +535,9 @@ class SessionBackend:
                 local_roots=tuple(root.path for root in source.projects[project_id].roots),
                 default_environment="workspace",
             )
-        if self.request.command is None:
+        # Keep same-directory recovery available when the saved Agent was removed;
+        # the user must be able to select a replacement with /agent first.
+        if self.request.command is None and thread.configuration.agent_source.id in configuration.agents:
             # TUI resume follows current MCP defaults, not the creation-time list.
             # Use the same Project > Agent > global resolver as new sessions.
             defaults = await self.app.preview_thread_configuration(

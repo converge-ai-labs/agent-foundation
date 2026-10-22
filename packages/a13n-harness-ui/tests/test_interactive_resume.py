@@ -837,6 +837,36 @@ async def test_resume_refreshes_mcp_defaults_without_connecting(tmp_path, monkey
 
 
 @pytest.mark.anyio
+async def test_resume_allows_replacing_a_removed_agent(tmp_path, monkeypatch):
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        original = SessionBackend(app, CliRequest(), tmp_path, Status())
+        thread_id = await original.ensure_session()
+        before = await app.get_thread(thread_id)
+        agent_path = path.parent / "agents/codex.yaml"
+        agent = yaml.safe_load(agent_path.read_text())
+        agent["id"] = "agent-replacement"
+        agent_path.write_text(yaml.safe_dump(agent))
+        document = yaml.safe_load(path.read_text())
+        document["defaults"]["agent"] = "agent-replacement"
+        path.write_text(yaml.safe_dump(document))
+        assert await app.reload_configuration() is not None
+        assert "agent-codex" not in (await app.current_configuration()).agents
+
+        resumed = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
+        assert not await resumed.initialize()  # No model is available until the Agent is replaced.
+        assert resumed.thread_id == thread_id
+        after = await app.get_thread(thread_id)
+        assert after.thread.configuration == before.thread.configuration
+        assert after.continuation_id == before.continuation_id
+        await resumed.agents("agent-replacement")
+        assert (await app.get_thread(thread_id)).thread.configuration.agent_source.id == "agent-replacement"
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("owner", ["agent", "project", "headless"])
 async def test_resume_respects_mcp_overrides_and_headless_selection(tmp_path, monkeypatch, owner):
     import yaml
@@ -915,6 +945,6 @@ async def test_missing_mcp_credential_reports_actionable_root_failure(tmp_path, 
         assert "MISSING_MCP_TOKEN" in operation.failure.message
         assert "process environment" in operation.failure.message
         assert "Unexpected" not in operation.failure.message
-        assert "Diagnostic report" not in operation.failure.message
+        assert "Diagnostic report" in operation.failure.message
         detail = await app.get_thread(thread_id)
         assert detail.thread.last_execution.error_message == operation.failure.message

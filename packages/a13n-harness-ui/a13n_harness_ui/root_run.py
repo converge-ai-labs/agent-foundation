@@ -16,7 +16,7 @@ from uuid import uuid4
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.usage import RunUsageSummary, UsageReportError
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
@@ -650,7 +650,7 @@ class RootRunCoordinator:
         except cancelled_class:
             cancelled = True
         except BaseException as exc:
-            if isinstance(exc, (HarnessUiError, HarnessError)) and not isinstance(exc, UsageReportError):
+            if isinstance(exc, HarnessUiError):
                 failure = _exception_failure(exc, code="root_operation_failed")
             else:
                 with CancelScope(shield=True):
@@ -664,8 +664,10 @@ class RootRunCoordinator:
                         )
                     )
                     failure = (
-                        FailureView(code=exc.code, message=f"{exc}\n{feedback}")
-                        if isinstance(exc, UsageReportError)
+                        _exception_failure(exc, code="root_operation_failed").model_copy(
+                            update={"message": f"{exc}\n{feedback}"}
+                        )
+                        if isinstance(exc, HarnessError)
                         else FailureView(
                             code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                         )

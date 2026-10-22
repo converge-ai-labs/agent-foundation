@@ -256,10 +256,10 @@ async def test_root_preparation_preserves_safe_harness_errors_only(tmp_path, mon
         assert operation.status is RootOperationStatus.failed
         if typed:
             assert operation.failure.code == safe_error.code
-            assert operation.failure.message == str(safe_error)
+            assert operation.failure.message == f"{safe_error}\nDiagnostic report: test-report.json"
             assert operation.failure.details == safe_error.details
             assert operation.failure.retry_hint == "dependency_change"
-            assert reports == []
+            assert reports == [safe_error]
         else:
             assert operation.failure.code == "root_operation_failed"
             assert "Unexpected RuntimeError" in operation.failure.message
