@@ -11,7 +11,13 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data, ifMatch, representation } from "../../shared/api";
+import {
+  allPages,
+  data,
+  ifMatch,
+  representation,
+  type Schema,
+} from "../../shared/api";
 import {
   ErrorNotice,
   ErrorToast,
@@ -33,7 +39,11 @@ import { useAgentComposer } from "./composer";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
 import { AgentEditor, type AgentDraftSummary } from "./editor";
-import { editableAgent } from "./queries";
+import {
+  editableAgent,
+  editableAgentRevision,
+  editablePreset,
+} from "./queries";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
 import styles from "./agents.module.css";
@@ -93,6 +103,7 @@ export function AgentDetail() {
       config: AgentConfig;
       etag?: string;
       note?: string | null;
+      preset?: Schema["PresetEdit"];
     }) => {
       if (!body.etag)
         throw new Error(
@@ -133,7 +144,7 @@ export function AgentDetail() {
     setGeneration((value) => value + 1);
   };
   const state = agent.archived_at ? "archived" : "enabled";
-  const editable = can("write") && editableAgent(agent);
+  const editable = can("write") && editableAgentRevision(agent);
   const rail = (summary: AgentDraftSummary): ReactNode => {
     const environment = summary.environmentId
       ? (templates.data?.find((item) => item.id === summary.environmentId)
@@ -225,7 +236,8 @@ export function AgentDetail() {
           status={<StatePill state={state} />}
           description={agent.description}
           edit={
-            editable && (
+            can("write") &&
+            editableAgent(agent) && (
               <ModalFrame
                 open={detailsOpen}
                 onOpenChange={setDetailsOpen}
@@ -314,7 +326,10 @@ export function AgentDetail() {
           pending={save.isPending}
           error={save.error}
           readonly={!editable}
-          submit={(config, etag, note) => save.mutate({ config, etag, note })}
+          preset={editablePreset(agent) ? revision : undefined}
+          submit={(config, etag, note, preset) =>
+            save.mutate({ config, etag, note, preset })
+          }
           discard={() => void reload()}
           rail={rail}
         />

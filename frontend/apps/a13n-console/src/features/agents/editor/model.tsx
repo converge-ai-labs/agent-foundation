@@ -42,6 +42,7 @@ export function ModelSection({
   expanded,
   onExpandedChange,
   validation,
+  limited = false,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
@@ -52,6 +53,7 @@ export function ModelSection({
   expanded: boolean;
   onExpandedChange: (value: boolean) => void;
   validation?: Error;
+  limited?: boolean;
 }) {
   const { t } = useTranslation();
   const [mediaExpanded, setMediaExpanded] = useState(false);
@@ -171,9 +173,15 @@ export function ModelSection({
           readOnly={readOnly}
           label={t("Provider-specific settings")}
           hideLabel
-          hint={t(
-            "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
-          )}
+          hint={
+            limited
+              ? t(
+                  "Only temperature and top_p can be changed here for built-in agents.",
+                )
+              : t(
+                  "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
+                )
+          }
           code
           value={draft.settings}
           onChange={draft.setSettings}
@@ -198,7 +206,7 @@ export function ModelSection({
               label: t("Workspace default"),
               describe: (kind) => workspaceDefault(kind) ?? t("Not configured"),
             }}
-            disabled={readOnly}
+            disabled={readOnly || limited}
           />
         </SettingsSection>
       </DisclosureSection>

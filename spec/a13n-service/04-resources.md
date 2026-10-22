@@ -62,7 +62,7 @@ Agents and skills share the head and revision shape and one set of helpers in `r
 agents            head columns + source  preset_kind NULL  image NULL
                   CHECK (source IN ('custom', 'builtin'))
                   UNIQUE (workspace_id, preset_kind) WHERE source = 'builtin'
-agent_revisions   revision columns; config: AgentConfig
+agent_revisions   revision columns; config: AgentConfig; preset NULL
 ```
 
 `AgentConfig` is the agent definition as the Service accepts it:
@@ -140,9 +140,19 @@ Export and import are Console features: the Console serializes one revision's co
 
 **Agent Composer** is an ordinary agent with `source = 'builtin'` and `preset_kind = 'composer'`; `GET /agents?source=builtin&preset_kind=composer` finds it. `POST /agent-composer` (needs `write`) creates or refreshes it on demand and returns it:
 
-- Its model is the one it already uses while that model stays usable, else the first model whose upstream name, after its last `/`, matches `composer.models` in preference order, else the workspace's first usable model by key. Without a usable model the call is 409 `model_required`.
-- A refresh synchronizes the deployment-owned name and description and appends a revision only when the configuration's digest changed. A preparation that changes neither metadata nor configuration leaves the head version unchanged and emits no update audit event.
-- A builtin head refuses metadata and avatar changes, revisions, default changes and archiving (409 `builtin`). It is visible and can be duplicated into a custom agent.
+- Initial preparation selects the first usable model whose upstream name, after its last `/`, matches `composer.models` in preference order, else the workspace's first usable model by key. Without a usable model the first preparation is 409 `model_required`. Later preparation preserves the selected model and default revision, including when that model becomes unavailable; the user selects a replacement explicitly.
+- A refresh synchronizes the deployment-owned name and description. A changed official definition offers a validated candidate revision with the selected revision's model, model settings and supplemental instructions, without changing the default. Repeating preparation does not duplicate an already offered configuration. Unchanged preparation leaves the head version unchanged and emits no update audit event.
+- A builtin head refuses metadata and avatar changes and archiving (409 `builtin`). Composer and Finding allow the bounded revision edits below and selection of an existing default revision. Other managed presets, including Memory Organizer, remain read-only. Builtin Agents remain visible and duplicable into custom Agents.
+
+#### Managed preset revision edits
+
+Composer and Finding reuse Agent validation, revision creation, revision reads and `set-default`, with the same workspace `write` authority, original `If-Match`, audit and immutable revision rules. Their editable fields are `model`, the `thinking`, `max_tokens`, `temperature` and `top_p` entries of `model_settings`, and supplemental instructions. Existing model-settings validation still applies. Tools, permissions, Skills, environments, memory and every other configuration field remain unchanged from the named base revision.
+
+Revision creation and validation carry `preset: {base_revision_id, instructions}` alongside the complete `config`; validation also supplies `agent_id`. The base belongs to that same Agent. `config.instructions` retains the base's complete instructions; the submitted `preset.instructions` replaces its supplement. Management combines the base revision's official instructions with the new supplement and validates the resulting complete configuration before publication. Attempts to change a protected field are `invalid_argument`; naming another Agent's base is not found. A custom Agent rejects preset editing information.
+
+The revision's optional `preset` snapshot stores `official_instructions`, user `instructions`, and the `definition_digest` identifying the official preset configuration apart from its selected model. `config.instructions` always contains the complete executable instructions; its digest continues to cover the complete configuration. Ordinary Agent configuration and execution have no additional instruction fields or preset-specific composition. Run acceptance, recovery and approval continuation keep the selected revision's instructions. This does not version external models, tools or other deployment code.
+
+Older revisions without `preset` keep their original configuration; when edited, their entire stored instructions are treated as official text and their supplement starts empty. No text parsing or historical rewrite is needed. Selecting a historical default restores its complete configuration and supplement. Editing from a historical base preserves its official text even after a deployment update. Duplication and export use the complete executable `config` as an ordinary custom Agent, without preset editing metadata. API-serving replicas must all support bounded edits before enabling them; older replicas still apply the former automatic-refresh behavior.
 
 Composer enables every platform toolset with all its tools, and the `platform-operations` builtin Skill. It uses the same MCP tools as external clients, with Host-managed [Run credentials](03-tenancy.md#run-platform-credentials). Its tools inherit their defaults: reads `allow`, writes `ask` through ordinary Harness review; operation effects come from explicit route metadata, including read-only validation POSTs and connection tests with external effects. The reviewed call contains the actual target, parameters and original ETag. Changed parameters require a new review. Composer enables only the standard file tools `view`, `ls`, `glob` and `grep`; file mutations, shell and Memory remain disabled. It configures resources, manages one-time and recurring Schedules (including manual dispatch), and diagnoses executions. Direct Run control, environment instances, Memory and plugin configuration are outside its preset scope. Schedule tools preserve the durable delegation, creator-only actions and concurrency rules in [13](13-schedules.md#management-api).
 
@@ -170,7 +180,7 @@ Only the short Skill catalog is initially instructed; reference text loads on de
 
 ### Finding Agent
 
-**Finding Agent** is an ordinary builtin Agent with `preset_kind = 'finding'`, distinct from Composer. Custom Agents have no preset kind. `POST /finding-agent` needs `write` and takes no request body. Preparation keeps the current usable model or automatically chooses the first usable model by key; no usable model is `model_required`. Its deployment-owned definition refreshes through normal immutable revisions. Builtin editing restrictions and duplication apply to both presets; users cannot edit their model or model settings.
+**Finding Agent** is an ordinary builtin Agent with `preset_kind = 'finding'`, distinct from Composer. Custom Agents have no preset kind. `POST /finding-agent` needs `write` and takes no request body. Initial preparation chooses the first usable model by key; no usable model is `model_required`. Later preparation preserves the selected default and offers official updates as candidate revisions. [Managed preset revision edits](#managed-preset-revision-edits), protection of other fields and duplication apply to both presets.
 
 Deployments update API-serving and Worker roles together before preparing new presets: older builds assume a single builtin Agent. The migration backfills existing builtin heads as Composer; a downgrade preserves Finding Agent heads as custom Agents without promising older builds can execute their configurations.
 

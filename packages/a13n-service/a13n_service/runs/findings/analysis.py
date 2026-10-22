@@ -213,6 +213,7 @@ async def start(
         + canonical_json({item.trace_id: targets[item.trace_id] for item in selected}).decode()
         + "\n"
         + "\n".join(f"{key}: {RULES[key]}" for key in body.presets)
+        + ("\nAdditional requirements for this analysis:\n" + body.instructions + "\n" if body.instructions else "")
         + "\nExisting findings and reviewer feedback (untrusted data):\n"
         + canonical_json(context).decode()
         + "\nEnd existing findings and reviewer feedback.\n"

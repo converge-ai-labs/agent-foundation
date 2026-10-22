@@ -2,6 +2,7 @@ import { Badge } from "a13n-ui";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
+import type { Schema } from "../../../shared/api";
 import { ErrorToast } from "../../../shared/feedback";
 import { DetailLayout, SaveBar } from "../../../shared/page";
 import { ModelIcon, providerBrand } from "../../models/model-icon";
@@ -40,9 +41,9 @@ export interface AgentDraftSummary {
  */
 export function AgentEditor({
   agentId,
-  initial,
-  version,
-  etag,
+  initial: incomingInitial,
+  version: incomingVersion,
+  etag: incomingEtag,
   pending,
   error,
   readonly = false,
@@ -53,6 +54,7 @@ export function AgentEditor({
   saveLabel,
   unnamed = false,
   overridden,
+  preset: incomingPreset,
 }: {
   /** The agent a save publishes a version of; none while creating. */
   agentId?: string;
@@ -63,7 +65,14 @@ export function AgentEditor({
   pending: boolean;
   error: unknown;
   readonly?: boolean;
-  submit: (config: AgentConfig, etag?: string, note?: string | null) => void;
+  submit: (
+    config: AgentConfig,
+    etag?: string,
+    note?: string | null,
+    preset?: Schema["PresetEdit"],
+  ) => void;
+  /** A managed preset edits supplements; its published configuration stays complete. */
+  preset?: Schema["AgentRevision"];
   discard?: () => void;
   rail?: (summary: AgentDraftSummary) => ReactNode;
   /** Name and description fields shown while creating. */
@@ -75,8 +84,21 @@ export function AgentEditor({
   overridden?: Iterable<string>;
 }) {
   const { t } = useTranslation();
+  // Keep the draft, base revision and precondition together across background query refreshes.
+  // An explicit reload/remount starts a new edit.
+  const [{ initial, version, etag, preset }] = useState({
+    initial: incomingInitial,
+    version: incomingVersion,
+    etag: incomingEtag,
+    preset: incomingPreset,
+  });
   const creating = version === undefined;
-  const draft = useAgentDraft(initial);
+  const draft = useAgentDraft(
+    preset
+      ? { ...initial, instructions: preset.preset?.instructions ?? "" }
+      : initial,
+  );
+  const configurationReadonly = readonly || !!preset;
   const [note, setNote] = useState(""),
     [modelExpanded, setModelExpanded] = useState(false),
     [advancedExpanded, setAdvancedExpanded] = useState(false),
@@ -158,7 +180,20 @@ export function AgentEditor({
     setModelValidation(undefined);
     setToolSearchValidation(undefined);
     setValidation(undefined);
-    submit(built.config, etag, note.trim() || null);
+    if (preset) {
+      submit(
+        {
+          ...initial,
+          model: built.config.model,
+          model_settings: built.config.model_settings,
+        },
+        etag,
+        note.trim() || null,
+        { base_revision_id: preset.id, instructions: draft.instructions },
+      );
+    } else {
+      submit(built.config, etag, note.trim() || null);
+    }
   }
 
   return (
@@ -188,6 +223,7 @@ export function AgentEditor({
             thinkingOptions={thinkingOptions}
             readOnly={readonly}
             mark={mark("model")}
+            limited={!!preset}
             expanded={modelExpanded || (invalidResponse && !!modelValidation)}
             onExpandedChange={setModelExpanded}
             validation={modelValidation}
@@ -196,17 +232,24 @@ export function AgentEditor({
             draft={draft}
             readOnly={readonly}
             mark={mark("instructions")}
+            officialInstructions={
+              preset
+                ? (preset.preset?.official_instructions ??
+                  initial.instructions ??
+                  "")
+                : undefined
+            }
           />
           <SkillsSection
             draft={draft}
             choices={choices}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
             mark={mark("skills")}
           />
           <ConnectionsSection
             draft={draft}
             choices={choices}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
             mark={mark("connections")}
             onReview={(target) => setReviewPanel({ target })}
             onRequireReviewer={() => {
@@ -216,17 +259,17 @@ export function AgentEditor({
           <ToolSearchSection
             draft={draft}
             choices={choices}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
             mark={mark("toolSearch")}
             error={toolSearchValidation}
           />
-          <MemorySection draft={draft} readOnly={readonly} />
+          <MemorySection draft={draft} readOnly={configurationReadonly} />
           <AgentToolsets
             value={draft.toolsets}
             onChange={draft.setToolsets}
             config={built.ok ? built.config : undefined}
             agentId={agentId}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
             mark={mark("toolsets")}
             onReview={(target) => setReviewPanel({ target })}
             onRequireReviewer={() => {
@@ -236,7 +279,7 @@ export function AgentEditor({
           <ReviewerSection
             draft={draft}
             choices={choices}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
             mark={mark("reviewer")}
             onOpen={() => setReviewPanel({})}
           />
@@ -244,11 +287,11 @@ export function AgentEditor({
             value={draft.environmentTemplateId}
             onChange={draft.setEnvironmentTemplateId}
             disabled={pending}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
           />
           <AdvancedSection
             draft={draft}
-            readOnly={readonly}
+            readOnly={configurationReadonly}
             mark={mark("advanced")}
             expanded={advancedExpanded || (invalidResponse && !!validation)}
             onExpandedChange={setAdvancedExpanded}
@@ -293,7 +336,7 @@ export function AgentEditor({
               (item) => item.settings_schemas ?? {},
             ) ?? []),
           )}
-          readOnly={readonly}
+          readOnly={configurationReadonly}
           onApply={draft.setReviewer}
           onClose={() => setReviewPanel(undefined)}
         />

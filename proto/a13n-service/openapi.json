@@ -1404,6 +1404,16 @@
           "number": {
             "title": "Number",
             "type": "integer"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresetSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1441,6 +1451,16 @@
               }
             ],
             "title": "Note"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresetEdit"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1609,6 +1629,16 @@
           },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Input"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PresetEdit"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1720,6 +1750,12 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Instructions",
+            "type": "string"
           },
           "max_traces": {
             "default": 10,
@@ -14297,6 +14333,29 @@
         ],
         "type": "string"
       },
+      "PresetEdit": {
+        "additionalProperties": false,
+        "description": "Edit a managed preset from an existing revision, preserving its official definition.",
+        "properties": {
+          "base_revision_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Base Revision Id",
+            "type": "string"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 262144,
+            "title": "Instructions",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_revision_id"
+        ],
+        "title": "PresetEdit",
+        "type": "object"
+      },
       "PresetKind": {
         "enum": [
           "composer",
@@ -14304,6 +14363,33 @@
           "memory_organizer"
         ],
         "type": "string"
+      },
+      "PresetSnapshot": {
+        "additionalProperties": false,
+        "description": "Revision-owned editing information; execution uses only the complete AgentConfig.",
+        "properties": {
+          "definition_digest": {
+            "title": "Definition Digest",
+            "type": "string"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 262144,
+            "title": "Instructions",
+            "type": "string"
+          },
+          "official_instructions": {
+            "maxLength": 262144,
+            "title": "Official Instructions",
+            "type": "string"
+          }
+        },
+        "required": [
+          "official_instructions",
+          "definition_digest"
+        ],
+        "title": "PresetSnapshot",
+        "type": "object"
       },
       "Pressure": {
         "additionalProperties": false,
@@ -22557,7 +22643,7 @@
   "paths": {
     "/api/v1/agent-composer": {
       "post": {
-        "description": "The workspace's Agent Composer, created or brought up to date with the deployment's definition.\n\nRefused with `model_required` while the workspace has no model the caller can use.",
+        "description": "The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.\n\nInitial preparation requires a usable model; later preparation preserves the selected model and revision.",
         "operationId": "prepare_composer",
         "parameters": [
           {

@@ -2,9 +2,8 @@
 
 Its head has `source = 'builtin'` and `preset_kind = 'composer'`: its runs, threads and approvals are every
 agent's, and it can be duplicated. The deployment owns its definition; the workspace owns the model it runs on, so
-`prepare` builds it on demand. The first preparation creates the head; a later one publishes the current
-definition, which appends a revision only when it changed or its model is no longer usable. The chosen model is
-kept while usable.
+`prepare` builds it on demand. The first preparation creates the head; later preparations offer changed official
+definitions as revisions without replacing the workspace's selected default or model.
 """
 
 from collections.abc import Sequence
