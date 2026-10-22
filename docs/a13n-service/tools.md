@@ -206,7 +206,9 @@ Groups can contain selected MCP or connector `connections`, `plugins` by instanc
 
 Omit `config` or set `mode: proxy`, control names, and pagination limits as described in [Harness ToolSearch](../a13n-harness/tool-search.md). Ungrouped sources stay direct. `client_tools` retain their flat external-call and client-resume protocol. Keep tools requiring approval/resume directly exposed as well.
 
-Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. To migrate, change `mode: native` to `proxy`, remove `strategy` and connection-level `defer_loading`, and put connections in `groups` when proxy discovery is wanted. Older revisions and saved run configurations containing removed fields are not converted automatically: create replacement revisions and finish old runs before upgrading.
+Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. To use proxy discovery, configure groups as above, omit `config.mode` or set it to `proxy`, and remove `strategy`. Native mode and `strategy` are rejected.
+
+Connection selections preserve unknown fields through revisions and run overrides, but only `connection_id`, `tools`, `permission`, and `permissions` affect execution. An extra `defer_loading` value of either `true` or `false` is inert: ungrouped tools stay direct and grouped tools use the proxy. Stored configurations are not rewritten or automatically converted to proxy mode.
 
 ### Caller headers
 

@@ -234,8 +234,8 @@
       "type": "object"
     },
     "ConnectionSelection": {
-      "additionalProperties": false,
-      "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+      "additionalProperties": true,
+      "description": "An agent's selected tools and permissions; extra fields round-trip without affecting execution.",
       "properties": {
         "connection_id": {
           "maxLength": 41,

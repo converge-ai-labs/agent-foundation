@@ -313,6 +313,12 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
     )
     current = await now(session)
+    stored_options = options.model_dump(mode="json", exclude_none=True)
+    if options.overrides is not None and options.overrides.connection_tools is not None:
+        # Connection extras are opaque data: an explicit null must survive acceptance.
+        stored_options["overrides"]["connection_tools"] = [
+            selection.model_dump(mode="json") for selection in options.overrides.connection_tools
+        ]
     run = RunRow(
         id=run_id,
         organization_id=thread.organization_id,
@@ -324,7 +330,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         revision_selection=source.revision_selection,
         principal_id=principal.id,
         authority=source.authority.model_dump(mode="json"),
-        options=options.model_dump(mode="json", exclude_none=True),
+        options=stored_options,
         options_digest=source.options_digest,
         # Frozen here: the thread's headers apply to this run even if the thread is edited later.
         mcp_headers=thread.mcp_headers,

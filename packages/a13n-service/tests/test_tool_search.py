@@ -121,7 +121,10 @@ def test_plan_uses_selected_instances_and_child_has_its_own_configuration() -> N
 
 
 @pytest.mark.parametrize("permission", ["allow", "ask", "deny"])
-async def test_proxy_discovery_restores_history_and_keeps_connection_permissions(permission: str) -> None:
+@pytest.mark.parametrize("defer_loading", [False, True])
+async def test_proxy_discovery_restores_history_and_keeps_connection_permissions(
+    permission: str, defer_loading: bool
+) -> None:
     effects = []
 
     def lookup(value: int) -> int:
@@ -131,7 +134,7 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
     source = Capability(toolsets=[FunctionToolset([lookup], id=CONNECTION)])
     selected = config(
         toolsets={},
-        connection_tools=[{"connection_id": CONNECTION, "permission": permission}],
+        connection_tools=[{"connection_id": CONNECTION, "permission": permission, "defer_loading": defer_loading}],
         tool_search=selection().tool_search,
     )
     root = resolved(new_object_id("ap"), new_object_id("apr"), selected, connection_types={CONNECTION: "connector"})
@@ -183,7 +186,8 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
     assert effects == ([4] if permission == "allow" else [])
 
 
-async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_checks(service) -> None:
+@pytest.mark.parametrize("extras", [{}, {"defer_loading": False}, {"defer_loading": True}])
+async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_checks(service, extras) -> None:
     from a13n_service.infra.db import short_session
     from a13n_service.providers.tools import ToolDispatch
     from a13n_service.resources.connections.runtime import open_connections
@@ -210,7 +214,15 @@ async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_che
             "Proxy search",
             model_key,
             toolsets={},
-            connection_tools=[{"connection_id": connection_id, "permission": "allow"}],
+            connection_tools=[
+                {
+                    "connection_id": connection_id,
+                    "permission": "allow",
+                    "url": "http://127.0.0.1:9/unused",
+                    "headers": {"x-api-key": "unused", "x-trace": "unused"},
+                    **extras,
+                }
+            ],
             tool_search={
                 "config": {"mode": "proxy"},
                 "groups": {

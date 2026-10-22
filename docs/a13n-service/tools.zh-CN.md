@@ -206,7 +206,9 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 `config` 可省略，也可设置 `mode: proxy`、控制工具名称及分页限制，详见 [Harness ToolSearch](../a13n-harness/tool-search.md)。未分组来源保持直接暴露，`client_tools` 保留原有平铺调用与客户端恢复协议。需要审批后恢复的工具也应保持直接暴露。
 
-每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。迁移旧配置时，将 `mode: native` 改为 `proxy`，删除 `strategy` 和连接级 `defer_loading`；需要代理发现的连接加入 `groups`。使用这些已删除字段的旧修订和保存的运行配置不会自动转换：升级前创建替代修订，完成旧运行后再切换。
+每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。使用代理发现时，按上例配置分组，省略 `config.mode` 或将其设为 `proxy`，并删除 `strategy`。原生模式和 `strategy` 会被拒绝。
+
+连接选择中的未知字段会在修订和运行覆盖的读写中保留，但只有 `connection_id`、`tools`、`permission` 和 `permissions` 影响执行。额外的 `defer_loading` 无论为 `true` 还是 `false` 都不生效：未分组工具保持直接暴露，分组工具使用代理。已有配置不会被重写或自动转换为代理模式。
 
 ### 调用方请求头
 
