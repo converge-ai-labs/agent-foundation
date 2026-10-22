@@ -521,6 +521,12 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 查询仅返回工作空间的 span。没有后端时返回 `503 unavailable`。Span 包含多少内容由 `telemetry.trace_content` 决定。Finding Agent 的分析运行只读取分析所选的 trace，并且逐个按 `trace_id` 读取：它自己的请求不能列出 trace 或尝试的 span，读取的每条 trace 都会记录为可引用的证据。
 
+在 **Traces** 中，点击**耗时**、**费用**或**开始时间**表头，按整个所选时间范围排序。耗时筛选填写秒数，费用筛选填写 USD；最小值和最大值均包含边界，点击**应用**后生效。例如，选择最近 24 小时、耗时最小值 `60`、费用最小值 `0.01`，再按费用降序，即可查找运行至少一分钟且上报费用至少 $0.01 的 trace。
+
+API 使用 `GET …/traces/search`，提供明确的 `started_after`、`started_before`，以及 `order_by=started|duration|cost`、`direction=asc|desc`。可选条件为 `min_duration_seconds`、`max_duration_seconds`、`min_cost_usd`、`max_cost_usd`，并支持原有 ID 和根属性筛选。费用累加 trace 内各 span 自身上报的费用；未上报不视为零，也不代表 Service 的 Run 计费金额。
+
+每次全范围查询由配置的后端执行，不缓存查询结果。Langfuse 每次读取最多 5,000 个匹配的根摘要，摘要总大小不超过 8 MiB。费用仅用于展示时，先选出当前页，再查询这一页的费用；费用参与排序或筛选时，仍需先查询全部候选 trace 的聚合费用，再分页。这要求 Langfuse 版本支持 Metrics API v2 按 Trace ID 和费用类别分组查询。Logfire 通过 SQL 完成聚合、筛选、排序和分页。使用返回的 Keyset 游标继续翻页时保持筛选条件不变。游标记录上一页末条的排序值和 trace/span ID，在该位置之后继续查询；前方新增或删除记录不会使下一页错位。排序值或筛选条件对应的数据发生变化时，仍可能重复或遗漏；分页不会冻结查询结果。查询限时 30 秒，结果不完整或超过收集限制时明确报错，不返回局部排名；请缩小时间范围或增加 ID 条件。结果仍受采样、上报延迟和保留期限影响。
+
 ## 发现并改进执行问题
 
 打开 **改进 → 发现（Improve → Findings）**，审阅 Agent Run 的诊断信号。每个发现项包含严重程度、人工审阅结论、引用的 Agent 版本、trace/Run 证据、问题说明和改进建议。即使标记为严重，在人工审阅前也仍是未确认信号。已保存的结论和理由默认以阅读模式展示。点击**编辑审阅**，选择已确认、预期行为、证据不足或误判，可以填写**审阅理由**，然后点击**保存审阅**，同时保存结论和理由。切换结论会清空旧理由；取消会恢复已保存的内容并返回阅读模式。关闭或重新打开发现项会保留审阅结论和理由，原始诊断和证据仍然可见。

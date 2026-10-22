@@ -3333,5 +3333,18 @@
   "Loading desktop preview…": "Loading desktop preview…",
   "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.": "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.",
   "Desktop preview": "Desktop preview",
-  "Creation failed": "Creation failed"
+  "Creation failed": "Creation failed",
+  "Sorts all matching traces in the selected time range.": "Sorts all matching traces in the selected time range.",
+  "Minimum": "Minimum",
+  "Maximum": "Maximum",
+  "seconds": "seconds",
+  "Minimum must not exceed maximum.": "Minimum must not exceed maximum.",
+  "Filters": "Filters",
+  "Filter by duration or cost": "Filter by duration or cost",
+  "Duration and cost": "Duration and cost",
+  "No limit": "No limit",
+  "Reset": "Reset",
+  "Clear all": "Clear all",
+  "Applied filters": "Applied filters",
+  "minutes": "minutes"
 }

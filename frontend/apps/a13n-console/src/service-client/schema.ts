@@ -3497,6 +3497,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/traces/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Search Traces
+     * @description Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.
+     *
+     *     Providers execute each query without a result cache; pages may reflect updates between requests.
+     *     Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
+     *     Incomplete queries fail without a partial rank.
+     */
+    get: operations["search_traces"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/traces/{trace_id}": {
     parameters: {
       query?: never;
@@ -11663,6 +11687,28 @@ export interface components {
       queryable_since: string | null;
       /** Type */
       type: ("langfuse" | "logfire") | null;
+    };
+    /** TraceSearchItem */
+    TraceSearchItem: {
+      /** Cost Usd */
+      cost_usd: string | null;
+      /** Duration Seconds */
+      duration_seconds: string | null;
+      root: components["schemas"]["Span"];
+    };
+    /** TraceSearchPage */
+    TraceSearchPage: {
+      /**
+       * Collected At
+       * Format: date-time
+       */
+      collected_at: string;
+      /** Items */
+      items: components["schemas"]["TraceSearchItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Total */
+      total: number;
     };
     /** @enum {string} */
     Trigger:
@@ -20214,6 +20260,46 @@ export interface operations {
           "application/json":
             | components["schemas"]["SpanPage"]
             | components["schemas"]["SpanReadPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  search_traces: {
+    parameters: {
+      query: {
+        session_id?: string | null;
+        thread_id?: string | null;
+        run_id?: string | null;
+        attribute?: string[];
+        started_after: string;
+        started_before: string;
+        order_by?: "started" | "duration" | "cost";
+        direction?: "asc" | "desc";
+        min_duration_seconds?: number | string | null;
+        max_duration_seconds?: number | string | null;
+        min_cost_usd?: number | string | null;
+        max_cost_usd?: number | string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TraceSearchPage"];
         };
       };
       400: components["responses"]["Error"];

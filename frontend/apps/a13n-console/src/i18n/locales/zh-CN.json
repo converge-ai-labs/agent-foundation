@@ -3333,5 +3333,18 @@
   "Loading desktop preview…": "正在加载桌面预览…",
   "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.": "这是只读快照，可刷新查看最新画面；需要操作桌面时，请从会话中接管。",
   "Desktop preview": "桌面预览",
-  "Creation failed": "创建失败"
+  "Creation failed": "创建失败",
+  "Sorts all matching traces in the selected time range.": "对所选时间范围内所有匹配的 Trace 排序。",
+  "Minimum": "最小值",
+  "Maximum": "最大值",
+  "seconds": "秒",
+  "Minimum must not exceed maximum.": "最小值不能大于最大值。",
+  "Filters": "筛选",
+  "Filter by duration or cost": "按耗时或费用筛选",
+  "Duration and cost": "耗时与费用",
+  "No limit": "不限",
+  "Reset": "重置",
+  "Clear all": "清除全部",
+  "Applied filters": "已应用的筛选",
+  "minutes": "分钟"
 }

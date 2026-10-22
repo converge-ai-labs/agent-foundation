@@ -738,6 +738,14 @@
   {
     "effect": "read",
     "group": "execution",
+    "key": "search_traces",
+    "method": "GET",
+    "path": "/api/v1/traces/search",
+    "summary": "Search Traces"
+  },
+  {
+    "effect": "read",
+    "group": "execution",
     "key": "get_trace",
     "method": "GET",
     "path": "/api/v1/traces/{trace_id}",

@@ -53,9 +53,9 @@ function typingUser() {
   return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 }
 const pause = () => act(() => vi.advanceTimersByTimeAsync(350));
-function mount(element: React.ReactNode, entry = "/") {
+function mount(element: React.ReactNode, entry = "/", staleTime = 0) {
   const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, staleTime } },
   });
   caches.push(cache);
   render(
@@ -1002,48 +1002,215 @@ it("immediately hides revoked content without waiting for unrelated cost reads o
   expect(http.GET.mock.calls.filter(([path]) => isSpans(path))).toHaveLength(4);
 });
 
-it("sorts the page by start time only and keeps the order after pagination", async () => {
+it("requests whole-range sorting and resets pagination when the sort changes", async () => {
   const user = userEvent.setup();
-  const makeTrace = (id: string, minute: number) => ({
+  const root = (name: string) => ({
     ...trace(),
-    id: `${id}-span`,
-    trace_id: id,
-    name: id,
-    started_at: new Date(
-      Date.parse("2026-09-11T00:00:00Z") + minute * 60_000,
-    ).toISOString(),
+    id: name,
+    trace_id: name,
+    name,
   });
   http.GET.mockImplementation(async (path, options) => {
     if (isBackend(path)) return response(descriptor);
     if (isSpans(path)) return response({ items: [], next_cursor: null });
-    const next = options.params.query.cursor;
-    return response({
-      items: next
-        ? [makeTrace("next-late", 4), makeTrace("next-early", 3)]
-        : [makeTrace("late", 2), makeTrace("early", 1), makeTrace("mid", 1.5)],
-      next_cursor: next ? null : "next",
-    });
+    const { cursor, order_by, direction } = options.params.query;
+    if (path === "/api/v1/traces/search")
+      return response({
+        items: [
+          {
+            root: root(cursor ? "second" : `${order_by}-${direction}`),
+            cost_usd: "0.25",
+            duration_seconds: "10",
+          },
+        ],
+        total: 2,
+        collected_at: "2026-09-11T00:00:00Z",
+        next_cursor: cursor ? null : "ranked-next",
+      });
+    return response({ items: [root("latest")], next_cursor: "next" });
   });
-  mount(<TracesPage />);
-  await screen.findByRole("link", { name: "late" });
-  const names = () =>
-    screen
-      .getAllByRole("row")
-      .slice(1)
-      .map((row) => within(row).getAllByRole("link")[0].textContent);
-  expect(screen.queryByRole("button", { name: "Cost" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Duration" })).toBeNull();
-  expect(names()).toEqual(["late", "mid", "early"]);
-  await user.click(screen.getByRole("button", { name: "Started" }));
-  expect(names()).toEqual(["early", "mid", "late"]);
+  mount(<TracesPage />, "/", 15_000);
+  await screen.findByRole("link", { name: "latest" });
   await user.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByRole("link", { name: "next-late" });
-  expect(names()).toEqual(["next-early", "next-late"]);
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.some(
+        ([, opts]) => opts.params?.query?.cursor === "next",
+      ),
+    ).toBe(true),
+  );
+  await user.click(screen.getByRole("button", { name: "Duration" }));
+  await screen.findByRole("link", { name: "duration-desc" });
+  expect(http.GET).toHaveBeenCalledWith(
+    "/api/v1/traces/search",
+    expect.objectContaining({
+      params: {
+        query: expect.objectContaining({
+          order_by: "duration",
+          direction: "desc",
+          cursor: undefined,
+        }),
+      },
+      signal: expect.any(AbortSignal),
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("link", { name: "second" });
+  const rankedCalls = http.GET.mock.calls.filter(
+    ([path]) => path === "/api/v1/traces/search",
+  ).length;
+  await user.click(screen.getByRole("button", { name: "Previous" }));
+  await screen.findByRole("link", { name: "duration-desc" });
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(([path]) => path === "/api/v1/traces/search"),
+    ).toHaveLength(rankedCalls + 1),
+  );
+  await user.click(screen.getByRole("button", { name: "Cost" }));
+  await screen.findByRole("link", { name: "cost-desc" });
+  await user.click(screen.getByRole("button", { name: "Cost" }));
+  await screen.findByRole("link", { name: "cost-asc" });
+  const searches = http.GET.mock.calls.filter(
+    ([path]) => path === "/api/v1/traces/search",
+  );
+  expect(searches[0][1].params.query.snapshot).toBeUndefined();
+  expect(
+    searches
+      .slice(1)
+      .every(([, options]) => options.params.query.snapshot === undefined),
+  ).toBe(true);
   expect(
     screen
-      .getByRole("columnheader", { name: "Started" })
+      .getByRole("columnheader", { name: "Cost" })
       .getAttribute("aria-sort"),
   ).toBe("ascending");
+  expect(screen.getByText("$0.25")).toBeTruthy();
+});
+
+it("applies duration and exact USD bounds together and validates the draft", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path) =>
+    response(
+      isBackend(path) ? descriptor : { items: [], next_cursor: null, total: 0 },
+    ),
+  );
+  mount(<TracesPage />);
+  await screen.findByText("No traces in this range");
+  await user.click(
+    screen.getByRole("button", { name: "Filter by duration or cost" }),
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Minimum" }),
+    "60",
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Maximum" }),
+    "30",
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Minimum must not exceed maximum.",
+  );
+  await user.clear(
+    screen.getByRole("spinbutton", { name: "Duration Maximum" }),
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Maximum" }),
+    "120",
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Cost Minimum" }),
+    "0.0012",
+  );
+  expect(
+    http.GET.mock.calls.some(([path]) => path === "/api/v1/traces/search"),
+  ).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      "/api/v1/traces/search",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({
+            min_duration_seconds: "60",
+            max_duration_seconds: "120",
+            min_cost_usd: "0.0012",
+            cursor: undefined,
+          }),
+        },
+        signal: expect.any(AbortSignal),
+      }),
+    ),
+  );
+  await user.click(
+    screen.getByRole("button", { name: /^Remove filter Duration:/ }),
+  );
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenLastCalledWith(
+      "/api/v1/traces/search",
+      expect.objectContaining({
+        params: {
+          query: expect.objectContaining({
+            min_duration_seconds: undefined,
+            max_duration_seconds: undefined,
+            min_cost_usd: "0.0012",
+          }),
+        },
+      }),
+    ),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Filter by duration or cost" }),
+  );
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Duration Minimum" }),
+    "90",
+  );
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(
+    screen.queryByRole("button", { name: /^Remove filter Duration:/ }),
+  ).toBeNull();
+});
+
+it("restarts the whole-range query when its cursor is rejected", async () => {
+  const user = userEvent.setup();
+  let searches = 0;
+  http.GET.mockImplementation(async (path, options) => {
+    if (isBackend(path)) return response(descriptor);
+    if (isSpans(path)) return response({ items: [], next_cursor: null });
+    if (path === "/api/v1/traces/search") {
+      if (options.params.query.cursor)
+        throw new ApiError(
+          400,
+          "invalid_cursor",
+          "Invalid trace search cursor",
+          {},
+          null,
+        );
+      expect(options.params.query.snapshot).toBeUndefined();
+      searches++;
+      return response({
+        items: [
+          {
+            root: { ...trace(), name: `search-${searches}` },
+            cost_usd: "0",
+            duration_seconds: "10",
+          },
+        ],
+        total: 2,
+        next_cursor: "invalid",
+      });
+    }
+    return response({ items: [trace()], next_cursor: null });
+  });
+  mount(<TracesPage />);
+  await screen.findByRole("button", { name: "Duration" });
+  await user.click(screen.getByRole("button", { name: "Duration" }));
+  await screen.findByRole("link", { name: "search-1" });
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Invalid trace search cursor");
+  await user.click(screen.getByRole("button", { name: "Reload" }));
+  await screen.findByRole("link", { name: "search-2" });
 });
 
 it("shows a placeholder while costs load, then one decimal count for the page", async () => {

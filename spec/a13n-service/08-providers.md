@@ -142,6 +142,9 @@ class SpanQuery:
     trace_id: str | None = None
     roots: bool = False                # only trace roots: one per attempt
     cursor: str | None = None
+    span_id: str | None = None
+    include_content: bool = True       # false for overview reads
+    metrics_only: bool = False         # smaller projection where supported
 
 class TraceProvider(Protocol):
     type: ClassVar[Literal["langfuse", "logfire"]]
@@ -149,9 +152,15 @@ class TraceProvider(Protocol):
     def otlp_endpoint(self) -> str: ...
     @property
     def otlp_headers(self) -> dict[str, str]: ...
+    @property
+    def query_identity(self) -> str: ...  # opaque configuration/credential identity
     async def query(self, query: SpanQuery) -> SpanPage: ...
+    async def search_traces(self, query: SearchQuery, owner: str) -> TraceSearchPage: ...
 ```
 
+- Whole-window metric searches have one provider-neutral contract. Service owns authorization and validates returned root scope; each adapter owns its backend query strategy and must scope aggregate inputs before computing metrics. Langfuse recollects roots for each request. It batches Metrics API v2 cost-category aggregates across all candidates only for cost sorting or filtering; otherwise it ranks roots first and fetches costs only for the requested page. Logfire pushes aggregation, thresholds, ordering and pagination into Query API SQL. Searches do not cache query results. The caller supplies an opaque scope identity for binding keyset cursors to the query. Both adapters continue after the last sort value and trace/span IDs, with unknown values last. See [whole-window ranking](07-facts-and-delivery.md#whole-window-ranking).
+- Logfire selects and deduplicates roots within the requested root-start window before selecting their trace IDs for span deduplication and cost aggregation. The wider child-span window must not include unrelated traces in deduplication; it still includes selected traces' children started after the root window. Root metadata selectors apply to deduplicated roots, not to their children.
+- `metrics_only` is an optimization hint, not a payload or authorization guarantee: Langfuse omits IO fields; summaries still remove payloads before returning them.
 - A backend reports spans as it stored them. Nothing it returns is trusted for tenancy: callers check every span's correlation attributes themselves.
 - Every read is bounded by `telemetry.trace_query_timeout` and 8 MiB of response. Any backend failure is `unavailable` with dependency `trace:{type}`.
 - The operator configured the backend, so its own host may be private; cloud metadata addresses stay refused.

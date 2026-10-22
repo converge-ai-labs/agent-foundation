@@ -543,5 +543,7 @@
   "Save durable execution authority as the creator, beyond this credential or Run's lifetime.\n\nDefaults to paused. Set state=enabled only when automatic future execution is intended.": "以创建者身份保存持久执行授权，授权在本次凭证或 Run 结束后仍然有效。\n\n默认暂停。只有希望开始后续自动执行时，才设置 state=enabled。",
   "Get Environment Creation": "获取环境创建进度",
   "Retry Environment Creation": "重试环境创建",
-  "Get Environment Desktop Preview": "获取环境桌面预览"
+  "Get Environment Desktop Preview": "获取环境桌面预览",
+  "Search Traces": "筛选和排序 trace",
+  "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank.": "在整个根 span 开始时间范围内筛选和排序，再分页返回。费用为各 span 上报费用之和，不代表计费金额。\n\n由各后端执行每次查询，不缓存查询结果；不同页可能反映请求之间的数据更新。Keyset 游标绑定排序、筛选条件及上一页末条的排序值和 trace/span ID。\n查询不完整时返回错误，不提供部分排名。"
 }
