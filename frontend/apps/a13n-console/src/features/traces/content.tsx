@@ -15,7 +15,9 @@ import { MarkdownContent } from "../../shared/markdown";
 import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
 import { canHighlightContent } from "./content-budget";
-import { ContentSequence, PagedSource, TEXT_PAGE_SIZE } from "./content-pages";
+import { ContentSequence, ScrollSource } from "./content-scroll";
+import { TEXT_CHUNK_SIZE } from "./content-source";
+import { ContentWindow } from "./content-window";
 
 const HighlightContent = createContext(true);
 
@@ -41,7 +43,7 @@ export function decodeContent(value: unknown): unknown {
 
 function CodeText({ text, language }: { text: string; language: string }) {
   const highlight = useContext(HighlightContent);
-  if (text.length > TEXT_PAGE_SIZE) return <PagedSource text={text} />;
+  if (text.length > TEXT_CHUNK_SIZE) return <ScrollSource text={text} />;
   // A longer fence keeps embedded Markdown fences inert inside source text.
   let fenceLength = 3;
   for (const match of text.matchAll(/`+/g))
@@ -63,7 +65,7 @@ export function TraceJson({ value }: { value: unknown }) {
 
 function TraceText({ text }: { text: string }) {
   const highlight = useContext(HighlightContent);
-  if (text.length > TEXT_PAGE_SIZE) return <PagedSource text={text} />;
+  if (text.length > TEXT_CHUNK_SIZE) return <ScrollSource text={text} />;
   const trimmed = text.trim();
   // Producer context envelopes are source, not HTML to hide or execute.
   if (/^<([a-z][\w-]*)(?:\s[^>]*)?>[\s\S]*<\/\1>$/i.test(trimmed))
@@ -119,9 +121,15 @@ export const TraceContent = memo(function TraceContent({
         </div>
       </div>
       <div className={`${styles.contentBody} a13n-scrollbar`}>
-        <HighlightContent value={highlight}>
-          {raw ? <TraceJson value={content} /> : <RichValue value={content} />}
-        </HighlightContent>
+        <ContentWindow source={content}>
+          <HighlightContent value={highlight}>
+            {raw ? (
+              <TraceJson value={content} />
+            ) : (
+              <RichValue value={content} />
+            )}
+          </HighlightContent>
+        </ContentWindow>
       </div>
     </div>
   );
