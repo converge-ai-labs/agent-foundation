@@ -3263,5 +3263,12 @@
   "Try a title, source, external ID, or words from the conversation.": "试试标题、来源、外部 ID，或对话中的关键词。",
   "What is this session about?": "这个会话在讨论什么？",
   "Your edits are preserved. Reload the saved details before making further changes.": "你的编辑已保留。请重新加载已保存的信息后再修改。",
-  "Drop a file here or choose one to upload.": "将文件拖到此处，或选择要上传的文件。"
+  "Drop a file here or choose one to upload.": "将文件拖到此处，或选择要上传的文件。",
+  "Supplemental instructions": "补充指令",
+  "Official instructions": "官方指令",
+  "Add requirements for this agent. Official instructions also apply.": "添加此 Agent 需要遵循的要求。官方指令会同时生效。",
+  "Only temperature and top_p can be changed here for built-in agents.": "内置 Agent 在此处仅支持修改 temperature 和 top_p。",
+  "Requirements for this analysis": "本次检查要求",
+  "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.": "选填。仅用于本次分析，不修改 Finding Agent 的配置。",
+  "Analysis uses the Finding Agent's selected default version and model.": "分析使用 Finding Agent 当前选定的默认版本和模型。"
 }

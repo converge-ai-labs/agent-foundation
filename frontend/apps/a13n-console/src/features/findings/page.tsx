@@ -36,6 +36,7 @@ import {
 import { CopyButton, CopyableId, Identifier } from "../../shared/identity";
 import { Page, Section, useTabParam } from "../../shared/page";
 import { RefreshButton } from "../../shared/time-range";
+import { TextAreaField } from "../../shared/forms";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
 
@@ -547,6 +548,14 @@ function AnalysisHistory({
                   <dd>{selected.cited_trace_count}</dd>
                 </div>
               </dl>
+              {selected.selection.instructions && (
+                <TextAreaField
+                  readOnly
+                  label={t("Requirements for this analysis")}
+                  value={selected.selection.instructions}
+                  onChange={() => {}}
+                />
+              )}
               <p className={styles.hint}>
                 {t(
                   "Evidence citations do not show how many traces were fully analyzed. See the analysis run's final reply for results and limitations.",
@@ -596,6 +605,7 @@ function AnalyzeDialog({
     { workspace } = useWorkspace(),
     backend = useTraceBackend();
   const [days, setDays] = useState("1"),
+    [instructions, setInstructions] = useState(""),
     [limit, setLimit] = useState("10"),
     [presets, setPresets] = useState<Schema["AnalysisCreate"]["presets"]>([
       "execution",
@@ -623,6 +633,7 @@ function AnalyzeDialog({
             started_before: traceId ? undefined : windowEnd,
             max_traces: traceId ? 1 : Number(limit),
             presets,
+            instructions,
           },
           params: { header: commandHeaders(requestKey) },
         })
@@ -665,7 +676,7 @@ function AnalyzeDialog({
         <ErrorNotice error={backend.error ?? mutation.error} />
         <p className={styles.hint}>
           {t(
-            "Analysis uses the built-in Finding Agent and automatically selects an available model.",
+            "Analysis uses the Finding Agent's selected default version and model.",
           )}
         </p>
         {backend.isSuccess && !backend.data.type && (
@@ -738,6 +749,17 @@ function AnalyzeDialog({
             </Label>
           ))}
         </fieldset>
+        <TextAreaField
+          label={t("Requirements for this analysis")}
+          hint={t(
+            "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
+          )}
+          value={instructions}
+          onChange={setInstructions}
+          maxLength={8192}
+          disabled={mutation.isPending}
+          rows={4}
+        />
         <p className={styles.hint}>
           {t(
             "Analysis runs on demand using ordinary Service execution. At most 100 trace roots are scanned; selected traces are capped at 20. No changes are applied to the target Agent.",

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { TextAreaField } from "../../../shared/forms";
 import { Section } from "../../../shared/page";
@@ -10,19 +11,27 @@ export function InstructionsSection({
   draft,
   readOnly,
   mark,
+  officialInstructions,
 }: {
   draft: AgentDraft;
   readOnly: boolean;
   /** Says how a read-only view's value differs, beside the title. */
   mark?: ReactNode;
+  officialInstructions?: string;
 }) {
   const { t } = useTranslation();
   return (
     <Section
       title={t("Instructions")}
-      description={t(
-        "The role, boundaries, and approach the agent follows on every run.",
-      )}
+      description={
+        officialInstructions === undefined
+          ? t(
+              "The role, boundaries, and approach the agent follows on every run.",
+            )
+          : t(
+              "Add requirements for this agent. Official instructions also apply.",
+            )
+      }
       actions={mark}
     >
       <TextAreaField
@@ -39,6 +48,17 @@ export function InstructionsSection({
           {t("{{count}} characters", { count: draft.instructions.length })}
         </span>
       </div>
+      {officialInstructions !== undefined && (
+        <DisclosureSection title={t("Official instructions")}>
+          <TextAreaField
+            readOnly
+            label={t("Official instructions")}
+            hideLabel
+            value={officialInstructions}
+            onChange={() => {}}
+          />
+        </DisclosureSection>
+      )}
     </Section>
   );
 }

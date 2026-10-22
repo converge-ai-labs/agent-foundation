@@ -10,9 +10,9 @@ export interface paths {
     put?: never;
     /**
      * Prepare Composer
-     * @description The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+     * @description The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.
      *
-     *     Refused with `model_required` while the workspace has no model the caller can use.
+     *     Initial preparation requires a usable model; later preparation preserves the selected model and revision.
      */
     post: operations["prepare_composer"];
     delete?: never;
@@ -4563,6 +4563,7 @@ export interface components {
       note: string | null;
       /** Number */
       number: number;
+      preset?: components["schemas"]["PresetSnapshot"] | null;
     };
     /** AgentRevisionCreate */
     AgentRevisionCreate: {
@@ -4574,6 +4575,7 @@ export interface components {
       make_default?: boolean;
       /** Note */
       note?: string | null;
+      preset?: components["schemas"]["PresetEdit"] | null;
     };
     /** AgentRevisionPage */
     AgentRevisionPage: {
@@ -4622,6 +4624,7 @@ export interface components {
       /** Agent Id */
       agent_id?: string | null;
       config: components["schemas"]["AgentConfig-Input"];
+      preset?: components["schemas"]["PresetEdit"] | null;
     };
     /** Analysis */
     Analysis: {
@@ -4658,6 +4661,11 @@ export interface components {
     AnalysisCreate: {
       /** Agent Id */
       agent_id?: string | null;
+      /**
+       * Instructions
+       * @default
+       */
+      instructions?: string;
       /**
        * Max Traces
        * @default 10
@@ -8948,8 +8956,36 @@ export interface components {
     };
     /** @enum {string} */
     Preset: "execution" | "recovery" | "answer";
+    /**
+     * PresetEdit
+     * @description Edit a managed preset from an existing revision, preserving its official definition.
+     */
+    PresetEdit: {
+      /** Base Revision Id */
+      base_revision_id: string;
+      /**
+       * Instructions
+       * @default
+       */
+      instructions?: string;
+    };
     /** @enum {string} */
     PresetKind: "composer" | "finding" | "memory_organizer";
+    /**
+     * PresetSnapshot
+     * @description Revision-owned editing information; execution uses only the complete AgentConfig.
+     */
+    PresetSnapshot: {
+      /** Definition Digest */
+      definition_digest: string;
+      /**
+       * Instructions
+       * @default
+       */
+      instructions?: string;
+      /** Official Instructions */
+      official_instructions: string;
+    };
     /** Pressure */
     Pressure: {
       full?: components["schemas"]["PressureLevel"] | null;

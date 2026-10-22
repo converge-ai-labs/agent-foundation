@@ -3263,5 +3263,12 @@
   "Try a title, source, external ID, or words from the conversation.": "Try a title, source, external ID, or words from the conversation.",
   "What is this session about?": "What is this session about?",
   "Your edits are preserved. Reload the saved details before making further changes.": "Your edits are preserved. Reload the saved details before making further changes.",
-  "Drop a file here or choose one to upload.": "Drop a file here or choose one to upload."
+  "Drop a file here or choose one to upload.": "Drop a file here or choose one to upload.",
+  "Supplemental instructions": "Supplemental instructions",
+  "Official instructions": "Official instructions",
+  "Add requirements for this agent. Official instructions also apply.": "Add requirements for this agent. Official instructions also apply.",
+  "Only temperature and top_p can be changed here for built-in agents.": "Only temperature and top_p can be changed here for built-in agents.",
+  "Requirements for this analysis": "Requirements for this analysis",
+  "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.": "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
+  "Analysis uses the Finding Agent's selected default version and model.": "Analysis uses the Finding Agent's selected default version and model."
 }

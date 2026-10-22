@@ -60,21 +60,24 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and adds a revision only when its configuration changed.
+The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and offers official definition updates as candidate revisions. Your selected default and model remain unchanged.
 
 ## Choose its model
 
-Preparation selects an enabled model the caller can use, in this order:
+Initial preparation selects an enabled model the caller can use, in this order:
 
-1. The model in Composer's current revision, while it stays usable.
-2. The first available model matching the deployment's [`composer.models`](configuration.md#execution) list, in list order. Matching uses the upstream name and ignores a `vendor/` prefix.
-3. The first usable workspace model, by key.
+1. The first available model matching the deployment's [`composer.models`](configuration.md#execution) list, in list order. Matching uses the upstream name and ignores a `vendor/` prefix.
+2. The first usable workspace model, by key.
 
-If no model is usable, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
+If no model is usable during initial setup, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
 
 ## Built-in agent rules
 
-Preparation owns Composer's configuration and model selection. Editing, revising, archiving or setting an avatar returns `409 conflict` with reason `builtin`. Duplicate Composer to create a custom agent you can change.
+Open Composer's Agent page to change its model, thinking effort, output token limit, `temperature`, `top_p` or supplemental instructions. The instruction editor contains your supplement; official instructions appear in a read-only disclosure. Saving creates a revision with the complete instructions, so old runs and historical revisions keep their instruction text.
+
+Use **Versions → Set as default** to switch or roll back. Later preparation preserves the selected version even when its model becomes unavailable; select a replacement explicitly. Official definition updates appear as candidate versions without replacing your default or supplement. Other configuration, identity, avatar and archiving remain protected. Duplicate Composer to freely change those fields.
+
+API clients reuse validation and revision creation: keep the complete base `config`, change only the allowed model/settings, and add `preset: {base_revision_id, instructions}` with the complete desired supplement. Keep `config.instructions` unchanged; Service performs composition. Read the base revision and original head ETag before editing. Older revisions without `preset` start with an empty supplement.
 
 ## Use the toolset in your own agents
 

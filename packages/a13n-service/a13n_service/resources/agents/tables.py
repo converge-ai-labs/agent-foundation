@@ -76,3 +76,5 @@ class AgentRevisionRow(RevisionColumns):
     HEAD_KEY = "agent_id"
     ID_PREFIX = "apr"
     agent_id: Mapped[str]
+    # Editing metadata is separate from the complete configuration used by execution.
+    preset: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
