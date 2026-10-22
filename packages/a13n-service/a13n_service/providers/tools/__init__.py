@@ -38,6 +38,8 @@ class ToolInfo(BaseModel):
     output_schema: dict[str, JsonValue] | None = None
     # Hints the server declares, such as `readOnlyHint`; shown to people, never trusted as a permission.
     annotations: dict[str, JsonValue] = Field(default_factory=dict)
+    # MCP declaration metadata, including App resource URI and visibility.
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
     # A connector's catalogue version the tool is executed at; None for MCP.
     provider_version: str | None = None
 

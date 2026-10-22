@@ -6,9 +6,10 @@ connection, or a toolset over the connector account. Before every tool call the 
 enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the call is never sent.
 """
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 
 import anyio
 from a13n_harness import AgentContext
@@ -28,6 +29,7 @@ from a13n_service.providers.registry import Registry
 from a13n_service.providers.tools import DispatchCheck, ToolDispatch
 from a13n_service.providers.tools.connectors import connector_toolset, list_connector_tools
 from a13n_service.providers.tools.mcp import mcp_capability, mcp_client
+from a13n_service.providers.tools.mcp_apps import Original
 from a13n_service.resources.connections.access import McpConnection, ResolvedConnection, resolve_connection
 from a13n_service.resources.connections.account import open_account
 from a13n_service.resources.connections.discovery import cache_tools, cached_tools
@@ -48,6 +50,7 @@ class SelectedConnection:
     caller_headers: Mapping[str, str]
     # MCP only: the model finds the tools through tool search instead of seeing every definition upfront.
     defer_loading: bool
+    selection: ConnectionSelection | None = None
 
 
 async def resolve_connections(
@@ -78,7 +81,7 @@ async def resolve_connections(
             tools = exposed
         elif exposed is not None:
             tools = tuple(name for name in tools if name in exposed)
-        selected.append(SelectedConnection(connection, tools, headers, selection.defer_loading))
+        selected.append(SelectedConnection(connection, tools, headers, selection.defer_loading, selection))
     return tuple(selected)
 
 
@@ -93,6 +96,7 @@ async def open_connections(
     registry: Registry,
     policy: EndpointPolicy,
     settings: Providers,
+    capture: Callable[[SelectedConnection, Original], None] | None = None,
 ) -> AsyncIterator[tuple[AbstractCapability[AgentContext], ...]]:
     """One worker attempt owns lazily entered clients; native Runs borrow fresh projections."""
     async with AsyncExitStack() as stack:
@@ -112,7 +116,11 @@ async def open_connections(
                         )
                         http.headers.update(headers)
                         client = mcp_client(
-                            connection.config.url, connection.id, http, timeout=settings.tool_call_seconds
+                            connection.config.url,
+                            connection.id,
+                            http,
+                            timeout=settings.tool_call_seconds,
+                            apps=capture is not None,
                         )
                         entered = await stack.enter_async_context(client)
                     return entered
@@ -131,6 +139,7 @@ async def open_connections(
                         tools=selected.tools,
                         defer_loading=selected.defer_loading,
                         check=checked,
+                        capture=partial(capture, selected) if capture is not None else None,
                     )
                 )
                 continue

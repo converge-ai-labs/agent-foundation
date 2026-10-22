@@ -574,7 +574,7 @@ async def test_checkpointed_sessions_are_recovered_only_within_the_same_run(
     await scripted_model.request()
     await scripted_model.request()
     saved = await saved_state()
-    assert saved.format == 3
+    assert saved.format == checkpoints.FORMAT
     assert set(saved.envd_sessions) == {"workspace"}
     original = saved.envd_sessions["workspace"].descriptor
     assert TOKEN not in saved.model_dump_json()
