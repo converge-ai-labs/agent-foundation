@@ -736,6 +736,12 @@ async def test_compaction_resumes_after_codeact_rejects_a_streamed_tool_batch() 
                 for message in messages
                 for part in message.parts
             )
+            assert {
+                part.tool_call_id
+                for message in messages
+                for part in message.parts
+                if isinstance(part, ToolReturnPart) and part.outcome == "interrupted"
+            } == {"rejected-code", "rejected-inspection"}
             yield "Summary: inspect the synthetic sample. The rejected tool batch was not executed."
             return
         ordinary += 1
@@ -783,6 +789,48 @@ async def test_compaction_resumes_after_codeact_rejects_a_streamed_tool_batch() 
     assert old_history not in _user_text(requests[-1])
 
 
+async def test_compaction_after_restore_uses_native_repair_of_older_function_calls() -> None:
+    requests: list[list[ModelMessage]] = []
+    old_history = "Synthetic historical context. " * 10_000
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        requests.append(deepcopy(messages))
+        if _COMPACTION_PROMPT in _user_text(messages):
+            assert any(
+                isinstance(part, ToolReturnPart)
+                and part.tool_call_id == "older-pending"
+                and part.outcome == "interrupted"
+                for message in messages
+                for part in message.parts
+            )
+            yield "Summary: the older tool call was interrupted."
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(old_history)]),
+            ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="older-pending")]),
+            ModelRequest(parts=[UserPromptPart("Continue after the interruption")]),
+            ModelResponse(parts=[TextPart("Earlier answer")], usage=RequestUsage(input_tokens=21_000)),
+        )
+    )
+    restored = HarnessState.model_validate_json(previous.model_dump_json())
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=20_000)),),
+    )
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=restored)
+
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 2
+    assert _COMPACTION_PROMPT in _user_text(requests[0])
+    assert old_history not in _user_text(requests[-1])
+
+
 @pytest.mark.parametrize("older_pending", [False, True])
 @pytest.mark.parametrize("tool_retry", [False, True])
 def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, tool_retry: bool) -> None:
@@ -812,6 +860,8 @@ def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, t
             ModelRequest(parts=[ToolReturnPart("lookup", "done", tool_call_id="later-call")]),
         ]
     )
+    # This raw-history guard does not perform Pydantic AI's outgoing/start-of-run repair.
+    # Serialization alone also leaves the calls unchanged; actual Run restoration repairs older calls.
     before = deepcopy(history)
     assert _requires_exact_history(history) is (older_pending or tool_retry)
     assert history == before
