@@ -11,7 +11,7 @@ import asyncio
 import os
 import subprocess
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, closing
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -101,7 +101,7 @@ async def daytona_organization(api_key: str) -> str:
 
 
 @asynccontextmanager
-async def modal_app(token_id: str, token_secret: str) -> AsyncIterator[str]:
+async def modal_app(token_id: str, token_secret: str) -> AsyncGenerator[str]:
     """A fresh deployed Modal App to hold the journey's sandboxes, stopped afterwards."""
     import modal
 
@@ -116,7 +116,7 @@ async def modal_app(token_id: str, token_secret: str) -> AsyncIterator[str]:
 
 
 @asynccontextmanager
-async def hosted_account(provider: str, config: pytest.Config) -> AsyncIterator[tuple[dict, dict, dict]]:
+async def hosted_account(provider: str, config: pytest.Config) -> AsyncGenerator[tuple[dict, dict, dict]]:
     """A hosted type's account configuration, credential and a small recipe, from the operator's variables.
 
     An organization or workspace name that only labels an account's backend defaults to `service-e2e`.
@@ -152,7 +152,7 @@ async def hosted_account(provider: str, config: pytest.Config) -> AsyncIterator[
 
 
 @asynccontextmanager
-async def backend(provider: str, directory: Path, config: pytest.Config) -> AsyncIterator[Backend]:
+async def backend(provider: str, directory: Path, config: pytest.Config) -> AsyncGenerator[Backend]:
     """The account of `provider` on this host."""
     if provider in HOSTED:
         async with hosted_account(provider, config) as (account, credential, recipe):

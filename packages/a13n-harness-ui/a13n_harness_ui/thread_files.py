@@ -10,7 +10,7 @@ import re
 import shutil
 import stat
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -248,7 +248,7 @@ class ThreadFiles:
             return await to_thread.run_sync(self._touch, thread_id)
 
     @asynccontextmanager
-    async def fork(self, source_id: str, destination_id: str) -> AsyncIterator[None]:
+    async def fork(self, source_id: str, destination_id: str) -> AsyncGenerator[None]:
         """Copy owned files before publishing the destination Thread.
 
         Keep scratch protected from pruning. Preserve symlinks as links rather

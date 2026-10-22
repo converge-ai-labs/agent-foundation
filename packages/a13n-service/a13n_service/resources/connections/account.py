@@ -7,7 +7,7 @@ revoked at the provider as a best effort.
 """
 
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
@@ -67,7 +67,7 @@ async def open_account(
     policy: EndpointPolicy,
     settings: Providers,
     timeout: float,
-) -> AsyncIterator[ConnectorConnectionRuntime]:
+) -> AsyncGenerator[ConnectorConnectionRuntime]:
     """The connection's external account over its provider's runtime; binding it sends nothing."""
     if connection.credential is None:
         raise conflict("connection", connection.id, "not_authorized")

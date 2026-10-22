@@ -1,6 +1,6 @@
 """Host-owned exclusion and durable uncertain-grant evidence for rotating file grants."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from .models import AccountStoreError, Provider
 
 
 @asynccontextmanager
-async def store_lock(path: Path) -> AsyncIterator[None]:
+async def store_lock(path: Path) -> AsyncGenerator[None]:
     """One complete mutation/refresh interval, shared by cooperating processes and instances."""
     canonical = path.resolve()
     await to_thread.run_sync(lambda: canonical.parent.mkdir(mode=0o700, parents=True, exist_ok=True))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -178,7 +178,7 @@ class WebSocketEnvdConnections:
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
         session_recovery: EnvdSessionRecovery | None = None,
-    ) -> AsyncIterator[EIPSession]:
+    ) -> AsyncGenerator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id, timeout=timeout)
         async with DeviceEIPSessionSource(device, session_recovery=session_recovery).open_session(
             expected_device_id=expected_device_id,

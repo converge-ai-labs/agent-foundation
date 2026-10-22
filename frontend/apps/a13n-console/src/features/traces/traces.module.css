@@ -437,8 +437,7 @@
 /* The panel body is the one scroll container: content and payloads grow in
    place instead of nesting scroll areas. */
 .panelStack .contentBody,
-.panelStack .payloadBody,
-.panelStack .rawContent {
+.panelStack .payloadBody {
   max-height: none;
   overflow: visible;
 }
@@ -549,17 +548,26 @@
   gap: 16px;
   min-width: 0;
 }
-.contentPagination,
-.contentPagination > div {
+.sourceToolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-.contentPagination {
   justify-content: space-between;
   flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
+}
+.sourceText {
+  min-width: 0;
+}
+.sourceChunk {
+  margin: 0;
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .contentEmpty {
   margin: 4px 0;
@@ -609,14 +617,6 @@
 .toolContent > .identifier {
   margin-bottom: 10px;
 }
-.rawContent {
-  max-height: 560px;
-  overflow: auto;
-  font-family: var(--a13n-mono);
-  font-size: var(--a13n-text-xs);
-  line-height: 1.7;
-  white-space: pre;
-}
 
 /* Narrow widths ----------------------------------------------------------- */
 @media (max-width: 1024px) {
@@ -651,8 +651,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
   }
-  .contentBody,
-  .rawContent {
+  .contentBody {
     max-height: 440px;
   }
   .message {

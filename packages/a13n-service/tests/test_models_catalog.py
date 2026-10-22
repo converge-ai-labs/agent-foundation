@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -250,7 +250,7 @@ async def models_dev(listen: Any) -> AsyncIterator[ModelsDev]:
 
 
 @asynccontextmanager
-async def running(catalog: ModelsDevCatalog) -> AsyncIterator[ModelsDevCatalog]:
+async def running(catalog: ModelsDevCatalog) -> AsyncGenerator[ModelsDevCatalog]:
     """The catalog with its refresh task running, as the app lifespan runs it."""
     async with anyio.create_task_group() as group:
         group.start_soon(catalog.run)

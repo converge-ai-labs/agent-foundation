@@ -264,6 +264,14 @@ The `a13n_harness.providers.model.oauth` module supplies SDK-level subscription 
 
 Use [Harness UI authentication](../a13n-harness-ui/models-and-authentication.md) for the ready-to-use local login experience. SDK integrations can start with [authentication and HTTP-client recipes](model-authentication.md), then follow the [Model authentication contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md) and the public types in `a13n_harness.providers.model.oauth`; Harness does not supply a product account database.
 
+## Thinking signature recovery
+
+Harness automatically retries the current Model request once when the provider explicitly rejects a historical thinking signature, for example with `` Invalid `signature` in `thinking` block ``. It removes all historical thinking and redacted-thinking parts while preserving user input, assistant text, tool calls, completed tool results, and other content. The retry keeps the same Model and request settings, including thinking configuration.
+
+This recovery discards old reasoning state. It runs only after a matching provider rejection and only when something can be removed. A successful first request keeps its history. A second rejection propagates normally. For streaming, the adapter must not yet have yielded its stream: an opening SSE error can recover even after HTTP 200, but an error after `message_start` has established the stream cannot use this retry, even before text arrives.
+
+The repair mutates the supplied in-memory message objects without rollback. Shared history reflects the cleanup in later state exports; detached request projections, such as image preparation, keep it request-local. Existing saved snapshots remain unchanged, and the Host owns subsequent persistence. Tools are not re-executed. This behavior uses the default self-healing capability; `HarnessBuilder(self_healing_enabled=False)` disables automatic installation.
+
 ## Request settings versus context policy
 
 `AgentSpec.model_settings` contains native provider request settings. `model_characteristics` describes explicit local context and input policy. A larger local budget does not increase a provider limit, and an image declaration does not make an endpoint accept images.

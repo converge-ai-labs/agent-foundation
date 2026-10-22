@@ -4,7 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
@@ -201,7 +201,7 @@ class RemoteServer:
 
 
 @asynccontextmanager
-async def remote(**options: Any) -> AsyncIterator[RemoteServer]:
+async def remote(**options: Any) -> AsyncGenerator[RemoteServer]:
     server = RemoteServer(**options)
     async with serve(server) as url:
         server.url = url
@@ -1313,7 +1313,7 @@ class Composio:
 @asynccontextmanager
 async def composio_connection(  # type: ignore[no-untyped-def]
     service, monkeypatch: pytest.MonkeyPatch, *, scheme: str = "OAUTH2", selector: str = "ac_github"
-) -> AsyncIterator[tuple[Composio, dict]]:
+) -> AsyncGenerator[tuple[Composio, dict]]:
     from a13n_harness.providers.connector.composio import catalog, runtime
 
     composio = Composio()

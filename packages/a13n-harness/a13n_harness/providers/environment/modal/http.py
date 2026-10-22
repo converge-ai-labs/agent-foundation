@@ -1,6 +1,6 @@
 """Resolve an owned Modal target's TLS tunnel and attach shared EIP without starting it."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
@@ -52,7 +52,7 @@ class HttpReference(ModalReference):
 @asynccontextmanager
 async def http_session(
     reference: ModalReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSession]:
     try:
         reference.require_target()
         sandbox = await reference.lookup()

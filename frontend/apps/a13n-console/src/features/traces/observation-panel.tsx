@@ -1,4 +1,6 @@
 import { DisclosureSection } from "a13n-ui";
+import { useLayoutEffect, useRef } from "react";
+import { contentScrollRoot } from "./content-window";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { Timestamp } from "../../shared/feedback";
@@ -57,8 +59,13 @@ export function ObservationPanelBody({
   observation: Schema["Span"];
 }) {
   const { t } = useTranslation();
+  const body = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const scroll = contentScrollRoot(body.current!);
+    if (scroll) scroll.scrollTop = 0;
+  }, [observation.id]);
   return (
-    <div className={styles.panelStack}>
+    <div ref={body} className={styles.panelStack}>
       <div className={styles.panelPair}>
         {(["input", "output"] as const).map((key) => (
           <section key={key} className={styles.panelSection}>

@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from a13n_harness.environment.models import EnvironmentState
@@ -31,7 +31,7 @@ class ModalProvider(BackendProvider[ModalConnectionConfiguration, ModalCredentia
     @asynccontextmanager
     async def desktop_session(
         self, environment: object, *, environment_id: str, state: EnvironmentState | None, operation_id: str
-    ) -> AsyncIterator[ModalManagement]:
+    ) -> AsyncGenerator[ModalManagement]:
         """Own one fixed-target connection for a single desktop transition request."""
         # Retain the existing validation, error translation and shielded cleanup.
         with desktop_operation(operation_id, "session"):
