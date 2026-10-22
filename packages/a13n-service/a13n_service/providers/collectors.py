@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import tempfile
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -166,7 +166,7 @@ class _Lock:
 
 
 @asynccontextmanager
-async def writer_lock(config: Configuration, kind: Kind) -> AsyncIterator[bool]:
+async def writer_lock(config: Configuration, kind: Kind) -> AsyncGenerator[bool]:
     """A nonblocking POSIX lock covers discovery, replacement and reload.
 
     Never unlink the lock inode. Cancellation waits for file work to finish before

@@ -1,6 +1,6 @@
 """Durable Agent-requested assistance. Provider I/O always runs outside storage scopes."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import timedelta
@@ -110,7 +110,7 @@ async def dispatch(runtime: Runtime, target: Target, request: wire.Request, *, o
 @asynccontextmanager
 async def access_dispatch(
     runtime: Runtime, target: Target, *, operation_id: str
-) -> AsyncIterator[Callable[[wire.Request], Awaitable[wire.Reply]]]:
+) -> AsyncGenerator[Callable[[wire.Request], Awaitable[wire.Reply]]]:
     if target.state is None or target.state.provider_key != "modal":
         yield partial(dispatch, runtime, target, operation_id=operation_id)
         return

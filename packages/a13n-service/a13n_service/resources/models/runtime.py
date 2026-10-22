@@ -1,6 +1,6 @@
 """Attempt-owned model clients: the provider's secrets are revealed only here, under the endpoint policy and bounds."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -25,7 +25,7 @@ async def open_model(
     policy: EndpointPolicy,
     settings: Providers,
     storage: Storage | None = None,
-) -> AsyncIterator[Model]:
+) -> AsyncGenerator[Model]:
     """The native model the Harness builds for this model's provider, entered; the caller owns its lifetime."""
     definition = registry.get("model", model.provider.type)
     credential = model.provider.reveal_credential(keys)

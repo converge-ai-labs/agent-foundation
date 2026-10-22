@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -25,7 +25,7 @@ class Frame:
 
 
 @asynccontextmanager
-async def session_stream(api: Workspace, session_id: str) -> AsyncIterator[AsyncIterator[Frame]]:
+async def session_stream(api: Workspace, session_id: str) -> AsyncGenerator[AsyncIterator[Frame]]:
     """The session's SSE stream, which every connection starts from a snapshot."""
     path = f"/api/v1/sessions/{session_id}/stream"
     async with api.client.stream("GET", path, timeout=TIMEOUT) as response:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -102,7 +102,7 @@ class VoiceController:
         )
 
     @asynccontextmanager
-    async def subscribe(self, owner_id: str) -> AsyncIterator[asyncio.Queue[VoiceSnapshot]]:
+    async def subscribe(self, owner_id: str) -> AsyncGenerator[asyncio.Queue[VoiceSnapshot]]:
         async with self._lock:
             if self._owner is not None:
                 raise ThreadError("Another browser owns Live. Stop it before connecting here.", code="live_owned")

@@ -1,6 +1,6 @@
 """Bounded HTTP transport; no automatic mutation retries or absence inference."""
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 
 import httpx2
@@ -54,7 +54,7 @@ class NativeHTTP:
         params: dict[str, str] | None = None,
         missing: bool = False,
         headers: dict[str, str] | None = None,
-    ) -> AsyncIterator[httpx2.Response]:
+    ) -> AsyncGenerator[httpx2.Response]:
         mutation = is_mutation(method, params)
         try:
             async with self.client.stream(method, path, json=body, params=params, headers=headers) as response:

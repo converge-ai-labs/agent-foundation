@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import ClassVar
@@ -56,7 +56,7 @@ class MemoryProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C,
     @asynccontextmanager
     async def _open(
         self, parsed: C, secret: K | None, namespace: str, http: httpx2.AsyncClient | None
-    ) -> AsyncIterator[RecordStore]:
+    ) -> AsyncGenerator[RecordStore]:
         if http is not None:
             async with self.open_store(parsed, secret, namespace, http) as store:
                 yield store

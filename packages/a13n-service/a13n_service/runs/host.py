@@ -7,7 +7,7 @@ builder with each agent's capabilities and gives each agent's run bindings what 
 are keyed by revision, which fixes their configuration.
 """
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
@@ -172,7 +172,7 @@ async def open_host(
     configuration: RunConfiguration,
     skill_cache: Cache,
     environments: Mapping[str, EnvironmentMount],
-) -> AsyncIterator[Host]:
+) -> AsyncGenerator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:

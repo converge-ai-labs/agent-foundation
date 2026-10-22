@@ -8,7 +8,7 @@ attempt's correlation as Harness observation metadata; trace queries match the s
 `correlation_attributes` is the one owner of their names.
 """
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from importlib.metadata import version
 from typing import Protocol
@@ -124,7 +124,7 @@ def attempt_observation(
 @asynccontextmanager
 async def open_instrumentation(
     target: ExportTarget | None, *, metered: bool, content: HarnessTraceContent
-) -> AsyncIterator[HarnessInstrumentation | None]:
+) -> AsyncGenerator[HarnessInstrumentation | None]:
     """The process's Harness instrumentation: spans exported to `target`, and the process's meter provider when
     `metered`; None when both are off.
 

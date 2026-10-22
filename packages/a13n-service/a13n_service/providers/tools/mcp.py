@@ -5,7 +5,7 @@ connection's authentication; this module only speaks MCP over it.
 """
 
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import replace
@@ -162,7 +162,7 @@ class DispatchTransport(ClientTransport):
     @asynccontextmanager
     async def connect_session(
         self, *, transport_options: TransportOptions | None = None, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession]:
         options = transport_options or TransportOptions()
         connection_id = self.connection_id
 

@@ -10,7 +10,7 @@ memory deleted meanwhile is `memory_deleted`. A record store also rechecks that 
 cursors, which each checkpoint commits.
 """
 
-from collections.abc import AsyncIterator, Callable, Collection
+from collections.abc import AsyncGenerator, Callable, Collection
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -263,7 +263,7 @@ async def record_memory_capability(
     authority: ExecutionAuthority,
     tools: Collection[RecordToolKey],
     configuration: RunConfiguration | None = None,
-) -> AsyncIterator[RecordMemoryCapability | None]:
+) -> AsyncGenerator[RecordMemoryCapability | None]:
     """The capability over the planned record memories whose stores open, which stay open until the context
     exits; None when there is none."""
     gate = _gate(lease, principal, authority)

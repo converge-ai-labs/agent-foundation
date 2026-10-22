@@ -7,7 +7,7 @@ import base64
 import json
 import os
 import socket
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.anyio
 @asynccontextmanager
 async def listener(
     tmp_path: Path, *, sharing: bool = True, configuration_path: Path | None = None
-) -> AsyncIterator[tuple[str, str]]:
+) -> AsyncGenerator[tuple[str, str]]:
     async with listener_with_app(tmp_path, sharing=sharing, configuration_path=configuration_path) as (http, ws, _):
         yield http, ws
 
@@ -36,12 +36,12 @@ async def listener(
 @asynccontextmanager
 async def listener_with_app(
     tmp_path: Path, *, sharing: bool = True, configuration_path: Path | None = None
-) -> AsyncIterator[tuple[str, str, HarnessUiApp]]:
+) -> AsyncGenerator[tuple[str, str, HarnessUiApp]]:
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
     app: HarnessUiApp | None = None
 
     @asynccontextmanager
-    async def factory() -> AsyncIterator[HarnessUiApp]:
+    async def factory() -> AsyncGenerator[HarnessUiApp]:
         nonlocal app
         async with open_harness_ui_app(
             settings,

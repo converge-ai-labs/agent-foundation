@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -791,7 +791,7 @@ class RootRunExecutor:
         run_id: str,
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         operator = self._subagent_operator
         if isinstance(operator, HarnessUiSubagentOperator):
             async with operator.bind_parent_run(

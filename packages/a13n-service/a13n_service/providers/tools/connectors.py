@@ -5,7 +5,7 @@ the host HTTP client and to Pydantic AI tools.
 """
 
 import hashlib
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 
 from a13n_harness import AgentContext
@@ -40,7 +40,7 @@ async def open_connector(
     policy: EndpointPolicy,
     timeout: float,
     max_bytes: int,
-) -> AsyncIterator[ConnectorProviderRuntime]:
+) -> AsyncGenerator[ConnectorProviderRuntime]:
     async with open_http(policy, timeout=timeout, max_bytes=max_bytes) as client:
         http = ConnectorHttpClient(client, policy, response_max_bytes=max_bytes, timeout_seconds=timeout)
         async with definition.open(config, credential, http=http) as runtime:

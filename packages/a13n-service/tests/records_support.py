@@ -4,7 +4,7 @@ tests share. Its store follows the `RecordStore` rules: IDs are global, and a re
 
 import asyncio
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
@@ -131,7 +131,7 @@ class FakeRecordStore:
 @asynccontextmanager
 async def _open(
     configuration: FakeConfiguration, credential: FakeCredential | None, namespace: str, http: httpx2.AsyncClient
-) -> AsyncIterator[RecordStore]:
+) -> AsyncGenerator[RecordStore]:
     yield FakeRecordStore(namespace)
 
 

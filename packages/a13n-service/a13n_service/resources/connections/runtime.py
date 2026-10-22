@@ -6,7 +6,7 @@ connection, or a toolset over the connector account. Before every tool call the 
 enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the call is never sent.
 """
 
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
@@ -91,7 +91,7 @@ async def open_connections(
     registry: Registry,
     policy: EndpointPolicy,
     settings: Providers,
-) -> AsyncIterator[tuple[AbstractCapability[AgentContext], ...]]:
+) -> AsyncGenerator[tuple[AbstractCapability[AgentContext], ...]]:
     """One worker attempt owns lazily entered clients; native Runs borrow fresh projections."""
     async with AsyncExitStack() as stack:
 
