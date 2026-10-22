@@ -74,7 +74,7 @@ Monospace is reserved for code, JSON, commands, and Markdown code. Identifiers u
 
 ## Color and Status
 
-Neutral surfaces carry the interface. The single filled accent is the primary button (near-black in light, near-white in dark). Indigo is a signal, not a brand fill: it marks focus, text selection, and the first chart series, and never fills buttons or decorates. Links inside the interface use text color with medium weight and an underline on hover; external links carry a trailing arrow icon and open in a new tab only when leaving the product.
+Neutral surfaces carry the interface. The single filled accent is the primary button (near-black in light, near-white in dark). Indigo is a signal, not a brand fill: it marks focus, text selection, prose links, and the first chart series, and never fills buttons or decorates. Navigation and resource links inside the interface use text color with medium weight and an underline on hover. Console Markdown prose links use the signal color, medium weight and a persistent underline so they remain recognizable within generated answers and document previews; hover strengthens the underline and keyboard focus adds a visible ring. External navigation links carry a trailing arrow icon and open in a new tab only when leaving the product.
 
 Status is a 6px dot and a 12px medium label. Settled states (success and neutral) stay untinted, so a column of healthy rows reads calm; states that ask for attention (warning, danger, and info) add a 10–12% tint of the same hue. Semantic hues are success (emerald), warning (amber), danger (red), info (blue), and neutral (gray). Color never carries meaning alone; the label always names the state.
 

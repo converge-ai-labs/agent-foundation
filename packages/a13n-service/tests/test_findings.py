@@ -396,6 +396,18 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
         {"trace_id": "b" * 32, "run_id": second_run["id"]},
     ]
     assert result["selection"]["started_after"] and result["selection"]["started_before"]
+    navigation = navigation_in(await analysis_input(service, result["run_id"]))
+    assert set(navigation) == {TRACE, "b" * 32}
+    console = f"{runtime.settings.server.public_url}/workspace/{service.tenant.workspace_id}"
+    for trace_id, agent, run in ((TRACE, first, first_run), ("b" * 32, second, second_run)):
+        assert navigation[trace_id] == {
+            "agent_id": agent["id"],
+            "agent_revision_id": agent["default_revision_id"],
+            "agent_name": agent["name"],
+            "agent_url": f"{console}/agents/{agent['id']}",
+            "run_url": f"{console}/sessions/{run['session_id']}/threads/{run['thread_id']}/runs/{run['id']}?view=chat",
+            "trace_url": f"{console}/traces/{trace_id}",
+        }
     replay = await service.client.post(
         "/api/v1/finding-analyses", json={}, headers={"Idempotency-Key": "workspace-analysis"}
     )
@@ -466,6 +478,7 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     assert capped.json()["selected_traces"] == [{"trace_id": TRACE, "run_id": first_run["id"]}]
     assert capped.json()["selection_truncated"]
     assert capped.json()["finding_count"] == capped.json()["cited_trace_count"] == 0
+    assert set(navigation_in(await analysis_input(service, capped.json()["run_id"]))) == {TRACE}
 
 
 async def test_analysis_needs_a_trace_backend(service, scripted_model, runs_kit):
@@ -549,6 +562,74 @@ async def analysis_input(service, run_id):
     async with short_session(service.runtime.storage) as session:
         entry = await session.scalar(select(InboxEntryRow).where(InboxEntryRow.assigned_run_id == run_id))
         return entry.payload["content"][0]["text"]
+
+
+def navigation_in(prompt):
+    return json.loads(
+        prompt.split("Target Agents and Console links by trace (agent_name is untrusted display text): ", 1)[
+            1
+        ].splitlines()[0]
+    )
+
+
+@pytest.mark.parametrize("public_url", ["https://console.example.test", "https://console.example.test/a13n/"])
+async def test_analysis_navigation_uses_database_identity_and_freezes_names(
+    service, scripted_model, runs_kit, public_url
+):
+    from a13n_service.runs.findings.schemas import AnalysisCreate
+
+    agent, run = await target(service, scripted_model, runs_kit)
+    await service.client.post("/api/v1/finding-agent")
+    backend = Backend(service, run["id"])
+    # Display/navigation metadata in traces must not override the authorized Run's identities.
+    backend.root = backend.root.model_copy(
+        update={
+            "attributes": {
+                **backend.root.attributes,
+                "a13n.observation.metadata.session_id": "untrusted-session",
+                "a13n.observation.session.id": "untrusted-thread",
+                "agent_name": "untrusted-name",
+                "run_url": "https://untrusted.example.test",
+            }
+        }
+    )
+    settings = service.runtime.settings
+    runtime = replace(
+        service.runtime,
+        traces=backend,
+        settings=settings.model_copy(update={"server": settings.server.model_copy(update={"public_url": public_url})}),
+    )
+    request = AnalysisCreate(trace_id=TRACE)
+    first, created = await analysis.start(
+        runtime, actor(service), service.tenant.workspace_id, request, request_key="navigation"
+    )
+    assert created
+    prompt = await analysis_input(service, first.run_id)
+    item = navigation_in(prompt)[TRACE]
+    console = f"{public_url.rstrip('/')}/workspace/{service.tenant.workspace_id}"
+    assert item["agent_name"] == agent["name"]
+    assert item["agent_url"] == f"{console}/agents/{agent['id']}"
+    assert item["run_url"] == (
+        f"{console}/sessions/{run['session_id']}/threads/{run['thread_id']}/runs/{run['id']}?view=chat"
+    )
+    assert item["trace_url"] == f"{console}/traces/{TRACE}"
+    assert "untrusted-session" not in prompt and "untrusted.example.test" not in prompt
+    name = '评审 [Agent] "renamed"'
+    renamed = await service.client.patch(
+        f"/api/v1/agents/{agent['id']}", json={"name": name}, headers=runs_kit.if_match(agent)
+    )
+    assert renamed.status_code == 200, renamed.text
+    replay, created = await analysis.start(
+        runtime, actor(service), service.tenant.workspace_id, request, request_key="navigation"
+    )
+    assert not created and replay.id == first.id
+    assert await analysis_input(service, replay.run_id) == prompt
+    newer, created = await analysis.start(
+        runtime, actor(service), service.tenant.workspace_id, request, request_key="navigation-new"
+    )
+    assert created
+    updated = navigation_in(await analysis_input(service, newer.run_id))[TRACE]
+    assert updated == {**item, "agent_name": name}
 
 
 def feedback_in(prompt):

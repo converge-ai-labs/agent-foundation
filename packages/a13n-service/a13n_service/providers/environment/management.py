@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
@@ -19,6 +20,21 @@ from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 class EnvironmentStatus:
     status: Literal["running", "stopped", "absent"]
     state: EnvironmentState | None
+
+
+class DesktopAccessSession(Protocol):
+    """Fixed-target desktop access borrowed for one management transition."""
+
+    async def desktop_access(self, request: Request) -> Reply: ...
+
+
+@runtime_checkable
+class DesktopSessionProvider(Protocol):
+    """Optional scoped access; providers without it keep their operation lifetimes."""
+
+    def desktop_session(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None, operation_id: str
+    ) -> AbstractAsyncContextManager[DesktopAccessSession]: ...
 
 
 class EnvironmentProvider[E: BaseModel](ABC):

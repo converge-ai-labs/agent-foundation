@@ -3,10 +3,11 @@
 import asyncio
 from dataclasses import replace
 from datetime import timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.infra.db import now, short_session, transaction
-from a13n_service.runs.schedules import dispatch, lifecycle
+from a13n_service.runs.schedules import dispatch, lifecycle, sweep
 from a13n_service.runs.schedules.sweep import Scheduler, plan_next, schedule_sweep
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.tables import ThreadRow
@@ -201,7 +202,7 @@ async def test_control_sweep_automatically_submits_without_browser(serve, settin
         assert sweep.name == "dispatch_schedules" and sweep.timeout == 30 and sweep.every == 0.05
 
 
-async def test_locked_schedule_does_not_block_other_due_work(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_locked_schedule_does_not_block_other_due_work(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     first, second = [await create_schedule(service, agent, runs_kit) for _ in range(2)]
@@ -210,6 +211,8 @@ async def test_locked_schedule_does_not_block_other_due_work(service, scripted_m
         for schedule in (first, second):
             row = await session.get_one(ScheduleRow, schedule["id"])
             row.next_fire_at = current - timedelta(minutes=1)
+    # Replanning must target the same instant even if database work crosses a minute boundary.
+    monkeypatch.setattr(sweep, "now", AsyncMock(return_value=current))
     async with transaction(service.runtime.storage) as session:
         await session.get_one(ScheduleRow, first["id"], with_for_update=True)
         async with asyncio.timeout(2):

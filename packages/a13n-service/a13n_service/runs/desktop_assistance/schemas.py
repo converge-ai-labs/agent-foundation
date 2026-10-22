@@ -13,6 +13,10 @@ class Request(BaseModel):
     reason: str = Field(min_length=1, max_length=2048)
 
 
+class OpenView(Request):
+    session_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{20,72}$")
+
+
 class Control(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{20,72}$")

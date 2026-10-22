@@ -292,6 +292,81 @@ it.each([
   );
 });
 
+it("preserves a short linked Run window when opening and applying its time filter", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path) =>
+    response(isBackend(path) ? descriptor : { items: [], next_cursor: null }),
+  );
+  const params = new URLSearchParams({
+    run_id: "run_short",
+    from: "2026-10-21T20:40:51.802025+08:00",
+    to: "2026-10-21T12:40:54.600Z",
+  });
+  mount(<TracesPage />, `/?${params}`);
+  await screen.findByText("No traces in this range");
+  const expected = expect.objectContaining({
+    params: expect.objectContaining({
+      query: expect.objectContaining({
+        run_id: "run_short",
+        started_after: "2026-10-21T12:40:51.802Z",
+        started_before: "2026-10-21T12:40:54.600Z",
+      }),
+    }),
+  });
+  expect(http.GET).toHaveBeenCalledWith("/api/v1/traces", expected);
+  await user.click(screen.getByRole("button", { name: /Time range:/ }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  // Even opening a nested field and accepting it without edits must preserve milliseconds.
+  await user.click(screen.getByRole("button", { name: "Start time" }));
+  const field = within(screen.getByRole("dialog", { name: "Start time" }));
+  expect(field.getByRole("combobox", { name: "Second" })).toBeTruthy();
+  await user.click(field.getByRole("button", { name: "Apply" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Start time" })).toBeNull(),
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(([path]) => path === "/api/v1/traces").length,
+    ).toBeGreaterThan(1),
+  );
+  for (const [path, options] of http.GET.mock.calls)
+    if (path === "/api/v1/traces") expect(options).toEqual(expected);
+});
+
+it.each([
+  ["equal", "2026-10-21T12:40:51Z"],
+  ["reversed", "2026-10-21T12:40:50Z"],
+  ["over 31 days", "2026-11-22T12:40:51Z"],
+])(
+  "falls back to the default window for an invalid %s linked range",
+  async (_, to) => {
+    http.GET.mockImplementation(async (path) =>
+      response(isBackend(path) ? descriptor : { items: [], next_cursor: null }),
+    );
+    const params = new URLSearchParams({
+      run_id: "run_linked",
+      from: "2026-10-21T12:40:51Z",
+      to,
+    });
+    mount(<TracesPage />, `/?${params}`);
+    await screen.findByText("No traces in this range");
+    expect(
+      screen.getByRole("button", { name: "Time range: Last 24 hours" }),
+    ).toBeTruthy();
+    for (const [path, options] of http.GET.mock.calls) {
+      if (path !== "/api/v1/traces") continue;
+      const query = options.params.query;
+      expect(query.run_id).toBe("run_linked");
+      expect(
+        Date.parse(query.started_before) - Date.parse(query.started_after),
+      ).toBe(86_400_000);
+    }
+  },
+);
+
 it("names the backend and how far back it finds traces", async () => {
   http.GET.mockImplementation(async (path) =>
     response(

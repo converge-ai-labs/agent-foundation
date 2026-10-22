@@ -589,7 +589,7 @@
   "Use the method provisioned for your OAuth client.": "Use the method provisioned for your OAuth client.",
   "Stored encrypted; used only for server-side OAuth token requests.": "Stored encrypted; used only for server-side OAuth token requests.",
   "Save configuration changes before starting or completing sign-in.": "Save configuration changes before starting or completing sign-in.",
-  "ChatGPT subscription": "ChatGPT subscription",
+  "Subscription": "Subscription",
   "Shared by this workspace, not a personal connection.": "Shared by this workspace, not a personal connection.",
   "Start authorization first.": "Start authorization first.",
   "Complete callback URL": "Complete callback URL",

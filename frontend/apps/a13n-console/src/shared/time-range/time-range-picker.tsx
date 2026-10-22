@@ -51,6 +51,7 @@ export function TimeRangePicker({
   presets,
   maxDays,
   minSeconds = 60,
+  precision = "minute",
   earliest,
   resolvePreset,
   disabled,
@@ -61,6 +62,7 @@ export function TimeRangePicker({
   presets: readonly number[];
   maxDays: number;
   minSeconds?: number;
+  precision?: "minute" | "second";
   /** The earliest start the data still covers. */
   earliest?: Date | null;
   /** The window a preset covers now, when it is not simply the trailing seconds. */
@@ -71,10 +73,16 @@ export function TimeRangePicker({
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage;
   const [open, setOpen] = useState(false);
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const startDate = parseLocalDateTime(start),
-    endDate = parseLocalDateTime(end);
+  // Keep exact instants until edited; draft text may be incomplete while typing.
+  const [start, setStart] = useState<Date | string>("");
+  const [end, setEnd] = useState<Date | string>("");
+  const startText =
+    typeof start === "string" ? start : formatLocalDateTime(start, precision);
+  const endText =
+    typeof end === "string" ? end : formatLocalDateTime(end, precision);
+  const startDate =
+    typeof start === "string" ? parseLocalDateTime(start) : start;
+  const endDate = typeof end === "string" ? parseLocalDateTime(end) : end;
   const seconds =
     startDate && endDate ? (endDate.getTime() - startDate.getTime()) / 1000 : 0;
   const error =
@@ -104,6 +112,7 @@ export function TimeRangePicker({
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
+          second: precision === "second" ? "2-digit" : undefined,
           hourCycle: "h23",
         }).formatRange(value.start, value.end);
   return (
@@ -120,8 +129,8 @@ export function TimeRangePicker({
                   end: new Date(now),
                 })
               : value;
-          setStart(formatLocalDateTime(window.start));
-          setEnd(formatLocalDateTime(window.end));
+          setStart(window.start);
+          setEnd(window.end);
         }
         setOpen(next);
       }}
@@ -174,15 +183,21 @@ export function TimeRangePicker({
           <div className={styles.fields}>
             <DateTimeField
               label={t("Start time")}
-              value={start}
+              value={startText}
               clearable={false}
-              onValueChange={setStart}
+              precision={precision}
+              onValueChange={(next) => {
+                if (next !== startText) setStart(next);
+              }}
             />
             <DateTimeField
               label={t("End time")}
-              value={end}
+              value={endText}
               clearable={false}
-              onValueChange={setEnd}
+              precision={precision}
+              onValueChange={(next) => {
+                if (next !== endText) setEnd(next);
+              }}
             />
           </div>
           {error && (

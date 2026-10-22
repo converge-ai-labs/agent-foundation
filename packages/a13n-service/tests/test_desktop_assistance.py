@@ -1,8 +1,11 @@
 """Assistance crosses real HTTP, SQL admission, checkpoint and deferred-resume boundaries."""
 
+from contextlib import asynccontextmanager
 from datetime import timedelta
+from functools import partial
 from uuid import uuid4
 
+import anyio
 import pytest
 from a13n_harness.environment.models import EnvironmentState
 from a13n_service.infra.db import now, transaction
@@ -27,6 +30,7 @@ class Endpoint:
         self.grants = {}
         self.calls = []
         self.fail_revoke = False
+        self.fail_settle = False
 
     async def dispatch(self, runtime, target, request, *, operation_id):
         self.calls.append(request)
@@ -41,6 +45,8 @@ class Endpoint:
                 websocket_url="wss://desktop.example/websockify",
             )
         if isinstance(request, wire.Settle):
+            if self.fail_settle:
+                raise RuntimeError("simulated unconfirmed input cleanup")
             assert not any(grant.mode == "control" and grant.state == "active" for grant in self.grants.values())
             return wire.Settlement(generation=GENERATION, input_cleanup_complete=True)
         if isinstance(request, wire.Grant):
@@ -92,20 +98,34 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
     endpoint = Endpoint()
     monkeypatch.setattr(assistance, "dispatch", endpoint.dispatch)
     monkeypatch.setattr(maintenance, "dispatch", endpoint.dispatch)
+
+    @asynccontextmanager
+    async def access_dispatch(runtime, target, *, operation_id):
+        # These HTTP/SQL tests use a fake guest endpoint; provider connection
+        # ownership is exercised by the Modal desktop-session tests.
+        yield partial(assistance.dispatch, runtime, target, operation_id=operation_id)
+
+    monkeypatch.setattr(assistance, "access_dispatch", access_dispatch)
     response = await service.client.post(
         f"{service.api}/environment-providers",
         json={
             "type": provider_key,
             "name": "Desktop",
-            "credential": {"api_key": "test-unused-key"},
-            "config": {"organization_id": "test-org"} if provider_key == "daytona" else {},
+            "credential": {"token_id": "test-id", "token_secret": "test-secret"}
+            if provider_key == "modal"
+            else {"api_key": "test-unused-key"},
+            "config": {"organization_id": "test-org"}
+            if provider_key == "daytona"
+            else {"workspace": "test", "app_name": "test"}
+            if provider_key == "modal"
+            else {},
         },
     )
     assert response.status_code == 201, response.text
     recipe = {
         "desktop": True,
         "desktop_assistance": True,
-        "snapshot" if provider_key == "daytona" else "template": "test-desktop",
+        {"daytona": "snapshot", "modal": "image"}.get(provider_key, "template"): "test-desktop",
     }
     if provider_key == "e2b":
         recipe["execution"] = "envd_http"
@@ -130,7 +150,7 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
                 provider_key=provider_key,
                 state_version="1",
                 state={
-                    "target_id" if provider_key == "daytona" else "sandbox_id": "test-" + uuid4().hex,
+                    "target_id" if provider_key in {"daytona", "modal"} else "sandbox_id": "test-" + uuid4().hex,
                 },
             ),
         ).model_dump(mode="json")
@@ -172,7 +192,82 @@ async def post(service, view, action, body):
     return await service.client.post(f"{service.api}/desktop-assistance/{view['id']}/{action}", json=body)
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+@pytest.mark.parametrize("mode", ["view", "control"])
+@pytest.mark.parametrize("renew", [False, True])
+async def test_slow_access_keeps_claim_until_request_deadline(
+    service, scripted_model, runs_kit, monkeypatch, mode, renew
+):
+    _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key="modal")
+    if renew:
+        response = await post(service, view, mode, control(view))
+        assert response.status_code == 200, response.text
+        view = response.json()["assistance"]
+    elapsed = timedelta()
+
+    async def clock(session):
+        return await now(session) + elapsed
+
+    async def slow_dispatch(runtime, target, request, *, operation_id):
+        nonlocal elapsed
+        if isinstance(request, wire.Describe):
+            elapsed = timedelta(seconds=49)
+            await maintenance.reconcile(runtime, view["id"])
+        return await endpoint.dispatch(runtime, target, request, operation_id=operation_id)
+
+    monkeypatch.setattr(assistance, "now", clock)
+    monkeypatch.setattr(maintenance, "now", clock)
+    monkeypatch.setattr(assistance, "dispatch", slow_dispatch)
+    response = await post(service, view, mode + ("?renew=true" if renew else ""), control(view))
+    assert response.status_code == 200, response.text
+    assert not any(isinstance(call, wire.Inspect) for call in endpoint.calls)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopAssistanceRow, view["id"])
+        assert row.operation_id is None and row.operation_expires_at is None
+
+
+async def test_access_timeout_blocks_until_dispatched_grant_is_revoked(service, scripted_model, runs_kit, monkeypatch):
+    _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key="modal")
+
+    async def lost_response(runtime, target, request, *, operation_id):
+        reply = await endpoint.dispatch(runtime, target, request, operation_id=operation_id)
+        if isinstance(request, wire.Grant):
+            await anyio.sleep_forever()
+        return reply
+
+    monkeypatch.setattr(assistance, "dispatch", lost_response)
+    monkeypatch.setattr(assistance, "_ACCESS_TIMEOUT_SECONDS", 0.1)
+    response = await post(service, view, "control", control(view))
+    assert response.status_code == 503, response.text
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopAssistanceRow, view["id"])
+        target = await session.get(DesktopTargetRow, row.target_key)
+        assert row.state == "blocked" and target.holder_id == row.id
+        assert row.operation_expires_at <= await now(session)
+    assert len(endpoint.grants) == 1 and next(iter(endpoint.grants.values())).state == "active"
+    await maintenance.reconcile(service.runtime, view["id"])
+    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
+
+
+async def test_expired_access_claim_cannot_publish_late_credentials(service, scripted_model, runs_kit, monkeypatch):
+    _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key="modal")
+
+    async def late_response(runtime, target, request, *, operation_id):
+        reply = await endpoint.dispatch(runtime, target, request, operation_id=operation_id)
+        if isinstance(request, wire.Grant):
+            async with transaction(runtime.storage) as session:
+                row = await session.get(DesktopAssistanceRow, view["id"])
+                row.operation_expires_at = await now(session) - timedelta(seconds=1)
+        return reply
+
+    monkeypatch.setattr(assistance, "dispatch", late_response)
+    response = await post(service, view, "control", control(view))
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["details"]["reason"] == "desktop_transition_superseded"
+    await maintenance.reconcile(service.runtime, view["id"])
+    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
+
+
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
 async def test_human_grants_revoke_before_exact_resume(service, scripted_model, runs_kit, monkeypatch, provider_key):
     run, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     resume = {"approvals": {}, "calls": {"help": {"status": "returned", "value": {"outcome": "completed"}}}}
@@ -226,7 +321,7 @@ async def test_expired_controller_is_revoked_without_answering_wait(service, scr
     assert all(grant.state == "revoked" for grant in endpoint.grants.values())
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
 async def test_lost_revoke_blocks_resume_and_reconciles(service, scripted_model, runs_kit, monkeypatch, provider_key):
     _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     claimed = await post(service, view, "control", control(view))
@@ -338,7 +433,7 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
         assert target.inflight == 3
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
 async def test_alias_admission_and_lifecycle_share_native_reservation(
     service, scripted_model, runs_kit, monkeypatch, provider_key
 ):
@@ -420,3 +515,22 @@ async def test_permission_loss_revokes_controller_and_viewer_cannot_connect(
         f"{service.api}/desktop-assistance/{view['id']}/view", json=control(view), headers=headers
     )
     assert denied.status_code == 403
+
+
+async def test_modal_handback_does_not_publish_resume_when_settlement_fails(
+    service, scripted_model, runs_kit, monkeypatch
+):
+    _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key="modal")
+    claimed = await post(service, view, "control", control(view))
+    assert claimed.status_code == 200, claimed.text
+    view = claimed.json()["assistance"]
+    endpoint.fail_settle = True
+    response = await post(service, view, "complete", control(view))
+    assert response.status_code >= 500, response.text
+    assert all(grant.state == "revoked" for grant in endpoint.grants.values())
+    assert isinstance(endpoint.calls[-1], wire.Settle)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopAssistanceRow, view["id"])
+        target = await session.get(DesktopTargetRow, row.target_key)
+        assert row.state == "blocked" and row.outcome is None and row.successor_id is None
+        assert target.holder_id == row.id

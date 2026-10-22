@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.modal.diagnostics import measure
+from a13n_harness.providers.environment.modal.http import HttpReference, http_execution, tunnel_connection
 from a13n_harness.providers.environment.modal.shared import (
     ModalEnvironmentConfiguration,
     ModalReference,
@@ -19,7 +23,10 @@ from a13n_harness.providers.environment.modal.shared import (
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 
+from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment.native import NativeManagement
+
+from .configuration import ModalRecipe
 
 if TYPE_CHECKING:
     import modal
@@ -28,13 +35,17 @@ if TYPE_CHECKING:
 class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfiguration, ModalState]):
     def __init__(
         self,
-        config: ModalEnvironmentConfiguration,
+        configuration: ModalRecipe,
         environment_id: str,
         state: EnvironmentState | None,
-        runtime: NativeRuntime,
+        runtime: NativeRuntime | None,
         operation_id: str,
     ):
-        super().__init__(config, environment_id, state, runtime)
+        if runtime is None:
+            raise TypeError("Modal management requires a runtime")
+        super().__init__(configuration, environment_id, state, runtime)
+        self.recipe = configuration
+        self._desktop_sandbox: modal.Sandbox | None = None
         del operation_id
 
     async def _allocate(self, snapshot: SnapshotReference | None) -> modal.Sandbox:
@@ -52,8 +63,8 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 raise failure(self.provider_key, "provider_target_missing", Category.MISSING) from None
         with sdk_errors(mutation=True):
             image = (
-                modal.Image.from_id(snapshot.image_id, client=client)
-                if snapshot
+                modal.Image.from_id(snapshot.image_id if snapshot else self.config.image, client=client)
+                if snapshot or re.fullmatch(r"im-[A-Za-z0-9]+", self.config.image)
                 else modal.Image.from_registry(self.config.image)
             )
             expiry = datetime.now(UTC) + timedelta(seconds=self.config.timeout_seconds)
@@ -61,6 +72,12 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             if snapshot is not None:
                 tags["a13n_resume_snapshot"] = snapshot.image_id
             sandbox = await modal.Sandbox.create.aio(
+                # Filesystem snapshots can retain runtime paths, not their owners.
+                # Only a newly allocated VM clears these before starting services.
+                "sh",
+                "-c",
+                "rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 /run/a13n-desktop-access/control.sock; "
+                "exec a13n-sandbox-entrypoint " + ("a13n-sandbox-desktop" if self.config.desktop else "a13n-envd"),
                 app=app,
                 name=self.name,
                 image=image,
@@ -69,6 +86,21 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 timeout=self.config.timeout_seconds,
                 cpu=self.config.cpu,
                 memory=self.config.memory,
+                workdir="/workspace",
+                encrypted_ports=[8888, *([access.PORT] if self.recipe.desktop_assistance else [])],
+                experimental_options={"vm_runtime": True} if self.config.desktop else None,
+                env={
+                    "A13N_ENVD_DEVICE_ID": self.owner,
+                    "A13N_ENVD_TRANSPORT": "http",
+                    "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
+                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+                    "A13N_ENVD_EXECUTION_UID": "1000",
+                    "A13N_ENVD_EXECUTION_GID": "1000",
+                    "A13N_ENVD_FULL_CONTROL": "true",
+                    "A13N_ENVD_STATE_DIR": "/var/lib/a13n-envd",
+                    "A13N_ENVD_RUNTIME_DIR": "/run/a13n-envd-state",
+                    "A13N_DESKTOP_ACCESS": "true" if self.recipe.desktop_assistance else "false",
+                },
             )
         self._remember_running(sandbox)
         return sandbox
@@ -89,7 +121,9 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
         self.sandbox = sandbox
         # Readiness and snapshot retirement belong to explicit management. A
         # failed probe retains both the new target ID and the resume snapshot.
-        await execute_command(sandbox, [self.config.python, "-I", "-c", "pass"], self.config.request_timeout_seconds)
+        await self._check_envd()
+        if self.recipe.desktop_assistance:
+            await self.desktop_access(access.Describe())
         if self.target and self.target.snapshot_id:
             self.observe(
                 self.target.model_copy(
@@ -107,6 +141,67 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 )
             )
         await self.cleanup_snapshots()
+
+    async def _check_envd(self) -> None:
+        assert self.sandbox is not None
+        probe = """import socket,time
+end=time.monotonic()+30
+while time.monotonic()<end:
+ try:
+  with socket.create_connection(('127.0.0.1',8888),timeout=1): break
+ except OSError: time.sleep(.2)
+else: raise RuntimeError('a13n-envd did not become ready')
+"""
+        await execute_command(self.sandbox, ["python3", "-I", "-c", probe], 35)
+        runtime = NativeRuntime(self.backend, self.credential)
+        async with asyncio.timeout(self.config.request_timeout_seconds):
+            while True:
+                execution = http_execution(HttpReference(self.config, self.environment_id, self.state, runtime))
+                try:
+                    await execution.open(execution_id="exec-readiness")
+                    await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
+                    if not self.config.desktop:
+                        return
+                    computer = execution.operations.computer
+                    if computer is not None:
+                        description = await computer.describe()
+                        if description.observe_ready and description.input_ready and description.targets:
+                            return
+                except EnvironmentProviderError as error:
+                    if error.category not in {Category.UNAVAILABLE, Category.TIMEOUT}:
+                        raise
+                except EnvironmentError as error:
+                    if error.code not in {"environment_unavailable", "environment_provider_failure"}:
+                        raise
+                finally:
+                    await execution.close()
+                await asyncio.sleep(0.1)
+
+    async def desktop_access(self, request: access.Request) -> access.Reply:
+        if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:
+            raise failure(self.provider_key, "desktop_access_unavailable", Category.UNSUPPORTED)
+        sandbox = self._desktop_sandbox
+        if sandbox is None:
+            sandbox = await self.lookup()
+            if sandbox is None:
+                raise failure(self.provider_key, "desktop_target_unavailable", Category.CONFLICT)
+            # The authorization scope pins this validated target. Each guest
+            # command still enforces generation/epoch; never rediscover a replacement.
+            self._desktop_sandbox = self.sandbox = sandbox
+        reply = access.decode(self.provider_key, request, await execute_command(sandbox, access.command(request), 25))
+        if isinstance(reply, access.Description):
+            with measure("sandbox_tunnels"), sdk_errors():
+                tunnels = await sandbox.tunnels.aio(timeout=int(self.config.request_timeout_seconds))
+            tunnel = tunnels.get(access.PORT)
+            if tunnel is None:
+                raise failure(self.provider_key, "desktop_access_unavailable", Category.UNSUPPORTED)
+            # The TLS tunnel carries the per-grant supervisor credentials only.
+            # Never send Modal account or Envd credentials to the browser.
+            connection = tunnel_connection(tunnel.url)
+            return reply.model_copy(
+                update={"websocket_url": connection.endpoint.replace("https://", "wss://", 1) + "/websockify"}
+            )
+        return reply
 
     async def create(self) -> None:
         async with asyncio.timeout(self.config.request_timeout_seconds):

@@ -11,6 +11,7 @@ from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
+from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -66,7 +67,13 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
     definition = runtime.registry.get("environment", account.type)
     connection = definition.configuration_model.model_validate(account.config)
     if isinstance(
-        connection, (DockerConnectionConfiguration, E2BConnectionConfiguration, DaytonaConnectionConfiguration)
+        connection,
+        (
+            DockerConnectionConfiguration,
+            E2BConnectionConfiguration,
+            DaytonaConnectionConfiguration,
+            ModalConnectionConfiguration,
+        ),
     ):
         connection._endpoint_policy = runtime.endpoint_policy
     return await definition.open_provider(
@@ -98,7 +105,13 @@ async def execution_connector(
     definition = runtime.registry.get("environment", account.type)
     connection = definition.configuration_model.model_validate(account.config)
     if isinstance(
-        connection, (DockerConnectionConfiguration, E2BConnectionConfiguration, DaytonaConnectionConfiguration)
+        connection,
+        (
+            DockerConnectionConfiguration,
+            E2BConnectionConfiguration,
+            DaytonaConnectionConfiguration,
+            ModalConnectionConfiguration,
+        ),
     ):
         connection._endpoint_policy = policy
     return definition.execution.execution_connector(

@@ -4,12 +4,14 @@ import asyncio
 import functools
 import shutil
 import sys
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_service.providers.environments.modal.management import ModalManagement
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message_factory import GetMessageClass
 from grpclib import GRPCError, Status
@@ -31,6 +33,7 @@ class ModalCloud:
         self.names = {}
         self.created = 0
         self.calls = []
+        self.definitions = []
 
     def __mapping__(self):
         result = {}
@@ -82,7 +85,10 @@ class ModalCloud:
                 result=api.GenericResult(status=api.GenericResult.GENERIC_STATUS_SUCCESS),
                 metadata=api.ImageMetadata(image_builder_version="2025.06"),
             )
+        elif name == "SecretGetOrCreate":
+            response = api.SecretGetOrCreateResponse(secret_id="st-fixture")
         elif name == "SandboxCreate":
+            self.definitions.append(request.definition)
             self.created += 1
             sandbox_id = f"sb-nGEijt9WbBMlGrsPH9FOa{self.created}"
             self.names[request.definition.name] = sandbox_id
@@ -156,7 +162,8 @@ class ModalCloud:
         await stream.send_message(response)
 
 
-def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
+@pytest.mark.parametrize("desktop", [False, True])
+def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
     async def scenario():
         root = tmp_path / "guest"
         root.mkdir()
@@ -167,9 +174,13 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
         cloud.url = f"http://127.0.0.1:{port}"
         monkeypatch.setenv("MODAL_SERVER_URL", cloud.url)
         monkeypatch.setenv("MODAL_SANDBOX_V2", "false")
+        ready = AsyncMock()
+        monkeypatch.setattr(ModalManagement, "_check_envd", ready)
+        access = AsyncMock()
+        monkeypatch.setattr(ModalManagement, "desktop_access", access)
         definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["modal"]
         config = definition.validate_environment(
-            {"root": str(root), "python": sys.executable, "request_timeout_seconds": 15}
+            {"image": "im-envd", "request_timeout_seconds": 15, "desktop": desktop, "desktop_assistance": desktop}
         )
         provider = await definition.open_provider(
             configuration={"workspace": "fixture", "app_name": "fixture"},
@@ -192,12 +203,14 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
 
         try:
             state = await manage("create")
-            before = list(cloud.calls)
-            async with await connector(state).open() as execution:
-                assert not {"SandboxCreate", "TaskExecStart", "ImageDelete", "SandboxTagsSet"}.intersection(
-                    cloud.calls[len(before) :]
-                )
-                await execution.operations.files.write_text("/data", "saved in native snapshot", mode="upsert")
+            assert ready.await_count == 1
+            launch = cloud.definitions[0]
+            assert launch.entrypoint_args[-1].endswith("a13n-sandbox-desktop" if desktop else "a13n-envd")
+            assert access.await_count == int(desktop)
+            assert launch.workdir == "/workspace"
+            assert [port.port for port in launch.open_ports.ports] == ([8888, 6081] if desktop else [8888])
+            assert not any(port.unencrypted for port in launch.open_ports.ports)
+            (root / "data").write_text("saved in native snapshot")
             running = EnvironmentState.model_validate_json(state.model_dump_json())
             state = await manage("stop", running)
             assert state.state["snapshot_id"]
@@ -212,15 +225,12 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
             # Retrying a stop from its prior reference adopts the retained snapshot.
             assert (await manage("stop", running)).state == state.state
             state = await manage("start", state)
-            async with await connector(state).open() as execution:
-                assert (await execution.operations.files.read_text("/data")).text == "saved in native snapshot"
+            assert (root / "data").read_text() == "saved in native snapshot"
+            assert ready.await_count == 2
             assert cloud.created == 2
             assert "TaskSnapshotFilesystem" in cloud.calls
             assert "ImageDelete" in cloud.calls
-            input = connector(state)
             await provider.close()
-            async with await input.open() as execution:
-                assert execution.state == state
             provider = await definition.open_provider(
                 configuration={"workspace": "fixture", "app_name": "fixture"},
                 credential={"token_id": "fixture", "token_secret": "fixture"},

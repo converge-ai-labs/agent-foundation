@@ -97,7 +97,7 @@ Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–
 
 `RunloopEnvironmentConfiguration` selects blueprint, resource size, and idle suspension interval, with root `/home/user`. `RunloopConnectionConfiguration` identifies the organization; `TokenCredential` supplies the API key.
 
-Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal uses `/usr/local/bin/python3` and Vercel its runtime Python path. Custom guest images must supply their configured root, Python, and shell; these paths do not refer to the Host filesystem. Shared command/file limits are listed in each generated recipe schema.
+Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal requires an Envd image and uses guest-PATH `python3` only for management helpers; Vercel uses its runtime Python path. Custom guest images must supply their configured root, Python, and shell; these paths do not refer to the Host filesystem. Shared command/file limits are listed in each generated recipe schema.
 
 ## Remote HTTP / WebSocket Envd
 

@@ -327,7 +327,9 @@ export function TemplateConfig({
                     ? "e2b"
                     : definition?.type === "daytona"
                       ? "daytona"
-                      : "default"
+                      : definition?.type === "modal"
+                        ? "modal"
+                        : "default"
               }
             >
               <DisclosureSection
