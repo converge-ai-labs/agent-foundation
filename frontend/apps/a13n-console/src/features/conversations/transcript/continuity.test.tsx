@@ -20,6 +20,7 @@ import { Suspense } from "react";
 import { createClient, type Client } from "../../../service-client";
 import { fixtureRun, fixtureThread, textInput } from "./fixture";
 import { RunPage } from "./run";
+import { conversationKeys } from "../api";
 
 let client: Client;
 let cache: QueryClient;
@@ -80,10 +81,18 @@ function Location() {
         {location.search}
       </output>
       <Link to={path("run")}>Earlier run</Link>
+      <Link to={`${location.pathname}${location.search}&follow=latest`}>
+        Follow latest
+      </Link>
     </>
   );
 }
-function show(level: "chat" | "debug" = "chat", delayNavigation = false) {
+function show(
+  level: "chat" | "debug" = "chat",
+  delayNavigation = false,
+  follow = false,
+  skipped = false,
+) {
   const navigation = deferred<void>();
   function Destination() {
     const { runId } = useParams();
@@ -103,11 +112,18 @@ function show(level: "chat" | "debug" = "chat", delayNavigation = false) {
   const next = fixtureRun({
     ...initial,
     id: "next",
-    parent_run_id: "run",
+    parent_run_id: skipped ? "middle" : "run",
     status: "accepted",
     sealed_at: null,
     input: textInput("Next request"),
     output: null,
+  });
+  const middle = fixtureRun({
+    ...initial,
+    id: "middle",
+    parent_run_id: "run",
+    input: textInput("Intervening request"),
+    output: "Intervening reply",
   });
   let thread = fixtureThread({
     id: "thread",
@@ -137,6 +153,13 @@ function show(level: "chat" | "debug" = "chat", delayNavigation = false) {
       queries.push(url.pathname);
       if (url.pathname.endsWith("/runs/next")) return refreshed.promise;
       if (url.pathname.endsWith("/runs/run")) return Response.json(initial);
+      if (url.pathname.endsWith("/runs/middle")) return Response.json(middle);
+      if (url.pathname.endsWith("/runs/next/lineage"))
+        return Response.json(
+          url.searchParams.has("cursor")
+            ? { items: [middle, initial], next_cursor: null }
+            : { items: [next], next_cursor: "older" },
+        );
       if (url.pathname.endsWith("/threads/thread"))
         return Response.json(thread);
       if (url.pathname.endsWith("/sessions/session"))
@@ -155,7 +178,11 @@ function show(level: "chat" | "debug" = "chat", delayNavigation = false) {
   });
   const view = render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={[`${path("run")}?view=${level}`]}>
+      <MemoryRouter
+        initialEntries={[
+          `${path("run")}?view=${level}${follow ? "&follow=latest" : ""}`,
+        ]}
+      >
         <div data-session-stage>
           <Suspense fallback={<p>Opening run</p>}>
             <Routes>
@@ -183,6 +210,18 @@ function show(level: "chat" | "debug" = "chat", delayNavigation = false) {
     finishNavigation() {
       delayNavigation = false;
       navigation.resolve();
+    },
+    automaticSuccessor() {
+      thread = {
+        ...thread,
+        current_run_id: "next",
+        version: thread.version + 1,
+      };
+      cache.setQueryData(
+        conversationKeys("workspace").thread("thread"),
+        thread,
+      );
+      refreshed.resolve(Response.json(next));
     },
     accept() {
       thread = {
@@ -299,3 +338,62 @@ it("keeps the draft and existing transcript when sending fails", async () => {
     `${path("run")}?view=chat`,
   );
 });
+
+it.each(["chat", "debug"] as const)(
+  "follows an automatic successor in %s without losing a draft",
+  async (level) => {
+    const view = show(level, false, true);
+    await screen.findByText("First request", { selector: "div" });
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: "Unsent draft" } });
+    await act(async () => view.automaticSuccessor());
+    await waitFor(() =>
+      expect(screen.getByTestId("location").textContent).toBe(
+        `${path("next")}?view=${level}&follow=latest`,
+      ),
+    );
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+    expect((composer as HTMLTextAreaElement).value).toBe("Unsent draft");
+    expect(screen.queryByText("You are viewing earlier work.")).toBeNull();
+  },
+);
+
+it("leaves an explicitly inspected Run in place when a successor arrives", async () => {
+  const view = show();
+  await screen.findByText("First request", { selector: "div" });
+  await act(async () => view.automaticSuccessor());
+  expect(screen.getByTestId("location").textContent).toBe(
+    `${path("run")}?view=chat`,
+  );
+  expect(await screen.findByText("You are viewing earlier work.")).toBeTruthy();
+});
+
+it.each([true, false])(
+  "includes paginated intervening Runs when following (already enabled: %s)",
+  async (following) => {
+    const view = show("chat", false, following, true);
+    const first = await screen.findByText("First request", { selector: "div" });
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    fireEvent.change(composer, { target: { value: "Unsent draft" } });
+    await act(async () => view.automaticSuccessor());
+    if (!following)
+      fireEvent.click(screen.getByRole("link", { name: "Follow latest" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location").textContent).toBe(
+        `${path("next")}?view=chat&follow=latest`,
+      ),
+    );
+    expect(
+      await screen.findByText("Intervening request", { selector: "div" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Next request", { selector: "div" })).toBeTruthy();
+    expect(screen.getByText("First request", { selector: "div" })).toBe(first);
+    if (following) {
+      expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+      expect(composer).toHaveProperty("value", "Unsent draft");
+    }
+    expect(
+      view.queries.filter((url) => url.endsWith("/runs/next/lineage")),
+    ).toHaveLength(2);
+  },
+);

@@ -62,6 +62,31 @@ beforeEach(() => {
         url = new URL(request.url);
       expect(request.headers.get("X-Workspace-Id")).toBe("ws_1");
       calls.push(url);
+      expect(request.method).toBe("GET");
+      if (url.pathname.endsWith("/observation"))
+        return Response.json({
+          execution: execution(),
+          source: active ? "live" : "retained",
+          shell: {
+            status: {
+              phase: active ? "running" : "exited",
+              cleanup: "complete",
+              exit_code: active ? null : 0,
+            },
+            stdout: {
+              text: active ? "live progress" : "finished output",
+              truncated: true,
+              produced_bytes: 123,
+              observation_closed: !active,
+            },
+            stderr: {
+              text: "",
+              truncated: false,
+              produced_bytes: 0,
+              observation_closed: !active,
+            },
+          },
+        });
       if (url.pathname.endsWith("/result")) {
         if (resultStatus !== 200)
           return Response.json(
@@ -175,9 +200,11 @@ it("preserves Run scope through pagination and refreshes completion independentl
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Load more" }));
   expect(await screen.findByText("run_code")).toBeTruthy();
-  expect(calls.every((url) => url.searchParams.get("run_id") === "run_1")).toBe(
-    true,
-  );
+  expect(
+    calls
+      .filter((url) => url.pathname.endsWith("/tool-executions"))
+      .every((url) => url.searchParams.get("run_id") === "run_1"),
+  ).toBe(true);
   expect(calls.at(-1)?.searchParams.get("cursor")).toBe("next");
 });
 
@@ -202,4 +229,36 @@ it("shows recoverable list and expired-result errors and isolates a changed Thre
     expect(screen.queryByText("shell_exec")).not.toBeTruthy(),
   );
   expect(await screen.findByText("No retained tool executions.")).toBeTruthy();
+});
+
+it("shows bounded live and terminal output using only reads and keeps payloads out of the query cache", async () => {
+  active = true;
+  const user = userEvent.setup();
+  render(<ToolExecutions threadId="thr_1" />, { wrapper });
+  await user.click(
+    await screen.findByRole("button", { name: "Inspect shell_exec" }),
+  );
+  expect(await screen.findByText("live progress")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Partial output preview. Some captured content is omitted.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: /cancel|signal|stdin/i }),
+  ).toBeNull();
+  active = false;
+  await user.click(screen.getByRole("button", { name: "Refresh output" }));
+  expect(await screen.findByText("finished output")).toBeTruthy();
+  expect(screen.queryByText("live progress")).toBeNull();
+  expect(
+    JSON.stringify(
+      cache
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.state.data),
+    ),
+  ).not.toContain("finished output");
+  await user.click(screen.getByRole("button", { name: "Inspect shell_exec" }));
+  expect(screen.queryByText("finished output")).toBeNull();
 });

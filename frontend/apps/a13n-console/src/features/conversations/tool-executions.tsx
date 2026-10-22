@@ -40,7 +40,7 @@ export function ThreadToolExecutionsDialog({
       onOpenChange={onOpenChange}
       closeLabel={t("Close")}
     >
-      <ToolExecutions key={threadId} threadId={threadId} />
+      {open && <ToolExecutions key={threadId} threadId={threadId} />}
     </ModalFrame>
   );
 }
@@ -56,16 +56,20 @@ export function ToolExecutions({
   const { t } = useTranslation(),
     client = useClient(),
     { workspace } = useWorkspace();
-  const query = useInfiniteQuery(
-    conversationQueries(client, workspace.id).toolExecutions(threadId, runId),
-  );
+  const query = useInfiniteQuery({
+    ...conversationQueries(client, workspace.id).toolExecutions(
+      threadId,
+      runId,
+    ),
+    refetchInterval: 5000,
+  });
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <div className={styles.executions}>
       <div className={styles.toolbar}>
         <p>
           {t(
-            "Calls can remain active after a run ends. Refresh to check their latest state.",
+            "Read-only observation. Active calls refresh automatically, even after their run ends.",
           )}
         </p>
         <Button
@@ -152,42 +156,45 @@ function ExecutionRow({ execution }: { execution: Execution }) {
           {execution.error && (
             <p className={styles.failure}>{execution.error}</p>
           )}
-          <dl className={styles.facts}>
-            <div>
-              <dt>{t("Run")}</dt>
-              <dd>
-                <CopyableId value={execution.run_id} />
-              </dd>
-            </div>
-            <div>
-              <dt>{t("Attempt")}</dt>
-              <dd>
-                <CopyableId value={execution.attempt_id} />
-              </dd>
-            </div>
-            <div>
-              <dt>{t("Worker")}</dt>
-              <dd>
-                <CopyableId value={execution.worker_id} />
-              </dd>
-            </div>
-            {execution.completed_at && (
+          <ExecutionOutput execution={execution} />
+          <DisclosureSection title={t("Execution details")}>
+            <dl className={styles.facts}>
               <div>
-                <dt>{t("Completed")}</dt>
+                <dt>{t("Run")}</dt>
                 <dd>
-                  <Timestamp value={execution.completed_at} precise />
+                  <CopyableId value={execution.run_id} />
                 </dd>
               </div>
-            )}
-            {execution.expires_at && (
               <div>
-                <dt>{t("Result expires")}</dt>
+                <dt>{t("Attempt")}</dt>
                 <dd>
-                  <Timestamp value={execution.expires_at} precise />
+                  <CopyableId value={execution.attempt_id} />
                 </dd>
               </div>
-            )}
-          </dl>
+              <div>
+                <dt>{t("Worker")}</dt>
+                <dd>
+                  <CopyableId value={execution.worker_id} />
+                </dd>
+              </div>
+              {execution.completed_at && (
+                <div>
+                  <dt>{t("Completed")}</dt>
+                  <dd>
+                    <Timestamp value={execution.completed_at} precise />
+                  </dd>
+                </div>
+              )}
+              {execution.expires_at && (
+                <div>
+                  <dt>{t("Result expires")}</dt>
+                  <dd>
+                    <Timestamp value={execution.expires_at} precise />
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </DisclosureSection>
           {execution.result_available ? (
             <ExecutionResult
               key={execution.execution_id}
@@ -208,6 +215,142 @@ function ExecutionRow({ execution }: { execution: Execution }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Output stays in the open inspector, never in transcript or persisted query state. */
+function ExecutionOutput({ execution }: { execution: Execution }) {
+  const { t } = useTranslation(),
+    client = useClient(),
+    { workspace } = useWorkspace();
+  const [value, setValue] = useState<Schema["ExecutionObservation"]>();
+  const [error, setError] = useState<unknown>();
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function observe() {
+      if (document.hidden) {
+        timer = setTimeout(() => void observe(), 2000);
+        return;
+      }
+      try {
+        const result = await client
+          .workspace(workspace.id)
+          .GET(
+            "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation",
+            {
+              params: {
+                path: {
+                  thread_id: execution.thread_id,
+                  execution_id: execution.execution_id,
+                },
+              },
+              signal: controller.signal,
+            },
+          )
+          .then(responseData);
+        if (controller.signal.aborted) return;
+        setValue(result);
+        setError(undefined);
+        if (!result.execution.completed_at)
+          timer = setTimeout(() => void observe(), 2000);
+      } catch (failure) {
+        if (!controller.signal.aborted) {
+          revalidateSession(failure);
+          setValue(undefined);
+          setError(failure);
+        }
+      }
+    }
+    void observe();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [
+    client,
+    workspace.id,
+    execution.thread_id,
+    execution.execution_id,
+    execution.completed_at,
+    refresh,
+  ]);
+  return (
+    <section className={styles.result} aria-label={t("Output")}>
+      <div className={styles.toolbar}>
+        <strong>
+          {t(value?.source === "retained" ? "Retained output" : "Live output")}
+        </strong>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setRefresh((n) => n + 1)}
+        >
+          {t("Refresh output")}
+        </Button>
+      </div>
+      <ErrorNotice error={error} />
+      {!value && !error && <Loading variant="list" rows={1} />}
+      {value?.source === "unavailable" && (
+        <p role="status">
+          {t(
+            "Live output is temporarily unavailable. Execution status is shown above.",
+          )}
+        </p>
+      )}
+      {value?.shell && (
+        <>
+          <p>
+            {t("Process")}: {value.shell.status.phase} · {t("Cleanup")}:{" "}
+            {value.shell.status.cleanup}
+            {value.shell.status.exit_code != null && (
+              <>
+                {" "}
+                · {t("Exit code")}: {value.shell.status.exit_code}
+              </>
+            )}
+          </p>
+          {(["stdout", "stderr"] as const).map((name) => {
+            const stream = value.shell![name];
+            return (
+              <div className={styles.stream} key={name}>
+                <div className={styles.toolbar}>
+                  <span>{name}</span>
+                  {stream.produced_bytes != null && (
+                    <span>
+                      {t("{{count}} bytes produced", {
+                        count: stream.produced_bytes,
+                      })}
+                    </span>
+                  )}
+                </div>
+                {stream.text ? (
+                  <CodeBlock>{stream.text}</CodeBlock>
+                ) : (
+                  <p>{t("No output captured.")}</p>
+                )}
+                {stream.truncated && (
+                  <p>
+                    {t(
+                      "Partial output preview. Some captured content is omitted.",
+                    )}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
+      {value?.source === "retained" && !value.shell && (
+        <p>
+          {t(
+            "No structured Shell output. Read the retained result below if available.",
+          )}
+        </p>
+      )}
+    </section>
   );
 }
 

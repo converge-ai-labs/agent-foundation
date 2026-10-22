@@ -20,7 +20,7 @@ import {
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
@@ -55,6 +55,8 @@ export function SessionHeader({
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
   const { basePath, can } = useWorkspace();
+  const [search, setSearch] = useSearchParams();
+  const following = search.get("follow") === "latest";
   const thread = threads.find((entry) => entry.id === threadId);
   const root = threads.find(
     (entry) => entry.origin === "new" && entry.session_id === sessionId,
@@ -164,6 +166,38 @@ export function SessionHeader({
         {thread && (
           <ThreadBranches thread={thread} threads={threads} level={level} />
         )}
+        {thread && runId && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={following}
+            title={t(following ? "Pause following" : "Follow latest")}
+            onClick={() =>
+              setSearch(
+                (params) => {
+                  if (following) params.delete("follow");
+                  else params.set("follow", "latest");
+                  return params;
+                },
+                { replace: true },
+              )
+            }
+          >
+            {t(following ? "Following latest" : "Follow latest")}
+          </Button>
+        )}
+        {thread && can("read") && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setTools(true)}
+          >
+            <TerminalIcon size={14} aria-hidden="true" />
+            {t("Tool executions")}
+          </Button>
+        )}
         <SegmentedControl
           className={styles.levelSwitch}
           label={t("Disclosure level")}
@@ -220,12 +254,6 @@ export function SessionHeader({
             <MenuItem onClick={() => setExecution(true)}>
               <SlidersHorizontalIcon size={14} aria-hidden="true" />
               {t("Execution policy")}
-            </MenuItem>
-          )}
-          {thread && can("read") && (
-            <MenuItem onClick={() => setTools(true)}>
-              <TerminalIcon size={14} aria-hidden="true" />
-              {t("Tool executions")}
             </MenuItem>
           )}
           {can("read") && (

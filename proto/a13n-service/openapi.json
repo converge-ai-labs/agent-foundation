@@ -7006,6 +7006,38 @@
         "title": "Evidence",
         "type": "object"
       },
+      "ExecutionObservation": {
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/ExecutionView"
+          },
+          "shell": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShellPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "live",
+              "retained",
+              "unavailable"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution",
+          "source"
+        ],
+        "title": "ExecutionObservation",
+        "type": "object"
+      },
       "ExecutionOverride": {
         "additionalProperties": false,
         "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
@@ -14057,6 +14089,41 @@
         "title": "OrganizationUpdate",
         "type": "object"
       },
+      "OutputPreview": {
+        "properties": {
+          "observation_closed": {
+            "title": "Observation Closed",
+            "type": "boolean"
+          },
+          "produced_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced Bytes"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated",
+          "produced_bytes",
+          "observation_closed"
+        ],
+        "title": "OutputPreview",
+        "type": "object"
+      },
       "OutputSpec": {
         "additionalProperties": false,
         "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
@@ -14889,6 +14956,67 @@
           "image_url"
         ],
         "title": "PrincipalSummary",
+        "type": "object"
+      },
+      "ProcessStatusProjection": {
+        "properties": {
+          "cleanup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal"
+          },
+          "termination_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termination Reason"
+          }
+        },
+        "required": [
+          "phase",
+          "termination_reason",
+          "exit_code",
+          "signal",
+          "cleanup"
+        ],
+        "title": "ProcessStatusProjection",
         "type": "object"
       },
       "Profile": {
@@ -18535,6 +18663,26 @@
           }
         },
         "title": "SharedSkillSync",
+        "type": "object"
+      },
+      "ShellPreview": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ProcessStatusProjection"
+          },
+          "stderr": {
+            "$ref": "#/components/schemas/OutputPreview"
+          },
+          "stdout": {
+            "$ref": "#/components/schemas/OutputPreview"
+          }
+        },
+        "required": [
+          "status",
+          "stdout",
+          "stderr"
+        ],
+        "title": "ShellPreview",
         "type": "object"
       },
       "Skill": {
@@ -46123,6 +46271,81 @@
           }
         ],
         "summary": "Cancel Tool Execution",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation": {
+      "get": {
+        "operationId": "observe_tool_execution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionObservation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Observe Tool Execution",
         "tags": [
           "runs"
         ]

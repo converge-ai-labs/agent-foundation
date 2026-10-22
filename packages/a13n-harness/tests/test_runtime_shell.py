@@ -488,6 +488,35 @@ async def test_codeact_shell_calls_return_native_results_without_nested_executio
         await runtime.close()
 
 
+async def test_cancel_waits_for_default_provider_child_cleanup(tmp_path):
+    import os
+
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable(
+            [
+                ("shell_exec", {"command": "(trap '' TERM; echo $$ > ready; sleep 60) & echo $! > child.pid; wait"}),
+                ("shell_exec", {"command": "read line"}),
+            ],
+            results,
+        ).run("start children", environment=source(tmp_path), bindings=bindings(runtime))
+        async with asyncio.timeout(5):
+            while not (tmp_path / "child.pid").exists() or not (tmp_path / "ready").exists():
+                await asyncio.sleep(0.01)
+        child = int((tmp_path / "child.pid").read_text())
+        execution_id = results[0]["execution_id"]
+        await runtime.cancel(first.thread_id, execution_id)
+        settled = await runtime.wait(first.thread_id, execution_id, timeout_seconds=15)
+        assert settled.record.status == "cancelled", settled
+        assert runtime.resource(first.thread_id, execution_id) is None
+        assert (await runtime.info(first.thread_id, results[1]["execution_id"])).status == "running"
+        with pytest.raises(ProcessLookupError):
+            os.kill(child, 0)
+    finally:
+        await runtime.close()
+
+
 async def test_cancel_during_admission_starts_once_then_terminates(tmp_path, monkeypatch):
     from a13n_harness.toolsets.process_manager import _ProcessController
 

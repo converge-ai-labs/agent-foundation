@@ -2,9 +2,12 @@
 
 import json
 from datetime import datetime
+from typing import Literal
 
 from a13n_harness.tool_execution import ToolExecutionRecord
-from pydantic import BaseModel
+from a13n_harness.toolsets.shell_observation import ShellStream
+from a13n_harness.toolsets.shell_results import ProcessStatusProjection, ShellExecSuccess
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +18,8 @@ from a13n_service.infra.objects.interface import ObjectRef, read
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import ToolExecutionRow
 from a13n_service.runs.threads import get_thread
-from a13n_service.runs.tool_executions.store import Store, available, observation
+from a13n_service.runs.tool_executions.payload import Payload
+from a13n_service.runs.tool_executions.store import available, observation
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
@@ -124,9 +128,106 @@ async def result(
     result = reads.read_value(
         value, source=f"tool-executions/{execution_id}/result", offset=offset, limit=limit, version=version
     )
-    if ref is not None:
-        await Store(runtime).acknowledge_delivery(thread_id, execution_id)
     return result
+
+
+class OutputPreview(BaseModel):
+    text: str
+    truncated: bool
+    produced_bytes: int | None
+    observation_closed: bool
+
+
+class ShellPreview(BaseModel):
+    status: ProcessStatusProjection
+    stdout: OutputPreview
+    stderr: OutputPreview
+
+
+class ExecutionObservation(BaseModel):
+    execution: ExecutionView
+    source: Literal["live", "retained", "unavailable"]
+    shell: ShellPreview | None = None
+
+
+_SHELL_RESULT = TypeAdapter(ShellExecSuccess)
+_PREVIEW_CHARS = 8000
+
+
+def _preview(value: object) -> ShellPreview | None:
+    try:
+        shell = _SHELL_RESULT.validate_python(value)
+    except ValidationError:
+        return None
+    streams = {}
+    for name in ("stdout", "stderr"):
+        stream = shell[name]
+        streams[name] = OutputPreview(
+            text=stream["text"][-_PREVIEW_CHARS:],
+            truncated=(
+                len(stream["text"]) > _PREVIEW_CHARS
+                or not stream["content_complete"]
+                or stream["omitted_before_bytes"] > 0
+            ),
+            produced_bytes=stream["produced_bytes"],
+            observation_closed=stream["observation_closed"],
+        )
+    return ShellPreview(status=shell["status"], stdout=streams["stdout"], stderr=streams["stderr"])
+
+
+def _stream_preview(stream: ShellStream) -> OutputPreview:
+    text = stream.data.decode("utf-8", errors="replace")
+    return OutputPreview(
+        text=text[-_PREVIEW_CHARS:],
+        truncated=(
+            len(text) > _PREVIEW_CHARS
+            or stream.start_offset > 0
+            or stream.capture.coverage != "complete"
+            or stream.start_offset + len(stream.data) < stream.capture.available_end
+        ),
+        produced_bytes=stream.capture.produced_bytes,
+        observation_closed=stream.capture.observation_closed,
+    )
+
+
+async def observe(
+    runtime: Runtime, actor: Principal, workspace_id: str, thread_id: str, execution_id: str
+) -> ExecutionObservation:
+    # Human observation uses workspace read authority, never a fabricated Run caller.
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "read")
+        await get_thread(session, workspace_id, thread_id)
+        row = await _get(session, thread_id, execution_id)
+        worker_id = row.worker_id
+        terminal = row.completed_at is not None
+    cached = None if terminal else await runtime.executions.output.get(thread_id, execution_id, worker_id)
+    # Recheck after cache I/O: durable completion, expiry and owner loss win.
+    async with short_session(runtime.storage) as session:
+        await workspace_scope(session, actor, workspace_id, "read")
+        await get_thread(session, workspace_id, thread_id)
+        row = await _get(session, thread_id, execution_id)
+        execution = view(row)
+        ref = ObjectRef(**row.result_ref) if row.result_ref is not None else None
+        live = row.completed_at is None and row.worker_id == worker_id and row.lease_expires_at > await now(session)
+    if execution.completed_at is not None:
+        payload = Payload.model_validate_json(await read(runtime.objects, ref)) if ref is not None else None
+        shell = (
+            _preview(payload.result.return_value)
+            if payload is not None and execution.tool_name == "shell_exec"
+            else None
+        )
+        return ExecutionObservation(execution=execution, source="retained", shell=shell)
+    if live and cached is not None:
+        return ExecutionObservation(
+            execution=execution,
+            source="live",
+            shell=ShellPreview(
+                status=ProcessStatusProjection(**cached.status.model_dump()),
+                stdout=_stream_preview(cached.stdout),
+                stderr=_stream_preview(cached.stderr),
+            ),
+        )
+    return ExecutionObservation(execution=execution, source="unavailable")
 
 
 async def cancel(

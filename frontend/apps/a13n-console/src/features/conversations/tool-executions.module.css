@@ -7,6 +7,18 @@
   min-width: 0;
 }
 
+.stream {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.stream pre {
+  max-height: 240px;
+  overflow: auto;
+}
+
 .execution {
   min-width: 0;
 }

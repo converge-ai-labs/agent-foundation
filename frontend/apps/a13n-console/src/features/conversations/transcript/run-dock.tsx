@@ -80,8 +80,11 @@ export function RunDock({
   const [executionOpen, setExecutionOpen] = useState(false);
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
+  const following = new URLSearchParams(search).get("follow") === "latest";
   const current =
-    latest === run.id || (!!pendingRunId && latest === pendingRunId);
+    following ||
+    latest === run.id ||
+    (!!pendingRunId && latest === pendingRunId);
   const active = isActiveRun(run.status);
   // Only the Thread's last Run can wait; show its exact questions.
   const last = latest === run.id ? run : latestRun.data;
@@ -203,7 +206,7 @@ export function RunDock({
                   session_id: thread.session_id,
                   thread_id: thread.id,
                   run_id: latest,
-                })}${search}`}
+                })}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
               >
                 {t(
                   level === "debug"
@@ -236,7 +239,7 @@ export function RunDock({
                         ? t("Message {{agent}}…", { agent: agentName })
                         : t("Message your agent…")
                 }
-                disabled={!can("run")}
+                disabled={!can("run") || (following && latest !== run.id)}
                 options={
                   !active &&
                   !resubmit && (

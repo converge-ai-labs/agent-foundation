@@ -805,7 +805,7 @@ async def test_execution_inspection_api_scopes_pages_results_and_cancellation(se
         f"{base}/{second.execution_id}/result", params={"offset": 100, "version": result.json()["version"]}
     )
     assert continued.status_code == 200, continued.text
-    assert (await store.get(lease.thread_id, second.execution_id)).record.delivery_acknowledged
+    assert not (await store.get(lease.thread_id, second.execution_id)).record.delivery_acknowledged
     active = await service.client.get(base, params={"active": True})
     assert [item["execution_id"] for item in active.json()["items"]] == [first.execution_id]
     async with transaction(service.runtime.storage) as session:
@@ -817,7 +817,7 @@ async def test_execution_inspection_api_scopes_pages_results_and_cancellation(se
     queries = [
         operation
         for path, methods in schema["paths"].items()
-        if "/tool-executions" in path
+        if "/tool-executions" in path and not path.endswith("/observation")
         for method, operation in methods.items()
         if method == "get"
     ]
@@ -825,3 +825,5 @@ async def test_execution_inspection_api_scopes_pages_results_and_cancellation(se
     assert all(operation.get("x-a13n-mcp") for operation in queries)
     cancel = schema["paths"]["/api/v1/threads/{thread_id}/tool-executions/{execution_id}/cancel"]["post"]
     assert not cancel.get("x-a13n-mcp")
+    observe = schema["paths"]["/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation"]["get"]
+    assert not observe.get("x-a13n-mcp")

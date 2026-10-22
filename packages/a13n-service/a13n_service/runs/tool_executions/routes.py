@@ -59,6 +59,18 @@ async def get_tool_execution_result(
     )
 
 
+# Live output observation is deliberately outside MCP management admission.
+@router.get("/{execution_id}/observation", response_model=views.ExecutionObservation)
+async def observe_tool_execution(
+    runtime: CurrentRuntime,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    execution_id: str,
+) -> views.ExecutionObservation:
+    return await views.observe(runtime, actor, workspace_id, thread_id, execution_id)
+
+
 # Execution cancellation is deliberately outside MCP management admission.
 @router.post("/{execution_id}/cancel", response_model=views.ExecutionView, status_code=202)
 async def cancel_tool_execution(

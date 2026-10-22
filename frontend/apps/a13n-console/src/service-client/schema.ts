@@ -3315,6 +3315,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Observe Tool Execution */
+    get: operations["observe_tool_execution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/result": {
     parameters: {
       query?: never;
@@ -6557,6 +6574,16 @@ export interface components {
       /** Trace Id */
       trace_id: string;
     };
+    /** ExecutionObservation */
+    ExecutionObservation: {
+      execution: components["schemas"]["ExecutionView"];
+      shell?: components["schemas"]["ShellPreview"] | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "live" | "retained" | "unavailable";
+    };
     /**
      * ExecutionOverride
      * @description Sparse choices: null inherits; Thread PATCH distinguishes omission from null.
@@ -8909,6 +8936,17 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** OutputPreview */
+    OutputPreview: {
+      /** Observation Closed */
+      observation_closed: boolean;
+      /** Produced Bytes */
+      produced_bytes: number | null;
+      /** Text */
+      text: string;
+      /** Truncated */
+      truncated: boolean;
+    };
     /**
      * OutputSpec
      * @description Plain text without a schema, one structured output, or at least two named variants.
@@ -9207,6 +9245,19 @@ export interface components {
       name: string;
       /** Status */
       status: string;
+    };
+    /** ProcessStatusProjection */
+    ProcessStatusProjection: {
+      /** Cleanup */
+      cleanup: string | null;
+      /** Exit Code */
+      exit_code: number | null;
+      /** Phase */
+      phase: string;
+      /** Signal */
+      signal: string | null;
+      /** Termination Reason */
+      termination_reason: string | null;
     };
     /** Profile */
     Profile: {
@@ -10460,6 +10511,12 @@ export interface components {
        * @default true
        */
       overwrite?: boolean;
+    };
+    /** ShellPreview */
+    ShellPreview: {
+      status: components["schemas"]["ProcessStatusProjection"];
+      stderr: components["schemas"]["OutputPreview"];
+      stdout: components["schemas"]["OutputPreview"];
     };
     /** Skill */
     Skill: {
@@ -19779,6 +19836,34 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ExecutionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  observe_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionObservation"];
         };
       };
       400: components["responses"]["Error"];

@@ -326,8 +326,10 @@ class _ProcessController:
         except asyncio.CancelledError:
             try:
                 with execution_cleanup():
-                    async with asyncio.timeout(5):
-                        await self._cancel_owned(entry)
+                    # Environment operations own their deadlines. A shorter Shell
+                    # timer can interrupt the provider's TERM grace before KILL
+                    # and output cleanup, falsely reporting failed cancellation.
+                    await self._cancel_owned(entry)
             except (EnvironmentError, TimeoutError) as exc:
                 raise ToolFailed(
                     "Shell cancellation could not confirm process termination; inspect the native target."

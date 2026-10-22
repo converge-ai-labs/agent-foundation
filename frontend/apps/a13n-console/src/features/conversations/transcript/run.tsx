@@ -1,7 +1,7 @@
 import { Button } from "a13n-ui";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { ArrowDownIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
@@ -9,7 +9,7 @@ import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
 import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { useAgent } from "../../agents/queries";
-import { conversationQueries, type ViewLevel } from "../api";
+import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
 import { BranchOrigin } from "../thread-branches";
@@ -33,11 +33,11 @@ export function RunPage() {
   const [shown, setShown] = useState([runId]);
   let runIds = shown;
   if (shown.at(-1) !== runId) {
-    // Only a submission continues this view. History links and Back open the
+    // Submissions and followed successors continue this view. History links and Back open the
     // requested run on its own, with that run's authoritative lineage.
     runIds =
       state?.continuedFrom === shown.at(-1) && !shown.includes(runId)
-        ? [...shown, runId]
+        ? [...shown, ...(state?.continuedRunIds ?? [runId])]
         : [runId];
     setShown(runIds);
   }
@@ -69,8 +69,11 @@ export function RunContent({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     queries = conversationQueries(client, workspace.id);
+  const navigate = useNavigate();
+  const { search } = useLocation();
+  const following = new URLSearchParams(search).get("follow") === "latest";
   const runQuery = useRun(runId);
   const threadQuery = useQuery({
     ...queries.thread(threadId),
@@ -81,6 +84,74 @@ export function RunContent({
   const thread = threadQuery.data;
   const agent = useAgent(run?.agent_id);
   const { level } = useViewLevel(thread, session.data);
+  const latest = thread?.current_run_id ?? thread?.last_run_id;
+  const successor = useRun(following && latest !== runId ? latest : undefined);
+  const indirect = !!successor.data && successor.data.parent_run_id !== runId;
+  const lineage = useInfiniteQuery({
+    ...queries.lineage(latest ?? ""),
+    enabled: following && latest !== runId && indirect,
+  });
+  useEffect(() => {
+    // Load before changing routes so the existing transcript, draft and inspectors
+    // remain mounted throughout an automatic successor transition.
+    if (
+      !following ||
+      !successor.data ||
+      successor.data.id !== latest ||
+      latest === runId ||
+      successor.data.thread_id !== threadId ||
+      successor.data.session_id !== sessionId
+    )
+      return;
+    let continuedRunIds = [latest];
+    if (indirect) {
+      if (!lineage.data || lineage.isError) return;
+      const entries = lineage.data.pages.flatMap((page) => page.items);
+      const anchor = entries.findIndex((entry) => entry.id === runId);
+      if (anchor < 0 && lineage.hasNextPage) {
+        if (!lineage.isFetchingNextPage) void lineage.fetchNextPage();
+        return;
+      }
+      // Reconnects and enabling follow on history can skip several successors.
+      // Include the entire interval, not just the newest Run.
+      continuedRunIds =
+        anchor < 0
+          ? []
+          : entries
+              .slice(0, anchor)
+              .map((entry) => entry.id)
+              .reverse();
+    }
+    navigate(
+      runPath(basePath, {
+        session_id: sessionId,
+        thread_id: threadId,
+        run_id: latest,
+      }) + search,
+      {
+        replace: true,
+        state: continuedRunIds.length
+          ? { continuedFrom: runId, continuedRunIds }
+          : null,
+      },
+    );
+  }, [
+    following,
+    successor.data,
+    indirect,
+    lineage.data,
+    lineage.isError,
+    lineage.hasNextPage,
+    lineage.isFetchingNextPage,
+    lineage.fetchNextPage,
+    latest,
+    runId,
+    threadId,
+    sessionId,
+    basePath,
+    search,
+    navigate,
+  ]);
 
   // The Session decides the level a Thread opens at, so it is read first.
   if (runQuery.isPending || threadQuery.isPending || session.isPending)
@@ -108,7 +179,9 @@ export function RunContent({
       thread={thread}
       level={level}
       agentName={agent.data?.name}
-      error={runQuery.error ?? threadQuery.error}
+      error={
+        runQuery.error ?? threadQuery.error ?? successor.error ?? lineage.error
+      }
     />
   );
 }

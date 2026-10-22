@@ -173,10 +173,7 @@ it("opens retained tools for the exact current Thread without a Run filter", asy
   );
   expect(toolRequests).toHaveLength(0);
   await user.click(
-    await screen.findByRole("button", { name: "Session actions" }),
-  );
-  await user.click(
-    await screen.findByRole("menuitem", { name: "Tool executions" }),
+    await screen.findByRole("button", { name: "Tool executions" }),
   );
   expect(await screen.findByText("No retained tool executions.")).toBeTruthy();
   expect(toolRequests).toHaveLength(1);
