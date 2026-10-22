@@ -14,6 +14,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
 from a13n_harness.usage import RunUsageSummary, UsageReportError
 from a13n_logging import get_logger
@@ -649,7 +650,7 @@ class RootRunCoordinator:
         except cancelled_class:
             cancelled = True
         except BaseException as exc:
-            if isinstance(exc, HarnessUiError):
+            if isinstance(exc, (HarnessUiError, HarnessError)):
                 failure = _exception_failure(exc, code="root_operation_failed")
             else:
                 with CancelScope(shield=True):
@@ -979,11 +980,12 @@ def _safe_failure(value: SafeFailure) -> FailureView:
 
 
 def _exception_failure(value: BaseException, *, code: str) -> FailureView:
-    if isinstance(value, HarnessUiError):
+    if isinstance(value, (HarnessUiError, HarnessError)):
         return FailureView(
             code=value.code[:256],
             message=_bounded_message(str(value)),
             details=_json_mapping(value.details),
+            retry_hint=value.retry_hint if isinstance(value, HarnessError) else None,
         )
     return FailureView(code=code, message=_bounded_message(str(value) or type(value).__name__))
 
