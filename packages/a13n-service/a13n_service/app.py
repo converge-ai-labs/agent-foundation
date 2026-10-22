@@ -15,6 +15,7 @@ from typing import Any, get_args
 
 from a13n_harness import HarnessTraceContent
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
+from a13n_harness.providers.environment.modal.pool import TransportPool
 from anyio.to_thread import run_sync
 from fastapi import FastAPI, Request
 from fastapi.dependencies.models import Dependant
@@ -191,6 +192,9 @@ async def open_runtime(
     registry = _registry(distribution, config)
     platform_mounts = await stack.enter_async_context(open_platform_mounts(registry, config))
     objects = await open_objects(stack, config.objects)
+    modal_transports = TransportPool()
+    modal_transports.start()
+    stack.push_async_callback(modal_transports.close)
     tasks = Tasks()
     stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
     access = distribution.access()
@@ -203,6 +207,7 @@ async def open_runtime(
         settings=config,
         registry=registry,
         platform_mounts=platform_mounts,
+        modal_transports=modal_transports,
         metrics_queries=Queries(
             concurrency=config.monitoring.query_concurrency,
             timeout=config.monitoring.query_seconds,

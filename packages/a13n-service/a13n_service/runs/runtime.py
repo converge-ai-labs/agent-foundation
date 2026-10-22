@@ -10,6 +10,7 @@ from a13n_harness import HarnessInstrumentation
 from a13n_harness.environment import EnvironmentMount
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.modal.pool import TransportPool
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +43,7 @@ class Runtime:
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     tasks: Tasks
+    modal_transports: TransportPool | None = field(default=None, repr=False)
     metrics_queries: Queries = field(default_factory=Queries)
     metrics_proxy: Proxy | None = None
     workspace_created: WorkspaceCreated | None = None

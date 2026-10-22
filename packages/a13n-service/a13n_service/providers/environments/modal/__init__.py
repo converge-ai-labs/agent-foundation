@@ -37,7 +37,12 @@ class ModalProvider(BackendProvider[ModalConnectionConfiguration, ModalCredentia
         with desktop_operation(operation_id, "session"):
             async with self._operation(environment, environment_id, state, operation_id) as target:
                 assert isinstance(target, ModalManagement)
-                yield target
+                target.reuse_transport = True
+                try:
+                    yield target
+                except BaseException:
+                    target.discard_transport()
+                    raise
 
 
 async def provider(
