@@ -57,7 +57,7 @@ export const navigationGroups: {
   {
     label: "Observe",
     entries: [
-      ["monitoring", "Metrics dashboards", GaugeIcon],
+      ["monitoring", "Metrics", GaugeIcon],
       ["usage", "Usage", ChartBarIcon],
       ["traces", "Traces", PulseIcon],
     ],

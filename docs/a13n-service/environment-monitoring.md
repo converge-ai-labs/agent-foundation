@@ -7,7 +7,7 @@ Environment monitoring shows the resources used by an Envd target independently 
 
 ## Use dashboards in Console
 
-Open **Observe → Metrics dashboards** in your workspace. Select an environment or Device to view its configured metrics. The built-in **Environment overview** is editable, just like a custom dashboard.
+Open **Observe → Metrics** in your workspace. Select an environment or Device to view its configured metrics. The built-in **Environment overview** is editable, just like a custom dashboard.
 
 1. Select **Edit dashboard**. Add, edit or remove panels. Drag the panel handle to move a panel and its corner to resize it. The panel editor also accepts numeric position and size; small screens stack the saved layout.
 2. Choose a typed Environment / Device metric, or select a data source and write PromQL. PromQL requires workspace administrator access. Local Cache supports typed metrics, not arbitrary PromQL.

@@ -413,7 +413,6 @@
   "Usage is grouped by ingestion time. Runs are counted by start time; average time includes only sealed runs. Costs are in USD. Cached tokens are included in input tokens.": "用量按入库时间统计，运行次数按开始时间统计；平均耗时仅包含已结束的运行。费用以美元计价，缓存 Token 已包含在输入 Token 中。",
   "Use deployment query credentials": "使用部署查询凭据",
   "The server saves a credential snapshot. Later deployment changes do not update this source.": "服务器将保存凭据快照。后续部署配置的变化不会更新此数据源。",
-  "Metrics dashboards": "指标仪表盘",
   "Explore infrastructure metrics. Edit panels, queries and layout in one place.": "探索基础设施指标，在同一处编辑面板、查询和布局。",
   "Dashboard": "仪表盘",
   "Dashboard name": "仪表盘名称",
