@@ -572,15 +572,17 @@ class _Attempt:
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
             async with stream, asyncio.TaskGroup() as monitors:
                 interrupt = monitors.create_task(self._cancel_when_stopped(stream))
-                self.incoming = monitors.create_task(self._poll_input(stream))
+                if self.plan.host.execution.steering == "immediate":
+                    self.incoming = monitors.create_task(self._receive_input(stream))
                 try:
                     async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
                         async for item in stream:
                             await self._observe(item, output)
                 finally:
                     interrupt.cancel()
-                    self.incoming.cancel()
-                    self.incoming = None
+                    if self.incoming is not None:
+                        self.incoming.cancel()
+                        self.incoming = None
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
@@ -820,29 +822,32 @@ class _Attempt:
         self.offers.open.pop(entry.id, None)
         return None
 
-    async def _poll_input(self, stream: HarnessRunStream) -> None:
-        """Assign durable input during generation/tool waits; checkpoints still own incorporation."""
-        while True:
-            await asyncio.sleep(0.2)
-            if not self.boundaries.accepting_steers:
-                continue
-            try:
-                async with transaction(self.runtime.storage) as session:
-                    thread, run, _, _ = await lock_thread_lease(session, self.lease)
-                    await authorize_execution(session, self.runtime.access, run)
-                    entries = await inbox.assign_steers(
-                        session,
-                        thread,
-                        run,
-                        max_count=self.runtime.settings.worker.delivery_count,
-                        max_bytes=self.runtime.settings.worker.delivery_bytes,
-                        scan=self.runtime.settings.control.inbox_count,
-                    )
-                    offers = [Offered.of(entry) for entry in entries]
+    async def _receive_input(self, stream: HarnessRunStream) -> None:
+        """Immediate input uses ordinary mailbox assignment; checkpoints still own incorporation."""
+        async with self.runtime.mailbox.listen(self.lease.thread_id) as ready:
+            while True:
+                await ready.wait()
+                ready.clear()
+                if not self.boundaries.accepting_steers:
+                    continue
+                try:
+                    async with transaction(self.runtime.storage) as session:
+                        thread, run, _, _ = await lock_thread_lease(session, self.lease)
+                        await authorize_execution(session, self.runtime.access, run)
+                        entries = await inbox.assign_steers(
+                            session,
+                            thread,
+                            run,
+                            max_count=self.runtime.settings.worker.delivery_count,
+                            max_bytes=self.runtime.settings.worker.delivery_bytes,
+                            scan=self.runtime.settings.control.inbox_count,
+                        )
+                        offers = [Offered.of(entry) for entry in entries]
+                except ServiceError as error:
+                    if error.code != "unavailable":
+                        raise
+                    continue
                 await self._offer(stream, offers)
-            except ServiceError as error:
-                if error.code != "unavailable":
-                    raise
 
     async def _cancel_when_stopped(self, stream: HarnessRunStream) -> None:
         await self.control.stopped.wait()

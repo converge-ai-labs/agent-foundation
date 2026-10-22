@@ -404,6 +404,13 @@ class ToolExecutionRuntime:
         live.resource = resource
         live.resource_context = contextvars.copy_context()
 
+    def observe_resource(self, observation: object) -> None:
+        """Offer a live observation to the Host without I/O or waiting.
+
+        Hosts may coalesce these ephemeral snapshots independently of execution
+        and lease supervision. The default runtime does not retain observations.
+        """
+
     def resource(self, thread_id: str, execution_id: str) -> object | None:
         """Resolve a live resource only inside its exact owning Thread."""
         live = self._live.get(execution_id)

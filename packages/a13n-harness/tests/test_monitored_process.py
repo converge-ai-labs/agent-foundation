@@ -33,10 +33,10 @@ from a13n_harness.tool_execution import ToolExecutionConfig
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
     _ProcessController,
-    _project_stream,
     _validate_stream,
 )
 from a13n_harness.toolsets.shell import ShellToolset
+from a13n_harness.toolsets.shell_observation import _project_stream
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage

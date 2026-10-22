@@ -60,6 +60,7 @@ class Worker:
         async with asyncio.TaskGroup() as group:
             group.create_task(self._supervise(), name="lease-supervisor")
             group.create_task(self.runtime.executions.routing.run(self.id), name="shell-control-routing")
+            group.create_task(self.runtime.executions.output.run(), name="shell-output-cache")
             try:
                 while not self.stopping:
                     if self.free == 0:

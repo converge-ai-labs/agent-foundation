@@ -319,6 +319,7 @@ class ChildRuns(SubagentOperator):
             request=None,
             control=self.runtime.settings.control,
         )
+        self.runtime.mailbox.notify(session, entry)
         return entry
 
     async def _page(self, execution_id: str | None, offset: int, limit: int) -> tuple[list[_Execution], int]:

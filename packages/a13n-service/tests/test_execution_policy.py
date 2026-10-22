@@ -149,11 +149,43 @@ async def test_steer_cannot_change_execution_but_next_run_can(service, scripted_
 @pytest.mark.parametrize("mode", ["inline", "auto"])
 @pytest.mark.parametrize("steering", ["boundary", "immediate"])
 async def test_independent_modes_reach_worker(service, scripted_model, runs_kit, mode, steering, monkeypatch):
+    from a13n_harness import HarnessRunStream
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from a13n_service.infra.db import short_session
     from a13n_service.runs.host import Host
+    from a13n_service.runs.mailbox import Mailbox
+    from a13n_service.runs.tables import InboxEntryRow
 
     original = Host.capabilities
+    original_steer = HarnessRunStream.steer
+    delivered = []
+
+    async def steer(self, *args, **kwargs):
+        entry_id = kwargs["input_id"]
+        async with short_session(service.runtime.storage) as session:
+            entry = await session.get(InboxEntryRow, entry_id)
+            assert entry.status == "assigned"
+            assert entry.assigned_run_id == started["run"]["id"]
+            assert entry.incorporated_checkpoint_seq is None
+        delivered.append(entry_id)
+        return await original_steer(self, *args, **kwargs)
+
+    monkeypatch.setattr(HarnessRunStream, "steer", steer)
     captured = []
+    listened = []
+    original_listen = Mailbox.listen
+
+    def listen(self, thread_id):
+        listened.append(thread_id)
+        return original_listen(self, thread_id)
+
+    monkeypatch.setattr(Mailbox, "listen", listen)
+
+    async def no_remote_input(self, thread_ids):
+        return set()
+
+    # A local committed message must preempt without waiting for a database scan.
+    monkeypatch.setattr(Mailbox, "_pending", no_remote_input)
 
     def capabilities(self, agent, *, retain_tools=False):
         features = original(self, agent, retain_tools=retain_tools)
@@ -186,6 +218,16 @@ async def test_independent_modes_reach_worker(service, scripted_model, runs_kit,
     gate.set()
     await running
     assert captured == [{"tools": {"mode": mode, "foreground_wait_seconds": 0}, "steering": steering}]
+    assert listened == ([started["thread"]["id"]] if steering == "immediate" else [])
+    assert service.runtime.mailbox._task is None
+    entry_id = submitted.json()["entry"]["id"]
+    assert delivered == [entry_id]
+    async with short_session(service.runtime.storage) as session:
+        entry = await session.get(InboxEntryRow, entry_id)
+        assert entry.status == "consumed"
+        assert entry.assigned_run_id == started["run"]["id"]
+        assert entry.incorporated_checkpoint_seq is not None
+        assert entry.finished_at is not None
 
 
 async def test_resume_keeps_frozen_policy_after_thread_edit(service, scripted_model, runs_kit):

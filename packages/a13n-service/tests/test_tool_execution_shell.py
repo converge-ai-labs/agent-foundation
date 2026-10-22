@@ -13,6 +13,7 @@ from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
 from a13n_service.runs.tables import ToolExecutionRow
+from a13n_service.runs.tool_executions.output import key
 from a13n_service.runs.tool_executions.routing import Caller, Request
 from a13n_service.settings import LocalProvisioning, Provisioning
 
@@ -20,8 +21,9 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("cancel_owner", [False, True])
+@pytest.mark.parametrize("cached", [False, True])
 async def test_successor_worker_controls_original_shell(
-    serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cancel_owner
+    serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cancel_owner, cached, caplog
 ):
     settings = settings.model_copy(
         update={
@@ -56,12 +58,15 @@ async def test_successor_worker_controls_original_shell(
         )
         await runs_kit.start_thread(service, agent, "start shell")
         (origin,) = await claim(service.runtime, worker_id="worker-a", worker_build="test", limit=1)
-        scripted_model.call(
-            "shell_exec", {"command": 'printf ready; read line; printf "done:%s" "$line"'}, call_id="shell"
+        large_output = cached and not cancel_owner
+        command = (
+            "printf ready; " + ("printf %080000d 0; " if large_output else "") + 'read line; printf "done:%s" "$line"'
         )
+        scripted_model.call("shell_exec", {"command": command}, call_id="shell")
         scripted_model.say("Shell continues independently")
         owner = service.runtime.executions
         route = asyncio.create_task(owner.routing.run("worker-a"))
+        publisher = asyncio.create_task(owner.output.run()) if cached else None
         successor_runtime = replace(service.runtime)
         cleanup_started, cleanup_allowed = asyncio.Event(), asyncio.Event()
         try:
@@ -82,6 +87,11 @@ async def test_successor_worker_controls_original_shell(
             async with asyncio.timeout(5):
                 while owner.resource(origin.thread_id, record.execution_id) is None:
                     await asyncio.sleep(0.01)
+            if cached:
+                async with asyncio.timeout(5):
+                    while await owner.output.get(origin.thread_id, record.execution_id, "worker-a") is None:
+                        await asyncio.sleep(0.02)
+                assert 0 < await service.runtime.redis.ttl(key(record.execution_id)) <= 10
             resource = owner.resource(origin.thread_id, record.execution_id)
             native_handle = resource.controller._entry(resource.process_id).handle
             assert successor_runtime.executions.resource(origin.thread_id, record.execution_id) is None
@@ -130,6 +140,12 @@ async def test_successor_worker_controls_original_shell(
             with pytest.raises(EnvironmentError) as denied:
                 await successor_runtime.executions.routing.call("worker-a", denied_input)
             assert denied.value.details["dispatch_stage"] == "pre_dispatch"
+            if cached:
+                with pytest.raises(EnvironmentError) as denied:
+                    await successor_runtime.executions.cached_control(
+                        "worker-a", denied_input.model_copy(update={"control": ShellControl(operation="wait")})
+                    )
+                assert denied.value.details["dispatch_stage"] == "pre_dispatch"
             scripted_model.say("Read-only Run")
             await execute(successor_runtime, restricted, AttemptControl())
             listing = await service.client.get(mounts_url)
@@ -154,6 +170,11 @@ async def test_successor_worker_controls_original_shell(
             with pytest.raises(EnvironmentError) as denied:
                 await successor_runtime.executions.routing.call("worker-a", stale)
             assert denied.value.details["dispatch_stage"] == "pre_dispatch"
+            if cached:
+                with pytest.raises(EnvironmentError):
+                    await successor_runtime.executions.cached_control(
+                        "worker-a", stale.model_copy(update={"control": ShellControl(operation="inspect")})
+                    )
             assert (
                 await successor_runtime.executions.routing.call(
                     "worker-a", control.model_copy(update={"thread_id": "other-thread"})
@@ -170,16 +191,44 @@ async def test_successor_worker_controls_original_shell(
                 with pytest.raises(EnvironmentError) as denied:
                     await successor_runtime.executions.routing.call("worker-a", control)
                 assert denied.value.details["dispatch_stage"] == "pre_dispatch"
+                if cached:
+                    with pytest.raises(EnvironmentError):
+                        await successor_runtime.executions.cached_control(
+                            "worker-a", control.model_copy(update={"control": ShellControl(operation="inspect")})
+                        )
                 return
             assert (await owner.result(origin.thread_id, record.execution_id)).record.status == "running"
+            routed = []
+            if large_output:
+                snapshot = await owner.output.get(origin.thread_id, record.execution_id, "worker-a")
+                assert snapshot is not None
+                assert len(snapshot.stdout.data) == 80005, snapshot.model_dump(exclude={"stdout": {"data"}})
+            original_route = successor_runtime.executions.routing.call
+
+            async def track_route(worker_id, request):
+                routed.append(request.control.operation)
+                if cached:
+                    assert request.control.operation == "input", "Cache hit must not call the owner"
+                return await original_route(worker_id, request)
+
+            monkeypatch.setattr(successor_runtime.executions.routing, "call", track_route)
             scripted_model.call("shell_info", {"process_id": record.execution_id}, call_id="inspect")
             scripted_model.call("shell_wait", {"process_id": record.execution_id, "timeout_seconds": 0}, call_id="poll")
+            if large_output:
+                scripted_model.call(
+                    "shell_wait",
+                    {"process_id": record.execution_id, "stdout_offset": 70000, "timeout_seconds": 0},
+                    call_id="later-page",
+                )
             scripted_model.call(
                 "shell_input", {"process_id": record.execution_id, "data": "accepted\n"}, call_id="input"
             )
             scripted_model.say("Controlled original shell")
             await asyncio.wait_for(execute(successor_runtime, successor, AttemptControl()), 20)
-            assert (await runs_kit.get_run(service, successor.run_id))["status"] == "completed"
+            assert (await runs_kit.get_run(service, successor.run_id))["status"] == "completed", json.dumps(
+                [item.__dict__.get("exception_details") for item in caplog.records if item.levelname == "ERROR"],
+                indent=2,
+            )
             await asyncio.wait_for(cleanup_started.wait(), 5)
             refused = await stop_environment()
             assert refused.status_code == 409 and refused.json()["error"]["details"]["reason"] == "in_use", refused.text
@@ -189,23 +238,50 @@ async def test_successor_worker_controls_original_shell(
             assert (await stop_environment()).status_code == 202
             result = await successor_runtime.executions.result(origin.thread_id, record.execution_id)
             assert result.record.status == "succeeded", result
-            assert result.result["stdout"]["text"] == "readydone:accepted"
+            if large_output:
+                # Terminal results retain the ordinary model-output disclosure.
+                assert result.result["stdout"]["text"].startswith("ready")
+                assert result.result["stdout"]["text"].endswith("done:accepted")
+                assert result.result["stdout"]["produced_bytes"] == 80018
+                assert result.result["stdout"]["available_end"] == 80018
+                assert result.result["disclosure"]["truncated"]
+                assert result.result["disclosure"]["content_complete"]
+            else:
+                assert result.result["stdout"]["text"] == "readydone:accepted"
             assert resource.identity == native_handle.identity
             assert resource._closed
+            assert routed == ["input"] if cached else {"describe", "inspect", "wait", "input"} <= set(routed)
+            if cached:
+                assert await owner.output.get(origin.thread_id, record.execution_id, "worker-a") is not None
+                # Terminal DB state wins over still-present live bytes, without acknowledging a result.
+                assert (
+                    await successor_runtime.executions.cached_control(
+                        "worker-a", control.model_copy(update={"control": ShellControl(operation="inspect")})
+                    )
+                    is None
+                )
             returns = {
                 message["tool_call_id"]: json.loads(message["content"])
                 for request in [scripted_model.requests.get_nowait() for _ in range(scripted_model.requests.qsize())]
                 for message in request["messages"]
-                if message.get("role") == "tool" and message.get("tool_call_id") in {"inspect", "poll", "input"}
+                if message.get("role") == "tool"
+                and message.get("tool_call_id") in {"inspect", "poll", "input", "later-page"}
             }
             assert returns["inspect"]["status"]["phase"] == "running", returns
-            assert returns["poll"]["stdout"]["text"] == "ready", returns
+            assert returns["poll"]["stdout"]["text"].startswith("ready"), returns
+            if large_output:
+                assert returns["later-page"]["stdout"]["start_offset"] == 70000
+                assert returns["later-page"]["stdout"]["text"].startswith("0")
+                assert returns["later-page"]["stdout"]["available_end"] == 80005
             assert returns["input"]["accepted_bytes"] == len("accepted\n"), returns
         finally:
             cleanup_allowed.set()
             await owner.close()
             route.cancel()
             await asyncio.gather(route, return_exceptions=True)
+            if publisher is not None:
+                publisher.cancel()
+                await asyncio.gather(publisher, return_exceptions=True)
             await successor_runtime.executions.close()
             await successor_runtime.executions.routing.client.aclose()
 

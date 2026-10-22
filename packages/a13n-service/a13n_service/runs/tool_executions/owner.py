@@ -19,6 +19,7 @@ from a13n_harness.tool_execution import (
     current_execution,
 )
 from a13n_harness.toolsets.shell_control import ShellControl, ShellTarget
+from a13n_harness.toolsets.shell_observation import ShellObservation
 from pydantic import JsonValue
 from sqlalchemy import select
 
@@ -27,6 +28,7 @@ from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, autho
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, ToolExecutionRow
 from a13n_service.runs.tool_executions.authority import authorize_control, lock_execution, prove
+from a13n_service.runs.tool_executions.output import Output, Snapshot
 from a13n_service.runs.tool_executions.routing import Caller, Request, Routing
 from a13n_service.runs.tool_executions.store import ORIGIN, SEQUENTIAL, Store
 
@@ -59,6 +61,23 @@ class Executions(ToolExecutionRuntime):
     def routing(self) -> Routing:
         return Routing(self)
 
+    @cached_property
+    def output(self) -> Output:
+        return Output(self.runtime)
+
+    def observe_resource(self, observation: object) -> None:
+        record = current_execution()
+        if isinstance(observation, ShellObservation) and record is not None:
+            origin = self._origins[record.execution_id]
+            self.output.offer(
+                record.execution_id,
+                Snapshot(
+                    thread_id=record.thread_id,
+                    worker_id=origin.worker_id,
+                    observation=observation,
+                ),
+            )
+
     def admit(
         self,
         operation: Callable[[], Awaitable[Any]],
@@ -84,6 +103,7 @@ class Executions(ToolExecutionRuntime):
                     await release()
             finally:
                 self._origins.pop(record.execution_id, None)
+                self.output.forget(record.execution_id)
                 if host_release is not None:
                     await host_release()
 
@@ -168,7 +188,54 @@ class Executions(ToolExecutionRuntime):
         )
         if execution_id in self._origins:
             return await self.local_control(envelope)
+        if control.operation in {"describe", "inspect"} or (
+            control.operation == "wait" and control.timeout_seconds == 0
+        ):
+            cached = await self.cached_control(worker_id, envelope)
+            if cached is not None:
+                return cached
         return await self.routing.call(worker_id, envelope)
+
+    async def cached_control(self, worker_id: str, request: Request) -> dict[str, JsonValue] | None:
+        observation = await self.output.get(request.thread_id, request.execution_id, worker_id)
+        if observation is None:
+            return None
+        result = observation.read(request.execution_id, request.control)
+        if result is None:
+            return None
+        # Redis I/O precedes this short DB check. Completion/cancellation/lease loss
+        # takes precedence over any remaining output, including an in-flight publication.
+        try:
+            async with short_session(self.runtime.storage) as session:
+                row = await session.get(ToolExecutionRow, request.execution_id)
+                if row is None or row.thread_id != request.thread_id or row.completed_at is not None:
+                    return None
+                if row.worker_id != worker_id or request.expires_at <= await now(session):
+                    raise LeaseLost()
+                for caller, actions in (
+                    (
+                        Caller(
+                            run_id=row.run_id, attempt_id=row.attempt_id, worker_id=row.worker_id, execution_id=row.id
+                        ),
+                        frozenset(),
+                    ),
+                    (request.caller, request.control.actions),
+                ):
+                    await authorize_control(
+                        session,
+                        self.runtime,
+                        caller,
+                        thread_id=request.thread_id,
+                        environment_id=observation.target.identity.environment_id,
+                        actions=actions,
+                    )
+        except (LeaseLost, AuthorityRevoked):
+            raise EnvironmentError(
+                "Shell control authority is no longer current.",
+                code="environment_denied",
+                details={"dispatch_stage": "pre_dispatch"},
+            ) from None
+        return result
 
     async def local_control(self, request: Request) -> dict[str, JsonValue] | None:
         origin = self._origins.get(request.execution_id)

@@ -22,6 +22,7 @@ from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.runs.admission import AdmissionPolicy
+from a13n_service.runs.mailbox import Mailbox
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
@@ -53,6 +54,10 @@ class Runtime:
     plugins: HarnessPluginFactoryCatalog = field(default_factory=lambda: HarnessPluginFactoryCatalog(()))
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
+
+    @cached_property
+    def mailbox(self) -> Mailbox:
+        return Mailbox(self.storage, interval=self.settings.worker.authority_seconds)
 
     @cached_property
     def executions(self) -> Executions:

@@ -111,6 +111,7 @@ async def _append(
         request=request,
         control=runtime.settings.control,
     )
+    runtime.mailbox.notify(session, entry)
     return Source.message(entry, "input", actor, revision, overrides)
 
 
