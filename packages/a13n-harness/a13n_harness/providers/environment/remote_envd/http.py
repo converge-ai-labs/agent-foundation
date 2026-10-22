@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -123,7 +123,7 @@ class HttpEnvdProviderRuntime:
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
         session_recovery: EnvdSessionRecovery | None = None,
-    ) -> AsyncIterator[EIPSession]:
+    ) -> AsyncGenerator[EIPSession]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
         async with DeviceEIPSessionSource(
             device, target=self.configuration.endpoint, session_recovery=session_recovery

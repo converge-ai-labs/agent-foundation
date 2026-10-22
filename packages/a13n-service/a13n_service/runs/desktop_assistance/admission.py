@@ -1,7 +1,7 @@
 """Service admission at the Harness operation boundary. SQL never spans provider I/O."""
 
 import hashlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import anyio
@@ -116,7 +116,7 @@ async def admit_mounts(
 @asynccontextmanager
 async def operation(
     runtime: Runtime, lease: Lease, environment_id: str, state: EnvironmentState | None, action: EnvironmentAction
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None]:
     if execution_cleanup_active() and action in {
         EnvironmentAction.PROCESS_KILL,
         EnvironmentAction.PROCESS_WAIT,

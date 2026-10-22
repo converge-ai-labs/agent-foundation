@@ -1,7 +1,7 @@
 """Host-owned mount sources: inert registration, first-use lifecycle and fixed-target connectors."""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
@@ -85,7 +85,7 @@ class Source:
         return self.mount.environment_id
 
     @asynccontextmanager
-    async def operation_guard(self, action: EnvironmentAction) -> AsyncIterator[None]:
+    async def operation_guard(self, action: EnvironmentAction) -> AsyncGenerator[None]:
         async with AsyncExitStack() as stack:
             try:
                 await stack.enter_async_context(
@@ -237,7 +237,7 @@ async def open_mounts(
     configuration: RunConfiguration | None = None,
     skill_cache: Cache | None = None,
     envd_sessions: dict[str, EnvdSessionRecovery] | None = None,
-) -> AsyncIterator[dict[str, HarnessMount]]:
+) -> AsyncGenerator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
     async with transaction(runtime.storage) as session:

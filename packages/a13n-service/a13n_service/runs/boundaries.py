@@ -6,7 +6,7 @@ Parallel tools share one completion. Only the primary native run stages checkpoi
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -52,7 +52,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
 
     @asynccontextmanager
-    async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncIterator[None]:
+    async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncGenerator[None]:
         """Own the serial writer; failure cancels execution and wakes tool waiters."""
         try:
             async with asyncio.TaskGroup() as tasks:

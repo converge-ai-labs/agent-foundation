@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -57,7 +57,7 @@ def tls_contexts(tmp_path: Path) -> tuple[ssl.SSLContext, ssl.SSLContext]:
 @asynccontextmanager
 async def endpoint(
     *, context: ssl.SSLContext | None = None, proxy: bool = False, reject: bool = False
-) -> AsyncIterator[tuple[int, list[bytes]]]:
+) -> AsyncGenerator[tuple[int, list[bytes]]]:
     requests: list[bytes] = []
     writers: list[asyncio.StreamWriter] = []
     tasks: set[asyncio.Task[None]] = set()

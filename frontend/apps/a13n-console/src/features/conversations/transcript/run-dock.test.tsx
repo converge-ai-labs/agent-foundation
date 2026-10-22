@@ -574,7 +574,7 @@ it.each(["chat", "debug"])(
         .getByRole("link", { name: "Return to latest messages" })
         .getAttribute("href"),
     ).toBe(
-      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}`,
+      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}&follow=latest`,
     );
   },
 );

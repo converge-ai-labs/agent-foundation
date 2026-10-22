@@ -1,6 +1,6 @@
 """Fixed-target Daytona routing and credentials for the shared Envd connection."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
@@ -38,7 +38,7 @@ class HttpReference(DaytonaReference):
 @asynccontextmanager
 async def http_session(
     reference: DaytonaReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSession]:
     try:
         reference.require_target()
         target = await reference.lookup()

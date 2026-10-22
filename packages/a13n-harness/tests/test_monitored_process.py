@@ -4,7 +4,7 @@ import asyncio
 import re
 import sys
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,7 +99,7 @@ def _ctx(wait_seconds: float = 0) -> Any:
 async def _bound_process_environment(
     root: Path,
     operations: frozenset[EnvironmentAction] | None = None,
-) -> AsyncIterator[BoundEnvironment]:
+) -> AsyncGenerator[BoundEnvironment]:
     runtime = create_environment_runtime(
         mounts={
             "local": EnvironmentMount(

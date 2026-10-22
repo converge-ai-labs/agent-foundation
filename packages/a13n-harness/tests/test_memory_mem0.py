@@ -15,7 +15,7 @@ The request and response shapes follow the vendor references:
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -147,7 +147,7 @@ class FakeMem0:
 @asynccontextmanager
 async def _store(
     fake: FakeMem0, *, credential: dict[str, str] | None = None, namespace: str = NAMESPACE
-) -> AsyncIterator[RecordStore]:
+) -> AsyncGenerator[RecordStore]:
     definition = MEM0_PLATFORM if fake.api == "platform" else MEM0_OSS
     if credential is None and fake.api == "platform":
         credential = {"api_key": "m0-secret"}

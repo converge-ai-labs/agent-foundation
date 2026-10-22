@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
@@ -41,7 +41,7 @@ async def managed_http_runtime(
     load_credential: Callable[[], Awaitable[HttpEnvdCredential]],
     credential_cache: ManagedCredentialCache | None = None,
     target_id: str,
-) -> AsyncIterator[HttpEnvdProviderRuntime]:
+) -> AsyncGenerator[HttpEnvdProviderRuntime]:
     """Own a Device carrier on an already resolved, fixed target.
 
     Providers resolve ownership and routing on each attachment. Credentials are

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from a13n_envd_client import EIPSession
@@ -35,7 +35,7 @@ class HttpReference(DockerReference):
 @asynccontextmanager
 async def http_runtime(
     reference: DockerReference, *, credential_cache: ManagedCredentialCache | None = None
-) -> AsyncIterator[HttpEnvdProviderRuntime]:
+) -> AsyncGenerator[HttpEnvdProviderRuntime]:
     if reference.target is None:
         raise _missing()
     with engine_errors(mutation=False):
@@ -82,7 +82,7 @@ async def http_runtime(
 @asynccontextmanager
 async def http_session(
     reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSession]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference.allocation_id,

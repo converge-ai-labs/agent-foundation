@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -75,7 +75,7 @@ class HostClient(Client[ClientTransport]):
     @asynccontextmanager
     async def app_dispatch(
         self, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         async with self.connection.operation(authorize=authorize, operation=operation):
             self.connection.require_admission()
             self.connection._borrows += 1
@@ -151,7 +151,7 @@ class Connection:
     @asynccontextmanager
     async def operation(
         self, *, authorize: Callable[[], Awaitable[None]] | None = None, operation: Operation | None = None
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         task = asyncio.current_task()
         if task is self._active_task:
             # An App authorization scope can call a normal SDK tool method without

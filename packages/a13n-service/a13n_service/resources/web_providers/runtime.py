@@ -5,7 +5,7 @@ the host transport and need no provider resource. Which operation a provider ser
 revision selecting it was validated.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import anyio
@@ -23,7 +23,7 @@ from a13n_service.resources.providers.service import ResolvedProvider
 @asynccontextmanager
 async def open_search_backend(
     provider: ResolvedProvider, options: SearchOptions, *, registry: Registry, keys: KeyRing, policy: EndpointPolicy
-) -> AsyncIterator[WebSearchBackendBinding]:
+) -> AsyncGenerator[WebSearchBackendBinding]:
     async with _open(provider, options, registry=registry, keys=keys, policy=policy) as handle:
         yield WebSearchBackendBinding(provider.id, handle)
 
@@ -31,7 +31,7 @@ async def open_search_backend(
 @asynccontextmanager
 async def open_scrape_backend(
     provider: ResolvedProvider, options: ScrapeOptions, *, registry: Registry, keys: KeyRing, policy: EndpointPolicy
-) -> AsyncIterator[WebScrapeBackendBinding]:
+) -> AsyncGenerator[WebScrapeBackendBinding]:
     async with _open(provider, options, registry=registry, keys=keys, policy=policy) as handle:
         yield WebScrapeBackendBinding(provider.id, handle, handle.supports_domain_restrictions)
 
@@ -44,7 +44,7 @@ async def _open(
     registry: Registry,
     keys: KeyRing,
     policy: EndpointPolicy,
-) -> AsyncIterator[WebProvider]:
+) -> AsyncGenerator[WebProvider]:
     """One backend owns its HTTP pool for the attempt; exchanges close only their responses."""
     client = provider_client()
     try:

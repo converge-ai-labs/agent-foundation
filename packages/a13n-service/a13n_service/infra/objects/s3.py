@@ -1,6 +1,6 @@
 """S3-compatible object store; keys are written once, so every write is a plain `PutObject`."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -106,7 +106,7 @@ async def open_s3(
     secret_access_key: str | None,
     max_bytes: int,
     timeout: float,
-) -> AsyncIterator[S3Objects]:
+) -> AsyncGenerator[S3Objects]:
     """Credentials default to the standard AWS provider chain when no static keys are configured."""
     async with AsyncExitStack() as stack:
         client = await stack.enter_async_context(

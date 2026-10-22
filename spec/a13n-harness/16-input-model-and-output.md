@@ -425,21 +425,28 @@ For one non-streaming request, the wrapper:
 
 1. calls the wrapped Model;
 2. on an exception, finds the first exact configured recovery rule that matches;
-3. mutates the request-local message list through that rule;
+3. mutates the supplied in-memory message objects through that rule;
 4. retries the request once only when the repair changed at least one value;
 5. otherwise re-raises the original exception.
 
-For streaming, only stream establishment can replay. Once a stream has been yielded, emitted content cannot be retracted; a later interruption belongs to the `ModelAttempt` recovery loop.
+For streaming, only stream establishment can replay. This boundary is the wrapped adapter yielding its stream, not the HTTP status or the first text token. A leading SSE error read by the adapter before it yields is eligible even after HTTP 200. An error after the adapter yields, including after Anthropic `message_start` with no text yet, propagates without this repair. Later interruptions are subject to the separate `ModelAttempt` recovery policy.
+
+The retry uses the same Model, settings, and request parameters, and does not restart the Agent or re-execute tools. A second failure propagates without another repair or rollback. The wrapper writes no database or checkpoint. Shared message objects expose the mutation to live history and subsequent `HarnessState` exports; earlier snapshots remain unchanged. Request-only projections that detach response envelopes, including image projection, keep the mutation local to the projected request. Host checkpoint and terminal-save boundaries own persistence.
 
 Default rules are narrow tested provider repairs:
 
-| Rule                                            | Repair                                                                              |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Oversized request payload                       | Replace inline images and videos with explicit removal reminders                    |
-| Invalid provider item ID                        | Remove provider-bound response IDs, metadata, reasoning state, and compaction parts |
-| Incomplete Anthropic thinking                   | Remove thinking parts                                                               |
-| Modified or invalidly signed Anthropic thinking | Remove thinking parts                                                               |
-| Stale or unverifiable reasoning                 | Remove thinking parts                                                               |
+| Rule                                 | Repair                                                                              |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| Oversized request payload            | Replace inline images and videos with explicit removal reminders                    |
+| Invalid provider item ID             | Remove provider-bound response IDs, metadata, reasoning state, and compaction parts |
+| Incomplete Anthropic thinking        | Remove thinking parts                                                               |
+| Invalid Anthropic thinking signature | Remove all thinking parts, including redacted thinking                              |
+| Modified Anthropic thinking          | Remove thinking parts                                                               |
+| Stale or unverifiable reasoning      | Remove thinking parts                                                               |
+
+The `anthropic_invalid_thinking_signature` rule matches explicit invalid-signature-in-thinking-block errors in a `ModelAPIError` message or body, including nested or JSON-serialized upstream errors. Matching is case-insensitive and accepts unquoted, backtick, single-quoted, and double-quoted `signature` and `thinking`. Existing block-first errors such as `thinking block has an invalid signature` and `thinking block signature is invalid`, including `redacted_thinking`, remain supported. HTTP status, gateway codes, and Model names alone do not trigger this rule; unrelated authentication signatures and thinking configuration errors remain failures.
+
+Signature recovery removes every complete `ThinkingPart` from all supplied historical assistant messages, including `id="redacted_thinking"`. Native Anthropic serialization therefore omits both `thinking` and `redacted_thinking` blocks on retry. It preserves other content and order, response metadata, tool-call IDs, names and arguments, and completed tool results. This is lossy removal of old reasoning state, including later dependent thinking, rather than signature repair. It neither clears signatures in place nor converts reasoning to text. Current-request thinking settings remain enabled as configured; no `drop_block` support, extra beta header, or provider-specific field is required. Successful requests leave history unchanged; a matching error with no thinking to remove is re-raised without replay.
 
 Oversized image/video reminders inserted into native user-prompt parts are `TextContent` with canonical slot annotations `display: false` and source ID `a13n.model.self-healing`, preserving opaque application references. They remain model-visible recovery instructions, not human-authored submissions. Ordinary user text in the same prompt is retained. Tool-return reminders remain tool content. Original media files and retained video history are unchanged; further inspection should use a smaller resource rather than repeatedly attaching the same oversized original.
 

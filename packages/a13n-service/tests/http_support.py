@@ -2,7 +2,7 @@
 
 import asyncio
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -24,7 +24,7 @@ class _Server(uvicorn.Server):
 
 
 @asynccontextmanager
-async def serve_http(app: Any, *, lifespan: Literal["auto", "on", "off"] = "auto") -> AsyncIterator[str]:
+async def serve_http(app: Any, *, lifespan: Literal["auto", "on", "off"] = "auto") -> AsyncGenerator[str]:
     """Serve on an ephemeral port; cancel unfinished responses after 0.1 s during shutdown."""
     server = _Server(
         uvicorn.Config(

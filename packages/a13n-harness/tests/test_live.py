@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -127,7 +127,7 @@ class _Model(RealtimeModel):
         messages: Sequence[ModelMessage],
         model_settings: RealtimeModelSettings | None,
         model_request_parameters: ModelRequestParameters,
-    ) -> AsyncIterator[RealtimeConnection]:
+    ) -> AsyncGenerator[RealtimeConnection]:
         self.messages = messages
         self.parameters = model_request_parameters
         self.opened = True

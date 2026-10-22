@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any, Unpack
@@ -36,7 +36,7 @@ class ObservedTransport(ClientTransport):
         *,
         transport_options: TransportOptions | None = None,
         **session_kwargs: Unpack[SessionKwargs],
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession]:
         options = transport_options or TransportOptions()
         on_closed, before_request, wrapped = self.on_closed, self.before_request, self.wrapped
 
