@@ -4,7 +4,12 @@ import asyncio
 import json
 import shlex
 import sys
+import tarfile
 from datetime import UTC, datetime, timedelta
+from email import policy
+from email.parser import BytesParser
+from io import BytesIO
+from pathlib import Path
 
 import a13n_service.providers.environment.native as native_environment
 import httpx2
@@ -59,6 +64,7 @@ class NativeCloud:
         if (
             self.key == "vercel"
             and request.method == "POST"
+            and not request.url.path.endswith("/fs/write")
             and request.headers.get("content-type") != "application/json"
         ):
             return httpx2.Response(415)
@@ -72,7 +78,26 @@ class NativeCloud:
             else:
                 self.delete_pending -= 1
         path = request.url.path
+        if path.endswith("/fs/write"):
+            assert request.headers["content-type"] == "application/gzip"
+            with tarfile.open(fileobj=BytesIO(request.content), mode="r:gz") as archive:
+                (member,) = archive.getmembers()
+                destination = Path(request.headers["x-cwd"]) / member.name
+                destination.write_bytes(archive.extractfile(member).read())
+                destination.chmod(member.mode)
+            return httpx2.Response(200, json={})
+        if path.endswith("/upload_file"):
+            message = BytesParser(policy=policy.default).parsebytes(
+                ("Content-Type: " + request.headers["content-type"] + "\r\n\r\n").encode() + request.content
+            )
+            parts = {part.get_param("name", header="content-disposition"): part for part in message.iter_parts()}
+            Path(parts["path"].get_payload(decode=True).decode()).write_bytes(parts["file"].get_payload(decode=True))
+            return httpx2.Response(200, json={})
         body = json.loads(request.content) if request.content else {}
+        if path.endswith(("/fs/read", "/download_file")):
+            return httpx2.Response(
+                200, content=Path(body["path"]).read_bytes(), headers={"content-type": "application/octet-stream"}
+            )
         if path.endswith("/process/execute") or path.endswith("/execute_sync") or path.endswith("/cmd"):
             argv = [body["command"], *body["args"]] if self.key == "vercel" else shlex.split(body["command"])
             process = await asyncio.create_subprocess_exec(

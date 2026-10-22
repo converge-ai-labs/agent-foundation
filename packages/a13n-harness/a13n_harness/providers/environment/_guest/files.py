@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import ctypes
 import errno
+import hashlib
 import json
 import os
 import re
@@ -279,6 +280,16 @@ def execute(request: dict) -> dict:
             return {"data": base64.b64encode(file.read(arguments["length"])).decode()}
     if action == "publish":
         staged = resolve(root, arguments["staged"])
+        require_regular_file(staged)
+        if "digest" in arguments:
+            if staged.stat().st_size != arguments["size"] or arguments["size"] > config["max_file_bytes"]:
+                raise ValueError("upload size mismatch")
+            with staged.open("rb") as candidate:
+                digest = hashlib.sha256()
+                while chunk := candidate.read(65536):
+                    digest.update(chunk)
+                if digest.hexdigest() != arguments["digest"]:
+                    raise ValueError("upload checksum mismatch")
         mode = arguments["mode"]
         if mode == "create":
             os.link(staged, path)
