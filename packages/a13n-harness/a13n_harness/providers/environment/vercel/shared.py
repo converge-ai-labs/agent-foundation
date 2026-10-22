@@ -48,6 +48,8 @@ class VercelEnvironmentConfiguration(CommandConfiguration):
     def fingerprint(self) -> str:
         # Existing native targets keep their exact pre-Envd recipe identity.
         excluded = {"desktop_assistance"}
+        if not self.environment:
+            excluded.add("environment")
         if self.execution == "native":
             excluded.update({"execution", "snapshot", "desktop"})
         return hashlib.sha256(self.model_dump_json(exclude=excluded).encode()).hexdigest()

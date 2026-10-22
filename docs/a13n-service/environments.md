@@ -87,6 +87,14 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
 
+### Default environment variables
+
+Every built-in provider supports `config.recipe.environment`, for example `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`. Add these in the template editor's **Environment variables** section. Commands and their normal child processes receive these defaults; explicit command values override them, and supported command unsets remove them. This does not add Agent, Thread or Run-level variable settings.
+
+Defaults freeze with the recipe when creation is first dispatched. Editing a template does not update an existing instance, including after stop/start or snapshot resume. Create a new instance to use changed defaults. Local providers also require each name in `allowed_environment_keys` (or an unrestricted null allowlist).
+
+Use portable names (`APP_MODE`, not `app-mode`) and string values; empty values are allowed. These values are readable ordinary configuration: do not put credentials here. Platform bootstrap, desktop and telemetry names (`A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY`, `XAUTHORITY`) are reserved. Provider credentials and existing secret bindings retain their separate controls.
+
 ### Docker image versions
 
 Leave `recipe.image` unset to use the Service-reviewed `ghcr.io/converge-ai-labs/a13n-sandbox` release. Sandbox versions belong to Envd, not to Service:

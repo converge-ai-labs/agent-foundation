@@ -55,6 +55,12 @@ Envd-backed Environment Providers use `a13n-envd-client` to perform Agent operat
 
 Each definition projects a configured descriptor without target I/O; Environment connector opening validates the live descriptor before exposing execution operations. The Host may restrict declared operations through its authorization policy, and the Harness applies those restrictions before dispatch; the provider implements its advertised capabilities. Stable environment identity is allocated by the Host per Environment and supplied at construction, never frozen into a reusable recipe; a Provider may retain its non-secret ownership correlation in state or labels to recover a dispatched creation.
 
+### Command Environment Defaults
+
+Local, Docker and the six managed cloud execution configurations expose `environment: dict[str, str]`, defaulting to empty. Each adapter combines defaults with the command's explicit set/unset immediately before dispatch. Explicit values win; supported unsets remove defaults. The resulting environment reaches ordinary child processes without changing the Host environment. Envd-backed managed providers send the same values through EIP command requests and retain daemon-side restrictions. Direct Local validates defaults against its allowed environment keys. Defaults are ordinary configuration, not a credential source; platform-owned bootstrap, telemetry and desktop variables cannot be supplied in this map. Service recipe lifecycle and validation are specified in [Environment management](../a13n-service/06a-environment-management.md#default-command-environment).
+
+Omitted or empty defaults preserve existing provider target fingerprints. Nonempty defaults participate in recipe identity; serialized key ordering must not change that identity.
+
 ### Direct Local
 
 `direct_local` denotes access to an existing Host-controlled directory over the embedding operating system. Its recipe declares the root, optional shell profiles, allowed executables, environment-inheritance policy, and finite value, process, wall-time, buffer, and spool limits. The root, shell executables, and allowed executables are absolute after user expansion; profile IDs are unique. The root is always writable: the Harness can withhold file-write actions under Host policy, but that restriction cannot constrain an allowed native process running under the embedding OS account. The account configuration is empty: the Host filesystem is the backend.

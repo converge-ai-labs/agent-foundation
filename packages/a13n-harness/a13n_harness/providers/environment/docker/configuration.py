@@ -8,6 +8,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
+from a13n_harness.providers.environment._variables import EnvironmentVariables
 
 DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:dev"
 
@@ -78,7 +79,7 @@ class DockerEnvironmentConfiguration(BaseModel):
         title="Host directory mounts",
         description="Existing host directories; source, target and read_only. External data survives Environment deletion.",
     )
-    environment: dict[str, str] = Field(default_factory=dict)
+    environment: EnvironmentVariables = Field(default_factory=dict)
     init_script: str | None = Field(
         default=None,
         max_length=1_048_576,

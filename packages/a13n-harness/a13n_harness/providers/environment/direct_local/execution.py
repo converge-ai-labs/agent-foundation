@@ -61,6 +61,8 @@ class DirectLocalExecution(DirectLocalReference, ExecutionBackend):
         root = await asyncio.to_thread(_resolve_shared_root, self._configuration.root.path)
         policy = self._configuration.model_dump(mode="json")
         policy["root"] = {"path": str(root)}
+        if not self._configuration.environment:
+            policy.pop("environment", None)
         for field in ("allowed_executables", "allowed_environment_keys", "allowed_ports"):
             if policy[field] is not None:
                 policy[field] = sorted(policy[field])
@@ -88,6 +90,7 @@ class DirectLocalExecution(DirectLocalReference, ExecutionBackend):
                 max_spool_bytes=self._configuration.max_spool_bytes,
             )
             processes = LocalProcessManager(
+                environment=self._configuration.environment,
                 files=files,
                 retention=retention,
                 policy=_DirectLocalProcessPolicy(

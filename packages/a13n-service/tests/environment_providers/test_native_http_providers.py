@@ -174,7 +174,9 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
         monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
         monkeypatch.setattr(native_environment, "_DELETE_POLL_SECONDS", 0.01)
         definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)[key]
-        config = definition.validate_environment({"root": str(tmp_path), "python": sys.executable})
+        config = definition.validate_environment(
+            {"root": str(tmp_path), "python": sys.executable, "environment": {"APP_MODE": "agent-default"}}
+        )
         provider = await definition.open_provider(
             configuration=BACKENDS[key], credential={"api_key": "fixture-private-token"}
         )
@@ -194,6 +196,7 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
             )
 
         state = await manage("create")
+        assert cloud.target["environment_variables" if key == "runloop" else "env"] == {"APP_MODE": "agent-default"}
         assert "fixture-private-token" not in state.model_dump_json()
         state = EnvironmentState.model_validate_json(state.model_dump_json())
         before = list(cloud.calls)
@@ -239,6 +242,15 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
         assert all(method == "GET" for method, _ in cloud.calls[len(before) :])
         state = await manage("start", state)
         second = await connector(state).open()
+        default_result = await second.operations.shell.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="default", script="sh -c 'printf %s \"$APP_MODE\"'"),
+                output_policy=EnvironmentOutputPolicy(
+                    max_inline_bytes=1024, max_output_bytes=1024, overflow="truncate"
+                ),
+            )
+        )
+        assert default_result.output.stdout.inline == b"agent-default"
         assert second.execution_id != first.execution_id
         assert (await second.operations.files.read_text("/data")).text == f"{key} files"
         assert second.descriptor.backing_identity == old_identity

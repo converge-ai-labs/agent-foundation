@@ -51,10 +51,12 @@ class RemoteEnvdExecution(ExecutionBackend):
         state: EnvironmentState,
         session_context: AbstractAsyncContextManager[EIPSession],
         working_directory: str | None = None,
+        environment: dict[str, str] | None = None,
     ) -> None:
         super().__init__(state)
         self._provider_key = provider_key
         self._environment_id = environment_id
+        self._environment = dict(environment or {})
         self._session_context = session_context
         self._entered_session = False
         self._bound: EIPEnvironmentSession | None = None
@@ -95,6 +97,7 @@ class RemoteEnvdExecution(ExecutionBackend):
                 provider_key=self.provider_key,
                 environment_id=self.environment_id,
                 execution_id=execution_id,
+                environment=self._environment,
             )
             self._descriptor = self._bound.descriptor
             self._operations = self._bound.operations

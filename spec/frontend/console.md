@@ -56,6 +56,8 @@ Built-in tool settings use the [Service catalogue](../a13n-service/04-resources.
 
 Saving Agent configuration explains that the new version becomes the default for new work, while active work and approval continuations retain their accepted version. Save changes is the normal editing action; saved version identities and history remain inspectable.
 
+Environment template editors expose an Environment variables key/value section for every built-in provider. Empty values are valid; blank, invalid or duplicate names block form submission. Values are identified as ordinary readable configuration, not credentials. Docker standard/desktop preset switches preserve these variables together with CPU, memory and mounts; read-only users cannot edit them.
+
 ## Agent Configuration Transfer
 
 When creation is authorized, the Agent list and its empty state expose Create with AI as the primary action and Create manually as a separate split button whose menu offers Import YAML; readable saved Agent revisions offer Export. The Console owns the Agent file format; the Service only creates Agents and revisions ([resources](../a13n-service/04-resources.md#operations)). An Agent file is a YAML mapping with exactly `schema_version` (currently `1`), `name`, `description` and `config`, where `config` is an [AgentConfig](../a13n-service/04-resources.md#agents); any other `schema_version` is rejected. Files are at most 1 MB and use the YAML core schema with string keys, finite numbers, bounded nesting and no aliases or custom tags. Export identifies the selected saved revision, excludes credentials and dependent resource creation, and offers a readable overview, complete YAML, copy feedback and download. Unsaved form input is not exported.

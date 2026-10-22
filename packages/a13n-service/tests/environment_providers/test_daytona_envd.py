@@ -46,7 +46,14 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         return execution
 
     monkeypatch.setattr(management, "http_execution", connect)
-    recipe = DAYTONA.validate_environment({"snapshot": "envd-snapshot", "desktop": True, "request_timeout_seconds": 1})
+    recipe = DAYTONA.validate_environment(
+        {
+            "snapshot": "envd-snapshot",
+            "environment": {"APP_MODE": "agent-default"},
+            "desktop": True,
+            "request_timeout_seconds": 1,
+        }
+    )
     async with await DAYTONA.open_provider(
         configuration=BACKENDS["daytona"], credential={"api_key": "fixture"}
     ) as provider:
@@ -73,6 +80,7 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
             assert cloud.count == 1
         state = await manage("create")
         assert cloud.target["env"]["A13N_ENVD_DEVICE_ID"] == "env-fixture"
+        assert cloud.target["env"]["APP_MODE"] == "agent-default"
         assert cloud.target["env"]["A13N_DESKTOP"] == "true"
         assert cloud.target["env"]["A13N_DESKTOP_ACCESS"] == "false"
         assert not any("computeruse" in path for _, path in cloud.calls)
@@ -86,6 +94,7 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         await manage("stop", state)
         assert cloud.target["state"] == "stopped"
         assert await manage("start", state) == state
+        assert cloud.target["env"]["APP_MODE"] == "agent-default"
         assert cloud.count == 1
         if fault == "deletion":
             cloud.delete_pending = 100

@@ -20,6 +20,7 @@ from a13n_harness.environment.commands import (
 from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
 from a13n_harness.environment.retention import EnvironmentOutputCapture
 from a13n_harness.providers.environment._guest_commands import collect_range, file_helper_source
+from a13n_harness.providers.environment._variables import with_defaults
 from a13n_harness.providers.environment.native.configuration import CommandConfiguration
 
 # Native exec returns the bounded stdout of one helper, with no retry after dispatch.
@@ -124,6 +125,7 @@ class NativeCommands:
         )
 
     async def exec(self, request: CommandRequest) -> ShellExecResult:
+        request = with_defaults(request, self.configuration.environment)
         config = self.configuration
         unsupported = (
             request.network != "configured"

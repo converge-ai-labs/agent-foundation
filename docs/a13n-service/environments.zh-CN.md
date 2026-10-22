@@ -87,6 +87,14 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
 
+### 默认环境变量
+
+所有内置 Provider 都支持 `config.recipe.environment`，例如 `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`。在模板编辑器的**环境变量**区域添加即可。命令及其普通子进程会收到这些默认值；命令显式指定的值优先，支持 unset 的执行路径也可移除默认值。本功能不增加 Agent、Thread 或 Run 层的变量配置。
+
+首次派发创建时，默认变量随 recipe 一起冻结。修改模板不会更新已有实例，停止后启动或从快照恢复也继续使用原值。要使用新值，请创建新实例。Local Provider 还要求变量名列入 `allowed_environment_keys`（或将该白名单设为不限制的 null）。
+
+变量名使用可移植格式（如 `APP_MODE`，不能使用 `app-mode`），值为字符串，可为空。这些值是可读取的普通配置，不用于存放凭据。平台启动、桌面和遥测变量名（`A13N_ENVD_*`、`EIP_*`、`A13N_DESKTOP*`、`OTEL_*`、`DISPLAY`、`XAUTHORITY`）保留给平台使用。Provider 凭据和已有的 secret binding 仍使用各自的控制机制。
+
 ### Docker 镜像版本
 
 不设置 `recipe.image` 时，使用 Service 审定的 `ghcr.io/converge-ai-labs/a13n-sandbox` 版本。sandbox 版本由 Envd 管理，不跟随 Service 版本号：

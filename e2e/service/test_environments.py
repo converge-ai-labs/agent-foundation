@@ -9,6 +9,7 @@ under `--require-all`.
 
 import asyncio
 import os
+import shlex
 import subprocess
 import sys
 from collections.abc import AsyncGenerator
@@ -215,10 +216,35 @@ async def delete(api, path: str, timeout: float) -> None:  # type: ignore[no-unt
     await eventually(deleted, timeout=timeout)
 
 
+DEFAULT_VARIABLES = {"APP_MODE": "agent-default", "TOOL_ENDPOINT": "https://example.test/a?q='中文;$HOME", "EMPTY": ""}
+
+
+def check_defaults(mode: str = "agent-default") -> str:
+    """Exercise actual guest processes; values must remain literal and reach their children."""
+    expected = {**DEFAULT_VARIABLES, "APP_MODE": mode}
+    script = (
+        "import os,sys,subprocess,json; "
+        f"expected={expected!r}; "
+        "assert {key:os.environ[key] for key in expected} == expected; "
+        "child=subprocess.check_output([sys.executable,'-c','import os,json; print(json.dumps(dict(os.environ)))'],text=True); "
+        "assert all(json.loads(child)[key] == value for key,value in expected.items()); "
+        "print('defaults-ok')"
+    )
+    return "python3 -c " + shlex.quote(script)
+
+
 async def use_environment(stack, account: Backend, cleanup: list[str]) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     # Hosted sandboxes take longer to create, stop and delete than a local container.
     timeout = 120 if account.type in {"local", "docker"} else 300
+    account = replace(
+        account,
+        recipe={
+            **account.recipe,
+            "environment": DEFAULT_VARIABLES,
+            **({"allowed_environment_keys": list(DEFAULT_VARIABLES)} if account.type == "local" else {}),
+        },
+    )
     template_id = await create_template(api, account)
     types = expect(await api.client.get("/api/v1/provider-types/environment"), 200)["items"]
     [described] = [item for item in types if item["type"] == account.type]
@@ -226,7 +252,7 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
         "Builder", await api.create_model(model.base_url), default_environment_template_id=template_id
     )
 
-    command = "echo live-$((6 * 7)) > proof.txt && cat proof.txt"
+    command = check_defaults() + " && echo live-$((6 * 7)) > proof.txt && cat proof.txt"
     if account.type == "docker":
         # Native execution must not inherit the sandbox image's root daemon identity.
         command = (
@@ -245,8 +271,35 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     assert (run["status"], run["output"]) == ("completed", "Written."), run["failure"]
     [_, answered] = await model.requests("[write]")
     assert "live-42" in tool_results(answered)[0]
+    assert "defaults-ok" in tool_results(answered)[0]
     assert expect(await api.client.get(path), 200)["status"] == "ready"
     assert await account.exists(environment_id)
+
+    # Command values override defaults without leaking into the next command in the same Run.
+    for index, value in enumerate(("override", "", "agent-default")):
+        await model.call(
+            "shell_exec",
+            {"command": check_defaults(value), **({"environment": {"APP_MODE": value}} if index < 2 else {})},
+            call_id=f"call_defaults_{index}",
+            to="[defaults]",
+        )
+    await model.say("Defaults checked.", to="[defaults]")
+    overrides = (await api.send(thread_id, agent, "[defaults] Check command defaults"))["run"]
+    assert (await api.sealed(overrides["id"], timeout=timeout))["status"] == "completed"
+    for answered in (await model.requests("[defaults]"))[1:]:
+        assert "defaults-ok" in tool_results(answered)[-1]
+
+    # Template edits must not change the retained instance, including after resume.
+    template_path = f"/api/v1/environment-templates/{template_id}"
+    saved = await api.client.get(template_path)
+    configuration = expect(saved, 200)["config"]
+    configuration["recipe"]["environment"] = {**DEFAULT_VARIABLES, "APP_MODE": "template-edited"}
+    expect(
+        await api.client.patch(
+            template_path, json={"config": configuration}, headers={"if-match": saved.headers["etag"]}
+        ),
+        200,
+    )
 
     # Stopping waits for no run; the next run starts the stopped instance, whose files survived.
     if described["supports_stop"]:
@@ -263,12 +316,14 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
         await model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="call_read", to="[read]")
     else:
         await model.call("shell_exec", {"command": "cat proof.txt"}, call_id="call_read", to="[read]")
+    await model.call("shell_exec", {"command": check_defaults()}, call_id="call_defaults_resumed", to="[read]")
     await model.say("Read.", to="[read]")
     again = (await api.send(thread_id, agent, "[read] Read the proof"))["run"]
     assert again["environment_mounts"] == [mount]
     assert (await api.sealed(again["id"], timeout=timeout))["status"] == "completed"
-    [_, answered] = await model.requests("[read]")
-    assert "live-42" in tool_results(answered)[0]
+    answered = (await model.requests("[read]"))[-1]
+    assert any("live-42" in result for result in tool_results(answered))
+    assert "defaults-ok" in tool_results(answered)[-1]
     assert expect(await api.client.get(path), 200)["status"] == "ready"
 
     # Deletion requires the thread to stop mounting it first, then removes the instance.

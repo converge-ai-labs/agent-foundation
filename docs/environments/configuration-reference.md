@@ -30,6 +30,7 @@ All six cloud Providers use the same recipe, backend, and private-credential bou
 | `root`                     | true     | DirectLocalRootConfiguration     | —                                       |
 | `shell_profiles`           | false    | array of DirectLocalShellProfile | default=[]                              |
 | `allowed_executables`      | false    | array of string                  | uniqueItems=true; default=[]            |
+| `environment`              | false    | EnvironmentVariables             | —; default from model factory           |
 | `inherit_environment`      | false    | boolean                          | default=false                           |
 | `allowed_environment_keys` | false    | array of string or null          | uniqueItems=true; default=[]            |
 | `allowed_ports`            | false    | array of integer                 | uniqueItems=true; default=[]            |
@@ -55,6 +56,12 @@ All six cloud Providers use the same recipe, backend, and private-credential bou
 | `fixed_arguments` | false    | array of string       | default=[]                 |
 | `dialect`         | false    | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false    | boolean               | default=false              |
+
+## `EnvironmentVariables`
+
+Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.
+
+Choices: `object`.
 
 ## `LocalEnvdEnvironmentConfiguration`
 
@@ -222,7 +229,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `execution`                   | false    | "native" or "envd_http"           | default="native"                                                                 |
 | `desktop`                     | false    | boolean                           | default=false                                                                    |
 | `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
-| `environment`                 | false    | object                            | —; default from model factory                                                    |
+| `environment`                 | false    | EnvironmentVariables              | —; default from model factory                                                    |
 | `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
 | `disable_network`             | false    | boolean                           | default=false                                                                    |
 | `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                         |
@@ -258,6 +265,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `template`                  | false    | string                | minLength=1; maxLength=256; default="base"                |
 | `execution`                 | false    | "native", "envd_http" | default="native"                                          |
 | `desktop`                   | false    | boolean               | default=false                                             |
+| `environment`               | false    | EnvironmentVariables  | —; default from model factory                             |
 | `root`                      | false    | string                | default="/home/user"                                      |
 | `user`                      | false    | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false    | string                | default="/usr/bin/python3"                                |
@@ -273,27 +281,30 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                      |
-| ------------------------- | -------- | -------------- | -------------------------------------------- |
-| `snapshot`                | true     | string         | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean        | default=false                                |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120 |
+| Field                     | Required | Type / choices       | Constraints and default                      |
+| ------------------------- | -------- | -------------------- | -------------------------------------------- |
+| `snapshot`                | true     | string               | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean              | default=false                                |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
 
 ## `ModalEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                      |
-| ------------------------- | -------- | -------------- | -------------------------------------------- |
-| `image`                   | true     | string         | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean        | default=false                                |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer        | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number         | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer        | minimum=128; maximum=262144; default=1024    |
+| Field                     | Required | Type / choices       | Constraints and default                      |
+| ------------------------- | -------- | -------------------- | -------------------------------------------- |
+| `image`                   | true     | string               | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean              | default=false                                |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false    | integer              | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false    | number               | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false    | integer              | minimum=128; maximum=262144; default=1024    |
 
 ## `VercelEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices        | Constraints and default                                                     |
 | ------------------------- | -------- | --------------------- | --------------------------------------------------------------------------- |
+| `environment`             | false    | EnvironmentVariables  | —; default from model factory                                               |
 | `root`                    | false    | string                | default="/vercel/sandbox"                                                   |
 | `python`                  | false    | string                | default="/vercel/runtimes/python/bin/python3"                               |
 | `shell`                   | false    | string                | default="/bin/bash"                                                         |
@@ -310,21 +321,23 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `SpritesEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices | Constraints and default                                |
-| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
-| `root`                    | false    | string         | default="/home/sprite"                                 |
-| `python`                  | false    | string         | default="python3"                                      |
-| `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false    | string or null | maxLength=64; default=null                             |
+| Field                     | Required | Type / choices       | Constraints and default                                |
+| ------------------------- | -------- | -------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables | —; default from model factory                          |
+| `root`                    | false    | string               | default="/home/sprite"                                 |
+| `python`                  | false    | string               | default="python3"                                      |
+| `shell`                   | false    | string               | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer              | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer              | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer              | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null       | maxLength=64; default=null                             |
 
 ## `RunloopEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices                                   | Constraints and default                                |
 | ------------------------- | -------- | ------------------------------------------------ | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables                             | —; default from model factory                          |
 | `root`                    | false    | string                                           | default="/home/user"                                   |
 | `python`                  | false    | string                                           | default="python3"                                      |
 | `shell`                   | false    | string                                           | default="/bin/bash"                                    |

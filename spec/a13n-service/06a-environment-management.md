@@ -40,6 +40,14 @@ Supported Docker/E2B Envd providers additionally expose session-free `observe_de
 
 Management providers hold account-scoped clients and close them independently from execution clients. Connector construction uses the composed Harness execution definition with authoritative state and current credentials, allocating no live execution client and performing no target I/O. Management can perform initialization and readiness probes without constructing a Harness execution scope. No factory returns an object carrying both roles.
 
+### Default Command Environment
+
+All eight built-in managed providers accept `recipe.environment`, a string-to-string map defaulting to empty. These are ordinary readable template values, not secret storage. Names use `[A-Za-z_][A-Za-z0-9_]*`; values must not contain NUL. Recipe validation rejects platform-owned `A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY` and `XAUTHORITY` variables before allocation.
+
+The first create claim freezes these defaults with the rest of the recipe. Retries, execution attachment, stop/start and snapshot resume retain them; later template edits apply only to instances whose recipe has not yet been frozen. Providers with a native creation environment receive the defaults during allocation. All managed execution paths also apply them when dispatching Agent shell/process requests, including EIP paths where the daemon need not inherit its launch environment. This does not mutate the Service process environment or a shared sandbox's global environment during a Run.
+
+Explicit command values take precedence. A command unset removes a default where the execution provider supports unset; existing unsupported-operation errors remain unchanged. Ordinary child processes inherit the resulting command environment. Local defaults must satisfy `allowed_environment_keys`; command authorization and Envd bound-secret protections remain authoritative. No Agent, Thread or Run-level default layers are introduced.
+
 ### Desktop Access Enforcement
 
 E2B, Docker, Daytona, Modal and Vercel management adapters support an optional, internal desktop-access endpoint on an existing running target. The endpoint is distinct from Agent Computer execution and environment lifecycle credentials. Service owns its public control-plane authorization. Custom desktop recipes require explicit human-access opt-in; Service automatic E2B desktop recipes default that opt-in to true. Discovery reports unsupported unless the template, image or snapshot supplies the endpoint; access calls never install dependencies, create a target, restart its display, resume it or extend its sandbox lifetime.

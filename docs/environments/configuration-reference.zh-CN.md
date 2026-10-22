@@ -25,20 +25,21 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DirectLocalEnvironmentConfiguration`
 
-| 字段                       | 必填  | 类型 / 可选值                            | 约束与默认值                            |
-| -------------------------- | ----- | ---------------------------------------- | --------------------------------------- |
-| `root`                     | true  | DirectLocalRootConfiguration             | —                                       |
-| `shell_profiles`           | false | 数组，元素类型为 DirectLocalShellProfile | default=[]                              |
-| `allowed_executables`      | false | string 数组                              | uniqueItems=true; default=[]            |
-| `inherit_environment`      | false | boolean                                  | default=false                           |
-| `allowed_environment_keys` | false | string 数组 或 null                      | uniqueItems=true; default=[]            |
-| `allowed_ports`            | false | integer 数组                             | uniqueItems=true; default=[]            |
-| `max_value_bytes`          | false | integer                                  | exclusiveMinimum=0; default=67108864    |
-| `max_concurrent_processes` | false | integer                                  | exclusiveMinimum=0; default=128         |
-| `max_wall_time_seconds`    | false | number                                   | default=86400                           |
-| `terminate_grace_seconds`  | false | number                                   | default=5.0                             |
-| `max_buffer_bytes`         | false | integer                                  | exclusiveMinimum=0; default=1048576     |
-| `max_spool_bytes`          | false | integer                                  | exclusiveMinimum=0; default=68719476736 |
+| 字段                       | 必填  | 类型 / 可选值                            | 约束与默认值                                                |
+| -------------------------- | ----- | ---------------------------------------- | ----------------------------------------------------------- |
+| `environment`              | false | EnvironmentVariables                     | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥 |
+| `root`                     | true  | DirectLocalRootConfiguration             | —                                                           |
+| `shell_profiles`           | false | 数组，元素类型为 DirectLocalShellProfile | default=[]                                                  |
+| `allowed_executables`      | false | string 数组                              | uniqueItems=true; default=[]                                |
+| `inherit_environment`      | false | boolean                                  | default=false                                               |
+| `allowed_environment_keys` | false | string 数组 或 null                      | uniqueItems=true; default=[]                                |
+| `allowed_ports`            | false | integer 数组                             | uniqueItems=true; default=[]                                |
+| `max_value_bytes`          | false | integer                                  | exclusiveMinimum=0; default=67108864                        |
+| `max_concurrent_processes` | false | integer                                  | exclusiveMinimum=0; default=128                             |
+| `max_wall_time_seconds`    | false | number                                   | default=86400                                               |
+| `terminate_grace_seconds`  | false | number                                   | default=5.0                                                 |
+| `max_buffer_bytes`         | false | integer                                  | exclusiveMinimum=0; default=1048576                         |
+| `max_spool_bytes`          | false | integer                                  | exclusiveMinimum=0; default=68719476736                     |
 
 ## `DirectLocalRootConfiguration`
 
@@ -55,6 +56,12 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `fixed_arguments` | false | string 数组           | default=[]                 |
 | `dialect`         | false | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false | boolean               | default=false              |
+
+## `EnvironmentVariables`
+
+Agent 命令的默认变量。它们是可读取的普通配置，不用于存放密钥；命令显式指定的值优先。
+
+类型：`object`，键和值均为字符串。
 
 ## `LocalEnvdEnvironmentConfiguration`
 
@@ -253,47 +260,51 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `E2BRecipe`
 
-| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                              |
-| --------------------------- | ----- | --------------------- | --------------------------------------------------------- |
-| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                |
-| `execution`                 | false | "native", "envd_http" | default="native"                                          |
-| `desktop`                   | false | boolean               | default=false                                             |
-| `root`                      | false | string                | default="/home/user"                                      |
-| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
-| `python`                    | false | string                | default="/usr/bin/python3"                                |
-| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30               |
-| `allow_internet_access`     | false | boolean               | default=true                                              |
-| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600 |
-| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576     |
-| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128             |
-| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
-| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000         |
-| `desktop_assistance`        | false | boolean               | default=false                                             |
-| `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                   |
+| 字段                        | 必填  | 类型 / 可选值         | 约束与默认值                                                |
+| --------------------------- | ----- | --------------------- | ----------------------------------------------------------- |
+| `environment`               | false | EnvironmentVariables  | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥 |
+| `template`                  | false | string                | minLength=1; maxLength=256; default="base"                  |
+| `execution`                 | false | "native", "envd_http" | default="native"                                            |
+| `desktop`                   | false | boolean               | default=false                                               |
+| `root`                      | false | string                | default="/home/user"                                        |
+| `user`                      | false | string                | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"        |
+| `python`                    | false | string                | default="/usr/bin/python3"                                  |
+| `request_timeout_seconds`   | false | number                | maximum=300; exclusiveMinimum=0; default=30                 |
+| `allow_internet_access`     | false | boolean               | default=true                                                |
+| `max_file_bytes`            | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=104857600   |
+| `max_observation_bytes`     | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576       |
+| `max_active_observations`   | false | integer               | maximum=1024; exclusiveMinimum=0; default=128               |
+| `max_retained_output_bytes` | false | integer               | maximum=1073741824; exclusiveMinimum=0; default=134217728   |
+| `max_query_entries`         | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000           |
+| `desktop_assistance`        | false | boolean               | default=false                                               |
+| `timeout_seconds`           | false | integer               | minimum=30; maximum=86400; default=3600                     |
 
 ## `DaytonaEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                 |
-| ------------------------- | ----- | ------------- | -------------------------------------------- |
-| `snapshot`                | true  | string        | minLength=1; maxLength=256                   |
-| `desktop`                 | false | boolean       | default=false                                |
-| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120 |
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                                |
+| ------------------------- | ----- | -------------------- | ----------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥 |
+| `snapshot`                | true  | string               | minLength=1; maxLength=256                                  |
+| `desktop`                 | false | boolean              | default=false                                               |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120                |
 
 ## `ModalEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                 |
-| ------------------------- | ----- | ------------- | -------------------------------------------- |
-| `image`                   | true  | string        | minLength=1; maxLength=256                   |
-| `desktop`                 | false | boolean       | default=false                                |
-| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false | integer       | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false | number        | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false | integer       | minimum=128; maximum=262144; default=1024    |
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                                |
+| ------------------------- | ----- | -------------------- | ----------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥 |
+| `image`                   | true  | string               | minLength=1; maxLength=256                                  |
+| `desktop`                 | false | boolean              | default=false                                               |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120                |
+| `timeout_seconds`         | false | integer              | minimum=300; maximum=86400; default=86400                   |
+| `cpu`                     | false | number               | maximum=64; exclusiveMinimum=0; default=1                   |
+| `memory`                  | false | integer              | minimum=128; maximum=262144; default=1024                   |
 
 ## `VercelEnvironmentConfiguration`
 
 | 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                                                |
 | ------------------------- | ----- | --------------------- | --------------------------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables  | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥                 |
 | `root`                    | false | string                | default="/vercel/sandbox"                                                   |
 | `python`                  | false | string                | default="/vercel/runtimes/python/bin/python3"                               |
 | `shell`                   | false | string                | default="/bin/bash"                                                         |
@@ -310,31 +321,33 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `SpritesEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值  | 约束与默认值                                           |
-| ------------------------- | ----- | -------------- | ------------------------------------------------------ |
-| `root`                    | false | string         | default="/home/sprite"                                 |
-| `python`                  | false | string         | default="python3"                                      |
-| `shell`                   | false | string         | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number         | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false | string 或 null | maxLength=64; default=null                             |
+| 字段                      | 必填  | 类型 / 可选值        | 约束与默认值                                                |
+| ------------------------- | ----- | -------------------- | ----------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥 |
+| `root`                    | false | string               | default="/home/sprite"                                      |
+| `python`                  | false | string               | default="python3"                                           |
+| `shell`                   | false | string               | default="/bin/bash"                                         |
+| `request_timeout_seconds` | false | number               | maximum=600; exclusiveMinimum=0; default=120                |
+| `max_file_bytes`          | false | integer              | maximum=67108864; exclusiveMinimum=0; default=16777216      |
+| `max_query_entries`       | false | integer              | maximum=100000; exclusiveMinimum=0; default=10000           |
+| `max_output_bytes`        | false | integer              | maximum=16777216; exclusiveMinimum=0; default=1048576       |
+| `region`                  | false | string 或 null       | maxLength=64; default=null                                  |
 
 ## `RunloopEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值                                    | 约束与默认值                                           |
-| ------------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------ |
-| `root`                    | false | string                                           | default="/home/user"                                   |
-| `python`                  | false | string                                           | default="python3"                                      |
-| `shell`                   | false | string                                           | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number                                           | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer                                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer                                          | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer                                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `blueprint_id`            | false | string 或 null                                   | maxLength=128; default=null                            |
-| `resource_size`           | false | "X_SMALL", "SMALL", "MEDIUM", "LARGE", "X_LARGE" | default="SMALL"                                        |
-| `idle_timeout_seconds`    | false | integer                                          | minimum=300; maximum=172800; default=3600              |
+| 字段                      | 必填  | 类型 / 可选值                                    | 约束与默认值                                                |
+| ------------------------- | ----- | ------------------------------------------------ | ----------------------------------------------------------- |
+| `environment`             | false | EnvironmentVariables                             | 默认={}; 命令的普通默认变量，显式命令值优先，不用于保存密钥 |
+| `root`                    | false | string                                           | default="/home/user"                                        |
+| `python`                  | false | string                                           | default="python3"                                           |
+| `shell`                   | false | string                                           | default="/bin/bash"                                         |
+| `request_timeout_seconds` | false | number                                           | maximum=600; exclusiveMinimum=0; default=120                |
+| `max_file_bytes`          | false | integer                                          | maximum=67108864; exclusiveMinimum=0; default=16777216      |
+| `max_query_entries`       | false | integer                                          | maximum=100000; exclusiveMinimum=0; default=10000           |
+| `max_output_bytes`        | false | integer                                          | maximum=16777216; exclusiveMinimum=0; default=1048576       |
+| `blueprint_id`            | false | string 或 null                                   | maxLength=128; default=null                                 |
+| `resource_size`           | false | "X_SMALL", "SMALL", "MEDIUM", "LARGE", "X_LARGE" | default="SMALL"                                             |
+| `idle_timeout_seconds`    | false | integer                                          | minimum=300; maximum=172800; default=3600                   |
 
 ## `RemoteEnvdEnvironmentConfiguration`
 

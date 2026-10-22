@@ -125,6 +125,7 @@ def http_execution(
     if reference.state is None:
         raise EnvironmentError("Docker target state is required", code="environment_not_found")
     return RemoteEnvdExecution(
+        environment=reference.config.environment,
         provider_key="docker",
         environment_id=reference.environment_id,
         state=reference.state,
