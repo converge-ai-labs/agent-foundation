@@ -346,7 +346,7 @@ requires-dist = [
     { name = "prometheus-client", specifier = ">=0.21,<1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.55.0,<3" },
+    { name = "pydantic-ai-slim", specifier = ">=2.59.0,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "python-multipart", specifier = ">=0.0.32,<1" },
     { name = "pyyaml", specifier = ">=6.0,<7" },

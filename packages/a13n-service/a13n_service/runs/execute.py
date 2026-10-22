@@ -83,6 +83,7 @@ from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
+from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -452,6 +453,7 @@ class _Attempt:
         if not root.config.lazy_environment and not await self._prepare_environments():
             return None
         skill_cache = Cache()
+        app_captures = Captures(lease.run_id)
         async with AsyncExitStack() as stack:
             environments = await stack.enter_async_context(
                 open_mounts(
@@ -479,6 +481,7 @@ class _Attempt:
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
                     environments=environments,
+                    app_captures=app_captures,
                 )
             )
             executable = agent.build(
@@ -516,7 +519,11 @@ class _Attempt:
             self.live = live
             output = await stack.enter_async_context(
                 Coalescer(
-                    self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds, contents=self.contents
+                    self.fold,
+                    live,
+                    window=runtime.settings.worker.stream_coalesce_seconds,
+                    contents=self.contents,
+                    app_captures=app_captures,
                 )
             )
 

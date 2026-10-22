@@ -119,6 +119,20 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 
 MCP clients live for one attempt; tool catalogs can refresh during that attempt. Each call checks the connection's current availability and the run's permissions. Service does not support MCP elicitation (a server asking the user for input); use client tools or agent questions for durable waits.
 
+### MCP Apps for embedding applications
+
+Service saves an App tool's original arguments, declaration and full MCP result, including `_meta`. Live Run output emits `a13n.mcp_apps`; detailed Run items retain the same references in `content.mcp_apps`. Once the reference is committed, use its `app_id` with these authenticated endpoints:
+
+| Request                                                   | Body                                  | Result                                                      |
+| --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------- |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | None                                  | Original tool data and freshly fetched HTML                 |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | Raw MCP result under `result`                               |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | Current HTML and resource metadata for the original App URI |
+
+Opening never repeats the original tool. Each request uses a new MCP client; servers requiring the worker's original session are unsupported. Button calls use the saved connection and Agent selection, current connection availability and tool selection, and App visibility. Tools requiring approval or model review are refused, and MCP human input is unsupported. Calls are never automatically retried; `outcome_unknown` means callers must check external state before trying again. Follow-up results do not replace the saved original or enter model history.
+
+The embedding application creates the iframe, enforces resource CSP and isolation, and supplies the original arguments and result through its MCP App bridge. It owns View state and sends context or messages through the existing Run submission API. HTML is not saved, so a newer resource can be incompatible with old result data. Console does not render Apps. Objects use checkpoint format 4: upgrade all control/readers before starting the new workers.
+
 ### OAuth
 
 With `auth: "oauth"`, the connection obtains its token from the MCP server's authorization server. The connection holds **one** credential that serves every run in the workspace, whoever authorized it.
