@@ -362,6 +362,8 @@ An explicit `trigger_tokens` remains an absolute Host-selected threshold and tak
 
 Automatic compaction first compares native `RunContext.context_window_used` with the ratio. If Pydantic AI cannot provide that value, the Capability falls back to the latest captured provider-reported input-plus-output token count divided by the resolved context window. The same latest token count is used for the bounded context snapshot and for an explicit absolute policy. If either required window or provider usage remains unknown, the Capability skips compaction on that boundary. It does not fail Agent construction, infer a window from the model name, or serialize messages to estimate tokens.
 
+Compaction and dynamic context projection preserve exact history while tool calls await results, at suspended response boundaries, and when integrating deferred results. A model-level `RetryPromptPart` without a `tool_name` immediately after a response rejects that response's function-tool batch before dispatch; those calls no longer await results and must not block future compaction or projection. This classification does not edit history or synthesize tool returns. Older unresolved calls and provider-executed native calls still require their own results, and a tool-specific retry resolves only its matching call. A retry before a new response does not retire calls from an earlier response.
+
 ```mermaid
 sequenceDiagram
     participant PAI as Pydantic AI
