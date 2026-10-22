@@ -65,13 +65,8 @@ export function AgentEditor({
   pending: boolean;
   error: unknown;
   readonly?: boolean;
-  submit: (
-    config: AgentConfig,
-    etag?: string,
-    note?: string | null,
-    preset?: Schema["PresetEdit"],
-  ) => void;
-  /** A managed preset edits supplements; its published configuration stays complete. */
+  submit: (config: AgentConfig, etag?: string, note?: string | null) => void;
+  /** A managed preset edits supplements; the Host supplies its official guidance. */
   preset?: Schema["AgentRevision"];
   discard?: () => void;
   rail?: (summary: AgentDraftSummary) => ReactNode;
@@ -94,8 +89,8 @@ export function AgentEditor({
   });
   const creating = version === undefined;
   const draft = useAgentDraft(
-    preset
-      ? { ...initial, instructions: preset.preset?.instructions ?? "" }
+    preset && !preset.uses_builtin_instructions
+      ? { ...initial, instructions: "" }
       : initial,
   );
   const configurationReadonly = readonly || !!preset;
@@ -186,10 +181,10 @@ export function AgentEditor({
           ...initial,
           model: built.config.model,
           model_settings: built.config.model_settings,
+          instructions: built.config.instructions,
         },
         etag,
         note.trim() || null,
-        { base_revision_id: preset.id, instructions: draft.instructions },
       );
     } else {
       submit(built.config, etag, note.trim() || null);
@@ -233,11 +228,7 @@ export function AgentEditor({
             readOnly={readonly}
             mark={mark("instructions")}
             officialInstructions={
-              preset
-                ? (preset.preset?.official_instructions ??
-                  initial.instructions ??
-                  "")
-                : undefined
+              preset ? (preset.builtin_instructions ?? "") : undefined
             }
           />
           <SkillsSection

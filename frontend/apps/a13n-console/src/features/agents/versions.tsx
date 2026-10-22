@@ -182,18 +182,26 @@ export function AgentVersions({
             </ReadOnlyField>
             <TextAreaField
               readOnly
-              label={t("Instructions")}
+              label={t(
+                selected.uses_builtin_instructions
+                  ? "Supplemental instructions"
+                  : "Instructions",
+              )}
               value={selected.config.instructions ?? ""}
               onChange={() => {}}
             />
-            {selected.preset && (
-              <TextAreaField
-                readOnly
-                label={t("Supplemental instructions")}
-                value={selected.preset.instructions ?? ""}
-                onChange={() => {}}
-              />
-            )}
+            {selected.uses_builtin_instructions &&
+              selected.builtin_instructions && (
+                <TextAreaField
+                  readOnly
+                  label={t("Current official instructions")}
+                  hint={t(
+                    "Official instructions follow the deployed version; they are not saved in this agent version.",
+                  )}
+                  value={selected.builtin_instructions}
+                  onChange={() => {}}
+                />
+              )}
             <DisclosureSection title={t("Configuration details")}>
               <JsonView value={selected.config} />
             </DisclosureSection>
@@ -343,6 +351,11 @@ function VersionActions({
       <ExportAgent
         agent={agent}
         config={revision.config}
+        builtinInstructions={
+          revision.uses_builtin_instructions
+            ? revision.builtin_instructions
+            : undefined
+        }
         version={revision.number}
         trigger={
           <MenuItem closeOnClick={false}>

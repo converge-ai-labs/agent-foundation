@@ -378,25 +378,9 @@ class AgentDuplicate(BaseModel):
     revision_id: ObjectId | None = None
 
 
-class PresetEdit(_Frozen):
-    """Edit a managed preset from an existing revision, preserving its official definition."""
-
-    base_revision_id: ObjectId
-    instructions: Instructions = ""
-
-
-class PresetSnapshot(_Frozen):
-    """Revision-owned editing information; execution uses only the complete AgentConfig."""
-
-    official_instructions: Instructions
-    instructions: Instructions = ""
-    definition_digest: str
-
-
 class AgentRevisionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     config: AgentConfig
-    preset: PresetEdit | None = None
     note: str | None = Field(default=None, max_length=2048)
     make_default: bool = True
 
@@ -411,7 +395,6 @@ class AgentValidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     config: AgentConfig
     agent_id: ObjectId | None = None
-    preset: PresetEdit | None = None
 
 
 class Agent(BaseModel):
@@ -439,7 +422,11 @@ class AgentRevision(BaseModel):
     agent_id: str
     number: int
     config: AgentConfig
-    preset: PresetSnapshot | None = None
+    uses_builtin_instructions: bool = False
+    builtin_instructions: Instructions | None = Field(
+        default=None,
+        description="Current deployment guidance for this builtin Agent, not a revision or Run snapshot.",
+    )
     digest: str
     note: str | None
     created_by_id: str

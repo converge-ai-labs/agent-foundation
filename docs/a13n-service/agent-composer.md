@@ -60,7 +60,7 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and offers official definition updates as candidate revisions. Your selected default and model remain unchanged.
+The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and offers protected configuration updates as candidate revisions. Your selected default and model remain unchanged.
 
 ## Choose its model
 
@@ -73,11 +73,11 @@ If no model is usable during initial setup, preparation returns `409 conflict` w
 
 ## Built-in agent rules
 
-Open Composer's Agent page to change its model, thinking effort, output token limit, `temperature`, `top_p` or supplemental instructions. The instruction editor contains your supplement; official instructions appear in a read-only disclosure. Saving creates a revision with the complete instructions, so old runs and historical revisions keep their instruction text.
+Open Composer's Agent page to change its model, thinking effort, output token limit, `temperature`, `top_p` or supplemental instructions. The instruction editor contains your supplement; official instructions appear in a read-only disclosure. Saving creates a revision containing your supplement. Official instructions come from the current Worker on every execution attempt, including recovery and continuation after waiting; they are not frozen with the revision. The disclosure shows current deployment guidance. Inspect the model request trace for the official text used in a particular run.
 
-Use **Versions → Set as default** to switch or roll back. Later preparation preserves the selected version even when its model becomes unavailable; select a replacement explicitly. Official definition updates appear as candidate versions without replacing your default or supplement. Other configuration, identity, avatar and archiving remain protected. Duplicate Composer to freely change those fields.
+Use **Versions → Set as default** to switch or roll back. Later preparation preserves the selected version even when its model becomes unavailable; select a replacement explicitly. Protected configuration updates appear as candidate versions without replacing your default or supplement. Other configuration, identity, avatar and archiving remain protected. Duplicate Composer to freely change those fields.
 
-API clients reuse validation and revision creation: keep the complete base `config`, change only the allowed model/settings, and add `preset: {base_revision_id, instructions}` with the complete desired supplement. Keep `config.instructions` unchanged; Service performs composition. Read the base revision and original head ETag before editing. Older revisions without `preset` start with an empty supplement.
+API clients reuse validation and revision creation: read the selected default and original head ETag, keep the complete `config`, and change only the allowed model/settings and `config.instructions` supplement. Revision responses identify this format with `uses_builtin_instructions=true` and show current official text in read-only `builtin_instructions`. Legacy revisions have the marker false and retain their complete original instructions. Preparation offers a candidate using current official guidance; selecting it or saving an edit adopts that format with an initially empty supplement. Duplication and export combine current official text with your supplement into an independent custom Agent.
 
 ## Use the toolset in your own agents
 

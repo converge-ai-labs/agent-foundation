@@ -19,7 +19,7 @@ from a13n_service.infra.labels import label_filter
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources import revisions
-from a13n_service.resources.agents import preset_edits, read_views, toolsets
+from a13n_service.resources.agents import instructions, preset_edits, read_views, toolsets
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentConfig,
@@ -104,8 +104,12 @@ async def duplicate_agent(
         if revision_id is None:
             raise not_found(AgentRevisionRow.KIND, source.id)
         revision = await _revision(session, source, revision_id)
+        config = AgentConfig.model_validate(revision.config)
         copy = AgentCreate(
-            **body.model_dump(exclude={"revision_id"}), config=AgentConfig.model_validate(revision.config)
+            **body.model_dump(exclude={"revision_id"}),
+            config=instructions.materialize(
+                config, instructions.for_preset(source.preset_kind) if revision.uses_builtin_instructions else None
+            ),
         )
         head = await insert_head(session, actor, scope, copy, registry=registry, plugins=plugins)
         audit_row(session, actor, head, "duplicate", {"source_revision_id": revision.id})
@@ -138,7 +142,6 @@ async def insert_head(
     config = await validate_config(session, actor, scope, head.id, body.config, registry=registry, plugins=plugins)
     session.add(head)
     await session.flush()
-    preset = preset_edits.definition_snapshot(body.config) if preset_kind in preset_edits.EDITABLE_KINDS else None
     await revisions.publish(
         session,
         head,
@@ -146,7 +149,7 @@ async def insert_head(
         config,
         actor=actor,
         note=None,
-        preset=preset.model_dump(mode="json") if preset is not None else None,
+        uses_builtin_instructions=preset_edits.editable(head),
     )
     await session.flush()
     await session.refresh(head)
@@ -233,7 +236,7 @@ async def create_revision(
         scope = await workspace_scope(session, actor, workspace_id, "write")
         head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
         preset_edits.require_editable(head, if_match)
-        config, preset = await preset_edits.prepare_edit(session, head, body.config, body.preset)
+        config, reuse_default = await preset_edits.prepare_edit(session, head, body.config)
         config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
         revision, created = await revisions.publish(
             session,
@@ -243,13 +246,14 @@ async def create_revision(
             actor=actor,
             note=body.note,
             make_default=body.make_default,
-            preset=preset.model_dump(mode="json") if preset is not None else None,
+            reuse_default=reuse_default,
+            uses_builtin_instructions=preset_edits.editable(head),
         )
         if created:
             audit_row(session, actor, head, "revision.create", {"revision_id": revision.id})
             await session.flush()
             await session.refresh(revision)
-        return AgentRevision.model_validate(revision)
+        return _revision_view(head, revision)
 
 
 async def validate_revision(
@@ -267,7 +271,7 @@ async def validate_revision(
         head = None
         if body.agent_id is not None:
             head = await resolve_agent(session, scope.workspace_id, body.agent_id)
-        config, _ = await preset_edits.prepare_edit(session, head, body.config, body.preset)
+        config, _ = await preset_edits.prepare_edit(session, head, body.config)
         await validate_config(
             session, actor, scope, head.id if head is not None else None, config, registry=registry, plugins=plugins
         )
@@ -373,7 +377,10 @@ async def list_revisions(
 
 
 def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:
-    return AgentRevision.model_validate(revision)
+    view = AgentRevision.model_validate(revision)
+    return view.model_copy(
+        update={"builtin_instructions": instructions.for_preset(head.preset_kind) if head.builtin else None}
+    )
 
 
 async def set_default(

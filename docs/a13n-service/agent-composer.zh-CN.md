@@ -60,7 +60,7 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-首次调用创建工作空间预设（`source: "builtin"`、`preset_kind: "composer"`）。通过 `GET /api/v1/agents?source=builtin&preset_kind=composer` 可查到它。后续准备会刷新名称和描述，并将官方定义更新保存为候选版本。你选定的默认版本和模型保持不变。
+首次调用创建工作空间预设（`source: "builtin"`、`preset_kind: "composer"`）。通过 `GET /api/v1/agents?source=builtin&preset_kind=composer` 可查到它。后续准备会刷新名称和描述，并将受保护配置的更新保存为候选版本。你选定的默认版本和模型保持不变。
 
 ## 选择模型
 
@@ -73,11 +73,11 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
 
 ## 内置 agent 规则
 
-打开 Composer 的 Agent 页面，可以修改模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。指令输入框只编辑你的补充内容，官方指令在只读折叠区展示。保存会创建包含完整指令的修订版本，旧运行和历史版本继续使用原有指令。
+打开 Composer 的 Agent 页面，可以修改模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。指令输入框只编辑你的补充内容，官方指令在只读折叠区展示。保存会创建只包含用户补充的修订版本。每次执行尝试，包括恢复和等待后的继续执行，都会使用当前 Worker 提供的官方指令；官方指令不随修订版本固定。折叠区展示当前部署的官方指令，某次运行实际使用的文本可在模型请求 trace 中查看。
 
-在“版本 → 设为默认”中切换或回退。后续准备保留选定版本，即使模型不可用也不会自动替换，请显式选择新模型。官方定义更新只生成候选版本，保留用户补充且不替换默认版本。其他配置、名称等元信息、头像和归档仍受保护；可复制为自定义 Agent 后自由修改。
+在“版本 → 设为默认”中切换或回退。后续准备保留选定版本，即使模型不可用也不会自动替换，请显式选择新模型。受保护配置的更新只生成候选版本，保留用户补充且不替换默认版本。其他配置、名称等元信息、头像和归档仍受保护；可复制为自定义 Agent 后自由修改。
 
-API 客户端复用校验和创建修订版本接口：保留完整的基础 `config`，仅修改允许的模型和参数，并提供 `preset: {base_revision_id, instructions}`，其中指令为完整的用户补充。保持 `config.instructions` 不变，由 Service 组合指令。编辑前读取基础版本和原始 head ETag；没有 `preset` 的旧版本从空补充开始。
+API 客户端复用校验和创建修订版本接口：先读取选定的默认版本和原始 head ETag，保留完整 `config`，仅修改允许的模型、参数和 `config.instructions` 中的用户补充。版本响应用 `uses_builtin_instructions=true` 标识新格式，`builtin_instructions` 只读展示当前官方指令。旧版本的标记为 false，继续保留并使用原有完整指令。准备操作会提供使用当前官方指令的候选版本；选择它或保存编辑即可采用新格式，初始补充为空。复制和导出会将当前官方指令与用户补充合并，得到独立的自定义 Agent。
 
 ## 在自己的 agent 中使用工具集
 

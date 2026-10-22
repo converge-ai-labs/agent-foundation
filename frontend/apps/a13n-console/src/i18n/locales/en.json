@@ -3265,10 +3265,12 @@
   "Your edits are preserved. Reload the saved details before making further changes.": "Your edits are preserved. Reload the saved details before making further changes.",
   "Drop a file here or choose one to upload.": "Drop a file here or choose one to upload.",
   "Supplemental instructions": "Supplemental instructions",
-  "Official instructions": "Official instructions",
   "Add requirements for this agent. Official instructions also apply.": "Add requirements for this agent. Official instructions also apply.",
   "Only temperature and top_p can be changed here for built-in agents.": "Only temperature and top_p can be changed here for built-in agents.",
   "Requirements for this analysis": "Requirements for this analysis",
   "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.": "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
-  "Analysis uses the Finding Agent's selected default version and model.": "Analysis uses the Finding Agent's selected default version and model."
+  "Analysis uses the Finding Agent's selected default version and model.": "Analysis uses the Finding Agent's selected default version and model.",
+  "Current official instructions": "Current official instructions",
+  "Official instructions follow the deployed version; they are not saved in this agent version.": "Official instructions follow the deployed version; they are not saved in this agent version.",
+  "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.": "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used."
 }

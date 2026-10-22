@@ -115,7 +115,7 @@ it("keeps non-editable agents and reader views read-only, including the model", 
 });
 
 it.each([false, true])(
-  "edits only preset supplements and model settings with the original base (legacy=%s)",
+  "edits supplements through ordinary config and keeps the original ETag (legacy=%s)",
   async (legacy) => {
     vi.stubGlobal(
       "ResizeObserver",
@@ -135,9 +135,7 @@ it.each([false, true])(
     });
     const initial = {
       model: "original",
-      instructions: legacy
-        ? "Official policy."
-        : "Official policy.\n\nWorkspace instructions:\nOld supplement.",
+      instructions: legacy ? "Official policy." : "Old supplement.",
       model_settings: {},
       user_questions: false,
     };
@@ -150,13 +148,8 @@ it.each([false, true])(
       note: null,
       created_at: "2026-10-22T00:00:00Z",
       created_by_id: "usr_test",
-      preset: legacy
-        ? null
-        : {
-            official_instructions: "Official policy.",
-            instructions: "Old supplement.",
-            definition_digest: "definition",
-          },
+      uses_builtin_instructions: !legacy,
+      builtin_instructions: "Current official policy.",
     };
     const submit = vi.fn();
     const cache = new QueryClient({
@@ -201,7 +194,7 @@ it.each([false, true])(
       screen.getByRole("spinbutton", { name: "Max output tokens" }),
       "2048",
     );
-    // A background refresh cannot silently move an in-progress edit onto another official definition.
+    // A background refresh cannot silently replace the draft or its precondition.
     rerender(
       editor(
         {
@@ -216,10 +209,13 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
-        { ...initial, model_settings: { max_tokens: 2048 } },
+        {
+          ...initial,
+          model_settings: { max_tokens: 2048 },
+          instructions: "New supplement.",
+        },
         '"ap_finding:2"',
         null,
-        { base_revision_id: "apr_original", instructions: "New supplement." },
       ),
     );
   },

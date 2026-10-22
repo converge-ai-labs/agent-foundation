@@ -65,19 +65,21 @@ async def prepare(
         await revisions.update_head(session, actor, head, {"name": name, "description": description})
         if kind in preset_edits.EDITABLE_KINDS and current is not None:
             held = AgentConfig.model_validate(current.config)
-            definition = configuration(held.model)
-            preset = preset_edits.definition_snapshot(definition)
-            previous = preset_edits.snapshot(current)
-            if preset.definition_digest == previous.definition_digest:
+            config = configuration(held.model).model_copy(
+                update={
+                    "model_settings": held.model_settings,
+                    "instructions": held.instructions if current.uses_builtin_instructions else "",
+                }
+            )
+            if current.uses_builtin_instructions and config == held:
                 return agent_view(head)
-            preset = preset.model_copy(update={"instructions": previous.instructions})
-            config = preset_edits.compose(definition.model_copy(update={"model_settings": held.model_settings}), preset)
             config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
             # A rollback keeps its selected revision. Do not recreate the same update on every preparation.
             offered = await session.scalar(
                 select(AgentRevisionRow.id)
                 .where(
                     AgentRevisionRow.agent_id == head.id,
+                    AgentRevisionRow.uses_builtin_instructions,
                     AgentRevisionRow.digest == revisions.config_digest(config.model_dump(mode="json")),
                 )
                 .limit(1)
@@ -91,7 +93,8 @@ async def prepare(
                     actor=actor,
                     note="Official preset update",
                     make_default=False,
-                    preset=preset.model_dump(mode="json"),
+                    reuse_default=current.uses_builtin_instructions,
+                    uses_builtin_instructions=True,
                 )
                 if created:
                     audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})

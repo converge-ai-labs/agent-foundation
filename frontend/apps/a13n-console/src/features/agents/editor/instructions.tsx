@@ -49,11 +49,14 @@ export function InstructionsSection({
         </span>
       </div>
       {officialInstructions !== undefined && (
-        <DisclosureSection title={t("Official instructions")}>
+        <DisclosureSection title={t("Current official instructions")}>
           <TextAreaField
             readOnly
-            label={t("Official instructions")}
+            label={t("Current official instructions")}
             hideLabel
+            hint={t(
+              "Official instructions follow the deployed version; they are not saved in this agent version.",
+            )}
             value={officialInstructions}
             onChange={() => {}}
           />

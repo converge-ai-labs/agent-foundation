@@ -470,7 +470,7 @@ async def test_the_agent_composer_creates_an_agent_once_approved(service, script
         )
         assert edited.status_code == 400, edited.text
         assert edited.json()["error"]["code"] == "invalid_argument"
-        assert edited.json()["error"]["details"]["field"] == "preset"
+        assert edited.json()["error"]["details"]["field"] == "builtin_skills"
 
         async def custom() -> list[dict[str, Any]]:
             return (await service.client.get(agents, params={"source": "custom"})).json()["items"]

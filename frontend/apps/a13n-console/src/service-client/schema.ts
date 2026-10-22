@@ -4547,6 +4547,11 @@ export interface components {
     AgentRevision: {
       /** Agent Id */
       agent_id: string;
+      /**
+       * Builtin Instructions
+       * @description Current deployment guidance for this builtin Agent, not a revision or Run snapshot.
+       */
+      builtin_instructions?: string | null;
       config: components["schemas"]["AgentConfig-Output"];
       /**
        * Created At
@@ -4563,7 +4568,11 @@ export interface components {
       note: string | null;
       /** Number */
       number: number;
-      preset?: components["schemas"]["PresetSnapshot"] | null;
+      /**
+       * Uses Builtin Instructions
+       * @default false
+       */
+      uses_builtin_instructions?: boolean;
     };
     /** AgentRevisionCreate */
     AgentRevisionCreate: {
@@ -4575,7 +4584,6 @@ export interface components {
       make_default?: boolean;
       /** Note */
       note?: string | null;
-      preset?: components["schemas"]["PresetEdit"] | null;
     };
     /** AgentRevisionPage */
     AgentRevisionPage: {
@@ -4624,7 +4632,6 @@ export interface components {
       /** Agent Id */
       agent_id?: string | null;
       config: components["schemas"]["AgentConfig-Input"];
-      preset?: components["schemas"]["PresetEdit"] | null;
     };
     /** Analysis */
     Analysis: {
@@ -8956,36 +8963,8 @@ export interface components {
     };
     /** @enum {string} */
     Preset: "execution" | "recovery" | "answer";
-    /**
-     * PresetEdit
-     * @description Edit a managed preset from an existing revision, preserving its official definition.
-     */
-    PresetEdit: {
-      /** Base Revision Id */
-      base_revision_id: string;
-      /**
-       * Instructions
-       * @default
-       */
-      instructions?: string;
-    };
     /** @enum {string} */
     PresetKind: "composer" | "finding" | "memory_organizer";
-    /**
-     * PresetSnapshot
-     * @description Revision-owned editing information; execution uses only the complete AgentConfig.
-     */
-    PresetSnapshot: {
-      /** Definition Digest */
-      definition_digest: string;
-      /**
-       * Instructions
-       * @default
-       */
-      instructions?: string;
-      /** Official Instructions */
-      official_instructions: string;
-    };
     /** Pressure */
     Pressure: {
       full?: components["schemas"]["PressureLevel"] | null;

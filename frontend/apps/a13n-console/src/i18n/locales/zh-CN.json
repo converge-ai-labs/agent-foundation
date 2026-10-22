@@ -3265,10 +3265,12 @@
   "Your edits are preserved. Reload the saved details before making further changes.": "你的编辑已保留。请重新加载已保存的信息后再修改。",
   "Drop a file here or choose one to upload.": "将文件拖到此处，或选择要上传的文件。",
   "Supplemental instructions": "补充指令",
-  "Official instructions": "官方指令",
   "Add requirements for this agent. Official instructions also apply.": "添加此 Agent 需要遵循的要求。官方指令会同时生效。",
   "Only temperature and top_p can be changed here for built-in agents.": "内置 Agent 在此处仅支持修改 temperature 和 top_p。",
   "Requirements for this analysis": "本次检查要求",
   "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.": "选填。仅用于本次分析，不修改 Finding Agent 的配置。",
-  "Analysis uses the Finding Agent's selected default version and model.": "分析使用 Finding Agent 当前选定的默认版本和模型。"
+  "Analysis uses the Finding Agent's selected default version and model.": "分析使用 Finding Agent 当前选定的默认版本和模型。",
+  "Current official instructions": "当前官方指令",
+  "Official instructions follow the deployed version; they are not saved in this agent version.": "官方指令随部署版本更新，不保存在此修订版本中。",
+  "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.": "此配置保存你的补充指令。内置指令由 Worker 版本提供；实际使用的文本可在模型请求 trace 中查看。"
 }

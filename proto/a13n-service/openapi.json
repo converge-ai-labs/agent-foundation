@@ -1370,6 +1370,19 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "builtin_instructions": {
+            "anyOf": [
+              {
+                "maxLength": 262144,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current deployment guidance for this builtin Agent, not a revision or Run snapshot.",
+            "title": "Builtin Instructions"
+          },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Output"
           },
@@ -1405,15 +1418,10 @@
             "title": "Number",
             "type": "integer"
           },
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PresetSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "uses_builtin_instructions": {
+            "default": false,
+            "title": "Uses Builtin Instructions",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1451,16 +1459,6 @@
               }
             ],
             "title": "Note"
-          },
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PresetEdit"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -1629,16 +1627,6 @@
           },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Input"
-          },
-          "preset": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PresetEdit"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -14333,29 +14321,6 @@
         ],
         "type": "string"
       },
-      "PresetEdit": {
-        "additionalProperties": false,
-        "description": "Edit a managed preset from an existing revision, preserving its official definition.",
-        "properties": {
-          "base_revision_id": {
-            "maxLength": 41,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
-            "title": "Base Revision Id",
-            "type": "string"
-          },
-          "instructions": {
-            "default": "",
-            "maxLength": 262144,
-            "title": "Instructions",
-            "type": "string"
-          }
-        },
-        "required": [
-          "base_revision_id"
-        ],
-        "title": "PresetEdit",
-        "type": "object"
-      },
       "PresetKind": {
         "enum": [
           "composer",
@@ -14363,33 +14328,6 @@
           "memory_organizer"
         ],
         "type": "string"
-      },
-      "PresetSnapshot": {
-        "additionalProperties": false,
-        "description": "Revision-owned editing information; execution uses only the complete AgentConfig.",
-        "properties": {
-          "definition_digest": {
-            "title": "Definition Digest",
-            "type": "string"
-          },
-          "instructions": {
-            "default": "",
-            "maxLength": 262144,
-            "title": "Instructions",
-            "type": "string"
-          },
-          "official_instructions": {
-            "maxLength": 262144,
-            "title": "Official Instructions",
-            "type": "string"
-          }
-        },
-        "required": [
-          "official_instructions",
-          "definition_digest"
-        ],
-        "title": "PresetSnapshot",
-        "type": "object"
       },
       "Pressure": {
         "additionalProperties": false,

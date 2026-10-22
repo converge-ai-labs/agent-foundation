@@ -11,13 +11,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import {
-  allPages,
-  data,
-  ifMatch,
-  representation,
-  type Schema,
-} from "../../shared/api";
+import { allPages, data, ifMatch, representation } from "../../shared/api";
 import {
   ErrorNotice,
   ErrorToast,
@@ -103,7 +97,6 @@ export function AgentDetail() {
       config: AgentConfig;
       etag?: string;
       note?: string | null;
-      preset?: Schema["PresetEdit"];
     }) => {
       if (!body.etag)
         throw new Error(
@@ -327,9 +320,7 @@ export function AgentDetail() {
           error={save.error}
           readonly={!editable}
           preset={editablePreset(agent) ? revision : undefined}
-          submit={(config, etag, note, preset) =>
-            save.mutate({ config, etag, note, preset })
-          }
+          submit={(config, etag, note) => save.mutate({ config, etag, note })}
           discard={() => void reload()}
           rail={rail}
         />
