@@ -19,7 +19,13 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
 
-TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id", "modal": "target_id"}
+TARGET_FIELDS = {
+    "e2b": "sandbox_id",
+    "docker": "container_id",
+    "daytona": "target_id",
+    "modal": "target_id",
+    "vercel": "backing_id",
+}
 
 
 def target_key(state: EnvironmentState | None) -> str | None:
@@ -29,6 +35,7 @@ def target_key(state: EnvironmentState | None) -> str | None:
     native = state.state.get(field) if field else None
     if not isinstance(native, str) or not native:
         return None
+    # Vercel uses its immutable name/creation identity across resumable sessions.
     # Native IDs are globally allocated. Treat ambiguous account aliases conservatively
     # as the same target rather than allowing a second controller through another account.
     return hashlib.sha256(f"{state.provider_key}:{native}".encode()).hexdigest()

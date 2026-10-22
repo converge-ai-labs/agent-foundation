@@ -15,7 +15,7 @@ Native Execution supports quick deployment and applications that need only basic
 
 Envd owns the general execution capability model, including port operations, Computer use, and Device metrics. Available capabilities follow the daemon's advertised methods and effective Host policy. OS sandbox and Egress enforce the selected [Device boundary](../a13n-envd/07-execution-isolation.md). Metrics are [Device-scoped observations](../a13n-envd/11-resource-monitoring.md) collected by the outer daemon and read through the Host's Device connection.
 
-Daytona, Modal, Vercel Sandbox, Sprites, Runloop, and additional built-in infrastructure backends use Envd through EIP for Agent operations. This keeps general execution semantics in one daemon instead of maintaining a separate advanced execution stack for each vendor.
+Daytona and Modal use Envd through EIP for Agent operations. Vercel Sandbox supports an explicit Envd route alongside its existing native Files & Shell route. Sprites and Runloop currently retain command-backed Files & Shell; their Envd integration is not implemented. This keeps general execution semantics in one daemon instead of maintaining a separate advanced execution stack for each vendor.
 
 Each managed infrastructure vendor retains its own `EnvironmentProvider` subclass for resource management: allocation, inspection, start/stop, destruction, renewal, Envd bootstrap, and connection setup. Service owns the built-in management implementations; other embedding Hosts may supply their own. Harness adapts the shared EIP operations. Bounded vendor commands remain available for bootstrap and readiness under Host authority; Agent operations follow the selected Native or Envd execution path.
 
@@ -45,9 +45,9 @@ Built-in provider types follow two operation routes. Managed targets have separa
 | Native / Envd | `e2b`            | E2B sandbox                                 | E2B SDK / EIP to the sandbox daemon             | Service or an external Host                |
 | Envd          | `daytona`        | Daytona sandbox                             | EIP to the sandbox daemon                       | Service or an external Host                |
 | Envd          | `modal`          | Modal sandbox                               | EIP to the sandbox daemon                       | Service or an external Host                |
-| Envd          | `vercel`         | Named Vercel Sandbox                        | EIP to the sandbox daemon                       | Service or an external Host                |
-| Envd          | `sprites`        | Persistent Fly.io Sprite                    | EIP to the sandbox daemon                       | Service or an external Host                |
-| Envd          | `runloop`        | Runloop Devbox                              | EIP to the sandbox daemon                       | Service or an external Host                |
+| Native / Envd | `vercel`         | Named Vercel Sandbox                        | Native Files & Shell / explicit HTTP EIP        | Service or an external Host                |
+| Native        | `sprites`        | Persistent Fly.io Sprite                    | Vendor Files & Shell; EIP not integrated        | Service or an external Host                |
+| Native        | `runloop`        | Runloop Devbox                              | Vendor Files & Shell; EIP not integrated        | Service or an external Host                |
 | Envd          | `http_envd`      | External daemon at a configured origin      | EIP over HTTP(S)                                | Connect-only                               |
 | Envd          | `websocket_envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket                     | Connect-only; Host-integrated SDK          |
 
@@ -105,7 +105,7 @@ The image creates a separate HTTP credential file for each container. Docker ret
 
 ### Cloud Providers
 
-E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each declare typed account settings, a private credential model, and one recipe model. E2B retains native Files & Shell execution. Advanced operations use the general Envd path on a compatible target. The other five expose Agent operations through the shared EIP adapter, with capabilities negotiated from the selected daemon and constrained by Host policy rather than by the vendor's foreground command API.
+E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each declare typed account settings, a private credential model, and one recipe model. E2B retains native Files & Shell execution. Advanced operations use the general Envd path on a compatible target. Daytona, Modal and explicitly configured Vercel targets expose negotiated EIP capabilities constrained by Host policy. Native Vercel, Sprites and Runloop currently retain vendor command-backed Files & Shell.
 
 Service implements native target management and establishes the Envd prerequisites for managed targets. Harness opens an EIP execution on that selected target; the common operation layer does not dispatch on vendor type. Vendor-specific API clients and port routes are connection or management details, not parallel implementations of file, process, output, or Computer semantics.
 
@@ -149,7 +149,7 @@ Output uses `origin="sdk_text"`; producer totals and completion are unknown even
 
 #### Daytona, Modal, Vercel Sandbox, Sprites, and Runloop
 
-These providers connect to a compatible Envd on the validated native target and expose the negotiated EIP operations. Target identity remains provider-specific; file, command, process, output, port, and Computer behavior comes from the shared daemon and client. A vendor's command-only API does not define the Environment capability ceiling or provide a fallback when the daemon is unavailable.
+Daytona, Modal and Vercel with `execution="envd_http"` connect to a compatible Envd on the validated native target and expose the negotiated EIP operations. Native Vercel, Sprites and Runloop expose Files & Shell only. Target identity remains provider-specific; file, command, process, output, port, and Computer behavior comes from the shared daemon and client. A vendor's command-only API does not define the Environment capability ceiling or provide a fallback when the daemon is unavailable.
 
 Daytona requires an operator-built Envd snapshot for both headless and desktop execution. Its working directory is `/workspace`; paths follow the Device namespace rather than a vendor-native root mapping. Each attachment validates the recorded sandbox ownership, organization and running state, resolves the private port 8888 preview route, and applies the Host endpoint policy before reading the guest's bounded Envd credential. The sandbox-wide Daytona preview token is used only as a private proxy header; the independent guest token authenticates EIP. Neither token nor the resolved route enters target state or public responses. Connection loss never starts a daemon, resumes a sandbox or falls back to Toolbox Agent operations.
 

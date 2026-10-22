@@ -13,6 +13,7 @@ from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from pydantic import BaseModel, JsonValue
 
+from .e2b_build import E2BDesktopPreparation
 from .management import EnvironmentProvider
 
 
@@ -32,6 +33,7 @@ class EnvironmentManagementDefinition[C: BaseModel, K: BaseModel, E: BaseModel, 
     supports_destroy: bool = False
     requires_keepalive: bool = False
     metrics_launch: Callable[[E], bool] | None = None
+    e2b_desktop_preparation: E2BDesktopPreparation | None = None
 
     def validate_domain(self) -> None:
         if not isinstance(self.execution, EnvironmentProviderDefinition):

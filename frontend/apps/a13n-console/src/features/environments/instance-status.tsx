@@ -11,6 +11,8 @@ export function EnvironmentStatus({
   const { t } = useTranslation();
   if (environment.failure?.code === "environment_lost")
     return <StatePill state="failed" label={t("Environment lost")} />;
+  if (environment.status === "creating" && environment.failure?.permanent)
+    return <StatePill state="failed" label={t("Creation failed")} />;
   if (environment.status === "ready" && environment.failure?.permanent)
     return <StatePill state="failed" label={t("Environment unavailable")} />;
   return <StatePill state={environment.status} />;

@@ -53,6 +53,7 @@ class Handle(BaseModel):
     recipe: dict[str, JsonValue]
     state: EnvironmentState | None = None
     credential_version: str | None = None
+    e2b_desktop_template: str | None = None
 
 
 class EnvironmentFailure(BaseModel):

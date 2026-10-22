@@ -38,13 +38,13 @@ description: 独立的环境管理、连接和执行接口，支持本地、容�
 | Envd          | `local_envd`     | 通过 stdio 连接本地守护进程                          | Host 管理的守护进程   |
 | Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
 | Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
-| Envd          | `vercel`         | 通过 EIP 连接兼容的沙箱守护进程                      | Vercel provider       |
-| Envd          | `sprites`        | 通过 EIP 连接兼容的沙箱守护进程                      | Sprites provider      |
-| Envd          | `runloop`        | 通过 EIP 连接兼容的沙箱守护进程                      | Runloop provider      |
+| Native / Envd | `vercel`         | Native Files & Shell；显式选择 HTTP EIP              | Vercel provider       |
+| Native        | `sprites`        | 厂商命令接口提供 Files & Shell；尚未接入 EIP         | Sprites provider      |
+| Native        | `runloop`        | 厂商命令接口提供 Files & Shell；尚未接入 EIP         | Runloop provider      |
 | Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
 | Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
-> 实现状态：本文定义统一后的执行模型。部分云 provider 和 E2B/Daytona 桌面适配器仍需迁移；需要通用能力时，请显式连接兼容的 Envd 目标。已有配置字段详见[配置参考](configuration-reference.md)。
+> 实现状态：Docker、E2B、Daytona、Modal 和 Vercel 已支持兼容运行环境下的 Envd/EIP 与桌面访问。Service 可自动准备 E2B 桌面模板；其他 Provider 仍按各自文档准备镜像或快照。Sprites 和 Runloop 当前提供原生 Files & Shell。已有字段详见[配置参考](configuration-reference.md)。
 
 [在本地试用远程示例](remote-envd.md)，无需模型、Docker 或云账号。
 

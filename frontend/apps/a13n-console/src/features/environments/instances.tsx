@@ -45,6 +45,7 @@ import {
   environmentTemplates,
 } from "./api";
 import instanceStyles from "./environments.module.css";
+import { FIRST_DESKTOP_NOTICE } from "./creation-progress";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
 import { MetricsSourcePicker } from "../monitoring/environment";
@@ -87,7 +88,10 @@ export function EnvironmentInstances() {
           ? (item) => matchesSearch(term, item.name, item.endpoint)
           : undefined,
       ),
-    refetchInterval: 15_000,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.status === "creating")
+        ? 2000
+        : 15_000,
   });
   const providers = useQuery({
     queryKey: ["environment-provider-options", workspace.id],
@@ -149,7 +153,9 @@ export function EnvironmentInstances() {
       <PageActions secondary>
         <ManageProvidersLink category="environments" />
       </PageActions>
-      <PageActions>{can("write") && <CreateEnvironment />}</PageActions>
+      <PageActions>
+        {can("write") && <CreateEnvironment onCreated={setSelected} />}
+      </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading variant="table" columns={5} />
@@ -247,7 +253,10 @@ export function EnvironmentInstances() {
                     "Choose an environment template when starting a conversation, or register an external environment.",
                   )
             }
-            action={!filtered && can("write") && <CreateEnvironment />}
+            action={
+              !filtered &&
+              can("write") && <CreateEnvironment onCreated={setSelected} />
+            }
           />
         )
       )}
@@ -263,7 +272,11 @@ export function EnvironmentInstances() {
   );
 }
 
-function CreateEnvironment() {
+function CreateEnvironment({
+  onCreated,
+}: {
+  onCreated: (value: Schema["EnvironmentView"]) => void;
+}) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
   return (
@@ -284,12 +297,20 @@ function CreateEnvironment() {
       closeLabel={t("Close")}
       open={open}
     >
-      {open && <EnvironmentForm close={() => setOpen(false)} />}
+      {open && (
+        <EnvironmentForm close={() => setOpen(false)} onCreated={onCreated} />
+      )}
     </ModalFrame>
   );
 }
 
-function EnvironmentForm({ close }: { close: () => void }) {
+function EnvironmentForm({
+  close,
+  onCreated,
+}: {
+  close: () => void;
+  onCreated: (value: Schema["EnvironmentView"]) => void;
+}) {
   const client = useClient(),
     { workspace } = useWorkspace(),
     cache = useQueryClient(),
@@ -331,9 +352,10 @@ function EnvironmentForm({ close }: { close: () => void }) {
         })
         .then(data);
     },
-    onSuccess: () => {
+    onSuccess: (value) => {
       void cache.invalidateQueries({ queryKey: ["environments"] });
       close();
+      onCreated(value);
     },
   });
   const templateOptions =
@@ -436,6 +458,9 @@ function EnvironmentForm({ close }: { close: () => void }) {
           </FormField>
         </>
       )}
+      {kind === "managed" &&
+        templates.data?.find((item) => item.id === templateId)?.config?.recipe
+          ?.template === "auto" && <p role="note">{t(FIRST_DESKTOP_NOTICE)}</p>}
       <MetricsSourcePicker
         value={metricsSource}
         onChange={setMetricsSource}

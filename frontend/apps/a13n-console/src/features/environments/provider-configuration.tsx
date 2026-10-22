@@ -61,11 +61,11 @@ export function ProviderConfiguration({
   } catch {
     // An unfinished JSON draft remains editable without losing its text.
   }
-  const e2bDefaultTemplate = "base";
+  const e2bDefaultTemplate = value?.desktop === true ? "auto" : "base";
   const e2bRequiresEnvd =
     value?.execution === "envd_http" || value?.desktop === true;
   const e2bUsesCustomTemplate =
-    e2bRequiresEnvd ||
+    (e2bRequiresEnvd && value?.desktop !== true) ||
     e2bCustom ||
     (typeof value?.template === "string" &&
       value.template !== e2bDefaultTemplate);
@@ -340,8 +340,10 @@ export function ProviderConfiguration({
                         ...(enabled &&
                         (!value.template ||
                           ["base", "desktop"].includes(String(value.template)))
-                          ? { template: "" }
-                          : {}),
+                          ? { template: "auto", desktop_assistance: true }
+                          : !enabled && value.template === "auto"
+                            ? { template: "base", execution: "native" }
+                            : {}),
                       })
                     }
                   />
@@ -357,8 +359,14 @@ export function ProviderConfiguration({
                       options={[
                         {
                           value: "official",
-                          label: t("Official default"),
-                          disabled: readOnly || e2bRequiresEnvd,
+                          label: t(
+                            value.desktop === true
+                              ? "Automatic desktop"
+                              : "Official default",
+                          ),
+                          disabled:
+                            readOnly ||
+                            (e2bRequiresEnvd && value.desktop !== true),
                         },
                         {
                           value: "custom",
@@ -382,7 +390,13 @@ export function ProviderConfiguration({
                           if (typeof value.template === "string")
                             e2bCustomDraft.current = value.template;
                           setE2bCustom(false);
-                          change({ ...value, template: e2bDefaultTemplate });
+                          change({
+                            ...value,
+                            template: e2bDefaultTemplate,
+                            ...(value.desktop === true
+                              ? { desktop_assistance: true }
+                              : {}),
+                          });
                         }
                       }}
                     />
@@ -408,11 +422,15 @@ export function ProviderConfiguration({
                     />
                   ) : (
                     <div className={styles.e2bTemplateSummary}>
-                      <strong>{e2bDefaultTemplate}</strong>
+                      <strong>
+                        {value.desktop === true
+                          ? t("Automatic desktop")
+                          : e2bDefaultTemplate}
+                      </strong>
                       <span>
                         {t(
                           value.desktop === true
-                            ? "Linux desktop with preinstalled desktop components."
+                            ? "The first desktop creation usually takes 1–2 minutes to prepare a private template; it may take longer. Later creations reuse it. You can leave this page while creation continues."
                             : "A standard sandbox for commands and files.",
                         )}
                       </span>

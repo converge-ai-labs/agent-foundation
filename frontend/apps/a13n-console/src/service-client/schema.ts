@@ -1087,6 +1087,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/creation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Environment Creation */
+    get: operations["get_environment_creation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/desktop-preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Environment Desktop Preview */
+    get: operations["get_environment_desktop_preview"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/metrics-binding": {
     parameters: {
       query?: never;
@@ -1132,6 +1166,23 @@ export interface paths {
     put?: never;
     /** Query Environment Metrics */
     post: operations["query_environment_metrics"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/retry-creation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Environment Creation */
+    post: operations["retry_environment_creation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -5671,6 +5722,32 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** CreationProgress */
+    CreationProgress: {
+      /** Ended At */
+      ended_at?: string | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /**
+       * Retryable
+       * @default false
+       */
+      retryable?: boolean;
+      /**
+       * Stage
+       * @enum {string}
+       */
+      stage:
+        "preparing" | "building" | "starting" | "ready" | "failed" | "inactive";
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
     };
     /**
      * CredentialMode
@@ -14184,6 +14261,61 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_environment_creation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreationProgress"] | null;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_environment_desktop_preview: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "image/jpeg": unknown;
+          "image/png": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   select_metrics_source: {
     parameters: {
       query?: never;
@@ -14271,6 +14403,35 @@ export interface operations {
           "application/json":
             | components["schemas"]["QueryResult"]
             | components["schemas"]["LocalResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  retry_environment_creation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
         };
       };
       400: components["responses"]["Error"];

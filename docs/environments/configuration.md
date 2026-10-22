@@ -77,6 +77,10 @@ Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–
 
 `E2BConnectionConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
 
+In Service/Console, enabling desktop without a custom template selects automatic private template preparation (`template="auto"`, `execution="envd_http"`, `desktop_assistance=true`). The first creation builds; later creations reuse within the same connection and credential scope. See [desktop preparation](providers.md#e2b-desktop-preparation).
+
+The first automatic E2B desktop creation usually takes 1–2 minutes and can take longer; later creations reuse the template. The environment inspector shows its actual preparation stage and elapsed time. You can leave the page while creation continues and reopen the inspector from Environment instances. Once ready, choose **View desktop** for a refreshable read-only snapshot; interactive control remains available through a conversation. A creation failure shows its reason and offers **Retry creation** once the previous operation has a confirmed outcome. Saving configuration alone does not start a build.
+
 ### Daytona
 
 `DaytonaEnvironmentConfiguration` selects a snapshot, which sets the sandbox's resources. The root defaults to the writable `/home/daytona`. `DaytonaConnectionConfiguration` supplies organization and target region; `TokenCredential` supplies the API key.
@@ -87,7 +91,7 @@ Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–
 
 ### Vercel Sandbox
 
-`VercelEnvironmentConfiguration` selects runtime, vCPUs, and session lifetime, with root `/vercel/sandbox`. `VercelConnectionConfiguration` names team and project; `TokenCredential` holds the Vercel access token. The adapter uses a named persistent Vercel sandbox with native stop and resume.
+`VercelEnvironmentConfiguration` defaults to native Files & Shell with root `/vercel/sandbox`. Select `execution="envd_http"` and an operator-built `snapshot` for EIP at `/workspace`; `desktop=true` requires this route. Service adds `desktop_assistance=true` for human access. `VercelConnectionConfiguration` names team and project; `TokenCredential` holds the Vercel access token. The provider uses a named persistent sandbox with native stop/resume and bounded session lifetime. See [snapshot preparation](providers.md#vercel-sandbox).
 
 ### Fly.io Sprites
 

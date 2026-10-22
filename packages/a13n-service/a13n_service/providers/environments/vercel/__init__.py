@@ -1,9 +1,29 @@
+from a13n_harness.providers.environment.native.configuration import TokenCredential
+from a13n_harness.providers.environment.native.environment import NativeRuntime
 from a13n_harness.providers.environment.vercel.provider import VERCEL as EXECUTION
+from a13n_harness.providers.environment.vercel.shared import VercelConnectionConfiguration
 
-from a13n_service.providers.environment.native import native_management_definition
+from a13n_service.providers.environment._backend_factory import ManagementBackendFactory
+from a13n_service.providers.environment.definition import management_definition
 
+from .configuration import VercelRecipe
 from .management import VercelManagement
 
-VERCEL = native_management_definition(
-    EXECUTION, management_type=VercelManagement, supports_stop=True, requires_keepalive=True
+
+async def runtime(*, configuration: VercelConnectionConfiguration, credential: TokenCredential | None) -> NativeRuntime:
+    if credential is None:
+        raise ValueError("Vercel requires a credential")
+    return NativeRuntime(configuration, credential)
+
+
+_factory = ManagementBackendFactory(
+    key="vercel", environment_model=VercelRecipe, management=VercelManagement, runtime_factory=runtime
+)
+VERCEL = management_definition(
+    EXECUTION,
+    environment_model=VercelRecipe,
+    provider_factory=_factory.provider,
+    supports_stop=True,
+    supports_destroy=True,
+    requires_keepalive=True,
 )

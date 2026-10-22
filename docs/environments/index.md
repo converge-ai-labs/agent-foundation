@@ -38,13 +38,13 @@ description: Independent target management and portable execution across local, 
 | Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
 | Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
 | Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
-| Envd           | `vercel`         | EIP to a compatible sandbox daemon                            | Vercel provider                 |
-| Envd           | `sprites`        | EIP to a compatible sandbox daemon                            | Sprites provider                |
-| Envd           | `runloop`        | EIP to a compatible sandbox daemon                            | Runloop provider                |
+| Native / Envd  | `vercel`         | Native Files & Shell / explicit HTTP EIP                      | Vercel provider                 |
+| Native         | `sprites`        | Vendor Files & Shell; EIP not integrated                      | Sprites provider                |
+| Native         | `runloop`        | Vendor Files & Shell; EIP not integrated                      | Runloop provider                |
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-> Implementation status: this page defines the consolidated execution model. Some cloud providers and E2B/Daytona desktop adapters still need migration. Use an explicit connection to a compatible Envd target for general capabilities. Existing configuration fields are documented in the [configuration reference](configuration-reference.md).
+> Implementation status: Docker, E2B, Daytona, Modal and Vercel support Envd/EIP and desktop access with compatible runtimes. Service can automatically prepare E2B desktop templates; the other providers retain their documented image or snapshot setup. Sprites and Runloop currently provide native Files & Shell. See the [configuration reference](configuration-reference.md) for existing fields.
 
 [Try the remote examples locally](remote-envd.md) without a model, Docker or cloud account.
 

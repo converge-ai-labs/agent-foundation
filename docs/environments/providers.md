@@ -70,13 +70,13 @@ Execution uses a Native basic path or the general Envd path; resource management
 | Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
 | Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
 | Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
-| Envd           | `vercel`         | EIP to a compatible sandbox daemon                            | Vercel provider                 |
-| Envd           | `sprites`        | EIP to a compatible sandbox daemon                            | Sprites provider                |
-| Envd           | `runloop`        | EIP to a compatible sandbox daemon                            | Runloop provider                |
+| Native / Envd  | `vercel`         | Native Files & Shell / explicit HTTP EIP                      | Vercel provider                 |
+| Native         | `sprites`        | Vendor Files & Shell; EIP not integrated                      | Sprites provider                |
+| Native         | `runloop`        | Vendor Files & Shell; EIP not integrated                      | Runloop provider                |
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-Native Local, Docker, and E2B provide Files & Shell directly. General execution on Daytona, Modal, Vercel, Sprites, and Runloop uses Envd/EIP, while their resource management providers continue to use vendor APIs. Docker retains explicit Native and Envd paths.
+Daytona and Modal use Envd/EIP. Docker, E2B and Vercel offer explicit Native and Envd paths. Sprites and Runloop currently provide vendor-native Files & Shell only; their Envd, Computer and human desktop access integrations are not implemented. Local execution remains separate.
 
 Before deploying Envd, check the [sandbox validation record](../a13n-envd/egress.md#cloud-platform-validation-record) for launch identities, egress coverage, and platform limits. Available execution capabilities follow daemon negotiation and Host policy.
 
@@ -131,20 +131,20 @@ With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the 
 
 ## Cloud Providers
 
-E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. E2B supplies Native Files & Shell; the other five use the general Envd execution path. Advanced capabilities on an E2B target also use a compatible Envd connection. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
+E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. Daytona and Modal use Envd. E2B and Vercel retain Native Files & Shell and offer an explicit Envd path for advanced capabilities. Sprites and Runloop currently expose Native Files & Shell only. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
 
 | Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                                |
 | -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------- |
 | E2B            | `domain`, optional `api_url`                                                   | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                |
 | Daytona        | `organization_id`, `target` (default `us`)                                     | `api_key`                       | `snapshot`, which sets the sandbox's resources                                        |
 | Modal          | `workspace`, existing deployed `app_name`, `environment_name` (default `main`) | `token_id`, `token_secret`      | required Envd-compatible `image`, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `runtime` (default `python3.13`), `vcpus`, `timeout_seconds`                          |
+| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`             |
 | Fly.io Sprites | `organization`                                                                 | `api_key` (Sprites token)       | `region`                                                                              |
 | Runloop        | `organization`                                                                 | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                               |
 
 Use the organization, team, or Modal `workspace` that owns the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a recipe or reconnect state.
 
-Daytona, Modal, Vercel, Sprites, and Runloop management providers prepare the target, compatible Envd runtime, and authorized connection. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
+Daytona, Modal and explicitly configured Vercel Envd management providers prepare the target, compatible Envd runtime, and authorized connection. Sprites and Runloop do not yet prepare Envd. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
 
 ### Reconnection and lifecycle
 
@@ -221,7 +221,11 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 
 ### E2B desktop preparation
 
-E2B defaults to `execution="native"` for Files & Shell without Envd. Select `execution="envd_http"` and `desktop=true` for Computer use. This requires an operator-built template containing Envd and desktop components; the stock `desktop` template does not provide `a13n-envd`.
+E2B defaults to `execution="native"` for Files & Shell without Envd. Select `execution="envd_http"` and `desktop=true` for Computer use. In Console, choose your E2B connection and enable **Desktop environment**. **Automatic desktop** prepares a private template on the first environment creation and reuses it on later creations. No local binary or manual template build is needed. The account key must permit template builds as well as sandboxes; the first creation takes longer. The stock E2B `desktop` template alone does not provide `a13n-envd`.
+
+The automatic manifest pins the base image, official Envd release and startup-source checksums. Reuse is scoped to the workspace, connection, backend, credential version and manifest. Changing credentials or upgrading the manifest prepares a new base for new instances. Existing instances keep their selected template. Failed builds retain diagnostic identity and are cleaned up only after ownership checks; successful private templates remain in your E2B account for reuse.
+
+For a manually maintained template, choose **Custom template** instead.
 
 The [template builder](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py) packages a compatible Linux amd64 Envd binary, the shared desktop launcher, Noto CJK fonts, Chromium and the desktop-access supervisor. Run from a source checkout with `E2B_API_KEY` securely configured:
 
@@ -231,9 +235,9 @@ uv sync --locked
 uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-Select that template name or ID in Console. Service starts the preinstalled components on creation, generates a private credential per sandbox, and connects through E2B's HTTPS port route. No additional Envd account or public bearer URL is needed. Agent files, shell and Computer operations all use EIP in this mode, with `/workspace` as working directory. Native account/root/helper settings apply only to Native execution. Opening an existing target never starts or repairs components; unavailable daemons and incompatible methods fail explicitly.
+For a custom build, enter that template name or ID in Console. For either path, Service starts the preinstalled components on creation, generates a private credential per sandbox, and connects through E2B's HTTPS port route. No additional Envd account or public bearer URL is needed. Agent files, shell and Computer operations all use EIP in this mode, with `/workspace` as working directory. Native account/root/helper settings apply only to Native execution. Opening an existing target never starts or repairs components; unavailable daemons and incompatible methods fail explicitly.
 
-Enable `desktop_assistance=true` for viewing and human control. Configure Agent Computer tools and mount permissions separately. The viewer supervisor enforces grants and revocation; Service coordinates safe pause and resume. Envd owns input, coordinate conversion and screenshot behavior. Its current Linux X11 backend supports physical keys but rejects literal Unicode text entry; there is no E2B Desktop SDK fallback. See [Envd Computer use](../a13n-envd/computer-use.md).
+Automatic desktop enables `desktop_assistance=true` by default. For custom templates, enable it explicitly for viewing and human control. Configure Agent Computer tools and mount permissions separately. The viewer supervisor enforces grants and revocation; Service coordinates safe pause and resume. Envd owns input, coordinate conversion and screenshot behavior. Its current Linux X11 backend supports physical keys but rejects literal Unicode text entry; there is no E2B Desktop SDK fallback. See [Envd Computer use](../a13n-envd/computer-use.md).
 
 ### Daytona
 
@@ -269,7 +273,13 @@ uv run --locked python examples/environment-provider/modal_desktop_image.py \
 Use the resulting image ID in the recipe:
 
 ```json
-{"image": "im-yourImageId", "desktop": true, "desktop_assistance": true, "cpu": 2, "memory": 4096}
+{
+  "image": "im-yourImageId",
+  "desktop": true,
+  "desktop_assistance": true,
+  "cpu": 2,
+  "memory": 4096
+}
 ```
 
 `desktop` requires an observable, input-ready desktop on create and resume. The Service-only `desktop_assistance` setting also requires the desktop access supervisor. A separate TLS tunnel on port 6081 provides read-only viewing, exclusive control, revocation and handback. The TLS tunnel on port 8888 carries Envd with its own guest token; the browser receives neither Modal nor Envd credentials. Enable Agent Computer tools and mount permissions separately.
@@ -282,7 +292,32 @@ Managed stop snapshots the filesystem before termination. Explicit start allocat
 
 ### Vercel Sandbox
 
-Default runtime: `python3.13`; root: `/vercel/sandbox`. Named persistent sandboxes use native stop/resume. Target identity includes native creation time; a new running session alone does not replace the persistent filesystem identity. Delete also requests native asynchronous cleanup of orphan snapshots.
+Vercel defaults to `execution="native"` for existing Files & Shell environments. Computer use requires `execution="envd_http"`, an operator-built `snapshot` and `desktop=true`. Enable Service `desktop_assistance=true` separately for human access.
+
+Build a snapshot from this checkout using a compatible Linux amd64 Envd binary. Securely configure `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`:
+
+```sh
+uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py --binary /path/to/linux-amd64/a13n-envd
+```
+
+For slow local upload links, pass `--archive-url` for a compatible official Linux amd64 release archive and `--archive-sha256` from its verified `SHA256SUMS` instead of `--binary`. The sandbox downloads the archive, checks the checksum, and extracts only `a13n-envd`.
+
+The builder creates a temporary billable sandbox, installs desktop prerequisites and Google Chrome, uploads the supplied binary and shared launchers, then preserves a snapshot without live daemons or guest credentials. It deletes the build sandbox and retains the snapshot for reuse.
+
+```json
+{
+  "execution": "envd_http",
+  "snapshot": "snap_yourSnapshot",
+  "desktop": true,
+  "desktop_assistance": true,
+  "vcpus": 2,
+  "timeout_seconds": 1800
+}
+```
+
+Envd uses `/workspace` as UID/GID 1001; native execution retains `/vercel/sandbox`. Create and explicit resume start the preinstalled components and verify EIP and Computer readiness. Attachment and access never install, repair or resume a desktop. Port 8888 carries authenticated EIP; port 6081 carries the revocable desktop viewer. Browser clients receive short-lived supervisor credentials, never the Vercel access token or Envd guest token. Service validates ownership, native identity, current session and endpoint policy. Stop preserves files but recreates desktop processes on resume; old observations and grants become invalid.
+
+Sprites and Runloop remain command-backed Files & Shell providers. A historical standalone Envd runtime probe does not establish current Provider or Console integration.
 
 ### Fly.io Sprites
 

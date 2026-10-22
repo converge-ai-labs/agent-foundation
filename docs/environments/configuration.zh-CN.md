@@ -77,6 +77,10 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 `E2BConnectionConfiguration.domain` 默认为 `e2b.dev`；`E2BCredential.api_key` 是单独保护的值。Host 提供运行时凭据，在保留策略需要时维护保活，并在生命周期操作后持久保存沙箱状态。新适配器可重连精确保留的沙箱，但不会重建丢失输出或扩大访问。
 
+在 Service/Console 中，勾选桌面且不指定自定义模板时，默认自动准备私有模板（`template="auto"`、`execution="envd_http"`、`desktop_assistance=true`）。首次创建构建，后续在同一连接和凭据范围内复用。见[桌面准备](providers.md#e2b-desktop-preparation)。
+
+首次自动创建 E2B 桌面通常需要 1～2 分钟，也可能更久；后续创建复用模板。创建后，环境详情显示实际准备阶段和已等待时间。可以离开页面，后台会继续处理，稍后从环境实例列表重新打开详情。就绪后点击“查看桌面”获取只读快照，按需刷新；交互操作仍从会话中接管。创建失败会展示原因，上一轮操作结果确认后可以“重试创建”。只保存配置不会提前构建。
+
 ### Daytona
 
 `DaytonaEnvironmentConfiguration` 选择决定沙箱资源的快照。根目录默认为可写的 `/home/daytona`。`DaytonaConnectionConfiguration` 提供组织和目标区域；`TokenCredential` 提供 API key。
@@ -87,7 +91,7 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 ### Vercel Sandbox
 
-`VercelEnvironmentConfiguration` 选择运行时、vCPU 和会话寿命，根目录为 `/vercel/sandbox`。`VercelConnectionConfiguration` 指定团队和项目；`TokenCredential` 保存 Vercel access token。适配器使用命名的持久 Vercel 沙箱，支持原生停止和恢复。
+`VercelEnvironmentConfiguration` 默认提供原生 Files & Shell，根目录为 `/vercel/sandbox`。选择 `execution="envd_http"` 和运维构建的 `snapshot`，即可通过 EIP 使用 `/workspace`；`desktop=true` 必须使用该路径。Service 另以 `desktop_assistance=true` 开启人工访问。`VercelConnectionConfiguration` 指定 team 和 project；`TokenCredential` 保存 Vercel access token。Provider 使用命名持久沙箱，保留原生停止／恢复和会话时限。参见[快照准备](providers.md#vercel-sandbox)。
 
 ### Fly.io Sprites
 
