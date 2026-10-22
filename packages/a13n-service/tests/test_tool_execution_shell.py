@@ -327,8 +327,9 @@ async def test_routing_lost_reply_does_not_repeat_mutation(serve, runs_kit, monk
             await caller.routing.client.aclose()
 
 
+@pytest.mark.parametrize("cause", ["explicit", "durable_cancel", "principal_revoked"])
 async def test_cancelled_shell_terminates_before_sibling_releases_environment(
-    serve, settings, scripted_model, runs_kit, tmp_path
+    serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cause
 ):
     import os
 
@@ -372,7 +373,26 @@ async def test_cancelled_shell_terminates_before_sibling_releases_environment(
             first = records["first"]
             pid = int((tmp_path / "first.pid").read_text())
             os.kill(pid, 0)
-            await owner.cancel(lease.thread_id, first.execution_id)
+            if cause == "explicit":
+                await owner.cancel(lease.thread_id, first.execution_id)
+            elif cause == "durable_cancel":
+                async with transaction(service.runtime.storage) as session:
+                    row = await session.get(ToolExecutionRow, first.execution_id)
+                    row.cancel_requested_at = datetime.now(UTC)
+            else:
+                from a13n_harness.tool_execution import current_execution
+                from a13n_service.runs.attempts import AuthorityRevoked
+                from a13n_service.runs.tool_executions import authority
+
+                original = authority.authorize_execution
+
+                async def revoked(session, access, run):
+                    execution = current_execution()
+                    if execution is not None and execution.execution_id == first.execution_id:
+                        raise AuthorityRevoked()
+                    return await original(session, access, run)
+
+                monkeypatch.setattr(authority, "authorize_execution", revoked)
             result = await owner.wait(lease.thread_id, first.execution_id, timeout_seconds=5)
             assert result.record.status == "cancelled"
             assert {record.execution_id for record in owner.active} == {records["second"].execution_id}

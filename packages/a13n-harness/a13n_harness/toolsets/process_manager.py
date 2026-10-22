@@ -323,7 +323,7 @@ class _ProcessController:
                 if _is_final(info):
                     # Native exit can precede output producer closure.
                     await asyncio.sleep(0.05)
-        except BaseException:
+        except asyncio.CancelledError:
             try:
                 with execution_cleanup():
                     async with asyncio.timeout(5):

@@ -218,3 +218,45 @@ async def test_uncooperative_tool_cannot_extend_worker_process_shutdown(cause):
         if process.returncode is None:
             process.kill()
             await process.wait()
+
+
+async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
+    script = textwrap.dedent("""
+        import asyncio
+        from types import SimpleNamespace
+        from a13n_harness.tool_execution import ToolExecutionRuntime
+        from a13n_service.runs.worker import Worker
+        from a13n_service.runs import worker as worker_module
+
+        async def main():
+            async def idle(*args):
+                await asyncio.Event().wait()
+            async def heartbeat(*args):
+                return (), set()
+            worker_module.heartbeat = heartbeat
+            executions = ToolExecutionRuntime()
+            executions.routing = SimpleNamespace(run=idle)
+            executions.output = SimpleNamespace(run=idle)
+            executions.lease_deadlines = {}
+            runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
+                worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30),
+                tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
+            ))
+            worker = Worker(runtime, None)
+            worker.free = 0
+            asyncio.get_running_loop().call_later(0.03, executions.stop_admission)
+            await worker.run()
+            raise AssertionError("closed worker stayed alive")
+        asyncio.run(main())
+    """)
+    process = await asyncio.create_subprocess_exec(sys.executable, "-c", script, stderr=asyncio.subprocess.PIPE)
+    try:
+        async with asyncio.timeout(10):
+            _, stderr = await process.communicate()
+        assert process.returncode == 1
+        assert b"forcing process exit after drain" in stderr
+        assert b"Traceback" not in stderr
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()

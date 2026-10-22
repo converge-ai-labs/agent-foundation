@@ -1,7 +1,8 @@
 """Host-owned mount sources: inert registration, first-use lifecycle and fixed-target connectors."""
 
+import asyncio
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
@@ -21,6 +22,7 @@ from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
+from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
@@ -29,7 +31,7 @@ from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.attempts import Lease, lock_lease
+from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
 from a13n_service.runs.desktop_assistance import admission as desktop_admission
 from a13n_service.runs.desktop_assistance.service import verify_continuation
 from a13n_service.runs.environments import external
@@ -82,8 +84,19 @@ class Source:
     def environment_id(self) -> str:
         return self.mount.environment_id
 
-    def operation_guard(self, action: EnvironmentAction):
-        return desktop_admission.operation(self.runtime, self.lease, self.environment_id, self.state, action)
+    @asynccontextmanager
+    async def operation_guard(self, action: EnvironmentAction) -> AsyncIterator[None]:
+        async with AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(
+                    desktop_admission.operation(self.runtime, self.lease, self.environment_id, self.state, action)
+                )
+            except (LeaseLost, AuthorityRevoked) as exc:
+                if current_execution() is not None and not execution_cleanup_active():
+                    # Authority loss cancels owned work; provider observation errors do not.
+                    raise asyncio.CancelledError from exc
+                raise
+            yield
 
     async def ensure_ready(self) -> EnvironmentConnector:
         seconds = self.runtime.settings.environments.wait_seconds

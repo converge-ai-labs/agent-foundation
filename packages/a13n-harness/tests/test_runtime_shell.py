@@ -524,6 +524,54 @@ async def test_cancel_during_admission_starts_once_then_terminates(tmp_path, mon
         await runtime.close()
 
 
+@pytest.mark.parametrize("operation", ["wait", "inspect", "read_output"])
+async def test_shell_observation_failure_does_not_kill_native_process(tmp_path, monkeypatch, operation):
+    import os
+
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+
+    fail = asyncio.Event()
+    original = getattr(LocalProcessManager, operation)
+    target = None
+
+    async def failed_observation(self, handle, **kwargs):
+        nonlocal target
+        if target is None:
+            target = handle
+        if handle == target:
+            await fail.wait()
+            raise EnvironmentError("Observation transport lost", code="environment_unavailable")
+        return await original(self, handle, **kwargs)
+
+    monkeypatch.setattr(LocalProcessManager, operation, failed_observation)
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable(
+            [
+                ("shell_exec", {"command": "echo $$ > first.pid; read line"}),
+                ("shell_exec", {"command": "read line"}),
+            ],
+            results,
+        ).run("two shells", environment=source(tmp_path), bindings=bindings(runtime))
+        async with asyncio.timeout(5):
+            while not (tmp_path / "first.pid").exists():
+                await asyncio.sleep(0.01)
+        pid = int((tmp_path / "first.pid").read_text())
+        fail.set()
+        settled = await runtime.wait(first.thread_id, results[0]["execution_id"], timeout_seconds=5)
+        assert settled.record.status == "succeeded", settled
+        assert settled.result["ok"] is False
+        assert settled.result["error"]["code"] == "environment_unavailable"
+        assert (await runtime.info(first.thread_id, results[1]["execution_id"])).status == "running"
+        # The sibling keeps the provider scope alive. Observation failure alone cannot kill its process.
+        os.kill(pid, 0)
+    finally:
+        fail.set()
+        await runtime.close()
+
+
 async def test_shell_settles_only_after_output_capture_closes(tmp_path, monkeypatch):
     from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
 

@@ -65,10 +65,15 @@ class Worker:
                 while not self.stopping:
                     if not self.runtime.executions.accepting:
                         await self._drain()
-                        raise RuntimeError("Tool execution publication failed; worker admission is closed.")
+                        logger.error("Tool execution admission closed; forcing process exit after drain")
+                        os._exit(1)
                     if self.free == 0:
                         self.slot_released.clear()
-                        await self.slot_released.wait()
+                        # Recheck failed tool admission even when every attempt slot remains occupied.
+                        try:
+                            await asyncio.wait_for(self.slot_released.wait(), timeout=settings.authority_seconds)
+                        except TimeoutError:
+                            pass
                         continue
                     requested = self.free
                     sent = asyncio.get_running_loop().time()
