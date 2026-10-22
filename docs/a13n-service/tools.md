@@ -131,7 +131,7 @@ Service saves an App tool's original arguments, declaration and full MCP result,
 
 Opening never repeats the original tool. Each request uses a new MCP client; servers requiring the worker's original session are unsupported. Button calls use the saved connection and Agent selection, current connection availability and tool selection, and App visibility. Tools requiring approval or model review are refused, and MCP human input is unsupported. Calls are never automatically retried; `outcome_unknown` means callers must check external state before trying again. Follow-up results do not replace the saved original or enter model history.
 
-The embedding application creates the iframe, enforces resource CSP and isolation, and supplies the original arguments and result through its MCP App bridge. It owns View state and sends context or messages through the existing Run submission API. HTML is not saved, so a newer resource can be incompatible with old result data. Console does not render Apps. Objects use checkpoint format 4: upgrade all control/readers before starting the new workers.
+The embedding application creates the iframe, enforces resource CSP and isolation, and supplies the original arguments and result through its MCP App bridge. It owns View state and sends context or messages through the existing Run submission API. HTML is not saved, so a newer resource can be incompatible with old result data. Console does not render Apps. Objects use checkpoint format 5: upgrade all control/readers before starting the new workers. New App records load the original from object storage only when opening; button calls and resource reads use private database references. Older records remain readable through their saved originals.
 
 ### OAuth
 

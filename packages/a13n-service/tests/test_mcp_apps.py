@@ -1,11 +1,14 @@
 """MCP App originals cross worker persistence and independent, authorized control requests."""
 
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
 import anyio
 import pytest
+from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.runs.contents import Contents
+from a13n_service.runs.mcp_apps.schemas import AppBinding, AppReference
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
@@ -18,7 +21,18 @@ MIME = "text/html;profile=mcp-app"
 
 
 @pytest.fixture
-async def app_run(service, scripted_model, runs_kit, request):
+async def app_run(service, scripted_model, runs_kit, request, monkeypatch):
+    mode = getattr(request, "param", False)
+    if mode == "legacy":
+        save_app = Contents.app
+
+        def legacy_app(self, identifier, data, *, binding=None):
+            # Format-4 writers included private authorization in the original, not its reference.
+            assert binding is not None
+            legacy = {**json.loads(data), **binding.model_dump(mode="json")}
+            return save_app(self, identifier, json.dumps(legacy).encode())
+
+        monkeypatch.setattr(Contents, "app", legacy_app)
     server = FastMCP("App counter")
     calls = SimpleNamespace(show=0, increment=0, resource=0, html="<p>First version</p>", slow=False, failed=False)
 
@@ -29,7 +43,7 @@ async def app_run(service, scripted_model, runs_kit, request):
             content=[TextContent(type="text", text=label)],
             structured_content={"count": 0},
             meta={"private_app_value": "original-private-value"},
-            is_error=getattr(request, "param", False),
+            is_error=mode is True,
         )
 
     @server.tool(meta={"ui": {"visibility": ["app"]}})
@@ -68,7 +82,14 @@ async def app_run(service, scripted_model, runs_kit, request):
         scripted_model.call("show_counter", {"label": "Counter"}, call_id="call_show")
         scripted_model.say("Opened")
         submitted = await runs_kit.start_thread(service, agent, "Show the counter")
-        await (await runs_kit.attempt(service))
+        runtime = service.runtime
+        if mode == "paged":
+            settings = runtime.settings
+            runtime = replace(
+                runtime,
+                settings=settings.model_copy(update={"worker": settings.worker.model_copy(update={"page_items": 1})}),
+            )
+        await (await runs_kit.attempt(service, runtime=runtime))
         run_id = submitted["run"]["id"]
         run = await runs_kit.get_run(service, run_id)
         assert run["status"] == "completed", run
@@ -84,6 +105,7 @@ async def app_run(service, scripted_model, runs_kit, request):
             connection=connection,
             agent=agent,
             history=history,
+            paged=mode == "paged",
         )
 
 
@@ -147,6 +169,77 @@ async def test_app_button_preserves_raw_error_result_without_retry(service, app_
     assert app_run.calls.increment == 1 and app_run.calls.show == 1
 
 
+@pytest.mark.parametrize("app_run", ["tail", "paged"], indirect=True)
+async def test_app_operations_read_only_committed_database_binding(service, app_run, monkeypatch):
+    from a13n_service.infra.db import short_session
+    from a13n_service.runs import checkpoints, runs
+    from a13n_service.runs.tables import RunRow
+
+    runtime = service.runtime
+    ref = await runs.content_ref(
+        runtime, admin(service), service.tenant.workspace_id, app_run.run_id, app_run.reference["app_id"], purpose="app"
+    )
+    assert ref.app is not None
+    assert ref.app.reference.model_dump() == app_run.reference
+    assert ref.app.selection.permissions == {"reset": "ask"}
+    raw = json.loads(await checkpoints.load(runtime.objects, ref))
+    assert "connection_url" not in raw and "selection" not in raw and "run_id" not in raw
+    async with short_session(runtime.storage) as session:
+        run = await session.get_one(RunRow, app_run.run_id)
+        tail_has_app = any(value["id"] == ref.id for value in run.tail["refs"])
+    assert tail_has_app is not app_run.paged
+
+    reads = []
+    get = runtime.objects.get
+
+    async def counted_get(key):
+        reads.append(key)
+        return await get(key)
+
+    monkeypatch.setattr(runtime.objects, "get", counted_get)
+    opened = await service.client.post(app_run.path + "/open")
+    assert opened.status_code == 200, opened.text
+    assert reads == [ref.key]
+    reads.clear()
+    for name in ("hidden", "reset", "missing"):
+        assert (await service.client.post(app_run.path + "/tools/call", json={"name": name})).status_code == 403
+    called = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
+    assert called.status_code == 200, called.text
+    resource = await service.client.post(app_run.path + "/resources/read", json={"uri": URI})
+    assert resource.status_code == 200, resource.text
+    assert resource.json()["html"] == app_run.calls.html
+    assert reads == []
+
+
+@pytest.mark.parametrize("app_run", ["legacy"], indirect=True)
+async def test_legacy_app_reference_loads_authorization_from_original(service, app_run, monkeypatch):
+    from a13n_service.runs import runs
+
+    runtime = service.runtime
+    ref = await runs.content_ref(
+        runtime, admin(service), service.tenant.workspace_id, app_run.run_id, app_run.reference["app_id"], purpose="app"
+    )
+    assert ref.app is None
+    reads = []
+    get = runtime.objects.get
+
+    async def counted_get(key):
+        reads.append(key)
+        return await get(key)
+
+    monkeypatch.setattr(runtime.objects, "get", counted_get)
+    opened = await service.client.post(app_run.path + "/open")
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["result"]["_meta"]["private_app_value"] == "original-private-value"
+    called = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
+    assert called.status_code == 200, called.text
+    resource = await service.client.post(app_run.path + "/resources/read", json={"uri": URI})
+    assert resource.status_code == 200, resource.text
+    denied = await service.client.post(app_run.path + "/tools/call", json={"name": "reset"})
+    assert denied.status_code == 403, denied.text
+    assert reads == [ref.key] * 4
+
+
 async def test_control_rejects_wrong_run_hidden_tools_permissions_and_disabled_connection(service, runs_kit, app_run):
     path = app_run.path
     other = await runs_kit.start_thread(service, app_run.agent, "another run")
@@ -198,7 +291,7 @@ async def test_unknown_outcome_is_not_retried_and_admission_must_opt_in(service,
 
 
 @pytest.mark.parametrize("count", [1, 128])
-async def test_app_reference_survives_tail_restore_and_page_dependencies(runtime, tenant, count):
+async def test_app_reference_survives_tail_restore_and_page_dependencies(runtime, tenant, count, monkeypatch):
     from a13n_service.runs import checkpoints
     from a13n_service.runs.attempts import Lease
     from a13n_service.runs.display import Page, Snapshot, Tail
@@ -208,7 +301,7 @@ async def test_app_reference_survives_tail_restore_and_page_dependencies(runtime
     lease = Lease("run_apps", "rat_apps", "thr_apps", tenant.organization_id, tenant.workspace_id, 1, "w", "t")
     contents = Contents()
     for index in range(count):
-        assert contents.app(f"app_{index}", b'{"original":true}')
+        assert contents.app(f"app_{index}", b'{"original":true}', binding=app_binding(f"app_{index}"))
     value = item(
         [
             {"app_id": f"app_{index}", "unavailable": False, "resource_uri": "ui://" + "x" * 400}
@@ -218,16 +311,30 @@ async def test_app_reference_survives_tail_restore_and_page_dependencies(runtime
     )
     first = await checkpoints.publish_display(runtime, lease, Snapshot([], Tail(items=[value])), contents=contents)
     assert sum(ref.purpose == "app" for ref in first.tail.refs) == count
+    reads = []
+    get = runtime.objects.get
+
+    async def counted_get(key):
+        reads.append(key)
+        return await get(key)
+
+    monkeypatch.setattr(runtime.objects, "get", counted_get)
     tail = await checkpoints.load_tail(runtime.objects, first.tail, hydrate=True)
+    app_keys = {ref.key for ref in first.tail.refs if ref.purpose == "app"}
+    assert not app_keys.intersection(reads)
+    assert tail.items[0].content == value.content
     restored = Contents(tail.items, tail.refs)
     second = await checkpoints.publish_display(runtime, lease, Snapshot([], tail), contents=restored)
     assert second.tail.refs == first.tail.refs
     original_ref = next(ref for ref in second.tail.refs if ref.purpose == "app")
+    assert original_ref.app == app_binding(original_ref.id)
     assert await checkpoints.load(runtime.objects, original_ref) == b'{"original":true}'
     paged = await checkpoints.publish_display(
         runtime, lease, Snapshot([Page(items=tail.items)], Tail(first=2)), contents=restored
     )
     assert {ref.id for ref in paged.pages[0].refs} == {ref.id for ref in second.tail.refs}
+    page = await checkpoints.load_page(runtime.objects, paged.pages[0])
+    assert page.refs == second.tail.refs
     restored.retire([value.id])
     assert not restored.refs
 
@@ -243,13 +350,44 @@ async def test_app_storage_failure_marks_unavailable_without_retrying_publicatio
         raise OSError("object store unavailable")
 
     contents = Contents()
-    contents.app("app_one", b'{"original":true}')
+    contents.app("app_one", b'{"original":true}', binding=app_binding("app_one"))
     value = item([{"app_id": "app_one", "unavailable": False}], "mcp_apps")
     for _ in range(2):
         saved = await contents.item(value, fail)
         assert saved.content["mcp_apps"] == [{"app_id": "app_one", "unavailable": True}]
         assert contents.dependencies([saved]) == ()
     assert attempts == 1 and not contents.pending_apps
+
+
+def app_binding(identifier):
+    connection_id = "con_" + "1" * 32
+    return AppBinding(
+        reference=AppReference(
+            app_id=identifier,
+            connection_id=connection_id,
+            agent_revision_id="agr_test",
+            source_run_id="run_child",
+            tool_call_id="call_show",
+            tool_name="show",
+            resource_uri=URI,
+        ),
+        run_id="run_apps",
+        connection_url="https://app.test/mcp",
+        selection=ConnectionSelection(connection_id=connection_id, permissions={"reset": "ask"}),
+    )
+
+
+async def test_app_binding_size_limit_omits_publication(monkeypatch):
+    from a13n_service.runs import contents as module
+
+    binding = app_binding("app_one")
+    size = len(binding.model_dump_json().encode())
+    monkeypatch.setattr(module, "MAX_APP_BINDING_BYTES", size - 1)
+    contents = Contents()
+    assert not contents.app("app_one", b"{}", binding=binding)
+    assert not contents.pending_apps and contents.pending_app_bytes == 0
+    monkeypatch.setattr(module, "MAX_APP_BINDING_BYTES", size)
+    assert contents.app("app_one", b"{}", binding=binding)
 
 
 @pytest.mark.parametrize("app_run", [True], indirect=True)

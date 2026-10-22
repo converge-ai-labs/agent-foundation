@@ -769,7 +769,7 @@ async def open_run_app(
     app_id: str,
 ) -> OpenedApp:
     """Open a saved MCP App with freshly read HTML and its original tool result."""
-    return await mcp_apps.read_resource(runtime, actor, workspace_id, run_id, app_id)
+    return await mcp_apps.open_app(runtime, actor, workspace_id, run_id, app_id)
 
 
 @router.post("/runs/{run_id}/apps/{app_id}/tools/call", response_model=AppToolResult)
@@ -795,4 +795,4 @@ async def read_run_app_resource(
     body: AppResourceRead,
 ) -> AppResource:
     """Read the HTML resource bound to a saved MCP App."""
-    return (await mcp_apps.read_resource(runtime, actor, workspace_id, run_id, app_id, body.uri)).resource
+    return await mcp_apps.read_resource(runtime, actor, workspace_id, run_id, app_id, body.uri)

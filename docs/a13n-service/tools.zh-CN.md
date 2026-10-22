@@ -131,7 +131,7 @@ Service 保存 App 工具的原始参数、声明和完整 MCP 结果（包括 `
 
 打开 App 不会重跑原始工具。每次请求使用新的 MCP 客户端，因此不支持依赖 worker 原 MCP 会话的服务器。按钮调用受原 Agent 的工具选择、当前连接状态及工具选择、App 可见性和工具权限约束。需要审批或模型审核的操作会被拒绝，也不支持 MCP 人工输入。调用不会自动重试；`outcome_unknown` 表示应先检查外部状态再决定是否重试。后续结果不会覆盖保存的原始结果，也不会加入模型历史。
 
-接入方负责创建 iframe、执行资源 CSP 和隔离要求，并通过 MCP App bridge 交付原始参数和结果。页面状态由接入方保存，上下文和消息使用已有的 Run 提交接口。Service 不保存 HTML，因此新资源可能不兼容旧结果。Console 不渲染 App。对象使用 checkpoint format 4：启动新版 worker 前，需要先升级所有 control 和读取端。
+接入方负责创建 iframe、执行资源 CSP 和隔离要求，并通过 MCP App bridge 交付原始参数和结果。页面状态由接入方保存，上下文和消息使用已有的 Run 提交接口。Service 不保存 HTML，因此新资源可能不兼容旧结果。Console 不渲染 App。对象使用 checkpoint format 5：启动新版 worker 前，需要先升级所有 control 和读取端。新 App 记录只在打开时从对象存储读取原始结果；按钮调用和资源读取使用数据库中的内部引用。旧记录仍可通过保存的原文读取。
 
 ### OAuth
 

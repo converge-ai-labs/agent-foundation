@@ -13,7 +13,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.connections.access import McpConnection
 from a13n_service.resources.connections.runtime import SelectedConnection
 from a13n_service.runs.contents import MAX_APP_BYTES, MAX_PENDING_APP_BYTES, MAX_PENDING_APPS, Contents
-from a13n_service.runs.mcp_apps.schemas import AppReference, SavedApp
+from a13n_service.runs.mcp_apps.schemas import AppBinding, AppOriginal, AppReference
 
 logger = get_logger(__name__)
 
@@ -22,6 +22,7 @@ logger = get_logger(__name__)
 class _Pending:
     context: AgentContext
     reference: AppReference
+    binding: AppBinding
     data: bytes | None
 
 
@@ -55,11 +56,14 @@ class Captures:
             tool_name=tool.name,
             resource_uri=app["resource_uri"],
         )
-        saved = SavedApp(
+        binding = AppBinding(
             reference=reference,
             run_id=self.run_id,
             connection_url=connection.config.url,
             selection=selected.selection,
+        )
+        saved = AppOriginal(
+            reference=reference,
             tool=tool.model_dump(mode="json", by_alias=True, exclude_none=True),
             arguments=app["tool_input"],
             result=app["result"],
@@ -69,7 +73,7 @@ class Captures:
             data = None
             reference = reference.model_copy(update={"unavailable": True})
             logger.warning("MCP App original exceeded capture limit", extra={"app_id": reference.app_id})
-        self.pending.append(_Pending(context, reference, data))
+        self.pending.append(_Pending(context, reference, binding, data))
         self.size += len(data or b"")
 
     def observe(self, source: HarnessStreamEvent[Any], *, root_run_id: str | None, contents: Contents) -> dict | None:
@@ -91,7 +95,7 @@ class Captures:
             ref = pending.reference
             if (ref.source_run_id, ref.tool_call_id) != (run_id, call_id):
                 continue
-            if pending.data is not None and not contents.app(ref.app_id, pending.data):
+            if pending.data is not None and not contents.app(ref.app_id, pending.data, binding=pending.binding):
                 ref = ref.model_copy(update={"unavailable": True})
             references.append(ref.model_dump(mode="json"))
             self.pending.remove(pending)

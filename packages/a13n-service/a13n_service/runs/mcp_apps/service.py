@@ -27,8 +27,10 @@ from a13n_service.resources.connections.oauth import open_mcp_client
 from a13n_service.resources.connections.service import check_caller_headers
 from a13n_service.runs import checkpoints, runs
 from a13n_service.runs.admission import AppCallContext
-from a13n_service.runs.contents import MAX_APP_BYTES, decode
+from a13n_service.runs.contents import MAX_APP_BYTES, ContentObject, decode
 from a13n_service.runs.mcp_apps.schemas import (
+    AppBinding,
+    AppOriginal,
     AppResource,
     AppToolCall,
     AppToolResult,
@@ -44,13 +46,42 @@ from a13n_service.tenancy.authorize import Principal
 logger = get_logger(__name__)
 
 
-async def original(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> SavedApp:
+async def _reference(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> ContentObject:
     ref = await runs.content_ref(runtime, actor, workspace_id, run_id, app_id, purpose="app")
     if ref.truncated or ref.media_type != "application/json" or ref.size_bytes > MAX_APP_BYTES:
         raise not_found("mcp_app", app_id)
-    saved = SavedApp.model_validate(decode(await checkpoints.load(runtime.objects, ref), ref))
+    return ref
+
+
+async def _original(runtime: Runtime, ref: ContentObject) -> SavedApp:
+    value = decode(await checkpoints.load(runtime.objects, ref), ref)
+    if ref.app is None:
+        return SavedApp.model_validate(value)
+    original = AppOriginal.model_validate(value)
+    if original.reference != ref.app.reference:
+        raise not_found("mcp_app", ref.id)
+    return SavedApp(**original.model_dump(), **ref.app.model_dump(exclude={"reference"}))
+
+
+def _check_binding(saved: AppBinding, run_id: str, app_id: str) -> None:
     if saved.run_id != run_id or saved.reference.app_id != app_id:
         raise not_found("mcp_app", app_id)
+    if saved.selection.connection_id != saved.reference.connection_id or saved.reference.unavailable:
+        raise not_found("mcp_app", app_id)
+
+
+async def original(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> SavedApp:
+    ref = await _reference(runtime, actor, workspace_id, run_id, app_id)
+    saved = await _original(runtime, ref)
+    _check_binding(saved, run_id, app_id)
+    return saved
+
+
+async def _binding(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> AppBinding:
+    ref = await _reference(runtime, actor, workspace_id, run_id, app_id)
+    # Older committed references keep their authorization facts in the original object.
+    saved = ref.app if ref.app is not None else await _original(runtime, ref)
+    _check_binding(saved, run_id, app_id)
     return saved
 
 
@@ -62,7 +93,7 @@ class _Connection:
 
 
 async def _resolve(
-    runtime: Runtime, actor: Principal, workspace_id: str, saved: SavedApp, *, tool_name: str | None = None
+    runtime: Runtime, actor: Principal, workspace_id: str, saved: AppBinding, *, tool_name: str | None = None
 ) -> _Connection:
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
@@ -134,23 +165,32 @@ async def _resource(toolset: MCPToolset[AgentContext], uri: str) -> AppResource:
     return AppResource(uri=uri, mime_type=APP_MIME_TYPE, html=html, metadata=value.meta or {})
 
 
-async def read_resource(
-    runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str, uri: str | None = None
-) -> OpenedApp:
-    saved = await original(runtime, actor, workspace_id, run_id, app_id)
-    if uri is not None and uri != saved.reference.resource_uri:
-        raise invalid("uri", "Only the saved App resource can be read")
+async def _read_resource(runtime: Runtime, actor: Principal, workspace_id: str, saved: AppBinding) -> AppResource:
     resolved = await _resolve(runtime, actor, workspace_id, saved)
     try:
         async with _toolset(runtime, resolved) as toolset:
-            resource = await _resource(toolset, saved.reference.resource_uri)
+            return await _resource(toolset, saved.reference.resource_uri)
     except ServiceError:
         raise
     except Exception:
         raise ServiceError("unavailable", "MCP App resource could not be read") from None
+
+
+async def open_app(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> OpenedApp:
+    saved = await original(runtime, actor, workspace_id, run_id, app_id)
+    resource = await _read_resource(runtime, actor, workspace_id, saved)
     return OpenedApp(
         reference=saved.reference, tool=saved.tool, arguments=saved.arguments, result=saved.result, resource=resource
     )
+
+
+async def read_resource(
+    runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str, uri: str
+) -> AppResource:
+    saved = await _binding(runtime, actor, workspace_id, run_id, app_id)
+    if uri != saved.reference.resource_uri:
+        raise invalid("uri", "Only the saved App resource can be read")
+    return await _read_resource(runtime, actor, workspace_id, saved)
 
 
 async def call_tool(
@@ -158,7 +198,7 @@ async def call_tool(
 ) -> AppToolResult:
     if len(body.model_dump_json().encode()) > MAX_APP_BYTES:
         raise ServiceError("payload_too_large", "MCP App arguments exceed the request limit")
-    saved = await original(runtime, actor, workspace_id, run_id, app_id)
+    saved = await _binding(runtime, actor, workspace_id, run_id, app_id)
     resolved = await _resolve(runtime, actor, workspace_id, saved, tool_name=body.name)
     call_id = new_object_id("call")
 

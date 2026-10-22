@@ -24,11 +24,18 @@ class AppOriginal(BaseModel):
     result: dict[str, JsonValue]
 
 
-class SavedApp(AppOriginal):
+class AppBinding(BaseModel):
+    """Private source and authorization facts committed with the original's object reference."""
+
+    reference: AppReference
     run_id: str
     # Private authorization facts; never returned to the browser.
     connection_url: str
     selection: ConnectionSelection
+
+
+class SavedApp(AppOriginal, AppBinding):
+    """An original with its binding, also the legacy object-storage format."""
 
 
 class AppResource(BaseModel):

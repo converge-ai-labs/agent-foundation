@@ -232,7 +232,7 @@ def test_legacy_checkpoint_defaults_to_no_session_hints(format):
     pointer = StatePointer(key="legacy", digest="0" * 64, size=1, format=format, seq=1, attempt=1)
     assert checkpoints.require_compatible(RunRow(id="run_legacy", checkpoint=pointer.model_dump())) == pointer
     upgraded = RunState(harness=restored.harness, seq=2, attempt=2)
-    assert upgraded.format == checkpoints.FORMAT == 4
+    assert upgraded.format == checkpoints.FORMAT == 5
 
 
 @pytest.mark.parametrize("format", checkpoints.READABLE_FORMATS)

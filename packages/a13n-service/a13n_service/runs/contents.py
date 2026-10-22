@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.objects.interface import ObjectRef
+from a13n_service.runs.mcp_apps.schemas import AppBinding
 
 INLINE_BYTES = 32 * 1024
 PREVIEW_BYTES = 4 * 1024
@@ -23,6 +24,7 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_PENDING_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_PENDING_IMAGES = 64
 MAX_APP_BYTES = 8 * 1024 * 1024
+MAX_APP_BINDING_BYTES = 64 * 1024
 MAX_PENDING_APP_BYTES = 32 * 1024 * 1024
 MAX_PENDING_APPS = 128
 logger = get_logger(__name__)
@@ -36,6 +38,7 @@ class ContentObject(StoredRef):
     media_type: Literal["text/plain", "application/json", "image/png", "image/jpeg"]
     truncated: bool = False
     purpose: Literal["value", "continuation", "image", "app"] = "value"
+    app: AppBinding | None = None
 
     def public(self, preview: str) -> ContentRef:
         assert self.media_type == "text/plain" or self.media_type == "application/json"
@@ -105,7 +108,7 @@ class Contents:
 
     def __init__(self, items: Sequence[Item] = (), refs: Sequence[ContentObject] = ()) -> None:
         self.refs = {ref.id: ref for ref in refs}
-        self.pending_apps: dict[str, bytes] = {}
+        self.pending_apps: dict[str, tuple[bytes, AppBinding | None]] = {}
         self.unavailable_apps: set[str] = set()
         self.pending_app_bytes = 0
         self.app_items = {item.id: app_ids(item) for item in items}
@@ -118,14 +121,15 @@ class Contents:
             for field, ref in item.content_refs.items()
         }
 
-    def app(self, identifier: str, data: bytes) -> bool:
+    def app(self, identifier: str, data: bytes, *, binding: AppBinding | None = None) -> bool:
         if (
             len(data) > MAX_APP_BYTES
+            or (binding is not None and len(binding.model_dump_json().encode()) > MAX_APP_BINDING_BYTES)
             or self.pending_app_bytes + len(data) > MAX_PENDING_APP_BYTES
             or len(self.pending_apps) >= MAX_PENDING_APPS
         ):
             return False
-        self.pending_apps[identifier] = data
+        self.pending_apps[identifier] = (data, binding)
         self.pending_app_bytes += len(data)
         return True
 
@@ -180,8 +184,9 @@ class Contents:
     async def item(self, item: Item, write: Callable[[bytes], Awaitable[ObjectRef]]) -> Item:
         self.app_items[item.id] = app_ids(item)
         for identifier in self.app_items[item.id]:
-            data = self.pending_apps.get(identifier)
-            if data is not None:
+            pending_app = self.pending_apps.get(identifier)
+            if pending_app is not None:
+                data, binding = pending_app
                 try:
                     stored = await write(data)
                 except Exception:
@@ -197,6 +202,7 @@ class Contents:
                         size_bytes=len(data),
                         media_type="application/json",
                         purpose="app",
+                        app=binding,
                     )
                 del self.pending_apps[identifier]
                 self.pending_app_bytes -= len(data)
