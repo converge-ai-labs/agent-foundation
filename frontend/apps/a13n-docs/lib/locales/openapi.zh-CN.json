@@ -1,4 +1,8 @@
 {
+  "Exact timeline and cost fields; payloads are read from the individual span.": "保留时间线和费用字段的原始值；完整内容通过单个 span 读取。",
+  "Get Trace Span": "获取 trace 中的单个 span",
+  "One complete observation, including redacted input, output and diagnostic metadata.": "单条完整观测记录，包含经过脱敏处理的输入、输出和诊断元数据。",
+  "Overview keeps exact timeline and cost fields without observation payloads.": "概览保留时间线和费用字段的原始值，不包含观测记录的完整内容。",
   "List Dashboards": "列出仪表盘",
   "Create Dashboard": "创建仪表盘",
   "Get Dashboard Preset": "获取仪表盘默认配置",
