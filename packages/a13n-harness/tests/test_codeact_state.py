@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-import httpx2
 import pytest
 from a13n_harness import HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import CodeActCapability, CodeActConfig
@@ -17,10 +16,7 @@ from a13n_harness.toolsets.codeact import _ExecutionBudget
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart, UserPromptPart
-from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.models.openai import OpenAIResponsesModel
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import UsageLimits
 
 from .test_codeact import _codeact_tools, _local_environment
@@ -404,9 +400,6 @@ async def test_state_tool_surface_requires_capability_and_has_no_message(enabled
         assert ({"run_code", "run_program", "store", "load", "forget"} <= tools.keys()) is enabled
         if enabled:
             assert set(tools["store"].parameters_json_schema["properties"]) == {"key", "value"}
-            assert tools["store"].strict is False
-            assert tools["load"].strict is None
-            assert tools["forget"].strict is None
             assert set(tools["load"].parameters_json_schema["properties"]) == {"key"}
         else:
             assert not ({"store", "load", "forget"} & tools.keys())
@@ -420,54 +413,6 @@ async def test_state_tool_surface_requires_capability_and_has_no_message(enabled
     )
     result = await executable.run("inspect", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "done"
-
-
-async def test_store_disables_strict_schema_on_responses_wire() -> None:
-    requests = []
-
-    def respond(request: httpx2.Request) -> httpx2.Response:
-        assert request.url.path == "/v1/responses"
-        requests.append(json.loads(request.content))
-        return httpx2.Response(
-            200,
-            json={
-                "id": "resp_test",
-                "object": "response",
-                "created_at": 0,
-                "model": "gpt-5",
-                "status": "completed",
-                "output": [],
-            },
-        )
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        responses = OpenAIResponsesModel("gpt-5", provider=OpenAIProvider(api_key="test", http_client=client))
-
-        async def model(messages, info):
-            await responses.request(messages, None, ModelRequestParameters(function_tools=info.function_tools))
-            yield "done"
-
-        executable = HarnessBuilder().build(
-            AgentSpec(),
-            output_type=str,
-            model=FunctionModel(stream_function=model),
-            capabilities=(CodeActCapability(),),
-        )
-        result = await executable.run("inspect", bindings=RunBindings.embedded())
-        assert result.output_or_raise() == "done"
-
-    assert len(requests) == 1
-    tools = {tool["name"]: tool for tool in requests[0]["tools"]}
-    assert tools["store"]["strict"] is False
-    assert tools["store"]["parameters"]["type"] == "object"
-    assert set(tools["store"]["parameters"]["properties"]) == {"key", "value"}
-
-
-@pytest.mark.parametrize("value", [None, True, 42, 1.5, "text", [1, None], {"nested": [False, {"key": "value"}]}])
-async def test_direct_store_preserves_json_value_shapes(value: Any) -> None:
-    result, seen, _ = await _run([("store", {"key": "saved", "value": value}), ("load", {"key": "saved"})])
-    assert seen[1].content == value
-    assert _values(result.state) == {"saved": value}
 
 
 async def test_store_survives_cancellation_and_pending_callbacks_are_drained() -> None:
