@@ -202,7 +202,9 @@ class Status:
         token_count = "--"
         if total is not None:
             token_count = (
-                f"{total / 1_000_000:.1f}M"
+                f"{total / 1_000_000_000:.1f}B"
+                if total >= 1_000_000_000
+                else f"{total / 1_000_000:.1f}M"
                 if total >= 1_000_000
                 else f"{total / 1_000:.1f}K"
                 if total >= 1000
