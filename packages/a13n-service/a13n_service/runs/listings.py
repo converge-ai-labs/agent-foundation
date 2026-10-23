@@ -3,9 +3,9 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import Select, func, literal, select, tuple_
+from sqlalchemy import Select, func, literal, select, true, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import aliased, load_only
 
 from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, short_session
@@ -141,26 +141,42 @@ async def list_thread_runs(
                 raise not_found("run", anchor)
             statement = statement.where(order <= tuple_(*map(literal, target)))
         ordered = (RunRow.created_at, RunRow.id) if newer else (RunRow.created_at.desc(), RunRow.id.desc())
-        rows = list((await session.scalars(statement.order_by(*ordered).limit(limit))).all())
+        # Select the bounded metadata window and its counts in one PostgreSQL snapshot.
+        # The aggregate scans this thread's index once; it never hydrates other Run payloads.
+        page = (
+            statement.with_only_columns(*(getattr(RunRow, name) for name in FIELDS))
+            .order_by(*ordered)
+            .limit(limit)
+            .cte("run_page")
+        )
+        page_order = (page.c.created_at, page.c.id)
+        if not newer:
+            page_order = tuple(column.desc() for column in page_order)
+        first = select(page.c.created_at, page.c.id).order_by(*page_order).limit(1).scalar_subquery()
+        counts = (
+            select(func.count().label("total"), func.count().filter(order <= first).label("number"))
+            .select_from(RunRow)
+            .where(*scoped)
+            .cte("run_counts")
+        )
+        run = aliased(RunRow, page)
+        result = (
+            await session.execute(
+                select(run, counts.c.total, counts.c.number)
+                .select_from(counts.outerjoin(page, true()))
+                .options(load_only(*(getattr(run, name) for name in FIELDS), raiseload=True))
+                .order_by(*page_order)
+            )
+        ).all()
+        total, number = result[0][1:]
+        rows = [row[0] for row in result if row[0] is not None]
         values = await views(session, rows)
         count = reads.fit_count(values)
         rows, values = rows[:count], values[:count]
         if newer:
             rows.reverse()
             values.reverse()
-        # A single scoped index count also gives stable chronological numbering;
-        # it never materializes run payloads or ranks every row separately.
-        first = tuple_(literal(rows[0].created_at), literal(rows[0].id)) if rows else None
-        total, number = (
-            await session.execute(
-                select(
-                    func.count(),
-                    func.count().filter(order <= first) if first is not None else literal(0),
-                )
-                .select_from(RunRow)
-                .where(*scoped)
-            )
-        ).one()
+            number += len(rows) - 1 if rows else 0
 
         def cursor_at(direction: str, row: RunRow) -> str:
             return cursors.encode("thread_runs", owner, direction, row.created_at.isoformat(), row.id)
@@ -209,6 +225,4 @@ async def lineage(
         values = await views(session, rows)
         count = reads.fit_count(values)
         older = rows[count - 1].parent_run_id
-        return RunPage(
-            items=await views(session, rows), next_cursor=cursors.encode("lineage", run_id, older) if older else None
-        )
+        return RunPage(items=values[:count], next_cursor=cursors.encode("lineage", run_id, older) if older else None)

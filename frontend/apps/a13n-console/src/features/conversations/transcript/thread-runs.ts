@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
@@ -50,7 +50,31 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
   const ordered = pages
     .flatMap((page) => (page.data ? [page.data] : []))
     .sort((a, b) => a.first_number - b.first_number);
-  const older = ordered[0]?.next_cursor;
+  // Refreshes can shorten a page at the character budget. Repair only uncovered
+  // intervals; retaining fixed cursor pages must not silently hide boundary Runs.
+  const gaps: string[] = [];
+  let edge: Schema["ThreadRunPage"] | undefined;
+  for (const page of [...ordered].reverse()) {
+    if (!page.items.length) continue;
+    if (
+      edge &&
+      page.first_number < edge.first_number - edge.items.length &&
+      edge.next_cursor &&
+      !cursors.includes(edge.next_cursor)
+    )
+      gaps.push(edge.next_cursor);
+    if (
+      !edge ||
+      page.first_number - page.items.length <
+        edge.first_number - edge.items.length
+    )
+      edge = page;
+  }
+  useEffect(() => {
+    if (gaps.length)
+      setLoaded({ scope, cursors: [...new Set([...cursors, ...gaps])] });
+  }, [scope, cursors, gaps]);
+  const older = edge?.next_cursor;
   const newer = ordered.at(-1)?.previous_cursor;
   const load = (cursor: string | null | undefined) => {
     if (cursor)

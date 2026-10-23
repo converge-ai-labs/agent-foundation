@@ -10084,6 +10084,11 @@ export interface components {
       models: components["schemas"]["ModelUsage"][];
       /** Run Id */
       run_id: string;
+      /**
+       * Run Number
+       * @description One-based chronological position among all Runs in the Thread.
+       */
+      run_number: number;
       /** Thread Id */
       thread_id: string;
     };

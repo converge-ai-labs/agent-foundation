@@ -334,6 +334,14 @@ export interface ConversationChange {
   runId?: string | null;
 }
 
+/** Only the entry page and a loaded newest edge can acquire new members. */
+function isLiveRunPage(position: unknown, data: unknown) {
+  return (
+    !(position as { cursor?: string } | undefined)?.cursor ||
+    (data as Schema["ThreadRunPage"] | undefined)?.previous_cursor === null
+  );
+}
+
 /** One invalidation map for command receipts. */
 export function invalidateConversation(
   cache: QueryClient,
@@ -342,7 +350,7 @@ export function invalidateConversation(
 ) {
   return cache.invalidateQueries({
     queryKey: conversationKeys(workspaceId).root,
-    predicate: ({ queryKey: [, , kind, id, position] }) =>
+    predicate: ({ queryKey: [, , kind, id, position], state }) =>
       changes.some((change) => {
         switch (kind) {
           case "sessions":
@@ -359,7 +367,7 @@ export function invalidateConversation(
             return (
               !!change.threadId &&
               id === change.threadId &&
-              !(position as { cursor?: string } | undefined)?.cursor
+              isLiveRunPage(position, state.data)
             );
           case "thread":
           case "inbox":
@@ -434,7 +442,7 @@ export function applyThreadState(
   void cache.invalidateQueries(
     {
       queryKey: keys.root,
-      predicate: ({ queryKey: [, , kind, id, position] }) =>
+      predicate: ({ queryKey: [, , kind, id, position], state }) =>
         kind === "sessions" ||
         (kind === "context" &&
           (id === thread.id ||
@@ -446,7 +454,7 @@ export function applyThreadState(
         (kind === "runs" &&
           id === thread.id &&
           membershipChanged &&
-          !(position as { cursor?: string } | undefined)?.cursor),
+          isLiveRunPage(position, state.data)),
     },
     // A thread seen first does not restart the reads that load the page.
     { cancelRefetch: held >= 0 },

@@ -108,8 +108,8 @@ async def test_thread_pages_anchor_and_bidirectional_cursors_do_not_skip_runs(se
         values = response.json()["items"]
         assert [item["id"] for item in values] == list(reversed(ids))[: len(values)]
         assert any("WITH RECURSIVE" in statement for statement in sql)
-        counts.append(len(sql))
-    assert counts[0] == counts[1]
+        counts.append(sum("FROM runs" in statement for statement in sql))
+    assert counts == [2, 2]
 
 
 async def test_input_preview_preserves_part_order_and_resume_input(service, scripted_model, runs_kit):
@@ -149,3 +149,63 @@ async def test_input_preview_preserves_part_order_and_resume_input(service, scri
     assert resumed.status_code == 201, resumed.text
     listing = await service.client.get(f"{service.api}/threads/{run['thread_id']}/runs")
     assert listing.json()["items"][0]["input_preview"] == {"text": "resume input", "truncated": False}
+
+
+async def test_lineage_budget_continues_without_duplicates(service, scripted_model, runs_kit):
+    from a13n_service.infra import reads
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    started = await runs_kit.start_thread(service, agent, "汉😀" * 100)
+    ids = [started["run"]["id"]]
+    for _ in range(14):
+        await service.client.post(f"{service.api}/runs/{ids[-1]}/interrupt")
+        added = await runs_kit.submit(service, started["thread"]["id"], runs_kit.message(agent, "汉😀" * 100))
+        assert added.status_code == 201, added.text
+        ids.append(added.json()["run"]["id"])
+    seen = []
+    cursor = None
+    pages = 0
+    while True:
+        with statements(service) as sql:
+            response = await service.client.get(
+                f"{service.api}/runs/{ids[-1]}/lineage", params={"cursor": cursor} if cursor else {}
+            )
+        assert response.status_code == 200, response.text
+        page = response.json()
+        assert reads.size(page) < reads.BODY_CHARS
+        assert sum("inbox_entries.payload" in query for query in sql) == 1
+        seen.extend(item["id"] for item in page["items"])
+        pages += 1
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+        assert pages < len(ids)
+    assert pages > 1
+    assert seen == list(reversed(ids))
+
+
+async def test_thread_counts_share_the_page_snapshot(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_service.runs import listings
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    started = await runs_kit.start_thread(service, agent, "first")
+    run_id, thread_id = started["run"]["id"], started["thread"]["id"]
+    await service.client.post(f"{service.api}/runs/{run_id}/interrupt")
+    original = listings.views
+
+    async def concurrent_insert(session, rows):
+        values = await original(session, rows)
+        added = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "concurrent"))
+        assert added.status_code == 201, added.text
+        return values
+
+    with monkeypatch.context() as patch:
+        patch.setattr(listings, "views", concurrent_insert)
+        response = await service.client.get(f"{service.api}/threads/{thread_id}/runs")
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert [item["id"] for item in page["items"]] == [run_id]
+    assert page["total"] == page["first_number"] == 1
+    assert page["previous_cursor"] is None
+    fresh = await service.client.get(f"{service.api}/threads/{thread_id}/runs")
+    assert fresh.json()["total"] == 2

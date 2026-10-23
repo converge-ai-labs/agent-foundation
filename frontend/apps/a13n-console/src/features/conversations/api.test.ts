@@ -39,7 +39,9 @@ it("updates loaded summaries without refetching history and never regresses a st
   cache.setQueryData(first.queryKey, fixtureRunPage([original]));
   cache.setQueryData(
     older.queryKey,
-    fixtureRunPage([fixtureRun({ id: "ancestor" })]),
+    fixtureRunPage([fixtureRun({ id: "ancestor" })], {
+      previous_cursor: "newer",
+    }),
   );
   const changed = { ...original, version: 5, attempts: 2 };
   applyThreadState(cache, "ws_1", {

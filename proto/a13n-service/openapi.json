@@ -17139,6 +17139,12 @@
             "title": "Run Id",
             "type": "string"
           },
+          "run_number": {
+            "description": "One-based chronological position among all Runs in the Thread.",
+            "minimum": 1.0,
+            "title": "Run Number",
+            "type": "integer"
+          },
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
@@ -17147,6 +17153,7 @@
         "required": [
           "run_id",
           "thread_id",
+          "run_number",
           "models"
         ],
         "title": "RunUsage",
