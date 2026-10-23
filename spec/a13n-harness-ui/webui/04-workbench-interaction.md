@@ -26,6 +26,14 @@ A Coordinator appears once among the Project's leading active rows while either 
 
 Promotion and follow-up controls use the ordinary Thread projections and invalidation. They do not allocate replacement conversations, rewrite titles, aggregate approvals, or add Project-wide execution state. Coordinators and workers retain the ordinary conversation renderer, composer, result tracking and pending-decision controls.
 
+## Usage Analytics
+
+The sidebar header exposes an icon-only, neutral **Usage** link immediately left of the collapse control, with a tooltip and accessible name. It opens `/usage` without adding a full navigation row. The narrow navigation sheet exposes the same entry. Project menus offer **View usage**, and Thread usage details offer **Open analytics** with the corresponding scope selected.
+
+The page shows recorded requests, input/output/total tokens, estimated model USD, a daily tokens/cost chart, and a paginated Project/Thread/actual-model breakdown with cache counters and unknown-cost counts. Group selection narrows scope; Thread rows also link to the conversation. The chart supports pointer and keyboard inspection. Unknown prices remain distinct from zero, and partial known costs show their incomplete coverage.
+
+URL state owns filters, grouping, ordering, and pagination. The default range is 30 UTC days, with 7/30/90-day presets and a custom inclusive date selector limited to 366 days. Project, searchable root Thread, and actual-model filters intersect. Reads occur on entry, filter changes, and explicit Refresh; there is no polling or usage WebSocket. Refreshing keeps previous data visible with an updating state; failure retains that data and offers retry. The page discloses the read timestamp and retained-observation coverage, with a distinct empty result. Detailed accounting semantics belong to [consumption analytics](../03-local-storage-and-recovery.md#consumption-analytics).
+
 ## Entry and Navigation
 
 1. Open the instance URL and complete the existing key-entry flow if necessary.

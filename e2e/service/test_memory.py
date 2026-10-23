@@ -349,6 +349,7 @@ async def test_memory_space_organization_runs_through_control_and_workers(stack)
     [organization] = listing["items"]
     assert organization["status"] == "completed" and organization["parent_run_id"] is None
     assert organization["session_id"] == state["session_id"]
+    organization = await api.run(organization["id"])
     assert organization["memory_mounts"][0]["memory_id"] == memory_id
     assert organization["memory_mounts"][0]["roots"] == ["global/", "sessions/"]
     assert organization["environment_mounts"] == []

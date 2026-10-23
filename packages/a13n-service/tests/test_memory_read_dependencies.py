@@ -124,6 +124,7 @@ async def test_organizer_rejects_stale_derivation_independently_of_progress(serv
     await save(service, space)
     await organize(service.runtime)
     [run] = await history(service, space)
+    run = await runs_kit.get_run(service, run["id"])
     name = run["memory_mounts"][0]["name"]
     gate = asyncio.Event()
     scripted_model.call("memory_file_view", {"memory": name, "path": "global/notes.md"}, call_id="read")

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field
 
 from a13n_harness.environment.models import EnvironmentTargetState
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment._variables import EnvironmentVariables
 
 PROVIDER_KEY = "e2b"
 
@@ -91,6 +92,7 @@ class E2BEnvironmentConfiguration(BaseModel):
             raise ValueError("Envd execution requires an operator-built a13n-envd template")
         return self
 
+    environment: EnvironmentVariables = Field(default_factory=dict)
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
@@ -113,6 +115,8 @@ class E2BEnvironmentConfiguration(BaseModel):
     @property
     def fingerprint(self) -> str:
         fields = {"template", "root", "user", "allow_internet_access"}
+        if self.environment:
+            fields.add("environment")
         # Preserve the historical digest byte-for-byte for non-desktop instances.
         if self.execution != "native":
             fields.update({"execution", "desktop"})

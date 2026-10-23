@@ -174,6 +174,14 @@ The root Thread usage projection distinguishes root-agent records, inline/asynch
 
 Coverage starts with the first persisted observation; replacing a scope retains that time and advances its observed-through time. No record means unavailable coverage, not proven zero lifetime usage. Pre-ledger history and usage never observed after a crash are not backfilled from messages. While work is active, totals are recorded-so-far; context occupancy and subscription limits are separate projections.
 
+### Consumption Analytics
+
+Consumption analytics reads the same retained ledger across all root families, including archived Threads, Memory, Live, projectless roots, and Coordinator workers. Each worker is its own root family; navigation visibility does not select accounting scope. A root filter includes its inline and asynchronous descendants and auxiliary model calls. Project attribution uses the root's current configuration, so moving a Thread moves its historical consumption. An unavailable Project retains its identifier; global Memory and Live belong to the projectless scope.
+
+Analytics deduplicates model contributions by `(root_thread_id, record_id)` before applying response-time or actual provider/model filters. UTC daily buckets contain the latest saved cumulative contribution assigned to its response date, including timestamp refinements; they are not streaming increments or observation-day deltas. Metadata, scope selection, and facts share one SQLite read snapshot. Model identity is the actual nullable provider/model tuple, independent of configured Model resources.
+
+Summary and daily totals cover every matching record, independently of group pagination. Total tokens equal input plus output; cache counters remain subsets. Costs aggregate with Decimal and serialize as decimal strings. A missing cost stays unknown, a known zero stays zero, and mixed coverage exposes the known USD subtotal plus unknown-record count. Provider receipts and their currencies remain in Thread usage details. Coverage timestamps describe matching retained observations; empty coverage cannot establish zero lifetime consumption. Analytics adds no persistence table, collector, price backfill, or mutable-row cache.
+
 ## Thread Metadata Head
 
 Each Thread has one mutable metadata head containing `version`, nullable `title`, `archived`, and `starred` (default false). A metadata mutation compares its required expected version, changes supplied fields in one short transaction, and increments the version once. Omitted fields remain unchanged; explicit null is invalid for archive and star flags. A no-op retains the current version. Metadata changes update `updated_at`, independently from configuration and continuation selection, without changing navigation `touched_at` or conversation `activity_at`.

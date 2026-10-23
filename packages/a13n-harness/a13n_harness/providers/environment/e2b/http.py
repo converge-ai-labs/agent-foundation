@@ -93,6 +93,7 @@ def http_execution(
     if reference.state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     return RemoteEnvdExecution(
+        environment=reference._configuration.environment,
         provider_key="e2b",
         environment_id=reference.environment_id,
         state=reference.state,

@@ -265,6 +265,7 @@ function RunBody({
                 thread={thread}
                 level={level}
                 jumpToDock={scroll.jumpToLatest}
+                preservePosition={scroll.preservePosition}
                 prefill={id === run.id ? prefill : undefined}
               />
             ))}

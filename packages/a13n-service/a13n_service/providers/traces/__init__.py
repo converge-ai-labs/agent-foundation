@@ -1,8 +1,8 @@
 """The trace backend contract: where Harness spans are exported, and a read-only span query against them.
 
 Backends report spans as they stored them; nothing they return is trusted for tenancy, so callers check every
-span's correlation attributes themselves. Every read is bounded by a deadline and a response size, and any
-backend failure is the one `unavailable` error naming the backend.
+span's correlation attributes themselves. Every read is bounded by a deadline and a response size. A response
+over that size is `payload_too_large`; any other backend failure is the one `unavailable` error naming the backend.
 """
 
 import json
@@ -144,6 +144,15 @@ def unavailable(provider: str) -> ServiceError:
     return ServiceError("unavailable", "The trace backend is unavailable", {"dependency": f"trace:{provider}"})
 
 
+def too_large(provider: str) -> ServiceError:
+    """The backend answered with more than one response may hold: a size failure, not a backend outage."""
+    return ServiceError(
+        "payload_too_large",
+        f"The trace backend response exceeds its {MAX_RESPONSE_BYTES} byte limit",
+        {"dependency": f"trace:{provider}", "limit": MAX_RESPONSE_BYTES},
+    )
+
+
 async def read_json(
     provider: str,
     method: Literal["GET", "POST"],
@@ -161,6 +170,9 @@ async def read_json(
             async with open_http(policy, timeout=timeout, max_bytes=MAX_RESPONSE_BYTES) as client:
                 response = await client.request(method, url, headers=headers, params=params, json=body)
     except (httpx2.HTTPError, ServiceError, TimeoutError, ValueError) as error:
+        if isinstance(error, ServiceError) and error.code == "payload_too_large":
+            logger.warning("Trace backend response exceeded its byte limit", extra={"limit": MAX_RESPONSE_BYTES})
+            raise too_large(provider) from error
         logger.warning(
             "Trace backend query failed",
             extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},

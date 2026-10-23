@@ -233,11 +233,36 @@ async def get_trace_span(
     span_id: str,
 ) -> Span:
     """One full observation, selected by both trace and span after workspace authorization."""
+    span = await find_trace_span(storage, traces, actor, workspace_id, trace_id, span_id)
+    if span is None:
+        raise not_found("span", span_id)
+    return span
+
+
+async def find_trace_span(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    span_id: str,
+) -> Span | None:
+    """The one observation the backend query selects by trace and span, never a page of its neighbours.
+
+    A response over the backend bound then means this observation alone exceeds it.
+    """
     scope = await _read_scope(storage, actor, workspace_id)
     query = replace(_trace_query(scope, trace_id, 1), span_id=span_id)
-    page = await _read(_available(traces), query, cursor=None)
+    try:
+        page = await _read(_available(traces), query, cursor=None)
+    except ServiceError as error:
+        if error.code != "payload_too_large":
+            raise
+        limit = error.details.get("limit")
+        message = f"span {span_id} alone exceeds the {limit} byte trace response limit; inspect it in the trace backend"
+        raise ServiceError("payload_too_large", message, {**error.details, "kind": "span", "id": span_id}) from error
     if not page.items:
-        raise not_found("span", span_id)
+        return None
     assert isinstance(page.items[0], Span)
     return page.items[0]
 

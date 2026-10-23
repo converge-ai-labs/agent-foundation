@@ -145,6 +145,82 @@ export const fixtureForkThread = fixtureThread({
  * The Session those Threads belong to, served: a root Thread of two Runs, a
  * child Thread its second Run delegated to, and a fork of that same Run.
  */
+export function fixtureRunList(run = fixtureRun()): Schema["RunListItem"] {
+  const {
+    id,
+    workspace_id,
+    session_id,
+    thread_id,
+    agent_id,
+    agent_revision_id,
+    principal_id,
+    status,
+    trigger,
+    lineage,
+    parent_run_id,
+    source_entry_id,
+    current_attempt_id,
+    attempts,
+    max_attempts,
+    wait_reason,
+    version,
+    created_at,
+    started_at,
+    sealed_at,
+    updated_at,
+  } = run;
+  const source = run.input ?? run.resume?.input;
+  const parts = source?.content as
+    { type: string; text?: string }[] | undefined;
+  const text =
+    parts
+      ?.filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n") ?? "";
+  const characters = Array.from(text);
+  return {
+    id,
+    workspace_id,
+    session_id,
+    thread_id,
+    agent_id,
+    agent_revision_id,
+    principal_id,
+    status,
+    trigger,
+    lineage,
+    parent_run_id,
+    source_entry_id,
+    current_attempt_id,
+    attempts,
+    max_attempts,
+    wait_reason,
+    version,
+    created_at,
+    started_at,
+    sealed_at,
+    updated_at,
+    input_preview: {
+      text: characters.slice(0, 200).join(""),
+      truncated: characters.length > 200,
+    },
+  };
+}
+
+export function fixtureRunPage(
+  runs: Schema["RunView"][],
+  overrides: Partial<Schema["ThreadRunPage"]> = {},
+): Schema["ThreadRunPage"] {
+  return {
+    items: runs.map(fixtureRunList),
+    total: runs.length,
+    first_number: runs.length,
+    next_cursor: null,
+    previous_cursor: null,
+    ...overrides,
+  };
+}
+
 export function fixtureBranchedSession() {
   return createClient({
     baseUrl: "https://service.example",
@@ -152,6 +228,13 @@ export function fixtureBranchedSession() {
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
       const name = url.pathname.split("/").at(-1) ?? "";
+      const page = (value: {
+        items: Schema["RunView"][];
+        next_cursor: string | null;
+      }) =>
+        Response.json(
+          fixtureRunPage(value.items, { next_cursor: value.next_cursor }),
+        );
       if (url.pathname.endsWith("/runs/run_2/lineage"))
         return Response.json({
           items: [fixtureRun({ lineage: "root", parent_run_id: null })],
@@ -183,7 +266,7 @@ export function fixtureBranchedSession() {
           next_cursor: null,
         });
       if (url.pathname.endsWith("/threads/thr_fork/runs"))
-        return Response.json({
+        return page({
           items: [
             fixtureRun({
               id: "run_fork",
@@ -195,7 +278,7 @@ export function fixtureBranchedSession() {
           next_cursor: null,
         });
       if (url.pathname.endsWith("/threads/thr_1/runs"))
-        return Response.json({
+        return page({
           items: [
             fixtureRun({
               id: "run_2",
@@ -210,7 +293,7 @@ export function fixtureBranchedSession() {
           next_cursor: null,
         });
       if (url.pathname.endsWith("/threads/thr_child/runs"))
-        return Response.json({
+        return page({
           items: [
             fixtureRun({
               id: "run_child",

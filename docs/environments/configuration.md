@@ -83,7 +83,7 @@ The first automatic E2B desktop creation usually takes 1–2 minutes and can tak
 
 ### Daytona
 
-`DaytonaEnvironmentConfiguration` selects a snapshot, which sets the sandbox's resources. The root defaults to the writable `/home/daytona`. `DaytonaConnectionConfiguration` supplies organization and target region; `TokenCredential` supplies the API key.
+`DaytonaEnvironmentConfiguration` selects a snapshot, which sets the sandbox's resources. The working directory is `/workspace`. `DaytonaConnectionConfiguration` supplies an optional organization constraint and target region; `TokenCredential` supplies the API key. When organization is omitted, it is discovered from that key. Harness requires a concrete snapshot; Service desktop recipes may omit it to build automatically on first creation and reuse it later.
 
 ### Modal
 

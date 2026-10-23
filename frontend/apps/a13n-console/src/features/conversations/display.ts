@@ -29,50 +29,105 @@ export function readDisplay(
     .then(data);
 }
 
-export type FullDisplay = Schema["RunItems"] & {
+export type RunDisplay = Schema["RunItems"] & {
   /** Items before this ordinal were read from immutable history pages. */
   immutableBefore: number;
 };
 
-/** Read every Item of one Run, keeping the newest read's live baseline. */
-export async function readFullDisplay(
+/** Read the newest window immediately; refresh only history the reader already loaded. */
+export async function readRunDisplay(
   client: Client,
   workspaceId: string,
   runId: string,
   signal?: AbortSignal,
-  previous?: FullDisplay,
-): Promise<FullDisplay> {
+  previous?: RunDisplay,
+): Promise<RunDisplay> {
   const latest = await readDisplay(client, workspaceId, runId, signal);
+  signal?.throwIfAborted();
   const first = latest.items[0]?.ordinal ?? 1;
-  // A former tail can have changed before becoming history. Only reuse Items
-  // that were already outside the mutable tail when we read them.
+  const start = Math.min(previous?.items[0]?.ordinal ?? first, first);
+  // A former tail may have changed before becoming history. Reuse only the
+  // contiguous prefix that was already immutable when read.
   const history =
     previous?.items.filter(
       (item) => item.ordinal < Math.min(first, previous.immutableBefore),
     ) ?? [];
-  let after = history.at(-1)?.ordinal ?? 0;
-  while (after < first - 1) {
-    signal?.throwIfAborted();
-    const page = await readDisplay(client, workspaceId, runId, signal, {
-      after,
-      limit: Math.min(500, first - 1 - after),
-    });
-    // Dense, fixed ordinals prove progress. A failed or non-advancing page
-    // leaves the prior display visible and offers retry, never silent loss.
-    if (!page.items.length)
-      throw new Error("Run history could not be fully loaded.");
-    for (const item of page.items) {
-      if (item.ordinal !== after + 1 || item.ordinal >= first)
-        throw new Error("Run history could not be fully loaded.");
-      history.push(item);
-      after = item.ordinal;
-    }
-  }
+  await fillHistory(client, workspaceId, runId, history, start, first, signal);
   return {
     ...latest,
     items: [...history, ...latest.items],
     immutableBefore: first,
   };
+}
+
+/** One older window per reader request. The live Run may already show more than the committed read. */
+export async function readEarlierDisplay(
+  client: Client,
+  workspaceId: string,
+  runId: string,
+  current: RunDisplay,
+  before: number,
+  signal?: AbortSignal,
+): Promise<RunDisplay> {
+  const page = await readDisplay(client, workspaceId, runId, signal, {
+    before,
+    limit: 200,
+  });
+  signal?.throwIfAborted();
+  const history = page.items;
+  const first = history[0]?.ordinal;
+  if (
+    first !== Math.max(1, before - 200) ||
+    history.at(-1)?.ordinal !== before - 1
+  )
+    throw new Error("Earlier run content could not be loaded.");
+  for (let index = 0; index < history.length; index++)
+    if (history[index]!.ordinal !== first + index)
+      throw new Error("Earlier run content could not be loaded.");
+  const currentFirst = current.items[0]?.ordinal ?? before;
+  await fillHistory(
+    client,
+    workspaceId,
+    runId,
+    history,
+    first,
+    currentFirst,
+    signal,
+  );
+  return {
+    ...current,
+    items: [
+      ...history.filter((item) => item.ordinal < currentFirst),
+      ...current.items,
+    ],
+  };
+}
+
+async function fillHistory(
+  client: Client,
+  workspaceId: string,
+  runId: string,
+  history: Schema["Item"][],
+  start: number,
+  before: number,
+  signal?: AbortSignal,
+) {
+  let after = history.at(-1)?.ordinal ?? start - 1;
+  while (after < before - 1) {
+    signal?.throwIfAborted();
+    const page = await readDisplay(client, workspaceId, runId, signal, {
+      after,
+      limit: Math.min(500, before - 1 - after),
+    });
+    if (!page.items.length) throw new Error("Run history could not be loaded.");
+    for (const item of page.items) {
+      if (item.ordinal !== after + 1 || item.ordinal >= before)
+        throw new Error("Run history could not be loaded.");
+      history.push(item);
+      after = item.ordinal;
+    }
+  }
+  signal?.throwIfAborted();
 }
 
 const POSITION = /^(0|[1-9]\d*)-(0|[1-9]\d*)$/;

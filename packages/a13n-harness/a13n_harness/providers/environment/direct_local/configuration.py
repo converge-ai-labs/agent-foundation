@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from a13n_harness.providers.environment._variables import EnvironmentVariables
 
 _MIB = 1024 * 1024
 _GIB = 1024 * _MIB
@@ -72,6 +75,7 @@ class DirectLocalEnvironmentConfiguration(BaseModel):
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
     allowed_executables: frozenset[Path] = frozenset()
+    environment: EnvironmentVariables = Field(default_factory=dict)
     inherit_environment: bool = False
     allowed_environment_keys: frozenset[Annotated[str, Field(min_length=1, max_length=128)]] | None = frozenset()
     allowed_ports: frozenset[Annotated[int, Field(ge=1, le=65535)]] = frozenset()
@@ -111,6 +115,11 @@ class DirectLocalEnvironmentConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def _consistent_configuration(self) -> Self:
+        if self.allowed_environment_keys is not None:
+            allowed = {key.upper() if os.name == "nt" else key for key in self.allowed_environment_keys}
+            keys = {key.upper() if os.name == "nt" else key for key in self.environment}
+            if not keys <= allowed:
+                raise ValueError("Environment defaults must respect allowed_environment_keys")
         profile_ids = tuple(profile.profile_id for profile in self.shell_profiles)
         if len(profile_ids) != len(set(profile_ids)):
             raise ValueError("shell profile IDs must be unique")

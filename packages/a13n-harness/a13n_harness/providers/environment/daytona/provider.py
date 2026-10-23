@@ -8,6 +8,7 @@ from a13n_harness.providers.environment.daytona.http import HttpReference, http_
 from a13n_harness.providers.environment.daytona.shared import (
     DaytonaConnectionConfiguration,
     DaytonaEnvironmentConfiguration,
+    resolved_runtime,
 )
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.eip.binding import configured_descriptor
@@ -22,7 +23,7 @@ async def runtime(
 ) -> NativeRuntime:
     if credential is None:
         raise ValueError("Daytona requires a credential")
-    return NativeRuntime(configuration, credential)
+    return await resolved_runtime(configuration, credential)
 
 
 def describe(configuration: DaytonaEnvironmentConfiguration) -> EnvironmentDescriptor:

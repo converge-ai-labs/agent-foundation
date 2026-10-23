@@ -162,7 +162,7 @@ class TraceProvider(Protocol):
 - Logfire selects and deduplicates roots within the requested root-start window before selecting their trace IDs for span deduplication and cost aggregation. The wider child-span window must not include unrelated traces in deduplication; it still includes selected traces' children started after the root window. Root metadata selectors apply to deduplicated roots, not to their children.
 - `metrics_only` is an optimization hint, not a payload or authorization guarantee: Langfuse omits IO fields; summaries still remove payloads before returning them.
 - A backend reports spans as it stored them. Nothing it returns is trusted for tenancy: callers check every span's correlation attributes themselves.
-- Every read is bounded by `telemetry.trace_query_timeout` and 8 MiB of response. Any backend failure is `unavailable` with dependency `trace:{type}`.
+- Every read is bounded by `telemetry.trace_query_timeout` and 8 MiB of response. A response over that bound is `payload_too_large` with dependency `trace:{type}` and its byte `limit`; a single-span read also names the span. Any other backend failure is `unavailable` with dependency `trace:{type}`.
 - The operator configured the backend, so its own host may be private; cloud metadata addresses stay refused.
 - Fields a backend does not keep are null or empty. Langfuse keeps no span events or links and gives each span a `source_url` to the trace in its UI; Logfire gives none.
 

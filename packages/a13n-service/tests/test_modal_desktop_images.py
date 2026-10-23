@@ -42,7 +42,8 @@ class Cloud:
 
 
 @pytest.fixture
-async def setup(service, monkeypatch):
+async def setup(service, monkeypatch, runs_kit):
+    await runs_kit.pause_sweeps(service)
     cloud = Cloud()
     monkeypatch.setattr(builds, "_builder", lambda *_: cloud)
     client = service.client

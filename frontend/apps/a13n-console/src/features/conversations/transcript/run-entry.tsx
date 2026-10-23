@@ -15,6 +15,7 @@ import { DebugRunSection } from "./debug/run-section";
 import { FailureNotice } from "./failure-notice";
 import { RunBlock } from "./run-block";
 import { useThreadRuns } from "./thread-runs";
+import { EarlierContent } from "./earlier-content";
 import debug from "./debug/debug.module.css";
 import styles from "./transcript.module.css";
 
@@ -25,12 +26,14 @@ export function RunEntry({
   level,
   prefill,
   jumpToDock,
+  preservePosition,
 }: {
   runId: string;
   thread: Schema["ThreadView"];
   level: ViewLevel;
   prefill?: () => void;
   jumpToDock: () => void;
+  preservePosition: () => () => void;
 }) {
   const { t } = useTranslation();
   const query = useRun(runId);
@@ -39,7 +42,7 @@ export function RunEntry({
   const agentName = agent.data?.name;
   const agentImageUrl = agent.data?.image_url;
   const live = useRunDisplay(runId);
-  const { number } = useThreadRuns(level === "debug" ? thread.id : "");
+  const { number } = useThreadRuns(level === "debug" ? thread.id : "", runId);
   const timeline = useMemo(
     () =>
       run &&
@@ -60,6 +63,11 @@ export function RunEntry({
   const stopped = ["failed", "cancelled"].includes(run.status);
   return (
     <StoredContents runId={runId} items={live.displayItems}>
+      <EarlierContent
+        history={live.history}
+        first={live.first}
+        preservePosition={preservePosition}
+      />
       {live.gap && (
         <p role="status" className={styles.notice}>
           {live.incomplete

@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import type { Client } from "../../../../service-client";
+import { createClient, type Client } from "../../../../service-client";
 import type { Schema } from "../../../../shared/api";
+import { invalidateConversation } from "../../api";
 import { useRunOutline } from "./outline";
 import { RunOutline } from "./run-outline";
 import {
@@ -13,6 +21,8 @@ import {
   fixtureForkThread,
   fixtureChildThread,
   fixtureThread,
+  fixtureRun,
+  fixtureRunPage,
 } from "../fixture";
 
 let client: Client;
@@ -113,4 +123,149 @@ it("opens a current-thread run that is not on the page", async () => {
       "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
     ),
   ).toBeTruthy();
+});
+
+it("opens a deep run without walking thousands of pages and numbers both directions from server positions", async () => {
+  const requests: URL[] = [];
+  const run = (number: number) =>
+    fixtureRun({
+      id: `run_${number}`,
+      created_at: new Date(number * 1000).toISOString(),
+    });
+  client.close();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      const url = new URL((request as Request).url);
+      requests.push(url);
+      const cursor = url.searchParams.get("cursor");
+      const first =
+        cursor === "older" ? 4998 : cursor === "newer" ? 5002 : 5000;
+      return Response.json(
+        fixtureRunPage([run(first), run(first - 1)], {
+          total: 10000,
+          first_number: first,
+          next_cursor: cursor === "older" ? "oldest" : "older",
+          previous_cursor: cursor === "newer" ? "newest" : "newer",
+        }),
+      );
+    },
+  });
+  show(fixtureThread(), "run_5000");
+  await screen.findByText("Run 5000");
+  expect(screen.getByText("10000")).toBeTruthy();
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.searchParams.get("anchor")).toBe("run_5000");
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Load earlier runs" }));
+  await screen.findByText("Run 4997");
+  expect(screen.getByText("Run 5000")).toBeTruthy();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Load newer runs" }));
+  await screen.findByText("Run 5002");
+  expect(requests).toHaveLength(3);
+  expect(
+    requests.slice(1).map((url) => url.searchParams.get("cursor")),
+  ).toEqual(["older", "newer"]);
+});
+
+it("repairs a page that shrinks after sealing without refetching older history", async () => {
+  const requests: string[] = [];
+  let shrunk = false;
+  const run = (number: number) =>
+    fixtureRun({
+      id: `run_${number}`,
+      created_at: new Date(number * 1000).toISOString(),
+    });
+  client.close();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      const cursor =
+        new URL((request as Request).url).searchParams.get("cursor") ??
+        "anchor";
+      requests.push(cursor);
+      const ids =
+        cursor === "older8"
+          ? [7, 6, 5]
+          : cursor === "older9"
+            ? [8, 7, 6]
+            : shrunk
+              ? [10, 9]
+              : [10, 9, 8];
+      return Response.json(
+        fixtureRunPage(ids.map(run), {
+          total: 10,
+          first_number: ids[0]!,
+          next_cursor: `older${ids.at(-1)}`,
+          previous_cursor: cursor === "anchor" ? null : "newer",
+        }),
+      );
+    },
+  });
+  show(fixtureThread(), "run_10");
+  await screen.findByText("Run 8");
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Load earlier runs" }));
+  await screen.findByText("Run 5");
+  shrunk = true;
+  await act(() =>
+    invalidateConversation(cache, "workspace", { threadId: "thr_1" }),
+  );
+  await waitFor(() =>
+    expect(requests).toEqual(["anchor", "older8", "anchor", "older9"]),
+  );
+  await waitFor(() => {
+    for (let number = 5; number <= 10; number++)
+      expect(screen.getAllByText(`Run ${number}`)).toHaveLength(1);
+  });
+});
+
+it("refreshes a loaded newest cursor page when another Run arrives", async () => {
+  const requests: string[] = [];
+  let total = 6;
+  const run = (number: number) =>
+    fixtureRun({
+      id: `run_${number}`,
+      created_at: new Date(number * 1000).toISOString(),
+    });
+  client.close();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      const cursor =
+        new URL((request as Request).url).searchParams.get("cursor") ??
+        "anchor";
+      requests.push(cursor);
+      const ids =
+        cursor === "anchor" ? [4, 3] : total === 6 ? [6, 5] : [7, 6, 5];
+      return Response.json(
+        fixtureRunPage(ids.map(run), {
+          total,
+          first_number: ids[0]!,
+          next_cursor: `older${ids.at(-1)}`,
+          previous_cursor: cursor === "anchor" ? "newer4" : null,
+        }),
+      );
+    },
+  });
+  show(fixtureThread(), "run_4");
+  await screen.findByText("Run 4");
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Load newer runs" }));
+  await screen.findByText("Run 6");
+  total = 7;
+  await act(() =>
+    invalidateConversation(cache, "workspace", { threadId: "thr_1" }),
+  );
+  await screen.findByText("Run 7");
+  expect(requests.filter((cursor) => cursor === "newer4")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: "Load newer runs" })).toBeNull();
 });

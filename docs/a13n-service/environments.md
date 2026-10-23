@@ -38,7 +38,7 @@ In Console, **Manage connections** beside the template's **Connection** selector
 | --------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `docker`  | Containers                                      | `docker_host`, optionally a remote `tcp://host:port` or `https://host:port` engine the outbound endpoint policy allows. No credential.                         | Stops the container                    |
 | `e2b`     | E2B sandboxes                                   | `domain` selects E2B cloud (default `e2b.dev`) or another E2B-compatible service; credential `{"api_key": ...}`. A recipe's `timeout_seconds` is at least 300. | Pauses, keeping memory and files       |
-| `daytona` | Daytona sandboxes                               | `organization_id`, optional `target` region; credential `{"api_key": ...}`                                                                                     | Stops, keeping files                   |
+| `daytona` | Daytona sandboxes                               | Optional `organization_id` constraint and `target` region; credential `{"api_key": ...}`                                                                       | Stops, keeping files                   |
 | `modal`   | Modal sandboxes                                 | Optional `workspace`, `app_name` (default `a13n-sandboxes`), `environment_name` (default `main`); credential `{"token_id", "token_secret"}`                    | Snapshots the files, then terminates   |
 | `vercel`  | Persistent Vercel sandboxes                     | `team_id`, `project_id`; credential `{"api_key": ...}` (a Vercel access token)                                                                                 | Stops, keeping files                   |
 | `sprites` | Fly.io Sprites                                  | `organization`; credential `{"api_key": ...}`                                                                                                                  | Not supported; Sprites sleep when idle |
@@ -86,6 +86,23 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
 To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
+
+### Automatic Vercel desktops
+
+1. Add a Vercel environment connection, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
+2. Create a Vercel environment template, choose that connection and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
+3. Create an instance from the template. The first creation builds a desktop snapshot and can take several minutes. Console shows its current phase and elapsed time. You can leave the page and return to **Environment instances** while creation continues.
+4. When ready, open the desktop preview. Runs using this environment can use Computer operations and Console human control. If creation fails, correct the reported configuration or permissions and use **Retry creation** when available.
+
+Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
+
+### Default environment variables
+
+Every built-in provider supports `config.recipe.environment`, for example `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`. Add these in the template editor's **Environment variables** section. Commands and their normal child processes receive these defaults; explicit command values override them, and supported command unsets remove them. This does not add Agent, Thread or Run-level variable settings.
+
+Defaults freeze with the recipe when creation is first dispatched. Editing a template does not update an existing instance, including after stop/start or snapshot resume. Create a new instance to use changed defaults. Local providers also require each name in `allowed_environment_keys` (or an unrestricted null allowlist).
+
+Use portable names (`APP_MODE`, not `app-mode`) and string values; empty values are allowed. These values are readable ordinary configuration: do not put credentials here. Platform bootstrap, desktop and telemetry names (`A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY`, `XAUTHORITY`) are reserved. Provider credentials and existing secret bindings retain their separate controls.
 
 ### Docker image versions
 
@@ -237,12 +254,12 @@ An agent can pause and ask a person to operate its desktop. The Console assistan
 
 An operator must prepare a compatible desktop environment and set `desktop: true` and `desktop_assistance: true` in the environment recipe. Enabling Computer operations alone does not enable human access.
 
-| Provider | Desktop access prerequisites                                                                                                                                                                                                                                                                  |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2B      | A custom template with the preinstalled desktop-access endpoint. The stock `desktop` template needs the viewer endpoint added; Agent Computer use also requires compatible Envd execution.                                                                                                    |
-| Docker   | A compatible desktop image and `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Docker Engine or Envd connectivity does not provide a browser route; plain WS is accepted only on loopback.                             |
-| Daytona  | An operator-built `snapshot` with the desktop access supervisor started at boot. Service uses a signed preview route to port 6081; the supervisor enforces read-only access and disconnects revoked controllers. See the [snapshot build instructions](../environments/providers.md#daytona). |
-| Modal    | Automatic `image="auto"` on desktop recipes, or an Envd-compatible custom image with the desktop access supervisor. Service uses a separate TLS tunnel on port 6081 and short-lived grants. See [Modal image preparation](../environments/providers.md#modal).                                |
+| Provider | Desktop access prerequisites                                                                                                                                                                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2B      | A custom template with the preinstalled desktop-access endpoint. The stock `desktop` template needs the viewer endpoint added; Agent Computer use also requires compatible Envd execution.                                                                                                                                               |
+| Docker   | A compatible desktop image and `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Docker Engine or Envd connectivity does not provide a browser route; plain WS is accepted only on loopback.                                                                        |
+| Daytona  | Automatic `snapshot="auto"` (the desktop default), or a custom snapshot with the desktop access supervisor started at boot. Service uses a signed preview route to port 6081; the supervisor enforces read-only access and disconnects revoked controllers. See the [snapshot build instructions](../environments/providers.md#daytona). |
+| Modal    | Automatic `image="auto"` on desktop recipes, or an Envd-compatible custom image with the desktop access supervisor. Service uses a separate TLS tunnel on port 6081 and short-lived grants. See [Modal image preparation](../environments/providers.md#modal).                                                                           |
 
 Agent-requested assistance and user takeover use the same provider prerequisites. Credentials and desktop URLs do not grant the Agent Computer permissions; configure its toolset and mount separately.
 

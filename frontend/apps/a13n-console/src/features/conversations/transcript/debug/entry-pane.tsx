@@ -204,7 +204,6 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
           <Link to={scope.child.path}>
             {t("Open {{name}} in full", { name: entry.name ?? t("subagent") })}
           </Link>
-          <span>{t("{{count}} runs", { count: scope.child.runs })}</span>
         </p>
       )}
       {entry.hitl && (

@@ -4,7 +4,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { conversationQueries } from "./api";
-import { isOmitted, type DisplayItem, type FullDisplay } from "./display";
+import { isOmitted, type DisplayItem, type RunDisplay } from "./display";
 import {
   emptyExecution,
   runExecution,
@@ -14,6 +14,7 @@ import {
 import { presentItems } from "./projection";
 import type { HeldDisplay } from "./session-displays";
 import { useSessionStream } from "./session-stream";
+import { useRunHistory } from "./run-history";
 
 export interface RunExecution extends Execution {
   coverage: ExecutionCoverage;
@@ -26,9 +27,8 @@ const unsubscribed = () => () => undefined;
 /**
  * A Run's Items and execution, read from one display so they never disagree.
  * The session stream's display of the Run, while it holds one, carries its
- * live output; any other Run is read as committed. Every committed Item of
- * the Run is loaded: the Items before a held display's first come from the
- * Run's full committed read.
+ * live output; any other Run is read as committed. Earlier windows load only
+ * when requested; checkpoint changes refresh only the already loaded range.
  */
 export function useRunDisplay(runId: string) {
   const client = useClient(),
@@ -45,7 +45,8 @@ export function useRunDisplay(runId: string) {
     () => displays?.get(runId),
   );
   const run = useQuery(queries.run(runId)).data;
-  const read = useQuery(queries.items(runId));
+  const history = useRunHistory(runId);
+  const { read } = history;
   const attempts = useQuery(queries.attempts(runId)).data ?? NO_ATTEMPTS;
   const shown = useMemo(() => held ?? committed(read.data), [held, read.data]);
   const before = held?.first ?? 1;
@@ -78,7 +79,11 @@ export function useRunDisplay(runId: string) {
         ? {
             ...runExecution(run, all),
             // Unread or missing Items take their execution facts with them.
-            coverage: shown.partial || !covered ? "partial" : "complete",
+            coverage: shown.partial
+              ? "partial"
+              : !covered || (all[0]?.ordinal ?? 1) > 1
+                ? "window"
+                : "complete",
           }
         : { ...emptyExecution(), coverage: "partial" },
     [run, shown, all, covered],
@@ -87,6 +92,8 @@ export function useRunDisplay(runId: string) {
   const error = closed ? stream.error : read.error;
   return {
     items,
+    history,
+    first: all[0]?.ordinal ?? 1,
     displayItems: all,
     execution,
     attempts,
@@ -103,10 +110,10 @@ export function useRunDisplay(runId: string) {
 }
 
 /** Whether every Item before `first` was final when the committed read returned it. */
-function finalBefore(read: FullDisplay | undefined, first: number) {
+function finalBefore(read: RunDisplay | undefined, first: number) {
   if (!read) return false;
   const final = read.complete ? Infinity : read.immutableBefore;
-  let expected = 1;
+  let expected = read.items[0]?.ordinal ?? first;
   for (const item of read.items) {
     if (item.ordinal >= first) break;
     if (item.ordinal !== expected || item.ordinal >= final) return false;

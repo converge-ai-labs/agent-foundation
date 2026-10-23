@@ -570,8 +570,7 @@ class RunQuery(_Frozen):
     status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
     created_after: AwareDatetime | None = None
     created_before: AwareDatetime | None = None
-    view: Literal["detailed", "compact"] = "detailed"
-    limit: int | None = Field(default=None, ge=1, le=100)
+    limit: PageLimit = 50
     cursor: str | None = None
 
     @model_validator(mode="after")
@@ -585,9 +584,50 @@ class RunQuery(_Frozen):
         return self
 
 
+class RunInputPreview(BaseModel):
+    text: str = Field(max_length=200, description="At most 200 Unicode code points of input text, in content order.")
+    truncated: bool
+
+
+class RunListItem(BaseModel):
+    """Run discovery metadata. Full input, results and execution settings belong to the Run detail read."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    workspace_id: str
+    session_id: str
+    thread_id: str
+    agent_id: str
+    agent_revision_id: str
+    principal_id: str
+    status: RunStatus
+    trigger: Trigger
+    lineage: Lineage
+    parent_run_id: str | None
+    source_entry_id: str | None
+    current_attempt_id: str | None
+    attempts: int
+    max_attempts: int
+    wait_reason: WaitReason | None
+    version: int
+    created_at: datetime
+    started_at: datetime | None
+    sealed_at: datetime | None
+    updated_at: datetime
+    input_preview: RunInputPreview
+
+
 class RunPage(BaseModel):
-    items: list[RunView]
+    items: list[RunListItem]
     next_cursor: str | None
+
+
+class ThreadRunPage(RunPage):
+    """Newest first; first_number is the first item's 1-based chronological position in the thread."""
+
+    previous_cursor: str | None
+    total: int
+    first_number: int
 
 
 class RunAgent(BaseModel):

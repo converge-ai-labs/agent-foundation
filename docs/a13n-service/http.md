@@ -102,14 +102,16 @@ Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–1
 
 ## Read summaries and selected details
 
-Use `view=compact` to find relevant runs, revisions, models, inbox entries, display items or spans. Combine the view with the operation's filters. Existing calls default to `view=detailed` and keep their original response. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
+Run lists and lineage return metadata and `input_preview: {text, truncated}`, containing at most 200 Unicode code points of input text. They do not accept `view`; read `/runs/{run_id}` for full input, output, options and other details. Thread run pages accept `anchor=<run_id>` to start at a specific Run, mutually exclusive with `cursor`, and include `total`, `first_number`, `next_cursor` toward older Runs and `previous_cursor` toward newer Runs. `first_number` is the first returned Run's chronological number, starting at one; it is not the number of loaded records. `limit` is a maximum: the shared 10,000-character response budget can yield fewer records, so always follow the returned cursors. Usage summaries include each Run’s `run_number` without additional Run-list requests.
+
+Use `view=compact` to find relevant revisions, models, inbox entries, display items or spans, and to summarize a selected Run. Combine the view with the operation's filters. These calls default to `view=detailed`. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
 
 A preview contains `text` and `truncated`. `omitted_sections` lists fields you can read separately. `source_truncated` means the stored content was already shortened; fetching more cannot recover discarded data. An omitted field or a shortened preview does not prove that the source lacks the information.
 
 For example, find failed runs and read one failure:
 
 ```http
-GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs?status=failed&limit=10
 GET /api/v1/runs/{run_id}?section=failure
 GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
 GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0
@@ -123,7 +125,7 @@ To inspect configuration, read a revision with `section=all` or a configuration 
 
 Search tool catalogs through `/toolsets/index`, `/connections/{connection_id}/tools/index` or `/connector-providers/{provider_id}/apps/{app}/actions/index`. Read the matching `/definitions` endpoint with up to five repeated exact `name` values. Check `missing` and `oversized`. An oversized definition is read through that same endpoint with one name and versioned fragments; it is never silently shortened. The model catalog accepts compact search, capability filters and paging; select the exact provider/model for characteristics or pricing sections.
 
-Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. Follow `next_cursor` while `items` is empty. Once found, keep the request cursor that located the span while continuing its text fragments. Trace data remains subject to the deployment's retention and backend availability.
+Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. The Service queries the backend for that span alone; empty `items` means the trace has no such span. Continue its text fragments with `version` and `next_offset`. A trace response over the backend's 8 MiB limit is `413 payload_too_large`, not an outage; for this route it means the span alone exceeds the limit. Trace data remains subject to the deployment's retention and backend availability.
 
 ## Limits
 

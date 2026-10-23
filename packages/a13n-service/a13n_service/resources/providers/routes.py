@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, Response
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.registry import ProviderKind
-from a13n_service.resources.providers import discovery, oauth, service
+from a13n_service.resources.providers import discovery, oauth, service, vercel_options
 from a13n_service.resources.providers.oauth import (
     AuthorizationCallback,
     AuthorizationDisconnect,
@@ -222,3 +222,15 @@ async def discover_model_provider_models(
         settings=runtime.settings.providers,
         catalog=request.app.state.model_catalog,
     )
+
+
+@router.post(
+    "/environment-provider-options/vercel",
+    response_model=vercel_options.VercelOptions,
+    openapi_extra={"x-a13n-mcp": True},
+)
+async def vercel_provider_options(
+    workspace_id: WorkspaceId, body: vercel_options.VercelOptionsRequest, actor: Actor, runtime: CurrentRuntime
+) -> vercel_options.VercelOptions:
+    """List accessible teams, or projects in a selected team, using an unsaved credential."""
+    return await vercel_options.choices(runtime, actor, workspace_id, body)

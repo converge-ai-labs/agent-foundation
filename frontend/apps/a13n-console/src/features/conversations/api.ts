@@ -1,4 +1,4 @@
-import { readFullDisplay, type FullDisplay } from "./display";
+import { readRunDisplay, type RunDisplay } from "./display";
 import type { Client, paths, ThreadState } from "../../service-client";
 import {
   infiniteQueryOptions,
@@ -60,6 +60,19 @@ function newer(previous: unknown, next: unknown) {
   return version(previous) > version(next)
     ? previous
     : replaceEqualDeep(previous, next);
+}
+
+/** A late HTTP response cannot overwrite newer stream metadata on the same page. */
+function newerRunPage(previous: unknown, next: unknown) {
+  const held = previous as Schema["ThreadRunPage"] | undefined;
+  const page = next as Schema["ThreadRunPage"];
+  if (!held) return page;
+  const versions = new Map(held.items.map((item) => [item.id, item]));
+  return replaceEqualDeep(held, {
+    ...page,
+    total: Math.max(held.total, page.total),
+    items: page.items.map((item) => newer(versions.get(item.id), item)),
+  });
 }
 
 /** Query owns request cancellation; delivery attachments never abort shared reads. */
@@ -175,12 +188,12 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: keys.items(run_id),
         queryFn: ({ signal, client: cache }) =>
-          readFullDisplay(
+          readRunDisplay(
             client,
             workspaceId,
             run_id,
             signal,
-            cache.getQueryData<FullDisplay>(keys.items(run_id)),
+            cache.getQueryData<RunDisplay>(keys.items(run_id)),
           ),
         staleTime: (query) => (query.state.data?.complete ? Infinity : 0),
       }),
@@ -247,22 +260,24 @@ export function conversationQueries(client: Client, workspaceId: string) {
               .then(data),
           ),
       }),
-    runs: (thread_id: string) =>
+    runs: (
+      thread_id: string,
+      position: { anchor?: string; cursor?: string } = {},
+    ) =>
       queryOptions({
-        queryKey: keys.runs(thread_id),
+        structuralSharing: newerRunPage,
+        queryKey: [...keys.runs(thread_id), position],
         queryFn: ({ signal }) =>
-          allPages((cursor) =>
-            client
-              .workspace(workspaceId)
-              .GET("/api/v1/threads/{thread_id}/runs", {
-                params: {
-                  path: { thread_id },
-                  query: { cursor },
-                },
-                signal,
-              })
-              .then(data),
-          ),
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads/{thread_id}/runs", {
+              params: {
+                path: { thread_id },
+                query: { ...position, limit: 50 },
+              },
+              signal,
+            })
+            .then(data),
       }),
     attempts: (run_id: string) =>
       queryOptions({
@@ -319,6 +334,14 @@ export interface ConversationChange {
   runId?: string | null;
 }
 
+/** Only the entry page and a loaded newest edge can acquire new members. */
+function isLiveRunPage(position: unknown, data: unknown) {
+  return (
+    !(position as { cursor?: string } | undefined)?.cursor ||
+    (data as Schema["ThreadRunPage"] | undefined)?.previous_cursor === null
+  );
+}
+
 /** One invalidation map for command receipts. */
 export function invalidateConversation(
   cache: QueryClient,
@@ -327,7 +350,7 @@ export function invalidateConversation(
 ) {
   return cache.invalidateQueries({
     queryKey: conversationKeys(workspaceId).root,
-    predicate: ({ queryKey: [, , kind, id] }) =>
+    predicate: ({ queryKey: [, , kind, id, position], state }) =>
       changes.some((change) => {
         switch (kind) {
           case "sessions":
@@ -340,8 +363,13 @@ export function invalidateConversation(
           // Usage is keyed by the Session or the Run it sums.
           case "usage":
             return id === change.sessionId || id === change.runId;
-          case "thread":
           case "runs":
+            return (
+              !!change.threadId &&
+              id === change.threadId &&
+              isLiveRunPage(position, state.data)
+            );
+          case "thread":
           case "inbox":
             return !!change.threadId && id === change.threadId;
           case "run":
@@ -370,18 +398,51 @@ export function applyThreadState(
   for (const run of [current_run, last_run]) {
     if (!run) continue;
     const held = version(cache.getQueryData(keys.run(run.id)));
-    cache.setQueryData(keys.run(run.id), run);
+    cache.setQueryData<Schema["RunView"]>(keys.run(run.id), (previous) =>
+      previous && previous.version > run.version ? previous : run,
+    );
+    cache.setQueriesData<Schema["ThreadRunPage"]>(
+      { queryKey: keys.runs(run.thread_id) },
+      (page) => {
+        if (!page) return page;
+        return {
+          ...page,
+          items: page.items.map((item) =>
+            item.id !== run.id || item.version >= run.version
+              ? item
+              : {
+                  ...item,
+                  status: run.status,
+                  current_attempt_id: run.current_attempt_id,
+                  attempts: run.attempts,
+                  wait_reason: run.wait_reason,
+                  version: run.version,
+                  started_at: run.started_at,
+                  sealed_at: run.sealed_at,
+                  updated_at: run.updated_at,
+                },
+          ),
+        };
+      },
+    );
     // A run's version moves with its attempts.
     if (held >= 0 && held < run.version)
       void cache.invalidateQueries({ queryKey: keys.attempts(run.id) });
   }
-  const held = version(cache.getQueryData(keys.thread(thread.id)));
-  cache.setQueryData(keys.thread(thread.id), thread);
+  const previous = cache.getQueryData<Schema["ThreadView"]>(
+    keys.thread(thread.id),
+  );
+  const held = version(previous);
   if (held >= thread.version) return;
+  cache.setQueryData(keys.thread(thread.id), thread);
+  const membershipChanged =
+    !previous ||
+    previous.current_run_id !== thread.current_run_id ||
+    previous.last_run_id !== thread.last_run_id;
   void cache.invalidateQueries(
     {
       queryKey: keys.root,
-      predicate: ({ queryKey: [, , kind, id] }) =>
+      predicate: ({ queryKey: [, , kind, id, position], state }) =>
         kind === "sessions" ||
         (kind === "context" &&
           (id === thread.id ||
@@ -389,7 +450,11 @@ export function applyThreadState(
             id === last_run?.id)) ||
         ((kind === "session" || kind === "threads") &&
           id === thread.session_id) ||
-        ((kind === "runs" || kind === "inbox") && id === thread.id),
+        (kind === "inbox" && id === thread.id) ||
+        (kind === "runs" &&
+          id === thread.id &&
+          membershipChanged &&
+          isLiveRunPage(position, state.data)),
     },
     // A thread seen first does not restart the reads that load the page.
     { cancelRefetch: held >= 0 },

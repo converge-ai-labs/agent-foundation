@@ -42,6 +42,7 @@ vi.mock("../run-display", () => ({
   useRunDisplay: (runId: string) => {
     stream.calls.push(runId);
     return {
+      first: 1,
       displayItems,
       items: presentItems(displayItems),
       connected: true,

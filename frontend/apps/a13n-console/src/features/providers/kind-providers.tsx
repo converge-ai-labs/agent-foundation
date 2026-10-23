@@ -23,6 +23,7 @@ import {
   validateSettings,
 } from "../../shared/forms";
 import { useCredentialSection } from "../../shared/use-credential-section";
+import { VercelChoices } from "./vercel-choices";
 import { AddProviderDialog } from "./add-provider-dialog";
 import type { ProviderCategoryValue } from "./categories";
 import { ConnectionTest, providerTestResult } from "./connection-test";
@@ -398,7 +399,20 @@ export function ProviderForm({
           }
           configurationSchema={configSchema}
           credential={section.credential}
-          onCredentialChange={section.setCredential}
+          onCredentialChange={(next) => {
+            section.setCredential(next);
+            if (kind === "environment" && type === "vercel")
+              setConfiguration({});
+          }}
+          configurationFields={
+            kind === "environment" && type === "vercel" ? (
+              <VercelChoices
+                credential={section.credential}
+                value={configuration}
+                onChange={setConfiguration}
+              />
+            ) : undefined
+          }
           configuration={configuration}
           onConfigurationChange={setConfiguration}
           name={name}
