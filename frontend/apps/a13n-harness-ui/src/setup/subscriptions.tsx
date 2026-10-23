@@ -1,6 +1,29 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import {
+  BrandIcon,
+  Button,
+  ChoiceField,
+  FormField,
+  Input,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+  ModalFrame,
+} from "a13n-ui";
+import {
+  ArrowsClockwiseIcon,
+  DotsThreeIcon,
+  KeyIcon,
+  PauseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  TicketIcon,
+  TrashIcon,
+  WalletIcon,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
@@ -40,18 +63,26 @@ function WindowUsage({
   const remaining = Math.max(0, Math.min(100, 100 - window.used_percent));
   return (
     <div className={styles.meter}>
-      <span>
-        {label} · {Math.round(remaining)}% left
-      </span>
+      <div className={styles.meterHeading}>
+        <span>{label}</span>
+        <span>
+          <strong>{Math.round(remaining)}%</strong> left
+        </span>
+      </div>
       <meter
         min={0}
         max={100}
         value={remaining}
         aria-label={`${label} remaining`}
       />
-      <span className={styles.quotaDetail}>
+      <span
+        className={styles.quotaDetail}
+        title={
+          window.reset_at > 0 ? quotaTime(window.reset_at * 1000) : undefined
+        }
+      >
         {window.reset_at > 0
-          ? `Resets ${quotaTime(window.reset_at * 1000)}`
+          ? `Resets ${quotaTime(window.reset_at * 1000, true)}`
           : "Reset time unavailable"}
       </span>
     </div>
@@ -70,7 +101,7 @@ function LimitUsage({
   );
   return (
     <div className={styles.quotaGroup}>
-      <span className={styles.quotaLabel}>{label}</span>
+      {label && <span className={styles.quotaLabel}>{label}</span>}
       <div className={styles.quotaWindows}>
         {windows.map((window, index) => (
           <WindowUsage
@@ -96,14 +127,17 @@ function VoucherSummary({
   const vouchers = voucherSummary(usage);
   return (
     <div className={styles.voucherSummary}>
-      <span>
+      <span className={styles.summaryItem}>
+        <TicketIcon size={15} aria-hidden />
         Reset vouchers ·{" "}
         {vouchers.count === null
           ? "Unavailable"
           : `${vouchers.count} available`}
       </span>
       {vouchers.expiresAt !== null && (
-        <span>Earliest expiry {quotaTime(vouchers.expiresAt)}</span>
+        <span className={styles.quotaDetail}>
+          Expires {quotaTime(vouchers.expiresAt)}
+        </span>
       )}
       {vouchers.count !== null &&
         vouchers.count > 0 &&
@@ -131,12 +165,7 @@ export function AccountUsage({ view }: { view: AccountView }) {
   const monthly = usage?.spend_control?.individual_limit;
   return (
     <div className={styles.usage}>
-      <span>
-        {usage?.plan_type && usage.plan_type !== "unknown"
-          ? `${usage.plan_type} plan`
-          : "Plan unavailable"}
-      </span>
-      <LimitUsage limits={usage?.rate_limit} label="Codex included allowance" />
+      <LimitUsage limits={usage?.rate_limit} label="" />
       {(usage?.additional_rate_limits ?? []).map((limit, index) => (
         <LimitUsage
           key={`${limit.metered_feature}-${index}`}
@@ -160,16 +189,19 @@ export function AccountUsage({ view }: { view: AccountView }) {
       {usage?.spend_control?.reached && (
         <span>Workspace spending limit reached</span>
       )}
-      {usage?.credits && (
-        <span>
-          Rechargeable credits ·{" "}
-          {usage.credits.unlimited
-            ? "Unlimited"
-            : (usage.credits.balance ??
-              (usage.credits.has_credits ? "Available" : "None"))}
-        </span>
-      )}
-      <VoucherSummary usage={usage} />
+      <div className={styles.balanceSummary}>
+        <VoucherSummary usage={usage} />
+        {usage?.credits && (
+          <span className={styles.summaryItem}>
+            <WalletIcon size={15} aria-hidden />
+            Credits ·{" "}
+            {usage.credits.unlimited
+              ? "Unlimited"
+              : (usage.credits.balance ??
+                (usage.credits.has_credits ? "Available" : "None"))}
+          </span>
+        )}
+      </div>
       <UsageFreshness snapshot={view.usage} />
     </div>
   );
@@ -268,10 +300,7 @@ export function SubscriptionAccounts({
       <header className={styles.heading}>
         <div>
           <h2>Subscription accounts</h2>
-          <p>
-            Usage updates during requests, with a 10-minute idle refresh.
-            Refresh any account now to check sooner.
-          </p>
+          <p>Allowance refreshes automatically, or on demand.</p>
         </div>
         <Button
           onClick={() => {
@@ -302,82 +331,111 @@ export function SubscriptionAccounts({
           .map((view) => {
             const { account, authentication } = view;
             return (
-              <article key={account.id} className={styles.row}>
-                <div className={styles.identity}>
-                  <strong>{account.name}</strong>
-                  <span>
-                    {account.provider} ·{" "}
-                    {account.enabled
-                      ? authentication.availability === "available"
-                        ? "Connected"
-                        : "Sign-in required"
-                      : "Paused"}
-                  </span>
-                  <AccountUsage view={view} />
-                </div>
-                <div className={styles.actions}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    loading={
-                      refresh.isPending && refresh.variables === account.id
-                    }
-                    onClick={() => refresh.mutate(account.id)}
-                  >
-                    Refresh
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setLogin(account)}
-                  >
-                    Sign-in & logout
-                  </Button>
-                  <details className={styles.more}>
-                    <summary>Manage</summary>
-                    <div className={styles.actions}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setName(account.name);
-                          setEditing(account);
-                        }}
-                      >
-                        Rename
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={update.isPending}
-                        onClick={() =>
-                          update.mutate({
-                            id: account.id,
-                            enabled: !account.enabled,
-                          })
+              <article key={account.id} className={styles.accountCard}>
+                <header className={styles.accountHeader}>
+                  <div className={styles.accountIdentity}>
+                    <BrandIcon
+                      identity={account.provider === "codex" ? "openai" : "xai"}
+                      size={24}
+                    />
+                    <div className={styles.identity}>
+                      <div className={styles.accountName}>
+                        <strong>{account.name}</strong>
+                        {view.usage.usage &&
+                          "plan_type" in view.usage.usage &&
+                          view.usage.usage.plan_type !== "unknown" && (
+                            <span className={styles.plan}>
+                              {view.usage.usage.plan_type}
+                            </span>
+                          )}
+                      </div>
+                      <span className={styles.accountMeta}>
+                        {account.provider === "codex" ? "Codex" : "Grok"}
+                        <span
+                          className={styles.status}
+                          data-connected={
+                            account.enabled &&
+                            authentication.availability === "available"
+                          }
+                        >
+                          {account.enabled
+                            ? authentication.availability === "available"
+                              ? "Connected"
+                              : "Sign-in required"
+                            : "Paused"}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className={styles.cardActions}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Refresh"
+                      loading={
+                        refresh.isPending && refresh.variables === account.id
+                      }
+                      onClick={() => refresh.mutate(account.id)}
+                    >
+                      <ArrowsClockwiseIcon />
+                    </Button>
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Manage account"
+                          />
                         }
                       >
-                        {account.enabled ? "Pause" : "Enable"}
-                      </Button>
-                      {account.provider === "codex" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setReset(account)}
+                        <DotsThreeIcon />
+                      </MenuTrigger>
+                      <MenuPopup align="end">
+                        <MenuItem onClick={() => setLogin(account)}>
+                          <KeyIcon />
+                          Sign-in & logout
+                        </MenuItem>
+                        <MenuItem
+                          onClick={() => {
+                            setName(account.name);
+                            setEditing(account);
+                          }}
                         >
-                          Reset voucher…
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDeleting(account)}
-                      >
-                        Delete…
-                      </Button>
-                    </div>
-                  </details>
-                </div>
+                          <PencilSimpleIcon />
+                          Rename
+                        </MenuItem>
+                        <MenuItem
+                          disabled={update.isPending}
+                          onClick={() =>
+                            update.mutate({
+                              id: account.id,
+                              enabled: !account.enabled,
+                            })
+                          }
+                        >
+                          {account.enabled ? <PauseIcon /> : <PlayIcon />}
+                          {account.enabled ? "Pause" : "Enable"}
+                        </MenuItem>
+                        {account.provider === "codex" && (
+                          <MenuItem onClick={() => setReset(account)}>
+                            <TicketIcon />
+                            Reset voucher…
+                          </MenuItem>
+                        )}
+                        <MenuSeparator />
+                        <MenuItem
+                          variant="destructive"
+                          onClick={() => setDeleting(account)}
+                        >
+                          <TrashIcon />
+                          Delete…
+                        </MenuItem>
+                      </MenuPopup>
+                    </Menu>
+                  </div>
+                </header>
+                <AccountUsage view={view} />
               </article>
             );
           })}

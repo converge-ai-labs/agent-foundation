@@ -38,13 +38,14 @@ export function voucherSummary(
   };
 }
 
-export function quotaTime(timestamp: number) {
+export function quotaTime(timestamp: number, compact = false) {
   return new Date(timestamp).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    timeZoneName: "short",
+    timeZoneName: compact ? undefined : "short",
+    ...(compact ? { hourCycle: "h23" as const } : {}),
   });
 }
 

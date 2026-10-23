@@ -157,8 +157,12 @@ it("saves a group to its owning source path with credits still opt-in", async ()
 
 it("requires voucher selection and a separate confirmation before redemption", async () => {
   const writes = mount();
-  fireEvent.click(await screen.findByText("Manage"));
-  fireEvent.click(screen.getByRole("button", { name: "Reset voucher…" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Reset voucher…" }),
+  );
   fireEvent.click(await screen.findByRole("combobox", { name: "Voucher" }));
   fireEvent.click(await screen.findByRole("option", { name: /Weekly reset/ }));
   fireEvent.click(screen.getByRole("button", { name: "Review redemption" }));

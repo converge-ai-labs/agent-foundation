@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
+import { ArrowsClockwiseIcon, WalletIcon } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -22,44 +23,61 @@ export function GrokAllowance({
   const allowance = grokAllowance(billing);
   return (
     <>
-      <span className={styles.quotaLabel}>Grok included allowance</span>
-      {allowance.usedPercent === null ? (
-        <span>Allowance unavailable</span>
-      ) : (
+      <div className={styles.quotaWindows}>
         <div className={styles.meter}>
-          <span>
-            {allowance.label} · {Math.floor(allowance.usedPercent)}% used
+          {allowance.usedPercent === null ? (
+            <span>Allowance unavailable</span>
+          ) : (
+            <>
+              <div className={styles.meterHeading}>
+                <span>{allowance.label}</span>
+                <span>
+                  <strong>{Math.floor(allowance.usedPercent)}%</strong> used
+                </span>
+              </div>
+              <meter
+                min={0}
+                max={100}
+                value={allowance.usedPercent}
+                aria-label={`${allowance.label} used`}
+              />
+            </>
+          )}
+          <span
+            className={styles.quotaDetail}
+            title={
+              allowance.resetAt
+                ? quotaTime(Date.parse(allowance.resetAt))
+                : undefined
+            }
+          >
+            {allowance.resetAt
+              ? `Resets ${quotaTime(Date.parse(allowance.resetAt), true)}`
+              : "Reset time unavailable"}
           </span>
-          <meter
-            min={0}
-            max={100}
-            value={allowance.usedPercent}
-            aria-label={`${allowance.label} used`}
-          />
         </div>
-      )}
-      <span className={styles.quotaDetail}>
-        {allowance.resetAt
-          ? `Resets ${quotaTime(Date.parse(allowance.resetAt))}`
-          : "Reset time unavailable"}
-      </span>
-      {billing?.is_unified_billing_user === true && (
-        <span>Shared usage pool</span>
-      )}
-      {billing?.prepaid_balance && (
-        <span>
-          Purchased credits ·{" "}
-          {dollars(Math.abs(billing.prepaid_balance.val ?? 0))}
-        </span>
-      )}
-      {billing?.is_unified_billing_user === false && billing.on_demand_cap && (
-        <span>
-          Pay as you go ·{" "}
-          {billing.on_demand_cap.val
-            ? `${billing.on_demand_used ? dollars(billing.on_demand_used.val ?? 0) : "Usage unknown"} / ${dollars(billing.on_demand_cap.val)} cap`
-            : "Disabled"}
-        </span>
-      )}
+      </div>
+      <div className={styles.balanceSummary}>
+        {billing?.is_unified_billing_user === true && (
+          <span>Shared usage pool</span>
+        )}
+        {billing?.prepaid_balance && (
+          <span className={styles.summaryItem}>
+            <WalletIcon size={15} aria-hidden />
+            Purchased credits ·{" "}
+            {dollars(Math.abs(billing.prepaid_balance.val ?? 0))}
+          </span>
+        )}
+        {billing?.is_unified_billing_user === false &&
+          billing.on_demand_cap && (
+            <span>
+              Pay as you go ·{" "}
+              {billing.on_demand_cap.val
+                ? `${billing.on_demand_used ? dollars(billing.on_demand_used.val ?? 0) : "Usage unknown"} / ${dollars(billing.on_demand_cap.val)} cap`
+                : "Disabled"}
+            </span>
+          )}
+      </div>
     </>
   );
 }
@@ -96,42 +114,44 @@ export function CopilotAllowance({
           {quota.isPending ? "Checking allowance…" : "Allowance unavailable"}
         </span>
       ) : (
-        buckets.map(([id, bucket]) => (
-          <div key={id} className={styles.meter}>
-            <span>
-              {copilotBucketLabel(id)} ·{" "}
-              {bucket.unlimited
-                ? "Unlimited"
-                : bucket.percent_remaining != null
-                  ? `${Math.round(Math.max(0, Math.min(100, bucket.percent_remaining)))}% left`
-                  : "Remaining allowance unavailable"}
-            </span>
-            {!bucket.unlimited && bucket.percent_remaining != null && (
-              <meter
-                min={0}
-                max={100}
-                value={Math.max(0, Math.min(100, bucket.percent_remaining))}
-                aria-label={`${copilotBucketLabel(id)} remaining`}
-              />
-            )}
-            {!bucket.unlimited &&
-              bucket.remaining != null &&
-              bucket.entitlement != null && (
-                <span>
-                  {bucket.remaining} / {bucket.entitlement} remaining
+        <div className={styles.quotaWindows}>
+          {buckets.map(([id, bucket]) => (
+            <div key={id} className={styles.meter}>
+              <span>
+                {copilotBucketLabel(id)} ·{" "}
+                {bucket.unlimited
+                  ? "Unlimited"
+                  : bucket.percent_remaining != null
+                    ? `${Math.round(Math.max(0, Math.min(100, bucket.percent_remaining)))}% left`
+                    : "Remaining allowance unavailable"}
+              </span>
+              {!bucket.unlimited && bucket.percent_remaining != null && (
+                <meter
+                  min={0}
+                  max={100}
+                  value={Math.max(0, Math.min(100, bucket.percent_remaining))}
+                  aria-label={`${copilotBucketLabel(id)} remaining`}
+                />
+              )}
+              {!bucket.unlimited &&
+                bucket.remaining != null &&
+                bucket.entitlement != null && (
+                  <span>
+                    {bucket.remaining} / {bucket.entitlement} remaining
+                  </span>
+                )}
+              {bucket.overage_permitted != null && (
+                <span className={styles.quotaDetail}>
+                  Additional usage{" "}
+                  {bucket.overage_permitted ? "enabled" : "disabled"}
+                  {bucket.overage_count != null
+                    ? ` · ${bucket.overage_count} used`
+                    : ""}
                 </span>
               )}
-            {bucket.overage_permitted != null && (
-              <span className={styles.quotaDetail}>
-                Additional usage{" "}
-                {bucket.overage_permitted ? "enabled" : "disabled"}
-                {bucket.overage_count != null
-                  ? ` · ${bucket.overage_count} used`
-                  : ""}
-              </span>
-            )}
-          </div>
-        ))
+            </div>
+          ))}
+        </div>
       )}
       {quota.data && (
         <span className={styles.quotaDetail}>
@@ -143,11 +163,12 @@ export function CopilotAllowance({
       {ready && (
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-sm"
+          aria-label="Refresh allowance"
           loading={quota.isFetching}
           onClick={() => void quota.refetch()}
         >
-          Refresh allowance
+          <ArrowsClockwiseIcon />
         </Button>
       )}
     </div>

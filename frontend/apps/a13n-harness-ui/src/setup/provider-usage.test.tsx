@@ -53,11 +53,17 @@ it("shows Codex windows, weekly reset, and expiring vouchers outside management"
     },
   } as Schema<"SubscriptionAccountView">;
   render(<AccountUsage view={view} />);
-  expect(screen.getByText("5h · 75% left")).toBeTruthy();
-  expect(screen.getByText("Weekly · 40% left")).toBeTruthy();
+  expect(
+    screen.getByRole("meter", { name: "5h remaining" }).getAttribute("value"),
+  ).toBe("75");
+  expect(
+    screen
+      .getByRole("meter", { name: "Weekly remaining" })
+      .getAttribute("value"),
+  ).toBe("40");
   expect(screen.getAllByText(/^Resets /)).toHaveLength(2);
   expect(screen.getByText("Reset vouchers · 1 available")).toBeTruthy();
-  expect(screen.getByText(/^Earliest expiry /)).toBeTruthy();
+  expect(screen.getByText(/^Expires /)).toBeTruthy();
 });
 
 it("renders Grok allowance and purchased dollars without Codex windows or vouchers", () => {
@@ -76,7 +82,10 @@ it("renders Grok allowance and purchased dollars without Codex windows or vouche
       }}
     />,
   );
-  expect(screen.getByText("Weekly · 99% used")).toBeTruthy();
+  expect(screen.getByText("99%")).toBeTruthy();
+  expect(
+    screen.getByRole("meter", { name: "Weekly used" }).getAttribute("value"),
+  ).toBe("99.994");
   expect(screen.getByText(/Purchased credits.*15.00/)).toBeTruthy();
   expect(screen.queryByText(/voucher/i)).toBeNull();
 });
