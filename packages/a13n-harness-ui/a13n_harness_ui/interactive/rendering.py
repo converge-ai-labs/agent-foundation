@@ -223,8 +223,8 @@ class Status:
             goal_label = f"Goal {phase} {goal.iteration}/{goal.max_iterations}"
         fields = [
             state,
-            *((f"MAIN {self.main_account.account_name}",) if self.main_account else ()),
             *((goal_label,) if goal_label is not None else ()),
+            *((f"MAIN {self.main_account.account_name}",) if self.main_account else ()),
             *((speed_label,) if not compact and speed_label is not None else ()),
             *(("Pro",) if not compact and self.reasoning_mode == "pro" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
