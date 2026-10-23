@@ -43,7 +43,7 @@ export function RunPage() {
   }
   return (
     <RunContent
-      key={`${threadId}:${runIds[0]}`}
+      key={threadId}
       runIds={runIds}
       runId={runId}
       threadId={threadId}
@@ -153,36 +153,51 @@ export function RunContent({
     navigate,
   ]);
 
-  // The Session decides the level a Thread opens at, so it is read first.
-  if (runQuery.isPending || threadQuery.isPending || session.isPending)
+  // The navigator belongs to the Thread. Keep it mounted while the selected
+  // Run loads; only its transcript and composer start a new inspection lifetime.
+  if (threadQuery.isPending || session.isPending)
     return <Loading variant="detail" />;
-  if (!run || !thread)
+  if (!thread)
     return (
       <ErrorNotice
-        error={runQuery.error ?? threadQuery.error}
-        retry={() => {
-          void runQuery.refetch();
-          void threadQuery.refetch();
-        }}
+        error={threadQuery.error}
+        retry={() => void threadQuery.refetch()}
       />
     );
-  if (run.thread_id !== threadId || run.session_id !== sessionId)
-    return (
-      <ErrorNotice
-        error={new Error(t("This run does not belong to this thread."))}
-      />
-    );
+  const debugLevel = level === "debug";
   return (
-    <RunBody
-      run={run}
-      runIds={runIds}
-      thread={thread}
-      level={level}
-      agentName={agent.data?.name}
-      error={
-        runQuery.error ?? threadQuery.error ?? successor.error ?? lineage.error
-      }
-    />
+    <div className={debugLevel ? debug.page : styles.page}>
+      <div className={debugLevel ? debug.frame : styles.page}>
+        {debugLevel && <RunNavigator thread={thread} runId={runId} />}
+        {runQuery.isPending ? (
+          <Loading variant="detail" />
+        ) : !run ? (
+          <ErrorNotice
+            error={runQuery.error}
+            retry={() => void runQuery.refetch()}
+          />
+        ) : run.thread_id !== threadId || run.session_id !== sessionId ? (
+          <ErrorNotice
+            error={new Error(t("This run does not belong to this thread."))}
+          />
+        ) : (
+          <RunBody
+            key={runIds[0]}
+            run={run}
+            runIds={runIds}
+            thread={thread}
+            level={level}
+            agentName={agent.data?.name}
+            error={
+              runQuery.error ??
+              threadQuery.error ??
+              successor.error ??
+              lineage.error
+            }
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -237,77 +252,72 @@ function RunBody({
   // wrappers add no box, and both levels keep them so a switch keeps the dock
   // and its draft.
   return (
-    <div className={debugLevel ? debug.page : styles.page}>
-      <div className={debugLevel ? debug.frame : styles.page}>
-        {debugLevel && <RunNavigator thread={thread} runId={run.id} />}
-        <div
-          className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
-          ref={transcript}
-        >
-          <ErrorNotice error={error} />
-          <BranchOrigin
-            thread={thread}
-            threads={threads.data ?? [thread]}
-            level={level}
-          />
-          <div className={debugLevel ? debug.sections : styles.transcript}>
-            <HistoryTranscript
-              runId={runIds[0]!}
-              thread={thread}
-              level={level}
-              preservePosition={scroll.preservePosition}
-              jumpToDock={scroll.jumpToLatest}
-            />
-            {runIds.map((id) => (
-              <RunEntry
-                key={id}
-                runId={id}
-                thread={thread}
-                level={level}
-                jumpToDock={scroll.jumpToLatest}
-                preservePosition={scroll.preservePosition}
-                prefill={id === run.id ? prefill : undefined}
-              />
-            ))}
-            {submitting &&
-              !runIds.includes(submitting.runId ?? "") &&
-              (debugLevel ? (
-                <DebugPendingRun request={pendingRequest(submitting)} />
-              ) : (
-                <div aria-busy="true">
-                  <UserMessage request={pendingRequest(submitting)} />
-                </div>
-              ))}
-          </div>
-          <RunDock
-            run={run}
+    <div
+      className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
+      ref={transcript}
+    >
+      <ErrorNotice error={error} />
+      <BranchOrigin
+        thread={thread}
+        threads={threads.data ?? [thread]}
+        level={level}
+      />
+      <div className={debugLevel ? debug.sections : styles.transcript}>
+        <HistoryTranscript
+          runId={runIds[0]!}
+          thread={thread}
+          level={level}
+          preservePosition={scroll.preservePosition}
+          jumpToDock={scroll.jumpToLatest}
+        />
+        {runIds.map((id) => (
+          <RunEntry
+            key={id}
+            runId={id}
             thread={thread}
             level={level}
-            agentName={agentName}
-            resubmit={resubmit}
-            pendingRunId={submitting?.runId}
-            onResubmitted={() => setResubmit(null)}
-            onSubmissionChange={(message) => {
-              setSubmitting(message);
-              if (message && !message.runId) scroll.followLatest();
-            }}
-            above={
-              scroll.showJump && (
-                <Button
-                  className={styles.jumpToLatest}
-                  size="sm"
-                  variant="outline"
-                  onClick={scroll.jumpToLatest}
-                  type="button"
-                >
-                  <ArrowDownIcon size={14} />
-                  {t("Jump to latest")}
-                </Button>
-              )
-            }
+            jumpToDock={scroll.jumpToLatest}
+            preservePosition={scroll.preservePosition}
+            prefill={id === run.id ? prefill : undefined}
           />
-        </div>
+        ))}
+        {submitting &&
+          !runIds.includes(submitting.runId ?? "") &&
+          (debugLevel ? (
+            <DebugPendingRun request={pendingRequest(submitting)} />
+          ) : (
+            <div aria-busy="true">
+              <UserMessage request={pendingRequest(submitting)} />
+            </div>
+          ))}
       </div>
+      <RunDock
+        run={run}
+        thread={thread}
+        level={level}
+        agentName={agentName}
+        resubmit={resubmit}
+        pendingRunId={submitting?.runId}
+        onResubmitted={() => setResubmit(null)}
+        onSubmissionChange={(message) => {
+          setSubmitting(message);
+          if (message && !message.runId) scroll.followLatest();
+        }}
+        above={
+          scroll.showJump && (
+            <Button
+              className={styles.jumpToLatest}
+              size="sm"
+              variant="outline"
+              onClick={scroll.jumpToLatest}
+              type="button"
+            >
+              <ArrowDownIcon size={14} />
+              {t("Jump to latest")}
+            </Button>
+          )
+        }
+      />
     </div>
   );
 }

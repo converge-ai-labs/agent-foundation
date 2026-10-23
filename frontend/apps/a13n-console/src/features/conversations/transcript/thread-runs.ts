@@ -23,16 +23,22 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
   const route = useParams();
   const anchor =
     selectedRunId ?? (route.threadId === threadId ? route.runId : undefined);
-  const scope = `${workspace.id}:${threadId}:${anchor ?? ""}`;
-  const [loaded, setLoaded] = useState<{ scope: string; cursors: string[] }>({
-    scope,
-    cursors: [],
-  });
-  const cursors = loaded.scope === scope ? loaded.cursors : [];
+  const scope = `${workspace.id}:${threadId}`;
+  const [loaded, setLoaded] = useState<{
+    scope: string;
+    anchor: string | undefined;
+    cursors: string[];
+  }>({ scope, anchor, cursors: [] });
+  const current =
+    loaded.scope === scope ? loaded : { scope, anchor, cursors: [] };
+  const { cursors } = current;
   const options = conversationQueries(client, workspace.id);
   const pages = useQueries({
     queries: [
-      { ...options.runs(threadId, { anchor }), enabled: !!threadId },
+      {
+        ...options.runs(threadId, { anchor: current.anchor }),
+        enabled: !!threadId,
+      },
       ...cursors.map((cursor) => options.runs(threadId, { cursor })),
     ],
   });
@@ -72,13 +78,23 @@ export function useThreadRuns(threadId: string, selectedRunId?: string) {
   }
   useEffect(() => {
     if (gaps.length)
-      setLoaded({ scope, cursors: [...new Set([...cursors, ...gaps])] });
-  }, [scope, cursors, gaps]);
+      setLoaded({ ...current, cursors: [...new Set([...cursors, ...gaps])] });
+    // A selected row retains the current anchor and all loaded pages. Only an
+    // explicit link outside this window establishes a new bounded window.
+    else if (
+      loaded.scope !== scope ||
+      (anchor !== current.anchor &&
+        anchor &&
+        !numbered.has(anchor) &&
+        pages.every((page) => !page.isFetching && !page.isPending))
+    )
+      setLoaded({ scope, anchor, cursors: [] });
+  }, [current, cursors, gaps, loaded.scope, scope, anchor, numbered, pages]);
   const older = edge?.next_cursor;
   const newer = ordered.at(-1)?.previous_cursor;
   const load = (cursor: string | null | undefined) => {
     if (cursor)
-      setLoaded({ scope, cursors: [...new Set([...cursors, cursor])] });
+      setLoaded({ ...current, cursors: [...new Set([...cursors, cursor])] });
   };
   return {
     runs,

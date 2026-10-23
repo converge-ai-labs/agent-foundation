@@ -12,9 +12,11 @@ export function RunOutline({ outline }: { outline: Outline }) {
   const { t } = useTranslation();
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
-    panel.current
-      ?.querySelector("[aria-current]")
-      ?.scrollIntoView({ block: "nearest" });
+    const selected = panel.current?.querySelector("[aria-current]");
+    // A click already put focus here. Leave this independent scroll container
+    // where the reader placed it; transcript-driven selection can still follow.
+    if (selected && selected !== document.activeElement)
+      selected.scrollIntoView({ block: "nearest" });
   }, [outline.inView]);
   return (
     <nav className={styles.panel} aria-label={t("Runs")} ref={panel}>
