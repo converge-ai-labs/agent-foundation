@@ -360,7 +360,7 @@ def _is_deferred_result_boundary(ctx: RunContext[AgentContext], messages: list[M
     resume = ctx.deps.deferred_resume
     if resume is None or not messages or not isinstance(messages[-1], ModelRequest):
         return False
-    expected = {part.tool_call_id for part in (*resume.requests.calls, *resume.requests.approvals)}
+    expected = {part.model_call.tool_call_id for part in (*resume.requests.calls, *resume.requests.approvals)}
     integrated = {
         part.tool_call_id for part in messages[-1].parts if isinstance(part, BaseToolReturnPart | RetryPromptPart)
     }

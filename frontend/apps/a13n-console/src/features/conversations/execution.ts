@@ -83,7 +83,8 @@ export interface ExecutionUsage {
  * `complete` requires a display that kept every item and stream output
  * without a gap; retained Items alone never establish it.
  */
-export type ExecutionCoverage = "complete" | "partial" | "unavailable";
+export type ExecutionCoverage =
+  "complete" | "window" | "partial" | "unavailable";
 
 export interface Execution {
   steps: ExecutionStep[];

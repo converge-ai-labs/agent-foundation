@@ -435,6 +435,14 @@ PATCH 保留省略的字段。使用 `{"execution":{"tools":{"mode":null}}}` 仅
 
 前台等待范围为 0–300 秒，不是执行截止时间。部署回退值为 `tool_executions.foreground_wait_seconds`；并发、保留期与关闭参数仍由部署统一设置。
 
+### 命令环境变量
+
+Agent 使用 `config.execution.environment`，Thread 使用 `execution.environment`，单次消息使用 `options.execution.environment`。例如 `{"execution":{"environment":{"APP_MODE":"staging","EMPTY":""}}}`。逐个变量的优先级为：**命令 → Run → Thread → Agent → Environment 已冻结的 recipe**。这些值作为普通配置保存，不用于保存密钥；变量名和保留名称规则与模板变量相同。Windows 上请保持变量名的大小写写法一致。
+
+Thread PATCH 会整体替换传入的变量表；传 null 或 `{}` 清除该层并恢复继承，省略则保持不变。空字符串表示显式设置为空；删除某个键不会移除下层默认值。命令显式 unset 在 Provider 支持时仍可移除继承值。
+
+Service 在 Run 接受时冻结 Agent／Thread／Run 三层的结果，恢复和继续执行仍使用原值。前台命令、后台进程及其普通子进程都会收到变量。共用 sandbox 的 Run 使用各自的命令环境，不修改 sandbox 全局变量或 recipe。内联子 Agent 共用所在 Run 的变量；Fork 和独立子 Thread 使用自己的 Agent 配置和覆盖值。Console 中可在上述**执行策略**入口编辑变量。
+
 ## 保留的工具执行
 
 默认 `auto` 工具模式下，支持保留的工具调用会自动交还前台：超过等待时间（默认 5 秒）后，模型收到 `exec-*` 回执并可继续处理，而同一次调用仍在原 worker 上运行。回执是引用，不是结果。整个 CodeAct 调用及其嵌套调用保持在一起；后续 Run 可由其他 worker 执行。所有者丢失时，未完成的执行标记为 `lost`，Service 不会自动重放调用。

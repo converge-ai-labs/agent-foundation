@@ -9,6 +9,7 @@ import sys
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from pydantic import JsonValue
@@ -37,6 +38,7 @@ from a13n_harness.environment.mounts import (
     EnvironmentSnapshot,
 )
 from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_harness.environment.variables import validate_variables, with_defaults
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.identity import AgentInstanceContext
 
@@ -735,6 +737,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
             requested = limits.wall_time_seconds
             effective = ceiling_value if requested is None else min(requested, ceiling_value)
             limits = limits.model_copy(update={"wall_time_seconds": effective})
+        request = with_defaults(
+            request,
+            self._runtime._command_environment,
+            windows=not entered.public.descriptor.environment_case_sensitive,
+        )
         return entered, request.model_copy(update={"cwd": cwd, "limits": limits})
 
     @asynccontextmanager
@@ -1437,6 +1444,7 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     _initial_mounts: tuple[_MountRequest, ...]
     _default_mount: str | None
     _extensions: tuple[tuple[str, EnvironmentRunExtension], ...] = ()
+    _command_environment: Mapping[str, str] = field(default_factory=dict)
     _noop: bool = False
     _used: bool = field(default=False, init=False, repr=False)
     _bound: CompositeBoundEnvironment | None = field(default=None, init=False, repr=False)
@@ -1912,6 +1920,7 @@ def create_environment_runtime(
     mounts: Mapping[str, EnvironmentEntry],
     default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
+    command_environment: Mapping[str, str] | None = None,
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
     try:
@@ -1929,12 +1938,14 @@ def create_environment_runtime(
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc
+    defaults = MappingProxyType(validate_variables(dict(command_environment or {})))
     captured_extensions = _normalize_environment_run_extensions(extensions)
     _validate_initial_mounts(captured, default_mount)
     return ManagedEnvironmentRuntime(
         _initial_mounts=captured,
         _default_mount=default_mount,
         _extensions=captured_extensions,
+        _command_environment=defaults,
     )
 
 

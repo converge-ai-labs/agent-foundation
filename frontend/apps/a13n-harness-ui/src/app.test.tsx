@@ -43,6 +43,34 @@ function json(body: unknown, code = 200) {
 }
 function fixture(request: Request): Response | Promise<Response> {
   const path = decodeURIComponent(new URL(request.url).pathname);
+  if (path === "/api/subscriptions")
+    return json({
+      accounts: [
+        {
+          account: {
+            id: "acct-codex-default",
+            name: "Codex default",
+            provider: "codex",
+            enabled: true,
+          },
+          authentication: {
+            usable: false,
+            availability: "absent",
+            required_action: "login",
+          },
+          usage: { observed_at: 0 },
+        },
+      ],
+      groups: [],
+      adoption: {},
+    });
+  if (path.startsWith("/api/subscriptions/accounts/"))
+    return json({
+      usable: false,
+      availability: "absent",
+      required_action: "login",
+      shared_with_cli: false,
+    });
   if (path === "/api/status") return json(status);
   if (path === "/api/threads/activity")
     return json({ rows: [], total: 0, next_cursor: null });
@@ -727,7 +755,7 @@ it("works without browser storage", async () => {
   }
 });
 
-it("retains login across navigation, requires switch authorization and respects completed cancellation", async () => {
+it("restores the native account login across navigation and respects completed cancellation", async () => {
   window.history.replaceState(null, "", "/settings/accounts");
   const starts: Record<string, unknown>[] = [];
   let succeeded = false;
@@ -735,25 +763,25 @@ it("retains login across navigation, requires switch authorization and respects 
     session_id: "login-one",
     provider: "codex",
     method: "device",
-    state: "failed",
-    error_code: "account_switch_confirmation_required",
+    account_id: "acct-codex-default",
+    state: "waiting",
+    error_code: "",
   };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path.startsWith("/api/auth/accounts/"))
+      if (path.startsWith("/api/subscriptions/accounts/"))
         return json({
-          provider: path.split("/").at(-1),
+          provider: "codex",
           usable: succeeded,
           source: "file",
           expiry: "not_applicable",
           required_action: "none",
         });
       if (path === "/api/auth/logins") {
+        if (request.method === "GET") return json(starts.length ? login : null);
         starts.push(await request.json());
-        if (starts.length > 1)
-          login = { ...login, state: "waiting", error_code: "" };
         return json(login);
       }
       if (path === "/api/auth/logins/login-one") {
@@ -769,23 +797,32 @@ it("retains login across navigation, requires switch authorization and respects 
   render(<BrowserApp />);
   await screen.findByRole("heading", { name: "Accounts & API keys" });
   fireEvent.click(
-    (await screen.findAllByRole("button", { name: "Connect account" }))[0],
+    await screen.findByRole("button", { name: "Manage account" }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Switch account…" }),
+    await screen.findByRole("menuitem", { name: "Sign-in & logout" }),
   );
-  expect(starts).toHaveLength(1);
-  expect(starts[0].allow_account_switch).toBe(false);
   fireEvent.click(
-    screen.getByRole("button", { name: "Allow switch and log in" }),
+    await screen.findByRole("button", { name: "Connect account" }),
   );
   await screen.findByRole("button", { name: "Cancel login" });
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
   fireEvent.click(screen.getByRole("link", { name: "Models" }));
   await screen.findByRole("heading", { name: "Models" });
   fireEvent.click(screen.getByRole("link", { name: "Accounts & API keys" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Sign-in & logout" }),
+  );
   fireEvent.click(await screen.findByRole("button", { name: "Cancel login" }));
   await screen.findByText("Login: succeeded");
-  expect(starts[1].allow_account_switch).toBe(true);
+  expect(starts).toHaveLength(1);
+  expect(starts[0]).toMatchObject({
+    account_id: "acct-codex-default",
+    allow_account_switch: false,
+  });
   expect(screen.queryByText("Login: cancelled")).toBeNull();
 });
 

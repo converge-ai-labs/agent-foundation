@@ -162,27 +162,29 @@ async def test_inert_catalog_and_provider_construction(api):
 
 
 async def test_create_resume_and_exact_destruction(api):
-    env = environment()
+    config = E2BRecipe(environment={"APP_MODE": "agent-default"})
+    env = environment(configuration=config)
     await env.create()
     assert api.calls.count("create") == 1
+    assert api.options[0]["envs"] == config.environment
     state = env.state
     assert state is not None and "secret" not in state.model_dump_json()
     await env.close()
     assert "kill" not in api.calls and "pause" not in api.calls
-    control = environment(state)
+    control = environment(state, configuration=config)
     await control.stop()
     assert await control.inspect() == "stopped"
     paused_calls = list(api.calls)
     with pytest.raises(EnvironmentProviderError, match="E2B"):
         await control.keepalive(deadline=datetime.now(UTC) + timedelta(seconds=30), operation_id="renew-1")
     assert api.calls.count("connect") == paused_calls.count("connect")
-    resumed = environment(state)
+    resumed = environment(state, configuration=config)
     await resumed.start()
     assert api.calls.count("create") == 1 and api.calls.count("connect") == 1
-    destroy = environment(state)
+    destroy = environment(state, configuration=config)
     await destroy.destroy()
-    assert await environment(state).inspect() == "absent"
-    await environment(state).destroy()
+    assert await environment(state, configuration=config).inspect() == "absent"
+    await environment(state, configuration=config).destroy()
     assert api.calls.count("kill") == 1
 
 

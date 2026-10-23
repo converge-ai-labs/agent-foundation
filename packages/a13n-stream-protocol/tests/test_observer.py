@@ -10,6 +10,8 @@ import anyio
 import pytest
 from a13n_harness import (
     AgentStreamEventProtocol,
+    DeferredToolCall,
+    DeferredToolRequests,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -65,7 +67,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.output import TextOutput
-from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError
 
 _OCCURRED_AT = datetime(2026, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
@@ -1013,7 +1014,8 @@ async def test_real_harness_stream_observes_lifecycle_text_and_terminal_events()
 
 
 @pytest.mark.anyio
-async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
+@pytest.mark.parametrize("forwarded", [False, True])
+async def test_terminal_statuses_map_from_explicit_harness_results(forwarded: bool) -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "state"
@@ -1040,8 +1042,27 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         usage=RunUsageSummary(),
         suspend_reason="deferred",
         deferred=DeferredToolRequests(
-            calls=[ToolCallPart(tool_name="external", args={"x": 1}, tool_call_id="call-external")],
-            approvals=[ToolCallPart(tool_name="approve", args={}, tool_call_id="call-approval")],
+            metadata={
+                "call-external": {"a13n.harness.client-tool": {"declared_name": "external", "toolset_id": "editor"}}
+            },
+            calls=[
+                DeferredToolCall(
+                    ToolCallPart("call_tool", {}, "model-external") if forwarded else call, call, "tool/test/external"
+                )
+                for call in [
+                    ToolCallPart(
+                        tool_name="clients__external" if forwarded else "external",
+                        args={"x": 1},
+                        tool_call_id="call-external",
+                    )
+                ]
+            ],
+            approvals=[
+                DeferredToolCall(
+                    ToolCallPart("call_tool", {}, "model-approval") if forwarded else call, call, "tool/test/approve"
+                )
+                for call in [ToolCallPart(tool_name="approve", args={}, tool_call_id="call-approval")]
+            ],
         ),
     )
     failed = HarnessRunResult(
@@ -1082,9 +1103,10 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
     assert isinstance(suspended_event, RunFinishedEvent)
     assert suspended_event.outcome.type == "interrupt"
     assert [(entry.id, entry.tool_call_id, entry.reason) for entry in suspended_event.outcome.interrupts] == [
-        ("call-approval", "call-approval", "approval"),
-        ("call-external", "call-external", "external"),
+        ("call-approval", "model-approval" if forwarded else "call-approval", "approval"),
+        ("call-external", "model-external" if forwarded else "call-external", "external"),
     ]
+    assert suspended_event.outcome.interrupts[1].metadata["tool_name"] == "external"
     assert isinstance(failed_event, RunErrorEvent)
     assert failed_event.code == "model_failed"
     assert failed_event.message == "The model failed."

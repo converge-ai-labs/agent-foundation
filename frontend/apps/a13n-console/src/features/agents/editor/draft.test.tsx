@@ -350,12 +350,14 @@ it("publishes sparse execution defaults and removes them when reset to inherit",
     draft.current.setExecution({
       tools: { mode: "inline", foreground_wait_seconds: 0 },
       steering: "boundary",
+      environment: { APP_MODE: "run", EMPTY: "" },
     }),
   );
   const built = buildDraftConfig(draft.current, undefined, asIs);
   expect(built.ok && built.config.execution).toEqual({
     tools: { mode: "inline", foreground_wait_seconds: 0 },
     steering: "boundary",
+    environment: { APP_MODE: "run", EMPTY: "" },
   });
   expect(draft.current.dirty).toBe(true);
   act(() =>

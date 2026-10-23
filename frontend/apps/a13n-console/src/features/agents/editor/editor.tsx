@@ -149,7 +149,7 @@ export function AgentEditor({
       </Badge>
     );
 
-  function save(event: FormEvent) {
+  function save(event: FormEvent<HTMLFormElement>) {
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
     // Creation's button stays enabled: a refused save points at what is
@@ -178,6 +178,12 @@ export function AgentEditor({
         setValidation(built.error);
         setAdvancedExpanded(true);
       }
+      return;
+    }
+    if (!event.currentTarget.checkValidity()) {
+      setAdvancedExpanded(true);
+      setModelExpanded(true);
+      event.currentTarget.reportValidity();
       return;
     }
     setModelValidation(undefined);

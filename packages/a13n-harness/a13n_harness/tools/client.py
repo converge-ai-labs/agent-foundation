@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -9,6 +10,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_harness._json import dump_json_bytes
@@ -180,3 +182,11 @@ def _require_bounded_json(value: Any, limit: int, description: str) -> None:
         raise ValueError(f"{description} must be JSON-safe") from exc
     if len(encoded) > limit:
         raise ValueError(f"{description} is too large")
+
+
+def client_tool_name(call: ToolCallPart, metadata: Mapping[str, Any]) -> str:
+    """Project the declared client name without changing the retained native call."""
+    marker = metadata.get(CLIENT_TOOL_MARKER_KEY)
+    if isinstance(marker, Mapping) and isinstance(name := marker.get("declared_name"), str) and name:
+        return name
+    return call.tool_name

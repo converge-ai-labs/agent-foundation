@@ -13,7 +13,8 @@ import { createClient, type Client } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
 import { fixtureRun, fixtureThread } from "./fixture";
-import { RunDock } from "./run-dock";
+import type { ComponentProps } from "react";
+import { RunDock, ThreadDock } from "./run-dock";
 import { useRun } from "../queries";
 
 let client: Client;
@@ -161,7 +162,7 @@ it("replaces a racing user takeover panel with the Agent assistance card without
     const live = useRun("run");
     if (!live.data) return null;
     return (
-      <RunDock
+      <TestDock
         run={live.data}
         thread={fixtureThread({
           id: "thread",
@@ -334,7 +335,7 @@ function mount({
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
-        <RunDock run={current} thread={thread} resubmit={resubmit} />
+        <TestDock run={current} thread={thread} resubmit={resubmit} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -416,7 +417,9 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
       await screen.findByText("Waiting for the application");
     if (status === "running")
       expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Queued messages/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Queued messages/ }),
+    );
     await screen.findByText("Queued test");
     for (const name of [
       "Queued message actions",
@@ -642,3 +645,11 @@ it("sends execution overrides once with next_run and returns the next message to
     "Inherit",
   );
 });
+
+function TestDock(props: ComponentProps<typeof RunDock>) {
+  return (
+    <ThreadDock thread={props.thread}>
+      <RunDock {...props} />
+    </ThreadDock>
+  );
+}

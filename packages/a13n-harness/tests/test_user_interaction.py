@@ -72,8 +72,8 @@ async def test_structured_question_suspends_and_resumes_through_native_deferred_
 
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
-    assert [call.tool_name for call in first.deferred.calls] == ["ask_user_question"]
-    call_id = first.deferred.calls[0].tool_call_id
+    assert [call.target_call.tool_name for call in first.deferred.calls] == ["ask_user_question"]
+    call_id = first.deferred.calls[0].target_call.tool_call_id
 
     second = await _build().run(
         bindings=RunBindings.embedded(),
@@ -132,7 +132,7 @@ async def test_structured_question_is_not_exposed_to_child_runs() -> None:
 async def test_structured_question_rejects_uncorrelated_answer_shape_before_resume() -> None:
     first = await _build().run("clarify", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
-    call_id = first.deferred.calls[0].tool_call_id
+    call_id = first.deferred.calls[0].target_call.tool_call_id
 
     with pytest.raises(RunError) as invalid:
         await _build().run(
@@ -186,7 +186,7 @@ async def test_invalid_question_returns_tool_failure_before_deferral(invalid_kin
     assert requests == 2
     assert result.status == "suspended"
     assert result.deferred is not None
-    assert [call.tool_call_id for call in result.deferred.calls] == ["valid-1"]
+    assert [call.target_call.tool_call_id for call in result.deferred.calls] == ["valid-1"]
 
 
 @pytest.mark.parametrize("successful", [False, True])
@@ -216,8 +216,9 @@ async def test_removed_question_tool_accepts_only_native_negative_closure(succes
         )
 
     if successful:
-        with pytest.raises(DefinitionError, match="current tool surface"):
+        with pytest.raises(DefinitionError) as error:
             await resume()
+        assert error.value.code == "deferred_surface_mismatch"
         assert not observed
     else:
         result = await resume()
@@ -270,7 +271,7 @@ async def test_negative_question_closure_rejects_present_local_substitution():
         model=FunctionModel(stream_function=model),
         capabilities=(Capability(id="replacement", tools=[tool]),),
     )
-    with pytest.raises(DefinitionError, match="current tool surface"):
+    with pytest.raises(DefinitionError) as error:
         await agent.run(
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
@@ -278,4 +279,5 @@ async def test_negative_question_closure_rejects_present_local_substitution():
                 first.deferred.build_results(calls={"question-1": ToolFailed("No response")}),
             ),
         )
+    assert error.value.code == "deferred_surface_mismatch"
     assert not effects

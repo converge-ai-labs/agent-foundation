@@ -243,13 +243,20 @@ async def open_host(
             tools,
             webs,
             memory,
-            _environment(environments, platform_mounts),
+            _environment(environments, platform_mounts, command_environment=plan.execution.environment),
         )
 
 
-def _environment(user: Mapping[str, EnvironmentMount], builtin: Mapping[str, EnvironmentMount]) -> EnvironmentRuntime:
+def _environment(
+    user: Mapping[str, EnvironmentMount],
+    builtin: Mapping[str, EnvironmentMount],
+    *,
+    command_environment: Mapping[str, str] | None = None,
+) -> EnvironmentRuntime:
     """Preserve the user's default while adding non-default Host document mounts."""
     if user.keys() & builtin.keys():
         raise ServiceError("invalid_argument", "Environment names conflict with builtin Skill mounts")
     default = PRIMARY if PRIMARY in user else next(iter(user)) if len(user) == 1 else None
-    return create_environment_runtime(mounts={**user, **builtin}, default_mount=default)
+    return create_environment_runtime(
+        mounts={**user, **builtin}, default_mount=default, command_environment=command_environment
+    )

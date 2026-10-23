@@ -510,7 +510,9 @@ export function NativeWorkspace({
                   ? "Memory"
                   : location.pathname === "/archived"
                     ? "Archived conversations"
-                    : "Settings"}
+                    : location.pathname === "/usage"
+                      ? "Usage"
+                      : "Settings"}
           </h1>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">

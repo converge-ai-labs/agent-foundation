@@ -1,6 +1,6 @@
 import { Button, ModalFrame } from "a13n-ui";
 import { ChartBarIcon } from "@phosphor-icons/react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -109,9 +109,7 @@ function SessionUsageReport({
   close: () => void;
 }) {
   const { t } = useTranslation();
-  const client = useClient(),
-    { workspace, basePath } = useWorkspace();
-  const queries = conversationQueries(client, workspace.id);
+  const { basePath } = useWorkspace();
   const known = new Map(threads.map((thread) => [thread.id, thread]));
   // Conversations in creation order; Run numbers count within each one, as
   // its Run list does.
@@ -122,15 +120,6 @@ function SessionUsageReport({
       .filter((id) => used.has(id)),
     ...[...used].filter((id) => !known.has(id)),
   ];
-  const lists = useQueries({
-    queries: threadIds.map((id) => queries.runs(id)),
-  });
-  const numbers = new Map<string, number>();
-  lists.forEach((list) =>
-    chronological(list.data ?? []).forEach((run, index) =>
-      numbers.set(run.id, index + 1),
-    ),
-  );
   const perModel = summary.models.length > 1;
   const sections: UsageSection[] = threadIds.map((threadId) => {
     const thread = known.get(threadId);
@@ -145,7 +134,6 @@ function SessionUsageReport({
       groups: summary.runs
         .filter((run) => run.thread_id === threadId)
         .map((run) => {
-          const number = numbers.get(run.run_id);
           return {
             key: run.run_id,
             models: run.models,
@@ -163,7 +151,7 @@ function SessionUsageReport({
                 )}
                 onClick={close}
               >
-                {number ? t("Run {{index}}", { index: number }) : t("Run")}
+                {t("Run {{index}}", { index: run.run_number })}
               </Link>
             ),
           };

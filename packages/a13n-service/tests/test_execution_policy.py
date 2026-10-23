@@ -235,11 +235,17 @@ async def test_resume_keeps_frozen_policy_after_thread_edit(service, scripted_mo
     agent = await runs_kit.create_agent(service, scripted_model, client_tools=[lookup])
     scripted_model.call("lookup", {}, call_id="call_lookup")
     started = await runs_kit.start_thread(
-        service, agent, "lookup", options={"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
+        service,
+        agent,
+        "lookup",
+        options={"execution": {"tools": {"mode": "inline"}, "steering": "boundary", "environment": {"MODE": "frozen"}}},
     )
     await (await runs_kit.attempt(service))
     await _patch(
-        service, runs_kit, started["thread"]["id"], {"execution": {"tools": {"mode": "auto"}, "steering": "immediate"}}
+        service,
+        runs_kit,
+        started["thread"]["id"],
+        {"execution": {"tools": {"mode": "auto"}, "steering": "immediate", "environment": {"MODE": "changed"}}},
     )
     resumed = await service.client.post(
         f"{service.api}/runs/{started['run']['id']}/resume",
@@ -248,3 +254,80 @@ async def test_resume_keeps_frozen_policy_after_thread_edit(service, scripted_mo
     )
     assert resumed.status_code == 201, resumed.text
     assert resumed.json()["options"]["execution"] == started["run"]["options"]["execution"]
+
+
+def test_environment_precedence_patch_and_legacy_serialization():
+    from pydantic import ValidationError
+
+    agent = ExecutionOverride(environment={"MODE": "agent", "BASE": "base"})
+    thread = ExecutionOverride(environment={"MODE": "thread", "THREAD": "thread"})
+    run = ExecutionOverride(environment={"MODE": "", "RUN": "run"})
+    policy = ExecutionPolicy().overlay(agent, thread, run)
+    assert policy.environment == {"BASE": "base", "MODE": "", "THREAD": "thread", "RUN": "run"}
+    assert ExecutionPolicy().overlay(policy.override()).environment == policy.environment
+    replaced = thread.patch(ExecutionOverride(environment={"NEW": "new"}))
+    assert ExecutionPolicy().overlay(agent, replaced).environment == {"BASE": "base", "MODE": "agent", "NEW": "new"}
+    for reset in (None, {}):
+        cleared = thread.patch(ExecutionOverride(environment=reset))
+        assert ExecutionPolicy().overlay(agent, cleared).environment == agent.environment
+    assert thread.patch(ExecutionOverride()).environment == thread.environment
+    assert "environment" not in ExecutionPolicy().model_dump()
+    assert "environment" not in ExecutionOverride(environment={}).model_dump()
+    for values in ({"BAD-NAME": "value"}, {"KEY": "bad\x00value"}, {"OTEL_EXPORTER_OTLP_ENDPOINT": "bad"}):
+        with pytest.raises(ValidationError):
+            ExecutionOverride(environment=values)
+
+
+async def test_environment_freezes_at_acceptance_and_thread_map_replacement(service, scripted_model, runs_kit):
+    agent = await runs_kit.create_agent(
+        service, scripted_model, execution={"environment": {"MODE": "agent", "BASE": "base"}}, **runs_kit.LOOKUP
+    )
+    started = await runs_kit.start_thread(
+        service,
+        agent,
+        "first",
+        execution={"environment": {"MODE": "thread", "THREAD": "thread"}},
+        options={"execution": {"environment": {"MODE": "run"}}},
+    )
+    thread_id = started["thread"]["id"]
+    frozen = {"BASE": "base", "MODE": "run", "THREAD": "thread"}
+    assert started["run"]["options"]["execution"]["environment"] == frozen
+    await _patch(service, runs_kit, thread_id, {"execution": {"environment": {"NEW": "new"}}})
+    assert (await runs_kit.get_run(service, started["run"]["id"]))["options"]["execution"]["environment"] == frozen
+    same = await runs_kit.submit(
+        service, thread_id, runs_kit.message(agent, "same", options={"execution": {"environment": {"MODE": "run"}}})
+    )
+    assert same.status_code == 201, same.text
+    changed = await runs_kit.submit(
+        service,
+        thread_id,
+        runs_kit.message(agent, "changed", options={"execution": {"environment": {"MODE": "different"}}}),
+    )
+    assert changed.status_code == 409 and "execution_policy_immutable" in changed.text
+    queued = await runs_kit.submit(
+        service,
+        thread_id,
+        runs_kit.message(
+            agent, "second", delivery="next_run", options={"execution": {"environment": {"NEW": "queued"}}}
+        ),
+    )
+    assert queued.status_code == 201, queued.text
+    # A queued entry has not resolved its inherited choices yet.
+    await _patch(service, runs_kit, thread_id, {"execution": {"environment": {"LATE": "late"}}})
+    # A tool boundary consumes the steer before the final answer; otherwise it can become the next Run.
+    runs_kit.lookup(scripted_model, call_id="call_environment_boundary")
+    scripted_model.say("done")
+    await (await runs_kit.attempt(service))
+    current = await runs_kit.get_thread(service, thread_id)
+    later = await runs_kit.get_run(service, current["current_run_id"])
+    assert later["options"]["execution"]["environment"] == {
+        "BASE": "base",
+        "MODE": "agent",
+        "LATE": "late",
+        "NEW": "queued",
+    }
+    entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
+    assert entries[same.json()["entry"]["id"]]["assigned_run_id"] == started["run"]["id"]
+    assert entries[queued.json()["entry"]["id"]]["assigned_run_id"] == later["id"]
+    reset = await _patch(service, runs_kit, thread_id, {"execution": {"environment": None}})
+    assert not (reset["execution"] or {}).get("environment")

@@ -66,11 +66,6 @@ class RunSummary(BaseModel):
     )
 
 
-class RunSummaryPage(BaseModel):
-    items: list[RunSummary]
-    next_cursor: str | None
-
-
 def run_summary(value: RunView, agent_name: str | None = None) -> RunSummary:
     fields = RunSummary.model_fields.keys() - {
         "view",

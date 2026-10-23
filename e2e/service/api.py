@@ -93,8 +93,15 @@ class Workspace:
 
     async def runs(self, thread_id: str) -> list[dict]:
         """The thread's runs, oldest first."""
-        listing = expect(await self.client.get(f"/api/v1/threads/{thread_id}/runs", params={"limit": 100}), 200)
-        return listing["items"][::-1]
+        runs = []
+        cursor = None
+        while True:
+            params = {"limit": 50, **({"cursor": cursor} if cursor else {})}
+            listing = expect(await self.client.get(f"/api/v1/threads/{thread_id}/runs", params=params), 200)
+            runs.extend(listing["items"])
+            cursor = listing["next_cursor"]
+            if cursor is None:
+                return runs[::-1]
 
     async def items(self, run_id: str) -> dict:
         return expect(await self.client.get(f"/api/v1/runs/{run_id}/items"), 200)

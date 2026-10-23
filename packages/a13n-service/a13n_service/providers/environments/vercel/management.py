@@ -4,8 +4,6 @@ import asyncio
 import json
 import math
 from datetime import UTC, datetime
-from time import perf_counter
-from uuid import uuid4
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentState
@@ -21,14 +19,11 @@ from a13n_harness.providers.environment.vercel.shared import (
     VercelEnvironmentConfiguration,
     VercelReference,
 )
-from a13n_logging import get_logger
 
 from a13n_service.providers.environment import desktop_access as access
 from a13n_service.providers.environment.native import NativeManagement
 
 from .configuration import VercelRecipe
-
-_logger = get_logger(__name__)
 
 
 class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfiguration, NamedTargetState]):
@@ -40,6 +35,8 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         runtime: NativeRuntime | None,
         operation_id: str,
     ):
+        if configuration.snapshot == "auto":
+            raise failure("vercel", "desktop_snapshot_not_prepared", Category.INVALID)
         if runtime is None:
             raise TypeError("Vercel management requires a runtime")
         super().__init__(configuration, environment_id, state, runtime)
@@ -68,6 +65,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                         else {"runtime": self.config.runtime}
                     ),
                     "persistent": True,
+                    **({"env": self.config.environment} if self.config.environment else {}),
                     "timeout": self.config.timeout_seconds * 1000,
                     "resources": {"vcpus": self.config.vcpus},
                     "snapshotExpiration": 0,
@@ -114,6 +112,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             # Only a new native session starts services. Failed/recovered creates
             # and attachment must never repair an existing desktop implicitly.
             settings = {
+                **self.config.environment,
                 "A13N_ENVD_DEVICE_ID": self.owner,
                 "A13N_ENVD_TRANSPORT": "http",
                 "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
@@ -180,45 +179,21 @@ else: raise RuntimeError('Envd readiness timed out')
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or self.target is None:
             raise failure("vercel", "desktop_access_unavailable", Category.UNSUPPORTED)
-        operation_id = uuid4().hex
-        started = perf_counter()
-        outcome = "interrupted"
-        stages: dict[str, float] = {}
-        try:
-            stage = perf_counter()
-            # Backend scope is one control-plane request. Subsequent commands use
-            # this exact session; the guest still validates every generation/epoch.
-            session_id = self.pinned_session or await self.running_session()
-            stages["lookup_ms"] = (perf_counter() - stage) * 1000
-            stage = perf_counter()
-            raw = await command(self, session_id, access.command(request), sudo=True, timeout=25, max_output=16384)
-            stages["command_ms"] = (perf_counter() - stage) * 1000
-            reply = access.decode("vercel", request, raw)
-            if isinstance(reply, access.Description):
-                endpoint = self.endpoint(access.PORT)
-                try:
-                    await self.backend._endpoint_policy.validate(endpoint)
-                except EndpointPolicyError:
-                    raise failure("vercel", "desktop_endpoint_denied", Category.INVALID) from None
-                reply = reply.model_copy(
-                    update={"websocket_url": endpoint.replace("https://", "wss://", 1) + "/websockify"}
-                )
-            outcome = "ok"
-            return reply
-        except Exception:
-            outcome = "error"
-            raise
-        finally:
-            _logger.info(
-                "Vercel desktop stage finished",
-                extra={
-                    "desktop_operation_id": operation_id,
-                    "desktop_operation": request.operation,
-                    "duration_ms": round((perf_counter() - started) * 1000, 3),
-                    "outcome": outcome,
-                    **{key: round(value, 3) for key, value in stages.items()},
-                },
+        # Backend scope is one control-plane request. Subsequent commands use
+        # this exact session; the guest still validates every generation/epoch.
+        session_id = self.pinned_session or await self.running_session()
+        raw = await command(self, session_id, access.command(request), sudo=True, timeout=25, max_output=16384)
+        reply = access.decode("vercel", request, raw)
+        if isinstance(reply, access.Description):
+            endpoint = self.endpoint(access.PORT)
+            try:
+                await self.backend._endpoint_policy.validate(endpoint)
+            except EndpointPolicyError:
+                raise failure("vercel", "desktop_endpoint_denied", Category.INVALID) from None
+            reply = reply.model_copy(
+                update={"websocket_url": endpoint.replace("https://", "wss://", 1) + "/websockify"}
             )
+        return reply
 
     async def stop(self) -> None:
         self.pinned_session = None

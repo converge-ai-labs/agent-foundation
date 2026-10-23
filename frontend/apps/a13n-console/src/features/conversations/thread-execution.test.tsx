@@ -26,6 +26,7 @@ it("clears inherited leaves under the original ETag and reloads a conflicting po
     execution: {
       tools: { mode: "auto", foreground_wait_seconds: 5 },
       steering: "immediate",
+      environment: { APP_MODE: "old" },
     },
   });
   const patches: { body: unknown; etag: string | null }[] = [];
@@ -70,8 +71,15 @@ it("clears inherited leaves under the original ETag and reloads a conflicting po
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
+  await user.clear(
+    screen.getByRole("textbox", { name: "Variable value {{number}}" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Variable value {{number}}" }),
+    "updated",
+  );
   await user.click(screen.getByRole("combobox", { name: "Tool execution" }));
-  await user.click(screen.getByRole("option", { name: "Inherit" }));
+  await user.click(await screen.findByRole("option", { name: "Inherit" }));
   await user.clear(
     screen.getByRole("spinbutton", { name: "Foreground wait (seconds)" }),
   );
@@ -83,6 +91,7 @@ it("clears inherited leaves under the original ETag and reloads a conflicting po
       execution: {
         tools: { mode: null, foreground_wait_seconds: null },
         steering: "immediate",
+        environment: { APP_MODE: "updated" },
       },
     },
   });
@@ -90,7 +99,7 @@ it("clears inherited leaves under the original ETag and reloads a conflicting po
   await user.click(screen.getByRole("button", { name: "Reload saved policy" }));
   await screen.findByText("At the next boundary");
   await user.click(screen.getByRole("combobox", { name: "Steering" }));
-  await user.click(screen.getByRole("option", { name: "Inherit" }));
+  await user.click(await screen.findByRole("option", { name: "Inherit" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(close).toHaveBeenCalledOnce());
   expect(patches[1]).toEqual({

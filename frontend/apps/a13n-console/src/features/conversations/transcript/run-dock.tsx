@@ -25,9 +25,9 @@ import { Composer } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
 import { DesktopAssistance } from "./desktop-assistance";
+import { ThreadInbox } from "./inbox";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
-import { ThreadInbox } from "./inbox";
 import {
   isInteractive,
   useInterruptRun,
@@ -40,6 +40,31 @@ export interface PendingMessage {
   payload: Schema["MessagePayload"];
   /** Keep the optimistic message until navigation displays this accepted Run. */
   runId?: string;
+}
+
+/** Thread-scoped queue and one sticky bottom region shared by Run inspections. */
+export function ThreadDock({
+  thread,
+  children,
+}: {
+  thread: Schema["ThreadView"];
+  children?: ReactNode;
+}) {
+  const latest = useRun(thread.current_run_id ?? thread.last_run_id);
+  return (
+    <div className={styles.dock} data-thread-dock>
+      <div className={styles.queue}>
+        <ThreadInbox
+          thread={thread}
+          canRunNext={
+            !!latest.data &&
+            ["failed", "cancelled"].includes(latest.data.status)
+          }
+        />
+      </div>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -93,10 +118,6 @@ export function RunDock({
       ? last
       : null;
   const interactive = isInteractive(thread);
-  // After a failed or cancelled Run the inbox advances only when someone
-  // starts its next message.
-  const canRunNext =
-    !!latestRun.data && ["failed", "cancelled"].includes(latestRun.data.status);
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [guidance, setGuidance] = useState<{
@@ -186,13 +207,7 @@ export function RunDock({
       ) : (
         feedback
       )}
-      <ThreadInbox
-        thread={thread}
-        canRunNext={canRunNext}
-        quiet={level === "chat"}
-        className={level === "debug" ? debug.inbox : undefined}
-      />
-      <div className={styles.dock}>
+      <div className={styles.dockControls}>
         {above}
         {!current ? (
           <div className={styles.dockNotice}>

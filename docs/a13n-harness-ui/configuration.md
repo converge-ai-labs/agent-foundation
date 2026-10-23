@@ -375,16 +375,16 @@ The data root owns saved conversations, per-Project TUI Model preferences, immut
 
 Changing it opens separate state; it does not migrate old conversations. Relative bootstrap paths resolve from the launch directory. Project roots must be absolute after `~` expansion; a missing root can be saved but cannot be used for a Run until available.
 
-| Input                                                       | Purpose                                                                                    |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `A13N_HARNESS_UI_DATA_ROOT`                                 | Select local data storage                                                                  |
-| Variables named by `authentication.env`                     | Model API keys read from the Harness UI process                                            |
-| Variables named by MCP `environment` / `headers` references | MCP environment and request values                                                         |
-| `CODEX_HOME`                                                | Compatible Codex store location; default `~/.codex`                                        |
-| `COPILOT_HOME`                                              | Copilot CLI store location for account reuse; default `~/.copilot`                         |
-| `GROK_AUTH_PATH`, `GROK_HOME`                               | Compatible Grok file-store location                                                        |
-| `GROK_AUTH`                                                 | Recognized inline Grok mode, unsupported for shared writable login; switch to a file store |
-| `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection                                    |
+| Input                                                       | Purpose                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| `A13N_HARNESS_UI_DATA_ROOT`                                 | Select local data storage                                          |
+| Variables named by `authentication.env`                     | Model API keys read from the Harness UI process                    |
+| Variables named by MCP `environment` / `headers` references | MCP environment and request values                                 |
+| `CODEX_HOME`                                                | One-time Codex migration source; default `~/.codex`                |
+| `COPILOT_HOME`                                              | Copilot CLI store location for account reuse; default `~/.copilot` |
+| `GROK_AUTH_PATH`, `GROK_HOME`                               | One-time Grok migration source                                     |
+| `GROK_AUTH`                                                 | Inline Grok mode is not imported; use native login                 |
+| `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection            |
 
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
 

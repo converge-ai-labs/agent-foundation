@@ -84,6 +84,32 @@ async def test_exact_identity_precedes_fuzzy_candidates_and_disambiguates_groups
     assert [x["tool"] for x in results[4].content["tools"]] == ["lookup_extra"]
 
 
+@pytest.mark.parametrize("groups", [("a_", "a_u"), ("a_u", "a_")])
+@pytest.mark.parametrize("query,expected_group", [("a_u__b", "a_"), ("a_uu__b", "a_u")])
+async def test_exact_registered_name_ranks_before_similar_escaped_groups(groups, query, expected_group):
+    sources = {
+        group: ToolSearchGroup(FunctionToolset([Tool(_operation, name="b")], id=group), "Operations")
+        for group in groups
+    }
+    result, results = await _run(
+        (ToolSearchCapability(groups=sources),),
+        [
+            ("discover_tools", {"query": query, "limit": 1}),
+            ("discover_tools", {"query": f" {query.upper()} ", "limit": 1}),
+            ("discover_tools", {"query": query, "limit": 1, "offset": 1}),
+        ],
+    )
+    assert result.status == "completed"
+    for page in (item.content for item in results[:2]):
+        assert page["detail"] == "summary"
+        assert [(tool["group"], tool["tool"]) for tool in page["tools"]] == [(expected_group, "b")]
+        assert page["total"] == 2 and page["next_offset"] == 1
+    last_page = results[2].content
+    other_group = next(group for group in groups if group != expected_group)
+    assert [(tool["group"], tool["tool"]) for tool in last_page["tools"]] == [(other_group, "b")]
+    assert last_page["total"] == 2 and last_page["next_offset"] is None
+
+
 async def test_ranking_prefers_name_words_then_whole_words_with_stable_ties():
     _, results = await _run(
         (

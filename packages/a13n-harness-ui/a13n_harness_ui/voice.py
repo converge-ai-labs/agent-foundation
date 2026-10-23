@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -26,6 +26,7 @@ from pydantic_ai.messages import TextContent
 
 from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+from a13n_harness_ui.configuration.models import CodexSubscriptionAuthentication
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore, Thread
@@ -41,6 +42,7 @@ class VoiceSnapshot(SurfaceModel):
     thread_id: str | None = None
     start_id: str | None = None
     model_id: str | None = None
+    account_id: str | None = None
     answer_sdp: str | None = Field(default=None, repr=False)
     error: str | None = None
     transcript: tuple[VoiceTurn, ...] = ()
@@ -71,7 +73,7 @@ class VoiceController:
         store: LocalStore,
         root_runs: RootRunCoordinator,
         projections: ThreadProjectionService,
-        model: Callable[[LoadedHarnessUiConfiguration], CodexLiveModel],
+        model: Callable[[LoadedHarnessUiConfiguration], Awaitable[tuple[CodexLiveModel, str | None]]],
     ) -> None:
         self._root = configuration_root
         self._configurations = configurations
@@ -226,7 +228,9 @@ class VoiceController:
                 except TimeoutError:
                     raise CodexLiveError("The browser did not connect audio in time.") from None
 
-            async with self._model(call.source).connect(
+            model, account_id = await self._model(call.source)
+            self._update(account_id=account_id)
+            async with model.connect(
                 offer, instructions=instructions, on_answer=connect_media, initial_items=tuple(reversed(selected))
             ) as session:
                 call.session = session
@@ -277,10 +281,14 @@ class VoiceController:
         current = await self._configurations.current()
         settings = call.source.document.live
         assert settings is not None and settings.model is not None
+        authentication = call.source.models[settings.model].authentication
+        assert isinstance(authentication, CodexSubscriptionAuthentication)
+        group_id = authentication.group or "codex-default"
         if (
             current is None
             or current.document.live != settings
             or current.models.get(settings.model) != call.source.models[settings.model]
+            or current.subscription_groups.get(group_id) != call.source.subscription_groups.get(group_id)
         ):
             raise ThreadError("Live settings changed. Restart voice to use them.", code="live_configuration_changed")
         context = "\n".join(f"{item.role}: {item.text}" for item in event.context)

@@ -243,13 +243,17 @@ uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/lin
 
 Daytona 的 Agent 文件、Shell、进程、端口和 Computer 操作全部通过 Envd/EIP 执行。Provider 保留沙箱创建、检查、停止／启动、删除和私有连接配置。工作目录为 `/workspace`，绝对文件路径指向沙箱文件系统。停止／启动保留文件，不保证桌面进程或旧截图观察仍有效。停止前需确认自动删除已禁用；删除等待目标最终销毁。
 
-无桌面和桌面环境都需要预装兼容 Envd 的自定义 snapshot。在本仓库使用 Linux amd64 二进制构建，并通过私有环境提供具有 snapshot 构建权限的 `DAYTONA_API_KEY`：
+在 Service / Console 填入 Daytona API Key，再勾选桌面即可。系统从 Key 识别组织；`organization_id` 是可选的账号约束，默认区域为 `us`。保存模板不会构建；首次创建自动构建包含 Envd、桌面依赖和人工接管组件的私有快照，后续复用记录的快照 ID。无需下载本地二进制或运行脚本。Key 需要 Sandbox 操作及 Snapshot 读写、删除权限。
+
+Console 会提示首次构建可能耗时数分钟，展示真实阶段和已等待时间；离开页面后后台继续。回到环境实例即可查看就绪桌面，确认失败后可修正原因并重试。自动快照使用 2 CPU、4 GiB 内存和 10 GiB 磁盘。复用按工作区、Provider、后端、凭据版本及构建清单版本隔离，每次核验归属、身份和构建内容。失败构建须通过校验后清理；提交结果不确定时只核对原提交，不盲目重复构建。就绪快照作为可复用资源保留，停止或删除实例不会删除快照。
+
+自定义快照、无桌面环境或仅有沙箱权限的运行凭据仍可使用原有方式。在本仓库使用 Linux amd64 二进制构建，并通过私有环境提供具有 snapshot 构建权限的 `DAYTONA_API_KEY`：
 
 ```bash
 uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-仅需文件和 Shell 时使用 `{"snapshot": "my-envd"}`；需要 Computer 和人工操作时使用 `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}`。Snapshot 启动 Envd，并按配置启动共用的 X11 桌面和访问 supervisor。Service 在创建／启动后检查 EIP 就绪状态。连接或授权访问不会安装、重启或修复服务。运行沙箱的 Key 不需要 snapshot 构建权限。
+仅需文件和 Shell 时使用 `{"snapshot": "my-envd"}`；需要 Computer 和人工操作时使用 `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}`。Snapshot 启动 Envd，并按配置启动共用的 X11 桌面和访问 supervisor。Service 在创建／启动后检查 EIP 就绪状态。连接或授权访问不会安装、重启或修复服务。仅使用自定义快照的运行 Key 不需要 snapshot 构建权限。
 
 Agent 的 EIP 操作通过私有 HTTP 端口 8888。Daytona 代理认证与客体 Envd 凭据独立，只保留在内存中；Host 根据部署和 Run 策略校验发现的地址，不会回退到原生执行。Agent Computer 工具和挂载权限需单独开启。Snapshot 预装中文字体；当前 Envd X11 输入支持物理按键，但不支持直接输入文字，包括中文和多行文字。
 

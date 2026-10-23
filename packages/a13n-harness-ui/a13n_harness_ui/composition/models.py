@@ -14,6 +14,7 @@ from a13n_harness_ui.configuration.models import (
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
+    SubscriptionGroupResource,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.model_thinking import ThinkingSelection
@@ -55,6 +56,7 @@ class ResolvedModelRecipe(CompositionModel):
     model_id: str = Field(min_length=1, max_length=128)
     route: str = Field(min_length=3, max_length=512)
     authentication: ModelAuthentication
+    subscription_group: SubscriptionGroupResource | None = Field(default=None, exclude_if=lambda value: value is None)
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     model_characteristics: ModelCharacteristics | None = None

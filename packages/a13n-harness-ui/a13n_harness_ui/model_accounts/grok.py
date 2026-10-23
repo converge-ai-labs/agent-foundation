@@ -364,6 +364,8 @@ class GrokAccountStore:
             usable=not blocked and expiry is ExpiryStatus.VALID,
             expiry=expiry,
             expires_at=loaded.credential.expires_at,
+            account_id=loaded.credential.account_id,
+            shared_with_cli=self.policy.shared_with_cli,
             required_action=(
                 RequiredAction.LOGIN
                 if blocked
@@ -372,6 +374,14 @@ class GrokAccountStore:
                 else RequiredAction.REFRESH
             ),
         )
+
+    async def export_login(self) -> dict[str, Any] | None:
+        """Export only the validated active scope, never other CLI accounts."""
+        loaded = await self._load()
+        if loaded.credential is None:
+            return None
+        assert loaded.snapshot.document is not None
+        return {self.scope: dict(loaded.snapshot.document[self.scope])}
 
     def exclusive(self) -> AbstractAsyncContextManager[None]:
         return store_lock(self._path())

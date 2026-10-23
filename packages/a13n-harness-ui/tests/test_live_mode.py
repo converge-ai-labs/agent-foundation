@@ -52,7 +52,7 @@ async def test_live_legacy_voice_generations_remain_readable_but_cannot_connect(
         source = await load_harness_ui_configuration(root)
         assert source.document.live.voice == voice
         with pytest.raises(ThreadError) as error:
-            app._voice_model(source)
+            await app._voice_model(source)
         assert error.value.code == "live_voice_incompatible"
     # Correct the source without rewriting the old immutable generation.
     value["live"]["voice"] = "cove"
@@ -143,6 +143,9 @@ class FakeVoiceModel:
         self.calls = []
         self.sessions = []
 
+    async def build(self, source):
+        return self, "acct-test"
+
     @asynccontextmanager
     async def connect(self, offer, **kwargs):
         self.calls.append((offer, kwargs))
@@ -170,7 +173,7 @@ async def test_voice_ownership_media_gate_receipts_and_transcript_restart(tmp_pa
     fake = FakeVoiceModel()
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
-        voice._model = lambda _: fake
+        voice._model = fake.build
         assert not fake.calls
         with pytest.raises(ThreadError, match="controls"):
             await voice.begin(owner_id="tab", start_id="one", offer_sdp="v=0")
@@ -208,7 +211,7 @@ async def test_voice_ownership_media_gate_receipts_and_transcript_restart(tmp_pa
         assert (await voice.receive(source_thread_id="source", message="offline", kind="task"))["mode"] == "skipped"
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
-        voice._model = lambda _: fake
+        voice._model = fake.build
         async with voice.subscribe("reloaded") as queue:
             result = await voice.begin(owner_id="reloaded", start_id="three", offer_sdp="v=0")
             await next_voice(queue, "connecting")
@@ -223,7 +226,7 @@ async def test_voice_disconnect_cancellation_releases_owner_and_closes_provider(
     ready = Event()
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
-        voice._model = lambda _: fake
+        voice._model = fake.build
 
         async def browser():
             async with voice.subscribe("tab") as queue:
@@ -260,7 +263,7 @@ async def test_voice_delegation_once_and_stop_does_not_cancel_executor(tmp_path,
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
-        voice._model = lambda _: fake
+        voice._model = fake.build
         async with voice.subscribe("tab") as queue:
             started = await voice.begin(owner_id="tab", start_id="one", offer_sdp="v=0")
             await next_voice(queue, "connecting")
@@ -290,7 +293,7 @@ async def test_live_callbacks_allow_coordinator_reports_without_broadening_read_
     fake = FakeVoiceModel()
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
-        voice._model = lambda _: fake
+        voice._model = fake.build
         tools = controller(app)
         tools._voice = voice
         lead = await create_coordinator(app)
@@ -333,7 +336,7 @@ async def test_voice_http_and_websocket_authentication_receipt_and_disconnect(tm
     root = live_configuration(tmp_path)
     fake = FakeVoiceModel()
     async with listener_with_app(tmp_path, configuration_path=root) as (http, ws, app):
-        app.voice()._model = lambda _: fake
+        app.voice()._model = fake.build
         async with httpx.AsyncClient(base_url=http, trust_env=False) as client:
             assert (await client.get("/api/voice")).status_code == 401
             client.headers["Authorization"] = "Bearer test-only-key"
@@ -403,7 +406,7 @@ async def test_stop_during_capture_rejects_new_task_before_registration(tmp_path
     results = []
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         voice = app.voice()
-        voice._model = lambda _: fake
+        voice._model = fake.build
         original = app._root_runs._executor.capture
 
         async def capture(*args, **kwargs):

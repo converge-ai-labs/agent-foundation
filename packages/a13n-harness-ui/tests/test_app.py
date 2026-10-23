@@ -52,7 +52,6 @@ from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_CLIENT_ID,
     DEFAULT_GROK_OAUTH_ISSUER,
     DEFAULT_GROK_OAUTH_SCOPE,
-    AccountStoreError,
     Availability,
     GrokLoginRequest,
     Provider,
@@ -193,7 +192,8 @@ async def test_first_grok_login_uses_default_compatible_scope(
 
     assert before.availability is Availability.ABSENT
     assert after.availability is Availability.AVAILABLE
-    document = json.loads(auth_path.read_text())
+    assert not auth_path.exists()
+    document = json.loads((tmp_path / "state/oauth/accounts/acct-grok-default.json").read_text())
     assert set(document) == {DEFAULT_GROK_OAUTH_SCOPE}
     assert document[DEFAULT_GROK_OAUTH_SCOPE]["user_id"] == "account-1"
 
@@ -208,10 +208,9 @@ async def test_broken_unused_grok_store_does_not_block_application_startup(
 
     async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
         assert app.state is AppState.ready
-        with pytest.raises(AccountStoreError) as failed:
-            await app.inspect_model_account(Provider.GROK)
-
-    assert failed.value.code == "account_store_malformed"
+        assert (await app.inspect_model_account(Provider.GROK)).availability is Availability.ABSENT
+        assert (await app.subscription_accounts.adoption())["grok"].status == "invalid"
+    assert auth_path.read_text() == "not-json"
 
 
 async def test_application_starts_persists_objects_and_closes(tmp_path: Path) -> None:
@@ -441,20 +440,20 @@ async def test_configuration_observer_reloads_only_after_metadata_fingerprint_ch
     with fail_after(5):
         async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root):
             (await waiting.receive()).set()
-            gate = await waiting.receive()  # The initial fingerprint scan has completed.
-            assert calls == 2
+            gate = await waiting.receive()  # Bootstrap includes native default-group publication.
+            baseline = calls
             gate.set()
             gate = await waiting.receive()
-            assert calls == 2
+            assert calls == baseline
             (tmp_path / "agents/assistant.yaml").write_text(
                 (tmp_path / "agents/assistant.yaml").read_text().replace("Help the user.", "Help carefully.")
             )
             gate.set()
             gate = await waiting.receive()
-            assert calls == 3
+            assert calls == baseline + 1
             gate.set()
             await waiting.receive()
-            assert calls == 3
+            assert calls == baseline + 1
 
 
 async def test_configuration_observer_invalidates_diagnostic_changes_without_generation_change(

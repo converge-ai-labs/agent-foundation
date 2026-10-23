@@ -29,6 +29,7 @@ from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
@@ -87,6 +88,7 @@ class _RootOperation:
     restart: RestartItem | None = None
     goal: GoalView | None = None
     observation_only: bool = False
+    main_account: MainAccountSelection | None = None
 
 
 @dataclass(slots=True)
@@ -641,6 +643,7 @@ class RootRunCoordinator:
                         admission,
                         goal=operation.goal,
                         on_goal=lambda value: self._goal_changed(operation, value),
+                        on_main_account=lambda value: self._main_account_changed(operation, value),
                         on_stream=lambda stream, input_files=None: self._running(
                             operation.receipt.receipt_id, stream, input_files
                         ),
@@ -851,6 +854,14 @@ class RootRunCoordinator:
         elif self._tool_executions is not None:
             self._tool_executions.retry(operation.receipt.thread_id)
 
+    async def _main_account_changed(self, operation: _RootOperation, value: MainAccountSelection) -> None:
+        previous = operation.main_account
+        if previous is not None and previous.account_id == value.account_id and previous.model_id == value.model_id:
+            return
+        operation.main_account = value
+        await self._persist_execution(operation)
+        await self._publish_change(operation)
+
     async def _persist_execution(self, operation: _RootOperation) -> None:
         if self._save_execution is None:
             return
@@ -862,6 +873,7 @@ class RootRunCoordinator:
         await self._save_execution(
             operation.receipt.thread_id,
             ThreadExecution(
+                main_account=operation.main_account,
                 execution_id=operation.receipt.receipt_id,
                 status=operation.status.value,
                 submitted_at=operation.receipt.submitted_at,
@@ -914,6 +926,7 @@ def _view(operation: _RootOperation) -> RootOperationView:
         outcome=operation.outcome,
         failure=operation.failure,
         goal=operation.goal,
+        main_account=operation.main_account,
         available_actions=tuple(action for action in actions if action == "wait")
         if operation.observation_only
         else actions,

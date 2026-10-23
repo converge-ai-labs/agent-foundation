@@ -19,8 +19,14 @@ START = datetime(2026, 9, 1, tzinfo=UTC)
 WINDOW = {"start": START.isoformat(), "end": (START + timedelta(days=3)).isoformat()}
 
 
-async def observed_run(service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None):  # type: ignore[no-untyped-def]
-    submitted = await kit.start_thread(service, agent, "Usage fixture")
+async def observed_run(
+    service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None, thread_id=None
+):  # type: ignore[no-untyped-def]
+    submitted = (
+        await kit.start_thread(service, agent, "Usage fixture")
+        if thread_id is None
+        else (await kit.submit(service, thread_id, kit.message(agent, "Usage fixture"))).json()
+    )
     run_id = submitted["run"]["id"]
     [lease] = await claim(service.runtime, worker_id="usage-fixture", worker_build="test", limit=1)
     async with transaction(service.runtime.storage) as session:
@@ -495,3 +501,21 @@ async def test_context_usage_preserves_unknowns_and_agent_override(service, scri
     }
     response = await service.client.get(f"{service.api}/usage/context", params={"record_id": "missing"})
     assert response.status_code == 404
+
+
+async def test_summary_numbers_include_runs_without_matching_usage(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    empty, _ = await observed_run(service, runs_kit, agent)
+    thread_id = (await service.client.get(f"{service.api}/runs/{empty}")).json()["thread_id"]
+    run_id, _ = await observed_run(
+        service,
+        runs_kit,
+        agent,
+        thread_id=thread_id,
+        records=[("scripted", 100, 5, 50, Decimal("0.2"), START)],
+    )
+    for filters in ({"thread_id": thread_id}, {"run_id": run_id}, {"ingested_after": START.isoformat()}):
+        response = await service.client.get(f"{service.api}/usage", params=filters)
+        assert response.status_code == 200, response.text
+        assert [(run["run_id"], run["run_number"]) for run in response.json()["runs"]] == [(run_id, 2)]

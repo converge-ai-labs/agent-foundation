@@ -375,16 +375,16 @@ tools:
 
 改变数据根会打开独立状态，不迁移旧对话。相对启动路径从启动目录解析。Project 根目录在展开 `~` 后必须为绝对路径；缺失根目录可以保存，但可用前不能用于 Run。
 
-| 输入                                         | 用途                                                         |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| `A13N_HARNESS_UI_DATA_ROOT`                  | 选择本地数据存储                                             |
-| `authentication.env` 指定的变量              | 从 Harness UI 进程读取 Model API 密钥                        |
-| MCP `environment` / `headers` 引用指定的变量 | MCP 环境和请求值                                             |
-| `CODEX_HOME`                                 | 兼容 Codex 存储位置；默认 `~/.codex`                         |
-| `COPILOT_HOME`                               | 复用账户时使用的 Copilot CLI 存储位置；默认 `~/.copilot`     |
-| `GROK_AUTH_PATH`、`GROK_HOME`                | 兼容 Grok 文件存储位置                                       |
-| `GROK_AUTH`                                  | 可识别的 Grok 内联模式，不支持共享可写登录；应切换为文件存储 |
-| `COLORFGBG`                                  | 自动主题选择使用的被动终端元数据                             |
+| 输入                                         | 用途                                                     |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `A13N_HARNESS_UI_DATA_ROOT`                  | 选择本地数据存储                                         |
+| `authentication.env` 指定的变量              | 从 Harness UI 进程读取 Model API 密钥                    |
+| MCP `environment` / `headers` 引用指定的变量 | MCP 环境和请求值                                         |
+| `CODEX_HOME`                                 | Codex 一次性迁移来源；默认 `~/.codex`                    |
+| `COPILOT_HOME`                               | 复用账户时使用的 Copilot CLI 存储位置；默认 `~/.copilot` |
+| `GROK_AUTH_PATH`、`GROK_HOME`                | Grok 一次性迁移来源                                      |
+| `GROK_AUTH`                                  | Grok 内联模式不导入；请使用原生登录                      |
+| `COLORFGBG`                                  | 自动主题选择使用的被动终端元数据                         |
 
 没有通用 `A13N_HARNESS_UI_*` 设置覆盖机制。`storage`、`envd_runtime` 和应用关闭超时是嵌入/运行时设置，**不是** 根 YAML 章节。Web 监听和身份验证选项是[进程本地 CLI 参数](webui.md)，不是资源配置。
 

@@ -34,7 +34,9 @@ The Computer toolset requires explicit enablement and an authorized desktop Envi
 
 ## Execution policy
 
-`execution` sets sparse defaults for new Runs: `tools.mode` is `inline` or `auto`, `tools.foreground_wait_seconds` is 0–300, and `steering` is `boundary` or `immediate`. Omitted/null leaves inherit the deployment defaults (`auto`, 5 seconds unless configured otherwise, `immediate`). Thread and single-Run choices override each leaf independently. Publishing a Revision affects future ordinary Runs; accepted Runs and their automatic continuations keep their frozen policy. Runtime capacity, result retention and shutdown limits remain deployment settings.
+`execution.environment` sets ordinary command variables, not secrets. Thread and Run maps override per key; an empty string is an explicit empty value. Thread PATCH replaces the whole supplied map, with null/empty clearing that layer. Accepted Runs freeze the overlay and inject it at command dispatch above recipe defaults.
+
+`execution` also sets sparse control defaults for new Runs: `tools.mode` is `inline` or `auto`, `tools.foreground_wait_seconds` is 0–300, and `steering` is `boundary` or `immediate`. Omitted/null leaves inherit the deployment defaults (`auto`, 5 seconds unless configured otherwise, `immediate`). Thread and single-Run choices override each leaf independently. Publishing a Revision affects future ordinary Runs; accepted Runs and their automatic continuations keep their frozen policy. Runtime capacity, result retention and shutdown limits remain deployment settings.
 
 ## Read only the needed configuration
 

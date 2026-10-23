@@ -54,14 +54,11 @@ const VIEWS = {
 export function ThreadInbox({
   thread,
   canRunNext = false,
-  quiet = false,
   className,
 }: {
   thread: Schema["ThreadView"];
   /** The inbox waits for someone to start its next message. */
   canRunNext?: boolean;
-  /** Chat says nothing about a queue that is empty. */
-  quiet?: boolean;
   /** Places the inbox on the surrounding level's grid. */
   className?: string;
 }) {
@@ -147,12 +144,15 @@ export function ThreadInbox({
   const editable = isInteractive(thread) && can("run");
   const next = items.find((item) => item.kind === "message");
   const nextMessage = next && entryResubmission(next);
-  // A known-empty inbox has nothing to say on a read-only thread, nor in a
-  // quiet queue the person has not switched away from.
+  // The bottom queue appears only when there is something to inspect. Keep
+  // errors and an explicitly selected history filter accessible.
   if (
-    (!editable || (quiet && state === "queued")) &&
-    query.data &&
-    !items.length
+    !query.error &&
+    !reorder.error &&
+    !runNext.error &&
+    runNext.data?.entry.status !== "failed" &&
+    !items.length &&
+    (!editable || state === "queued")
   )
     return null;
   function move(index: number, offset: number) {

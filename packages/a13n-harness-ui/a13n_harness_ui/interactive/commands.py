@@ -84,9 +84,9 @@ COMMANDS = (
         "usage",
         "Show this Thread's tokens, costs, and models for all/root/subagents; details adds attribution and Runs. "
         "Subscription limits and confirmed Codex reset credits are separate.",
-        "[all|root|subagents|details|subscription|reset]",
+        "[all|root|subagents|details|subscription|accounts|reset]",
         maximum=1,
-        choices=("all", "root", "subagents", "details", "subscription", "reset"),
+        choices=("all", "root", "subagents", "details", "subscription", "accounts", "reset"),
         busy=True,
     ),
     Command(

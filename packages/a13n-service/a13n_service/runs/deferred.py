@@ -1,15 +1,16 @@
 """The Harness deferred-tool contract: what a suspended run waits for, and the resume that answers it.
 
-The native requests are stored unchanged in the waiting run's checkpoint, because the Harness re-reads their
-metadata on resume. The public `Pending` projection is derived from them once, when the run suspends.
+The complete Harness requests are stored in the waiting run's checkpoint so resume retains
+model/target correlation, identity and metadata. The public `Pending` projection is derived from them once, when the run suspends.
 """
 
-from a13n_harness import DeferredToolResume
+from a13n_harness import DeferredToolRequests, DeferredToolResume
 from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
+from a13n_harness.tools.client import client_tool_name
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import ToolDenied, ToolFailed
 from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolResults
 
 from a13n_service.runs.schemas import Approve, Deny, Failed, Pending, PendingCall, Resume, Returned
 
@@ -33,15 +34,15 @@ def pending(requests: DeferredToolRequests) -> Pending:
         return PendingCall.model_validate(
             {
                 "tool_call_id": part.tool_call_id,
-                "tool_name": part.tool_name,
+                "tool_name": part.tool_name if approval else client_tool_name(part, metadata),
                 "arguments": part.args_as_dict(),
                 "presentation": presentation,
             }
         )
 
     return Pending(
-        approvals=tuple(project(part, approval=True) for part in requests.approvals),
-        calls=tuple(project(part) for part in requests.calls),
+        approvals=tuple(project(entry.target_call, approval=True) for entry in requests.approvals),
+        calls=tuple(project(entry.target_call) for entry in requests.calls),
     )
 
 

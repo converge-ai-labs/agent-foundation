@@ -4,13 +4,15 @@ import json
 from collections.abc import AsyncIterator
 from copy import deepcopy
 from itertools import pairwise
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
+    DeferredToolCall,
+    DeferredToolRequests,
+    DeferredToolResume,
     HarnessBuilder,
     RunBindings,
 )
@@ -557,18 +559,16 @@ async def test_exact_boundaries_skip_projection_without_history_mutation() -> No
     await _assert_exact_coordinator_hooks([committed, suspended])
 
     calls = (
-        SimpleNamespace(tool_call_id="call-1"),
-        SimpleNamespace(tool_call_id="call-2"),
+        ToolCallPart(tool_name="one", args={}, tool_call_id="call-1"),
+        ToolCallPart(tool_name="two", args={}, tool_call_id="call-2"),
     )
-    deferred_resume = SimpleNamespace(
-        requests=SimpleNamespace(calls=calls, approvals=()),
+    requests = DeferredToolRequests(
+        calls=[DeferredToolCall(call, call, f"tool/test/{call.tool_name}") for call in calls],
     )
-    pending_calls = ModelResponse(
-        parts=(
-            ToolCallPart(tool_name="one", args={}, tool_call_id="call-1"),
-            ToolCallPart(tool_name="two", args={}, tool_call_id="call-2"),
-        )
+    deferred_resume = DeferredToolResume(
+        requests, requests.build_results(calls={call.tool_call_id: call.tool_name for call in calls})
     )
+    pending_calls = ModelResponse(parts=calls)
     complete_results = ModelRequest(
         parts=(
             ToolReturnPart(tool_name="one", content="one", tool_call_id="call-1"),

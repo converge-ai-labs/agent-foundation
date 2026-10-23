@@ -137,20 +137,20 @@ The fold retains current delivery evidence per inline scope in continuation, rep
 
 The observer uses standard AG-UI events for direct semantic matches:
 
-| Public source observation                        | AG-UI representation                                                                     |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Assistant `TextPart` start, delta, and end       | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, and `TEXT_MESSAGE_END`                     |
-| `ThinkingPart` start, delta, signature, and end  | Reasoning message events and `REASONING_ENCRYPTED_VALUE`                                 |
-| Completed `ToolCallPart` at its end observation  | `TOOL_CALL_START`, complete `TOOL_CALL_ARGS`, and `TOOL_CALL_END`                        |
-| Successful function or output tool return        | `TOOL_CALL_RESULT`                                                                       |
-| Logical `run_started` observation                | `RUN_STARTED` with `protocolVersion: "1.0"`                                              |
-| Completed terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with success outcome and a JSON-safe result when available                |
-| Cancelled terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with cancelled outcome                                                    |
-| Suspended terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with interrupt outcome and one interrupt per native deferred tool-call ID |
-| Failed terminal `HarnessRunResultEvent`          | `RUN_ERROR` with the Harness-owned public failure                                        |
-| Inline delegation lifecycle in a stream observer | `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, or `SUBAGENT_ERROR`                             |
-| Non-success tool return or retry prompt          | Namespaced `CUSTOM` preserving authoritative Harness correlation and public payload      |
-| Other native Pydantic AI `CapabilityEvent`       | Namespaced `CUSTOM` preserving Capability, Tool-call, Harness correlation, and payload   |
+| Public source observation                        | AG-UI representation                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Assistant `TextPart` start, delta, and end       | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, and `TEXT_MESSAGE_END`                   |
+| `ThinkingPart` start, delta, signature, and end  | Reasoning message events and `REASONING_ENCRYPTED_VALUE`                               |
+| Completed `ToolCallPart` at its end observation  | `TOOL_CALL_START`, complete `TOOL_CALL_ARGS`, and `TOOL_CALL_END`                      |
+| Successful function or output tool return        | `TOOL_CALL_RESULT`                                                                     |
+| Logical `run_started` observation                | `RUN_STARTED` with `protocolVersion: "1.0"`                                            |
+| Completed terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with success outcome and a JSON-safe result when available              |
+| Cancelled terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with cancelled outcome                                                  |
+| Suspended terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with interrupt outcome and one interrupt per deferred target call ID    |
+| Failed terminal `HarnessRunResultEvent`          | `RUN_ERROR` with the Harness-owned public failure                                      |
+| Inline delegation lifecycle in a stream observer | `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, or `SUBAGENT_ERROR`                           |
+| Non-success tool return or retry prompt          | Namespaced `CUSTOM` preserving authoritative Harness correlation and public payload    |
+| Other native Pydantic AI `CapabilityEvent`       | Namespaced `CUSTOM` preserving Capability, Tool-call, Harness correlation, and payload |
 
 Successful tool results use the execution value explicitly identified by Harness tool-content annotations, or the complete native `ToolReturnPart.content` when no such marker exists, as their readable `TOOL_CALL_RESULT` payload. They retain `role: tool` and the original tool-call ID. Ordinary JSON execution values remain text. Explicit native content in the execution value becomes an ordered list of AG-UI `TextPart`, `ImagePart`, `AudioPart`, `VideoPart`, or `DocumentPart` values. HTTP(S) URLs use `UrlSource`; provider file handles use `FileSource` without inventing a downloadable URL. Binary data and unsafe URLs become payload-omitted descriptors, never inline bytes or base64. Order, duplicate attachments, and `display: false` annotations are preserved. The exported `tool_result_content` projection can also serve explicit saved-content adapters. Supplemental media remains model-only even when it is a transportable URL or provider handle; it neither replaces the readable execution value nor generates user-input events. Host-authenticated screenshot materialization remains separate from this IO-free projection. The Host supplement `a13n.tool_images` carries `value.event = {tool_call_id, images, unavailable}` and optional `subagentRunId`; normalization attaches its opaque image metadata as `tool_images` and its omission flag as `tool_image_unavailable` to the matching tool item. The existing `a13n.harness-ui.tool_images` name remains supported. Each Host owns image reference authorization and resolution; the normalizer never fetches images. The native `DeferredToolResultsEvent` custom projection carries only `event_kind`, resolved `call_ids`, and `approval_ids`; each result is observed separately, without serializing the batch's media payloads.
 
@@ -215,7 +215,7 @@ Agent Stream Protocol translates explicit lifecycle facts; it does not create th
 
 Model-request lifecycle extensions use the generic custom fallback because they are not equivalent to AG-UI Run lifecycle. Harness publishes one logical Run-start fact after preparation and at the beginning of public iteration, including Runs with no model request. The observer translates that fact, not the first token, model request, Host admission, or connection.
 
-Suspended results carry one interrupt for each deferred call or approval. Both `id` and `toolCallId` use the native tool-call ID. Reasons are `external` or `approval`; metadata retains the tool name, arguments, and deferred metadata. These observations do not replace Host pending-request validation, continuation selection, or partial-answer policy. Terminal usage includes cache-read and cache-write input counters; it remains presentation, never a replacement for usage reports or the accounting ledger. Provider/model attribution is absent when the aggregate does not establish it.
+Suspended results carry one interrupt for each deferred call or approval. `id` uses the deferred target call ID for answers; `toolCallId` uses the associated model call ID for transcript correlation. These IDs are equal for direct calls. Reasons are `external` or `approval`; metadata retains the actual target tool name, arguments, and deferred metadata. These observations do not replace Host pending-request validation, continuation selection, or partial-answer policy. Terminal usage includes cache-read and cache-write input counters; it remains presentation, never a replacement for usage reports or the accounting ledger. Provider/model attribution is absent when the aggregate does not establish it.
 
 On a real terminal result, open text and reasoning presentations end before the terminal event; incomplete tool calls are not fabricated as completed. Inline child completion derives from the delegation lifecycle after output projection and state retention, not the private child result consumed by Harness. The stream observer closes that child's open presentations before its standard terminal child event. Failed or cancelled inline invocations use `SUBAGENT_ERROR` only when the corresponding failure observation exists. Preparation failures without a child Run ID retain custom facts without inventing an identity.
 

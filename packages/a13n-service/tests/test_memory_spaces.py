@@ -205,6 +205,7 @@ async def test_api_changes_organize_in_one_dedicated_session_with_fresh_threads(
     await save(service, space)
     await asyncio.gather(organize(service.runtime), organize(service.runtime))
     [first] = await history(service, space)
+    first = await runs_kit.get_run(service, first["id"])
     assert first["parent_run_id"] is None and first["environment_mounts"] == []
     assert first["options"]["max_usage"]["requests"] == 200
     assert first["memory_mounts"][0]["roots"] == ["global/", "sessions/"]

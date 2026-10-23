@@ -66,7 +66,7 @@ export function SessionHeader({
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
   const agent = useAgent(valid ? run.data?.agent_id : undefined);
-  const { runs } = useThreadRuns(threadId);
+  const { total } = useThreadRuns(threadId);
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -78,10 +78,7 @@ export function SessionHeader({
   const child = thread?.origin === "child";
   // How this session started reads the same at both levels.
   const note = debugSession
-    ? [
-        t("Debug session"),
-        runs.length ? t("{{count}} runs", { count: runs.length }) : null,
-      ]
+    ? [t("Debug session"), total ? t("{{count}} runs", { count: total }) : null]
         .filter(Boolean)
         .join(" · ")
     : run.data?.schedule_origin

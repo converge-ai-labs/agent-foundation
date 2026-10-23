@@ -39,11 +39,13 @@ export function ComposerStatus({
 }) {
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
-  const operation =
-    observed.data ??
-    activity.data?.pages
-      .flatMap((page) => page.rows)
-      .find((row) => row.thread.thread_id === threadId)?.latest_operation;
+  const row = activity.data?.pages
+    .flatMap((page) => page.rows)
+    .find((row) => row.thread.thread_id === threadId);
+  const operation = observed.data ?? row?.latest_operation;
+  const mainAccount = operation
+    ? operation.main_account
+    : row?.thread.last_execution?.main_account;
   // Terminal receipts remain inspectable even after their working state is reset.
   const goal = busy ? (operation?.goal ?? savedGoal) : savedGoal;
   const active =
@@ -106,6 +108,14 @@ export function ComposerStatus({
   return (
     <div className={styles.bar}>
       <div className={styles.metrics}>
+        {mainAccount && (
+          <span
+            className={styles.metric}
+            title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
+          >
+            MAIN <strong>{mainAccount.account_name}</strong>
+          </span>
+        )}
         {goal && (
           <GoalStatus
             goal={goal}

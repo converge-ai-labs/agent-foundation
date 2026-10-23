@@ -135,3 +135,49 @@ it("keeps execution edits across disclosure toggles and opens invalid JSON on sa
     null,
   );
 });
+
+it("rejects duplicate execution variable names before saving the agent", () => {
+  http.GET.mockResolvedValue({
+    data: { items: [], next_cursor: null },
+    response: new Response(null, { status: 200 }),
+  });
+  const submit = vi.fn();
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <MemoryRouter>
+        <AgentEditor
+          id="variables-form"
+          initial={{
+            ...initialConfig(),
+            model: "test-model",
+            execution: { environment: { APP_MODE: "agent" } },
+          }}
+          pending={false}
+          error={undefined}
+          submit={submit}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+  const names = screen.getAllByLabelText("Variable name {{number}}");
+  fireEvent.change(names[1], { target: { value: "APP_MODE" } });
+  fireEvent.submit(document.getElementById("variables-form")!);
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.change(names[1], { target: { value: "OTHER" } });
+  fireEvent.submit(document.getElementById("variables-form")!);
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      execution: { environment: { APP_MODE: "agent", OTHER: "" } },
+    }),
+    undefined,
+    null,
+  );
+});

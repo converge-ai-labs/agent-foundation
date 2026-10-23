@@ -423,7 +423,7 @@ async def test_recovery_keeps_external_deferral_and_explicit_result_continuation
     first = await executable.run(previous_state=saved)
     assert first.status == "suspended"
     assert first.deferred is not None
-    assert [call.tool_call_id for call in first.deferred.calls] == ["old"]
+    assert [call.target_call.tool_call_id for call in first.deferred.calls] == ["old"]
     second = await executable.run(
         previous_state=first.state,
         tool_recovery="never",

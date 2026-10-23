@@ -33,6 +33,7 @@ from a13n_harness.environment.retention import (
     OpaqueProcessHandle,
     _unwrap_opaque,
 )
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment._local_retention import LocalRetentionStore
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.errors import engine_errors
@@ -81,6 +82,7 @@ class DockerProcesses:
         return token
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
+        request = with_defaults(request, self.commands.config.environment)
         self.commands.check_open()
         config = self.commands.config
         if any(value is not None for value in request.limits.model_dump().values()):

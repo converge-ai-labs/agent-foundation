@@ -11,11 +11,13 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
+import { SessionUsage } from "./session-usage";
 import { SessionHeader } from "./session-header";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
   fixtureRun,
+  fixtureRunPage,
   fixtureRunAgent,
   fixtureThread,
   fixtureTimeline,
@@ -75,11 +77,13 @@ const usage = {
   runs: [
     {
       run_id: "run_1",
+      run_number: 1,
       thread_id: "thr_1",
       models: [model("small", 1, 1000, 800, "0.04")],
     },
     {
       run_id: "run_2",
+      run_number: 2,
       thread_id: "thr_1",
       models: [
         model("large", 1, 1000, 600, "0.20", [1.2, 48.6]),
@@ -115,10 +119,9 @@ beforeEach(() => {
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/runs"))
-        return Response.json({
-          items: [fixtureRun({ id: "run_1" }), fixtureRun()],
-          next_cursor: null,
-        });
+        return Response.json(
+          fixtureRunPage([fixtureRun(), fixtureRun({ id: "run_1" })]),
+        );
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/usage/context")) {
@@ -364,4 +367,37 @@ it("uses the latest run of the thread when no run is selected", async () => {
   await screen.findByText("42k / 200k");
   expect(contextRequests.at(-1)?.searchParams.get("thread_id")).toBe("thr_1");
   expect(contextRequests.at(-1)?.searchParams.has("run_id")).toBe(false);
+});
+
+it("numbers old usage rows directly without fetching any Run pages", async () => {
+  const requests: string[] = [];
+  client.close();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      const path = new URL((request as Request).url).pathname;
+      requests.push(path);
+      if (path.endsWith("/usage"))
+        return Response.json({
+          ...usage,
+          runs: [{ ...usage.runs[0], run_number: 42 }],
+        });
+      if (path.endsWith("/models"))
+        return Response.json({ items: [], next_cursor: null });
+      throw new Error(`Unexpected request ${path}`);
+    },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <SessionUsage sessionId="ses_1" threads={[fixtureThread()]} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Session usage: $0.30" }));
+  expect(await screen.findByRole("link", { name: "Run 42" })).toBeTruthy();
+  expect(requests.some((path) => path.endsWith("/runs"))).toBe(false);
 });

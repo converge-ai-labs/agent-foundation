@@ -1578,7 +1578,7 @@ async def test_declared_recovery_does_not_treat_retry_safety_as_approval(marker:
     if marker is True:
         assert result.status == "suspended"
         assert result.deferred is not None
-        assert [call.tool_call_id for call in result.deferred.approvals] == ["old-call"]
+        assert [call.target_call.tool_call_id for call in result.deferred.approvals] == ["old-call"]
         assert histories == []
     else:
         assert result.output_or_raise() == "continued"

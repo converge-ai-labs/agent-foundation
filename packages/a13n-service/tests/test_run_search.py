@@ -127,7 +127,6 @@ async def test_creation_completion_and_same_run_and_matching(service, scripted_m
         event.remove(engine, "before_cursor_execute", capture)
     assert len(vector_updates) == 1  # The unchanged model boundary and seal add no extra vector write.
     assert await ids("runs", "南京 finalanswer", status="completed") == [run["id"]]
-    assert await ids("runs", "南京 finalanswer", status="completed", view="compact") == [run["id"]]
     tail = await runs_kit.tail(service, run["id"])
     assert tail.search is not None
     async with short_session(service.runtime.storage) as session:
@@ -155,10 +154,9 @@ async def test_search_cursor_is_bound_to_text(service, scripted_model, runs_kit)
     agent = await runs_kit.create_agent(service, scripted_model)
     for _ in range(2):
         await runs_kit.start_thread(service, agent, "searchable")
-    for resource, view in (("runs", "detailed"), ("runs", "compact"), ("threads", None), ("sessions", None)):
-        projection = {"view": view} if view is not None else {}
+    for resource in ("runs", "threads", "sessions"):
         response = await service.client.get(
-            f"{service.api}/{resource}", params={"text_query": "searchable", "limit": 1, **projection}
+            f"{service.api}/{resource}", params={"text_query": "searchable", "limit": 1}
         )
         assert response.status_code == 200, response.text
         cursor = response.json()["next_cursor"]

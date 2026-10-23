@@ -7,9 +7,7 @@ import re
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from functools import partial
 from typing import Annotated, Any, Literal
-from uuid import uuid4
 
 from pydantic import Field
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool
@@ -23,19 +21,20 @@ from pydantic_ai.exceptions import (
     UsageLimitExceeded,
     UserError,
 )
-from pydantic_ai.messages import InstructionPart, ToolCallPart
+from pydantic_ai.messages import InstructionPart
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
-from a13n_harness._review_context import record_approval_denials
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
+from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder, forward_tool_call
 from a13n_harness.tools.tool_search import (
     PROXY_CONTROL_KEY,
     PROXY_MEMBERSHIP_KEY,
     ProxyToolSearchConfig,
     ToolSearchMembership,
     active_proxy_tools,
+    grouped_tool_name,
     proxy_control,
     proxy_directory,
     proxy_membership,
@@ -95,14 +94,22 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
             validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
-            canonical = f"{self.group}__{name}"
+            canonical = grouped_tool_name(self.group, name)
+            metadata = dict(definition.metadata or {})
+            if definition.kind == "external":
+                from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
+
+                metadata.setdefault(
+                    CLIENT_TOOL_MARKER_KEY,
+                    {"declared_name": name, "toolset_id": definition.toolset_id or tool.toolset.id},
+                )
             result[canonical] = _GroupTool(
                 toolset=self,
                 tool_def=replace(
                     definition,
                     name=canonical,
                     metadata={
-                        **(definition.metadata or {}),
+                        **metadata,
                         PROXY_MEMBERSHIP_KEY: ToolSearchMembership(self.group, self.group_description, name),
                     },
                 ),
@@ -185,7 +192,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
                 "This call can have side effects; after uncertain failure inspect the outcome before retrying."
             ),
             sequential=True,
-            metadata={PROXY_CONTROL_KEY: "call"},
+            metadata={PROXY_CONTROL_KEY: "call", FORWARDED_TOOL_KEY: ToolCallForwarder(resolve_proxy_call)},
         )
         listing = Tool(
             self._list,
@@ -386,11 +393,8 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             projected = deepcopy(ctx.usage)
             projected.tool_calls += 2  # This outer envelope and one native target call.
             ctx.usage_limits.check_before_tool_call(projected)
-        call = ToolCallPart(name, values, tool_call_id=f"proxy-{uuid4().hex}")
         try:
-            result = await manager.handle_call(
-                call, on_inline_deferred=partial(record_approval_denials, context=ctx.deps)
-            )
+            result = await forward_tool_call(ctx, name, values)
         except ToolRetryError as exc:
             # Native target retries remain keyed by the original prepared name.
             # Re-correlate only the model-facing message; rethrowing ModelRetry
@@ -405,10 +409,7 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
                 )
             ) from exc
         except (ApprovalRequired, CallDeferred):
-            raise ToolFailed(
-                f"Tool {group}/{tool} requires unresolved Host interaction. Expose it directly for cross-turn approval "
-                "or external execution. Do not assume completion or blindly retry."
-            ) from None
+            raise
         except (ModelRetry, ToolFailed, UsageLimitExceeded, UnexpectedModelBehavior, EnvironmentActivationError):
             raise
         except Exception as exc:
@@ -442,9 +443,7 @@ def _search_matches(
     query = query.strip()
     scoped = {key: name for key, name in directory.items() if group is None or key[0] == group}
     exact = {
-        name
-        for (group_name, local_name), name in scoped.items()
-        if query.casefold() in (local_name.casefold(), f"{group_name}__{local_name}".casefold())
+        name for (_, local_name), name in scoped.items() if query.casefold() in (local_name.casefold(), name.casefold())
     }
     tokens = set(_words(query))
     if not tokens:

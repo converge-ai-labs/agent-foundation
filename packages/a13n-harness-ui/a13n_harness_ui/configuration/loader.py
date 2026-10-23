@@ -34,6 +34,7 @@ from .models import (
     ModelResource,
     ProjectResource,
     SourceDocument,
+    SubscriptionGroupResource,
     canonical_digest,
 )
 
@@ -47,9 +48,10 @@ _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
 _NORMALIZATION_VERSION = "1"
 logger = logging.getLogger(__name__)
-_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices")
+_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices", "subscription_groups")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
+    "subscription_groups": SubscriptionGroupResource,
     "mcp": McpServerResource,
     "agents": AgentResource,
     "projects": ProjectResource,
@@ -259,6 +261,7 @@ def _parse_complete_tree(
         code="settings_invalid",
     )
     models: dict[str, ModelResource] = {}
+    subscription_groups: dict[str, SubscriptionGroupResource] = {}
     plugins: dict[str, HarnessPluginResource] = {}
     profiles: dict[str, EnvironmentProfileResource] = {}
     run_extensions: dict[str, EnvironmentRunExtensionResource] = {}
@@ -334,6 +337,7 @@ def _parse_complete_tree(
                 )
                 expected_kind = {
                     "models": "model",
+                    "subscription_groups": "subscription_group",
                     "mcp": "mcp_server",
                     "agents": "agent",
                     "projects": "project",
@@ -347,6 +351,7 @@ def _parse_complete_tree(
                     )
                 target = {
                     "models": models,
+                    "subscription_groups": subscription_groups,
                     "mcp": mcp,
                     "agents": agents,
                     "projects": projects,
@@ -404,6 +409,7 @@ def _parse_complete_tree(
             content_plugins=content_plugins,
             content_plugin_diagnostics=tuple(plugin_diagnostics),
             models=models,
+            subscription_groups=subscription_groups,
             harness_plugins=plugins,
             environment_profiles=profiles,
             environment_run_extensions=run_extensions,

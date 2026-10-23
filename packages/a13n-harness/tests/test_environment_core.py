@@ -2192,3 +2192,45 @@ async def test_batch_authorizes_every_operation_before_dispatch(cross_mount):
             )
         assert error.value.code == ("environment_selection_invalid" if cross_mount else "environment_denied")
         assert calls == []
+
+
+async def test_command_defaults_follow_each_selected_mount_case_rules() -> None:
+    from a13n_harness.environment.commands import CommandEnvironment
+
+    class RecordingProcesses(_IdempotentProcessOperations):
+        def __init__(self):
+            super().__init__()
+            self.requests = []
+
+        async def start(self, request):
+            self.requests.append(request)
+            return await super().start(request)
+
+    mounts = {}
+    recorders = {}
+    for alias, sensitive in (("posix", True), ("windows", False)):
+        operations = RecordingProcesses()
+        provider = _Binding(
+            "processes",
+            families=frozenset({"processes"}),
+            operations=EnvironmentProviderOperations(processes=operations),
+            permissions=_process_permissions(),
+        )
+        provider.bound.descriptor = provider.bound.descriptor.model_copy(
+            update={"environment_case_sensitive": sensitive}
+        )
+        operations.configure_execution(provider.bound.execution_id)
+        mounts[alias] = _runtime_mount(provider, permissions=_process_permissions())
+        recorders[alias] = operations
+    runtime = create_environment_runtime(mounts=mounts, command_environment={"PATH": "run", "REMOVE": "run"})
+    original = _process_request().model_copy(
+        update={"environment": CommandEnvironment(set={"Path": "command"}, unset=("remove",))}
+    )
+    async with runtime.bind(thread_id="thread", run_id="run", instance=_instance(), host_refs={}) as environment:
+        await runtime._activate()
+        for alias in mounts:
+            result = await environment.processes.start(original, alias=alias)
+            await environment.processes.release(result.process.handle)
+    assert dict(recorders["posix"].requests[0].environment.set) == {"PATH": "run", "Path": "command", "REMOVE": "run"}
+    assert dict(recorders["windows"].requests[0].environment.set) == {"PATH": "command"}
+    assert dict(original.environment.set) == {"Path": "command"}

@@ -6746,6 +6746,13 @@
         "title": "EnvironmentUpdate",
         "type": "object"
       },
+      "EnvironmentVariables": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+        "type": "object"
+      },
       "EnvironmentView": {
         "properties": {
           "created_at": {
@@ -7082,6 +7089,16 @@
         "additionalProperties": false,
         "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
         "properties": {
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentVariables"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "steering": {
             "anyOf": [
               {
@@ -16471,6 +16488,26 @@
         "title": "RunContent",
         "type": "object"
       },
+      "RunInputPreview": {
+        "properties": {
+          "text": {
+            "description": "At most 200 Unicode code points of input text, in content order.",
+            "maxLength": 200,
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated"
+        ],
+        "title": "RunInputPreview",
+        "type": "object"
+      },
       "RunItems": {
         "description": "Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,\nso the first item's ordinal tells whether earlier ones exist.",
         "properties": {
@@ -16518,6 +16555,166 @@
           "labels"
         ],
         "title": "RunLabels",
+        "type": "object"
+      },
+      "RunListItem": {
+        "description": "Run discovery metadata. Full input, results and execution settings belong to the Run detail read.",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Attempt Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_preview": {
+            "$ref": "#/components/schemas/RunInputPreview"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/Lineage"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "sealed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sealed At"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Entry Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "session_id",
+          "thread_id",
+          "agent_id",
+          "agent_revision_id",
+          "principal_id",
+          "status",
+          "trigger",
+          "lineage",
+          "parent_run_id",
+          "source_entry_id",
+          "current_attempt_id",
+          "attempts",
+          "max_attempts",
+          "wait_reason",
+          "version",
+          "created_at",
+          "started_at",
+          "sealed_at",
+          "updated_at",
+          "input_preview"
+        ],
+        "title": "RunListItem",
         "type": "object"
       },
       "RunMetrics": {
@@ -16671,7 +16868,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/RunView"
+              "$ref": "#/components/schemas/RunListItem"
             },
             "title": "Items",
             "type": "array"
@@ -16946,34 +17143,6 @@
         "title": "RunSummary",
         "type": "object"
       },
-      "RunSummaryPage": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/RunSummary"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "items",
-          "next_cursor"
-        ],
-        "title": "RunSummaryPage",
-        "type": "object"
-      },
       "RunUsage": {
         "properties": {
           "models": {
@@ -16987,6 +17156,12 @@
             "title": "Run Id",
             "type": "string"
           },
+          "run_number": {
+            "description": "One-based chronological position among all Runs in the Thread.",
+            "minimum": 1.0,
+            "title": "Run Number",
+            "type": "integer"
+          },
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
@@ -16995,6 +17170,7 @@
         "required": [
           "run_id",
           "thread_id",
+          "run_number",
           "models"
         ],
         "title": "RunUsage",
@@ -19514,7 +19690,7 @@
         "type": "object"
       },
       "SpanContentPage": {
-        "description": "A matching span's selected content, or a continuation to keep locating that span.",
+        "description": "A matching span's selected content, or no items when the trace has no such span.",
         "properties": {
           "items": {
             "items": {
@@ -21252,6 +21428,57 @@
         "title": "ThreadPage",
         "type": "object"
       },
+      "ThreadRunPage": {
+        "description": "Newest first; first_number is the first item's 1-based chronological position in the thread.",
+        "properties": {
+          "first_number": {
+            "title": "First Number",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "previous_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "previous_cursor",
+          "total",
+          "first_number"
+        ],
+        "title": "ThreadRunPage",
+        "type": "object"
+      },
       "ThreadUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -22684,6 +22911,94 @@
           "admin"
         ],
         "type": "string"
+      },
+      "VercelOption": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "VercelOption",
+        "type": "object"
+      },
+      "VercelOptions": {
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VercelOption"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "VercelOptions",
+        "type": "object"
+      },
+      "VercelOptionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "VercelOptionsRequest",
+        "type": "object"
       },
       "VideoInputPolicy": {
         "additionalProperties": false,
@@ -28580,6 +28895,76 @@
           "monitoring-devices"
         ],
         "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/environment-provider-options/vercel": {
+      "post": {
+        "description": "List accessible teams, or projects in a selected team, using an unsaved credential.",
+        "operationId": "vercel_provider_options",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VercelOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VercelOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Vercel Provider Options",
+        "tags": [
+          "providers"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/environment-providers": {
@@ -38184,34 +38569,14 @@
           },
           {
             "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "default": "detailed",
-              "enum": [
-                "detailed",
-                "compact"
-              ],
-              "title": "View",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 100,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
@@ -38256,15 +38621,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/RunPage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RunSummaryPage"
-                    }
-                  ],
-                  "title": "Response List Runs"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             },
@@ -40267,32 +40624,15 @@
             }
           },
           {
-            "description": "Use compact for discovery; detailed preserves the original response.",
-            "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadView",
-              "default": "detailed",
-              "description": "Use compact for discovery; detailed preserves the original response."
-            }
-          },
-          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 50,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
@@ -40321,15 +40661,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/RunPage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RunSummaryPage"
-                    }
-                  ],
-                  "title": "Response Get Run Lineage"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             },
@@ -46066,7 +46398,7 @@
     },
     "/api/v1/threads/{thread_id}/runs": {
       "get": {
-        "description": "Newest first.",
+        "description": "Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.",
         "operationId": "list_thread_runs",
         "parameters": [
           {
@@ -46079,32 +46411,15 @@
             }
           },
           {
-            "description": "Use compact for discovery; detailed preserves the original response.",
-            "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadView",
-              "default": "detailed",
-              "description": "Use compact for discovery; detailed preserves the original response."
-            }
-          },
-          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 100,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
@@ -46121,6 +46436,23 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
             }
           },
           {
@@ -46149,15 +46481,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/RunPage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RunSummaryPage"
-                    }
-                  ],
-                  "title": "Response List Thread Runs"
+                  "$ref": "#/components/schemas/ThreadRunPage"
                 }
               }
             },
@@ -48210,7 +48534,7 @@
     },
     "/api/v1/traces/{trace_id}/spans/{span_id}/content": {
       "get": {
-        "description": "Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's\ncursor while continuing fragments with version and next_offset.",
+        "description": "Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the\ntrace has no such span. Continue fragments with version and next_offset.",
         "operationId": "read_span_content",
         "parameters": [
           {
@@ -48251,22 +48575,6 @@
               ],
               "title": "Section",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
             }
           },
           {

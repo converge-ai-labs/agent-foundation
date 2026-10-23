@@ -15,8 +15,8 @@ from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.modal.diagnostics import measure
 from a13n_harness.providers.environment.modal.pool import Transport, TransportKey, TransportPool
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
@@ -62,6 +62,7 @@ class ModalEnvironmentConfiguration(BaseModel):
         description="Operator-built registry image or Modal image ID (im-...) containing compatible a13n-envd and sandbox launchers. Agent operations use EIP.",
     )
     desktop: bool = Field(default=False, description="Require an observable, input-ready X11 desktop from the image.")
+    environment: EnvironmentVariables = Field(default_factory=dict)
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     timeout_seconds: int = Field(default=86400, ge=300, le=86400)
     cpu: float = Field(default=1, gt=0, le=64, allow_inf_nan=False)
@@ -69,7 +70,9 @@ class ModalEnvironmentConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        return hashlib.sha256(
+            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+        ).hexdigest()
 
 
 class SnapshotReference(BaseModel):
@@ -112,12 +115,9 @@ def sdk_errors(*, mutation: bool = False) -> Iterator[None]:
 async def execute_command(sandbox: modal.Sandbox, argv: list[str], timeout: float) -> str:
     with sdk_errors(mutation=True):
         async with asyncio.timeout(timeout + 5):
-            with measure("command_start"):
-                process = await sandbox.exec.aio(*argv, timeout=int(timeout))
-            with measure("command_stdout"):
-                stdout = await process.stdout.read.aio()
-            with measure("command_wait"):
-                await process.wait.aio()
+            process = await sandbox.exec.aio(*argv, timeout=int(timeout))
+            stdout = await process.stdout.read.aio()
+            await process.wait.aio()
             if process.returncode != 0:
                 raise failure(
                     "modal",
@@ -174,15 +174,12 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
                     try:
                         candidate = self._lease.sandbox if self._lease is not None else None
                         if candidate is None:
-                            with measure("sandbox_from_id"):
-                                candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
+                            candidate = await modal.Sandbox.from_id.aio(self.target.target_id, client=client)
                             if self._lease is not None:
                                 self._lease.sandbox = candidate
                         self.sandbox = candidate
-                        with measure("sandbox_get_tags"):
-                            self.validate_labels(await candidate.get_tags.aio())
-                        with measure("sandbox_poll"):
-                            status = await candidate.poll.aio()
+                        self.validate_labels(await candidate.get_tags.aio())
+                        status = await candidate.poll.aio()
                         if status is None:
                             sandbox = candidate
                     except modal.exception.NotFoundError:
@@ -227,7 +224,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
                 self.client = self._lease.client
             if self.client is not None:
                 return self.client
-            with measure("client_open"), sdk_errors():
+            with sdk_errors():
                 # Avoid from_credentials' implicit process-lifetime shutdown registry.
                 # The explicit pool, or this reference when unpooled, owns cleanup.
                 self.client = modal.Client(
@@ -280,9 +277,7 @@ class ModalReference(NativeReference[ModalEnvironmentConfiguration, ModalState])
             return
         try:
             if sandbox is not None:
-                with measure("sandbox_detach"):
-                    await sandbox.detach.aio()
+                await sandbox.detach.aio()
         finally:
             if client is not None:
-                with measure("client_close"):
-                    await client.__aexit__(None, None, None)
+                await client.__aexit__(None, None, None)

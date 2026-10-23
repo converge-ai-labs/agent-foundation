@@ -97,7 +97,7 @@ def description():
 
 async def test_native_fingerprint_and_desktop_opt_in():
     config = VercelEnvironmentConfiguration()
-    old = config.model_dump_json(exclude={"execution", "snapshot", "desktop"})
+    old = config.model_dump_json(exclude={"execution", "snapshot", "desktop", "environment"})
     assert config.fingerprint == hashlib.sha256(old.encode()).hexdigest()
     assert VercelRecipe().fingerprint == config.fingerprint
     assert (
@@ -106,7 +106,8 @@ async def test_native_fingerprint_and_desktop_opt_in():
             recipe().model_dump(exclude={"desktop_assistance"})
         ).fingerprint
     )
-    for values in ({"desktop": True}, {"execution": "envd_http"}, {"snapshot": "snap_x"}, {"desktop_assistance": True}):
+    assert VercelRecipe(desktop=True).snapshot == "auto"
+    for values in ({"execution": "envd_http"}, {"snapshot": "snap_x"}, {"desktop_assistance": True}):
         with pytest.raises(ValueError):
             VercelRecipe(**values)
 

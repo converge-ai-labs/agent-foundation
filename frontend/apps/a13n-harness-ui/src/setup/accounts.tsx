@@ -7,6 +7,8 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
 import accountStyles from "./accounts.module.css";
+import { SubscriptionAccounts } from "./subscriptions";
+import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -22,18 +24,26 @@ export function ProviderAccount({
   inline = false,
   onReady,
   onIdentity,
+  accountId,
 }: {
   connection: Schema<"AccountConnection">;
   inline?: boolean;
+  accountId?: string;
   onReady?: (ready: boolean) => void;
   onIdentity?: (identity: string) => void;
 }) {
   const { provider, label, login_methods: loginMethods } = connection;
+  const nativeAccountId =
+    accountId ??
+    (provider === "codex" || provider === "grok"
+      ? `acct-${provider}-default`
+      : undefined);
+  const accountKey = nativeAccountId ?? provider;
   const { client } = useTransport();
   const queries = useQueryClient();
   const [session, setSession] = useState<string | null>(
     () =>
-      queries.getQueryData<Schema<"LoginStatus">>(["login", provider])
+      queries.getQueryData<Schema<"LoginStatus">>(["login", accountKey])
         ?.session_id ?? null,
   );
   const activeLogin = useQuery({
@@ -43,11 +53,22 @@ export function ProviderAccount({
   });
   useEffect(() => {
     const status = activeLogin.data;
-    if (status?.provider === provider && status.session_id !== session) {
-      queries.setQueryData(["login", provider], status);
+    if (
+      status?.provider === provider &&
+      (!nativeAccountId || status.account_id === nativeAccountId) &&
+      status.session_id !== session
+    ) {
+      queries.setQueryData(["login", accountKey], status);
       setSession(status.session_id);
     }
-  }, [activeLogin.data, provider, queries, session]);
+  }, [
+    activeLogin.data,
+    provider,
+    accountKey,
+    nativeAccountId,
+    queries,
+    session,
+  ]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [copyFailed, setCopyFailed] = useState(false);
 
@@ -59,14 +80,21 @@ export function ProviderAccount({
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const account = useQuery({
-    queryKey: ["account", provider],
+    queryKey: ["account", accountKey],
     queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/auth/accounts/{provider}", {
-          params: { path: { provider } },
-          signal,
-        }),
-      ),
+      nativeAccountId
+        ? result(
+            client.GET("/api/subscriptions/accounts/{account_id}", {
+              params: { path: { account_id: nativeAccountId } },
+              signal,
+            }),
+          )
+        : result(
+            client.GET("/api/auth/accounts/{provider}", {
+              params: { path: { provider } },
+              signal,
+            }),
+          ),
   });
   const sources = useQuery({
     queryKey: ["account-sources", provider],
@@ -88,7 +116,7 @@ export function ProviderAccount({
         }),
       ),
     onSuccess: (status) => {
-      queries.setQueryData(["account", provider], status);
+      queries.setQueryData(["account", accountKey], status);
       void queries.invalidateQueries({
         queryKey: ["account-sources", provider],
       });
@@ -96,7 +124,7 @@ export function ProviderAccount({
     },
   });
   const login = useQuery({
-    queryKey: ["login", provider],
+    queryKey: ["login", accountKey],
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/auth/logins/{session_id}", {
@@ -116,14 +144,19 @@ export function ProviderAccount({
     mutationFn: (allowAccountSwitch: boolean) =>
       result(
         client.POST("/api/auth/logins", {
-          body: { provider, method, allow_account_switch: allowAccountSwitch },
+          body: {
+            provider,
+            method,
+            account_id: nativeAccountId,
+            allow_account_switch: allowAccountSwitch,
+          },
         }),
       ),
     onSuccess: (status) => {
       setSwitchOpen(false);
       setCallbackUrl("");
       setCallbackSent(false);
-      queries.setQueryData(["login", provider], status);
+      queries.setQueryData(["login", accountKey], status);
       setSession(status.session_id);
       queries.setQueryData(["active-login"], status);
     },
@@ -152,17 +185,23 @@ export function ProviderAccount({
         }),
       ),
     onSuccess: (status) => {
-      queries.setQueryData(["login", provider], status);
+      queries.setQueryData(["login", accountKey], status);
       void queries.invalidateQueries({ queryKey: ["active-login"] });
     },
   });
   const logout = useMutation({
     mutationFn: () =>
-      result(
-        client.DELETE("/api/auth/accounts/{provider}", {
-          params: { path: { provider } },
-        }),
-      ),
+      nativeAccountId
+        ? result(
+            client.POST("/api/subscriptions/accounts/{account_id}/logout", {
+              params: { path: { account_id: nativeAccountId } },
+            }),
+          )
+        : result(
+            client.DELETE("/api/auth/accounts/{provider}", {
+              params: { path: { provider } },
+            }),
+          ),
     onSuccess: () => {
       setLogoutOpen(false);
       setSession(null);
@@ -171,13 +210,14 @@ export function ProviderAccount({
   });
   useEffect(() => {
     if (login.data?.state === "succeeded") {
-      void queries.invalidateQueries({ queryKey: ["account", provider] });
+      void queries.invalidateQueries({ queryKey: ["subscriptions"] });
+      void queries.invalidateQueries({ queryKey: ["account", accountKey] });
       void queries.invalidateQueries({ queryKey: ["setup"] });
       void queries.invalidateQueries({
         queryKey: ["account-sources", provider],
       });
     }
-  }, [login.data?.state, queries, provider]);
+  }, [login.data?.state, queries, provider, accountKey]);
   const ready =
     !!account.data?.usable ||
     (account.data?.availability === "available" &&
@@ -259,6 +299,14 @@ export function ProviderAccount({
             </p>
           )}
           {account.data?.message && <p role="status">{account.data.message}</p>}
+          {!inline && provider === "copilot" && (
+            <CopilotAllowance
+              key={identity}
+              identity={identity}
+              ready={ready}
+            />
+          )}
+          {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
               <summary>Choose account source</summary>
@@ -509,9 +557,11 @@ export function ProviderAccount({
         description={
           provider === "chatgpt"
             ? "Clear the selected Host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
-            : account.data?.source_id?.startsWith("native:")
-              ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
-              : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
+            : nativeAccountId
+              ? "Clear this managed account’s credentials. The original CLI login and other managed accounts remain unchanged."
+              : account.data?.source_id?.startsWith("native:")
+                ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
+                : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
         }
         closeLabel="Cancel"
         footer={
@@ -652,11 +702,27 @@ export function AccountsPage() {
   return (
     <>
       <PageHeader title="Accounts & API keys" />
+      <SubscriptionAccounts
+        renderLogin={(account) => {
+          const connection = choices.data?.connections?.find(
+            (item) => item.account?.provider === account.provider,
+          )?.account;
+          return connection ? (
+            <ProviderAccount
+              key={account.id}
+              connection={connection}
+              accountId={account.id}
+              inline
+            />
+          ) : null;
+        }}
+      />
       <div className={styles.twoColumns}>
         <ErrorNotice error={choices.error} />
         {choices.data?.connections?.map(
           (connection) =>
-            connection.account && (
+            connection.account &&
+            !["codex", "grok"].includes(connection.account.provider) && (
               <ProviderAccount
                 key={connection.id}
                 connection={connection.account}

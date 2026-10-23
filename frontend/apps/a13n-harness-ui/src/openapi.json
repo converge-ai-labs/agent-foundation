@@ -2940,6 +2940,358 @@
         }
       }
     },
+    "/api/subscriptions/copilot/usage": {
+      "get": {
+        "summary": "Copilot Usage",
+        "operationId": "copilot_usage_api_subscriptions_copilot_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotUsage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions": {
+      "get": {
+        "summary": "Subscriptions",
+        "operationId": "subscriptions_api_subscriptions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionCatalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions/accounts/{account_id}": {
+      "get": {
+        "summary": "Subscription Account",
+        "operationId": "subscription_account_api_subscriptions_accounts__account_id__get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountProjection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update Subscription Account",
+        "operationId": "update_subscription_account_api_subscriptions_accounts__account_id__patch",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionAccount"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionAccountUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Subscription Account",
+        "operationId": "delete_subscription_account_api_subscriptions_accounts__account_id__delete",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions/accounts": {
+      "post": {
+        "summary": "Create Subscription Account",
+        "operationId": "create_subscription_account_api_subscriptions_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriptionAccountCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionAccount"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions/accounts/{account_id}/logout": {
+      "post": {
+        "summary": "Logout Subscription Account",
+        "operationId": "logout_subscription_account_api_subscriptions_accounts__account_id__logout_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "title": "Response Logout Subscription Account Api Subscriptions Accounts  Account Id  Logout Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions/accounts/{account_id}/refresh": {
+      "post": {
+        "summary": "Refresh Subscription Usage",
+        "operationId": "refresh_subscription_usage_api_subscriptions_accounts__account_id__refresh_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageSnapshot"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions/accounts/{account_id}/reset-vouchers": {
+      "get": {
+        "summary": "Subscription Reset Vouchers",
+        "operationId": "subscription_reset_vouchers_api_subscriptions_accounts__account_id__reset_vouchers_get",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodexUsage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/subscriptions/accounts/{account_id}/reset": {
+      "post": {
+        "summary": "Redeem Subscription Reset",
+        "operationId": "redeem_subscription_reset_api_subscriptions_accounts__account_id__reset_post",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/accounts/{provider}": {
       "get": {
         "summary": "Account",
@@ -4110,6 +4462,166 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ContextUsageView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/usage": {
+      "get": {
+        "summary": "Usage Analytics",
+        "operationId": "usage_analytics_api_usage_get",
+        "parameters": [
+          {
+            "name": "start",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "End"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "projectless",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Projectless"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "project",
+                "thread",
+                "model"
+              ],
+              "type": "string",
+              "default": "project",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "tokens",
+                "cost"
+              ],
+              "type": "string",
+              "default": "tokens",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageAnalyticsView"
                 }
               }
             }
@@ -7433,6 +7945,87 @@
         ],
         "title": "ActivitySummary"
       },
+      "AdditionalUsageLimit": {
+        "properties": {
+          "limit_name": {
+            "type": "string",
+            "title": "Limit Name"
+          },
+          "metered_feature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metered Feature"
+          },
+          "normal_model_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal Model Slug"
+          },
+          "rate_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "limit_name"
+        ],
+        "title": "AdditionalUsageLimit"
+      },
+      "Adoption": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "adopted",
+              "absent",
+              "unsupported",
+              "invalid"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "group_created": {
+            "type": "boolean",
+            "title": "Group Created",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "Adoption"
+      },
       "AgentResourceSource": {
         "properties": {
           "kind": {
@@ -8412,7 +9005,6 @@
           },
           "tool_name": {
             "type": "string",
-            "maxLength": 128,
             "minLength": 1,
             "title": "Tool Name"
           },
@@ -9664,6 +10256,16 @@
             "type": "string",
             "const": "codex_subscription",
             "title": "Kind"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -9672,6 +10274,106 @@
           "kind"
         ],
         "title": "CodexSubscriptionAuthentication"
+      },
+      "CodexUsage": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "codex",
+            "title": "Provider",
+            "default": "codex"
+          },
+          "account_id": {
+            "type": "string",
+            "title": "Account Id"
+          },
+          "plan_type": {
+            "type": "string",
+            "title": "Plan Type"
+          },
+          "rate_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaidCredits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "additional_rate_limits": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AdditionalUsageLimit"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Rate Limits",
+            "default": []
+          },
+          "spend_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpendControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rate_limit_reset_credits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetCreditSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reset_credits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetCredits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reset_unavailable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset Unavailable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "plan_type"
+        ],
+        "title": "CodexUsage"
       },
       "ConfigurationProvenance": {
         "properties": {
@@ -10041,6 +10743,61 @@
         "type": "object",
         "title": "ConnectionMetrics"
       },
+      "ConsumptionTotals": {
+        "properties": {
+          "model_requests": {
+            "type": "integer",
+            "title": "Model Requests"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens"
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "title": "Cache Write Tokens"
+          },
+          "model_cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Cost Usd"
+          },
+          "unknown_model_costs": {
+            "type": "integer",
+            "title": "Unknown Model Costs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_requests",
+          "input_tokens",
+          "output_tokens",
+          "total_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "model_cost_usd",
+          "unknown_model_costs"
+        ],
+        "title": "ConsumptionTotals"
+      },
       "ContentMetadata": {
         "properties": {
           "display": {
@@ -10281,6 +11038,83 @@
         ],
         "title": "CoordinatorUpdate"
       },
+      "CopilotQuota": {
+        "properties": {
+          "quota_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Id"
+          },
+          "entitlement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitlement"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "unlimited": {
+            "type": "boolean",
+            "title": "Unlimited",
+            "default": false
+          },
+          "overage_count": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overage Count"
+          },
+          "overage_permitted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overage Permitted"
+          },
+          "percent_remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Remaining"
+          }
+        },
+        "type": "object",
+        "title": "CopilotQuota"
+      },
       "CopilotSubscriptionAuthentication": {
         "properties": {
           "kind": {
@@ -10295,6 +11129,48 @@
           "kind"
         ],
         "title": "CopilotSubscriptionAuthentication"
+      },
+      "CopilotUsage": {
+        "properties": {
+          "copilot_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copilot Plan"
+          },
+          "quota_reset_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Reset Date"
+          },
+          "quota_snapshots": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/CopilotQuota"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Snapshots"
+          }
+        },
+        "type": "object",
+        "title": "CopilotUsage"
       },
       "CpuLimit": {
         "oneOf": [
@@ -10566,7 +11442,6 @@
             "type": "string"
           },
           "tool_name": {
-            "maxLength": 128,
             "minLength": 1,
             "title": "Tool Name",
             "type": "string"
@@ -11787,7 +12662,6 @@
           },
           "tool_name": {
             "type": "string",
-            "maxLength": 128,
             "minLength": 1,
             "title": "Tool Name"
           },
@@ -12826,12 +13700,171 @@
         "title": "GrantAccess",
         "type": "string"
       },
+      "GrokBilling": {
+        "properties": {
+          "credit_usage_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Usage Percent"
+          },
+          "current_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prepaid_balance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_unified_billing_user": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Unified Billing User"
+          },
+          "on_demand_cap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "on_demand_used": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "used": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "billing_period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Period End"
+          }
+        },
+        "type": "object",
+        "title": "GrokBilling"
+      },
+      "GrokMoney": {
+        "properties": {
+          "val": {
+            "type": "integer",
+            "title": "Val",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "GrokMoney"
+      },
+      "GrokPeriod": {
+        "properties": {
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "title": "GrokPeriod"
+      },
       "GrokSubscriptionAuthentication": {
         "properties": {
           "kind": {
             "type": "string",
             "const": "grok_subscription",
             "title": "Kind"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -12840,6 +13873,28 @@
           "kind"
         ],
         "title": "GrokSubscriptionAuthentication"
+      },
+      "GrokUsage": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "grok",
+            "title": "Provider",
+            "default": "grok"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokBilling"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "GrokUsage"
       },
       "HTTPValidationError": {
         "properties": {
@@ -13229,6 +14284,17 @@
             "type": "string",
             "title": "Session Id"
           },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
           "provider": {
             "type": "string",
             "enum": [
@@ -13319,6 +14385,41 @@
           "method"
         ],
         "title": "LoginStatus"
+      },
+      "MainAccountSelection": {
+        "additionalProperties": false,
+        "description": "Actual subscription identity for the latest successful MAIN request.",
+        "properties": {
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "account_name": {
+            "title": "Account Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "group_id",
+          "account_id",
+          "account_name",
+          "reason"
+        ],
+        "title": "MainAccountSelection",
+        "type": "object"
       },
       "MarkdownSubagentSource": {
         "properties": {
@@ -14855,6 +15956,33 @@
           }
         ]
       },
+      "PaidCredits": {
+        "properties": {
+          "has_credits": {
+            "type": "boolean",
+            "title": "Has Credits",
+            "default": false
+          },
+          "unlimited": {
+            "type": "boolean",
+            "title": "Unlimited",
+            "default": false
+          },
+          "balance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance"
+          }
+        },
+        "type": "object",
+        "title": "PaidCredits"
+      },
       "PairingApproved": {
         "properties": {
           "status": {
@@ -15768,6 +16896,126 @@
         ],
         "title": "RequiredAction"
       },
+      "ResetCredit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "reset_type": {
+            "type": "string",
+            "title": "Reset Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reset_type",
+          "status"
+        ],
+        "title": "ResetCredit"
+      },
+      "ResetCreditSummary": {
+        "properties": {
+          "available_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Available Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available_count"
+        ],
+        "title": "ResetCreditSummary"
+      },
+      "ResetCredits": {
+        "properties": {
+          "available_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Available Count"
+          },
+          "credits": {
+            "items": {
+              "$ref": "#/components/schemas/ResetCredit"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Credits",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "available_count"
+        ],
+        "title": "ResetCredits"
+      },
+      "ResetResult": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "reset",
+              "nothing_to_reset",
+              "no_credit",
+              "already_redeemed"
+            ],
+            "title": "Code"
+          },
+          "windows_reset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Windows Reset",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "ResetResult"
+      },
       "ResourceHistory": {
         "properties": {
           "kind": {
@@ -16121,6 +17369,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/GoalView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "main_account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MainAccountSelection"
               },
               {
                 "type": "null"
@@ -17122,6 +18381,62 @@
         ],
         "title": "SkillCatalogView"
       },
+      "SpendControl": {
+        "properties": {
+          "reached": {
+            "type": "boolean",
+            "title": "Reached"
+          },
+          "individual_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpendControlLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "reached"
+        ],
+        "title": "SpendControl"
+      },
+      "SpendControlLimit": {
+        "properties": {
+          "limit": {
+            "type": "string",
+            "title": "Limit"
+          },
+          "used": {
+            "type": "string",
+            "title": "Used"
+          },
+          "remaining": {
+            "type": "string",
+            "title": "Remaining"
+          },
+          "used_percent": {
+            "type": "number",
+            "title": "Used Percent"
+          },
+          "reset_at": {
+            "type": "integer",
+            "title": "Reset At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "limit",
+          "used",
+          "remaining",
+          "used_percent",
+          "reset_at"
+        ],
+        "title": "SpendControlLimit"
+      },
       "StoreKind": {
         "type": "string",
         "enum": [
@@ -17149,7 +18464,6 @@
           },
           "tool_name": {
             "type": "string",
-            "maxLength": 128,
             "minLength": 1,
             "title": "Tool Name"
           },
@@ -17190,6 +18504,224 @@
           "questions"
         ],
         "title": "StructuredQuestionRequestView"
+      },
+      "SubscriptionAccount": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^acct-[a-zA-Z0-9_-]+$",
+            "title": "Id"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/SubscriptionProvider"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "deleted": {
+            "type": "boolean",
+            "title": "Deleted",
+            "default": false
+          },
+          "upstream_account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Account Id"
+          },
+          "login_revision": {
+            "type": "integer",
+            "title": "Login Revision",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "name"
+        ],
+        "title": "SubscriptionAccount",
+        "description": "Nonsecret local identity; credentials retain their provider-owned envelope."
+      },
+      "SubscriptionAccountView": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/SubscriptionAccount"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/AccountProjection"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSnapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account",
+          "authentication",
+          "usage"
+        ],
+        "title": "SubscriptionAccountView"
+      },
+      "SubscriptionCatalog": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionAccountView"
+            },
+            "type": "array",
+            "title": "Accounts"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionGroupResource"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "adoption": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Adoption"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SubscriptionProvider"
+            },
+            "type": "object",
+            "title": "Adoption"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "accounts",
+          "groups",
+          "adoption"
+        ],
+        "title": "SubscriptionCatalog"
+      },
+      "SubscriptionGroupMember": {
+        "properties": {
+          "account": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^acct-[a-zA-Z0-9_-]+$",
+            "title": "Account"
+          },
+          "weight": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Weight",
+            "default": 1
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "account"
+        ],
+        "title": "SubscriptionGroupMember"
+      },
+      "SubscriptionGroupResource": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "const": "1",
+            "title": "Schema Version"
+          },
+          "kind": {
+            "type": "string",
+            "const": "subscription_group",
+            "title": "Kind"
+          },
+          "id": {
+            "$ref": "#/components/schemas/ResourceId"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "grok"
+            ],
+            "title": "Provider"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "ordered",
+              "weighted"
+            ],
+            "title": "Strategy",
+            "default": "ordered"
+          },
+          "allow_credits": {
+            "type": "boolean",
+            "title": "Allow Credits",
+            "default": false
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionGroupMember"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Accounts",
+            "default": []
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "kind",
+          "id",
+          "name",
+          "provider"
+        ],
+        "title": "SubscriptionGroupResource"
+      },
+      "SubscriptionProvider": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "grok"
+        ]
       },
       "SystemInfo": {
         "properties": {
@@ -18667,6 +20199,17 @@
             ],
             "default": null,
             "title": "Error Message"
+          },
+          "main_account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MainAccountSelection"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -19687,8 +21230,7 @@
           "tool_name": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 128
+                "type": "string"
               },
               {
                 "type": "null"
@@ -19959,6 +21501,320 @@
         "title": "UrlInputSupport",
         "description": "URL subtypes consumed natively by the selected transport."
       },
+      "UsageAnalyticsView": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of"
+          },
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "first_observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Observed At"
+          },
+          "observed_through": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Through"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ConsumptionTotals"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/UsageDay"
+            },
+            "type": "array",
+            "title": "Daily"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/UsageGroup"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "group_count": {
+            "type": "integer",
+            "title": "Group Count"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/UsageOption"
+            },
+            "type": "array",
+            "title": "Projects"
+          },
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/UsageThreadOption"
+            },
+            "type": "array",
+            "title": "Threads"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/UsageOption"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "start",
+          "end",
+          "first_observed_at",
+          "observed_through",
+          "summary",
+          "daily",
+          "groups",
+          "group_count",
+          "projects",
+          "threads",
+          "models"
+        ],
+        "title": "UsageAnalyticsView"
+      },
+      "UsageDay": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/ConsumptionTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "totals"
+        ],
+        "title": "UsageDay"
+      },
+      "UsageGroup": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/ConsumptionTotals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "totals"
+        ],
+        "title": "UsageGroup"
+      },
+      "UsageLimits": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "limit_reached": {
+            "type": "boolean",
+            "title": "Limit Reached"
+          },
+          "primary_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secondary_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "allowed",
+          "limit_reached"
+        ],
+        "title": "UsageLimits"
+      },
+      "UsageOption": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "UsageOption"
+      },
+      "UsageSnapshot": {
+        "properties": {
+          "login_revision": {
+            "type": "integer",
+            "title": "Login Revision",
+            "default": 0
+          },
+          "checked_at": {
+            "type": "number",
+            "title": "Checked At",
+            "default": 0
+          },
+          "observed_at": {
+            "type": "number",
+            "title": "Observed At",
+            "default": 0
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexUsage"
+              },
+              {
+                "$ref": "#/components/schemas/GrokUsage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "rejected": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Rejected"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UsageSnapshot"
+      },
+      "UsageThreadOption": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "project_id"
+        ],
+        "title": "UsageThreadOption"
+      },
       "UsageTotals": {
         "properties": {
           "model_requests": {
@@ -20034,6 +21890,31 @@
           "omitted_currency_receipts"
         ],
         "title": "UsageTotals"
+      },
+      "UsageWindow": {
+        "properties": {
+          "used_percent": {
+            "type": "number",
+            "title": "Used Percent"
+          },
+          "limit_window_seconds": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Limit Window Seconds"
+          },
+          "reset_at": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reset At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "used_percent",
+          "limit_window_seconds",
+          "reset_at"
+        ],
+        "title": "UsageWindow"
       },
       "ValidationError": {
         "properties": {
@@ -20141,6 +22022,17 @@
               }
             ],
             "title": "Model Id"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
           },
           "answer_sdp": {
             "anyOf": [
@@ -22536,6 +24428,86 @@
         ],
         "title": "PreflightRequest"
       },
+      "SubscriptionAccountUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "title": "SubscriptionAccountUpdate",
+        "type": "object"
+      },
+      "SubscriptionAccountCreate": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/SubscriptionProvider"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "name"
+        ],
+        "title": "SubscriptionAccountCreate"
+      },
+      "ResetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account Id",
+            "type": "string"
+          },
+          "credit_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Credit Id",
+            "type": "string"
+          },
+          "redeem_request_id": {
+            "format": "uuid",
+            "title": "Redeem Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "credit_id",
+          "redeem_request_id"
+        ],
+        "title": "ResetRequest",
+        "type": "object"
+      },
       "ApiKeyInput": {
         "properties": {
           "credential_ref": {
@@ -22584,6 +24556,19 @@
             "type": "boolean",
             "title": "Allow Account Switch",
             "default": false
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "pattern": "^acct-[a-zA-Z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
           }
         },
         "additionalProperties": false,

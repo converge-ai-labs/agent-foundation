@@ -149,6 +149,7 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
         )
     )
     session = SimpleNamespace(
+        device_descriptor=SimpleNamespace(path_style=eip.PathStyle.POSIX),
         descriptor=SimpleNamespace(
             device_id="device",
             session_id="session",

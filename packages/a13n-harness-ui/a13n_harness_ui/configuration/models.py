@@ -408,10 +408,12 @@ class ChatGPTSubscriptionAuthentication(StrictModel):
 
 class CodexSubscriptionAuthentication(StrictModel):
     kind: Literal["codex_subscription"]
+    group: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class GrokSubscriptionAuthentication(StrictModel):
     kind: Literal["grok_subscription"]
+    group: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class CopilotSubscriptionAuthentication(StrictModel):
@@ -445,6 +447,28 @@ def _native_model_characteristics(value: object) -> object:
 
 
 type ModelCharacteristics = Annotated[HarnessModelCharacteristics, BeforeValidator(_native_model_characteristics)]
+
+
+class SubscriptionGroupMember(StrictModel):
+    account: str = Field(pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
+    weight: int = Field(default=1, ge=1, le=1000)
+
+
+class SubscriptionGroupResource(ConfigurationModel):
+    schema_version: Literal["1"]
+    kind: Literal["subscription_group"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    provider: Literal["codex", "grok"]
+    strategy: Literal["ordered", "weighted"] = "ordered"
+    allow_credits: bool = False
+    accounts: tuple[SubscriptionGroupMember, ...] = Field(default=(), max_length=256)
+
+    @model_validator(mode="after")
+    def _unique_accounts(self) -> Self:
+        if len({member.account for member in self.accounts}) != len(self.accounts):
+            raise ValueError("Subscription group accounts must be unique")
+        return self
 
 
 class ModelResource(ConfigurationModel):
@@ -882,6 +906,9 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     content_plugins: tuple[InstalledContentPlugin, ...] = Field(default=(), max_length=256)
     content_plugin_diagnostics: tuple[str, ...] = ()
     models: dict[ResourceId, ModelResource] = Field(default_factory=dict)
+    subscription_groups: dict[ResourceId, SubscriptionGroupResource] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     harness_plugins: dict[ResourceId, HarnessPluginResource] = Field(default_factory=dict)
     environment_profiles: dict[ResourceId, EnvironmentProfileResource] = Field(default_factory=dict)
     environment_run_extensions: dict[ResourceId, EnvironmentRunExtensionResource] = Field(default_factory=dict)
@@ -894,6 +921,15 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
+        for model in self.models.values():
+            auth = model.authentication
+            if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
+                provider = auth.kind.removesuffix("_subscription")
+                if auth.group:
+                    _require_reference(auth.group, self.subscription_groups, f"{model.id}.authentication.group")
+                group = self.subscription_groups.get(auth.group or f"{provider}-default")
+                if group is not None and group.provider != provider:
+                    raise ValueError(f"{model.id} requires a same-provider subscription group")
         for item in self.document.mcp.host_owned_servers:
             _require_reference(item, self.mcp_servers, "mcp.host_owned_servers")
         for item in self.document.mcp.protocol_overrides:

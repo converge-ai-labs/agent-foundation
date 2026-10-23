@@ -12,6 +12,18 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class MainAccountSelection(BaseModel):
+    """Actual subscription identity for the latest successful MAIN request."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model_id: str
+    group_id: str
+    account_id: str
+    account_name: str
+    reason: str
+
+
 class Provider(StrEnum):
     CODEX = "codex"
     GROK = "grok"
@@ -60,6 +72,7 @@ class StorePolicy:
     supported: bool
     writable: bool
     required_action: RequiredAction = RequiredAction.NONE
+    shared_with_cli: bool = True
 
 
 @dataclass(frozen=True, slots=True)

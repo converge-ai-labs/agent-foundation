@@ -84,7 +84,7 @@ assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个�
 ## 终结事件
 
 - 已完成输出转换为 `RUN_FINISHED`，包含成功结果和用量。不兼容 JSON 的输出会被省略，在 `rawEvent` 中标记 `result_omitted`，不会任意序列化 Python 对象。
-- 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 和 `toolCallId` 保留原生调用 ID；待处理回答策略仍由 Host 决定。
+- 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 是用于回复的目标调用 ID，`toolCallId` 是用于历史关联的模型调用 ID（直接调用时两者相同）；待处理回答策略仍由 Host 决定。
 - 取消转换为 `RUN_FINISHED`，其 `outcome.type="cancelled"`。
 - 失败转换为 `RUN_ERROR`，包含可安全公开的失败代码、消息和用量。
 - 内联子执行使用 `SUBAGENT_STARTED`、`SUBAGENT_FINISHED` 和 `SUBAGENT_ERROR`；内容携带 `subagentRunId`，不嵌套根执行生命周期。

@@ -435,6 +435,14 @@ In Console, open **Execution policy** in the agent configuration for defaults, o
 
 The foreground wait accepts 0–300 seconds and is not an execution deadline. Its deployment fallback is `tool_executions.foreground_wait_seconds`; concurrency, retention and shutdown settings remain deployment-wide.
 
+### Command environment variables
+
+Use `config.execution.environment` on an Agent, `execution.environment` on a Thread, or `options.execution.environment` on one message. For example, `{"execution":{"environment":{"APP_MODE":"staging","EMPTY":""}}}` sets two defaults. Precedence per key is **command → Run → Thread → Agent → frozen Environment recipe**. These are readable configuration values, not secret storage; the same portable names and reserved-name rules as recipe variables apply. Use consistent spelling of names on Windows.
+
+Thread PATCH replaces its entire supplied variable map; null or `{}` clears that layer and restores inheritance. An omitted map leaves it unchanged. An empty string sets an empty value; removing a key does not unset lower defaults. Supported explicit command unsets still remove inherited values.
+
+The Run freezes its Agent/Thread/Run overlay at acceptance, including across recovery and resume. Shell commands, background processes and their ordinary children receive it. Concurrent Runs sharing a sandbox keep separate command environments; the sandbox's global variables and recipe stay unchanged. Inline subagents share their containing Run's defaults; forks and independent child Threads use their own Agent and choices. In Console, edit variables in the same **Execution policy** dialogs described above.
+
 ## Retained tool executions
 
 With the default `auto` tool mode, supported tool calls use automatic handoff: after the foreground wait (5 seconds by default), the model receives an `exec-*` receipt and can continue while the same invocation runs on its original worker. A receipt is a reference, not a result. A whole CodeAct invocation and its nested calls stay together; later runs may execute on another worker. Owner loss marks unfinished work `lost`; Service never replays the invocation automatically.

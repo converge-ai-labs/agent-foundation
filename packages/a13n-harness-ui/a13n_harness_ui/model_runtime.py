@@ -33,6 +33,9 @@ from a13n_harness_ui.configuration import (
     GrokSubscriptionAuthentication,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
+from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
+from a13n_harness_ui.model_accounts.routing import AccountSelectionEvent, SubscriptionGroupModel
+from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
 
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
@@ -69,8 +72,20 @@ class CopilotSubscriptionSource:
     refresh: CopilotRefresh | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ManagedSubscriptionSource:
+    accounts: SubscriptionAccounts
+    usage: SubscriptionUsage
+    grok_refresh: Callable[[GrokCredentials], Awaitable[GrokCredentials]] | None = None
+    selected: Callable[[str, str, AccountSelectionEvent], None] | None = None
+
+
 type SubscriptionSource = (
-    ChatGPTSubscriptionSource | CodexSubscriptionSource | GrokSubscriptionSource | CopilotSubscriptionSource
+    ChatGPTSubscriptionSource
+    | CodexSubscriptionSource
+    | GrokSubscriptionSource
+    | CopilotSubscriptionSource
+    | ManagedSubscriptionSource
 )
 
 
@@ -126,6 +141,9 @@ class HarnessUiModelResolver:
                 "This subscription Model transport cannot enforce Run allowed hosts.",
                 code="model_configuration_unsupported",
             )
+        managed = self._subscription_sources.get(authentication.kind)
+        if isinstance(managed, ManagedSubscriptionSource):
+            return self._managed_model(recipe, managed, thread_id=thread_id)
         if isinstance(authentication, ChatGPTSubscriptionAuthentication):
             from pydantic_ai.models.openai import OpenAIResponsesModel
             from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTProvider
@@ -169,6 +187,45 @@ class HarnessUiModelResolver:
             "The Model authentication kind is unsupported.",
             code="model_authentication_unsupported",
         )
+
+    def _managed_model(
+        self, recipe: ResolvedModelRecipe, source: ManagedSubscriptionSource, *, thread_id: str
+    ) -> Model:
+        from a13n_harness.models.codex import CodexRequestModel
+        from a13n_harness.providers.model.oauth import build_grok_model
+
+        from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
+        from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource, CodexAccountStore
+        from a13n_harness_ui.model_accounts.grok import GrokAccountStore
+
+        provider = "codex" if isinstance(recipe.authentication, CodexSubscriptionAuthentication) else "grok"
+        # Historical recipes have no captured group; their former single identity remains native.
+        group = recipe.subscription_group or SubscriptionGroupResource(
+            schema_version="1",
+            kind="subscription_group",
+            id=f"{provider}-default",
+            name=f"{provider.title()} default",
+            provider=provider,
+            accounts=(SubscriptionGroupMember(account=f"acct-{provider}-default"),),
+        )
+
+        def factory(account: SubscriptionAccount) -> Model:
+            store = source.accounts.store(account)
+            if isinstance(store, CodexAccountStore):
+                return CodexRequestModel(
+                    _model_name(recipe),
+                    credential_source=BoundCodexCredentialSource(store, account_id=account.upstream_account_id),
+                    thread_id=thread_id,
+                    response_headers=lambda headers: source.usage.observe_headers(account, headers),
+                )
+            assert isinstance(store, GrokAccountStore)
+            return build_grok_model(_model_name(recipe), credential_source=store, refresh=source.grok_refresh)
+
+        def selected(event: AccountSelectionEvent) -> None:
+            if source.selected is not None:
+                source.selected(thread_id, recipe.model_id, event)
+
+        return SubscriptionGroupModel(group, source.accounts, source.usage, factory, selected=selected)
 
     async def _api_key_model(self, recipe: ResolvedModelRecipe, authentication: ApiKeyAuthentication) -> Model:
         api_key = (

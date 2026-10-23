@@ -7,7 +7,7 @@ import { runPath } from "../../api";
 import { useThreadRuns } from "../thread-runs";
 import { runSection } from "./view";
 
-type Run = Schema["RunView"];
+type Run = Schema["RunListItem"];
 type Thread = Schema["ThreadView"];
 
 export interface OutlineRun {
@@ -20,6 +20,14 @@ export interface RunOutline {
   nodes: OutlineRun[];
   inView: string;
   label: string;
+  total: number;
+  loading: boolean;
+  error: unknown;
+  retry(): void;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  loadOlder(): void;
+  loadNewer(): void;
   open(run: Run): void;
 }
 
@@ -29,28 +37,30 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
   const { basePath } = useWorkspace();
   const navigate = useNavigate();
   const [, setSearch] = useSearchParams();
-  const { runs } = useThreadRuns(thread.id);
+  const pages = useThreadRuns(thread.id, runId);
+  const { runs, number } = pages;
   const visible = useVisibleRun(runId);
   // Inherited history can be visible above this branch; it is not a navigation target.
   const inView = runs.some((run) => run.id === visible) ? visible : runId;
-  const position = runs.findIndex((run) => run.id === inView);
+  const position = number(inView);
   return {
-    nodes: runs.map((run, index) => ({
+    ...pages,
+    nodes: runs.map((run) => ({
       run,
       thread,
-      label: t("Run {{index}}", { index: index + 1 }),
+      label: t("Run {{index}}", { index: number(run.id) }),
     })),
     inView,
     label:
-      position < 0
+      position === null
         ? t("Runs")
         : t("Run {{index}} of {{total}}", {
-            index: position + 1,
-            total: runs.length,
+            index: position,
+            total: pages.total,
           }),
     open(run) {
       const loaded = runSection(run.id);
-      if (loaded) {
+      if (loaded && !loaded.closest("[inert]")) {
         setSearch(
           (params) => {
             params.delete("follow");
@@ -77,7 +87,10 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
 
 /** Which loaded Run section the reader is actually looking at. */
 function useVisibleRun(fallback: string) {
-  const [visible, setVisible] = useState<string | null>(null);
+  const [visible, setVisible] = useState<{
+    selection: string;
+    run: string;
+  } | null>(null);
   useEffect(() => {
     const stage = document.querySelector("[data-session-stage]");
     if (!(stage instanceof HTMLElement)) return;
@@ -91,9 +104,15 @@ function useVisibleRun(fallback: string) {
         }
         const sections = [...stage.querySelectorAll<HTMLElement>("[data-run]")];
         const top = sections.find(
-          (section) => (seen.get(section.dataset.run ?? "") ?? 0) > 0,
+          (section) =>
+            !section.closest("[inert]") &&
+            (seen.get(section.dataset.run ?? "") ?? 0) > 0,
         );
-        if (top?.dataset.run) setVisible(top.dataset.run);
+        setVisible(
+          top?.dataset.run
+            ? { selection: fallback, run: top.dataset.run }
+            : null,
+        );
       },
       { root: stage, threshold: [0, 0.01, 0.5] },
     );
@@ -108,6 +127,6 @@ function useVisibleRun(fallback: string) {
       observer.disconnect();
       mutations.disconnect();
     };
-  }, []);
-  return visible ?? fallback;
+  }, [fallback]);
+  return visible?.selection === fallback ? visible.run : fallback;
 }

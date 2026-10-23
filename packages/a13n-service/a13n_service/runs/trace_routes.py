@@ -239,22 +239,19 @@ async def read_span_content(
     actor: Actor,
     origin: OriginRun,
     section: Literal["all", "input", "output", "attributes", "resource_attributes", "events", "links", "usage"] = "all",
-    cursor: str | None = None,
     offset: reads.Offset = 0,
     limit: reads.TextLimit = 4000,
     version: reads.Version = None,
     query: reads.Search = None,
 ) -> trace_reads.SpanContentPage:
-    """Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
-    cursor while continuing fragments with version and next_offset."""
+    """Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the
+    trace has no such span. Continue fragments with version and next_offset."""
     await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     # Full span is needed only internally; projection happens after the original tenancy and redaction checks.
-    page = await traces.list_trace_spans(
-        runtime.storage, runtime.traces, actor, workspace_id, trace_id, limit=100, cursor=cursor
-    )
-    selected = [span for span in page.items if span.id == span_id]
-    if selected:
-        await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
+    span = await traces.find_trace_span(runtime.storage, runtime.traces, actor, workspace_id, trace_id, span_id)
+    if span is None:
+        return trace_reads.SpanContentPage(items=[], next_cursor=None)
+    await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     return trace_reads.SpanContentPage(
         items=[
             reads.read_value(
@@ -265,7 +262,6 @@ async def read_span_content(
                 version=version,
                 query=query,
             )
-            for span in selected
         ],
-        next_cursor=None if selected else page.next_cursor,
+        next_cursor=None,
     )

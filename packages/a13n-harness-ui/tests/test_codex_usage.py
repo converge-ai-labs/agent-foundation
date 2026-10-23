@@ -155,7 +155,7 @@ async def test_uncertain_reset_survives_cancel_and_retries_same_identity(error: 
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace(app=app, cancel=AsyncMock())
-        await choose_codex_reset(shell)
+        await choose_codex_reset(shell, account_id="acct-work")
         await shell.menu_answer("credit-1")
         assert shell.selection.cursor == -1  # no implicit consent
         assert shell.selection.choices[0].value == "no"
@@ -173,6 +173,7 @@ async def test_uncertain_reset_survives_cancel_and_retries_same_identity(error: 
         await shell.menu_answer("yes")
         assert [call.args[0] for call in app.redeem_codex_reset.await_args_list] == [pending, pending]
         assert shell.pending_codex_reset is None
+        assert all(call.kwargs["account_id"] == "acct-work" for call in app.redeem_codex_reset.await_args_list)
 
 
 async def test_confirmed_redemption_refresh_error_cannot_reopen_mutation() -> None:
@@ -184,7 +185,7 @@ async def test_confirmed_redemption_refresh_error_cannot_reopen_mutation() -> No
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace(app=app, cancel=AsyncMock())
-        await choose_codex_reset(shell)
+        await choose_codex_reset(shell, account_id="acct-work")
         await shell.menu_answer("credit-1")
         await shell.menu_answer("yes")
         assert shell.menu_handler is None and shell.pending_codex_reset is None
@@ -198,7 +199,29 @@ async def test_confirmed_redemption_refresh_error_cannot_reopen_mutation() -> No
 @pytest.mark.parametrize("credits", [None, _CREDITS, {"available_count": 0}])
 async def test_status_usage_is_nonmodal_even_with_pending_redemption(pending, credits) -> None:
     usage = CodexUsage(account_id="account-1", **_USAGE, reset_credits=credits)
-    app = SimpleNamespace(codex_usage=AsyncMock(return_value=usage), redeem_codex_reset=AsyncMock())
+    from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
+    from a13n_harness_ui.model_accounts.models import AccountProjection, Availability, ExpiryStatus, Provider, StoreKind
+    from a13n_harness_ui.model_accounts.subscriptions import SubscriptionAccountView, SubscriptionCatalog
+    from a13n_harness_ui.model_accounts.usage_cache import UsageSnapshot
+
+    catalog = SubscriptionCatalog(
+        accounts=(
+            SubscriptionAccountView(
+                account=SubscriptionAccount(id="acct-work", provider="codex", name="Work"),
+                authentication=AccountProjection(
+                    provider=Provider.CODEX,
+                    availability=Availability.AVAILABLE,
+                    source=StoreKind.FILE,
+                    usable=True,
+                    expiry=ExpiryStatus.UNKNOWN,
+                ),
+                usage=UsageSnapshot(usage=usage),
+            ),
+        ),
+        groups=(),
+        adoption={},
+    )
+    app = SimpleNamespace(subscriptions=AsyncMock(return_value=catalog), redeem_codex_reset=AsyncMock())
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace(app=app)
@@ -214,7 +237,7 @@ async def test_status_usage_is_nonmodal_even_with_pending_redemption(pending, cr
         assert shell.composer.text == "keep this draft"
         app.redeem_codex_reset.assert_not_awaited()
         text = "".join(block.source for block in shell.renderer.transcript.blocks.values())
-        assert "0% remaining" in text
+        assert "0% left" in text
         if pending:
             assert "/usage reset" in text
 
@@ -260,3 +283,97 @@ async def test_official_token_error_body_is_not_exposed_by_account_operations() 
     assert "private-token" not in str(caught.value)
     assert caught.value.__cause__ is None
     assert requests == ["/backend-api/wham/usage", "/oauth/token"]
+
+
+@pytest.mark.parametrize("action", ["refresh", "toggle", "reset"])
+async def test_account_picker_targets_selected_native_identity(action):
+    from a13n_harness_ui.interactive.usage import choose_subscription_account
+    from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
+    from a13n_harness_ui.model_accounts.models import AccountProjection, Availability, ExpiryStatus, Provider, StoreKind
+    from a13n_harness_ui.model_accounts.subscriptions import SubscriptionAccountView, SubscriptionCatalog
+    from a13n_harness_ui.model_accounts.usage_cache import UsageSnapshot
+
+    usage = CodexUsage(account_id="upstream-work", **_USAGE, reset_credits=_CREDITS)
+    catalog = SubscriptionCatalog(
+        accounts=tuple(
+            SubscriptionAccountView(
+                account=SubscriptionAccount(id=f"acct-{name}", provider="codex", name=name),
+                authentication=AccountProjection(
+                    provider=Provider.CODEX,
+                    availability=Availability.AVAILABLE,
+                    source=StoreKind.FILE,
+                    usable=True,
+                    expiry=ExpiryStatus.UNKNOWN,
+                ),
+                usage=UsageSnapshot(usage=usage),
+            )
+            for name in ("personal", "work")
+        ),
+        groups=(),
+        adoption={},
+    )
+    app = SimpleNamespace(
+        subscriptions=AsyncMock(return_value=catalog),
+        refresh_subscription_usage=AsyncMock(),
+        update_subscription_account=AsyncMock(),
+        codex_usage=AsyncMock(return_value=usage),
+        redeem_codex_reset=AsyncMock(return_value=ResetResult(code="reset", windows_reset=1)),
+    )
+    with create_pipe_input(), create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = SimpleNamespace(app=app)
+        try:
+            await choose_subscription_account(shell, reset=action == "reset")
+            await shell.menu_answer("acct-work")
+            app.refresh_subscription_usage.assert_not_awaited()
+            app.redeem_codex_reset.assert_not_awaited()
+            if action == "reset":
+                app.codex_usage.assert_awaited_once_with("acct-work")
+                await shell.menu_answer("credit-1")
+                app.redeem_codex_reset.assert_not_awaited()
+                assert shell.selection.cursor == -1
+                await shell.menu_answer("yes")
+                call = app.redeem_codex_reset.await_args
+                assert call.kwargs["account_id"] == "acct-work"
+                assert call.args[0].account_id == "upstream-work"
+            else:
+                await shell.menu_answer(action)
+                if action == "refresh":
+                    app.refresh_subscription_usage.assert_awaited_once_with("acct-work")
+                    app.update_subscription_account.assert_not_awaited()
+                else:
+                    call = app.update_subscription_account.await_args
+                    assert call.args[0] == "acct-work" and call.args[1].enabled is False
+                    app.refresh_subscription_usage.assert_not_awaited()
+                app.redeem_codex_reset.assert_not_awaited()
+        finally:
+            shell.renderer.transcript.close()
+
+
+async def test_usage_summary_spend_control_and_nullable_additional_limits():
+    payload = {
+        **_USAGE,
+        "additional_rate_limits": None,
+        "rate_limit_reset_credits": {"available_count": 3},
+        "spend_control": {
+            "reached": False,
+            "individual_limit": {
+                "limit": "100",
+                "used": "25",
+                "remaining": "75",
+                "used_percent": 25,
+                "reset_at": 1900000000,
+            },
+        },
+    }
+
+    def handle(request):
+        assert "x-openai-codex-luna-reserve" not in request.headers
+        return httpx2.Response(200, json=payload) if request.url.path.endswith("/usage") else httpx2.Response(503)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        result = await CodexUsageClient(_source(), client).read()
+    assert result.rate_limit_reset_credits.available_count == 3
+    assert result.spend_control.individual_limit.remaining == "75"
+    assert result.additional_rate_limits is None
+    assert result.reset_unavailable

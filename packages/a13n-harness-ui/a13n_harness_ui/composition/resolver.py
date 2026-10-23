@@ -39,6 +39,7 @@ from a13n_harness_ui.configuration.models import (
     CapabilitySelection,
     MarkdownSubagentSelection,
     SidekickConfiguration,
+    SubscriptionGroupResource,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import (
@@ -200,7 +201,7 @@ class AgentCompositionResolver:
             )
 
         for model in source.models.values():
-            self.model_recipe(model)
+            self.model_recipe(model, source)
         for agent in source.agents.values():
             self._capability_recipes(source, agent, warnings=warnings)
 
@@ -312,7 +313,7 @@ class AgentCompositionResolver:
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,
             media_understanding={
-                kind: self.model_recipe(source.models[model_id])
+                kind: self.model_recipe(source.models[model_id], source)
                 for kind, model_id in source.document.media_understanding.selections().items()
             },
             webui_sidekick=(
@@ -407,7 +408,7 @@ class AgentCompositionResolver:
                 effective.pop(service_tier_setting(resource.route), None)
                 effective["service_tier"] = model_overrides.service_tier
             resource = resource.model_copy(update={"settings": effective})
-        model = self.model_recipe(resource)
+        model = self.model_recipe(resource, source)
         if model_overrides is not None and model_overrides.thinking is not None:
             model = model.model_copy(update={"thinking_override": model_overrides.thinking})
         capabilities = self._capability_recipes(source, agent, active_model=model)
@@ -519,7 +520,7 @@ class AgentCompositionResolver:
                 code="composition_subagent_model_unavailable",
                 details={"subagent_id": child.id, "model_id": child.model},
             )
-        model = parent.model if child.model is None else self.model_recipe(source.models[child.model])
+        model = parent.model if child.model is None else self.model_recipe(source.models[child.model], source)
         capabilities = parent.capabilities
         if not supports_guardian_credits(model.route) and any(item.guardian_credits for item in capabilities):
             _LOGGER.warning(
@@ -575,7 +576,7 @@ class AgentCompositionResolver:
                 "Stopping voice does not stop dispatched work. Use notes and tasks for ongoing coordination.",
             ),
             instructions=(settings.instructions,) if settings.instructions else (),
-            model=self.model_recipe(source.models[settings.model]),
+            model=self.model_recipe(source.models[settings.model], source),
             capabilities=(
                 ResolvedCapabilityRecipe(capability="working_state"),
                 ResolvedCapabilityRecipe(capability="runtime_context"),
@@ -609,22 +610,39 @@ class AgentCompositionResolver:
                 roster_name="memory",
                 system_prompt=(ORGANIZATION_PROMPT,),
                 instructions=(settings.instructions,) if settings.instructions else (),
-                model=self.model_recipe(source.models[model_id]),
+                model=self.model_recipe(source.models[model_id], source),
             ),
             # Retained for the shared composition schema; memory execution never
             # enters this profile or grants Environment capabilities.
             environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
         )
 
-    def model_recipe(self, item: ModelResource) -> ResolvedModelRecipe:
+    def model_recipe(self, item: ModelResource, source: LoadedHarnessUiConfiguration) -> ResolvedModelRecipe:
         _validate_auth_route(item)
         normalized = self._model_adapter.validate(
             route=item.route,
             settings=item.settings,
             model_cfg=item.model_configuration,
         )
+        group = None
+        auth = item.authentication
+        if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
+            provider = "codex" if isinstance(auth, CodexSubscriptionAuthentication) else "grok"
+            group_id = auth.group or f"{provider}-default"
+            group = source.subscription_groups.get(group_id)
+            if group is None:
+                # Capture absence explicitly: only historical recipes use singleton compatibility.
+                group = SubscriptionGroupResource(
+                    schema_version="1",
+                    kind="subscription_group",
+                    id=group_id,
+                    name=f"{provider.title()} default",
+                    provider=provider,
+                    accounts=(),
+                )
         return ResolvedModelRecipe(
             model_id=item.id,
+            subscription_group=group,
             route=normalized.route,
             authentication=item.authentication,
             settings=normalized.settings,
@@ -675,13 +693,13 @@ class AgentCompositionResolver:
                         model = active_model
                         if model is None:
                             assert agent.model is not None
-                            model = self.model_recipe(source.models[agent.model])
+                            model = self.model_recipe(source.models[agent.model], source)
                         review["model"] = model.model_id
                         configuration["review"] = review
                     else:
                         if not isinstance(model_id, str) or model_id not in source.models:
                             raise self._review_model_error(source, agent, model_id=model_id)
-                        model = self.model_recipe(source.models[model_id])
+                        model = self.model_recipe(source.models[model_id], source)
                     overrides = review.get("model_settings", {})
                     if not isinstance(overrides, dict):
                         raise CompositionError(

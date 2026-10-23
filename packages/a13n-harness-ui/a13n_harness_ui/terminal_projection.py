@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities import AskUserQuestionRequest
+from a13n_harness.tools.client import client_tool_name
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
@@ -416,11 +417,12 @@ class TerminalProjectionService:
         if requests is None or (not requests.calls and not requests.approvals):
             return None
         projected = []
-        for request in requests.calls:
+        for request in (entry.target_call for entry in requests.calls):
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
             metadata_omitted = raw_metadata is not None and metadata is None
-            if request.tool_name == "ask_user_question":
+            name = client_tool_name(request, raw_metadata or {})
+            if name == "ask_user_question":
                 try:
                     questions = AskUserQuestionRequest.model_validate(request.args_as_dict())
                 except ValidationError as exc:
@@ -431,7 +433,7 @@ class TerminalProjectionService:
                 projected.append(
                     StructuredQuestionRequestView(
                         request_id=request.tool_call_id,
-                        tool_name=request.tool_name,
+                        tool_name=name,
                         questions=tuple(
                             QuestionView(
                                 question=item.question,
@@ -453,14 +455,14 @@ class TerminalProjectionService:
                 projected.append(
                     ExternalRequestView(
                         request_id=request.tool_call_id,
-                        tool_name=request.tool_name,
+                        tool_name=name,
                         arguments=value,
                         arguments_omitted=omitted,
                         metadata=metadata,
                         metadata_omitted=metadata_omitted,
                     )
                 )
-        for request in requests.approvals:
+        for request in (entry.target_call for entry in requests.approvals):
             value, omitted = _bounded_json(request.args)
             raw_metadata = requests.metadata.get(request.tool_call_id)
             metadata = _json_mapping(raw_metadata)
@@ -872,8 +874,12 @@ def _pending_summary(value: DeferredToolRequests | None) -> PendingDecisionSumma
     if value is None:
         return None
     kinds: set[Literal["question", "approval", "external"]] = set()
-    for request in value.calls:
-        kinds.add("question" if request.tool_name == "ask_user_question" else "external")
+    for request in (entry.target_call for entry in value.calls):
+        kinds.add(
+            "question"
+            if client_tool_name(request, value.metadata.get(request.tool_call_id, {})) == "ask_user_question"
+            else "external"
+        )
     if value.approvals:
         kinds.add("approval")
     count = len(value.calls) + len(value.approvals)
