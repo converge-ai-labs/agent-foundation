@@ -45,11 +45,9 @@ export interface PendingMessage {
 /** Thread-scoped queue and one sticky bottom region shared by Run inspections. */
 export function ThreadDock({
   thread,
-  level = "chat",
   children,
 }: {
   thread: Schema["ThreadView"];
-  level?: ViewLevel;
   children?: ReactNode;
 }) {
   const latest = useRun(thread.current_run_id ?? thread.last_run_id);
@@ -58,12 +56,10 @@ export function ThreadDock({
       <div className={styles.queue}>
         <ThreadInbox
           thread={thread}
-          quiet={level === "chat"}
           canRunNext={
             !!latest.data &&
             ["failed", "cancelled"].includes(latest.data.status)
           }
-          className={level === "debug" ? debug.inbox : undefined}
         />
       </div>
       {children}

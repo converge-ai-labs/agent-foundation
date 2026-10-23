@@ -417,7 +417,9 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
       await screen.findByText("Waiting for the application");
     if (status === "running")
       expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Queued messages/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Queued messages/ }),
+    );
     await screen.findByText("Queued test");
     for (const name of [
       "Queued message actions",
@@ -646,7 +648,7 @@ it("sends execution overrides once with next_run and returns the next message to
 
 function TestDock(props: ComponentProps<typeof RunDock>) {
   return (
-    <ThreadDock thread={props.thread} level={props.level}>
+    <ThreadDock thread={props.thread}>
       <RunDock {...props} />
     </ThreadDock>
   );

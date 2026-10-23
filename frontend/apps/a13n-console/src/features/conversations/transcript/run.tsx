@@ -353,7 +353,7 @@ function RunBody({
             ))}
         </div>
       </div>
-      <ThreadDock thread={thread} level={level}>
+      <ThreadDock thread={thread}>
         <div inert={switching} className={styles.dockRun}>
           <RunDock
             key={runIds[0]}
