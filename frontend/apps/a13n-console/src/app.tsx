@@ -1,21 +1,39 @@
 import { Button, ToastProvider, TooltipProvider } from "a13n-ui";
+import { CompassIcon } from "@phosphor-icons/react";
 import { lazy, Suspense, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router";
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+} from "react-router";
 import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
 import { AuthPage } from "./auth/pages";
 import { ConnectionAuthorizationCallback } from "./features/connections/callback";
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
-import { WorkspaceProvider } from "./layout/workspace";
+import { WorkspaceProvider, useWorkspace } from "./layout/workspace";
 import { Empty } from "./shared/collection";
-import { ErrorPage, Loading } from "./shared/feedback";
+import { ErrorPage, Loading, NotFoundPage } from "./shared/feedback";
 import { Page } from "./shared/page";
 
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
+  })),
+);
+const SchedulesPage = lazy(() =>
+  import("./features/schedules/list").then((module) => ({
+    default: module.SchedulesPage,
+  })),
+);
+const ScheduleDetail = lazy(() =>
+  import("./features/schedules/detail").then((module) => ({
+    default: module.ScheduleDetail,
   })),
 );
 const Agents = lazy(() =>
@@ -91,6 +109,21 @@ const EnvironmentsPage = lazy(() =>
 const ConnectionsPage = lazy(() =>
   import("./features/connections/page").then((module) => ({
     default: module.ConnectionsPage,
+  })),
+);
+const DataSourcesPage = lazy(() =>
+  import("./features/monitoring/sources").then((module) => ({
+    default: module.DataSourcesPage,
+  })),
+);
+const DevicesPage = lazy(() =>
+  import("./features/monitoring/devices").then((module) => ({
+    default: module.DevicesPage,
+  })),
+);
+const DashboardsPage = lazy(() =>
+  import("./features/monitoring/page").then((module) => ({
+    default: module.DashboardsPage,
   })),
 );
 const UsagePage = lazy(() =>
@@ -169,15 +202,34 @@ function WorkspaceShell() {
     </WorkspaceProvider>
   );
 }
+/** Inside a workspace the shell stays, so the way back is its first page. */
 function NotFound() {
   const { t } = useTranslation();
+  const { basePath } = useWorkspace();
   return (
     <Page title={t("Page not found")}>
       <Empty
-        title={t("Nothing here")}
-        description={t("Choose a page from the navigation to continue.")}
+        icon={<CompassIcon aria-hidden="true" />}
+        title={t("Nothing at this address")}
+        description={t("The link may be out of date, or the page has moved.")}
+        action={
+          <Button render={<Link to={`${basePath}/agents`} />}>
+            {t("Go to agents")}
+          </Button>
+        }
       />
     </Page>
+  );
+}
+/** Outside the shell nothing else on screen leads anywhere, so it offers the way in. */
+function MissingPage() {
+  const { t } = useTranslation();
+  return (
+    <NotFoundPage
+      title={t("Page not found")}
+      description={t("The link may be out of date, or the page has moved.")}
+      actions={<Button render={<Link to="/" />}>{t("Open Console")}</Button>}
+    />
   );
 }
 export function App() {
@@ -229,6 +281,11 @@ function AppContent() {
                       <Route path="agents" element={<Agents />} />
                       <Route path="agents/new" element={<CreateAgent />} />
                       <Route path="agents/:agentId" element={<AgentDetail />} />
+                      <Route path="schedules" element={<SchedulesPage />} />
+                      <Route
+                        path="schedules/:scheduleId"
+                        element={<ScheduleDetail />}
+                      />
                       <Route path="sessions" element={<ConversationsPage />}>
                         <Route path="new" element={<NewConversation />} />
                         <Route path=":sessionId" element={<SessionLayout />}>
@@ -244,6 +301,15 @@ function AppContent() {
                       <Route
                         path="findings/:findingId"
                         element={<FindingDetail />}
+                      />
+                      <Route path="monitoring" element={<DashboardsPage />} />
+                      <Route
+                        path="monitoring/sources"
+                        element={<DataSourcesPage />}
+                      />
+                      <Route
+                        path="monitoring/devices"
+                        element={<DevicesPage />}
                       />
                       <Route path="usage" element={<UsagePage />} />
                       <Route path="traces" element={<TracesPage />} />
@@ -285,6 +351,10 @@ function AppContent() {
                         element={<WorkspaceSettings />}
                       />
                       <Route
+                        path="settings/webhooks/:subscriptionId"
+                        element={<WorkspaceSettings />}
+                      />
+                      <Route
                         path="settings/:section?"
                         element={<WorkspaceSettings />}
                       />
@@ -302,7 +372,7 @@ function AppContent() {
                       />
                     </Route>
                   </Route>
-                  <Route path="*" element={<NotFound />} />
+                  <Route path="*" element={<MissingPage />} />
                 </Routes>
               </Suspense>
             </AuthProvider>

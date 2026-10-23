@@ -1,6 +1,6 @@
 """Run policy at the native Model boundary, before SDK-owned media conversion."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from pydantic_ai.messages import FileUrl, ModelMessage, ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
@@ -69,7 +69,7 @@ class _ConfiguredModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
         run_context: RunContext[object] | None = None,
-    ) -> AsyncIterator[StreamedResponse]:
+    ) -> AsyncGenerator[StreamedResponse]:
         self._validate(messages)
         async with super().request_stream(messages, model_settings, model_request_parameters, run_context) as stream:
             yield stream

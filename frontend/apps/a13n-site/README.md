@@ -33,3 +33,7 @@ make site-build
 The build rejects missing or mismatched canonical URLs, duplicate entries, incomplete documentation exports, and sitemaps exceeding 50,000 URLs or 50 MB. It parses the generated XML to verify coverage and checks the root declaration in `robots.txt`. Next.js continues to publish `/docs/sitemap.xml` for existing consumers; the build verifies that it matches the documentation subset of the root sitemap. To check an existing build without regenerating it, run `pnpm --dir frontend --filter a13n-site run check:sitemap`.
 
 Local previews serve the deployment artifact, so sitemap URLs retain the production domain `https://a13n.dev`. Inspect the full local inventory at `/sitemap.xml`; following a listed URL opens the production page. A browser's message that the XML has no style information is normal.
+
+## Documentation entry redirects
+
+`public/_redirects` restores known documentation URLs that omit `/docs/` with permanent redirects to their existing canonical pages. Each mapping names a concrete destination; unknown URLs, API examples, and local file paths keep the site's not-found response. Cloudflare Pages applies these rules after deployment; the Vite preview does not emulate them. Check redirect destinations against the assembled `dist/docs/` export when changing a mapping.

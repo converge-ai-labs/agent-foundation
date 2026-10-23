@@ -174,6 +174,31 @@
 
 .group {
   display: block;
+  container-type: inline-size;
+}
+.groupDisclosure > [data-slot="disclosure-surface"] > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.groupDisclosure .title strong {
+  flex: 0 1 auto;
+}
+.groupDisclosure .phase {
+  white-space: normal;
+}
+@container (max-width: 36rem) {
+  .groupDisclosure > [data-slot="disclosure-surface"] > button {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 0.25rem;
+    height: auto;
+  }
+  .groupDisclosure
+    > [data-slot="disclosure-surface"]
+    > button
+    > span:nth-of-type(2) {
+    grid-column: 2;
+    text-align: left;
+  }
 }
 .actions {
   display: flex;

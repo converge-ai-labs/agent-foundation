@@ -21,7 +21,9 @@ import {
   entryGlyph,
   entryLabel,
   entrySubject,
+  entryWait,
   StateMark,
+  waitingLabel,
   workState,
   type WorkState,
 } from "../entry-language";
@@ -88,6 +90,7 @@ function StepRow({
   return (
     <>
       <LogLine
+        itemId={entry.id}
         kind={entry.kind}
         depth={depth}
         open={open}
@@ -141,6 +144,7 @@ function StepRow({
  * fixed columns. The line's name opens it; links in it stay ordinary links.
  */
 function LogLine({
+  itemId,
   kind,
   depth,
   open,
@@ -157,6 +161,7 @@ function LogLine({
   popup = false,
   onToggle,
 }: {
+  itemId?: string;
   kind: string;
   depth: number;
   open?: boolean;
@@ -193,6 +198,7 @@ function LogLine({
   return (
     <div
       className={styles.line}
+      data-message-id={itemId}
       data-kind={kind}
       data-tone={tone}
       data-depth={depth}
@@ -316,12 +322,7 @@ function actionText(
     entrySubject(entry),
     // Without a link to follow, the row still says where the work went.
     entry.dispatchOnly && !childPath && t("child thread"),
-    state === "waiting" &&
-      t(
-        asksAQuestion(entry)
-          ? "waiting for your answer"
-          : "waiting for your approval",
-      ),
+    state === "waiting" && waitingLabel(entryWait(entry), t),
   ].filter(Boolean) as string[];
   return { ...entryLabel(entry, t), subject: notes.join(" · ") };
 }

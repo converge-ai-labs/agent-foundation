@@ -448,3 +448,71 @@ def test_screenshot_collection_requires_the_explicit_marker_and_preserves_child_
         assert part.content == [image]
     else:
         assert result is None and not contents.pending_images
+
+
+@pytest.mark.parametrize("immediate", [False, True])
+async def test_harness_handoff_reaches_service_live_and_saved_display(immediate):
+    import asyncio
+    import json
+    from types import SimpleNamespace
+
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, ToolExecutionConfig, ToolExecutionRuntime
+    from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
+    from pydantic_ai import Tool
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    entered = asyncio.Event()
+
+    async def lookup():
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def model(messages, info):
+        if any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield "Continuing after handoff."
+        else:
+            yield {0: DeltaToolCall(name="lookup", json_args="{}", tool_call_id="call_lookup")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            ToolExecutionCapability(
+                ToolExecutionConfig(mode="inline" if immediate else "auto", foreground_wait_seconds=0)
+            ),
+            Capability(tools=[Tool(lookup, metadata={"a13n.tool-execution": "owned"})]),
+        ),
+    )
+    runtime = ToolExecutionRuntime()
+    fold = DisplayFold("run_handoff", Tail(), attempt=1, page_items=100, page_bytes=100000)
+    streamed = []
+    try:
+        async with Coalescer(fold, SimpleNamespace(delta=streamed.append), window=0) as output:
+            async with executable.stream(
+                "start", bindings=RunBindings.embedded(tool_execution=runtime, producer_observer=output.observe)
+            ) as stream:
+
+                async def consume():
+                    async for event in stream:
+                        if not isinstance(event, HarnessEvent):
+                            output.observe(event)
+
+                consumer = asyncio.create_task(consume())
+                await entered.wait()
+                if immediate:
+                    await stream.steer("continue", immediate=True)
+                await consumer
+        call = next(item for item in fold.items.values() if item.kind == "tool_call")
+        assert call.state == "completed"
+        receipt = json.loads(call.content["result"])
+        assert receipt["type"] == "tool_execution_receipt"
+        assert receipt["execution_id"].startswith("exec-")
+        results = [item for item in streamed if item.event["type"] == "TOOL_CALL_RESULT"]
+        assert len(results) == 1
+        restored = Item.model_validate_json(call.model_dump_json())
+        assert restored.content == call.content
+        assert restored.state == call.state
+    finally:
+        await runtime.close()

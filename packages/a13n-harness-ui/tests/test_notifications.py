@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from a13n_harness import HarnessRunResult, HarnessState
+from a13n_harness import DeferredToolCall, DeferredToolRequests, HarnessRunResult, HarnessState
 from a13n_harness.usage import RunUsageSummary
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice, SummaryCursor
@@ -15,7 +15,6 @@ from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import ObjectRef
 from anyio import Event, fail_after
 from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.tools import DeferredToolRequests
 
 
 def test_reply_brief_is_actual_prose_not_heading_code_or_markdown() -> None:
@@ -54,27 +53,33 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
     if scenario == "question":
         deferred = DeferredToolRequests(
             calls=[
-                ToolCallPart(
-                    "ask_user_question",
-                    {
-                        "questions": [
-                            {
-                                "header": "Scope",
-                                "question": "Which project should I update?",
-                                "options": [
-                                    {"label": "One", "description": "First project"},
-                                    {"label": "Two", "description": "Second project"},
-                                ],
-                            }
-                        ]
-                    },
-                    "question-1",
-                )
+                DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+                for call in [
+                    ToolCallPart(
+                        "ask_user_question",
+                        {
+                            "questions": [
+                                {
+                                    "header": "Scope",
+                                    "question": "Which project should I update?",
+                                    "options": [
+                                        {"label": "One", "description": "First project"},
+                                        {"label": "Two", "description": "Second project"},
+                                    ],
+                                }
+                            ]
+                        },
+                        "question-1",
+                    )
+                ]
             ]
         )
     if scenario == "approval":
         deferred = DeferredToolRequests(
-            approvals=[ToolCallPart("shell_exec", {"command": "deploy"}, "approval-1")],
+            approvals=[
+                DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+                for call in [ToolCallPart("shell_exec", {"command": "deploy"}, "approval-1")]
+            ],
             metadata={"approval-1": {"reason": "This command deploys the application."}},
         )
 

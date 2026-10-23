@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -24,7 +24,7 @@ from .rendering import Status
 @asynccontextmanager
 async def open_session(
     request: CliRequest, directory: Path, status: Status, emit: Callable[[str], None]
-) -> AsyncIterator[SessionBackend]:
+) -> AsyncGenerator[SessionBackend]:
     root = resolve_harness_ui_data_root(request.config_path, data_root=request.data_root)
     with terminal_logging(root, "INFO", emit):
         async with _session(request, directory, status, emit) as backend:
@@ -34,7 +34,7 @@ async def open_session(
 @asynccontextmanager
 async def _session(
     request: CliRequest, directory: Path, status: Status, emit: Callable[[str], None]
-) -> AsyncIterator[SessionBackend]:
+) -> AsyncGenerator[SessionBackend]:
     source = await load_harness_ui_settings(request.config_path, data_root=request.data_root)
     logging.getLogger().setLevel(source.settings.log_level)
     await asyncio.to_thread(ensure_default_directories, source)

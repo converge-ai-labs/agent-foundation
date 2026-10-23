@@ -3,7 +3,11 @@ import { toolSearchConfig, toolSearchDraft } from "../tool-search";
 import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
-import { jsonObject, validateSettings } from "../../../shared/forms";
+import {
+  executionOverride,
+  jsonObject,
+  validateSettings,
+} from "../../../shared/forms";
 import {
   mediaKinds,
   mediaSelected,
@@ -72,8 +76,10 @@ export function useAgentDraft(initial: AgentConfig) {
       toolSearchDraft(initial.tool_search),
     ),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
-    [memory, setMemory] = useState(initial.memory ?? {});
+    [memory, setMemory] = useState(initial.memory ?? {}),
+    [execution, setExecution] = useState(initial.execution ?? {});
   const dirty =
+    JSON.stringify(execution) !== JSON.stringify(initial.execution ?? {}) ||
     JSON.stringify(toolSearch) !==
       JSON.stringify(toolSearchDraft(initial.tool_search)) ||
     JSON.stringify(reviewer) !== JSON.stringify(initial.reviewer) ||
@@ -99,6 +105,8 @@ export function useAgentDraft(initial: AgentConfig) {
       JSON.stringify(initial.memory_mounts ?? []);
   return {
     initial,
+    execution,
+    setExecution,
     initialExtraSettings,
     instructions,
     setInstructions,
@@ -221,6 +229,7 @@ export function buildDraftConfig(
       config: buildConfig(
         initial,
         {
+          execution: executionOverride(draft.execution),
           instructions: draft.instructions,
           toolsets: draft.toolsets,
           reviewer: draft.reviewer,

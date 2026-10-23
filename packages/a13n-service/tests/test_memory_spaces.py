@@ -16,6 +16,13 @@ from sqlalchemy import update
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+async def service(service, runs_kit):
+    """These tests drive organization and cleanup explicitly, including the disabled-Space boundary."""
+    await runs_kit.pause_sweeps(service)
+    return service
+
+
 async def create_space(service: SimpleNamespace, **fields: Any) -> dict[str, Any]:
     response = await service.client.post(f"{service.api}/memory-spaces", json={"name": "Knowledge", **fields})
     assert response.status_code == 201, response.text
@@ -187,19 +194,29 @@ async def test_disabled_space_does_not_hide_other_mounts(service, scripted_model
 
 
 async def test_api_changes_organize_in_one_dedicated_session_with_fresh_threads(
-    service, scripted_model, runs_kit
+    service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
+    def refuse_retention(*args, **kwargs):
+        pytest.fail("Memory organization must finish its calls inline")
+
+    monkeypatch.setattr(service.runtime.executions, "admit", refuse_retention)
     model = await runs_kit.create_model(service, scripted_model)
     space = await create_space(service, organization={"enabled": True, "model": model})
     await save(service, space)
     await asyncio.gather(organize(service.runtime), organize(service.runtime))
     [first] = await history(service, space)
+    first = await runs_kit.get_run(service, first["id"])
     assert first["parent_run_id"] is None and first["environment_mounts"] == []
     assert first["options"]["max_usage"]["requests"] == 200
     assert first["memory_mounts"][0]["roots"] == ["global/", "sessions/"]
+    scripted_model.call("memory_file_view", {"memory": "space", "path": "global/notes.md"}, call_id="read")
     scripted_model.say("Organized first round")
     await (await runs_kit.attempt(service))
-    await scripted_model.request()
+    request = await scripted_model.request()
+    names = {tool["function"]["name"] for tool in request["tools"]}
+    assert names and all(name.startswith("memory_file_") for name in names)
+    request = await scripted_model.request()
+    assert any(message.get("tool_call_id") == "read" for message in request["messages"])
     await due(service, space)
     await organize(service.runtime)
     assert (await status(service, space))["processed_seq"] == 1

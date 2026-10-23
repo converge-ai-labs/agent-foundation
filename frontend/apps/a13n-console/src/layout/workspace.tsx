@@ -10,7 +10,12 @@ import { CreateWorkspace } from "../features/settings/create-workspace";
 import { workspacePath } from "../shared/paths";
 import { allPages, data, type Schema } from "../shared/api";
 import { Empty } from "../shared/collection";
-import { ErrorPage, ErrorToast, Loading } from "../shared/feedback";
+import {
+  ErrorPage,
+  ErrorToast,
+  Loading,
+  NotFoundPage,
+} from "../shared/feedback";
 import { Page } from "../shared/page";
 
 type Verb = Schema["Verb"];
@@ -28,7 +33,22 @@ const Context = createContext<WorkspaceContextValue | null>(null);
 const isPersonalSettings = (pathname: string) =>
   pathname === "/settings" || pathname.startsWith("/settings/");
 
-const lastWorkspaceByUser = new Map<string, string>();
+// A reload keeps the reader in the workspace they last opened.
+const lastWorkspaceKey = (userId: string) => `a13n-last-workspace:${userId}`;
+function rememberedWorkspace(userId: string) {
+  try {
+    return localStorage.getItem(lastWorkspaceKey(userId)) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+function rememberWorkspace(userId: string, workspaceId: string) {
+  try {
+    localStorage.setItem(lastWorkspaceKey(userId), workspaceId);
+  } catch {
+    // Storage is a convenience; without it the first active workspace opens.
+  }
+}
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const auth = useAuth(),
     client = useClient(),
@@ -56,7 +76,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }),
   });
   const items = workspaces.data?.items ?? [];
-  const remembered = userId ? lastWorkspaceByUser.get(userId) : undefined;
+  const remembered = userId ? rememberedWorkspace(userId) : undefined;
   const workspace = workspaceId
     ? items.find((item) => item.id === workspaceId)
     : // An archived workspace runs nothing, so it is the landing page only when no other exists.
@@ -65,15 +85,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       items[0]);
   const selected = workspace?.id;
   useEffect(() => {
-    if (userId && selected) lastWorkspaceByUser.set(userId, selected);
+    if (userId && selected) rememberWorkspace(userId, selected);
   }, [userId, selected]);
   if (!auth.isPending && !organization) return <NoOrganization />;
   if (auth.isPending || workspaces.isPending) return <Loading page />;
   if (workspaceId && workspaces.isSuccess && !selected)
     return (
-      <ErrorPage
-        title={t("Not found")}
-        error={new Error(t("Resource not found"))}
+      <NotFoundPage
+        title={t("Workspace not found")}
+        description={t(
+          "This workspace doesn't exist, or you no longer have access to it.",
+        )}
         actions={<WorkspaceRecoveryActions workspaces={items} />}
       />
     );
@@ -134,14 +156,17 @@ function WorkspaceRecoveryActions({
     <>
       {retry && <Button onClick={retry}>{t("Try again")}</Button>}
       {workspaces
-        .filter((workspace) => workspace.id !== currentWorkspaceId)
+        .filter(
+          (workspace) =>
+            workspace.id !== currentWorkspaceId && !workspace.archived_at,
+        )
         .map((workspace) => (
           <Button
             key={workspace.id}
             variant="outline"
             render={<Link to={`${workspacePath(workspace)}/agents`} />}
           >
-            {t("Switch workspace")}: {workspace.name}
+            {t("Open {{name}}", { name: workspace.name })}
           </Button>
         ))}
       <Button variant="ghost" render={<Link to="/settings/profile" />}>

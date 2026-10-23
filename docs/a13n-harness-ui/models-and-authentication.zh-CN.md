@@ -25,7 +25,7 @@ Model 资源定义提供方连接、请求设置和工作上下文预算。将�
 在 WebUI 打开 **Settings → Models**，添加、编辑或克隆已保存的 Model。首次设置和 Agent 的 **Add model** 使用相同流程。保存 Model 不改变任何活动 Run。
 
 1. 选择 **ChatGPT subscription**、**Codex subscription**、**Grok subscription**、**GitHub Copilot subscription** 或 API 连接。订阅保留原生账户存储和传输，不是 API 密钥预设。
-2. 连接共享订阅账户、选择已保存 API 密钥、保存新密钥，或指定服务器环境变量名。凭据写入独立进行；取消 Model 草稿不会撤销已完成登录或密钥保存。
+2. 选择 Codex/Grok 账户组、连接订阅账户、选择已保存 API 密钥、保存新密钥，或指定服务器环境变量名。凭据写入独立进行；取消 Model 草稿不会撤销已完成登录或密钥保存。
 3. 选择建议项或输入区分大小写的模型 ID。建议描述已知路由，不代表账户权限；目录获取失败时仍可手动填写 ID。
 4. 选择 **Use this model**，调整提供的推理、速度和工作上下文预算选项。修改已保存 Model 的连接、模型 ID 或基础 URL 时，此按钮显示为 **Apply connection & defaults**，并将模型专属设置重置为经审查的默认值。
 5. 保存 Model YAML。只有已保存 Model 出现在对话选择器中；仍可高级编辑 YAML。
@@ -127,9 +127,9 @@ settings: {}
 model_configuration: {}
 ```
 
-登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖、静态 API 密钥、previous-response ID、temperature、Top P、输出 token 上限，以及策略允许的网页搜索之外的托管工具。
+登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖或静态 API 密钥。官方 profile 忽略通用 temperature、Top P 和输出 token 上限；其他设置和工具序列化遵循原生 Model。
 
-凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除 token，保留已颁发注册信息供后续登录，并请求 OpenAI 撤销授权；未确认撤销会单独报告。更换账户会影响使用此 Host 的所有人。
+凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除本地 token，保留已颁发注册信息供后续登录。请在 ChatGPT 设置中管理远端访问。活动 Model 可能仍使用缓存的 access token。到期和 401 刷新由官方 provider 处理，完整凭据保存到 Host 存储，不提供跨进程刷新互斥。更换账户会影响使用此 Host 的所有人。
 
 ## GitHub Copilot 订阅
 
@@ -383,7 +383,7 @@ authentication:
 ```
 
 ```yaml
-# Compatible account store, no literal token:
+# Native default account group, no literal token:
 authentication:
   kind: codex_subscription
 ```
@@ -428,9 +428,47 @@ model_characteristics:
 
 ### 账户存储位置
 
-Codex 在 `CODEX_HOME`（默认 `~/.codex`）下共享受支持的文件存储。Harness UI 遵循上游凭据存储策略，对不支持存储报告错误，不替换。Grok 优先使用 `GROK_AUTH_PATH`，再用 `GROK_HOME` 或默认文件；内联 `GROK_AUTH` 不是共享可写登录模式。账户检查不登录或刷新凭据。Codex 模型请求使用显式共享存储凭据来源。进程内的 Codex model provider 在自身生命周期内缓存凭据，并在刷新前重读存储，不是每次请求都读。新 Run 或账户操作获得新的 model provider。刷新凭据无法保存时，请求失败，但 model provider 在内存保留轮换凭据；应解决存储冲突并启动新 Run，不要假定轮换已持久化。Grok 保留由 Harness 负责的刷新生命周期。
+Codex 和 Grok 凭据由 `<data-root>/oauth/accounts/<account-id>.json` 纳管。非敏感目录位于 `oauth/accounts.json`，用量快照位于 `oauth/state/`。这些文件以私有权限保存明文凭据，请保护 Host 和备份。
 
-官方 Codex provider 没有等效功能时，Harness 保留设备登录、Thread 亲和性、路由提示和每 Run 的轮次状态。浏览器 PKCE 和回调使用官方流程；小型登录交换适配器保留原生 Codex `auth.json` 要求的真实 ID token。新登录和账户切换写入该 token，同账户刷新保留它。不会创建第二个 Codex 订阅存储。
+升级后首次启动 App 时，Harness UI 一次性导入受支持的已有 Codex/Grok 登录。Codex 发现遵循 `CODEX_HOME` 和文件存储策略；Grok 依次检查 `GROK_AUTH_PATH`、`GROK_HOME`。不支持或无效的来源显示在 **Migration from existing CLI logins** 中，可通过原生登录恢复。原 CLI 文件保持不变。之后的刷新、登录、退出和删除只操作原生文件，不再导入外部登录。导入的副本与原 CLI 共享同一刷新授权：Harness UI 或原 CLI 任一方轮换凭据，都可能使另一方的登录失效，即使另一方的文件没有变化。请在受影响的客户端中分别重新登录。
+
+已有 `codex_subscription` 或 `grok_subscription` Model 无需修改 YAML：省略 `group` 时选择 `codex-default` 或 `grok-default`，默认组初始包含迁移账户。删除默认组会被尊重；请恢复该组或显式选择其他组。
+
+打开 **Settings → Accounts & API keys**，添加并登录账户、重命名或暂停账户，以及创建同提供方账户组。**Ordered consumption** 按成员顺序使用，**Weighted balance** 按正整数权重分配 Run。在 **Settings → Models** 中为订阅 Model 选择账户组：
+
+```yaml
+authentication:
+  kind: codex_subscription
+  group: codex-work
+```
+
+账户组保存为 `subscription_groups/work.yaml` 等普通文件。从账户页面复制账户 ID，不要在配置中保存凭据：
+
+```yaml
+schema_version: "1"
+kind: subscription_group
+id: codex-work
+name: Work accounts
+provider: codex
+strategy: weighted
+allow_credits: false
+accounts:
+  - account: acct-work
+    weight: 3
+  - account: acct-personal
+    weight: 1
+```
+
+Run 捕获组成员和策略，每次请求前检查账户暂停、退出、删除和凭据变化。优先使用套餐内额度；充值余额需要开启 **Allow rechargeable credits**。提供方快照可能落后于并发消耗，因此这是尽力控制，不是严格费用上限。认证或额度错误仅在响应交付前换号，不重放工具或已显示的流。对话的 **MAIN** 状态显示实际账户和选择原因，辅助推理不会覆盖它。Live 在连接时选择可用账户，并在该会话内固定使用。
+
+Codex 响应会立即更新其报告的用量窗口。请求前，若账户距离上次用量 API 检查已超过 **60 秒**，则刷新用量。空闲账户由 **10 分钟**的后台刷新兜底；重置时间不触发刷新。点击账户的 **Refresh**，或在 TUI 使用 `/usage accounts` 可立即刷新。`/usage subscription` 紧凑显示缓存的账户和组。刷新失败时保留最近成功快照并显示时间和错误。共享数据目录的多个 TUI 最终收敛到同一快照。**Reset voucher…** 和 `/usage reset` 单独要求选择账户、兑换券并明确确认；轮询和自动换号不会消耗兑换券。
+
+账户卡片按提供方显示对应额度：
+
+- \*\*Codex：\*\*按实际时长显示 **5h**、**Weekly** 等窗口，每个窗口都有重置日期、本地时间和时区。模型专项额度与月度 credit 限制分开显示。无需打开 **Manage** 即可查看可用重置券数量和最早已知到期时间；充值 credits 是独立余额。兑换券详情查询失败时，仍保留用量接口返回的数量。
+- \*\*Grok：\*\*显示当前周度或月度计费额度及下次重置时间，另列美元计价的已购 credits，以及提供方报告的旧版按量付费信息。查询使用 Grok Build 计费接口，不套用 Codex 窗口。缺少计费配置表示不可用，不是零；使用相同的账户刷新控件。
+- \*\*GitHub Copilot：\*\*显示当前所选账户返回的额度类别，包括无限额度、剩余百分比或数量、额外用量权限和重置日期。进入页面时查询，之后每十分钟刷新，也可点击 **Refresh allowance**。查询使用官方客户端采用的内部接口；提供方拒绝查询时显示不可用。
+- \*\*ChatGPT：\*\*直接链接到官方用量设置。此独立连接暂不提供数值额度，不会借用 Codex 的额度。
 
 ```console
 a13n-harness-ui auth status codex --format json
@@ -438,7 +476,7 @@ a13n-harness-ui auth logout codex
 a13n-harness-ui login codex --allow-account-switch
 ```
 
-退出和账户替换是显式凭据修改；先确认正在改变哪个共享账户/存储。不要将账户文件、token 或已存密钥文件放入诊断报告。
+退出和账户替换是显式凭据修改；先确认正在改变哪个原生账户。不要将账户文件、token 或已存密钥文件放入诊断报告。
 
 ## 在 TUI 中切换 Agent 或 Model
 
@@ -449,6 +487,8 @@ a13n-harness-ui login codex --allow-account-switch
 `/status` 显示根级观测用量，Codex 还提供只读订阅限制。`/usage reset` 独立打开需明确确认的额度兑换。本地观测费用是估计，不是订阅账单。见[用量与额度确认](everyday-use.md#tasks-usage-and-terminal-feedback)。
 
 ## API 提供方与设置预设
+
+使用 Cloudflare AI Gateway 时，选择 **Cloudflare AI Gateway**。基础 URL 填写 `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai`，使用具有 **Account → Workers AI → Read** 权限的 Cloudflare token（`CLOUDFLARE_API_TOKEN`）。模型 ID 保留厂商前缀，例如 `openai/gpt-5.4`。`cloudflare:` 路由对所有受支持的聊天模型统一使用网关的 Chat Completions API。切换厂商只需修改模型 ID，无需选择协议。在 Cloudflare 中配置默认别名的 BYOK 或统一计费。通过 `settings.extra_headers` 中的 `{"cf-aig-gateway-id": "your-gateway"}` 指定网关；省略时第三方模型使用默认网关。不暴露单独的 Workers AI 目录和原生服务端工具。
 
 向导式 HTTP/API 密钥目录包含 OpenAI Responses、OpenAI 兼容 Chat Completions、Anthropic、Google Gemini API、OpenRouter、DeepSeek、Z.AI / GLM、Moonshot AI / Kimi、Groq、Mistral、Together AI、Fireworks AI、Cerebras、SambaNova 和 Vercel AI Gateway 集成。xAI 有两种独立 API 密钥选项：`grok:` 使用 Chat Completions，`xai:` 使用原生 SDK 默认 gRPC 端点，提供原生 X Search 和其他 xAI 工具。原生 SDK 跳过 HTTP 基础 URL 步骤。两者都不同于 Grok 订阅身份验证。其他 OpenAI 兼容服务，选择 **OpenAI-compatible · Chat Completions**，填写服务 URL 和模型 ID。Cloud IAM 和订阅传输不是通用 URL/密钥连接。
 

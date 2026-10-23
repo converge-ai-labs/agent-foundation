@@ -829,6 +829,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         )
         if not threshold_reached:
             return request_context
+        limits = ctx.usage_limits
+        if limits is not None and limits.request_limit is not None and limits.request_limit - ctx.usage.requests < 2:
+            # Optional compaction needs a summary request and the pending ordinary request.
+            return request_context
 
         operation_id = f"compaction-{token_urlsafe(9)}"
         await emit_harness_event(

@@ -49,6 +49,15 @@ export function CreateMCP({
     [bearer, setBearer] = useState(""),
     [started, setStarted] = useState(false),
     [oauthConnection, setOAuthConnection] = useState<Schema["Connection"]>();
+  const named = headerRows.filter((row) => row.name.trim());
+  // Credentials written with the connection are not asked for again.
+  const credentialReady =
+    !!created.current?.credential_configured ||
+    (mode === "bearer"
+      ? !!bearer.trim()
+      : mode !== "headers" ||
+        (!!named.length && named.every((row) => !!row.value)));
+  const ready = !!name.trim() && !!endpoint.trim() && credentialReady;
   const connect = useMutation({
     gcTime: 0,
     mutationFn: async () => {
@@ -211,6 +220,7 @@ export function CreateMCP({
       <FormActions
         onCancel={onCancel}
         pending={connect.isPending}
+        disabled={!ready}
         label={t(created.current ? "Continue connection" : "Connect")}
       />
     </form>

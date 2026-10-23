@@ -30,7 +30,11 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../shared/api";
 import { primaryArgument, resultExcerpt } from "../format";
-import type { LifecycleNotice } from "../lifecycle";
+import {
+  QUESTION_TOOL,
+  type LifecycleNotice,
+  type WaitKind,
+} from "../lifecycle";
 import type { ActionEntry, TimelineEntry } from "../timeline";
 import { readQuestions } from "./questions";
 import styles from "./entry-language.module.css";
@@ -53,7 +57,13 @@ export interface EntryLabel {
  * that answer belongs to the Run that owns it.
  */
 export type WorkState =
-  "done" | "working" | "waiting" | "interrupted" | "failed" | "unknown";
+  | "done"
+  | "working"
+  | "waiting"
+  | "interrupted"
+  | "failed"
+  | "unknown"
+  | "handed_off";
 
 const IN_PROGRESS = ["in_progress", "running", "prepared"];
 const RUN_WORKING = ["running", "queued", "accepted"];
@@ -64,6 +74,7 @@ const TURN_REMINDER = "a13n.service.reminder";
 
 export function workState(state: string, runState = "running"): WorkState {
   if (state === "completed") return "done";
+  if (state === "handed_off") return "handed_off";
   if (ENTRY_FAILED.includes(state)) return "failed";
   // A sealed waiting Run keeps its unresolved call open, whatever the entry
   // state had to say about it when the stream closed.
@@ -148,9 +159,32 @@ export function entrySubject(entry: TimelineEntry): string {
 
 /** A question asks the reader for an answer; anything else asks for approval. */
 export function asksAQuestion(entry: ActionEntry): boolean {
-  return entry.hitl
-    ? entry.hitl === "question"
-    : (entry.name ?? "").includes("question");
+  return entry.hitl ? entry.hitl === "question" : entry.name === QUESTION_TOOL;
+}
+
+/**
+ * What a waiting step asks of the reader, in the same kinds a pending call has;
+ * null when only retained messages remain and they do not say.
+ */
+export function entryWait(entry: ActionEntry): WaitKind | null {
+  if (entry.hitl === "approval" || entry.waitingReason === "approval")
+    return "approval";
+  if (asksAQuestion(entry)) return "question";
+  return entry.waitingReason === "external_call" ? "result" : null;
+}
+
+/** The one phrase for a wait, on every surface that shows it. */
+export function waitingLabel(kind: WaitKind | null, t: TFunction): string {
+  switch (kind) {
+    case "approval":
+      return t("Waiting for your approval");
+    case "question":
+      return t("Waiting for your answer");
+    case "result":
+      return t("Waiting for a tool result");
+    default:
+      return t("Waiting for your response");
+  }
 }
 
 /** What a tool did is readable from its name; the glyph only has to agree. */
@@ -220,11 +254,7 @@ function noticeText(notice: LifecycleNotice, t: TFunction): string {
     ? t("Run failed")
     : notice.status === "cancelled"
       ? t("Run cancelled")
-      : notice.reason === "approval"
-        ? t("Waiting for approval")
-        : notice.reason === "multiple"
-          ? t("Waiting for approvals and call results")
-          : t("Waiting for call results");
+      : waitingLabel(notice.wait, t);
 }
 
 /** What follows a lifecycle fact's head: a stop's reason and its message. */
@@ -263,25 +293,29 @@ export function StateMark({
   const { t } = useTranslation();
   if (state === "unknown") return null;
   const name =
-    state === "working"
-      ? t("Working")
-      : state === "waiting"
-        ? t("Waiting")
-        : state === "failed"
-          ? t("Failed")
-          : state === "interrupted"
-            ? t("Interrupted")
-            : t("Completed");
+    state === "handed_off"
+      ? t("Execution handed off")
+      : state === "working"
+        ? t("Working")
+        : state === "waiting"
+          ? t("Waiting")
+          : state === "failed"
+            ? t("Failed")
+            : state === "interrupted"
+              ? t("Interrupted")
+              : t("Completed");
   const Glyph =
-    state === "working"
-      ? CircleNotchIcon
-      : state === "waiting"
-        ? PauseIcon
-        : state === "failed"
-          ? XIcon
-          : state === "interrupted"
-            ? WarningCircleIcon
-            : CheckIcon;
+    state === "handed_off"
+      ? ArrowBendUpRightIcon
+      : state === "working"
+        ? CircleNotchIcon
+        : state === "waiting"
+          ? PauseIcon
+          : state === "failed"
+            ? XIcon
+            : state === "interrupted"
+              ? WarningCircleIcon
+              : CheckIcon;
   return (
     <span
       className={className ? `${styles.mark} ${className}` : styles.mark}

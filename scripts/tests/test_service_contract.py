@@ -28,6 +28,8 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
         "items",
         "delta",
         "gap",
+        "schedule",
+        "occurrence",
     }
     assert set(exported[contract.TARGET / "thread-stream.schema.json"]["frames"]) == {
         "delta",

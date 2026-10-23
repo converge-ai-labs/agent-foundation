@@ -14,12 +14,21 @@
   gap: 24px;
 }
 .reason {
-  margin: 0;
-  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 14px;
   border-radius: var(--a13n-radius-row);
   background: color-mix(in srgb, var(--warning) 12%, transparent);
   font-size: var(--a13n-text-xs);
   line-height: 1.5;
+}
+.reason p {
+  flex: 1;
+  margin: 0;
+}
+.reason button {
+  flex: none;
 }
 .inlineEdit {
   display: flex;
@@ -86,4 +95,31 @@
 }
 .loadMore {
   margin: 6px auto;
+}
+/* The directory keeps its height while a search narrows the results. */
+.directoryBody {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: min(460px, 58dvh);
+}
+/* One provider's applications failed; the rest of the directory still works. */
+.directoryNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.directoryNotice > svg {
+  flex: none;
+  color: var(--warning);
+}
+.directoryNotice > span {
+  flex: 1;
+  min-width: 0;
 }

@@ -349,7 +349,9 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         await release.wait()
         if terminal_status == "error":
             raise RuntimeError("wait failed")
-        return SimpleNamespace(status=RootOperationStatus(terminal_status), outcome=None, failure=None, goal=None)
+        return SimpleNamespace(
+            status=RootOperationStatus(terminal_status), outcome=None, failure=None, goal=None, main_account=None
+        )
 
     live_totals = replace(
         _usage_totals(requests=6, cost=Decimal("0.55")),
@@ -363,7 +365,7 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         live_events=hub.subscribe,
         submit_thread=submit,
         wait_root_operation=wait,
-        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None)),
+        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None, main_account=None)),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
         thread_usage=AsyncMock(
             side_effect=[
@@ -436,9 +438,11 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
     app = SimpleNamespace(
         live_events=hub.subscribe,
         submit_thread=AsyncMock(return_value=SimpleNamespace(receipt_id="receipt-one")),
-        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None)),
+        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None, main_account=None)),
         wait_root_operation=AsyncMock(
-            return_value=SimpleNamespace(status=RootOperationStatus.completed, outcome=outcome, failure=None, goal=None)
+            return_value=SimpleNamespace(
+                status=RootOperationStatus.completed, outcome=outcome, failure=None, goal=None, main_account=None
+            )
         ),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
         thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals())),
@@ -490,9 +494,11 @@ async def test_subscription_close_invalidates_outliving_child_process_observatio
     app = SimpleNamespace(
         live_events=hub.subscribe,
         submit_thread=submit,
-        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None)),
+        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None, main_account=None)),
         wait_root_operation=AsyncMock(
-            return_value=SimpleNamespace(status=RootOperationStatus.cancelled, outcome=None, failure=None, goal=None)
+            return_value=SimpleNamespace(
+                status=RootOperationStatus.cancelled, outcome=None, failure=None, goal=None, main_account=None
+            )
         ),
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
         thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals(requests=0))),
@@ -739,3 +745,18 @@ def test_active_snapshot_raw_suffix_keeps_cli_text_and_tools_single(cut: int) ->
         == "hello world"
     )
     assert not renderer.gap
+
+
+@pytest.mark.anyio
+async def test_steer_uses_app_policy_and_rejection_keeps_draft() -> None:
+    backend = SimpleNamespace(steer=AsyncMock(return_value="Guidance sent."))
+    with create_pipe_input(), create_app_session(output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = backend
+        await shell.command(shell.registry.parse("/steer change direction", busy=True))
+        assert backend.steer.call_args.args[0].text == "change direction"
+        assert "immediate" not in backend.steer.call_args.kwargs
+        backend.steer.side_effect = ValueError("Unsupported handoff")
+        await shell.handle("keep my input", steering_receipt="receipt-original")
+        assert backend.steer.call_args.kwargs["receipt_id"] == "receipt-original"
+        assert shell.composer.text == "keep my input"

@@ -76,7 +76,7 @@ async def main():
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call = requests.calls[0]
+    call = requests.calls[0].target_call
     assert call.tool_name == "open_document"
 
     # A real Host authenticates the client and validates/persists its result here.
@@ -132,3 +132,30 @@ asyncio.run(main())
 审批界面、执行方认证、命令幂等性、持久化的待处理记录、超时与取消策略，以及结果接收，都由 Host 负责。客户端提供的元数据不能授权服务端工具。独立的进程内调用边界见[受管理的工具](managed-tools.md)。
 
 当前 Host 支持结果反馈生命周期时，子执行可以延迟等待。没有这项生命周期支持的 Host 应设置 `RunBindings.deferred_tools_supported=False`：声明为延迟执行的工具会被移除，动态延迟请求会被拒绝，意外出现的最终延迟结果会以 `deferred_tools_unsupported` 失败。不要根据观测事件创建等待任务，应保留最终结果中完整、精确的待处理批次和检查点。[内置内联执行](delegation-and-codeact.md#host-managed-feedback)禁用延迟工具；支持此功能的 Host 则直接恢复自己管理的子执行。
+
+## 通过 Proxy 发现客户端工具
+
+将定义中的同一个 `ClientToolsCapability` 实例选入 `ToolSearchPlan` 分组：
+
+```python
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
+
+search = ToolSearchPlan(
+    groups={"workspace": ToolSearchSelection("Editor actions", capabilities=(client_tools,))}
+)
+# 构建 Harness 时传入 tool_search=search。
+```
+
+`ClientToolsetDefinition.toolset_id` 标识客户端来源，ToolSearch 分组用于发现工具。声明为 `select` 的工具，在内部注册为 `workspace__select`；模型调用 `call_tool(group="workspace", tool="select", arguments={...})` 后，Run 按原有外部调用流程进入等待。
+
+```python
+from a13n_harness.tools.client import client_tool_name
+
+entry = pending.calls[0]
+call = entry.target_call
+name = client_tool_name(call, pending.metadata.get(call.tool_call_id, {}))
+# 将 name、call.args_as_dict() 和 call.tool_call_id 发给客户端。
+results = pending.build_results(calls={call.tool_call_id: client_result})
+```
+
+客户端收到原始名称 `select`，保存的目标调用保留 `workspace__select` 供恢复校验。等待元数据只保存名称还原所需的 `declared_name` 和 `toolset_id`，不复制工具定义中的其他元数据。保存完整 pending 与之前的 state，再通过 `DeferredToolResume(pending, results)` 启动新 Run。成功结果与原生 `ToolFailed` 都使用目标调用 ID 回传。原生内联等待处理器也可以将调用和对应元数据传给同一个名称函数。客户端声明仍不支持任意改名 wrapper。

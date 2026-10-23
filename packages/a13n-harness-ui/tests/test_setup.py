@@ -41,6 +41,7 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
     }
     assert "gpt-5.6-luna" in preview.files["models/codex-review.yaml"]
     result = await publish_setup(path, selection, validate_candidate=_validate())
@@ -110,6 +111,7 @@ async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str 
         {"enable_codeact": False},
         {"enable_ask_user_question": False, "interaction_timeout_seconds": 45},
         {"enable_ask_user_question": False, "interaction_timeout_seconds": 30, "enable_codeact": False},
+        {"execution": {"mode": "auto", "foreground_wait_seconds": 0.25}},
     ],
 )
 async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_values(
@@ -121,6 +123,7 @@ async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_v
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
         **authored_tools,
     }
     selection = _selection(tmp_path)
@@ -366,7 +369,7 @@ async def test_setup_with_global_guidance_saves_successfully(tmp_path: Path, ope
 
 
 @pytest.mark.anyio
-async def test_app_setup_discovery_isolates_and_retries_invalid_codex_policy(
+async def test_app_setup_discovery_uses_native_store_after_failed_cli_adoption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
@@ -381,8 +384,9 @@ async def test_app_setup_discovery_isolates_and_retries_invalid_codex_policy(
     ) as app:
         status = await app.setup_status()
         assert status.needed
-        assert status.providers[0].action == "retry"
-        assert status.providers[0].diagnostic
+        assert status.providers[0].action == "login"
+        assert status.providers[0].diagnostic is None
+        assert (await app.subscription_accounts.adoption())["codex"].status == "invalid"
         assert status.providers[1].provider == "grok"
         (tmp_path / "missing-codex-home").mkdir()
         status = await app.setup_status(rediscover=True)
@@ -501,6 +505,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
     review_outcome: str,
 ) -> None:
     import json
+    from datetime import UTC, datetime, timedelta
 
     import a13n_harness.models.codex as runtime
     from a13n_harness_ui.app import open_harness_ui_app
@@ -508,11 +513,14 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
-    # Both native Model factories are replaced, not the App composition or
-    # shell-review pipeline. No compatible account credential is read by a model.
+    from .test_onboarding import _codex_login_file
+
+    # Keep real native-account eligibility and the App shell-review pipeline;
+    # only inference is replaced by deterministic provider models.
     monkeypatch.setenv("HOME", str(tmp_path))
     (tmp_path / "codex").mkdir()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    _codex_login_file(datetime.now(UTC) + timedelta(days=1))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     marker = tmp_path / "executed-command"
     reviewed: list[str | bool | None] = []
@@ -729,7 +737,11 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
-    (tmp_path / "codex").mkdir()
+    from datetime import UTC, datetime, timedelta
+
+    from .test_onboarding import _codex_login_file
+
+    _codex_login_file(datetime.now(UTC) + timedelta(days=1))
     calls = []
 
     async def stream(messages, info):

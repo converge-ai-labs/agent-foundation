@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         SubagentIdentityPolicy,
         derive_child_identity,
     )
+    from a13n_harness.codeact.state import CodeActStateOwner
     from a13n_harness.configuration import RunConfiguration
     from a13n_harness.content import ContentItem, ContentMetadata
     from a13n_harness.context import AgentContext, RunBindings
@@ -75,9 +76,33 @@ if TYPE_CHECKING:
         VideoUrlType,
     )
     from a13n_harness.state import HarnessState, StateStore, StoredRef
-    from a13n_harness.tools.deferred import DeferredToolResume
+    from a13n_harness.tool_execution import (
+        MemoryToolExecutionStore,
+        StoredToolExecution,
+        ToolExecutionArtifact,
+        ToolExecutionConfig,
+        ToolExecutionRecord,
+        ToolExecutionRuntime,
+        ToolExecutionStore,
+    )
+    from a13n_harness.tools.deferred import (
+        DeferredToolCall,
+        DeferredToolRequests,
+        DeferredToolResults,
+        DeferredToolResume,
+    )
 
 _EXPORTS = {
+    "a13n_harness.codeact.state": ("CodeActStateOwner",),
+    "a13n_harness.tool_execution": (
+        "MemoryToolExecutionStore",
+        "StoredToolExecution",
+        "ToolExecutionArtifact",
+        "ToolExecutionConfig",
+        "ToolExecutionRecord",
+        "ToolExecutionRuntime",
+        "ToolExecutionStore",
+    ),
     "a13n_harness.configuration": ("RunConfiguration",),
     "a13n_harness.context": (
         "AgentContext",
@@ -165,7 +190,12 @@ _EXPORTS = {
         "VideoUrlType",
     ),
     "a13n_harness.state": ("HarnessState", "StateStore", "StoredRef"),
-    "a13n_harness.tools.deferred": ("DeferredToolResume",),
+    "a13n_harness.tools.deferred": (
+        "DeferredToolCall",
+        "DeferredToolRequests",
+        "DeferredToolResults",
+        "DeferredToolResume",
+    ),
 }
 
 

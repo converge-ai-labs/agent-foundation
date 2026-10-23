@@ -1,6 +1,6 @@
 import {
   ClockCounterClockwiseIcon,
-  DotsThreeIcon,
+  DotsThreeOutlineVerticalIcon,
   TextAaIcon,
   TrashIcon,
   FilePlusIcon,
@@ -337,7 +337,7 @@ function FileContent({
                     />
                   }
                 >
-                  <DotsThreeIcon />
+                  <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
                 </MenuTrigger>
                 <MenuPopup align="end">{menu}</MenuPopup>
               </Menu>

@@ -5,7 +5,7 @@
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from functools import partial
@@ -15,6 +15,7 @@ from typing import Any, get_args
 
 from a13n_harness import HarnessTraceContent
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
+from a13n_harness.providers.environment.modal.pool import TransportPool
 from anyio.to_thread import run_sync
 from fastapi import FastAPI, Request
 from fastapi.dependencies.models import Dependant
@@ -40,9 +41,12 @@ from a13n_service.mcp import WorkspaceKey, build_mcp
 from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
+from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
 from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
+from a13n_service.runs.environments.monitoring.proxy import Proxy
+from a13n_service.runs.environments.monitoring.pull import run as run_collector
 from a13n_service.runs.execute import execute
 from a13n_service.runs.platform_files import open_platform_mounts
 from a13n_service.runs.platform_tokens import RunAuthenticator
@@ -188,10 +192,22 @@ async def open_runtime(
     registry = _registry(distribution, config)
     platform_mounts = await stack.enter_async_context(open_platform_mounts(registry, config))
     objects = await open_objects(stack, config.objects)
+    modal_transports = TransportPool()
+    modal_transports.start()
+    stack.push_async_callback(modal_transports.close)
     tasks = Tasks()
-    stack.push_async_callback(tasks.close, timeout=config.server.shutdown_timeout)
+    # HTTP connection drain stays bounded by server.shutdown_timeout. Lifespan cleanup must also allow
+    # the worker's natural-completion and finalization windows before closing its shared clients.
+    shutdown_seconds = config.server.shutdown_timeout
+    if executes:
+        shutdown_seconds += (
+            config.worker.drain_seconds
+            + config.tool_executions.shutdown_grace_seconds
+            + config.tool_executions.finalization_seconds
+        )
+    stack.push_async_callback(tasks.close, timeout=shutdown_seconds)
     access = distribution.access()
-    return Runtime(
+    runtime = Runtime(
         storage=storage,
         objects=objects,
         tasks=tasks,
@@ -200,6 +216,12 @@ async def open_runtime(
         settings=config,
         registry=registry,
         platform_mounts=platform_mounts,
+        modal_transports=modal_transports,
+        metrics_queries=Queries(
+            concurrency=config.monitoring.query_concurrency,
+            timeout=config.monitoring.query_seconds,
+            max_bytes=config.monitoring.query_bytes,
+        ),
         access=replace(access, authenticator=RunAuthenticator(access.authenticator)),
         plugins=build_harness_plugin_factory_catalog(plugin_keys=config.plugins.keys),
         admission=distribution.admission,
@@ -207,6 +229,7 @@ async def open_runtime(
         # Backends hold no connection between queries, so the query side needs no lifecycle.
         traces=telemetry.trace_config(),
     )
+    return replace(runtime, metrics_proxy=Proxy(runtime))
 
 
 def _key_ring(encryption: Encryption) -> KeyRing:
@@ -265,7 +288,7 @@ def build_app(
     serves_api, executes = role != "worker", role != "control"
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if role != "worker" and config.database.auto_migrate:
             await run_sync(partial(upgrade, config.database, distribution))
         async with AsyncExitStack() as stack:
@@ -291,6 +314,14 @@ def build_app(
                     await initializer.existing()
                 runtime.tasks.start(run_official_catalog(runtime.endpoint_policy), name="official-model-catalog")
                 if serves_api:
+                    if config.monitoring.enabled:
+                        assert runtime.metrics_proxy is not None
+                        runtime.tasks.start(runtime.metrics_proxy.run(), name="environment-monitoring", service=True)
+                        for kind, collector in config.monitoring.collectors.items():
+                            if collector.writer:
+                                runtime.tasks.start(
+                                    run_collector(runtime, kind), name=f"collector-{kind}", service=True
+                                )
                     await stack.enter_async_context(mcp.lifespan(mcp))
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy
@@ -368,6 +399,11 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        from a13n_service.runs.devices.tables import DeviceRow
+        from a13n_service.runs.devices.transport import install as install_device_transport
+
+        if DeviceRow in distribution.tables:
+            install_device_transport(app)
         app.add_middleware(CredentialAccess, routes=api_routes)
         mcp = build_mcp(app, config, api_routes)
         app.mount("/api/v1/mcp", WorkspaceKey(mcp))

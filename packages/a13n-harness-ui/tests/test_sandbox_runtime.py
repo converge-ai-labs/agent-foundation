@@ -255,7 +255,6 @@ async def test_root_runs_use_captured_sandbox_with_fresh_sessions(binary, tmp_pa
                 {
                     "command": f"test ! -r {shlex.quote(str(secret))} && printf sandbox-shell-ok",
                     "cwd": str(project),
-                    "yield_time_seconds": 1,
                 },
             ),
             ("write", {"file_path": str(scratch / "tmp/result.txt"), "content": "Sandbox thread files"}),

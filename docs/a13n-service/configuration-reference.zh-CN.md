@@ -107,6 +107,15 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `control.import_timeout`         | `A13N_CONTROL__IMPORT_TIMEOUT`         | 数值        | maximum=120; exclusiveMinimum=0; default=30     |
 | `control.stream_refresh_seconds` | `A13N_CONTROL__STREAM_REFRESH_SECONDS` | 数值        | maximum=60; exclusiveMinimum=0; default=2       |
 
+## `schedules`
+
+| 设置                              | 环境变量                                | 类型 / 选项 | 约束与默认值                               |
+| --------------------------------- | --------------------------------------- | ----------- | ------------------------------------------ |
+| `schedules.scan_seconds`          | `A13N_SCHEDULES__SCAN_SECONDS`          | 数值        | maximum=300; exclusiveMinimum=0; default=5 |
+| `schedules.batch`                 | `A13N_SCHEDULES__BATCH`                 | 整数        | minimum=1; maximum=1000; default=100       |
+| `schedules.max_per_workspace`     | `A13N_SCHEDULES__MAX_PER_WORKSPACE`     | 整数        | minimum=1; maximum=100000; default=1000    |
+| `schedules.dispatch_max_attempts` | `A13N_SCHEDULES__DISPATCH_MAX_ATTEMPTS` | 整数        | minimum=1; maximum=20; default=5           |
+
 ## `outbox`
 
 | 设置                                          | 环境变量                                                          | 类型 / 选项 | 约束与默认值                                   |
@@ -148,6 +157,17 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `worker.stream_trim_seconds`     | `A13N_WORKER__STREAM_TRIM_SECONDS`     | 数值        | minimum=0; maximum=600; default=10               |
 | `worker.child_depth`             | `A13N_WORKER__CHILD_DEPTH`             | 整数        | minimum=0; maximum=16; default=4                 |
 | `worker.child_count`             | `A13N_WORKER__CHILD_COUNT`             | 整数        | minimum=0; maximum=256; default=16               |
+
+## `tool_executions`
+
+| 设置                                          | 环境变量                                            | 类型 / 选项 | 约束与默认值                                |
+| --------------------------------------------- | --------------------------------------------------- | ----------- | ------------------------------------------- |
+| `tool_executions.max_active`                  | `A13N_TOOL_EXECUTIONS__MAX_ACTIVE`                  | 整数        | minimum=1; maximum=1024; default=64         |
+| `tool_executions.foreground_wait_seconds`     | `A13N_TOOL_EXECUTIONS__FOREGROUND_WAIT_SECONDS`     | 数值        | minimum=0; maximum=300; default=5           |
+| `tool_executions.delivered_retention_seconds` | `A13N_TOOL_EXECUTIONS__DELIVERED_RETENTION_SECONDS` | 整数        | minimum=1; maximum=31536000; default=3600   |
+| `tool_executions.max_retention_seconds`       | `A13N_TOOL_EXECUTIONS__MAX_RETENTION_SECONDS`       | 整数        | minimum=1; maximum=31536000; default=86400  |
+| `tool_executions.shutdown_grace_seconds`      | `A13N_TOOL_EXECUTIONS__SHUTDOWN_GRACE_SECONDS`      | 数值        | minimum=0; maximum=3600; default=300        |
+| `tool_executions.finalization_seconds`        | `A13N_TOOL_EXECUTIONS__FINALIZATION_SECONDS`        | 数值        | maximum=300; exclusiveMinimum=0; default=10 |
 
 ## `run_search`
 
@@ -255,3 +275,21 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `telemetry.logfire_read_token`  | `A13N_TELEMETRY__LOGFIRE_READ_TOKEN`  | 字符串或 null                       | format="password"; default=null                                 |
 | `telemetry.trace_content`       | `A13N_TELEMETRY__TRACE_CONTENT`       | "none", "standard", "full"          | default="standard"                                              |
 | `telemetry.trace_query_timeout` | `A13N_TELEMETRY__TRACE_QUERY_TIMEOUT` | 数值                                | maximum=60; exclusiveMinimum=0; default=10                      |
+
+## `monitoring`
+
+| 设置                                       | 环境变量                                         | 类型 / 选项   | 约束与默认值                                     |
+| ------------------------------------------ | ------------------------------------------------ | ------------- | ------------------------------------------------ |
+| `monitoring.enabled`                       | `A13N_MONITORING__ENABLED`                       | 布尔值        | default=true                                     |
+| `monitoring.allow_loopback_ws`             | `A13N_MONITORING__ALLOW_LOOPBACK_WS`             | 布尔值        | default=false                                    |
+| `monitoring.max_devices`                   | `A13N_MONITORING__MAX_DEVICES`                   | 整数          | minimum=1; maximum=512; default=64               |
+| `monitoring.poll_seconds`                  | `A13N_MONITORING__POLL_SECONDS`                  | 数值          | minimum=5; maximum=60; default=10                |
+| `monitoring.request_seconds`               | `A13N_MONITORING__REQUEST_SECONDS`               | 数值          | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_concurrency`             | `A13N_MONITORING__QUERY_CONCURRENCY`             | 整数          | minimum=1; maximum=64; default=8                 |
+| `monitoring.query_seconds`                 | `A13N_MONITORING__QUERY_SECONDS`                 | 数值          | minimum=1; maximum=30; default=5                 |
+| `monitoring.query_bytes`                   | `A13N_MONITORING__QUERY_BYTES`                   | 整数          | minimum=65536; maximum=16777216; default=4194304 |
+| `monitoring.deployment_preset`             | `A13N_MONITORING__DEPLOYMENT_PRESET`             | 对象或 null   | default=null                                     |
+| `monitoring.deployment_query_bearer_token` | `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN` | 字符串或 null | format="password"; default=null                  |
+| `monitoring.collectors`                    | `A13N_MONITORING__COLLECTORS`                    | 对象          | —                                                |
+| `monitoring.collector_seconds`             | `A13N_MONITORING__COLLECTOR_SECONDS`             | 数值          | minimum=10; maximum=300; default=30              |
+| `monitoring.collector_targets`             | `A13N_MONITORING__COLLECTOR_TARGETS`             | 整数          | minimum=1; maximum=4096; default=512             |

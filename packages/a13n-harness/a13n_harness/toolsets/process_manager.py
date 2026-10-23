@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import codecs
 import hashlib
 import re
 import secrets
@@ -15,6 +14,7 @@ from typing import Literal, cast
 
 from pydantic import JsonValue
 from pydantic_ai import RunContext
+from pydantic_ai.exceptions import ToolFailed
 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.commands import (
@@ -27,19 +27,31 @@ from a13n_harness.environment.commands import (
     ProcessStreamRead,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
-from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.providers import BoundEnvironment, BoundProcessOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime, execution_cleanup
 
 from .events import ShellStatusEvent
-from .output import tool_output_size
+from .shell_control import ShellControl, ShellTarget
+from .shell_observation import (
+    ShellObservation,
+    ShellStream,
+)
+from .shell_observation import (
+    _fit_stream_prefixes as _fit_stream_prefixes,
+)
+from .shell_observation import (
+    _process_observation as _project_observation,
+)
+from .shell_observation import (
+    _project_status as _project_status,
+)
 from .shell_results import (
-    OutputPageProjection,
     ProcessInfoSuccess,
     ProcessInputSuccess,
     ProcessListSuccess,
     ProcessObservationSuccess,
     ProcessSignalSuccess,
-    ProcessStatusProjection,
     ProcessSummaryProjection,
     ShellExecSuccess,
 )
@@ -47,7 +59,6 @@ from .shell_results import (
 _MAX_MODEL_OUTPUT_BYTES = 1024 * 1024
 _DEFAULT_INLINE_BYTES = 64 * 1024
 _MAX_REFERENCE_ENTRIES = 100_000
-_MAX_PROJECTED_OUTPUT_CHARS = 10_500
 _REFERENCE_PATTERN = re.compile(r"^process-([0-9a-f]{4})-([1-9][0-9]*)$")
 _TERMINAL_PHASES = frozenset({"exited", "signaled", "timed_out", "cancelled", "failed"})
 _PROCESS_OBSERVATION_ACTIONS = frozenset(
@@ -73,6 +84,56 @@ class _ProcessEntry:
     discovered: bool = False
     completion_observed: bool = False
     notification_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+class _OwnedProcess:
+    """One runtime-owned process control surface, closed before its lease releases."""
+
+    def __init__(self, controller: _ProcessController, process_id: str, execution_id: str) -> None:
+        self.controller = controller
+        self.process_id = process_id
+        self.execution_id = execution_id
+        self.resource_id = controller.resource_id(process_id)
+        self.identity = controller._entry(process_id).handle.identity
+        self.backing_identity = next(
+            mount.descriptor.backing_identity
+            for mount in controller._environment.snapshot.mounts
+            if controller._environment.resolve_path(".", alias=mount.name).execution_id
+            == controller._entry(process_id).handle.execution_id
+        )
+        self._condition = asyncio.Condition()
+        self._readers = 0
+        self._closed = False
+
+    async def call(self, request: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        control = ShellControl.model_validate(request)
+        async with self._condition:
+            if self._closed:
+                raise EnvironmentError(
+                    "Shell execution has settled. Use tool_execution_result for its retained result.",
+                    code="environment_reference_stale",
+                )
+            self._readers += 1
+        try:
+            if control.operation == "describe":
+                return ShellTarget(
+                    resource_id=self.resource_id, identity=self.identity, backing_identity=self.backing_identity
+                ).model_dump(mode="json")
+            async with self.controller._environment.retained_process_dispatch(
+                self.controller._entry(self.process_id).handle,
+                actions=control.actions,
+            ) as processes:
+                return await self.controller.control(self.process_id, control, processes=processes)
+        finally:
+            async with self._condition:
+                self._readers -= 1
+                self._condition.notify_all()
+
+    async def close(self) -> None:
+        async with self._condition:
+            self._closed = True
+            await self._condition.wait_for(lambda: self._readers == 0)
+        await self.controller._retire(self.controller._entry(self.process_id))
 
 
 class _ProcessController:
@@ -136,8 +197,189 @@ class _ProcessController:
         expected_mount_id: str | None = None,
     ) -> ShellExecSuccess:
         self._guard_execution()
-        published = False
-        entry: _ProcessEntry | None = None
+        admission = asyncio.create_task(self._admit(request, alias=alias, expected_mount_id=expected_mount_id))
+        cancellation: asyncio.CancelledError | None = None
+        # Provider admission must settle before cancellation can return a usable
+        # reference. Never replay a start whose outcome is still unknown.
+        while not admission.done():
+            try:
+                await asyncio.shield(admission)
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+        entry = admission.result()
+        if cancellation is not None and _OWNED_TOOL_EXECUTION.get():
+            raise cancellation
+        try:
+            if cancellation is None:
+                await self._emit_status(entry)
+                if yield_time_seconds > 0:
+                    try:
+                        baseline = entry.latest
+                        waited = await self._environment.processes.wait(
+                            entry.handle,
+                            condition="initial_terminal",
+                            timeout_seconds=yield_time_seconds,
+                        )
+                        self._adopt_info(entry, waited, baseline=baseline)
+                    except EnvironmentError as exc:
+                        if exc.code != "environment_timeout":
+                            raise
+            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+        except asyncio.CancelledError:
+            if _OWNED_TOOL_EXECUTION.get():
+                raise
+            observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=0)
+        if _is_final(observation[0]):
+            result = _shell_exec_result(None, observation, bound_output=False)
+            try:
+                await _await_cleanup_shielded(self._retire(entry))
+            except asyncio.CancelledError:
+                if _OWNED_TOOL_EXECUTION.get():
+                    raise
+            return result
+        entry.model_visible.set()
+        return _shell_exec_result(entry.process_id, observation)
+
+    async def run_owned(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None,
+        expected_mount_id: str,
+        runtime: ToolExecutionRuntime,
+        execution_id: str,
+    ) -> ShellExecSuccess:
+        """Keep the admitted command and observation alive until final capture."""
+        self._guard_execution()
+        # Providers may fix their capture buffer at admission. Preserve the bounded
+        # retained result there; model-visible pages are projected separately.
+        request = request.model_copy(
+            update={
+                "output_policy": request.output_policy.model_copy(
+                    update={"max_inline_bytes": min(request.output_policy.max_output_bytes, _MAX_MODEL_OUTPUT_BYTES)}
+                )
+            }
+        )
+        admission = asyncio.create_task(
+            self._admit(request, alias=alias, expected_mount_id=expected_mount_id, watch=False)
+        )
+        cancelled = False
+        while not admission.done():
+            try:
+                await asyncio.shield(admission)
+            except asyncio.CancelledError:
+                cancelled = True
+        entry = admission.result()
+        resource = _OwnedProcess(self, entry.process_id, execution_id)
+        runtime.attach_resource(resource)
+        try:
+            if cancelled:
+                raise asyncio.CancelledError
+            stdout_offset = stderr_offset = 0
+            while True:
+                observation = await self._observe_owned(
+                    entry,
+                    stdout_offset=stdout_offset,
+                    stderr_offset=stderr_offset,
+                    wait_seconds=1,
+                    max_inline_bytes=64 * 1024,
+                )
+                stdout = ShellStream.from_read(observation[1].stdout, requested_offset=stdout_offset)
+                stderr = ShellStream.from_read(observation[1].stderr, requested_offset=stderr_offset)
+                stdout_offset = stdout.start_offset + len(stdout.data)
+                stderr_offset = stderr.start_offset + len(stderr.data)
+                runtime.observe_resource(
+                    ShellObservation(
+                        target=ShellTarget(
+                            resource_id=resource.resource_id,
+                            identity=resource.identity,
+                            backing_identity=resource.backing_identity,
+                        ),
+                        status=observation[0].status,
+                        stdin_open=observation[0].stdin_open,
+                        stdout=stdout,
+                        stderr=stderr,
+                    )
+                )
+                info, output = observation
+                if info.status.phase in {"unknown", "missing"}:
+                    raise ToolFailed(
+                        "Shell process observation was lost; command outcome is unknown. Do not replay it."
+                    )
+                if (
+                    _is_final(info)
+                    and output.stdout.capture.observation_closed
+                    and output.stderr.capture.observation_closed
+                ):
+                    # Final disclosure is the provider's bounded result, not the last delta.
+                    final = await self._observe_owned(
+                        entry,
+                        stdout_offset=0,
+                        stderr_offset=0,
+                        wait_seconds=0,
+                        max_inline_bytes=_MAX_MODEL_OUTPUT_BYTES,
+                    )
+                    return _shell_exec_result(None, final, bound_output=False)
+                if _is_final(info):
+                    # Native exit can precede output producer closure.
+                    await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            try:
+                with execution_cleanup():
+                    # Environment operations own their deadlines. A shorter Shell
+                    # timer can interrupt the provider's TERM grace before KILL
+                    # and output cleanup, falsely reporting failed cancellation.
+                    await self._cancel_owned(entry)
+            except (EnvironmentError, TimeoutError) as exc:
+                raise ToolFailed(
+                    "Shell cancellation could not confirm process termination; inspect the native target."
+                ) from exc
+            raise
+        finally:
+            with execution_cleanup():
+                await _await_cleanup_shielded(resource.close())
+
+    async def _observe_owned(
+        self,
+        entry: _ProcessEntry,
+        *,
+        stdout_offset: int,
+        stderr_offset: int,
+        wait_seconds: float,
+        max_inline_bytes: int,
+    ) -> tuple[ProcessInfo, ProcessReadOutputResult]:
+        # Retry only read-only transport observations, keeping the original handle
+        # and offsets. Cancellation interrupts backoff and follows native cleanup.
+        retries = 0
+        while True:
+            try:
+                return await self._observe(
+                    entry,
+                    stdout_offset=stdout_offset,
+                    stderr_offset=stderr_offset,
+                    wait_seconds=wait_seconds,
+                    max_inline_bytes=max_inline_bytes,
+                )
+            except EnvironmentError as exc:
+                if exc.code not in {"environment_unavailable", "environment_timeout"} or retries == 3:
+                    raise
+                await asyncio.sleep(0.1 * 2**retries)
+                retries += 1
+
+    async def _cancel_owned(self, entry: _ProcessEntry) -> None:
+        if not _is_final(entry.latest):
+            killed = await self._environment.processes.kill(entry.handle)
+            self._adopt_info(entry, killed.process)
+            inspected = await self._environment.processes.wait(
+                entry.handle, condition="initial_terminal", timeout_seconds=5
+            )
+            self._adopt_info(entry, inspected)
+            if not _is_final(entry.latest):
+                raise ToolFailed("Shell cancellation could not confirm process termination.")
+
+    async def _admit(
+        self, request: CommandRequest, *, alias: str | None, expected_mount_id: str | None, watch: bool = True
+    ) -> _ProcessEntry:
         async with self._admission_lock:
             self._assert_open()
             process_id = self._reserve_reference()
@@ -147,53 +389,47 @@ class _ProcessController:
                 required_actions=_PROCESS_OBSERVATION_ACTIONS,
                 expected_mount_id=expected_mount_id,
             )
-            entry = _ProcessEntry(
-                process_id=process_id,
-                handle=started.process.handle,
-                latest=started.process,
-            )
+            entry = _ProcessEntry(process_id=process_id, handle=started.process.handle, latest=started.process)
             try:
-                entry.watcher = asyncio.create_task(
-                    self._watch(entry),
-                    name=f"{process_id}-completion",
-                )
+                if watch:
+                    entry.watcher = asyncio.create_task(self._watch(entry), name=f"{process_id}-completion")
                 self._entries[process_id] = entry
-                published = True
             except BaseException:
                 await _await_cleanup_shielded(self._release_observation(entry))
                 raise
+            return entry
 
-        assert entry is not None
-        try:
-            await self._emit_status(entry)
-            if yield_time_seconds > 0:
-                try:
-                    baseline = entry.latest
-                    waited = await self._environment.processes.wait(
-                        entry.handle,
-                        condition="initial_terminal",
-                        timeout_seconds=yield_time_seconds,
-                    )
-                    self._adopt_info(entry, waited, baseline=baseline)
-                except EnvironmentError as exc:
-                    if exc.code != "environment_timeout":
-                        raise
-            observation = await self._observe(
-                entry,
-                stdout_offset=0,
-                stderr_offset=0,
-                wait_seconds=0,
-            )
-            if _is_final(observation[0]):
-                result = _shell_exec_result(None, observation, bound_output=False)
-                await _await_cleanup_shielded(self._retire(entry))
-                return result
-            entry.model_visible.set()
-            return _shell_exec_result(process_id, observation)
-        except BaseException:
-            if not published:
-                await _await_cleanup_shielded(self._release_observation(entry))
-            raise
+    async def control(
+        self,
+        process_id: str,
+        control: ShellControl,
+        *,
+        processes: BoundProcessOperations | None = None,
+        alias: str | None = None,
+    ) -> dict[str, JsonValue]:
+        match control.operation:
+            case "inspect":
+                result = await self.info(process_id, alias=alias, limit=1, processes=processes)
+            case "wait":
+                result = await self.wait(
+                    process_id,
+                    stdout_offset=control.stdout_offset,
+                    stderr_offset=control.stderr_offset,
+                    timeout_seconds=control.timeout_seconds,
+                    processes=processes,
+                )
+            case "input":
+                result = await self.write_input(
+                    process_id,
+                    control.data,
+                    close_stdin=control.close_stdin,
+                    processes=processes,
+                )
+            case "signal":
+                result = await self.signal(process_id, control.signal, processes=processes)
+            case _:
+                raise EnvironmentError("Invalid process control.", code="environment_request_invalid")
+        return cast(dict[str, JsonValue], result)
 
     async def wait(
         self,
@@ -202,6 +438,7 @@ class _ProcessController:
         stdout_offset: int,
         stderr_offset: int,
         timeout_seconds: float,
+        processes: BoundProcessOperations | None = None,
     ) -> ProcessObservationSuccess:
         self._guard_execution()
         entry = self._entry(process_id)
@@ -210,6 +447,7 @@ class _ProcessController:
             stdout_offset=stdout_offset,
             stderr_offset=stderr_offset,
             wait_seconds=timeout_seconds,
+            processes=processes,
         )
         result = _process_observation(
             entry.process_id,
@@ -230,9 +468,15 @@ class _ProcessController:
         return result
 
     async def info(
-        self, process_id: str | None, *, alias: str | None, limit: int
+        self,
+        process_id: str | None,
+        *,
+        alias: str | None,
+        limit: int,
+        processes: BoundProcessOperations | None = None,
     ) -> ProcessInfoSuccess | ProcessListSuccess:
         self._guard_execution()
+        processes = processes or self._environment.processes
         if process_id is not None:
             entry = self._entry(process_id)
             if alias is not None:
@@ -241,7 +485,7 @@ class _ProcessController:
                     raise EnvironmentError(
                         "Process reference conflicts with alias.", code="environment_request_invalid"
                     )
-            inspected = await self._environment.processes.inspect(entry.handle)
+            inspected = await processes.inspect(entry.handle)
             self._adopt_info(entry, inspected)
             return {
                 "ok": True,
@@ -277,8 +521,10 @@ class _ProcessController:
         data: str,
         *,
         close_stdin: bool,
+        processes: BoundProcessOperations | None = None,
     ) -> ProcessInputSuccess:
         self._guard_execution()
+        processes = processes or self._environment.processes
         entry = self._entry(process_id)
         async with entry.control_lock:
             self._require_live(entry)
@@ -286,7 +532,7 @@ class _ProcessController:
             accepted_bytes = 0
             stdin_open = entry.latest.stdin_open
             if encoded:
-                result = await self._environment.processes.write_stdin(
+                result = await processes.write_stdin(
                     entry.handle,
                     encoded,
                     close_after_write=close_stdin,
@@ -294,11 +540,11 @@ class _ProcessController:
                 accepted_bytes = result.accepted_bytes
                 stdin_open = result.stdin_open
             elif close_stdin:
-                await self._environment.processes.close_stdin(entry.handle)
+                await processes.close_stdin(entry.handle)
                 stdin_open = False
             baseline = entry.latest
             try:
-                inspected = await self._environment.processes.inspect(entry.handle)
+                inspected = await processes.inspect(entry.handle)
             except EnvironmentError:
                 # A later observation failure cannot erase accepted input or invite replay.
                 inspected = baseline.model_copy(
@@ -317,18 +563,21 @@ class _ProcessController:
         self,
         process_id: str,
         signal: Literal["interrupt", "terminate", "kill"],
+        *,
+        processes: BoundProcessOperations | None = None,
     ) -> ProcessSignalSuccess:
         self._guard_execution()
+        processes = processes or self._environment.processes
         entry = self._entry(process_id)
         async with entry.control_lock:
             self._require_live(entry)
             baseline = entry.latest
             if signal == "kill":
-                result = await self._environment.processes.kill(entry.handle)
+                result = await processes.kill(entry.handle)
                 self._adopt_info(entry, result.process, baseline=baseline)
                 accepted = True
             else:
-                result = await self._environment.processes.signal(entry.handle, signal)
+                result = await processes.signal(entry.handle, signal)
                 self._adopt_info(entry, result.process, baseline=baseline)
                 accepted = result.accepted
         return {
@@ -346,11 +595,14 @@ class _ProcessController:
         stdout_offset: int,
         stderr_offset: int,
         wait_seconds: float,
+        max_inline_bytes: int = _DEFAULT_INLINE_BYTES,
+        processes: BoundProcessOperations | None = None,
     ) -> tuple[ProcessInfo, ProcessReadOutputResult]:
+        processes = processes or self._environment.processes
         if wait_seconds > 0:
             try:
                 baseline = entry.latest
-                waited = await self._environment.processes.wait(
+                waited = await processes.wait(
                     entry.handle,
                     condition="initial_terminal",
                     timeout_seconds=wait_seconds,
@@ -360,15 +612,15 @@ class _ProcessController:
                 if exc.code != "environment_timeout":
                     raise
         baseline = entry.latest
-        inspected = await self._environment.processes.inspect(entry.handle)
+        inspected = await processes.inspect(entry.handle)
         self._adopt_info(entry, inspected, baseline=baseline)
-        output = await self._environment.processes.read_output(
+        output = await processes.read_output(
             entry.handle,
             stdout_start_offset=stdout_offset,
             stderr_start_offset=stderr_offset,
             wait_seconds=0,
             policy=EnvironmentOutputPolicy(
-                max_inline_bytes=(_MAX_MODEL_OUTPUT_BYTES if _is_final(entry.latest) else _DEFAULT_INLINE_BYTES),
+                max_inline_bytes=(_MAX_MODEL_OUTPUT_BYTES if _is_final(entry.latest) else max_inline_bytes),
                 max_output_bytes=_MAX_MODEL_OUTPUT_BYTES,
                 overflow="truncate",
             ),
@@ -555,16 +807,6 @@ class _ProcessController:
             self._execution_guard()
 
 
-def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
-    return {
-        "phase": status.phase,
-        "termination_reason": status.termination_reason,
-        "exit_code": status.exit_code,
-        "signal": status.signal,
-        "cleanup": status.cleanup,
-    }
-
-
 def _validate_capture(capture: EnvironmentOutputCapture) -> None:
     if not (0 <= capture.available_start <= capture.available_end) or (
         capture.produced_bytes is not None and capture.available_end > capture.produced_bytes
@@ -603,33 +845,6 @@ def _validate_stream(stream: ProcessStreamRead, *, requested_offset: int) -> Non
             )
 
 
-def _project_stream(
-    stream: ProcessStreamRead,
-    *,
-    requested_offset: int,
-    data: bytes,
-    full_page_bytes: int,
-) -> OutputPageProjection:
-    capture = stream.capture
-    start_offset = stream.chunks[0].start_offset if stream.chunks else max(requested_offset, capture.available_start)
-    return {
-        "requested_offset": requested_offset,
-        "start_offset": start_offset,
-        "next_offset": start_offset + len(data),
-        "available_start": capture.available_start,
-        "available_end": capture.available_end,
-        "origin": capture.origin,
-        "coverage": capture.coverage,
-        "observation_closed": capture.observation_closed,
-        "reason": capture.reason,
-        "produced_bytes": capture.produced_bytes,
-        "producer_complete": capture.producer_complete,
-        "content_complete": capture.content_complete and len(data) == full_page_bytes,
-        "omitted_before_bytes": max(0, start_offset - requested_offset),
-        "text": data.decode("utf-8", errors="replace"),
-    }
-
-
 def _process_observation(
     process_id: str,
     observation: tuple[ProcessInfo, ProcessReadOutputResult],
@@ -639,63 +854,16 @@ def _process_observation(
     bound_output: bool = True,
 ) -> ProcessObservationSuccess:
     info, output = observation
-    stdout_full = b"".join(chunk.data for chunk in output.stdout.chunks)
-    stderr_full = b"".join(chunk.data for chunk in output.stderr.chunks)
-    budget = len(stdout_full) + len(stderr_full)
-    while True:
-        stdout_data, stderr_data = _fit_stream_prefixes(stdout_full, stderr_full, budget)
-        result: ProcessObservationSuccess = {
-            "ok": True,
-            "process_id": process_id,
-            "status": _project_status(info.status),
-            "stdin_open": info.stdin_open,
-            "stdout": _project_stream(
-                output.stdout,
-                requested_offset=stdout_offset,
-                data=stdout_data,
-                full_page_bytes=len(stdout_full),
-            ),
-            "stderr": _project_stream(
-                output.stderr,
-                requested_offset=stderr_offset,
-                data=stderr_data,
-                full_page_bytes=len(stderr_full),
-            ),
-        }
-        if not bound_output or tool_output_size(cast(dict[str, JsonValue], result)) <= _MAX_PROJECTED_OUTPUT_CHARS:
-            return result
-        if budget == 0:
-            raise EnvironmentError(
-                "The process result metadata exceeds Harness output bounds.",
-                code="environment_provider_failure",
-            )
-        budget = max(0, int(budget * 0.75) - 1)
-
-
-def _fit_stream_prefixes(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[bytes, bytes]:
-    """Fit fair UTF-8-safe stream prefixes inside one aggregate byte budget."""
-    if max_bytes < 0:
-        raise ValueError("max_bytes must be non-negative")
-    stdout_limit = min(len(stdout), (max_bytes + 1) // 2)
-    stderr_limit = min(len(stderr), max_bytes // 2)
-    remaining = max_bytes - stdout_limit - stderr_limit
-    if remaining:
-        added = min(len(stdout) - stdout_limit, remaining)
-        stdout_limit += added
-        remaining -= added
-    if remaining:
-        stderr_limit += min(len(stderr) - stderr_limit, remaining)
-    return _utf8_safe_prefix(stdout, stdout_limit), _utf8_safe_prefix(stderr, stderr_limit)
-
-
-def _utf8_safe_prefix(data: bytes, limit: int) -> bytes:
-    prefix = data[:limit]
-    if limit >= len(data):
-        return prefix
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    decoder.decode(prefix, final=False)
-    buffered, _ = decoder.getstate()
-    return prefix[: len(prefix) - len(buffered)] if buffered else prefix
+    return _project_observation(
+        process_id,
+        info.status,
+        info.stdin_open,
+        output.stdout,
+        output.stderr,
+        stdout_offset=stdout_offset,
+        stderr_offset=stderr_offset,
+        bound_output=bound_output,
+    )
 
 
 def _shell_exec_result(

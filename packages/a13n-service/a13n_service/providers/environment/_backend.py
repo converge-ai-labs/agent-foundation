@@ -6,8 +6,10 @@ from typing import Literal
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.environment._backend import BackendReference
+from a13n_harness.providers.environment.remote_envd.managed import ManagedCredentialCache
 
 from .desktop_access import Reply, Request
+from .metrics import DeviceObservation, MetricsLaunch, ScrapeTarget
 
 
 class ManagementBackend(BackendReference):
@@ -24,6 +26,18 @@ class ManagementBackend(BackendReference):
     def validate_management(self) -> None:
         """Validate saved ownership before any management dispatch."""
         return None
+
+    def configure_metrics(self, metrics: MetricsLaunch) -> None:
+        """Accept private exporter settings only on supported creation paths."""
+        raise self._unsupported()
+
+    async def scrape_target(self) -> ScrapeTarget:
+        """Resolve the owned HTTP route and credential without a Session or lifecycle mutation."""
+        raise self._unsupported()
+
+    async def observe_device(self, *, credential_cache: ManagedCredentialCache | None = None) -> DeviceObservation:
+        """Read Envd-owned cached observations without an execution Session."""
+        raise self._unsupported()
 
     async def create(self) -> None:
         raise self._unsupported()

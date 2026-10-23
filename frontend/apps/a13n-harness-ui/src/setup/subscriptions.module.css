@@ -1,0 +1,253 @@
+.section {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.heading h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.heading p,
+.migration p {
+  margin: 6px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+}
+.search {
+  max-width: 300px;
+}
+.rows {
+  display: grid;
+  gap: 10px;
+}
+.accountCard {
+  min-width: 0;
+  padding: 16px 20px;
+  background: var(--a13n-surface);
+  border-radius: 10px;
+}
+.accountHeader,
+.accountIdentity,
+.accountName,
+.accountMeta,
+.cardActions,
+.summaryItem,
+.status {
+  display: flex;
+  align-items: center;
+}
+.accountHeader {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.accountIdentity {
+  min-width: 0;
+  gap: 12px;
+}
+.accountName {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.accountMeta {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cardActions {
+  flex-shrink: 0;
+  gap: 2px;
+  color: var(--a13n-secondary);
+}
+.plan {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  text-transform: capitalize;
+}
+.status {
+  gap: 5px;
+}
+.status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--a13n-secondary);
+}
+.status[data-connected="true"]::before {
+  background: var(--a13n-success);
+}
+.balanceSummary,
+.voucherSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+}
+.summaryItem {
+  gap: 6px;
+}
+.summaryItem svg {
+  flex-shrink: 0;
+}
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  background: var(--a13n-surface);
+  border-radius: 8px;
+}
+.identity {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.identity strong {
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.identity > span,
+.usage,
+.members {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.actions,
+.usage,
+.members {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.actions {
+  justify-content: flex-end;
+}
+.usage {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.quotaGroup {
+  display: grid;
+  gap: 5px;
+}
+.quotaLabel {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.quotaWindows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+.quotaDetail {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.meter {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.meterHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.meterHeading strong {
+  color: var(--a13n-text);
+  font-size: 17px;
+  font-weight: 500;
+}
+.meterHeading > span:first-child {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.meter meter {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border: 0;
+  border-radius: 4px;
+  background: var(--a13n-elevated);
+}
+.meter meter::-webkit-meter-bar {
+  height: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--a13n-elevated);
+}
+.meter meter::-webkit-meter-optimum-value {
+  background: var(--a13n-signal);
+  border-radius: 4px;
+}
+.meter meter::-moz-meter-bar {
+  background: var(--a13n-signal);
+  border-radius: 4px;
+}
+
+.migration summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  padding: 6px 0;
+}
+.members > span {
+  background: var(--a13n-elevated);
+  padding: 3px 7px;
+  border-radius: 6px;
+}
+.form {
+  display: grid;
+  gap: 16px;
+}
+.member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.member > span {
+  flex: 1;
+  min-width: 100px;
+}
+.member input {
+  width: 72px;
+}
+@media (max-width: 700px) {
+  .accountCard {
+    padding: 14px;
+  }
+  .accountIdentity {
+    gap: 8px;
+  }
+  .quotaWindows {
+    column-gap: 16px;
+  }
+  .row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .actions {
+    justify-content: flex-start;
+  }
+  .heading {
+    align-items: flex-start;
+  }
+}

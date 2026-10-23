@@ -1,13 +1,6 @@
-import {
-  Checkbox,
-  ChoiceField,
-  FormField,
-  Input,
-  Label,
-  Textarea,
-} from "a13n-ui";
+import { ChoiceField, FormField, Input, Switch, Textarea } from "a13n-ui";
 
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
@@ -17,13 +10,23 @@ import {
   object,
   objectVariants,
 } from "./schema-definition";
-import { fieldLabel } from "./labels";
+import { humanize, translatedFieldLabel } from "./labels";
 import { jsonValue } from "./validation";
 
-/** A nested group reads as "Shell profiles" when the schema names nothing. */
-function humanize(key: string) {
-  const words = key.replaceAll(/[_-]+/g, " ").trim();
-  return words ? words[0].toLocaleUpperCase() + words.slice(1) : key;
+/** An all-caps enum value (X_SMALL) reads as words too. */
+function optionWords(value: string) {
+  return humanize(value === value.toUpperCase() ? value.toLowerCase() : value);
+}
+/** A byte limit also reads as a size, such as 16 MiB. */
+function byteSize(value: number) {
+  let size = value,
+    unit = "B";
+  for (const next of ["KiB", "MiB", "GiB"]) {
+    if (size < 1024) break;
+    size /= 1024;
+    unit = next;
+  }
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(size)} ${unit}`;
 }
 function visible(
   field: Record<string, unknown>,
@@ -102,6 +105,7 @@ export function SchemaFields({
 }) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState(0);
+  const translated = (title: string) => translatedFieldLabel(t, title);
   const variants = objectVariants(schema);
   if (variants.length) {
     const matching = matchingVariant(variants, value);
@@ -150,23 +154,34 @@ export function SchemaFields({
           // the schema's own name and stays as it is.
           label =
             typeof field.title === "string"
-              ? fieldLabel(t(field.title))
-              : t(key),
+              ? translated(field.title)
+              : translated(humanize(key)),
           first = index === 0,
           required =
             requireFields &&
             Array.isArray(schema.required) &&
             schema.required.includes(key);
-        const description =
-          descriptions && typeof field.description === "string"
-            ? t(field.description)
+        const current = Object.hasOwn(value, key) ? value[key] : field.default;
+        const size =
+          key.endsWith("_bytes") &&
+          typeof current === "number" &&
+          current >= 1024
+            ? byteSize(current)
             : undefined;
+        const description =
+          [
+            descriptions && typeof field.description === "string"
+              ? t(field.description)
+              : undefined,
+            size,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined;
         if (
           Object.hasOwn(field, "const") ||
           !visible(field, withSchemaValues(schema, value))
         )
           return null;
-        const current = Object.hasOwn(value, key) ? value[key] : field.default;
         const options = Array.isArray(field.oneOf)
           ? field.oneOf.flatMap((choice) =>
               object(choice) && typeof choice.const === "string"
@@ -183,7 +198,9 @@ export function SchemaFields({
             )
           : Array.isArray(field.enum)
             ? field.enum.flatMap((item) =>
-                typeof item === "string" ? [{ value: item, label: item }] : [],
+                typeof item === "string"
+                  ? [{ value: item, label: translated(optionWords(item)) }]
+                  : [],
               )
             : [];
         if (options.length)
@@ -192,7 +209,7 @@ export function SchemaFields({
               key={key}
               placeholder={t("Select…")}
               value={typeof current === "string" ? current : undefined}
-              className="min-w-0"
+              className={`min-w-0 ${styles.short}`}
               required={required}
               onValueChange={(next) => change(key, next)}
               label={label}
@@ -204,12 +221,10 @@ export function SchemaFields({
           if (!Object.keys(field.properties).length) return null;
           return (
             <fieldset key={key} className={styles.schemaGroup}>
-              {/* A nested object is a group; it is named by its property. */}
-              <legend>
-                {typeof field.title === "string" && field.title
-                  ? label
-                  : t(humanize(key))}
-              </legend>
+              {/* A nested object is a group named by its property; one field names itself. */}
+              {Object.keys(field.properties).length > 1 && (
+                <legend>{label}</legend>
+              )}
               <SchemaFields
                 schema={{ ...field, $defs: schema.$defs }}
                 value={object(current) ? current : {}}
@@ -225,21 +240,20 @@ export function SchemaFields({
         }
         if (field.type === "boolean")
           return (
-            <Label key={key} className="flex items-center gap-2">
-              <Checkbox
-                checked={current === true}
-                onCheckedChange={(next) => change(key, next === true)}
-              />
-              {label}
-            </Label>
+            <SwitchField
+              key={key}
+              label={label}
+              description={description}
+              checked={current === true}
+              onCheckedChange={(next) => change(key, next)}
+            />
           );
         if (
           field.contentMediaType === "application/x-pem-file" ||
           field.format === "multiline"
         )
           return (
-            <label key={key} className={styles.field}>
-              <span>{label}</span>
+            <FormField key={key} label={label} description={description}>
               <Textarea
                 autoComplete="off"
                 spellCheck={false}
@@ -249,14 +263,13 @@ export function SchemaFields({
                   change(key, event.target.value || undefined)
                 }
                 required={required}
-                aria-label={label}
               />
-            </label>
+            </FormField>
           );
         if (["string", "number", "integer"].includes(String(field.type)))
           return (
             <FormField
-              className="min-w-0 w-full"
+              className={`min-w-0 w-full ${field.type === "string" ? "" : styles.short}`}
               label={label}
               description={description}
               labelAction={first ? labelAction : undefined}
@@ -313,6 +326,7 @@ export function SchemaFields({
           <JsonField
             key={key}
             label={label}
+            description={description}
             value={current}
             onChange={(next) => change(key, next)}
           />
@@ -323,10 +337,12 @@ export function SchemaFields({
 }
 function JsonField({
   label,
+  description,
   value,
   onChange,
 }: {
   label: string;
+  description?: string;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
@@ -335,13 +351,11 @@ function JsonField({
     ),
     [error, setError] = useState("");
   return (
-    <label className={styles.field}>
-      <span>{label}</span>
+    <FormField label={label} description={description} error={error}>
       <Textarea
         className={styles.code}
         rows={4}
         value={text}
-        aria-invalid={!!error}
         onChange={(event) => {
           setText(event.target.value);
           try {
@@ -359,7 +373,35 @@ function JsonField({
           }
         }}
       />
-      {error && <small role="alert">{error}</small>}
-    </label>
+    </FormField>
+  );
+}
+
+/** A yes/no setting is a switch row: the name and its effect, the switch at the right. */
+function SwitchField({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className={styles.switchField}>
+      <div>
+        <label htmlFor={id}>{label}</label>
+        {description && <p id={`${id}-description`}>{description}</p>}
+      </div>
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        aria-describedby={description ? `${id}-description` : undefined}
+      />
+    </div>
   );
 }

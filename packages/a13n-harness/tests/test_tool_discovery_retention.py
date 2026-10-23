@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-from a13n_harness import AgentSpec, DeferredToolResume, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness import AgentSpec, DeferredToolRequests, DeferredToolResume, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
     CompactionCapability,
@@ -18,7 +18,8 @@ from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.content import request_input_content
 from a13n_harness.tools import discovery
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
-from pydantic_ai import FunctionToolset, Tool
+from pydantic import TypeAdapter
+from pydantic_ai import CallDeferred, FunctionToolset, Tool
 from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
@@ -169,12 +170,12 @@ async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
     effects = []
     index = 0
     observed = []
-    search = ("search_proxy_tools", {"query": "double"})
+    search = ("discover_tools", {"query": "double"})
     if nested:
-        search = ("run_code", {"code": "await search_proxy_tools(query='double')"})
+        search = ("run_code", {"code": "await discover_tools(query='double')"})
     calls = [
         search,
-        ("run_code", {"code": "await call_proxy_tool(group='math', tool='double', arguments={'value': 20})"}),
+        ("run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 20})"}),
         ("summarize", {"content": "Continue arithmetic"}),
     ]
 
@@ -212,7 +213,7 @@ async def test_proxy_discovery_survives_summary_and_state_roundtrip(nested):
         if resumed == 2:
             assert "parameters_json_schema" in ModelMessagesTypeAdapter.dump_json(messages).decode()
             return _call(
-                "run_code", {"code": "await call_proxy_tool(group='math', tool='double', arguments={'value': 21})"}, 11
+                "run_code", {"code": "await call_tool(group='math', tool='double', arguments={'value': 21})"}, 11
             )
         return ModelResponse(parts=[TextPart("done")])
 
@@ -252,7 +253,7 @@ async def _run_calls(capabilities, calls, *, previous_state=None):
 async def test_search_without_target_calls_retains_nothing(monkeypatch, proxy):
     monkeypatch.setattr(discovery, "_MAX_TOOLS", 1)
     capabilities = (_source([], proxy=proxy), ToolSearch(strategy="keywords"), CodeActCapability(), HandoffCapability())
-    search = ("search_proxy_tools", {"query": ""}) if proxy else ("search_tools", {"queries": ["double triple"]})
+    search = ("discover_tools", {"query": ""}) if proxy else ("search_tools", {"queries": ["double triple"]})
     _, snapshots = await _run_calls(capabilities, [search, ("summarize", {"content": "Continue"})])
     messages, info = snapshots[-1]
     assert not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts)
@@ -314,8 +315,8 @@ async def test_proxy_revalidation_drops_stale_evidence(change):
     first, _ = await _run_calls(
         (grouped(), HandoffCapability()),
         [
-            ("search_proxy_tools", {"query": "lookup"}),
-            ("call_proxy_tool", {"group": "db", "tool": "lookup", "arguments": {"value": 1}}),
+            ("discover_tools", {"query": "lookup"}),
+            ("call_tool", {"group": "db", "tool": "lookup", "arguments": {"value": 1}}),
         ],
     )
     state = HarnessState.model_validate_json(first.state.model_dump_json())
@@ -501,11 +502,11 @@ async def test_nested_proxy_state_deduplicates_calls_and_eviction_does_not_resur
     first, _ = await _run_calls(
         capabilities,
         [
-            ("run_code", {"code": "await search_proxy_tools(query='double')"}),
+            ("run_code", {"code": "await discover_tools(query='double')"}),
             (
                 "run_code",
                 {
-                    "code": "for i in range(40):\n    await call_proxy_tool(group='math', tool='double', arguments={'value': i})"
+                    "code": "for i in range(40):\n    await call_tool(group='math', tool='double', arguments={'value': i})"
                 },
             ),
         ],
@@ -577,15 +578,15 @@ async def test_multi_tool_search_retains_only_called_member(monkeypatch, mode):
         calls = [("search_tools", {"queries": ["double triple"]}), ("double", {"value": 1})]
     elif mode == "proxy":
         calls = [
-            ("search_proxy_tools", {"query": ""}),
-            ("call_proxy_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
+            ("discover_tools", {"query": ""}),
+            ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
         ]
     else:
         calls = [
             (
                 "run_code",
                 {
-                    "code": "await search_proxy_tools(query='')\nawait call_proxy_tool(group='math', tool='double', arguments={'value': 1})"
+                    "code": "await discover_tools(query='')\nawait call_tool(group='math', tool='double', arguments={'value': 1})"
                 },
             )
         ]
@@ -597,7 +598,7 @@ async def test_multi_tool_search_retains_only_called_member(monkeypatch, mode):
     retained_calls = [p for msg in messages for p in msg.parts if isinstance(p, ToolCallPart)]
     assert len(retained_calls) == 1
     marker = "[query omitted during context replacement]"
-    assert retained_calls[0].args_as_dict() == ({"query": marker} if proxy else {"queries": [marker]})
+    assert retained_calls[0].args_as_dict() == ({"query": marker, "detail": "full"} if proxy else {"queries": [marker]})
     assert "Original search queries were not retained" in ModelMessagesTypeAdapter.dump_json(messages).decode()
     if proxy:
         assert [entry["tool"] for entry in results[0].content["tools"]] == ["double"]
@@ -655,14 +656,14 @@ async def test_wrapped_proxy_search_does_not_break_called_tool_retention(nested)
         CodeActCapability(),
         HandoffCapability(),
     )
-    search = ("search_proxy_tools", {"query": "lookup"})
+    search = ("discover_tools", {"query": "lookup", "detail": "full"})
     if nested:
-        search = ("run_code", {"code": "await search_proxy_tools(query='lookup')"})
+        search = ("run_code", {"code": "await discover_tools(query='lookup', detail='full')"})
     result, snapshots = await _run_calls(
         capabilities,
         [
             search,
-            ("call_proxy_tool", {"group": "db", "tool": "lookup", "arguments": {}}),
+            ("call_tool", {"group": "db", "tool": "lookup", "arguments": {}}),
             ("summarize", {"content": "Continue"}),
         ],
     )
@@ -718,9 +719,11 @@ async def test_approval_only_retains_tools_that_execute(approved):
         assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None
 
 
+@pytest.mark.parametrize("proxy", [False, True])
+@pytest.mark.parametrize("runtime_function", [False, True])
 @pytest.mark.parametrize("inline", [False, True])
 @pytest.mark.parametrize("failed", [False, True])
-async def test_external_completion_retains_called_tool_but_failure_does_not(inline, failed):
+async def test_deferred_completion_retains_actual_tool_but_failure_does_not(proxy, runtime_function, inline, failed):
     returned = ToolFailed("External execution failed") if failed else {"value": 42}
 
     class ResolveExternal(AbstractCapability):
@@ -729,18 +732,28 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
                 return DeferredToolResults(calls={call.tool_call_id: returned for call in requests.calls})
             return None
 
-    external = ExternalToolset([ToolDefinition(name="lookup", defer_loading=True)], id="external-source")
+    effects = []
+
+    def lookup():
+        effects.append("started")
+        raise CallDeferred()
+
+    source = (
+        FunctionToolset([Tool(lookup, defer_loading=not proxy)], id="external-source")
+        if runtime_function
+        else ExternalToolset([ToolDefinition(name="lookup", defer_loading=not proxy)], id="external-source")
+    )
     index = 0
     snapshots = []
     calls = [
-        ("search_tools", {"queries": ["lookup"]}),
-        ("lookup", {}),
+        ("discover_tools", {"query": "lookup"}) if proxy else ("search_tools", {"queries": ["lookup"]}),
+        ("call_tool", {"group": "editor", "tool": "lookup", "arguments": {}}) if proxy else ("lookup", {}),
         ("summarize", {"content": "Continue after external result"}),
     ]
 
     def model(messages, info):
         nonlocal index
-        snapshots.append(info)
+        snapshots.append((deepcopy(messages), info))
         if index == len(calls):
             return ModelResponse(parts=[TextPart("done")])
         name, args = calls[index]
@@ -752,8 +765,11 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
         model=_scripted_model(model),
         output_type=str,
         capabilities=(
-            Capability(toolsets=[external]),
-            ToolSearch(strategy="keywords"),
+            *(
+                (ToolSearchCapability(groups={"editor": ToolSearchGroup(source, "Editor tools")}),)
+                if proxy
+                else (Capability(toolsets=[source]), ToolSearch(strategy="keywords"))
+            ),
             HandoffCapability(),
             ResolveExternal(),
         ),
@@ -763,30 +779,70 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
         assert result.deferred is not None
         assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None
         state = HarnessState.model_validate_json(result.state.model_dump_json())
+        adapter = TypeAdapter(DeferredToolRequests)
+        pending = adapter.validate_json(adapter.dump_json(result.deferred))
         result = await executable.run(
             previous_state=state,
             deferred_resume=DeferredToolResume(
-                result.deferred,
-                result.deferred.build_results(calls={"step-2": returned}),
+                pending,
+                pending.build_results(calls={pending.calls[0].target_call.tool_call_id: returned}),
             ),
         )
     assert result.output_or_raise() == "done"
-    assert snapshots[-1].model_request_parameters.revealed_tool_names == (set() if failed else {"lookup"})
+    assert effects == (["started"] if runtime_function else [])
+    returns = [
+        part
+        for message in snapshots[-2][0]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == "step-2"
+    ]
+    assert len(returns) == 1
+    assert returns[0].tool_name == ("call_tool" if proxy else "lookup")
+    assert returns[0].outcome == ("failed" if failed else "success")
+    if proxy:
+        entries = [
+            entry
+            for message in snapshots[-1][0]
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict) and part.content.get("retained")
+            for entry in part.content["tools"]
+        ]
+        assert [entry["tool"] for entry in entries] == ([] if failed else ["lookup"])
+        if not failed:
+            assert entries[0]["group"] == "editor"
+            assert entries[0]["parameters_json_schema"]["type"] == "object"
+    else:
+        assert snapshots[-1][1].model_request_parameters.revealed_tool_names == (set() if failed else {"lookup"})
     saved = result.state.agent_context_state.get(discovery._DISCOVERY_ID)
     if failed:
         assert saved is None
     else:
-        assert [item["name"] for item in saved.data["called"]] == ["lookup"]
+        assert saved.data["called"] == [
+            {"name": "editor__lookup" if proxy else "lookup", "tool_id": "tool/external-source/lookup"}
+        ]
 
 
 async def test_proxy_call_without_search_reconstructs_current_schema():
     _, snapshots = await _run_calls(
         (_source([], proxy=True), HandoffCapability()),
         [
-            ("call_proxy_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
+            ("call_tool", {"group": "math", "tool": "double", "arguments": {"value": 1}}),
             ("summarize", {"content": "Continue"}),
         ],
     )
     retained = next(p for msg in snapshots[-1][0] for p in msg.parts if isinstance(p, ToolReturnPart))
     assert [entry["tool"] for entry in retained.content["tools"]] == ["double"]
     assert retained.content["tools"][0]["parameters_json_schema"]["required"] == ["value"]
+
+
+@pytest.mark.parametrize("nested", [False, True])
+async def test_describe_without_execution_retains_nothing(nested):
+    describe = ("describe_tool", {"group": "math", "tool": "double"})
+    if nested:
+        describe = ("run_code", {"code": "await describe_tool(group='math', tool='double')"})
+    result, snapshots = await _run_calls(
+        (_source([], proxy=True), CodeActCapability(), HandoffCapability()),
+        [describe, ("summarize", {"content": "Continue"})],
+    )
+    assert not any(isinstance(p, ToolReturnPart) for msg in snapshots[-1][0] for p in msg.parts)
+    assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None

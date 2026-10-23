@@ -10,7 +10,6 @@ import pytest
 from a13n_harness import AbstractHarnessPlugin, AgentContext, AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
-    NativeToolSearchConfig,
     ProxyToolSearchConfig,
     ToolSearchCapability,
     ToolSearchGroup,
@@ -119,18 +118,18 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
 
     def inspect(_step: int, info: AgentInfo) -> None:
         definitions = {tool.name: tool for tool in info.function_tools}
-        assert set(definitions) == {"search_proxy_tools", "call_proxy_tool"}
-        assert definitions["call_proxy_tool"].parameters_json_schema["properties"]["group"]["enum"] == ["crm"]
-        assert "crm operations" in definitions["search_proxy_tools"].description
-        assert "Double a customer" not in definitions["search_proxy_tools"].description
+        assert set(definitions) == {"discover_tools", "describe_tool", "call_tool", "list_tools", "list_tool_groups"}
+        assert "enum" not in definitions["call_tool"].parameters_json_schema["properties"]["group"]
+        assert "crm operations" not in definitions["discover_tools"].description
+        assert "Double a customer" not in definitions["discover_tools"].description
         assert "Grouped tool discovery" in info.instructions
         assert "Use exact customer IDs." not in info.instructions
 
     result, returns = await _run(
         (_group(double), Hooks()),
         [
-            ("search_proxy_tools", {"query": "double"}),
-            ("call_proxy_tool", {"group": "crm", "tool": "double", "arguments": {"value": "21"}}),
+            ("discover_tools", {"query": "double"}),
+            ("call_tool", {"group": "crm", "tool": "double", "arguments": {"value": "21"}}),
         ],
         inspect=inspect,
     )
@@ -141,7 +140,7 @@ async def test_proxy_discovers_exact_schemas_and_dispatches_through_original_hoo
     assert found["instructions"] == ["Use exact customer IDs."]
     assert found["codeact_eligible"] is True
     assert returns[-1].content == 42
-    assert validated == ["search_proxy_tools", "call_proxy_tool", "crm__double"]
+    assert validated == ["discover_tools", "call_tool", "crm__double"]
     assert executed == validated
 
 
@@ -188,14 +187,14 @@ async def test_codeact_can_search_and_call_proxy_without_expanding_business_cata
 
     def inspect(_step: int, info: AgentInfo) -> None:
         runner = next(tool for tool in info.function_tools if tool.name == "run_code")
-        assert "search_proxy_tools" in runner.description
-        assert "call_proxy_tool" in runner.description
+        assert "discover_tools" in runner.description
+        assert "call_tool" in runner.description
         assert "crm__double" not in runner.description
         assert "async def double" not in runner.description
 
-    source = """found = await search_proxy_tools(query='double', group='crm')
+    source = """found = await discover_tools(query='double', group='crm')
 match = found['tools'][0]
-await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'value': 21})"""
+await call_tool(group=match['group'], tool=match['tool'], arguments={'value': 21})"""
     capability = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([double]), CodeActToolPolicy(default=True))])
     result, returns = await _run(
         (CodeActCapability(), capability if use_plan else _group(double)),
@@ -219,7 +218,7 @@ async def test_codeact_proxy_does_not_grant_target_eligibility() -> None:
 
     result, returns = await _run(
         (CodeActCapability(), _group(forbidden, eligible=False)),
-        [("run_code", {"code": "await call_proxy_tool(group='crm', tool='forbidden', arguments={})"})],
+        [("run_code", {"code": "await call_tool(group='crm', tool='forbidden', arguments={})"})],
     )
     assert result.output_or_raise() == "done"
     assert calls == []
@@ -236,7 +235,7 @@ async def test_invalid_arguments_do_not_execute_target() -> None:
 
     result, _ = await _run(
         (_group(typed),),
-        [("call_proxy_tool", {"group": "crm", "tool": "typed", "arguments": {"value": "invalid"}})],
+        [("call_tool", {"group": "crm", "tool": "typed", "arguments": {"value": "invalid"}})],
     )
     assert result.output_or_raise() == "done"
     assert calls == []
@@ -250,7 +249,7 @@ async def test_proxy_composes_with_native_tool_search() -> None:
         return "normal"
 
     def inspect(_step: int, info: AgentInfo) -> None:
-        assert {"search_tools", "search_proxy_tools", "call_proxy_tool"} <= {tool.name for tool in info.function_tools}
+        assert {"search_tools", "discover_tools", "call_tool"} <= {tool.name for tool in info.function_tools}
 
     result, _ = await _run(
         (
@@ -275,7 +274,7 @@ async def test_capability_group_wraps_a_fresh_run_replacement() -> None:
 
     result, returns = await _run(
         (ToolSearchCapability(groups={"identity": ToolSearchGroup(Source(id="fresh"), "Current run")}),),
-        [("call_proxy_tool", {"group": "identity", "tool": "identify", "arguments": {}})],
+        [("call_tool", {"group": "identity", "tool": "identify", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     assert isinstance(returns[-1].content, str)
@@ -287,7 +286,7 @@ async def test_search_budget_never_returns_partial_schema() -> None:
 
     result, returns = await _run(
         (_group(Tool(giant, description="x" * 2000), config=ProxyToolSearchConfig(max_search_bytes=1024)),),
-        [("search_proxy_tools", {"query": "giant"})],
+        [("discover_tools", {"query": "giant", "detail": "full"})],
     )
     assert result.output_or_raise() == "done"
     assert returns[-1].outcome == "failed"
@@ -324,10 +323,10 @@ async def test_proxy_preserves_managed_authorization_and_successful_call_account
             return request_context
 
     capabilities = (_group(HarnessTool(write, harness_metadata=_metadata())), InspectUsage())
-    call = ("call_proxy_tool", {"group": "crm", "tool": "write", "arguments": {"value": "7"}})
+    call = ("call_tool", {"group": "crm", "tool": "write", "arguments": {"value": "7"}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='write', arguments={'value': '7'})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='write', arguments={'value': '7'})"})
     result, _ = await _run(
         capabilities,
         [call],
@@ -356,10 +355,10 @@ async def test_proxy_usage_limit_admits_one_actual_target_not_a_second_router_ca
             return request_context
 
     capabilities = (_group(work), Usage())
-    call = ("call_proxy_tool", {"group": "crm", "tool": "work", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "work", "arguments": {}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='work', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='work', arguments={})"})
     result, _ = await _run(capabilities, [call], usage_limits=UsageLimits(tool_calls_limit=2))
     assert result.output_or_raise() == "done"
     assert effects == [True]
@@ -371,7 +370,7 @@ async def test_proxy_usage_limit_admits_one_actual_target_not_a_second_router_ca
 
 
 @pytest.mark.parametrize("resolution", ["approve", "deny", "unresolved"])
-async def test_proxy_preserves_inline_approval_without_leaking_unresolved_nested_calls(resolution: str) -> None:
+async def test_proxy_preserves_inline_approval_and_suspends_unresolved_target(resolution: str) -> None:
     from pydantic_ai.capabilities import HandleDeferredToolCalls
     from pydantic_ai.tools import DeferredToolResults, ToolDenied
 
@@ -392,9 +391,12 @@ async def test_proxy_preserves_inline_approval_without_leaking_unresolved_nested
     caps = (_group(Tool(change, requires_approval=True)),)
     if resolution != "unresolved":
         caps += (HandleDeferredToolCalls(handler=handler),)
-    result, returns = await _run(
-        caps, [("call_proxy_tool", {"group": "crm", "tool": "change", "arguments": {"value": 3}})]
-    )
+    result, returns = await _run(caps, [("call_tool", {"group": "crm", "tool": "change", "arguments": {"value": 3}})])
+    if resolution == "unresolved":
+        assert result.status == "suspended" and result.deferred is not None
+        assert result.deferred.approvals[0].target_call.tool_name == "crm__change"
+        assert effects == [] and returns == []
+        return
     assert result.output_or_raise() == "done"
     assert effects == ([3] if resolution == "approve" else [])
     assert returns[-1].outcome == ("success" if resolution == "approve" else "failed")
@@ -417,11 +419,11 @@ async def test_group_source_preparation_updates_schema_and_disappearing_groups_r
 
     def inspect(step, info):
         names = {tool.name for tool in info.function_tools}
-        assert ("search_proxy_tools" in names) == (step < 2)
+        assert ("discover_tools" in names) == (step < 2)
 
     result, returns = await _run(
         (_group(Tool(lookup, prepare=prepare)),),
-        [("search_proxy_tools", {"query": "lookup"}), ("search_proxy_tools", {"query": "lookup"})],
+        [("discover_tools", {"query": "lookup"}), ("discover_tools", {"query": "lookup"})],
         inspect=inspect,
     )
     assert result.output_or_raise() == "done"
@@ -449,7 +451,7 @@ async def test_proxy_supersession_removes_target_from_search_and_codeact() -> No
                 HarnessTool(new, harness_metadata=_metadata("new")),
             ),
         ),
-        [("search_proxy_tools", {"query": ""}), ("call_proxy_tool", {"group": "crm", "tool": "old", "arguments": {}})],
+        [("discover_tools", {"query": ""}), ("call_tool", {"group": "crm", "tool": "old", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     assert [tool["tool"] for tool in returns[0].content["tools"]] == ["new"]
@@ -461,10 +463,10 @@ async def test_proxy_retains_multimodal_tool_return_content(codeact: bool) -> No
         return ToolReturn(return_value={"value": 1}, content="supplemental evidence", metadata={"source": "test"})
 
     caps = (_group(rich),)
-    call = ("call_proxy_tool", {"group": "crm", "tool": "rich", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "rich", "arguments": {}})
     if codeact:
         caps += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='rich', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='rich', arguments={})"})
     result, returns = await _run(caps, [call])
     assert result.output_or_raise() == "done"
     from a13n_harness.tools._output import tool_execution_value
@@ -497,7 +499,7 @@ async def test_grouped_sequential_tool_keeps_awaitable_barrier_in_codeact() -> N
             (
                 "run_code",
                 {
-                    "code": "import asyncio\nawait asyncio.gather(call_proxy_tool(group='crm', tool='work', arguments={'value': 1}), call_proxy_tool(group='crm', tool='work', arguments={'value': 2}))"
+                    "code": "import asyncio\nawait asyncio.gather(call_tool(group='crm', tool='work', arguments={'value': 1}), call_tool(group='crm', tool='work', arguments={'value': 2}))"
                 },
             )
         ],
@@ -518,7 +520,7 @@ async def test_proxy_keeps_target_retry_context_and_does_not_charge_envelope_bud
             raise ModelRetry("Try this operation again")
         return "recovered"
 
-    call = ("call_proxy_tool", {"group": "crm", "tool": "retrying", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "retrying", "arguments": {}})
     result, returns = await _run(
         (_group(Tool(retrying, max_retries=3)),),
         [call, call, call],
@@ -556,8 +558,8 @@ async def test_outer_prefix_preserves_group_identity_source_guidance_and_codeact
     result, returns = await _run(
         (ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Customer data")}),),
         [
-            ("search_proxy_tools", {"query": "value"}),
-            ("call_proxy_tool", {"group": "crm", "tool": "outer_value", "arguments": {}}),
+            ("discover_tools", {"query": "value", "detail": "full"}),
+            ("call_tool", {"group": "crm", "tool": "outer_value", "arguments": {}}),
         ],
     )
     assert result.output_or_raise() == "done"
@@ -575,7 +577,7 @@ async def test_unknown_execution_failure_is_bounded_and_does_not_retry_side_effe
 
     result, returns = await _run(
         (_group(mutate),),
-        [("call_proxy_tool", {"group": "crm", "tool": "mutate", "arguments": {}})],
+        [("call_tool", {"group": "crm", "tool": "mutate", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     assert effects == [True]
@@ -614,10 +616,10 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
         result, returns = await _run(
             caps,
             [
-                ("search_proxy_tools", {"query": "", "limit": 2}),
-                ("search_proxy_tools", {"query": "", "limit": 2, "offset": count - 1}),
+                ("discover_tools", {"query": "", "limit": 2}),
+                ("discover_tools", {"query": "", "limit": 2, "offset": count - 1}),
                 (
-                    "call_proxy_tool",
+                    "call_tool",
                     {"group": "crm", "tool": f"operation_{count - 1:04}", "arguments": {"index": count}},
                 ),
             ],
@@ -647,9 +649,9 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
 
     (tmp_path / "job.codeact.py").write_text(
         "async def main(inputs):\n"
-        "    found = await search_proxy_tools(query='double', group='crm')\n"
+        "    found = await discover_tools(query='double', group='crm')\n"
         "    match = found['tools'][0]\n"
-        "    return await call_proxy_tool(group=match['group'], tool=match['tool'], arguments={'value': inputs['value']})\n",
+        "    return await call_tool(group=match['group'], tool=match['tool'], arguments={'value': inputs['value']})\n",
         encoding="utf-8",
     )
     provider = DirectLocalSource(
@@ -694,15 +696,15 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent() -> Non
         def inspect(_step: int, info: AgentInfo, enabled: bool = enabled) -> None:
             instructions = info.instructions or ""
             assert ("Grouped tool discovery" in instructions) is enabled
-            assert "search_proxy_tools" not in instructions
-            assert "call_proxy_tool" not in instructions
+            assert "discover_tools" not in instructions
+            assert "call_tool" not in instructions
             if enabled:
                 assert "find_ops" in instructions
                 assert "invoke_op" in instructions
 
         result, returns = await _run(
             (_group(value, config=config),),
-            [("find_ops", {"query": ""})],
+            [("find_ops", {"query": "", "detail": "full"})],
             inspect=inspect,
             toolset_instructions=enabled,
         )
@@ -738,8 +740,8 @@ async def test_group_wraps_combined_capabilities_without_duplicate_tools_or_hook
     result, returns = await _run(
         (ToolSearchCapability(groups={"combined": ToolSearchGroup(source, "Combined source")}),),
         [
-            ("search_proxy_tools", {"query": ""}),
-            ("call_proxy_tool", {"group": "combined", "tool": "second", "arguments": {}}),
+            ("discover_tools", {"query": ""}),
+            ("call_tool", {"group": "combined", "tool": "second", "arguments": {}}),
         ],
     )
     assert result.output_or_raise() == "done"
@@ -761,6 +763,9 @@ def test_proxy_configuration_errors_explain_how_to_fix_the_source() -> None:
         validate_proxy_target(ToolDefinition(name="lookup", defer_loading=True))
     with pytest.raises(UserError, match="native=False, local=True"):
         validate_proxy_target(ToolDefinition(name="lookup", unless_native=True))
+    validate_proxy_target(ToolDefinition(name="lookup", kind="external"))
+    with pytest.raises(UserError, match="Leave control, output, and provider-native tools directly exposed"):
+        validate_proxy_target(ToolDefinition(name="lookup", kind="output"))
 
 
 async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_executing() -> None:
@@ -771,7 +776,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
 
     result, _ = await _run(
         (_group(value),),
-        [("call_proxy_tool", {"group": "crm", "tool": "missing", "arguments": {}})],
+        [("call_tool", {"group": "crm", "tool": "missing", "arguments": {}})],
     )
     assert result.output_or_raise() == "done"
     retry = next(
@@ -782,7 +787,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
         if isinstance(part, RetryPromptPart)
     )
     assert "crm/missing" in retry.content
-    assert "Search again" in retry.content
+    assert "Rediscover available tools" in retry.content
 
 
 async def test_empty_groups_leave_direct_tools_unchanged() -> None:
@@ -811,7 +816,7 @@ async def test_group_mapping_is_consumed_at_construction() -> None:
     groups = {"crm": descriptor}
     proxy = ToolSearchCapability(groups=groups)
     groups.clear()
-    result, returns = await _run((proxy,), [("call_proxy_tool", {"group": "crm", "tool": "value", "arguments": {}})])
+    result, returns = await _run((proxy,), [("call_tool", {"group": "crm", "tool": "value", "arguments": {}})])
     assert result.output_or_raise() == "done"
     assert returns[0].content == 42
 
@@ -903,9 +908,9 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
             log.append("plugin:wrap_run")
             return await call_next(exchange)
 
-    target = ("call_proxy_tool", {"group": "crm", "tool": "identify", "arguments": {}}) if grouped else ("identify", {})
+    target = ("call_tool", {"group": "crm", "tool": "identify", "arguments": {}}) if grouped else ("identify", {})
     if codeact:
-        code = "await call_proxy_tool(group='crm', tool='identify', arguments={})" if grouped else "await identify()"
+        code = "await call_tool(group='crm', tool='identify', arguments={})" if grouped else "await identify()"
         target = ("run_code", {"code": code})
     calls = [target, ("status", {})]
     requests = 0
@@ -918,11 +923,11 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
         assert "Preserve capability instructions." in (info.instructions or "")
         if codeact:
             runner = next(tool for tool in info.function_tools if tool.name == "run_code")
-            assert ("call_proxy_tool" in runner.description) is grouped
+            assert ("call_tool" in runner.description) is grouped
             assert ("async def identify" in runner.description) is not grouped
         else:
             assert ("identify" in names) is not grouped
-            assert ("call_proxy_tool" in names) is grouped
+            assert ("call_tool" in names) is grouped
         index = requests
         requests += 1
         if index < len(calls):
@@ -1115,9 +1120,9 @@ async def test_plan_groups_exact_plugin_instances_and_keeps_unlisted_sources_dir
     result, returns = await _run(
         (source,),
         [
-            ("call_proxy_tool", {"group": "first", "tool": "identify", "arguments": {}}),
-            ("call_proxy_tool", {"group": "second", "tool": "identify", "arguments": {}}),
-            ("call_proxy_tool", {"group": "first", "tool": "local", "arguments": {}}),
+            ("call_tool", {"group": "first", "tool": "identify", "arguments": {}}),
+            ("call_tool", {"group": "second", "tool": "identify", "arguments": {}}),
+            ("call_tool", {"group": "first", "tool": "local", "arguments": {}}),
             ("identify", {}),
         ],
         plugins=(Plugin("plugin-one"), Plugin("plugin-two"), Plugin("plugin-direct")),
@@ -1239,7 +1244,13 @@ async def test_grouped_custom_container_retains_native_binding_hooks_and_state(u
 
     async def model(messages, info):
         assert "Container-owned instructions." in info.instructions
-        assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -1274,11 +1285,17 @@ async def test_build_plan_survives_model_recovery_without_replaying_completed_ta
     async def model(messages, info):
         nonlocal requests
         requests += 1
-        assert {tool.name for tool in info.function_tools} == {"search_proxy_tools", "call_proxy_tool"}
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
         if requests == 1:
             yield {
                 0: DeltaToolCall(
-                    name="call_proxy_tool",
+                    name="call_tool",
                     json_args='{"group":"storage","tool":"write","arguments":{}}',
                     tool_call_id="call-write",
                 )
@@ -1321,12 +1338,12 @@ async def test_proxy_target_permission_gate_precedes_business_dispatch(codeact: 
         _group(forbidden),
         ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/native/forbidden": mode})),
     )
-    call = ("call_proxy_tool", {"group": "crm", "tool": "forbidden", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "forbidden", "arguments": {}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='forbidden', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='forbidden', arguments={})"})
     result, _ = await _run(capabilities, [call])
-    assert result.status == "completed"
+    assert result.status == ("suspended" if mode == "ask" and not codeact else "completed")
     assert not effects
 
 
@@ -1345,228 +1362,13 @@ async def test_proxy_and_codeact_use_capability_approval_override(codeact: bool,
         _group(Tool(change, requires_approval=True)),
         ToolPermissionsCapability(ToolPermissions(rules={"tool/native/change": mode})),
     )
-    call = ("call_proxy_tool", {"group": "crm", "tool": "change", "arguments": {}})
+    call = ("call_tool", {"group": "crm", "tool": "change", "arguments": {}})
     if codeact:
         capabilities += (CodeActCapability(),)
-        call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='change', arguments={})"})
+        call = ("run_code", {"code": "await call_tool(group='crm', tool='change', arguments={})"})
     result, _ = await _run(capabilities, [call])
-    assert result.status == "completed"
+    assert result.status == ("suspended" if mode == "inherit" and not codeact else "completed")
     assert effects == ([False] if mode == "allow" else [])
-
-
-@pytest.mark.parametrize("use_plan", [False, True])
-async def test_native_search_requires_support_without_local_fallback(use_plan: bool) -> None:
-    def hidden() -> str:
-        raise AssertionError("unsupported model must never execute tools")
-
-    source = Capability(toolsets=[FunctionToolset([hidden])])
-    plan = ToolSearchPlan(
-        groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))}, config=NativeToolSearchConfig()
-    )
-    capability = ToolSearchCapability(
-        groups={"crm": ToolSearchGroup(source, "Customer data")}, config=NativeToolSearchConfig()
-    )
-    requests = []
-    from a13n_harness.errors import DefinitionError
-
-    with pytest.raises(DefinitionError, match="native tool search") as exc:
-        await _run(
-            (source,) if use_plan else (capability,),
-            [],
-            tool_search=plan if use_plan else None,
-            inspect=lambda step, info: requests.append(step),
-            profile=ModelProfile(supported_native_tools=frozenset()),
-        )
-    assert exc.value.code == "native_tool_search_unsupported"
-    assert requests == []
-
-
-async def test_native_search_preserves_group_names_and_direct_local_dispatch() -> None:
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    calls = []
-
-    def lookup(ctx: RunContext, value: int) -> int:
-        calls.append(ctx.tool_name)
-        return value * 2
-
-    def direct() -> str:
-        return "direct"
-
-    source = Capability(toolsets=[FunctionToolset([lookup])])
-
-    def inspect(step: int, info: AgentInfo) -> None:
-        tools = {tool.name: tool for tool in info.function_tools}
-        assert "search_proxy_tools" not in tools
-        assert "call_proxy_tool" not in tools
-        assert tools["crm__lookup"].defer_loading
-        assert tools["crm__lookup"].with_native == "tool_search"
-        assert not tools["direct"].defer_loading
-
-    result, returns = await _run(
-        (source, Capability(tools=[direct]), ToolSearch(strategy="keywords")),
-        [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {"value": 4})],
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
-            config=NativeToolSearchConfig(),
-        ),
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-        inspect=inspect,
-    )
-    assert result.output_or_raise() == "done"
-    assert calls == ["lookup"]
-    assert returns[-1].content == 8
-
-
-@pytest.mark.parametrize("provider", ["anthropic", "openai-responses", "openai-chat"])
-async def test_native_server_search_profile_and_history_restore(provider: str) -> None:
-    from a13n_harness.errors import DefinitionError
-    from pydantic_ai.messages import NativeToolSearchCallPart, NativeToolSearchReturnPart
-    from pydantic_ai.models.anthropic import AnthropicModel
-    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
-    from pydantic_ai.providers.anthropic import AnthropicProvider
-    from pydantic_ai.providers.openai import OpenAIProvider
-
-    if provider == "anthropic":
-        adapter = AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(api_key="test"))
-    elif provider == "openai-responses":
-        adapter = OpenAIResponsesModel("gpt-5.4", provider=OpenAIProvider(api_key="test"))
-    else:
-        adapter = OpenAIChatModel("gpt-5.4", provider=OpenAIProvider(api_key="test"))
-    effects = []
-    phase = "discover"
-    step = 0
-
-    def lookup() -> str:
-        effects.append("called")
-        return "found"
-
-    async def model(messages, info):
-        nonlocal step
-        parameters = info.model_request_parameters
-        _, prepared = adapter.prepare_request(None, parameters)
-        assert {tool.name for tool in prepared.function_tools} == {"crm__lookup"}
-        assert len(prepared.native_tools) == 1
-        assert prepared.native_tools[0].kind == "tool_search"
-        assert prepared.native_tools[0].optional is False
-        if phase == "discover":
-            yield {0: NativeToolSearchCallPart(args={"queries": ["lookup"]}, tool_call_id="search-1")}
-            yield {
-                1: NativeToolSearchReturnPart(
-                    content={"discovered_tools": [{"name": "crm__lookup"}]}, tool_call_id="search-1"
-                )
-            }
-            yield "discovered"
-        elif step == 0:
-            step += 1
-            yield {0: DeltaToolCall(name="crm__lookup", json_args="{}", tool_call_id="lookup-1")}
-        else:
-            yield "done"
-
-    source = Capability(tools=[lookup])
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=model, profile=adapter.profile),
-        capabilities=(source,),
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
-            config=NativeToolSearchConfig(),
-        ),
-    )
-    if provider == "openai-chat":
-        with pytest.raises(DefinitionError, match="native tool search"):
-            await executable.run("find", bindings=RunBindings.embedded())
-        assert effects == []
-        return
-    discovered = await executable.run("find", bindings=RunBindings.embedded())
-    assert discovered.output_or_raise() == "discovered"
-    state = type(discovered.state).model_validate_json(discovered.state.model_dump_json())
-    phase = "invoke"
-    resumed = await executable.run("invoke", previous_state=state, bindings=RunBindings.embedded())
-    assert resumed.output_or_raise() == "done"
-    assert effects == ["called"]
-    assert _returns(resumed.all_messages())[-1].content == "found"
-
-
-@pytest.mark.parametrize("mode", ["deny", "ask"])
-async def test_native_search_preserves_named_source_permission_identity(mode: str) -> None:
-    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    effects = []
-
-    def forbidden() -> str:
-        effects.append(True)
-        return "must not run"
-
-    source = Capability(toolsets=[FunctionToolset([forbidden], id="secure")])
-    result, returns = await _run(
-        (
-            source,
-            ToolSearch(strategy="keywords"),
-            ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/secure/forbidden": mode})),
-        ),
-        [("search_tools", {"queries": ["forbidden"]}), ("crm__forbidden", {})],
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Secure tools", capabilities=(source,))}, config=NativeToolSearchConfig()
-        ),
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-    )
-    assert effects == []
-    if mode == "ask":
-        assert result.status == "suspended"
-        assert result.deferred is not None
-    else:
-        assert result.output_or_raise() == "done"
-        assert returns[-1].outcome == "failed"
-        assert returns[-1].content == "Tool invocation is denied by its permission configuration."
-
-
-@pytest.mark.parametrize("discovered", [False, True])
-@pytest.mark.parametrize("eligible", [False, True])
-async def test_codeact_native_search_requires_discovery_and_owner_policy(discovered: bool, eligible: bool) -> None:
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    effects = []
-
-    def lookup() -> str:
-        effects.append(True)
-        return "found"
-
-    source = Capability(toolsets=[CodeActPolicyToolset(FunctionToolset([lookup]), CodeActToolPolicy(default=eligible))])
-
-    def inspect(step: int, info: AgentInfo) -> None:
-        definitions = {tool.name: tool for tool in info.function_tools}
-        assert definitions["crm__lookup"].defer_loading
-        for runner in ("run_code", "run_program"):
-            assert ("crm__lookup" in (definitions[runner].description or "")) is (discovered and eligible and step > 0)
-
-    calls = [("search_tools", {"queries": ["lookup"]}), ("crm__lookup", {})] if discovered else []
-    calls.append(("run_code", {"code": "await crm__lookup()"}))
-    result, returns = await _run(
-        (source, CodeActCapability(), ToolSearch(strategy="keywords")),
-        calls,
-        tool_search=ToolSearchPlan(
-            groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))},
-            config=NativeToolSearchConfig(),
-        ),
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-        inspect=inspect,
-    )
-    assert result.output_or_raise() == "done"
-    assert effects == [True] * (int(discovered) + int(discovered and eligible))
-    assert returns[-1].tool_name == "run_code"
-    if discovered and eligible:
-        assert returns[-1].content == "found"
-    else:
-        assert returns[-1].outcome == "failed"
-        failure = json.loads(returns[-1].content)
-        assert failure["codeact"]["tool_call_count"] == 0
-        assert failure["codeact"]["side_effect_uncertain"] is False
-    if discovered:
-        assert returns[-2].tool_name == "crm__lookup"
-        assert returns[-2].content == "found"
 
 
 @pytest.mark.parametrize("resolution", ["approve", "deny", "permission-deny"])
@@ -1618,39 +1420,6 @@ async def test_discovered_codeact_tool_preserves_permissions_and_inline_approval
     assert returns[-1].outcome == ("success" if resolution == "approve" else "failed")
 
 
-@pytest.mark.parametrize("strategy", [None, "bm25", "regex"])
-@pytest.mark.parametrize("use_plan", [False, True])
-async def test_native_strategy_reaches_required_provider_tool(strategy, use_plan: bool) -> None:
-    from pydantic_ai.native_tools._tool_search import ToolSearchTool
-    from pydantic_ai.profiles.anthropic import anthropic_model_profile
-
-    source = Capability(tools=[lambda: "found"])
-    config = NativeToolSearchConfig(strategy=strategy)
-    plan = ToolSearchPlan(groups={"crm": ToolSearchSelection("Customer data", capabilities=(source,))}, config=config)
-    grouped = ToolSearchCapability(groups={"crm": ToolSearchGroup(source, "Customer data")}, config=config)
-    requests = []
-
-    def inspect(step: int, info: AgentInfo) -> None:
-        tools = info.model_request_parameters.native_tools
-        assert len(tools) == 1
-        tool = tools[0]
-        assert isinstance(tool, ToolSearchTool)
-        assert tool.strategy == strategy
-        assert tool.optional is False
-        assert all(item.unless_native != "tool_search" for item in info.function_tools)
-        requests.append(step)
-
-    result, _ = await _run(
-        (source,) if use_plan else (grouped,),
-        [],
-        tool_search=plan if use_plan else None,
-        profile=anthropic_model_profile("claude-sonnet-4-6"),
-        inspect=inspect,
-    )
-    assert result.output_or_raise() == "done"
-    assert requests
-
-
 @pytest.mark.parametrize(
     "value",
     [
@@ -1670,17 +1439,110 @@ def test_search_configuration_rejects_inapplicable_settings(value) -> None:
         TypeAdapter(ToolSearchConfig).validate_python(value)
 
 
-@pytest.mark.parametrize("value", [{}, {"strategy": "regex"}, {"max_results": 5}])
-def test_search_configuration_requires_mode_in_runtime_and_schema(value) -> None:
+@pytest.mark.parametrize("detail", ["summary", "full"])
+async def test_list_pages_enumerate_every_tool_without_expanding_model_schema(detail: str) -> None:
+    effects = []
+
+    def lookup(value: int) -> int:
+        effects.append(value)
+        return value
+
+    definitions = []
+
+    def inspect(step: int, info: AgentInfo) -> None:
+        definitions.append(info.function_tools)
+        assert {tool.name for tool in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
+
+    tools = [Tool(lookup, name=f"lookup_{index:02}") for index in range(23)]
+    result, returns = await _run(
+        (_group(*tools, config=ProxyToolSearchConfig(max_results=5)),),
+        [("list_tools", {"detail": detail, "offset": offset}) for offset in range(0, 23, 5)]
+        + [("call_tool", {"group": "crm", "tool": "lookup_22", "arguments": {"value": 42}})],
+        inspect=inspect,
+    )
+    assert result.output_or_raise() == "done"
+    assert all(page.content["total"] == 23 for page in returns[:-1])
+    assert [page.content["next_offset"] for page in returns[:-1]] == [5, 10, 15, 20, None]
+    entries = [entry for page in returns[:-1] for entry in page.content["tools"]]
+    assert [entry["tool"] for entry in entries] == [f"lookup_{index:02}" for index in range(23)]
+    assert all(("parameters_json_schema" in entry) == (detail == "full") for entry in entries)
+    assert all(current == definitions[0] for current in definitions)
+    assert effects == [42]
+
+
+async def test_proxy_schemas_stay_identical_across_different_group_inventories() -> None:
+    def lookup() -> str:
+        return "found"
+
+    definitions = []
+
+    def inspect(step: int, info: AgentInfo) -> None:
+        definitions.append(info.function_tools)
+
+    for group, count in (("alpha", 1), ("beta", 12)):
+        result, returns = await _run(
+            (_group(*(Tool(lookup, name=f"lookup_{i}") for i in range(count)), group=group),),
+            [("list_tool_groups", {})],
+            inspect=inspect,
+        )
+        assert result.output_or_raise() == "done"
+        assert returns[0].content["groups"] == [{"group": group, "description": f"{group} operations", "count": count}]
+    assert all(current == definitions[0] for current in definitions)
+
+
+async def test_group_listing_paginates_and_custom_names_work_in_codeact() -> None:
+    def lookup() -> str:
+        return "found"
+
+    groups = {
+        name: ToolSearchGroup(
+            CodeActPolicyToolset(FunctionToolset([lookup], id=name), CodeActToolPolicy(default=True)),
+            f"{name} operations",
+        )
+        for name in ("alpha", "beta", "gamma")
+    }
+    code = """first = await domains()
+second = await domains(offset=first['next_offset'])
+items = await inventory(group=second['groups'][0]['group'], detail='full')
+{'first': first, 'second': second, 'items': items}"""
+    result, returns = await _run(
+        (
+            CodeActCapability(),
+            ToolSearchCapability(
+                groups=groups,
+                config=ProxyToolSearchConfig(
+                    groups_name="domains",
+                    list_name="inventory",
+                    max_results=2,
+                ),
+            ),
+        ),
+        [("run_code", {"code": code})],
+    )
+    assert result.output_or_raise() == "done"
+    content = returns[-1].content
+    assert content["first"]["total"] == 3
+    assert content["first"]["next_offset"] == 2
+    assert content["second"]["next_offset"] is None
+    assert content["second"]["groups"] == [{"group": "gamma", "description": "gamma operations", "count": 1}]
+    assert content["items"]["tools"][0]["tool"] == "lookup"
+
+
+def test_search_configuration_defaults_to_proxy_and_roundtrips() -> None:
     from a13n_harness.tools.tool_search import ToolSearchConfig
     from jsonschema import Draft202012Validator
-    from pydantic import TypeAdapter, ValidationError
+    from pydantic import TypeAdapter
 
     adapter = TypeAdapter(ToolSearchConfig)
-    assert not Draft202012Validator(adapter.json_schema()).is_valid(value)
-    with pytest.raises(ValidationError, match="union_tag_not_found"):
-        adapter.validate_python(value)
-    for config in (NativeToolSearchConfig(), ProxyToolSearchConfig()):
+    for value in ({}, {"max_results": 5}, {"mode": "proxy"}):
+        config = adapter.validate_python(value)
+        assert config.mode == "proxy"
         encoded = adapter.dump_python(config, mode="json")
         Draft202012Validator(adapter.json_schema()).validate(encoded)
         assert adapter.validate_python(encoded) == config

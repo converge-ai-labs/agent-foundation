@@ -194,6 +194,10 @@ def _field_annotation(
             return f"Annotated[{annotation}, {constraint}]", default
         return annotation, "()"
     if is_map:
+        field_option = _field_option(field, options)
+        if field_option is not None and (constraint := _length_constraint(field_option)):
+            default = None if field_option.min_length > 0 else "Field(default_factory=dict)"
+            return f"Annotated[{base_type}, {constraint}]", default
         return base_type, "Field(default_factory=dict)"
 
     field_option = _field_option(field, options)

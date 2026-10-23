@@ -148,11 +148,9 @@ it.each(surfaces)(
     const credentials = {
       api_key: connector ? "test-project" : "test-environment",
     };
-    for (const [name, value] of Object.entries(credentials)) {
-      const field = screen.getByLabelText(name) as HTMLInputElement;
-      expect(field.type).toBe("password");
-      await user.type(field, value);
-    }
+    const field = screen.getByLabelText("API key") as HTMLInputElement;
+    expect(field.type).toBe("password");
+    await user.type(field, credentials.api_key);
     expect(
       screen.queryByRole("button", { name: "Test connection" }),
     ).toBeNull();
@@ -209,7 +207,7 @@ it.each(surfaces)(
       connector ? "Composio" : provider.type,
     );
     // The saved secret is stated in one row rather than offered as an input.
-    expect(screen.queryByLabelText("api_key")).toBeNull();
+    expect(screen.queryByLabelText("API key")).toBeNull();
     expect(screen.getByText("Saved")).toBeTruthy();
     expect(http.GET).toHaveBeenCalledWith(detailPath, expect.anything());
     await user.clear(name);
@@ -280,7 +278,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
   await user.clear(name);
   await user.type(name, "Renamed");
   await user.click(screen.getByRole("button", { name: "Replace" }));
-  await user.type(screen.getByLabelText("api_key"), "new-project");
+  await user.type(screen.getByLabelText("API key"), "new-project");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   expect(http.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -331,7 +329,7 @@ it("preserves structured Connector credentials and setup help", async () => {
   await user.type(screen.getByLabelText("Token"), "nested-secret");
   await user.type(screen.getByLabelText("Revision"), "7");
   await user.click(screen.getByRole("combobox", { name: "Tier" }));
-  await user.click(await screen.findByRole("option", { name: "sandbox" }));
+  await user.click(await screen.findByRole("option", { name: "Sandbox" }));
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await waitFor(() =>
     expect(http.POST).toHaveBeenCalledWith(

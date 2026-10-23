@@ -53,6 +53,8 @@ it("renders a full Session page from collection previews without per-row Thread 
         items: Array.from({ length: 20 }, (_, index) => ({
           id: `session_${index}`,
           workspace_id: "workspace",
+          labels: {},
+          title: `Question ${index}`,
           created_at: "2026-09-09T00:00:00Z",
           updated_at: "2026-09-09T00:00:00Z",
           run_count: index === 19 ? null : index + 1,
@@ -92,21 +94,27 @@ it("renders a full Session page from collection previews without per-row Thread 
     </QueryClientProvider>,
   );
   expect(await screen.findByText("Question 18")).toBeTruthy();
-  expect(screen.getByText("Agent 18 · {{count}} runs")).toBeTruthy();
+  expect(screen.getByText("Agent 18")).toBeTruthy();
   expect(
     screen.getAllByRole("columnheader").map((column) => column.textContent),
-  ).toEqual(["Session", "Status", "Trigger", "Updated", "Actions"]);
-  expect(screen.getByText("No request text")).toBeTruthy();
-  expect(screen.getAllByText("—")).toHaveLength(2);
+  ).toEqual([
+    "Session",
+    "Source",
+    "Status",
+    "Runs",
+    "Updated",
+    "Session actions",
+  ]);
+  expect(screen.getByText("Not started")).toBeTruthy();
   expect(screen.getByRole("searchbox")).toBeTruthy();
   expect(screen.queryByText("Session detail")).toBeNull();
   expect(requests).toEqual(["/api/v1/sessions"]);
   const row = screen.getByText("Question 0").closest("tr")!;
   await user.click(
-    within(row).getByRole("button", { name: "Show resource reference" }),
+    within(row).getByRole("button", { name: "Session actions" }),
   );
   await user.click(
-    await screen.findByRole("button", { name: "Copy resource ID" }),
+    await screen.findByRole("menuitem", { name: "Copy session ID" }),
   );
   expect(copy).toHaveBeenCalledWith("session_0");
   expect(screen.queryByText("Session detail")).toBeNull();
@@ -138,6 +146,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
         items: [
           {
             id: "sess_one",
+            labels: {},
             workspace_id: "workspace",
             created_at: "2026-09-09T00:00:00Z",
             updated_at: "2026-09-09T00:00:00Z",
@@ -168,11 +177,16 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  await screen.findByText("No request text");
+  await screen.findByText("Untitled session");
   expect(urls[0].searchParams.get("agent_id")).toBe("agt_one");
-  await user.type(screen.getByRole("searchbox"), "  thread_one  ");
+  await user.type(
+    screen.getByRole("searchbox"),
+    "  thread_0123456789abcdef0123456789abcdef  ",
+  );
   await waitFor(() =>
-    expect(urls.at(-1)?.searchParams.get("q")).toBe("thread_one"),
+    expect(urls.at(-1)?.searchParams.get("q")).toBe(
+      "thread_0123456789abcdef0123456789abcdef",
+    ),
   );
   await user.click(screen.getByRole("button", { name: "Status" }));
   await user.click(
@@ -213,10 +227,10 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
       Date.parse(bounds.get("updated_after")!),
   ).toBe(7 * 86400000);
   expect(urls.at(-1)?.searchParams.get("agent_id")).toBe("agt_one");
-  await user.click(screen.getByText("No request text").closest("tr")!);
+  await user.click(screen.getByText("Untitled session").closest("tr")!);
   expect(
     await screen.findByText(
-      "/workspace/ws_design/sessions/sess_one/threads/thread_one?view=debug",
+      "/workspace/ws_design/sessions/sess_one/threads/thread_0123456789abcdef0123456789abcdef?view=debug",
     ),
   ).toBeTruthy();
   cleanup();
@@ -248,6 +262,7 @@ it.each(["inherit", "off", "on"])(
                 id: "ses_1",
                 workspace_id: "workspace",
                 labels: { "a13n.console": "debug" },
+                origin: { application: "a13n-console", name: "Console" },
                 created_by_id: "usr_1",
                 last_run_id: null,
                 version: 1,
@@ -318,7 +333,7 @@ it.each(["inherit", "off", "on"])(
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(
       await screen.findByRole("option", {
-        name: "Create from template: Research",
+        name: /^Research.*Create from template$/,
       }),
     );
     await user.click(screen.getByRole("button", { name: "Apply" }));
@@ -328,7 +343,7 @@ it.each(["inherit", "off", "on"])(
       );
       if (memoryChoice === "on")
         await user.click(
-          screen.getByRole("switch", { name: "Use Memory Spaces" }),
+          screen.getByRole("switch", { name: "Use memory spaces" }),
         );
     }
     await user.type(
@@ -340,7 +355,7 @@ it.each(["inherit", "off", "on"])(
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(
       await screen.findByText(
-        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
+        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1?follow=latest",
       ),
     ).toBeTruthy();
     expect(posts.map(({ path }) => path)).toEqual([
@@ -351,6 +366,7 @@ it.each(["inherit", "off", "on"])(
     ]);
     expect(posts[0]?.body).toEqual({
       labels: { "a13n.console": "debug" },
+      origin: { application: "a13n-console", name: "Console" },
       ...(memoryChoice === "inherit"
         ? {}
         : {
@@ -505,7 +521,7 @@ it.each(["writer", "runner", "forbidden", "pinned", "unavailable"])(
         await user.click(screen.getByRole("button", { name: "Send" }));
       }
       await screen.findByText(
-        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
+        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1?follow=latest",
       );
       expect(posts).toEqual([
         ...(shouldPrepare ? ["/api/v1/agent-composer"] : []),

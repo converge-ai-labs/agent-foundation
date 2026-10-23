@@ -78,13 +78,17 @@
   display: grid;
   gap: 12px;
 }
+/* Rows fade out at the bottom edge while more follow; the bottom padding is
+   as tall as the fade, so the last row is fully visible at the end. */
 .directoryList {
   display: grid;
+  align-content: start;
   gap: 2px;
   max-height: min(460px, 58dvh);
   margin: 0 -8px;
-  padding: 0 8px;
+  padding: 0 8px 24px;
   overflow-y: auto;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 .group {
   display: grid;

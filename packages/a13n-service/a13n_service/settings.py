@@ -15,12 +15,15 @@ from urllib.parse import urlsplit
 
 from a13n_harness.http import OUTBOUND_TLS_VERIFY_ENV, outbound_tls_verify
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.model.oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
 
 from a13n_service.infra.outbox import OutboxKind, Policy
+from a13n_service.providers.collectors import Configuration as CollectorConfiguration
+from a13n_service.providers.collectors import Kind as CollectorKind
+from a13n_service.providers.metrics import Endpoint as MetricsEndpoint
 from a13n_service.providers.tools.mcp_catalog import McpServers
 from a13n_service.providers.traces import TraceProvider
 from a13n_service.providers.traces.langfuse import Langfuse
@@ -223,6 +226,13 @@ class Control(Section):
     stream_refresh_seconds: float = Field(default=2, gt=0, le=60)
 
 
+class Schedules(Section):
+    scan_seconds: float = Field(default=5, gt=0, le=300)
+    batch: int = Field(default=100, ge=1, le=1000)
+    max_per_workspace: int = Field(default=1000, ge=1, le=100000)
+    dispatch_max_attempts: int = Field(default=5, ge=1, le=20)
+
+
 class Outbox(Section):
     purge_interval_seconds: float = Field(default=60, gt=0, le=3600)
     purge_batch: int = Field(default=1000, ge=1, le=10000)
@@ -247,6 +257,15 @@ class Outbox(Section):
             if policy.parallel > policy.batch:
                 raise ValueError(f"outbox {kind}: parallel must not exceed batch")
         return self
+
+
+class ToolExecutions(Section):
+    max_active: int = Field(default=64, ge=1, le=1024)
+    foreground_wait_seconds: float = Field(default=5, ge=0, le=300)
+    delivered_retention_seconds: int = Field(default=3600, ge=1, le=31536000)
+    max_retention_seconds: int = Field(default=86400, ge=1, le=31536000)
+    shutdown_grace_seconds: float = Field(default=300, ge=0, le=3600)
+    finalization_seconds: float = Field(default=10, gt=0, le=300)
 
 
 class Worker(Section):
@@ -424,27 +443,21 @@ class Providers(Section):
     # Per-read timeout of one model exchange; reasoning models can stay silent for minutes.
     model_timeout: float = Field(default=300, gt=0, le=3600)
     response_bytes: int = Field(default=16777216, ge=65536, le=268435456)
-    # Explicitly provisioned public SIWC client; an OSS-issued ID does not authorize HTTPS callbacks.
+    # Public ChatGPT registration and loopback callback.
     chatgpt_client_id: str | None = Field(default=None, min_length=1, max_length=256)
     chatgpt_redirect_uri: str = Field(default="http://127.0.0.1:1456/auth/callback", max_length=2048)
 
     @model_validator(mode="after")
     def chatgpt_callback(self) -> "Providers":
         if self.chatgpt_client_id is not None and (
-            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == DYNAMIC_CLIENT_ID
+            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == "dynamic_agent_client"
         ):
-            raise ValueError("providers.chatgpt_client_id must be an explicitly provisioned client ID")
+            raise ValueError("providers.chatgpt_client_id must be an issued public client ID")
         try:
-            validate_chatgpt_redirect_uri(
-                self.chatgpt_redirect_uri, preconfigured_client=self.chatgpt_client_id is not None
-            )
+            OpenAIChatGPTOAuthFlow(app_name="Agent Foundation OSS", redirect_uri=self.chatgpt_redirect_uri)
         except UserError as error:
             raise ValueError(f"providers.chatgpt_redirect_uri: {error}") from None
         return self
-
-    @property
-    def chatgpt_browser_callback(self) -> bool:
-        return urlsplit(self.chatgpt_redirect_uri).scheme == "https"
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:
@@ -515,6 +528,56 @@ class Telemetry(Section):
                 )
 
 
+class MonitoringPreset(Section):
+    """Operator-offered pull source, explicitly confirmed by an allowlisted workspace admin."""
+
+    name: str = Field(default="Deployment metrics", min_length=1, max_length=128)
+    collector: CollectorKind = "vmagent"
+    query_endpoint: MetricsEndpoint
+    workspace_ids: list[str] = Field(default_factory=list, max_length=1024)
+
+
+class Monitoring(Section):
+    """Small-deployment Device monitoring; external export and history query are independent."""
+
+    enabled: bool = True
+    allow_loopback_ws: bool = False
+    max_devices: int = Field(default=64, ge=1, le=512)
+    poll_seconds: float = Field(default=10, ge=5, le=60)
+    request_seconds: float = Field(default=5, ge=1, le=30)
+    query_concurrency: int = Field(default=8, ge=1, le=64)
+    query_seconds: float = Field(default=5, ge=1, le=30)
+    query_bytes: int = Field(default=4194304, ge=65536, le=16777216)
+    deployment_preset: MonitoringPreset | None = None
+    deployment_query_bearer_token: SecretStr | None = Field(default=None, repr=False)
+    collectors: dict[CollectorKind, CollectorConfiguration] = Field(default_factory=dict)
+    collector_seconds: float = Field(default=30, ge=10, le=300)
+    collector_targets: int = Field(default=512, ge=1, le=4096)
+
+    @field_validator("deployment_preset", mode="before")
+    @classmethod
+    def decode_preset(cls, value: object) -> object:
+        return json.loads(value) if isinstance(value, str) else value
+
+    @field_validator("deployment_query_bearer_token")
+    @classmethod
+    def valid_token(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            token = value.get_secret_value()
+            if not token or any(char.isspace() or ord(char) < 32 or ord(char) > 126 for char in token):
+                raise ValueError("Query bearer token must be a nonempty ASCII token without whitespace")
+        return value
+
+    @model_validator(mode="after")
+    def collector_receivers(self) -> "Monitoring":
+        for kind, collector in self.collectors.items():
+            if kind == "alloy" and collector.receiver is None:
+                raise ValueError("Alloy requires an operator-owned receiver")
+            if kind == "vmagent" and collector.receiver is not None:
+                raise ValueError("vmagent delivery is configured through its remoteWrite flags")
+        return self
+
+
 class RunSearch(Section):
     """UTF-8 excerpt budgets and stripped PostgreSQL vector retention limits."""
 
@@ -542,8 +605,10 @@ class Settings(Section):
     auth: Authentication = Field(default_factory=Authentication)
     encryption: Encryption = Field(default_factory=Encryption)
     control: Control = Field(default_factory=Control)
+    schedules: Schedules = Field(default_factory=Schedules)
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
+    tool_executions: ToolExecutions = Field(default_factory=ToolExecutions)
     run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
     provisioning: Provisioning = Field(default_factory=Provisioning)
@@ -552,19 +617,9 @@ class Settings(Section):
     plugins: Plugins = Field(default_factory=Plugins)
     composer: Composer = Field(default_factory=Composer)
     telemetry: Telemetry = Field(default_factory=Telemetry)
+    monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def chatgpt_callback_origin(self) -> "Settings":
-        if self.providers.chatgpt_browser_callback:
-            parts = urlsplit(self.providers.chatgpt_redirect_uri)
-            origin = f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}"
-            if origin != self.server.public_origin:
-                raise ValueError(
-                    "providers.chatgpt_redirect_uri must share server.public_url's origin for browser cookies"
-                )
-        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":

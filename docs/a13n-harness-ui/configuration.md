@@ -299,18 +299,39 @@ Display defaults are read at startup. `--display` and live `/mode` override the 
 
 ### Built-in tools and subagents
 
-| Field                               | Default | Meaning                                                                                                |
-| ----------------------------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `tools.enable_ask_user_question`    | `true`  | Include native `ask_user_question` in newly resolved Runs                                              |
-| `tools.interaction_timeout_seconds` | `120`   | Positive finite seconds per TUI interaction or complete WebUI root decision batch; not model execution |
-| `tools.enable_codeact`              | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                        |
-| `subagents.include`                 | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                       |
+| Field                                     | Default  | Meaning                                                                                                         |
+| ----------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`   | Include native `ask_user_question` in newly resolved Runs                                                       |
+| `tools.interaction_timeout_seconds`       | `120`    | Positive finite seconds per TUI interaction or complete WebUI root decision batch; not model execution          |
+| `tools.enable_codeact`                    | `true`   | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                                 |
+| `tools.execution.mode`                    | `inline` | Generic tools wait for completion; `auto` enables timed handoff. Process-backed Shell always uses a finite wait |
+| `tools.execution.foreground_wait_seconds` | `5.0`    | Nonnegative finite wait in seconds for process-backed Shell and generic automatic handoff                       |
+| `subagents.include`                       | `[]`     | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                                |
 
-Setup writes all three `tools` fields explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
+Setup writes the tool switches and interaction timeout explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
 
 Global disabled tool switches take precedence over explicit Agent Capability selections. Tool allowlists still apply. Interaction expiry never chooses an answer or approves a command. See [TUI decision handling](everyday-use.md#approvals-and-questions) and [WebUI timeouts](webui.md#questions-and-approval-timeouts) for their separate waiting and recovery lifecycles.
 
 For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, for example, `[explorer]`. Advanced setup offers all or none; normal setup includes all three. Definitions remain package-owned; inclusion does not write `subagents/*.md`. [Built-in subagents](agents-and-subagents.md#built-in-subagents) explains inheritance and name conflicts.
+
+Harness UI uses immediate steering and inline generic tool execution by default. Process-backed Shell automatically yields after the foreground wait. Select `auto` to enable the same timed handoff for other eligible tools. These global settings apply to root and child Runs:
+
+```yaml
+input:
+  steering_mode: immediate  # queued waits for the next safe boundary
+tools:
+  execution:
+    mode: inline           # auto also enables timed handoff for generic tools
+    foreground_wait_seconds: 5.0
+```
+
+Each Run captures its tool execution policy. In `inline` mode, generic tool calls wait for their results; in `auto` mode, eligible calls return an execution receipt after the foreground wait. Immediate steering can release either wait early. The original call continues with its captured configuration, and CodeAct retains the whole program as one execution.
+
+On process-capable mounts, top-level Shell calls return an execution receipt after the configured interval in both `inline` and `auto` modes if still running. Fast commands return their final result. Foreground-only mounts retain the generic execution policy. A live Shell execution can be controlled across Runs in the same App through its `exec-*` identifier. Shell callbacks inside CodeAct return native results and Run-local process references, with only the outer runner eligible for handoff. See [shell execution](../a13n-harness/environments.md) for observation and process control.
+
+Fractional seconds are supported: `foreground_wait_seconds: 0.05` requests a 50 ms foreground wait for process-backed Shell in both modes and for generic tools in automatic mode. This bounds waiting, not command execution.
+
+`input.steering_mode` selects immediate handoff or queued delivery for subsequent user input. The App retains tool records and results in memory with bounded completed-history retention. See [WebUI](webui.md#tool-executions-and-immediate-steering) for status and cancellation.
 
 ## What wins, and when edits apply
 
@@ -326,7 +347,7 @@ For a new Thread, the first match wins:
 4. Root YAML defaults.
 5. The built-in Environment fallback.
 
-Lists replace, not merge; `[]` selects none. Existing Threads keep selections until explicitly changed; Project default edits do not reapply. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Temporary overrides stay with their operation, TUI process or browser tab. `/agent` changes the Thread Agent; `/model` remembers a per-Project choice, and `/model default` clears it. Neither writes YAML. Explicit launch `--agent` and noninteractive calls ignore the remembered Model.
+Lists replace, not merge; `[]` selects none. Existing Threads keep selections until explicitly changed. TUI resume explicitly reapplies current MCP defaults (Project, then Agent, then global); other selections and surfaces remain sticky. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Temporary overrides stay with their operation, TUI process or browser tab. `/agent` changes the Thread Agent; `/model` remembers a per-Project choice, and `/model default` clears it. Neither writes YAML. Explicit launch `--agent` and noninteractive calls ignore the remembered Model.
 
 | What changed                                                                  | When it takes effect                                                                             | What stays unchanged                                                                               |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -354,16 +375,16 @@ The data root owns saved conversations, per-Project TUI Model preferences, immut
 
 Changing it opens separate state; it does not migrate old conversations. Relative bootstrap paths resolve from the launch directory. Project roots must be absolute after `~` expansion; a missing root can be saved but cannot be used for a Run until available.
 
-| Input                                                       | Purpose                                                                                    |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `A13N_HARNESS_UI_DATA_ROOT`                                 | Select local data storage                                                                  |
-| Variables named by `authentication.env`                     | Model API keys read from the Harness UI process                                            |
-| Variables named by MCP `environment` / `headers` references | MCP environment and request values                                                         |
-| `CODEX_HOME`                                                | Compatible Codex store location; default `~/.codex`                                        |
-| `COPILOT_HOME`                                              | Copilot CLI store location for account reuse; default `~/.copilot`                         |
-| `GROK_AUTH_PATH`, `GROK_HOME`                               | Compatible Grok file-store location                                                        |
-| `GROK_AUTH`                                                 | Recognized inline Grok mode, unsupported for shared writable login; switch to a file store |
-| `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection                                    |
+| Input                                                       | Purpose                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| `A13N_HARNESS_UI_DATA_ROOT`                                 | Select local data storage                                          |
+| Variables named by `authentication.env`                     | Model API keys read from the Harness UI process                    |
+| Variables named by MCP `environment` / `headers` references | MCP environment and request values                                 |
+| `CODEX_HOME`                                                | One-time Codex migration source; default `~/.codex`                |
+| `COPILOT_HOME`                                              | Copilot CLI store location for account reuse; default `~/.copilot` |
+| `GROK_AUTH_PATH`, `GROK_HOME`                               | One-time Grok migration source                                     |
+| `GROK_AUTH`                                                 | Inline Grok mode is not imported; use native login                 |
+| `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection            |
 
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
 

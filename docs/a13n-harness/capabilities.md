@@ -123,7 +123,7 @@ Video input support is built in, not an optional definition Capability. The mode
 | `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical Run                       | Current `AgentContext` supplied by the Harness                 |
 
-For large local tool collections, [ToolSearchCapability](tool-search.md) accepts a `groups` mapping of passive `ToolSearchGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery with dynamic schemas and CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-search.md#host-integration) covers source selection and plugin composition.
+For large local tool collections, [ToolSearchCapability](tool-search.md) accepts a `groups` mapping of passive `ToolSearchGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery and exhaustive listing through fixed proxy schemas, with CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-search.md#host-integration) covers source selection and plugin composition.
 
 Each feature has one public Capability. Its internal run-bound instance stays private and is reused across model attempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
 
@@ -371,11 +371,11 @@ When `WebCapability()` is constructed without an explicit configuration, these e
 
 An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebBinding` in `RunBindings.web`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
 `DynamicEnvironmentCapability` derives shell execution, native discovery/inspection through `shell_info`, explicit-offset `shell_wait`, and supported input/control tools from the current mount actions. The tool surface does not require a Host process operator or all-or-nothing interactive permissions.
 
-Run cleanup releases local observations without blanket command termination. References and buffers are Run-local; a later Run can discover commands actually retained by the Provider under fresh references. Completion hints report native exit, not complete output capture. No process database or post-Run wake service is introduced.
+With the Host-held tool runtime, top-level Shell executions retain their original process and capture across Runs until native termination and output observation closure. Standalone `process-*` references and buffers remain Run-local, with best-effort native exit hints. Provider discovery owns recovery after scope loss; the Harness tool runtime owns retained execution results and completion observations.
 
 See [Environment tools](environments.md) for signatures, output provenance, observation limits, and Provider-specific recovery behavior.
 

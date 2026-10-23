@@ -22,25 +22,29 @@ PROXY_CONTROL_KEY = "a13n.tool_search.control"
 class ProxyToolSearchConfig:
     """Names and bounded discovery settings for one Agent's proxy surface."""
 
-    # Serialized union inputs require the tag; Python constructors supply it.
-    __pydantic_config__ = ConfigDict(extra="forbid", json_schema_extra={"required": ["mode"]})
+    # The mode tag remains accepted for existing proxy configurations.
+    __pydantic_config__ = ConfigDict(extra="forbid")
 
     mode: Literal["proxy"] = field(default="proxy", kw_only=True)
-    search_name: str = "search_proxy_tools"
-    call_name: str = "call_proxy_tool"
+    search_name: str = "discover_tools"
+    call_name: str = "call_tool"
     max_results: Annotated[int, Field(strict=True)] = 10
     max_search_bytes: Annotated[int, Field(strict=True)] = 32_768
+    describe_name: str = "describe_tool"
+    list_name: str = "list_tools"
+    groups_name: str = "list_tool_groups"
 
     def __post_init__(self) -> None:
         if self.mode != "proxy":
             raise ValueError("ProxyToolSearchConfig.mode must be 'proxy'")
-        for name in (self.search_name, self.call_name):
+        names = (self.search_name, self.describe_name, self.call_name, self.list_name, self.groups_name)
+        for name in names:
             if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,63}", name) is None:
                 raise ValueError(
                     "ToolSearch entry names must start with a letter or underscore and contain 1-64 letters, digits, underscores, or hyphens."
                 )
-        if self.search_name == self.call_name:
-            raise ValueError("ToolSearch search and call names must differ")
+        if len(set(names)) != len(names):
+            raise ValueError("ToolSearch control names must differ")
         if (
             isinstance(self.max_results, bool)
             or not isinstance(self.max_results, int)
@@ -55,28 +59,11 @@ class ProxyToolSearchConfig:
             raise ValueError("ToolSearch max_search_bytes must be an integer between 1024 and 32768")
 
 
-@dataclass(frozen=True, slots=True)
-class NativeToolSearchConfig:
-    """Provider-native discovery; omitted strategy uses the provider default."""
-
-    # Serialized union inputs require the tag; Python constructors supply it.
-    __pydantic_config__ = ConfigDict(extra="forbid", json_schema_extra={"required": ["mode"]})
-
-    mode: Literal["native"] = field(default="native", kw_only=True)
-    strategy: Literal["bm25", "regex"] | None = None
-
-    def __post_init__(self) -> None:
-        if self.mode != "native":
-            raise ValueError("NativeToolSearchConfig.mode must be 'native'")
-        if self.strategy not in (None, "bm25", "regex"):
-            raise ValueError("Native tool search strategy must be bm25, regex, or omitted")
-
-
-type ToolSearchConfig = Annotated[ProxyToolSearchConfig | NativeToolSearchConfig, Field(discriminator="mode")]
+type ToolSearchConfig = ProxyToolSearchConfig
 
 
 class ToolSearchConfiguration(BaseModel):
-    """Shared mode-specific settings for host tool search configuration."""
+    """Shared settings for host tool search configuration."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -117,6 +104,11 @@ def proxy_control(definition: ToolDefinition) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def grouped_tool_name(group: str, name: str) -> str:
+    """Keep the group delimiter unambiguous even at underscore boundaries."""
+    return f"{group.replace('_', '_u')}__{name}"
+
+
 def validate_proxy_target(definition: ToolDefinition) -> None:
     """Validate after preparation too: native wrappers can add deferral flags later."""
     if definition.defer_loading:
@@ -128,13 +120,13 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
             f"Tool {definition.name!r} is a provider-native fallback; select native=False, local=True for grouped MCP tools."
         )
     if (
-        definition.kind not in {"function", "unapproved"}
+        definition.kind not in {"function", "unapproved", "external"}
         or definition.tool_kind is not None
         or proxy_control(definition) is not None
         or (definition.metadata or {}).get("a13n.codeact.runner") is True
     ):
         raise UserError(
-            f"Tool {definition.name!r} is not a local function tool supported by ToolSearch. Leave control, output, external, and provider-native tools directly exposed."
+            f"Tool {definition.name!r} is not a function or external tool supported by ToolSearch. Leave control, output, and provider-native tools directly exposed."
         )
 
 
@@ -170,19 +162,26 @@ def resolve_proxy_call(
     """Resolve a call envelope, leaving target validation/execution to ToolManager."""
     group, tool, values = arguments.get("group"), arguments.get("tool"), arguments.get("arguments")
     if not isinstance(group, str) or not isinstance(tool, str) or not isinstance(values, dict):
-        raise ModelRetry("Supply group, tool, and an arguments object using the schema returned by proxy search.")
+        raise ModelRetry("Supply group, tool, and an arguments object matching the tool's complete current schema.")
     if set(arguments) != {"group", "tool", "arguments"}:
-        raise ModelRetry("Proxy calls accept only group, tool, and arguments.")
+        raise ModelRetry("Tool calls accept only group, tool, and arguments.")
+    return resolve_proxy_tool(tools, group, tool), values
+
+
+def resolve_proxy_tool(tools: Mapping[str, ToolsetTool[AgentContext]], group: str, tool: str) -> str:
+    """Resolve an exact current identity for either description or execution."""
     directory = proxy_directory(tools)
     name = directory.get((group, tool))
     if name is None:
         groups = sorted({key[0] for key in directory})
         if group not in groups:
             raise ModelRetry(
-                f"Group {group!r} is unavailable in this step. Search a current group before calling. Available groups: {', '.join(groups) or '(none)'}."
+                f"Group {group!r} is unavailable in this step. Choose a current group. Available groups: {', '.join(groups) or '(none)'}."
             )
-        raise ModelRetry(f"Tool {group}/{tool} is unavailable in this step. Search again for its current schema.")
-    return name, values
+        raise ModelRetry(
+            f"Tool {group}/{tool} is unavailable in this step. Rediscover available tools and use an exact current group and local tool name."
+        )
+    return name
 
 
 def active_proxy_tools(ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:

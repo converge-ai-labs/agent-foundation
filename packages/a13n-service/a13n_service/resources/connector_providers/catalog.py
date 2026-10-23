@@ -1,6 +1,6 @@
 """A connector provider's app catalogue, read with the provider's credential and cached briefly."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import anyio
@@ -39,7 +39,7 @@ async def open_connector_provider(
     policy: EndpointPolicy,
     settings: Providers,
     timeout: float,
-) -> AsyncIterator[ConnectorProviderRuntime]:
+) -> AsyncGenerator[ConnectorProviderRuntime]:
     """The provider's runtime with its credential; transports close with the context."""
     async with open_connector(
         registry.get("connector", provider.type),

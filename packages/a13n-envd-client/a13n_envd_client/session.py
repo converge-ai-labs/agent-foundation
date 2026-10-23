@@ -279,6 +279,11 @@ class EIPSession:
         return self._descriptor
 
     @property
+    def device_descriptor(self) -> DeviceDescriptor:
+        """The connected target's metadata, without issuing another request."""
+        return self._device.descriptor
+
+    @property
     def protocol_version(self) -> str:
         return self._device.protocol_version
 

@@ -5,7 +5,9 @@ from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import conflict, not_found
@@ -21,8 +23,12 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
 
-async def get_thread(session: AsyncSession, workspace_id: str, thread_id: str, *, lock: bool = False) -> ThreadRow:
+async def get_thread(
+    session: AsyncSession, workspace_id: str, thread_id: str, *, lock: bool = False, history: bool = True
+) -> ThreadRow:
     query = select(ThreadRow).where(ThreadRow.workspace_id == workspace_id, ThreadRow.id == thread_id)
+    if not history:
+        query = query.options(defer(ThreadRow.message_history, raiseload=True))
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     thread = await session.scalar(query)
@@ -52,18 +58,21 @@ def new_thread(
     session_row: SessionRow,
     *,
     mcp_headers: McpHeaders,
+    execution: ExecutionOverride | None = None,
     message_history: MessageHistory | None = None,
     origin: str = "new",
     origin_thread_id: str | None = None,
     origin_run_id: str | None = None,
     origin_tool_call_id: str | None = None,
     subagent: str | None = None,
+    schedule_occurrence_id: str | None = None,
 ) -> ThreadRow:
     return ThreadRow(
         id=new_object_id("thread"),
         organization_id=session_row.organization_id,
         workspace_id=session_row.workspace_id,
         session_id=session_row.id,
+        schedule_occurrence_id=schedule_occurrence_id,
         origin=origin,
         origin_thread_id=origin_thread_id,
         origin_run_id=origin_run_id,
@@ -71,6 +80,7 @@ def new_thread(
         subagent=subagent,
         message_history=HISTORY.dump_python(message_history or [], mode="json"),
         mcp_headers=dict(mcp_headers),
+        execution=execution.model_dump(exclude_none=True) if execution is not None else None,
         labels={},
     )
 
@@ -92,18 +102,25 @@ async def list_threads(
     limit: int,
     cursor: str | None,
     text_query: str | None = None,
+    occurrence_id: str | None = None,
 ) -> ThreadPage:
     """Oldest first, so a session opens at its first thread and child threads follow their parents."""
     match = predicate(RunRow.search_vector, text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        query = select(ThreadRow).where(
-            ThreadRow.workspace_id == scope.workspace_id,
-            ThreadRow.purpose == "conversation",
-            label_filter(ThreadRow.labels, list(label)),
+        query = (
+            select(ThreadRow)
+            .options(defer(ThreadRow.message_history, raiseload=True))
+            .where(
+                ThreadRow.workspace_id == scope.workspace_id,
+                ThreadRow.purpose == "conversation",
+                label_filter(ThreadRow.labels, list(label)),
+            )
         )
         if session_id is not None:
             query = query.where(ThreadRow.session_id == session_id)
+        if occurrence_id is not None:
+            query = query.where(ThreadRow.schedule_occurrence_id == occurrence_id)
         if match is not None:
             query = query.where(
                 ThreadRow.id.in_(select(RunRow.thread_id).where(RunRow.workspace_id == scope.workspace_id, match))
@@ -113,7 +130,7 @@ async def list_threads(
             query,
             (ThreadRow.created_at, ThreadRow.id),
             kind="threads",
-            owner=cursors.query_owner(scope.workspace_id, session_id, label, text_query),
+            owner=cursors.query_owner(scope.workspace_id, session_id, label, text_query, occurrence_id),
             cursor=cursor,
             limit=limit,
             newest_first=False,
@@ -124,7 +141,7 @@ async def list_threads(
 async def get(storage: Storage, actor: Principal, workspace_id: str, thread_id: str) -> ThreadView:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        return ThreadView.model_validate(await get_thread(session, scope.workspace_id, thread_id))
+        return ThreadView.model_validate(await get_thread(session, scope.workspace_id, thread_id, history=False))
 
 
 async def update(
@@ -137,6 +154,10 @@ async def update(
         require_match(if_match, thread.id, thread.version)
         if body.labels is not None:
             thread.labels = dict(body.labels)
+        if "execution" in body.model_fields_set:
+            require_open(thread)
+            current = ExecutionOverride.model_validate(thread.execution or {})
+            thread.execution = current.patch(body.execution).model_dump(exclude_none=True) if body.execution else None
         if body.mcp_headers is not None:
             require_open(thread)
             await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)

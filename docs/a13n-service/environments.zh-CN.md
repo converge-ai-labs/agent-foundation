@@ -38,8 +38,8 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 | --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
 | `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
 | `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
-| `daytona` | Daytona 沙箱                      | `organization_id`、可选 `target` 区域；凭据为 `{"api_key": ...}`                                                                     | 停止，保留文件             |
-| `modal`   | Modal 沙箱                        | `workspace`、`app_name`（托管沙箱的已部署 App）、可选 `environment_name`；凭据为 `{"token_id", "token_secret"}`                      | 保存文件快照后终止         |
+| `daytona` | Daytona 沙箱                      | 可选 `organization_id` 约束和 `target` 区域；凭据为 `{"api_key": ...}`                                                               | 停止，保留文件             |
+| `modal`   | Modal 沙箱                        | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`）；凭据为 `{"token_id", "token_secret"}`      | 保存文件快照后终止         |
 | `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
 | `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
 | `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
@@ -86,6 +86,23 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。
 
 要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
+
+### 自动创建 Vercel 桌面
+
+1. 添加 Vercel 环境连接，填写 Vercel access token，点击“加载 Vercel 团队”，选择该 Token 可访问的团队和项目。Token 需要沙箱和快照的创建、读取、删除权限。如果项目列表为空，请先在 Vercel 创建项目。
+2. 创建 Vercel 环境模板，选择该连接，勾选“桌面环境”，保留“自动桌面”。无需下载本地二进制、运行构建脚本或手填快照 ID。
+3. 从模板创建实例。首次创建会构建桌面快照，可能需要数分钟。Console 展示当前阶段和已等待时间；离开页面后仍会在后台继续，稍后可回到“环境实例”查看。
+4. 就绪后可以查看桌面预览。使用该环境的运行支持 Computer 操作和 Console 人工接管。如果创建失败，修正提示的配置或权限问题，待“重试创建”可用后重试。
+
+同一工作区、Provider、凭据版本、团队、项目和构建版本下，后续创建会复用经过校验的快照。上述输入变化会单独准备快照。临时构建沙箱会被清理，成功快照保留在 Vercel 项目中供后续复用。请使用有效期合适的 Vercel access token；短期 CLI 登录 Token 不适合无人值守的长期 Provider 连接。管理员仍可选择自定义快照，无桌面的原生环境保持原有行为。
+
+### 默认环境变量
+
+所有内置 Provider 都支持 `config.recipe.environment`，例如 `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`。在模板编辑器的**环境变量**区域添加即可。命令及其普通子进程会收到这些默认值；命令显式指定的值优先，支持 unset 的执行路径也可移除默认值。Agent、Thread 和单次 Run 可通过[执行策略](agents-and-runs.md#execution-policy)覆盖这些默认值，不会修改共享 sandbox。
+
+首次派发创建时，默认变量随 recipe 一起冻结。修改模板不会更新已有实例，停止后启动或从快照恢复也继续使用原值。要使用新值，请创建新实例。Local Provider 还要求变量名列入 `allowed_environment_keys`（或将该白名单设为不限制的 null）。
+
+变量名使用可移植格式（如 `APP_MODE`，不能使用 `app-mode`），值为字符串，可为空。这些值是可读取的普通配置，不用于存放凭据。平台启动、桌面和遥测变量名（`A13N_ENVD_*`、`EIP_*`、`A13N_DESKTOP*`、`OTEL_*`、`DISPLAY`、`XAUTHORITY`）保留给平台使用。Provider 凭据和已有的 secret binding 仍使用各自的控制机制。
 
 ### Docker 镜像版本
 
@@ -237,11 +254,12 @@ Agent 可以主动暂停并请人操作桌面。Console 的协助卡片提供“
 
 启用前，由管理员准备兼容的桌面环境，并在环境配方中设置 `desktop: true` 和 `desktop_assistance: true`。仅启用 Computer 操作不会开放人工访问。
 
-| Provider | 桌面访问前提                                                                                                                                                                                                          |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2B      | 预装桌面访问端点的自定义模板。普通官方 `desktop` 模板需要补充查看端点；Agent Computer use 还需要兼容的 Envd 执行。                                                                                                    |
-| Docker   | 兼容的桌面镜像及 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，由部署方将路由转发到各容器的 6081 端口。连接 Docker Engine 或 Envd 不能替代浏览器访问路由；仅回环地址允许明文 WS。     |
-| Daytona  | 自定义 `snapshot`，预装并在启动时运行桌面访问 supervisor。Service 通过签名预览路由访问 6081 端口；supervisor 负责只读权限及强制断开已撤销的控制连接。参见 [snapshot 构建说明](../environments/providers.md#daytona)。 |
+| Provider | 桌面访问前提                                                                                                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2B      | 预装桌面访问端点的自定义模板。普通官方 `desktop` 模板需要补充查看端点；Agent Computer use 还需要兼容的 Envd 执行。                                                                                                                                   |
+| Docker   | 兼容的桌面镜像及 `desktop_viewer_url`，例如 `wss://desktop.example/{container_id}/websockify`，由部署方将路由转发到各容器的 6081 端口。连接 Docker Engine 或 Envd 不能替代浏览器访问路由；仅回环地址允许明文 WS。                                    |
+| Daytona  | 自动 `snapshot="auto"`（桌面默认），或自定义快照，预装并在启动时运行桌面访问 supervisor。Service 通过签名预览路由访问 6081 端口；supervisor 负责只读权限及强制断开已撤销的控制连接。参见 [snapshot 构建说明](../environments/providers.md#daytona)。 |
+| Modal    | 桌面配方默认 `image="auto"` 自动构建，或使用预装 Envd 与桌面访问 supervisor 的自定义镜像。Service 使用独立的 6081 TLS 通道与短期授权，参见 [Modal 构建说明](../environments/providers.md#modal)。                                                    |
 
 Agent 主动请求协助和用户主动接管使用相同的 Provider 前提。凭据和桌面地址不会授予 Agent 电脑权限；仍需单独配置工具集和挂载。
 
@@ -251,12 +269,21 @@ Agent 需要启用 Computer 工具集，挂载需要允许屏幕观察。协助�
 
 ### 获取与归还桌面控制权
 
-对于支持接管的运行中任务，在 Console 打开“桌面控制”，有多个桌面挂载时先选择目标，再点击“打开桌面”。“查看桌面”不会暂停 Agent；点击“获取控制权”才会申请独占输入。Service 停止派发新工具，等待已开始的操作结束并保存结果，再授予控制权。确认安全边界前，界面显示“正在暂停 Agent”，不能输入。
+对于支持接管的运行中任务，在 Console 打开“桌面控制”，有多个桌面挂载时先选择目标，再点击“查看桌面”即可连接画面。观看不会暂停 Agent；点击“获取控制权”才会申请独占输入。Service 停止派发新工具，等待已开始的操作结束并保存结果，再授予控制权。确认安全边界前，界面显示“正在暂停 Agent”，不能输入。
 
 如果 Agent 同时发起协助请求，以服务端先确认的请求为准。Agent 先请求成功时，Console 会显示说明并切换到协助卡片，由你点击“开始操作”；你的接管先成功时，Agent 会等待这次接管完成，不再创建第二个协助请求。
 
 操作完成后，点击“归还控制权并继续”。Service 先撤销人工输入并确认清理完成，再接受后续 Run。Agent 保留对话和已完成的工具结果，重新观察桌面并调整下一步。可选备注用于说明修改内容。如果还有其他问题或审批，应先归还控制权，再提交整个回复批次。归还成功但继续请求失败时，“继续 Agent”可重试，不会重放已完成的工具。
 
-关闭页面、断开连接或点击“结束操作，保持暂停”均不会自动恢复 Agent。需要明确重连并完成归还。整个协助时段过期后，只有 Service 确认访问权限已撤销、输入已清理，才能点击“继续 Agent”显式恢复；过期本身不会继续任务。执行结果不确定、Worker 丢失执行权、存在未跟踪的后台命令、或配置了子 Agent 时，会拒绝接管，不提供强制抢占。已完成的任务可以操作桌面，但不会因此启动新的 Run。每个 Run 只选择一个接管桌面。E2B、Docker 和 Daytona 使用相同协议，都需要上文的兼容端点与路由；远端 Docker 部署仍需验证浏览器可达性和 TLS。
+关闭页面、断开连接或点击“结束操作，保持暂停”均不会自动恢复 Agent。需要明确重连并完成归还。整个协助时段过期后，只有 Service 确认访问权限已撤销、输入已清理，才能点击“继续 Agent”显式恢复；过期本身不会继续任务。执行结果不确定、Worker 丢失执行权、存在未跟踪的后台命令、或配置了子 Agent 时，会拒绝接管，不提供强制抢占。已完成的任务可以操作桌面，但不会因此启动新的 Run。每个 Run 只选择一个接管桌面。E2B、Docker、Daytona 和 Modal 使用相同协议，都需要上文的兼容端点与路由；远端 Docker 部署仍需验证浏览器可达性和 TLS。
 
 启用此能力前，同步升级 Service control 和 worker。旧 Worker 不识别新的执行屏障和桌面暂停检查点。创建用户接管历史后，数据库拒绝回滚到旧结构，应通过后续迁移修复。
+
+### 自动创建 Sprites 桌面
+
+1. 添加 Fly.io Sprites 连接，填写组织和 API Token。Token 需要支持带归属标签的创建、执行、删除和 URL 配置。限制名称或数量的 Token 可能拒绝设置标签，请换用满足权限要求的 Sprites Token，不要取消归属校验。
+2. 创建模板，选择该连接并勾选“桌面环境”。无需本地二进制、预构建镜像或模板 ID。
+3. 创建实例。**每个新 Sprite** 都会安装 Envd、桌面依赖和 Chrome，可能耗时数分钟。Console 显示分配、安装、启动校验阶段及已等待时间。可以离开页面，稍后回到环境实例查看进度；确认失败后可点击重试。
+4. 就绪后点击“查看桌面”获取只读截图；在使用该环境的会话中可进行交互式人工接管。
+
+新建另一个 Sprite 仍需安装；已有 Sprite 休眠后保留文件和安装结果。Envd 通道保持私有，浏览器桌面连接由短期授权和 VNC 密码保护，云端 API Token 留在 Service。安装失败保留所属沙箱，供明确重试或删除。Sprites 不支持显式停止；需要控制保留时间时可设置空闲删除。

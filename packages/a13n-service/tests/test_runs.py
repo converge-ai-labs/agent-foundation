@@ -407,12 +407,20 @@ async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripte
 
 
 async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.delegating(executing, scripted_model, "async")
+    agent = await runs_kit.delegating(
+        executing,
+        scripted_model,
+        "async",
+        execution={"environment": {"MODE": "parent"}},
+        worker={"execution": {"environment": {"MODE": "child"}}},
+    )
     scripted_model.call(
         "delegate", {"subagent_name": "helper", "prompt": "compute"}, call_id="call_d", to="coordinator"
     )
     scripted_model.say("Delegated", to="coordinator")
-    submitted = await runs_kit.start_thread(executing, agent, "ask the helper")
+    submitted = await runs_kit.start_thread(
+        executing, agent, "ask the helper", options={"execution": {"environment": {"MODE": "run"}}}
+    )
     parent = await runs_kit.sealed(executing, submitted["run"]["id"])
     assert parent["status"] == "completed" and parent["output"] == "Delegated", parent
 
@@ -426,6 +434,8 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
     child = await runs_kit.sealed(executing, child_thread.current_run_id)  # type: ignore[arg-type]
     assert child["status"] == "completed" and child["output"] == "42"
 
+    assert child["options"]["execution"]["environment"] == {"MODE": "child"}
+
     # The child's result arrives in the parent thread as its own entry and starts the next parent run.
     scripted_model.say("The helper said 42", to="coordinator")
     async with asyncio.timeout(20):
@@ -436,6 +446,7 @@ async def test_an_async_subagent_runs_as_a_child_run_and_reports_back(executing,
     delivered = await runs_kit.sealed(executing, thread.json()["last_run_id"])
     assert delivered["status"] == "completed" and delivered["output"] == "The helper said 42", delivered
     assert delivered["trigger"] == "child_result"
+    assert delivered["options"]["execution"]["environment"] == {"MODE": "run"}
     # The result names the edge that delegated the child, as the request a Console shows for the run.
     assert (delivered["input"]["subagent"], delivered["input"]["child_run_id"]) == ("helper", child["id"])
     received = []

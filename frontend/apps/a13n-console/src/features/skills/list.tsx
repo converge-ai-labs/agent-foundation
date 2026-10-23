@@ -25,7 +25,7 @@ import {
 import { Page } from "../../shared/page";
 import { usedByQuery } from "./detail/used-by";
 import { ImportSkill } from "./import-dialog";
-import { SkillIcon, SourceChip } from "./source";
+import { SkillAvatar, SkillIcon, SourceChip } from "./source";
 import styles from "./skills.module.css";
 
 type Source = Schema["SkillRevisionSummary"]["source"]["kind"];
@@ -124,7 +124,13 @@ export function SkillsPage() {
                     name={skill.name}
                     description={skill.description || skill.id}
                     resourceId={skill.id}
-                    icon={<SkillIcon />}
+                    icon={
+                      <SkillAvatar
+                        name={skill.name}
+                        id={skill.id}
+                        className="size-8 rounded-lg"
+                      />
+                    }
                   />
                 ),
               },

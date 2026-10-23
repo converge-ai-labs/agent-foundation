@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
+from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
@@ -31,7 +32,6 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
@@ -1117,9 +1117,9 @@ def _deferred_requests(value: object | None) -> tuple[DeferredRequestView, ...]:
     if not isinstance(value, DeferredToolRequests):
         raise ThreadError("Stored deferred requests are invalid.", code="thread_continuation_incompatible")
     projected: list[DeferredRequestView] = []
-    for request in value.calls:
+    for request in (entry.target_call for entry in value.calls):
         projected.append(_deferred_request(value, request, kind="external"))
-    for request in value.approvals:
+    for request in (entry.target_call for entry in value.approvals):
         projected.append(_deferred_request(value, request, kind="approval"))
     return tuple(projected)
 

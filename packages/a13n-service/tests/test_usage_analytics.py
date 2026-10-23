@@ -19,8 +19,14 @@ START = datetime(2026, 9, 1, tzinfo=UTC)
 WINDOW = {"start": START.isoformat(), "end": (START + timedelta(days=3)).isoformat()}
 
 
-async def observed_run(service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None):  # type: ignore[no-untyped-def]
-    submitted = await kit.start_thread(service, agent, "Usage fixture")
+async def observed_run(
+    service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None, thread_id=None
+):  # type: ignore[no-untyped-def]
+    submitted = (
+        await kit.start_thread(service, agent, "Usage fixture")
+        if thread_id is None
+        else (await kit.submit(service, thread_id, kit.message(agent, "Usage fixture"))).json()
+    )
     run_id = submitted["run"]["id"]
     [lease] = await claim(service.runtime, worker_id="usage-fixture", worker_build="test", limit=1)
     async with transaction(service.runtime.storage) as session:
@@ -439,11 +445,22 @@ async def test_context_usage_selects_main_call_and_current_capacity(service, scr
             "delivery": "next_run",
             "agent_id": agent["id"],
             "payload": {"content": [{"type": "text", "text": "Next round"}]},
+            "options": {"overrides": {"model_characteristics": {"context_window_tokens": 32000}}},
         },
     )
     assert receipt.status_code == 201, receipt.text
     response = await service.client.get(f"{service.api}/usage/context", params={"thread_id": thread_id})
-    assert response.status_code == 200 and response.json()["record_id"] == latest_id
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": receipt.json()["run"]["id"],
+        "record_id": None,
+        "input_tokens": None,
+        "output_tokens": None,
+        "context_window_tokens": 32000,
+    }
+    response = await service.client.get(f"{service.api}/usage/context", params={"run_id": run_id})
+    assert response.json()["record_id"] == latest_id
+    assert response.json()["context_window_tokens"] == 100000
     other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other"})).json()
     for scope in ({"run_id": run_id}, {"thread_id": thread_id}, {"record_id": record_id}):
         response = await service.client.get(
@@ -455,19 +472,50 @@ async def test_context_usage_selects_main_call_and_current_capacity(service, scr
         assert response.status_code == 400
 
 
-async def test_context_usage_preserves_unknowns_and_agent_override(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("window", [None, 100000])
+async def test_context_usage_preserves_unknowns_and_agent_override(service, scripted_model, runs_kit, window):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(
-        service, scripted_model, model_characteristics={"context_window_tokens": 100000}
+        service, scripted_model, model_characteristics={"context_window_tokens": window}
     )
     run_id, _ = await observed_run(service, runs_kit, agent, records=[("scripted", 0, 0, 0, None, START)])
+    async with transaction(service.runtime.storage) as session:
+        model = await session.scalar(select(ModelRow).where(ModelRow.key == "scripted"))
+        assert model is not None
+        model.config = {**model.config, "characteristics": {"context_window_tokens": 200000}}
+    expected_window = window or 200000
     response = await service.client.get(f"{service.api}/usage/context", params={"run_id": run_id})
     assert response.status_code == 200, response.text
     assert response.json()["input_tokens"] is None
     assert response.json()["output_tokens"] is None
-    assert response.json()["context_window_tokens"] == 100000
+    assert response.json()["context_window_tokens"] == expected_window
     empty_id, _ = await observed_run(service, runs_kit, agent)
     response = await service.client.get(f"{service.api}/usage/context", params={"run_id": empty_id})
-    assert response.status_code == 200 and response.json() is None
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": empty_id,
+        "record_id": None,
+        "input_tokens": None,
+        "output_tokens": None,
+        "context_window_tokens": expected_window,
+    }
     response = await service.client.get(f"{service.api}/usage/context", params={"record_id": "missing"})
     assert response.status_code == 404
+
+
+async def test_summary_numbers_include_runs_without_matching_usage(service, scripted_model, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    empty, _ = await observed_run(service, runs_kit, agent)
+    thread_id = (await service.client.get(f"{service.api}/runs/{empty}")).json()["thread_id"]
+    run_id, _ = await observed_run(
+        service,
+        runs_kit,
+        agent,
+        thread_id=thread_id,
+        records=[("scripted", 100, 5, 50, Decimal("0.2"), START)],
+    )
+    for filters in ({"thread_id": thread_id}, {"run_id": run_id}, {"ingested_after": START.isoformat()}):
+        response = await service.client.get(f"{service.api}/usage", params=filters)
+        assert response.status_code == 200, response.text
+        assert [(run["run_id"], run["run_number"]) for run in response.json()["runs"]] == [(run_id, 2)]

@@ -47,6 +47,7 @@ from a13n_harness.environment.retention import (
     _unwrap_opaque,
     materialize_capture,
 )
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment._local_retention import LocalRetentionStore, LocalRetentionWriter
 
 if TYPE_CHECKING:
@@ -74,6 +75,7 @@ class _OutputCollector:
         self.produced = 0
         self.stored = 0
         self.preview = bytearray()
+        self._preview_bytes = b""
         self.reference: BoundOutputReference | None = None
         self.complete = False
 
@@ -139,11 +141,16 @@ class _OutputCollector:
                 available_end=len(preview),
             )
         self.preview.clear()
+        self._preview_bytes = b""
         self.writer = None
         return capture
 
     def snapshot(self) -> EnvironmentOutputCapture:
-        preview = bytes(self.preview)
+        # The preview is append-only until finish. Silent inspect/read polls reuse
+        # immutable bytes instead of copying the entire capture on every call.
+        if len(self._preview_bytes) != len(self.preview):
+            self._preview_bytes = bytes(self.preview)
+        preview = self._preview_bytes
         return EnvironmentOutputCapture(
             kind="empty" if not preview and self.complete else "inline" if self.complete else "truncated",
             producer_complete=self.complete,
@@ -198,7 +205,9 @@ class LocalProcessManager:
         environment_id: str,
         execution_id: str,
         generation: str,
+        environment: dict[str, str] | None = None,
     ) -> None:
+        self._environment = dict(environment or {})
         self._files = files
         self._retention = retention
         self._policy = policy
@@ -273,6 +282,7 @@ class LocalProcessManager:
         raise EnvironmentError("Direct Local discovery is unsupported.", code="environment_unsupported")
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
+        request = with_defaults(request, self._environment, windows=os.name == "nt")
         if os.name not in {"posix", "nt"}:
             raise EnvironmentError("Direct Local processes are unavailable on this OS.", code="environment_unsupported")
         self._validate_request(request)

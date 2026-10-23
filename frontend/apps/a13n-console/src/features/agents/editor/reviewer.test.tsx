@@ -1,15 +1,21 @@
+import { useAgentDraft, type AgentDraft } from "./draft";
+import type { useAgentChoices } from "../choices";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../../shared/api";
-import { ReviewerSettings } from "./reviewer";
+import { ReviewerSection, ReviewerSettings } from "./reviewer";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 afterEach(cleanup);
 const models = [
-  { key: "review-model", name: "Reviewer", config: { model_api: "test" } },
+  {
+    key: "review-model",
+    name: "Reviewer",
+    config: { model_api: "test", model_name: "test-model" },
+  },
 ] as Schema["Model"][];
 
 it("requires a model, validates advanced settings, and applies without publishing", async () => {
@@ -78,6 +84,11 @@ it("keeps existing wildcard rules while editing one tool and discards cancelled 
   };
   const user = userEvent.setup();
   const view = render(<ReviewerSettings {...props} />);
+  expect(
+    screen
+      .getByLabelText("Custom review instructions")
+      .getAttribute("maxlength"),
+  ).toBe("32768");
   await user.type(
     screen.getByLabelText("Custom review instructions"),
     "Temporary edit",
@@ -143,4 +154,56 @@ it("does not add a tool override merely by inspecting and applying its settings"
     .setup()
     .click(screen.getByRole("button", { name: "Apply to draft" }));
   expect(onApply).toHaveBeenCalledWith(initial);
+});
+
+it("edits review policy inline while preserving rules, and can clear the reviewer", async () => {
+  let draft: AgentDraft;
+  const onOpen = vi.fn();
+  function Editor() {
+    draft = useAgentDraft({
+      model: "test",
+      reviewer: {
+        model: "review-model",
+        rules: { "shell.*": { on_flagged: "deny" } },
+      },
+    });
+    return (
+      <ReviewerSection
+        draft={draft}
+        choices={{ data: { models } } as ReturnType<typeof useAgentChoices>}
+        readOnly={false}
+        onOpen={onOpen}
+      />
+    );
+  }
+  render(<Editor />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "When flagged" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Ask for approval" }),
+  );
+  expect(draft!.reviewer).toEqual({
+    model: "review-model",
+    on_flagged: "approval_required",
+    rules: { "shell.*": { on_flagged: "deny" } },
+  });
+  const instructions = screen.getByLabelText("Review instructions");
+  expect(instructions.getAttribute("maxlength")).toBe("32768");
+  await user.type(instructions, "Check destructive commands");
+  await user.click(screen.getByRole("combobox", { name: "Risk threshold" }));
+  await user.click(await screen.findByRole("option", { name: "High risk" }));
+  expect(draft!.reviewer).toEqual({
+    model: "review-model",
+    risk_threshold: "high",
+    on_flagged: "approval_required",
+    instruction: "Check destructive commands",
+    rules: { "shell.*": { on_flagged: "deny" } },
+  });
+  await user.click(screen.getByRole("button", { name: "More options" }));
+  expect(onOpen).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole("combobox", { name: "Review model" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Not configured" }),
+  );
+  expect(draft!.reviewer).toBeUndefined();
 });

@@ -19,6 +19,7 @@ NOT_OBJECT_KEYED = {
     "pending_answers",
     "run_item_pages",
     "memory_space_organizations",
+    "thread_codeact",
     "thread_environments",
     "thread_memories",
     "usage_records",
@@ -38,6 +39,7 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
     assert [column.name for column in metadata.tables["desktop_targets"].primary_key.columns] == ["key"]
     assert [column.name for column in metadata.tables["desktop_executions"].primary_key.columns] == ["run_id"]
+    assert [column.name for column in metadata.tables["thread_codeact"].primary_key.columns] == ["thread_id"]
     assert [column.name for column in metadata.tables["memory_space_organizations"].primary_key.columns] == ["space_id"]
     assert [column.name for column in metadata.tables["memory_record_sources"].primary_key.columns] == [
         "memory_id",

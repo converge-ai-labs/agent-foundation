@@ -581,20 +581,72 @@
       "title": "ClientToolDefinition",
       "type": "object"
     },
+    "Configuration": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "max_lateness_seconds": {
+          "title": "Max Lateness Seconds",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "pause_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pause Reason"
+        },
+        "principal_id": {
+          "title": "Principal Id",
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleRule"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ScheduleState"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "session_id",
+        "name",
+        "state",
+        "pause_reason",
+        "version",
+        "principal_id",
+        "schedule",
+        "max_lateness_seconds"
+      ],
+      "title": "Configuration",
+      "type": "object"
+    },
     "ConnectionSelection": {
-      "additionalProperties": false,
-      "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+      "description": "An agent's selected tools and permissions.",
       "properties": {
         "connection_id": {
           "maxLength": 41,
           "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
           "title": "Connection Id",
           "type": "string"
-        },
-        "defer_loading": {
-          "default": false,
-          "title": "Defer Loading",
-          "type": "boolean"
         },
         "permission": {
           "$ref": "#/$defs/ToolPermissionSetting",
@@ -676,6 +728,35 @@
         "preview"
       ],
       "title": "ContentRef",
+      "type": "object"
+    },
+    "CronSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "expression": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Expression",
+          "type": "string"
+        },
+        "timezone": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Timezone",
+          "type": "string"
+        },
+        "type": {
+          "const": "cron",
+          "default": "cron",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expression",
+        "timezone"
+      ],
+      "title": "CronSchedule",
       "type": "object"
     },
     "DelegationContextPolicy": {
@@ -958,7 +1039,8 @@
         "kind": {
           "enum": [
             "message",
-            "child_result"
+            "child_result",
+            "tool_result"
           ],
           "title": "Kind",
           "type": "string"
@@ -1154,6 +1236,54 @@
       "title": "EnvironmentPermissionSet",
       "type": "object"
     },
+    "EnvironmentVariables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+      "type": "object"
+    },
+    "ExecutionOverride": {
+      "additionalProperties": false,
+      "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
+      "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvironmentVariables"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "steering": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Steering"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ExecutionOverride",
+      "type": "object"
+    },
     "Failed": {
       "additionalProperties": false,
       "description": "An explicit external tool failure, including an intentional unanswered question.",
@@ -1331,6 +1461,24 @@
         "run_id"
       ],
       "title": "Gap",
+      "type": "object"
+    },
+    "InitialRun": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "InitialRun",
       "type": "object"
     },
     "IsolatedSkillSync": {
@@ -1737,39 +1885,6 @@
       "title": "MessagePayload",
       "type": "object"
     },
-    "NativeToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Provider-native discovery; omitted strategy uses the provider default.",
-      "properties": {
-        "mode": {
-          "const": "native",
-          "default": "native",
-          "title": "Mode",
-          "type": "string"
-        },
-        "strategy": {
-          "anyOf": [
-            {
-              "enum": [
-                "bm25",
-                "regex"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Strategy"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "NativeToolSearchConfig",
-      "type": "object"
-    },
     "ObserverContinuation": {
       "additionalProperties": false,
       "description": "Native conversion cursors required to resume mid-part, without raw history.",
@@ -1803,6 +1918,321 @@
         }
       },
       "title": "ObserverContinuation",
+      "type": "object"
+    },
+    "OccurrenceEvent": {
+      "properties": {
+        "occurrence": {
+          "$ref": "#/$defs/OccurrenceSummary"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "schedule_id",
+        "occurrence"
+      ],
+      "title": "OccurrenceEvent",
+      "type": "object"
+    },
+    "OccurrenceExecution": {
+      "additionalProperties": false,
+      "description": "Current execution observations alongside the durable occurrence completion facts.",
+      "properties": {
+        "has_unfinished_work": {
+          "title": "Has Unfinished Work",
+          "type": "boolean"
+        },
+        "initial_entry_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntryStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initial_run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InitialRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "initial_entry_status",
+        "initial_run",
+        "has_unfinished_work",
+        "observed_at"
+      ],
+      "title": "OccurrenceExecution",
+      "type": "object"
+    },
+    "OccurrenceStatus": {
+      "enum": [
+        "pending",
+        "submitted",
+        "completed",
+        "skipped",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "OccurrenceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed At"
+        },
+        "completion_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion Run Id"
+        },
+        "covered_from_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Covered From At"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "deadline_at": {
+          "format": "date-time",
+          "title": "Deadline At",
+          "type": "string"
+        },
+        "dispatch_attempts": {
+          "title": "Dispatch Attempts",
+          "type": "integer"
+        },
+        "entry_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Entry Id"
+        },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OccurrenceExecution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "execution_outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "succeeded",
+                "failed",
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Outcome"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Finished At"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "last_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Error"
+        },
+        "next_attempt_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Attempt At"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "schedule_version": {
+          "title": "Schedule Version",
+          "type": "integer"
+        },
+        "scheduled_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Scheduled At"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/OccurrenceStatus"
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Thread Id"
+        },
+        "trigger": {
+          "$ref": "#/$defs/ScheduleTrigger"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "schedule_id",
+        "session_id",
+        "trigger",
+        "scheduled_at",
+        "covered_from_at",
+        "schedule_version",
+        "status",
+        "reason",
+        "thread_id",
+        "entry_id",
+        "dispatch_attempts",
+        "next_attempt_at",
+        "deadline_at",
+        "last_error",
+        "version",
+        "created_at",
+        "updated_at",
+        "finished_at"
+      ],
+      "title": "OccurrenceSummary",
+      "type": "object"
+    },
+    "OnceSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "run_at": {
+          "format": "date-time",
+          "title": "Run At",
+          "type": "string"
+        },
+        "type": {
+          "const": "once",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "run_at"
+      ],
+      "title": "OnceSchedule",
       "type": "object"
     },
     "OutputSpec": {
@@ -2045,7 +2475,8 @@
         "skills",
         "environment_templates",
         "providers",
-        "execution"
+        "execution",
+        "schedules"
       ],
       "type": "string"
     },
@@ -2078,41 +2509,49 @@
       "title": "PluginSelection",
       "type": "object"
     },
-    "ProxyToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
+    "Progress": {
       "properties": {
-        "call_name": {
-          "default": "call_proxy_tool",
-          "title": "Call Name",
-          "type": "string"
+        "last_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Last Occurrence Id"
         },
-        "max_results": {
-          "default": 10,
-          "title": "Max Results",
-          "type": "integer"
+        "next_fire_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Next Fire At"
         },
-        "max_search_bytes": {
-          "default": 32768,
-          "title": "Max Search Bytes",
-          "type": "integer"
-        },
-        "mode": {
-          "const": "proxy",
-          "default": "proxy",
-          "title": "Mode",
-          "type": "string"
-        },
-        "search_name": {
-          "default": "search_proxy_tools",
-          "title": "Search Name",
-          "type": "string"
+        "pending_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pending Occurrence Id"
         }
       },
       "required": [
-        "mode"
+        "next_fire_at",
+        "pending_occurrence_id",
+        "last_occurrence_id"
       ],
-      "title": "ProxyToolSearchConfig",
+      "title": "Progress",
       "type": "object"
     },
     "RecordSource": {
@@ -2270,6 +2709,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/RunConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionOverride"
             },
             {
               "type": "null"
@@ -2549,6 +2999,17 @@
           "title": "Revision Selection",
           "type": "string"
         },
+        "schedule_origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "sealed_at": {
           "anyOf": [
             {
@@ -2674,6 +3135,76 @@
       "title": "RunView",
       "type": "object"
     },
+    "ScheduleEvent": {
+      "properties": {
+        "configuration": {
+          "$ref": "#/$defs/Configuration"
+        },
+        "progress": {
+          "$ref": "#/$defs/Progress"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "schedule_id",
+        "configuration",
+        "progress"
+      ],
+      "title": "ScheduleEvent",
+      "type": "object"
+    },
+    "ScheduleOrigin": {
+      "properties": {
+        "occurrence_id": {
+          "title": "Occurrence Id",
+          "type": "string"
+        },
+        "schedule_id": {
+          "title": "Schedule Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schedule_id",
+        "occurrence_id"
+      ],
+      "title": "ScheduleOrigin",
+      "type": "object"
+    },
+    "ScheduleRule": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CronSchedule"
+        },
+        {
+          "$ref": "#/$defs/OnceSchedule"
+        }
+      ]
+    },
+    "ScheduleState": {
+      "enum": [
+        "paused",
+        "enabled",
+        "completed",
+        "archived"
+      ],
+      "type": "string"
+    },
+    "ScheduleTrigger": {
+      "enum": [
+        "scheduled",
+        "manual"
+      ],
+      "type": "string"
+    },
     "SharedSkillSync": {
       "additionalProperties": false,
       "description": "Publish mutable conventional names; the last completed publication wins.",
@@ -2727,6 +3258,13 @@
       ],
       "title": "SkillSelection",
       "type": "object"
+    },
+    "Steering": {
+      "enum": [
+        "boundary",
+        "immediate"
+      ],
+      "type": "string"
     },
     "StreamPosition": {
       "additionalProperties": false,
@@ -2926,6 +3464,17 @@
           ],
           "title": "Current Run Id"
         },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -3009,6 +3558,18 @@
           "title": "Purpose",
           "type": "string"
         },
+        "schedule_occurrence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schedule Occurrence Id"
+        },
         "session_id": {
           "title": "Session Id",
           "type": "string"
@@ -3064,6 +3625,43 @@
       "minLength": 1,
       "pattern": "\\S",
       "type": "string"
+    },
+    "ToolExecutionOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "foreground_wait_seconds": {
+          "anyOf": [
+            {
+              "maximum": 300,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Foreground Wait Seconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "inline",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "ToolExecutionOverride",
+      "type": "object"
     },
     "ToolPermissionMode": {
       "enum": [
@@ -3150,25 +3748,69 @@
       "type": "object"
     },
     "ToolSearchConfig": {
-      "discriminator": {
-        "mapping": {
-          "native": "#/$defs/NativeToolSearchConfig",
-          "proxy": "#/$defs/ProxyToolSearchConfig"
+      "additionalProperties": false,
+      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
+      "properties": {
+        "call_name": {
+          "default": "call_tool",
+          "title": "Call Name",
+          "type": "string"
         },
-        "propertyName": "mode"
-      },
-      "oneOf": [
-        {
-          "$ref": "#/$defs/ProxyToolSearchConfig"
+        "describe_name": {
+          "default": "describe_tool",
+          "title": "Describe Name",
+          "type": "string"
         },
-        {
-          "$ref": "#/$defs/NativeToolSearchConfig"
+        "groups_name": {
+          "default": "list_tool_groups",
+          "title": "Groups Name",
+          "type": "string"
+        },
+        "list_name": {
+          "default": "list_tools",
+          "title": "List Name",
+          "type": "string"
+        },
+        "max_results": {
+          "default": 10,
+          "title": "Max Results",
+          "type": "integer"
+        },
+        "max_search_bytes": {
+          "default": 32768,
+          "title": "Max Search Bytes",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "proxy",
+          "default": "proxy",
+          "title": "Mode",
+          "type": "string"
+        },
+        "search_name": {
+          "default": "discover_tools",
+          "title": "Search Name",
+          "type": "string"
         }
-      ]
+      },
+      "title": "ProxyToolSearchConfig",
+      "type": "object"
     },
     "ToolSearchGroup": {
       "additionalProperties": false,
       "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "enum": [
+              "environment",
+              "web"
+            ],
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
         "connections": {
           "default": [],
           "items": {
@@ -3284,6 +3926,7 @@
         "queued",
         "resume",
         "child_result",
+        "tool_result",
         "spawned"
       ],
       "type": "string"
@@ -3591,6 +4234,12 @@
     },
     "items": {
       "$ref": "#/$defs/RunSnapshot"
+    },
+    "occurrence": {
+      "$ref": "#/$defs/OccurrenceEvent"
+    },
+    "schedule": {
+      "$ref": "#/$defs/ScheduleEvent"
     },
     "thread": {
       "$ref": "#/$defs/ThreadState"

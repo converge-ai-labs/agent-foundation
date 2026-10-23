@@ -10,7 +10,8 @@ vi.mock("../../auth/context", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { defaultValue?: string }) =>
+      options?.defaultValue ?? key,
     i18n: { resolvedLanguage: "en" },
   }),
 }));
@@ -19,7 +20,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it("lists the reader's own security activity, account-wide events included", async () => {
+it("lists the reader's own security activity as readable events without an actor column", async () => {
   http.GET.mockResolvedValue({
     data: {
       items: [
@@ -57,8 +58,13 @@ it("lists the reader's own security activity, account-wide events included", asy
       <Audit scope={{ kind: "personal" }} />
     </QueryClientProvider>,
   );
-  expect(await screen.findByText("user.password_change")).toBeTruthy();
-  expect(screen.getByText("ada@example.com")).toBeTruthy();
+  // An action the console has no label for still reads as words, with its
+  // code kept in the tooltip.
+  const action = await screen.findByText("User password change");
+  expect(action.getAttribute("title")).toBe("user.password_change");
+  expect(screen.getByText("User").getAttribute("title")).toBe("user");
+  expect(screen.queryByRole("columnheader", { name: "Actor" })).toBeNull();
+  expect(screen.queryByText("ada@example.com")).toBeNull();
   expect(http.GET).toHaveBeenCalledWith("/api/v1/users/me/audit-events", {
     params: { query: { cursor: undefined, limit: 30 } },
     signal: expect.any(AbortSignal),

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+from typing import Any
 
 from pydantic_ai import ToolApproved, ToolDenied, ToolFailed, ToolReturn
 from pydantic_ai.messages import (
@@ -15,7 +16,9 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolApprovalResult
+from pydantic_ai.tools import DeferredToolRequests as NativeDeferredToolRequests
+from pydantic_ai.tools import DeferredToolResults as DeferredToolResults
 
 from a13n_harness._json import dump_json_bytes, require_finite_json
 from a13n_harness.errors import RunError
@@ -24,6 +27,48 @@ from a13n_harness.tools._output import _render_tool_return
 
 MAX_DEFERRED_ITEMS = 128
 MAX_DEFERRED_METADATA_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class DeferredToolCall:
+    """A model call awaiting one actual tool invocation, without execution authority."""
+
+    model_call: ToolCallPart
+    target_call: ToolCallPart
+    target_identity: str
+
+    @property
+    def forwarded(self) -> bool:
+        return self.model_call.tool_call_id != self.target_call.tool_call_id
+
+
+@dataclass(kw_only=True)
+class DeferredToolRequests:
+    """Portable waits, with replies and metadata keyed by the actual target call ID."""
+
+    calls: list[DeferredToolCall] = field(default_factory=list)
+    approvals: list[DeferredToolCall] = field(default_factory=list)
+    metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def target_requests(self) -> NativeDeferredToolRequests:
+        """Project actual targets for native handlers and approval observations."""
+        return NativeDeferredToolRequests(
+            calls=[item.target_call for item in self.calls],
+            approvals=[item.target_call for item in self.approvals],
+            metadata=deepcopy(self.metadata),
+        )
+
+    def build_results(
+        self,
+        *,
+        approvals: Mapping[str, bool | DeferredToolApprovalResult] | None = None,
+        calls: dict[str, Any] | None = None,
+        metadata: dict[str, dict[str, Any]] | None = None,
+        approve_all: bool = False,
+    ) -> DeferredToolResults:
+        return self.target_requests().build_results(
+            approvals=approvals, calls=calls, metadata=metadata, approve_all=approve_all
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +82,7 @@ class DeferredToolResume:
 
     def __post_init__(self) -> None:
         if not isinstance(self.requests, DeferredToolRequests) or not isinstance(self.results, DeferredToolResults):
-            raise TypeError("DeferredToolResume requires native DeferredToolRequests and DeferredToolResults")
+            raise TypeError("DeferredToolResume requires Harness DeferredToolRequests and native DeferredToolResults")
         try:
             object.__setattr__(self, "requests", deepcopy(self.requests))
             object.__setattr__(self, "results", deepcopy(self.results))
@@ -67,11 +112,11 @@ class DeferredToolResume:
             for part in message.parts
             if isinstance(part, ToolReturnPart | RetryPromptPart)
         }
-        calls = [call for call in self.requests.calls if call.tool_call_id in ids - completed]
-        approvals = [call for call in self.requests.approvals if call.tool_call_id in ids - completed]
+        calls = [call for call in self.requests.calls if call.model_call.tool_call_id in ids - completed]
+        approvals = [call for call in self.requests.approvals if call.model_call.tool_call_id in ids - completed]
         if not calls and not approvals:
             return None
-        pending = {call.tool_call_id for call in (*calls, *approvals)}
+        pending = {call.target_call.tool_call_id for call in (*calls, *approvals)}
         return DeferredToolResume(
             DeferredToolRequests(
                 calls=calls,
@@ -79,23 +124,85 @@ class DeferredToolResume:
                 metadata={key: value for key, value in self.requests.metadata.items() if key in pending},
             ),
             DeferredToolResults(
-                calls={call.tool_call_id: self.results.calls[call.tool_call_id] for call in calls},
-                approvals={call.tool_call_id: self.results.approvals[call.tool_call_id] for call in approvals},
+                calls={
+                    call.target_call.tool_call_id: self.results.calls[call.target_call.tool_call_id] for call in calls
+                },
+                approvals={
+                    call.target_call.tool_call_id: self.results.approvals[call.target_call.tool_call_id]
+                    for call in approvals
+                },
                 metadata={key: value for key, value in self.results.metadata.items() if key in pending},
             ),
             recovery=self.recovery,
         )
+
+    def model_results(self) -> DeferredToolResults:
+        """Adapt replies to the native history boundary; target approvals stay target-local."""
+        results = DeferredToolResults()
+        for item in self.requests.calls:
+            results.calls[item.model_call.tool_call_id] = self.results.calls[item.target_call.tool_call_id]
+        for item in self.requests.approvals:
+            decision = self.results.approvals[item.target_call.tool_call_id]
+            # An override applies to the target's arguments, never the proxy envelope.
+            if item.forwarded and isinstance(decision, ToolApproved):
+                decision = ToolApproved()
+            results.approvals[item.model_call.tool_call_id] = decision
+        for item in (*self.requests.calls, *self.requests.approvals):
+            if item.target_call.tool_call_id in self.results.metadata:
+                results.metadata[item.model_call.tool_call_id] = deepcopy(
+                    self.results.metadata[item.target_call.tool_call_id]
+                )
+        return results
 
 
 @dataclass(slots=True)
 class DeferredInputState:
     """Run-owned, monotonically shrinking accepted facts; never a replay grant."""
 
-    pending: DeferredToolResume | None
+    pending: DeferredToolResume | None = None
+    # Current-step associations are observations, not another executable registry.
+    calls: dict[str, DeferredToolCall] = field(default_factory=dict)
+    metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def record_metadata(self, call_id: str, metadata: Mapping[str, Any]) -> None:
+        """Merge handler metadata without replacing the captured function identity."""
+        captured = self.metadata.setdefault(call_id, {})
+        function_id = captured.get("a13n.harness.deferred-function-id")
+        captured.update(deepcopy(metadata))
+        if function_id is not None:
+            captured["a13n.harness.deferred-function-id"] = function_id
 
     def reconcile(self, messages: Sequence[ModelMessage]) -> None:
         if self.pending is not None:
             self.pending = self.pending.remaining(messages)
+
+    def export(self, requests: NativeDeferredToolRequests) -> DeferredToolRequests:
+        """Detach the final native pending batch with its captured target associations."""
+        metadata: dict[str, dict[str, Any]] = {}
+
+        def entries(parts: list[ToolCallPart], *, approval: bool = False) -> list[DeferredToolCall]:
+            result = []
+            for part in parts:
+                item = self.calls.get(part.tool_call_id)
+                if item is None:
+                    raise RunError("Deferred call has no captured identity.", code="deferred_request_missing")
+                if not item.forwarded:
+                    item = replace(item, model_call=part, target_call=part)
+                target_id = item.target_call.tool_call_id
+                metadata[target_id] = {
+                    **requests.metadata.get(part.tool_call_id, {}),
+                    **self.metadata.get(target_id, {}),
+                }
+                if approval:
+                    metadata[target_id].pop("a13n.harness.deferred-function-id", None)
+                result.append(deepcopy(item))
+            return result
+
+        result = DeferredToolRequests(
+            calls=entries(requests.calls), approvals=entries(requests.approvals, approval=True), metadata=metadata
+        )
+        validate_deferred_requests(result)
+        return deepcopy(result)
 
 
 def preflight_deferred_resume(
@@ -128,14 +235,16 @@ def preflight_deferred_resume(
                 "Deferred approval results must use the native approval value types.",
                 code="deferred_approval_invalid",
             )
+    from a13n_harness.tools.client import client_tool_name
+
     try:
-        pending_calls = {request.tool_call_id: request for request in detached.requests.calls}
+        pending_calls = {item.target_call.tool_call_id: item.target_call for item in detached.requests.calls}
         for call_id, call_result in tuple(detached.results.calls.items()):
             request = pending_calls[call_id]
             if isinstance(call_result, ToolFailed):
                 require_finite_json(call_result.message)
                 continue
-            if request.tool_name == "ask_user_question":
+            if client_tool_name(request, detached.requests.metadata.get(call_id, {})) == "ask_user_question":
                 from a13n_harness.toolsets.interaction import validate_user_question_result
 
                 if isinstance(call_result, ToolReturn):
@@ -159,7 +268,10 @@ def preflight_deferred_resume(
         raise RunError("Deferred results contain invalid JSON values.", code="deferred_results_invalid") from exc
     _validate_metadata(detached.results.metadata, call_ids | approval_ids)
 
-    pending = {part.tool_call_id: part for part in (*detached.requests.calls, *detached.requests.approvals)}
+    pending = {
+        item.model_call.tool_call_id: item.model_call
+        for item in (*detached.requests.calls, *detached.requests.approvals)
+    }
     completed: set[str] = set()
     last_response: ModelResponse | None = None
     for message in previous_state.message_history:
@@ -225,20 +337,48 @@ def validate_deferred_requests(requests: DeferredToolRequests) -> tuple[set[str]
     if len(call_ids) + len(approval_ids) > MAX_DEFERRED_ITEMS:
         raise RunError("Deferred resume has too many pending requests.", code="deferred_requests_too_large")
 
+    model_ids: set[str] = set()
+    for item in (*requests.calls, *requests.approvals):
+        model, target = item.model_call, item.target_call
+        if not model.tool_call_id or model.tool_call_id in model_ids:
+            raise RunError("Deferred model call IDs must be unique.", code="deferred_request_duplicate")
+        model_ids.add(model.tool_call_id)
+        if not isinstance(item.target_identity, str) or not item.target_identity or len(item.target_identity) > 1024:
+            raise RunError("Deferred target identity is invalid.", code="deferred_request_invalid")
+        try:
+            require_finite_json(model.args_as_dict())
+            require_finite_json(target.args_as_dict())
+            if not model.tool_name or not target.tool_name or (not item.forwarded and model != target):
+                raise ValueError("Inconsistent direct call")
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise RunError("Deferred call association is invalid.", code="deferred_request_invalid") from exc
+
+    # A forwarded target cannot impersonate another model call in the same batch.
+    if any(
+        item.forwarded and item.target_call.tool_call_id in model_ids for item in (*requests.calls, *requests.approvals)
+    ):
+        raise RunError("Deferred target IDs overlap model calls.", code="deferred_request_duplicate")
+
     _validate_metadata(requests.metadata, call_ids | approval_ids)
     return call_ids, approval_ids
 
 
-def _request_ids(requests: list[ToolCallPart], *, category: str) -> set[str]:
+def _request_ids(requests: list[DeferredToolCall], *, category: str) -> set[str]:
     ids: set[str] = set()
     for request in requests:
-        if not isinstance(request, ToolCallPart) or not request.tool_call_id or request.tool_call_id in ids:
+        if (
+            not isinstance(request, DeferredToolCall)
+            or not isinstance(request.target_call, ToolCallPart)
+            or not isinstance(request.model_call, ToolCallPart)
+            or not request.target_call.tool_call_id
+            or request.target_call.tool_call_id in ids
+        ):
             raise RunError(
                 "Deferred request IDs must be non-blank and unique within each category.",
                 code="deferred_request_duplicate",
                 details={"category": category},
             )
-        ids.add(request.tool_call_id)
+        ids.add(request.target_call.tool_call_id)
     return ids
 
 

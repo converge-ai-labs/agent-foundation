@@ -16,12 +16,17 @@ import { strToU8, zipSync } from "fflate";
 
 const { download } = vi.hoisted(() => ({ download: vi.fn() }));
 vi.mock("../../shared/download", () => ({ downloadBlob: download }));
-vi.mock("../../auth/context", () => ({ useClient: () => client }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => client,
+  useAuth: () => ({ data: undefined }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/ws_design",
     workspace: { id: workspaceId },
+    organization: { id: "org_design" },
     can: () => true,
+    organizationCan: () => false,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -83,6 +88,8 @@ function setup(workspace: string, search = "") {
       source: { kind: "upload", upload_id: "upl_example" },
     },
     created_at: "2026-09-09T00:00:00Z",
+    created_by_id: "usr_author",
+    note: null,
   });
   const current = makeRevision("skr_example", 2, "", currentFiles);
   // An uploaded archive may keep its package in one top-level directory.
@@ -248,7 +255,7 @@ it("renames and archives a skill with its CSRF proof and existing ETag", async (
   await user.click(
     await screen.findByRole("button", { name: "Archive skill" }),
   );
-  expect(await screen.findByText("Archived")).toBeTruthy();
+  expect(await screen.findByText("state.archived")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "New version" })).toBeNull();
   const mutations = requests.filter((request) => request.method !== "GET");
   expect(
@@ -277,7 +284,7 @@ it("opens SKILL.md by default, switches files without downloading again, and ope
     ),
   ).toHaveLength(1);
   await user.click(screen.getByRole("tab", { name: /Versions/ }));
-  await user.click(await screen.findByRole("link", { name: "v1" }));
+  await user.click(await screen.findByText("v1"));
   await screen.findByRole("heading", { name: "Earlier instructions" });
   expect(screen.queryByRole("button", { name: "checklist.md" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "notes.txt" }));
@@ -307,17 +314,30 @@ it("sets an older version as the default with the workspace and existing ETag", 
   const { user, requests } = setup("ws_default");
   await screen.findByRole("heading", { name: "Example skill" });
   await user.click(screen.getByRole("tab", { name: /Versions/ }));
-  const row = (version: string) =>
-    within(screen.getByRole("link", { name: version }).closest("div")!);
-  expect(row("v2").getByText("Default version")).toBeTruthy();
-  await user.click(row("v1").getByRole("button", { name: "Set as default" }));
+  const row = async (version: string) =>
+    within(
+      within(await screen.findByRole("table"))
+        .getByText(version)
+        .closest("tr")!,
+    );
+  expect((await row("v2")).getByText("Default")).toBeTruthy();
+  await user.click(
+    (await row("v1")).getByRole("button", { name: "Version actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Set as default" }),
+  );
   const confirm = await screen.findByRole("dialog", { name: "Set as default" });
   await user.click(
     within(confirm).getByRole("button", { name: "Set as default" }),
   );
-  await waitFor(() => expect(row("v1").getByText("Default version")));
+  await waitFor(async () => expect((await row("v1")).getByText("Default")));
+  await user.keyboard("{Escape}");
+  await user.click(
+    (await row("v2")).getByRole("button", { name: "Version actions" }),
+  );
   expect(
-    row("v2").getByRole("button", { name: "Set as default" }),
+    await screen.findByRole("menuitem", { name: "Set as default" }),
   ).toBeTruthy();
   const request = requests.find((request) => request.method === "POST")!;
   expect(new URL(request.url).pathname).toBe(

@@ -7,8 +7,29 @@ import {
   StackIcon,
   WrenchIcon,
 } from "@phosphor-icons/react";
+import type { TFunction } from "i18next";
 import type { Schema } from "../../shared/api";
 import styles from "./traces.module.css";
+import type { Observation } from "./overview";
+
+const kindLabels: Record<string, string> = {
+  agent: "Agent",
+  chain: "Chain",
+  embedding: "Embedding",
+  evaluator: "Evaluator",
+  event: "Event",
+  generation: "Generation",
+  guardrail: "Guardrail",
+  retriever: "Retriever",
+  span: "Span",
+  tool: "Tool",
+};
+
+/** The reported observation type in the reader's language; an unfamiliar type reads as reported. */
+export function kindLabel(t: TFunction, kind: string) {
+  const label = kindLabels[kind.toLowerCase()];
+  return label ? t(label) : kind;
+}
 
 /** Open telemetry types retain a neutral fallback; names refine generic spans only. */
 export function observationKind(
@@ -37,7 +58,7 @@ const icons = {
   span: StackIcon,
 };
 
-export function isFailed(observation: Schema["Span"]) {
+export function isFailed(observation: Observation) {
   return (
     observation.status === "error" ||
     ["error", "fatal", "critical"].includes(observation.level ?? "")
@@ -57,11 +78,7 @@ export function ObservationGlyph({
 }
 
 /** The 22px kind tile that leads a timeline row. */
-export function ObservationIcon({
-  observation,
-}: {
-  observation: Schema["Span"];
-}) {
+export function ObservationIcon({ observation }: { observation: Observation }) {
   return (
     <span
       className={styles.observationIcon}

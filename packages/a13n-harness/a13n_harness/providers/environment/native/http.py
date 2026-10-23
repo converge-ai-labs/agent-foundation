@@ -1,6 +1,6 @@
 """Bounded HTTP transport; no automatic mutation retries or absence inference."""
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 
 import httpx2
@@ -32,6 +32,12 @@ class NativeHTTP:
             raise failure(self.key, "provider_denied", Category.DENIED, certainty=Certainty.KNOWN)
         if status in {400, 422}:
             raise failure(self.key, "provider_spec_invalid", Category.INVALID, certainty=Certainty.KNOWN)
+        if status in {405, 501}:
+            raise failure(
+                self.key, "provider_file_transport_unsupported", Category.UNSUPPORTED, certainty=Certainty.KNOWN
+            )
+        if status == 413:
+            raise failure(self.key, "provider_file_too_large", Category.INVALID, certainty=Certainty.KNOWN)
         if status == 409:
             raise failure(self.key, "provider_target_conflict", Category.CONFLICT, certainty=Certainty.KNOWN)
         if status == 404:
@@ -54,10 +60,14 @@ class NativeHTTP:
         params: dict[str, str] | None = None,
         missing: bool = False,
         headers: dict[str, str] | None = None,
-    ) -> AsyncIterator[httpx2.Response]:
-        mutation = is_mutation(method, params)
+        content: AsyncIterator[bytes] | None = None,
+        mutation: bool | None = None,
+    ) -> AsyncGenerator[httpx2.Response]:
+        mutation = is_mutation(method, params) if mutation is None else mutation
         try:
-            async with self.client.stream(method, path, json=body, params=params, headers=headers) as response:
+            async with self.client.stream(
+                method, path, json=body, content=content, params=params, headers=headers
+            ) as response:
                 self.check(response, mutation=mutation, missing=missing)
                 yield response
         except (ValueError, TypeError, KeyError, AttributeError):
@@ -69,6 +79,11 @@ class NativeHTTP:
                 Category.UNKNOWN_OUTCOME if mutation else Category.UNAVAILABLE,
                 certainty=Certainty.UNKNOWN if mutation else Certainty.KNOWN,
             ) from None
+        finally:
+            if content is not None:
+                close = getattr(content, "aclose", None)
+                if close is not None:
+                    await close()
 
     async def request(
         self,

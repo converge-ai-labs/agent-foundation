@@ -1,4 +1,5 @@
 import { readContentParts } from "a13n-ui";
+import { toolExecutionReceipt } from "a13n-ui/display";
 import type { ContentPart } from "@ag-ui/core";
 import { isRecord } from "../../service-client";
 import { inDisplayOrder, type DisplayItem } from "./display";
@@ -44,7 +45,10 @@ export function presentItem(item: DisplayItem): PresentedItem {
   return {
     id: item.id,
     kind: item.kind,
-    state: item.state,
+    state:
+      item.kind === "tool_call" && toolExecutionReceipt(content.result)
+        ? "handed_off"
+        : item.state,
     firstPosition: item.first_stream_id,
     lastPosition: item.last_stream_id,
     startedAt: item.started_at,

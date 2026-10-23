@@ -421,9 +421,9 @@ class ComputerZoomImage(EIPModel):
 
 class ConnectionMetrics(EIPModel):
     tcp_total: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
-    tcp_states: dict[StrictStr, Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]] = Field(
-        default_factory=dict
-    )
+    tcp_states: Annotated[
+        dict[StrictStr, Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]], Field(max_length=16)
+    ] = Field(default_factory=dict)
     udp_sockets: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
 
 
@@ -498,7 +498,7 @@ class DiskIoMetrics(EIPModel):
 
 
 class DiskMetrics(EIPModel):
-    devices: dict[StrictStr, DiskIoMetrics] = Field(default_factory=dict)
+    devices: Annotated[dict[StrictStr, DiskIoMetrics], Field(max_length=64)] = Field(default_factory=dict)
     truncated: StrictBool
 
 
@@ -806,7 +806,7 @@ class FileWriterOpenResult(EIPModel):
 
 
 class FilesystemInventory(EIPModel):
-    filesystems: dict[StrictStr, FilesystemObservation] = Field(default_factory=dict)
+    filesystems: Annotated[dict[StrictStr, FilesystemObservation], Field(max_length=16)] = Field(default_factory=dict)
     truncated: StrictBool
 
 
@@ -862,7 +862,7 @@ class NetworkInterfaceMetrics(EIPModel):
 
 
 class NetworkMetrics(EIPModel):
-    interfaces: dict[StrictStr, NetworkInterfaceMetrics] = Field(default_factory=dict)
+    interfaces: Annotated[dict[StrictStr, NetworkInterfaceMetrics], Field(max_length=64)] = Field(default_factory=dict)
     truncated: StrictBool
 
 

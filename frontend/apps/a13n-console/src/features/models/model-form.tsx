@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { WarningIcon } from "@phosphor-icons/react";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Button,
   ChoiceField,
   DisclosureSection,
@@ -9,21 +13,21 @@ import {
   SettingsSection,
   Switch,
 } from "a13n-ui";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, type Schema } from "../../shared/api";
+import { type Schema } from "../../shared/api";
 import { CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, jsonObject, validateSettings } from "../../shared/forms";
 import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
-import { modelApi } from "./api";
+import { modelApi, workspaceProvidersQuery } from "./api";
 import { catalogRefKey } from "./catalog-picker";
 import { ModelPicker } from "./model-picker";
-import { ModelIcon } from "./model-icon";
+import { ModelIcon, providerBrand } from "./model-icon";
 import { ImageInputFields } from "./image-input-fields";
 import {
   imageInputDraft,
@@ -117,10 +121,8 @@ export function useModelDraft({
   const [settingsExpanded, setSettingsExpanded] = useState(false);
   const [manual, setManual] = useState(false);
   const providers = useQuery({
-    queryKey: ["model-provider-choices", workspace.id],
+    ...workspaceProvidersQuery(client, workspace.id),
     enabled: active,
-    queryFn: ({ signal }) =>
-      allPages((cursor) => api.providers(signal, cursor)),
   });
   const definitions = useModelProviderDefinitions();
   const catalog = useQuery({
@@ -207,7 +209,7 @@ export function useModelDraft({
   }
   function acceptProvider(item: Schema["Provider"], preferredApi?: string) {
     cache.setQueryData<Schema["Provider"][]>(
-      ["model-provider-choices", workspace.id],
+      workspaceProvidersQuery(client, workspace.id).queryKey,
       (items) => [
         ...(items ?? []).filter((value) => value.id !== item.id),
         item,
@@ -344,27 +346,41 @@ export function ModelSelection({
           <ModelIcon
             upstream={draft.model_name}
             catalogRef={draft.catalog_ref}
-            provider={model.selectedProvider?.type}
+            provider={providerBrand(model.selectedProvider)}
             size={20}
           />
         </IconTile>
+        {/* The model, then the provider serving it; the ID field below is never repeated. */}
         <span className={styles.chosenCopy}>
           <strong>
-            {selectedEntry?.name || draft.model_name || t("Custom model")}
-          </strong>
-          <small>
-            {selectedEntry?.identity ??
-              model.selectedProvider?.name ??
+            {selectedEntry?.name ||
+              (!showAddress && draft.model_name) ||
               t("Custom model")}
-          </small>
+          </strong>
+          {model.selectedProvider && (
+            <small>{model.selectedProvider.name}</small>
+          )}
         </span>
-        {onChange && (
-          <Button type="button" variant="outline" size="sm" onClick={onChange}>
-            {t("Change")}
-          </Button>
-        )}
-        {actions}
+        <span className={styles.chosenActions}>
+          {onChange && (
+            <Button type="button" variant="ghost" size="sm" onClick={onChange}>
+              {t("Change")}
+            </Button>
+          )}
+          {actions}
+        </span>
       </div>
+      {model.selectedProvider?.enabled === false && (
+        <Alert variant="warning">
+          <WarningIcon aria-hidden="true" />
+          <AlertTitle>{t("Provider disabled")}</AlertTitle>
+          <AlertDescription>
+            {t("Agents can't use this model until {{provider}} is enabled.", {
+              provider: model.selectedProvider.name,
+            })}
+          </AlertDescription>
+        </Alert>
+      )}
       {showAddress && <ModelAddress model={model} />}
     </div>
   );
@@ -372,42 +388,45 @@ export function ModelSelection({
 
 function ModelAddress({ model }: { model: ModelDraft }) {
   const { t } = useTranslation();
+  const hintId = useId();
   const { draft, selectedEntry, definition, channels } = model;
   const compatible =
     !!selectedEntry && !channels.includes(selectedEntry.ref.provider);
   const multipleApis = (definition?.model_apis?.length ?? 0) > 1;
   return (
-    <div
-      className={multipleApis ? sharedStyles.twoColumns : sharedStyles.stack}
-    >
-      <FormField
-        label={t("Upstream model")}
-        description={t(
+    <div className={styles.address}>
+      <div className={multipleApis ? sharedStyles.twoColumns : undefined}>
+        <FormField label={t("Upstream model")}>
+          <Input
+            required
+            maxLength={256}
+            aria-describedby={hintId}
+            value={draft.model_name}
+            onChange={(event) => model.change("model_name", event.target.value)}
+          />
+        </FormField>
+        {multipleApis && (
+          <ChoiceField
+            label={t("API")}
+            value={model.callingApi}
+            onValueChange={(value) => model.change("model_api", value)}
+            options={
+              definition?.model_apis?.map((value) => ({
+                value,
+                label: definition.model_api_labels?.[value] ?? value,
+              })) ?? []
+            }
+          />
+        )}
+      </div>
+      {/* Spans both columns, so the hint never wraps in a half-width cell. */}
+      <p id={hintId} className={styles.addressHint}>
+        {t(
           compatible
             ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
             : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
         )}
-      >
-        <Input
-          required
-          maxLength={256}
-          value={draft.model_name}
-          onChange={(event) => model.change("model_name", event.target.value)}
-        />
-      </FormField>
-      {multipleApis && (
-        <ChoiceField
-          label={t("API")}
-          value={model.callingApi}
-          onValueChange={(value) => model.change("model_api", value)}
-          options={
-            definition?.model_apis?.map((value) => ({
-              value,
-              label: definition.model_api_labels?.[value] ?? value,
-            })) ?? []
-          }
-        />
-      )}
+      </p>
     </div>
   );
 }
@@ -423,7 +442,7 @@ export function ModelFields({
   requireEnabled?: boolean;
 }) {
   const { t } = useTranslation();
-  const { draft, selectedEntry, original } = model;
+  const { draft, selectedEntry } = model;
   const name = (
     <FormField label={t("Name")}>
       <Input
@@ -438,16 +457,8 @@ export function ModelFields({
     <div className={styles.modelDetails}>
       {compact && !model.manual && <ModelAddress model={model} />}
       <section className={styles.identityFields}>
-        <div className={compact ? sharedStyles.stack : sharedStyles.twoColumns}>
-          {!compact && name}
-          {original ? (
-            <FormField label={t("Model key")} readOnly>
-              <Input value={draft.key} readOnly />
-            </FormField>
-          ) : (
-            <ModelKeyField model={model} />
-          )}
-        </div>
+        {/* A saved model's key is fixed and already in the dialog title. */}
+        {compact ? <ModelKeyField model={model} /> : name}
         <FormField label={t("Description")}>
           <Input
             maxLength={2048}

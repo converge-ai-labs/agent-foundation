@@ -107,12 +107,7 @@ export function ProviderReadOnly({
           <CredentialsPill state={credentials} />
         </SettingsRow>
       </ProviderGroup>
-      <FormActions
-        dismiss
-        pending={false}
-        cancelLabel={t("Close")}
-        onCancel={onClose}
-      />
+      <FormActions dismiss pending={false} onCancel={onClose} />
     </div>
   );
 }

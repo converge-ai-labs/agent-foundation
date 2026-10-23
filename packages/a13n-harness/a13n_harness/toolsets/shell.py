@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Annotated, Any, Literal, cast
 
@@ -9,12 +10,14 @@ from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.environment._resources import EnvironmentResources
 from a13n_harness.environment.commands import CommandEnvironment, CommandLimits, CommandRequest, ShellCommand
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+from a13n_harness.tool_execution import _CURRENT_TOOL_EXECUTION, _OWNED_TOOL_EXECUTION
 from a13n_harness.tools.metadata import (
     CanonicalResource,
     HarnessTool,
@@ -29,11 +32,13 @@ from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
 from .process_manager import _PROCESS_OBSERVATION_ACTIONS, _ProcessController, _project_status
+from .shell_control import ShellControl, ShellTarget
 from .shell_results import (
     OutputPageProjection,
     ProcessInfoResult,
     ProcessInputResult,
     ProcessObservationResult,
+    ProcessObservationSuccess,
     ProcessSignalResult,
     ShellExecToolResult,
 )
@@ -253,11 +258,10 @@ class ShellToolset:
         *,
         cwd: _CommandCwd = None,
         environment: Mapping[str, str] | None = None,
-        yield_time_seconds: _NonNegativeTimeout = 10,
         execution_timeout_seconds: _PositiveTimeout | None = None,
         alias: _MountAlias = None,
     ) -> ShellExecToolResult:
-        """Start a command and automatically yield a Run-local process reference when still live."""
+        """Run a command under the Host execution policy, with live process controls where supported."""
         try:
             request = self._command_request(
                 command,
@@ -285,12 +289,24 @@ class ShellToolset:
                     alias=alias,
                     expected_mount_id=mount_id,
                 )
-            result = await self._process_controller.start(
-                request,
-                alias=alias,
-                yield_time_seconds=yield_time_seconds,
-                expected_mount_id=mount_id,
-            )
+            owned = _CURRENT_TOOL_EXECUTION.get()
+            if owned is not None and owned.tool_call_id == ctx.tool_call_id and ctx.deps.tool_execution is not None:
+                result = await self._process_controller.run_owned(
+                    request,
+                    alias=alias,
+                    expected_mount_id=mount_id,
+                    runtime=ctx.deps.tool_execution,
+                    execution_id=owned.execution_id,
+                )
+            else:
+                result = await self._process_controller.start(
+                    request,
+                    alias=alias,
+                    yield_time_seconds=ctx.deps._tool_executions.config.foreground_wait_seconds,
+                    expected_mount_id=mount_id,
+                )
+                if ctx.tool_call_id is not None:
+                    ctx.deps._tool_executions.returns[ctx.tool_call_id] = result
             return cast(
                 ShellExecToolResult,
                 await disclose_text_paths(
@@ -314,10 +330,14 @@ class ShellToolset:
         alias: _MountAlias = None,
         limit: Annotated[int, Field(ge=1, le=1000)] = 50,
     ) -> ProcessInfoResult:
-        """List processes on a mount permitting process.list, or inspect a Run-local process reference."""
-        del ctx
+        """Discover native processes, or inspect a local process or live Shell execution reference."""
         try:
-            return await self._process_controller.info(process_id, alias=alias, limit=limit)
+            if process_id is None:
+                return await self._process_controller.info(None, alias=alias, limit=limit)
+            return cast(
+                ProcessInfoResult,
+                await self._control(ctx.deps, process_id, ShellControl(operation="inspect"), alias=alias),
+            )
         except EnvironmentError as exc:
             return cast(ProcessInfoResult, _environment_error_result(exc))
 
@@ -328,7 +348,7 @@ class ShellToolset:
         *,
         alias: _MountAlias = None,
     ) -> ProcessInfoResult:
-        """Inspect a Run-local process_id from shell_exec; native process listing is unavailable."""
+        """Inspect a local process or live Shell execution reference; native listing is unavailable."""
         return await self.shell_info(ctx, process_id, alias=alias)
 
     async def shell_wait(
@@ -342,19 +362,34 @@ class ShellToolset:
     ) -> ProcessObservationResult:
         """Wait boundedly, or poll with zero, then read available output at explicit offsets."""
         try:
-            result = await self._process_controller.wait(
-                process_id,
+            control = ShellControl(
+                operation="wait",
                 stdout_offset=stdout_offset,
                 stderr_offset=stderr_offset,
                 timeout_seconds=timeout_seconds,
             )
+            try:
+                result = await ctx.deps._tool_executions.wait_control(
+                    lambda timeout: self._control(
+                        ctx.deps, process_id, control.model_copy(update={"timeout_seconds": timeout})
+                    ),
+                    timeout_seconds=timeout_seconds,
+                )
+            except asyncio.CancelledError:
+                if _OWNED_TOOL_EXECUTION.get():
+                    raise
+                result = await self._control(ctx.deps, process_id, control.model_copy(update={"timeout_seconds": 0}))
+            if ctx.tool_call_id is not None:
+                ctx.deps._tool_executions.returns[ctx.tool_call_id] = result
+            observation = cast(ProcessObservationSuccess, result)
             return cast(
                 ProcessObservationResult,
                 await disclose_text_paths(
                     ctx.deps,
                     cast(dict[str, JsonValue], result),
                     text_paths=(("stdout", "text"), ("stderr", "text")),
-                    content_complete=result["stdout"]["content_complete"] and result["stderr"]["content_complete"],
+                    content_complete=observation["stdout"]["content_complete"]
+                    and observation["stderr"]["content_complete"],
                     noun="process observation",
                     limit=DEFAULT_TOOL_OUTPUT_CHARS,
                     preserve_tail=True,
@@ -372,12 +407,12 @@ class ShellToolset:
         close_stdin: bool = False,
     ) -> ProcessInputResult:
         """Write UTF-8 stdin and optionally close stdin without reading output."""
-        del ctx
         try:
-            return await self._process_controller.write_input(
-                process_id,
-                data,
-                close_stdin=close_stdin,
+            return cast(
+                ProcessInputResult,
+                await self._control(
+                    ctx.deps, process_id, ShellControl(operation="input", data=data, close_stdin=close_stdin)
+                ),
             )
         except EnvironmentError as exc:
             return cast(ProcessInputResult, _environment_error_result(exc))
@@ -389,9 +424,11 @@ class ShellToolset:
         signal: Literal["interrupt", "terminate", "kill"],
     ) -> ProcessSignalResult:
         """Control a live process without reading output."""
-        del ctx
         try:
-            return await self._process_controller.signal(process_id, signal)
+            return cast(
+                ProcessSignalResult,
+                await self._control(ctx.deps, process_id, ShellControl(operation="signal", signal=signal)),
+            )
         except EnvironmentError as exc:
             return cast(ProcessSignalResult, _environment_error_result(exc))
 
@@ -414,13 +451,58 @@ class ShellToolset:
     async def _process_resources(
         self, arguments: Mapping[str, object], *, context: AgentContext
     ) -> tuple[CanonicalResource, ...]:
+        process_id = _string_argument(arguments, "process_id")
+        owned = await self._runtime_process(context, process_id)
         return (
             CanonicalResource(
                 namespace="environment",
                 kind="managed-process",
-                identifier=self.resolve_process_resource(_string_argument(arguments, "process_id")),
+                identifier=owned.resource_id if owned is not None else self.resolve_process_resource(process_id),
             ),
         )
+
+    async def _runtime_process(self, context: AgentContext, process_id: str) -> ShellTarget | None:
+        if not process_id.startswith("exec-"):
+            return None
+        runtime = context.tool_execution
+        resource = (
+            await runtime.call_resource(context.thread_id, process_id, {"operation": "describe"})
+            if runtime is not None and context._tool_executions.enabled
+            else None
+        )
+        if resource is None:
+            raise EnvironmentError(
+                "No live Shell control surface is available. Use tool_execution_info or tool_execution_result for this execution.",
+                code="environment_reference_invalid",
+            )
+        return ShellTarget.model_validate(resource)
+
+    async def _control(
+        self, context: AgentContext, process_id: str, control: ShellControl, *, alias: str | None = None
+    ) -> dict[str, JsonValue]:
+        self._guard_execution()
+        target = await self._runtime_process(context, process_id)
+        if target is None:
+            return await self._process_controller.control(process_id, control, alias=alias)
+        assert context.tool_execution is not None
+        async with self._environment.authorize_retained_process(
+            target.identity,
+            backing_identity=target.backing_identity,
+            actions=control.actions,
+            alias=alias,
+            timeout_seconds=control.timeout_seconds,
+        ):
+            result = await context.tool_execution.call_resource(
+                context.thread_id, process_id, control.model_dump(mode="json")
+            )
+            if result is None:
+                raise EnvironmentError(
+                    "Shell execution has settled. Use tool_execution_result for its retained result.",
+                    code="environment_reference_stale",
+                    details={"dispatch_stage": "pre_dispatch"},
+                )
+            result["process_id"] = process_id
+            return result
 
     def _tool(
         self,
@@ -435,6 +517,9 @@ class ShellToolset:
         return HarnessTool(
             function,
             name=name,
+            metadata={
+                TOOL_EXECUTION_METADATA_KEY: self._execution_mode if tool_id == "environment.shell_exec" else "control"
+            },
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=frozenset(effects),
@@ -453,6 +538,24 @@ class ShellToolset:
                 ),
             ),
         )
+
+    def _execution_mode(self, arguments: dict[str, Any]) -> Literal["owned", "owned_auto"]:
+        """Bound process-backed waits without changing foreground-only mounts."""
+        try:
+            request = self._command_request(
+                arguments["command"],
+                cwd=arguments.get("cwd"),
+                environment=arguments.get("environment"),
+                execution_timeout_seconds=arguments.get("execution_timeout_seconds"),
+                keep_stdin_open=False,
+            )
+            _, process_capable = self._environment._select_command_actions(
+                request, alias=arguments.get("alias"), actions=_PROCESS_OBSERVATION_ACTIONS
+            )
+        except EnvironmentError:
+            # Dispatch owns the model-facing selection/request error.
+            return "owned"
+        return "owned_auto" if process_capable else "owned"
 
     @staticmethod
     def _command_request(

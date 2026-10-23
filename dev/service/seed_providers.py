@@ -17,6 +17,7 @@ FICTIONAL_KEY = "fictional-not-a-real-key"
 CONFIG: dict[tuple[str, str], Json] = {
     ("model", "google_vertex"): {"project_id": "northstar-fictional", "location": "us-central1"},
     ("model", "azure_openai"): {"resource_endpoint": "https://northstar-fictional.openai.azure.com"},
+    ("model", "cloudflare_ai_gateway"): {"account_id": "0" * 32, "gateway_id": "northstar-fictional"},
     ("model", "aws_bedrock"): {"region": "us-east-1"},
     ("model", "ollama"): {"base_url": "http://127.0.0.1:11434"},
     ("model", "alibaba_model_studio"): {"region": "cn-beijing", "domain_type": "mainland_china"},
@@ -36,6 +37,7 @@ MODELS = {
     "google_vertex": ("Gemini 3.8 Flash", "gemini-3.8-flash"),
     "azure_openai": ("GPT-5.6 Terra", "gpt-5.6-terra"),
     "aws_bedrock": ("Claude Opus 5", "anthropic.claude-opus-5"),
+    "cloudflare_ai_gateway": ("GPT-5.4", "openai/gpt-5.4"),
     "openrouter": ("Claude Opus 5", "anthropic/claude-opus-5"),
     "ollama": ("Llama 3.2", "llama3.2"),
     "alibaba_model_studio": ("Qwen3.8 Flash", "qwen3.8-flash"),

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -13,6 +13,7 @@ from uuid import uuid4
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+    DeferredToolRequests,
     DeferredToolResume,
     HarnessEvent,
     HarnessRunResult,
@@ -36,7 +37,7 @@ from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
-from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
+from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
 from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -66,6 +67,8 @@ from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
+from a13n_harness_ui.model_accounts.provenance import MainAccountCapability
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     phase,
@@ -99,6 +102,7 @@ from a13n_harness_ui.thread_projection import build_thread_inspection
 from a13n_harness_ui.thread_service import ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
+from a13n_harness_ui.tool_executions import ToolExecutions
 from a13n_harness_ui.tool_images import ToolImageCollector
 
 
@@ -158,8 +162,10 @@ class RootRunExecutor:
         restart_coordinator: GracefulRestart | None = None,
         mcp_apps: AppSnapshots | None = None,
         browsers: HostBrowsers | None = None,
+        tool_executions: ToolExecutions | None = None,
     ) -> None:
         self._browsers = browsers
+        self._tool_executions = tool_executions
         self._store = store
         self._mcp_apps = mcp_apps
         self._restart = restart_coordinator
@@ -337,6 +343,7 @@ class RootRunExecutor:
         on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
+        on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
         thread = admission.thread
         thread_id = thread.thread_id
@@ -418,7 +425,9 @@ class RootRunExecutor:
                 )
                 image_events = await tool_images.observe(observed)
                 app_events = (
-                    await self._mcp_apps.observe(observed, thread_id=thread_id, run_id=stream.run_id)
+                    await self._mcp_apps.observe(
+                        observed, thread_id=thread_id, run_id=stream.run_id, context=stream.context
+                    )
                     if self._mcp_apps is not None
                     else ()
                 )
@@ -433,6 +442,7 @@ class RootRunExecutor:
                 organization=admission.organization,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
+                    MainAccountCapability(published.value.root.model.model_id, on_main_account),
                     goal_capability,
                     RootCheckpointCapability(save_checkpoint),
                     _ToolPresentationCapability(retain_tool_presentation),
@@ -496,6 +506,8 @@ class RootRunExecutor:
                 host_refs={"thread_id": thread.thread_id},
             )
             bindings = RunBindings(
+                tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
+                codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
                 instance=instance,
                 configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
@@ -539,8 +551,6 @@ class RootRunExecutor:
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
             tool_evidence = ToolEvidenceCollector(run_id=stream.run_id)
             tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
-            if on_stream is not None:
-                await on_stream(stream, input_files)
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
                 run_id=stream.run_id,
@@ -549,6 +559,8 @@ class RootRunExecutor:
             ):
                 stream_entry_attempted = True
                 async with stream:
+                    if on_stream is not None:
+                        await on_stream(stream, input_files)
                     async for item in stream:
                         record_skill_event(item)
                         excerpts.observe(item)
@@ -576,7 +588,7 @@ class RootRunExecutor:
                 result = stream.outcome
         finally:
             if self._mcp_apps is not None and stream is not None:
-                self._mcp_apps.connections.captures.discard_run(stream.run_id)
+                self._mcp_apps.finish_run(stream.context)
 
         if result is not None:
             record_output(result.output, status=result.status)
@@ -795,7 +807,7 @@ class RootRunExecutor:
         run_id: str,
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
-    ) -> AsyncIterator[None]:
+    ) -> AsyncGenerator[None]:
         operator = self._subagent_operator
         if isinstance(operator, HarnessUiSubagentOperator):
             async with operator.bind_parent_run(
@@ -991,8 +1003,8 @@ def _deferred_resume(
             "The selected Thread continuation changed before deferred response admission.",
             code="thread_continuation_conflict",
         )
-    approval_ids = {request.tool_call_id for request in requests.approvals}
-    external_ids = {request.tool_call_id for request in requests.calls}
+    approval_ids = {request.tool_call_id for request in (entry.target_call for entry in requests.approvals)}
+    external_ids = {request.tool_call_id for request in (entry.target_call for entry in requests.calls)}
     expected_ids = approval_ids | external_ids
     supplied_ids = {item.request_id for item in response.responses}
     if not supplied_ids <= expected_ids:
@@ -1027,7 +1039,11 @@ def _deferred_resume(
             if item.denied:
                 calls[item.request_id] = ToolFailed(item.denial_message or "The external tool call was denied.")
                 continue
-            pending = next(request for request in requests.calls if request.tool_call_id == item.request_id)
+            pending = next(
+                request
+                for request in (entry.target_call for entry in requests.calls)
+                if request.tool_call_id == item.request_id
+            )
             metadata = requests.metadata.get(item.request_id)
             if isinstance(metadata, dict) and metadata.get("kind") == "ask_user_question":
                 try:

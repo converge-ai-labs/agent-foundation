@@ -327,16 +327,20 @@ class _Host:
 
     def compose(self, agent: ResolvedAgent) -> AgentDefinition[Any]:
         config = agent.config
+        sources = dict(self.tool_sources(agent) if self.tool_sources else {})
+        environment = DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets))
+        sources["environment"] = environment
         features: list[AbstractCapability[AgentContext]] = [
             *self.capabilities(agent),
-            DynamicEnvironmentCapability(toolsets.environment_configuration(config.toolsets)),
+            environment,
             FileContextCapability(),
             self._permissions(agent),
             # Compacts at the agent's threshold of the model's context window.
             CompactionCapability(),
         ]
         if (web := toolsets.web_tools(config.toolsets)) is not None:
-            features.append(WebCapability(toolsets.web_configuration(web)))
+            sources["web"] = WebCapability(toolsets.web_configuration(web))
+            features.append(sources["web"])
         if config.user_questions:
             features.append(UserInteractionCapability())
         if (client := definition.client_toolset(config)) is not None:
@@ -361,7 +365,7 @@ class _Host:
             # The revision identifies the definition, so a child run can be matched to the edge that spawned it.
             definition_id=agent.revision_id,
             capabilities=tuple(features),
-            tool_search=definition.tool_search(config, self.tool_sources(agent) if self.tool_sources else {}),
+            tool_search=definition.tool_search(config, sources),
             plugins=tuple(
                 self.plugins.create_plugin(
                     HarnessPluginFactoryContext(

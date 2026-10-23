@@ -32,6 +32,16 @@ flowchart TB
 
 Markdown 默认以 **Preview** 打开，**Text** 切换到编辑器。预览包含未保存编辑。**Add to chat** 附加选中的源码行，未选中时附加完整文件，不会发送。Agent 的 `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` 链接打开 Files 抽屉；单独的路径和 Files API URL 不会，外部链接仍单独打开。
 
+## 工具执行与即时 steering
+
+Run 活动期间，**Steer** 默认中断主模型生成，或释放支持工具的前台等待。工具审查和参数校验会先完成；当前批次返回结果或保留执行回执，或挂起等待审批后，Agent 才继续处理你的指引。支持的工具调用仍由原有执行方继续运行一次。请求被接受表示指引已入队，不表示 Agent 已经将其纳入处理。根级和子级 steering 使用同一全局 `input.steering_mode`；在配置中选择 `queued`，即可改为等待下一个安全边界。输入框不需要额外的模式控件。
+
+Harness UI 固定为即时 steering 启用 best-effort 投递，不提供单独配置。如果仍有不支持交接的工具在运行，消息会立即被接受到普通队列，在正常执行边界交给模型。如果启动或恢复期间原生 steering 尚未就绪，Harness 会在接受输入前最多等待 5 秒。就绪超时或 Run 提前停止会拒绝请求。接受成功表示已收下消息，不代表模型已经读到。
+
+打开 **Work → Tools**，查看保留的工具执行、来源 Run 和调用、翻页浏览记录，或取消活动执行。面板只读取状态，不消耗结果。Agent 通过 `tool_execution_result` 或 `tool_execution_wait` 获取结果；完成提示和后续输入会带上当前执行状态。通用工具的[自动后台执行](configuration.md#built-in-tools-and-subagents)需显式开启；支持进程的 Shell 在两种模式下都会在配置的前台等待到期后自动让出。即时 steering 可以提前释放前台等待。Shell 进程仍在独立的进程视图中。
+
+**Stop** 取消对话，并在收到新用户输入前禁止完成事件自动唤醒。它不会取消所有保留的工具；需要取消时使用该执行的 **Cancel**。取消请求被接受不代表远端操作已回滚。记录和结果属于当前进程，并受有界保留策略限制；重启 App 后，旧引用不再可用。
+
 ## 整理 Project 并在对话中工作
 
 1. 通过 **Home** 或 Project 的 **+** 开始草稿。Agent 需要使用 Project 的服务器目录时，选择对应 Project。
@@ -58,6 +68,14 @@ Run 活跃时，**Next message** 仍可编辑，但不会成为队列。**Steer*
 展开 **Explored**、Shell、浏览或 **File changes** 可检查分组活动、参数、结果和观测到的编辑 diff。折叠时仍显示失败和缺失结果；**Awaiting result** 不代表成功。旧版省略内容仍不可获得，**Requested replacement** 不代表已应用 diff。**Open on host** 打开服务器或容器绝对路径，不是 Agent Environment 路径，保留未保存缓冲区；当前文件可能不同于记录内容。
 
 打开 **Details** 查看根操作、子执行、任务、笔记、用量和配置。执行、续接保存和 Environment 清理分别报告结果。子控件针对准确父执行；保存结果分页，活动预览有界。应用 Project 默认值需审阅前后差异。配置竞争时保留编辑并要求重新审阅。
+
+### 查看 token 用量和估算费用
+
+点击侧栏顶部、折叠按钮左侧的图表图标，打开 **Usage**。也可以使用 Project 菜单的 **View usage**，或 **Details → Usage → Open analytics**，直接查看对应范围。
+
+选择最近 7、30、90 个 UTC 日，或最多 366 天的自定义范围。按 Project、根 Thread 或实际 provider/model 筛选。汇总和每日图表涵盖所有匹配记录。明细可按 Project、Thread 或模型分组，按 token 或费用排序，点击行可进一步缩小范围。筛选条件保存在 URL 中。点击 **Refresh** 读取新保存的用量，页面不持续自动更新。
+
+总量包括保留的归档对话、Memory、Live、子 agent、辅助模型调用和 Coordinator worker。Project 归属跟随根 Thread 当前的 Project。费用是记录下来的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 表示仅包含已知部分的小计。缓存 token 是输入/输出的子集，不额外计入总量。Provider 回执仍在 Thread 详情中查看。覆盖范围始于已持久化的观测，无法补回更早未记录的消耗。访客分享链接不授予分析页访问权限。
 
 ### 共享草稿
 

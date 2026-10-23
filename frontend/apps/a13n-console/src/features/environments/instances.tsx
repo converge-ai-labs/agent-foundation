@@ -45,8 +45,16 @@ import {
   environmentTemplates,
 } from "./api";
 import instanceStyles from "./environments.module.css";
+import {
+  FIRST_DESKTOP_NOTICE,
+  SPRITES_DESKTOP_NOTICE,
+  MODAL_FIRST_DESKTOP_NOTICE,
+  DAYTONA_FIRST_DESKTOP_NOTICE,
+  VERCEL_FIRST_DESKTOP_NOTICE,
+} from "./creation-progress";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
+import { MetricsSourcePicker } from "../monitoring/environment";
 
 const STATUSES = [
   "reserved",
@@ -86,7 +94,10 @@ export function EnvironmentInstances() {
           ? (item) => matchesSearch(term, item.name, item.endpoint)
           : undefined,
       ),
-    refetchInterval: 15_000,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.status === "creating")
+        ? 2000
+        : 15_000,
   });
   const providers = useQuery({
     queryKey: ["environment-provider-options", workspace.id],
@@ -111,7 +122,7 @@ export function EnvironmentInstances() {
     templates.data?.map((template) => [template.id, template]),
   );
   function templateName(item: Schema["EnvironmentView"]) {
-    if (!item.template_id) return t("External target");
+    if (!item.template_id) return t("External environment");
     const template = templateById.get(item.template_id);
     if (template) return template.name;
     return templates.isPending ? <InlineLoading width="6rem" /> : t("Managed");
@@ -148,7 +159,9 @@ export function EnvironmentInstances() {
       <PageActions secondary>
         <ManageProvidersLink category="environments" />
       </PageActions>
-      <PageActions>{can("write") && <CreateEnvironment />}</PageActions>
+      <PageActions>
+        {can("write") && <CreateEnvironment onCreated={setSelected} />}
+      </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
         <Loading variant="table" columns={5} />
@@ -205,12 +218,20 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Activity"),
-                render: (item) => <Timestamp value={item.last_used_at} />,
+                tone: "muted",
+                render: (item) =>
+                  item.last_used_at ? (
+                    <Timestamp value={item.last_used_at} relative />
+                  ) : (
+                    t("Not used yet")
+                  ),
               },
               {
                 label: t("Updated"),
                 tone: "muted",
-                render: (item) => <Timestamp value={item.updated_at} />,
+                render: (item) => (
+                  <Timestamp value={item.updated_at} relative />
+                ),
               },
             ]}
           />
@@ -235,10 +256,13 @@ export function EnvironmentInstances() {
               filtered
                 ? t("Change or clear the search and filters.")
                 : t(
-                    "Choose an environment template when starting a conversation, or register an external environment.",
+                    "Choose an environment template when starting a session, or register an external environment.",
                   )
             }
-            action={!filtered && can("write") && <CreateEnvironment />}
+            action={
+              !filtered &&
+              can("write") && <CreateEnvironment onCreated={setSelected} />
+            }
           />
         )
       )}
@@ -254,7 +278,11 @@ export function EnvironmentInstances() {
   );
 }
 
-function CreateEnvironment() {
+function CreateEnvironment({
+  onCreated,
+}: {
+  onCreated: (value: Schema["EnvironmentView"]) => void;
+}) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
   return (
@@ -270,17 +298,25 @@ function CreateEnvironment() {
       placement="top"
       title={t("Create environment")}
       description={t(
-        "Allocate from a template or connect an externally managed target.",
+        "Allocate from a template or connect an externally managed environment.",
       )}
       closeLabel={t("Close")}
       open={open}
     >
-      {open && <EnvironmentForm close={() => setOpen(false)} />}
+      {open && (
+        <EnvironmentForm close={() => setOpen(false)} onCreated={onCreated} />
+      )}
     </ModalFrame>
   );
 }
 
-function EnvironmentForm({ close }: { close: () => void }) {
+function EnvironmentForm({
+  close,
+  onCreated,
+}: {
+  close: () => void;
+  onCreated: (value: Schema["EnvironmentView"]) => void;
+}) {
   const client = useClient(),
     { workspace } = useWorkspace(),
     cache = useQueryClient(),
@@ -292,6 +328,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
         environmentTemplates(client, workspace.id, signal, cursor),
       ),
   });
+  const [metricsSource, setMetricsSource] = useState("");
   const [kind, setKind] = useState("managed"),
     [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
@@ -304,11 +341,13 @@ function EnvironmentForm({ close }: { close: () => void }) {
         if (!templateId) throw new Error(t("Select an environment template."));
         return createManagedEnvironment(client, workspace.id, {
           template_id: templateId,
+          metrics_data_source_id: metricsSource || null,
           ...named,
         });
       }
       const body: Schema["ExternalTargetCreate"] = {
         endpoint: endpoint.trim(),
+        metrics_data_source_id: metricsSource || null,
         token,
         ...named,
       };
@@ -319,9 +358,10 @@ function EnvironmentForm({ close }: { close: () => void }) {
         })
         .then(data);
     },
-    onSuccess: () => {
+    onSuccess: (value) => {
       void cache.invalidateQueries({ queryKey: ["environments"] });
       close();
+      onCreated(value);
     },
   });
   const templateOptions =
@@ -366,14 +406,14 @@ function EnvironmentForm({ close }: { close: () => void }) {
                   value: "managed",
                   label: t("Managed from template"),
                   description: t(
-                    "Service allocates and retires the target for you.",
+                    "The Service allocates and retires the environment for you.",
                   ),
                 },
                 {
                   value: "external",
-                  label: t("External target"),
+                  label: t("External environment"),
                   description: t(
-                    "Register a target you run and keep control of.",
+                    "Register an environment you run and keep control of.",
                   ),
                 },
               ],
@@ -424,6 +464,43 @@ function EnvironmentForm({ close }: { close: () => void }) {
           </FormField>
         </>
       )}
+      {kind === "managed" &&
+        templates.data?.find((item) => item.id === templateId)?.config?.recipe
+          ?.template === "auto" && <p role="note">{t(FIRST_DESKTOP_NOTICE)}</p>}
+      {kind === "managed" &&
+        templates.data?.find((item) => item.id === templateId)?.config?.recipe
+          ?.image === "auto" && (
+          <p role="note">{t(MODAL_FIRST_DESKTOP_NOTICE)}</p>
+        )}
+      {kind === "managed" &&
+        templates.data?.find((item) => item.id === templateId)?.config?.recipe
+          ?.snapshot === "auto" && (
+          <p role="note">
+            {t(
+              templates.data?.find((item) => item.id === templateId)?.config
+                ?.recipe?.execution === "envd_http"
+                ? VERCEL_FIRST_DESKTOP_NOTICE
+                : DAYTONA_FIRST_DESKTOP_NOTICE,
+            )}
+          </p>
+        )}
+      {kind === "managed" &&
+        (() => {
+          const recipe = templates.data?.find((item) => item.id === templateId)
+            ?.config?.recipe;
+          return (
+            recipe?.desktop === true &&
+            recipe?.execution === "envd_http" &&
+            !recipe?.snapshot &&
+            !recipe?.template &&
+            !recipe?.image
+          );
+        })() && <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>}
+      <MetricsSourcePicker
+        value={metricsSource}
+        onChange={setMetricsSource}
+        external={kind === "external"}
+      />
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

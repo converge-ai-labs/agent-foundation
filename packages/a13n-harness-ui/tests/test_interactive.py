@@ -211,10 +211,14 @@ for arguments in {invocations!r}:
     assert not (tmp_path / ".a13n-harness-ui").exists()
 
 
-async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, shell_review: bool = False) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
-    (tmp_path / "codex").mkdir()
+    from datetime import UTC, datetime, timedelta
+
+    from .test_onboarding import _codex_login_file
+
+    _codex_login_file(datetime.now(UTC) + timedelta(days=1))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     selection = SetupSelection(
@@ -225,7 +229,7 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         project="project-local",
         project_path=str(tmp_path),
         environment_profile="environment-native",
-        shell_review=False,
+        shell_review=shell_review,
     )
     validate = AgentCompositionResolver(HarnessUiExtensionCatalog()).validate_generation
     await preview_setup(path, selection, validate_candidate=validate)
@@ -691,7 +695,7 @@ async def test_onboarding_import_enrolls_inheriting_subagent_and_is_retryable(
 @pytest.mark.anyio
 @pytest.mark.parametrize("composed", [False, True])
 @pytest.mark.parametrize("mode", ["concise", "detailed"])
-async def test_active_guidance_reaches_native_model_in_order_without_another_root_run(
+async def test_queued_guidance_reaches_native_model_in_order_without_another_root_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, composed: bool, mode: str
 ) -> None:
 
@@ -700,6 +704,7 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
     from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
 
     path = await _seed(tmp_path, monkeypatch)
+    path.write_text(path.read_text() + "\ninput:\n  steering_mode: queued\n")
     entered, release = asyncio.Event(), asyncio.Event()
     observed = []
 
@@ -1318,7 +1323,7 @@ async def test_model_control_status_distinguishes_inheritance_overrides_and_prov
         await backend.fast("off")
         await backend.pro("off")
         assert backend.status.fast_description == "Off (session override)"
-        assert "Fast Off" in backend.status.line()
+        assert "Fast" not in backend.status.line()
         assert "Mode Standard" in backend.status.line()
         await backend.thinking("default")
         await backend.fast("reset")
@@ -1335,10 +1340,27 @@ async def test_model_control_status_distinguishes_inheritance_overrides_and_prov
         assert backend.status.thinking == "Provider default"
         assert backend.status.fast_description == "Provider default"
         assert backend.status.reasoning_mode_description == "Provider default"
-        assert "Fast Provider default" in backend.status.line()
+        assert "Fast" not in backend.status.line()
         assert "Mode Provider default" in backend.status.line()
         assert not any(choice.description.startswith("Current") for choice in backend.thinking_choices())
         assert backend.overrides.controls().model_dump(exclude_none=True) == {}
+
+
+@pytest.mark.parametrize("width", [None, 200, 80, 50])
+@pytest.mark.parametrize(
+    "fast,label",
+    [("default", None), ("off", None), ("unavailable", None), ("on", "Fast"), ("ultrafast", "Ultrafast")],
+)
+def test_status_shows_only_enabled_speed_indicator(fast, label, width):
+    status = Status(state="working", fast=fast)
+    line = status.line(width)
+    if label is None:
+        assert "fast" not in line.lower()
+    else:
+        assert line.lower().count("fast") == 1
+        assert line.strip().startswith(f"Working {label}" if width == 50 else f"Working · {label} ·")
+    assert "Fast On" not in line
+    assert " ·  · " not in line
 
 
 @pytest.mark.parametrize(

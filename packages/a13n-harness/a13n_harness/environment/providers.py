@@ -36,7 +36,12 @@ from a13n_harness.environment.computer import (
 )
 from a13n_harness.environment.execution import EnvironmentExecution
 from a13n_harness.environment.files import FileOperator
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentOperationReceipt, EnvironmentState
+from a13n_harness.environment.models import (
+    EnvironmentAction,
+    EnvironmentError,
+    EnvironmentOperationReceipt,
+    EnvironmentState,
+)
 from a13n_harness.environment.mounts import (
     EnvironmentChange,
     EnvironmentMountObservation,
@@ -315,6 +320,41 @@ class BoundEnvironment(ABC):
         wait: bool = False,
     ) -> tuple[EnvironmentChange, ...]:
         """Read run-local mount changes for Harness event adaptation."""
+
+    def authorize_retained_process(
+        self,
+        identity: ProcessIdentity,
+        *,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AbstractAsyncContextManager[None]:
+        """Hold current-Run authorization across a local or remote retained control."""
+        raise EnvironmentError("Retained process controls are unavailable.", code="environment_unsupported")
+
+    def retained_process_dispatch(
+        self, handle: BoundProcessHandle, *, actions: frozenset[EnvironmentAction]
+    ) -> AbstractAsyncContextManager[BoundProcessOperations]:
+        """Pin the original native scope after the caller has authorized all actions.
+
+        Host routing must prove both caller and owner authority before entering.
+        This low-level port does not authorize an operation by itself.
+        """
+        raise EnvironmentError("Retained process controls are unavailable.", code="environment_unsupported")
+
+    def retained_process_lease(
+        self,
+        handle: BoundProcessHandle,
+        *,
+        owner: BoundEnvironment,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AbstractAsyncContextManager[BoundProcessOperations]:
+        """Authorize current-Run controls while retaining the original native handle."""
+        raise EnvironmentError("Retained process controls are unavailable.", code="environment_unsupported")
 
 
 class EnvironmentRuntime(ABC):

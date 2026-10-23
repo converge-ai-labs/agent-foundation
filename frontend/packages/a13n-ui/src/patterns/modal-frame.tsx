@@ -1,9 +1,12 @@
 import {
   memo,
+  useEffect,
+  useRef,
   useState,
   type ComponentProps,
   type ReactElement,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   Dialog,
@@ -15,6 +18,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/dialog";
+import { useMenuActions } from "../components/menu";
 import { cn } from "../lib/utils";
 
 /** Resource forms share a title, a bounded scroll region, and action placement. */
@@ -24,6 +28,7 @@ export function ModalFrame({
   description,
   closeLabel,
   finalFocus,
+  keepVisibleWhenNested = false,
   size = "md",
   children,
   footer,
@@ -35,6 +40,8 @@ export function ModalFrame({
 }: Omit<ComponentProps<typeof Dialog>, "children"> & {
   trigger?: ReactElement;
   finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
+  /** Keep the form visible underneath a nested confirmation or error dialog. */
+  keepVisibleWhenNested?: boolean;
   title: ReactNode;
   description?: ReactNode;
   closeLabel: string;
@@ -45,22 +52,52 @@ export function ModalFrame({
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const open = controlledOpen ?? uncontrolledOpen;
+  // A menu that opened this dialog stays hidden until the dialog has left,
+  // then closes, so it never shows through the backdrop or comes back.
+  const menu = useMenuActions();
+  const popup = useRef<HTMLDivElement>(null);
+  const [present, setPresent] = useState(open);
+  useEffect(() => {
+    if (open) setPresent(true);
+  }, [open]);
   return (
     <Dialog
       {...props}
       open={open}
       onOpenChange={(nextOpen, details) => {
+        // A click beside a form is a slip, not a decision to drop its input.
+        if (
+          !nextOpen &&
+          details.reason === "outside-press" &&
+          popup.current?.querySelector("form")
+        ) {
+          details.cancel();
+          return;
+        }
         onOpenChange?.(nextOpen, details);
         if (!details.isCanceled) setUncontrolledOpen(nextOpen);
       }}
+      onOpenChangeComplete={(nextOpen) => {
+        props.onOpenChangeComplete?.(nextOpen);
+        if (nextOpen) return;
+        setPresent(false);
+        menu?.current?.close();
+      }}
     >
-      {trigger && <DialogTrigger render={trigger} />}
+      {trigger && (
+        <DialogTrigger
+          render={trigger}
+          data-a13n-dialog-open={open || present ? "" : undefined}
+        />
+      )}
       <ModalSurface
+        popupRef={popup}
         open={open}
         title={title}
         description={description}
         closeLabel={closeLabel}
         finalFocus={finalFocus}
+        keepVisibleWhenNested={keepVisibleWhenNested}
         size={size}
         placement={placement}
         footer={footer}
@@ -75,20 +112,24 @@ export function ModalFrame({
 // Callers may clear their form or conditional children as soon as open becomes false.
 const ModalSurface = memo(
   function ModalSurface({
+    popupRef,
     title,
     description,
     closeLabel,
     finalFocus,
+    keepVisibleWhenNested,
     size,
     children,
     footer,
     placement,
   }: {
+    popupRef: RefObject<HTMLDivElement | null>;
     open: boolean;
     title: ReactNode;
     description?: ReactNode;
     closeLabel: string;
     finalFocus?: ComponentProps<typeof DialogPopup>["finalFocus"];
+    keepVisibleWhenNested: boolean;
     size: "md" | "lg" | "xl";
     placement: "center" | "top";
     children?: ReactNode;
@@ -96,9 +137,11 @@ const ModalSurface = memo(
   }) {
     return (
       <DialogPopup
+        ref={popupRef}
         data-a13n-modal
         data-size={size}
         className={cn(
+          keepVisibleWhenNested && "opacity-100",
           size === "lg" && "sm:max-w-[40rem]",
           size === "xl" && "sm:max-w-[55rem]",
         )}
@@ -113,7 +156,7 @@ const ModalSurface = memo(
         {children != null && children !== false && (
           <DialogPanel
             scrollFade={false}
-            className="has-[[data-a13n-form-actions]]:pb-0 [&_form]:gap-4 [&_[data-a13n-form-actions]]:pt-4 [&_[data-a13n-form-actions]]:pb-6 [&_[data-a13n-form-actions]]:z-10 [&_[data-a13n-form-actions]]:sticky [&_[data-a13n-form-actions]]:bottom-0 [&_[data-a13n-form-actions]]:bg-popover"
+            className="has-[[data-a13n-form-actions]:not([hidden]_*)]:pb-0 [&_form]:gap-4 [&_[data-a13n-form-actions]]:pt-4 [&_[data-a13n-form-actions]]:pb-6 [&_[data-a13n-form-actions]]:z-10 [&_[data-a13n-form-actions]]:sticky [&_[data-a13n-form-actions]]:bottom-0 [&_[data-a13n-form-actions]]:bg-popover"
           >
             {children}
           </DialogPanel>

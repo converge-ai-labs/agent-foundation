@@ -93,43 +93,43 @@ function RunAgentConfiguration({ run }: { run: Run }) {
   const { revision, config } = executed.data;
   const overridden = overriddenFields(run);
   return (
-    <AgentEditor
-      initial={config}
-      version={revision.number}
-      pending={false}
-      error={undefined}
-      readonly
-      submit={() => {}}
-      overridden={overridden}
-      identity={
-        <dl className={styles.facts}>
-          <div>
-            <dt>{t("Agent")}</dt>
-            <dd>
-              <AgentLink agentId={run.agent_id} />
-            </dd>
-          </div>
-          <div>
-            <dt>{t("Version")}</dt>
-            <dd>
-              <span className={styles.mono}>v{revision.number}</span>
-              <span className={styles.note}>
-                {t(`revisionSelection.${run.revision_selection}`)}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt>{t("Overrides")}</dt>
-            <dd>
-              {overridden.length ? (
-                <span className={styles.mono}>{overridden.join(", ")}</span>
-              ) : (
-                <span className={styles.note}>{t("None")}</span>
-              )}
-            </dd>
-          </div>
-        </dl>
-      }
-    />
+    <div className="grid gap-6">
+      <dl className={styles.facts}>
+        <div>
+          <dt>{t("Agent")}</dt>
+          <dd>
+            <AgentLink agentId={run.agent_id} />
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Version")}</dt>
+          <dd>
+            <span className={styles.mono}>v{revision.number}</span>
+            <span className={styles.note}>
+              {t(`revisionSelection.${run.revision_selection}`)}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Overrides")}</dt>
+          <dd>
+            {overridden.length ? (
+              <span className={styles.mono}>{overridden.join(", ")}</span>
+            ) : (
+              <span className={styles.note}>{t("None")}</span>
+            )}
+          </dd>
+        </div>
+      </dl>
+      <AgentEditor
+        initial={config}
+        version={revision.number}
+        pending={false}
+        error={undefined}
+        readonly
+        submit={() => {}}
+        overridden={overridden}
+      />
+    </div>
   );
 }

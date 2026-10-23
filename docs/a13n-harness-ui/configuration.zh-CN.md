@@ -299,18 +299,39 @@ defaults:
 
 ### 内置工具与 subagent
 
-| 字段                                | 默认值 | 含义                                                             |
-| ----------------------------------- | ------ | ---------------------------------------------------------------- |
-| `tools.enable_ask_user_question`    | `true` | 在新解析的 Run 中包含原生 `ask_user_question`                    |
-| `tools.interaction_timeout_seconds` | `120`  | 每次 TUI 交互或完整 WebUI 根决策批次的正有限秒数；不限制模型执行 |
-| `tools.enable_codeact`              | `true` | 包含原生 CodeAct runner 和显式 `store`/`load`/`forget` 状态工具  |
-| `subagents.include`                 | `[]`   | 有序的内置名称：`code-reviewer`、`executor`、`explorer`          |
+| 字段                                      | 默认值   | 含义                                                                     |
+| ----------------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `tools.enable_ask_user_question`          | `true`   | 在新解析的 Run 中包含原生 `ask_user_question`                            |
+| `tools.interaction_timeout_seconds`       | `120`    | 每次 TUI 交互或完整 WebUI 根决策批次的正有限秒数；不限制模型执行         |
+| `tools.enable_codeact`                    | `true`   | 包含原生 CodeAct runner 和显式 `store`/`load`/`forget` 状态工具          |
+| `tools.execution.mode`                    | `inline` | 通用工具等待完成；`auto` 启用定时交接。支持进程的 Shell 始终使用有限等待 |
+| `tools.execution.foreground_wait_seconds` | `5.0`    | 支持进程的 Shell 和通用工具自动交接的非负有限等待秒数                    |
+| `subagents.include`                       | `[]`     | 有序的内置名称：`code-reviewer`、`executor`、`explorer`                  |
 
-设置向导将三项 `tools` 字段显式写入所选根 YAML（默认 `~/.a13n-harness-ui/a13n-harness-ui.yaml`），用上述默认值补齐省略字段，保留现有值。
+设置向导将工具开关和交互超时显式写入所选根 YAML（默认 `~/.a13n-harness-ui/a13n-harness-ui.yaml`），用上述默认值补齐省略字段，保留现有值。
 
 全局关闭开关优先于显式 Agent Capability 选择。工具允许列表仍适用。交互到期不会选择答案或批准命令。[TUI 决策处理](everyday-use.md#approvals-and-questions)和 [WebUI 超时](webui.md#questions-and-approval-timeouts)分别说明等待和恢复生命周期。
 
 全部内置角色使用 `[code-reviewer, executor, explorer]`；部分选择可用 `[explorer]` 等。高级设置提供全部或不选；常规设置包含全部三种。定义仍由包维护；包含选择不会写入 `subagents/*.md`。[内置 subagent](agents-and-subagents.md#built-in-subagents)说明继承和名称冲突。
+
+Harness UI 默认使用即时 steering 和 inline 通用工具执行。支持进程的 Shell 会在前台等待到期后自动让出。选择 `auto` 可为其他支持的工具启用相同的定时交接。这些全局设置适用于根级和子级 Run：
+
+```yaml
+input:
+  steering_mode: immediate  # queued waits for the next safe boundary
+tools:
+  execution:
+    mode: inline           # auto also enables timed handoff for generic tools
+    foreground_wait_seconds: 5.0
+```
+
+每次 Run 捕获自己的工具执行策略。`inline` 模式等待通用工具调用的结果；`auto` 模式在前台等待到期后，为支持的调用返回执行回执。即时 steering 可以提前释放两种模式的等待。原始调用按捕获的配置继续执行，CodeAct 以整个程序为单位保留执行。
+
+在支持进程的挂载上，顶层 Shell 调用在 `inline` 和 `auto` 两种模式下都会在配置的等待时间到期后，为仍在运行的命令返回执行回执。快速命令直接返回最终结果。仅支持前台执行的挂载保留通用执行策略。同一 App 内，存活的 Shell 执行可通过 `exec-*` 标识跨 Run 控制。CodeAct 内的 Shell 回调返回原生结果和 Run 内进程引用，只有外层 runner 可以移交。观察和控制操作见 [shell 执行](../a13n-harness/environments.md)。
+
+支持小数秒：`foreground_wait_seconds: 0.05` 表示支持进程的 Shell 在两种模式下前台等待 50 ms，通用工具则在自动模式下使用该等待时间。该值只限制等待时间，不限制命令执行时间。
+
+`input.steering_mode` 为后续用户输入选择即时交接或排队送达。App 在内存中保留工具记录和结果，并限制已完成历史的数量。状态与取消操作见 [WebUI](webui.md#tool-executions-and-immediate-steering)。
 
 ## 优先级与修改生效时间
 
@@ -326,7 +347,7 @@ defaults:
 4. 根 YAML 默认值。
 5. 内置 Environment 回退。
 
-列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改；修改 Project 默认值不重新应用。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
+列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改。TUI 恢复会话时会重新应用当前 MCP 默认值（依次为 Project、Agent、全局）；其他选择和界面继续保留已保存的设置。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
 
 | 修改内容                                                          | 生效时间                                                     | 保持不变的内容                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
@@ -354,16 +375,16 @@ defaults:
 
 改变数据根会打开独立状态，不迁移旧对话。相对启动路径从启动目录解析。Project 根目录在展开 `~` 后必须为绝对路径；缺失根目录可以保存，但可用前不能用于 Run。
 
-| 输入                                         | 用途                                                         |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| `A13N_HARNESS_UI_DATA_ROOT`                  | 选择本地数据存储                                             |
-| `authentication.env` 指定的变量              | 从 Harness UI 进程读取 Model API 密钥                        |
-| MCP `environment` / `headers` 引用指定的变量 | MCP 环境和请求值                                             |
-| `CODEX_HOME`                                 | 兼容 Codex 存储位置；默认 `~/.codex`                         |
-| `COPILOT_HOME`                               | 复用账户时使用的 Copilot CLI 存储位置；默认 `~/.copilot`     |
-| `GROK_AUTH_PATH`、`GROK_HOME`                | 兼容 Grok 文件存储位置                                       |
-| `GROK_AUTH`                                  | 可识别的 Grok 内联模式，不支持共享可写登录；应切换为文件存储 |
-| `COLORFGBG`                                  | 自动主题选择使用的被动终端元数据                             |
+| 输入                                         | 用途                                                     |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `A13N_HARNESS_UI_DATA_ROOT`                  | 选择本地数据存储                                         |
+| `authentication.env` 指定的变量              | 从 Harness UI 进程读取 Model API 密钥                    |
+| MCP `environment` / `headers` 引用指定的变量 | MCP 环境和请求值                                         |
+| `CODEX_HOME`                                 | Codex 一次性迁移来源；默认 `~/.codex`                    |
+| `COPILOT_HOME`                               | 复用账户时使用的 Copilot CLI 存储位置；默认 `~/.copilot` |
+| `GROK_AUTH_PATH`、`GROK_HOME`                | Grok 一次性迁移来源                                      |
+| `GROK_AUTH`                                  | Grok 内联模式不导入；请使用原生登录                      |
+| `COLORFGBG`                                  | 自动主题选择使用的被动终端元数据                         |
 
 没有通用 `A13N_HARNESS_UI_*` 设置覆盖机制。`storage`、`envd_runtime` 和应用关闭超时是嵌入/运行时设置，**不是** 根 YAML 章节。Web 监听和身份验证选项是[进程本地 CLI 参数](webui.md)，不是资源配置。
 

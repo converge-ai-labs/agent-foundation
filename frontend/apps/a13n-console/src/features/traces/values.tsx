@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { StatePill } from "../../shared/feedback";
+import { formatDuration } from "../../shared/time-range";
 import { UNKNOWN } from "../../shared/unknown";
 import styles from "./traces.module.css";
+import type { Observation } from "./overview";
 
 /** Label above value, the one fact anatomy the traces surfaces share. */
 export function Fact({
@@ -23,28 +25,24 @@ export function Fact({
 }
 
 /** Presentation only: missing end time does not imply running execution. */
-export function durationMs(observation: Schema["Span"]): number | null {
+export function durationMs(observation: Observation): number | null {
   if (!observation.ended_at) return null;
   const value =
     Date.parse(observation.ended_at) - Date.parse(observation.started_at);
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-export function Duration({ observation }: { observation: Schema["Span"] }) {
+export function Duration({ observation }: { observation: Observation }) {
+  const { i18n } = useTranslation();
   const value = durationMs(observation);
   return (
     <>
-      {value === null
-        ? UNKNOWN
-        : `${(value / 1000).toLocaleString(undefined, { maximumFractionDigits: 6 })} s`}
+      {value === null ? UNKNOWN : formatDuration(value, i18n.resolvedLanguage)}
     </>
   );
 }
 
-/**
- * Span status is a lifecycle state, so it keeps the console's one status
- * affordance. Log level is a severity scale and reads as a `TracePill`.
- */
+/** Span status is a lifecycle state and keeps the console's status pill. */
 export function TelemetryStatus({
   observation,
 }: {
@@ -67,34 +65,24 @@ const levelLabels: Record<string, string> = {
   fatal: "Fatal",
 };
 
+/** Informational levels stay neutral; only warnings and errors are tinted. */
 const levelVariants: Record<string, StatusPillVariant> = {
   critical: "danger",
-  debug: "neutral",
-  default: "neutral",
   error: "danger",
   fatal: "danger",
-  info: "neutral",
-  information: "neutral",
-  notice: "info",
-  trace: "neutral",
   warn: "warning",
   warning: "warning",
 };
 
-/**
- * Severity tag for a log level. It carries the severity hue and drops the
- * status dot so a level never reads as a span's lifecycle state.
- */
-export function TracePill({ level }: { level: string | null }) {
+/** A log level in the same pill as every other state. */
+export function LevelPill({ level }: { level: string | null }) {
   const { t } = useTranslation();
   if (!level) return <>{UNKNOWN}</>;
   const normalized = level.toLowerCase();
   const label = levelLabels[normalized];
   return (
-    <span title={level} className={styles.levelPill}>
-      <StatusPill variant={levelVariants[normalized] ?? "neutral"}>
-        {label ? t(label) : level}
-      </StatusPill>
-    </span>
+    <StatusPill variant={levelVariants[normalized] ?? "neutral"}>
+      {label ? t(label) : level}
+    </StatusPill>
   );
 }

@@ -15,9 +15,12 @@ import {
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
+  PencilSimpleIcon,
+  TerminalIcon,
+  SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
@@ -31,7 +34,11 @@ import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
+import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
+import { SessionEditor } from "./session-editor";
+import { sessionTitle } from "./session-identity";
+import { ThreadToolExecutionsDialog } from "./tool-executions";
 import styles from "./conversations.module.css";
 
 /**
@@ -48,6 +55,8 @@ export function SessionHeader({
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
   const { basePath, can } = useWorkspace();
+  const [search, setSearch] = useSearchParams();
+  const following = search.get("follow") === "latest";
   const thread = threads.find((entry) => entry.id === threadId);
   const root = threads.find(
     (entry) => entry.origin === "new" && entry.session_id === sessionId,
@@ -57,25 +66,54 @@ export function SessionHeader({
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
   const agent = useAgent(valid ? run.data?.agent_id : undefined);
-  const { runs } = useThreadRuns(threadId);
+  const { total } = useThreadRuns(threadId);
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const title = session.data && sessionTitle(session.data);
+  const [tools, setTools] = useState(false);
+  const [execution, setExecution] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
+  // How this session started reads the same at both levels.
+  const note = debugSession
+    ? [t("Debug session"), total ? t("{{count}} runs", { count: total }) : null]
+        .filter(Boolean)
+        .join(" · ")
+    : run.data?.schedule_origin
+      ? t("Scheduled execution")
+      : run.data
+        ? t("Started by {{trigger}}", {
+            trigger: t(`trigger.${run.data.trigger}`, {
+              defaultValue: run.data.trigger,
+            }),
+          })
+        : "";
   const active =
     valid &&
     !!run.data &&
     (isActiveRun(run.data.status) || run.data.status === "waiting");
   return (
     <header className={styles.sessionHeader}>
-      <Link className={styles.back} to={`${basePath}/sessions`}>
+      <Link
+        className={styles.back}
+        to={
+          session.data?.schedule_id
+            ? `${basePath}/schedules/${session.data.schedule_id}`
+            : `${basePath}/sessions`
+        }
+      >
         <CaretLeftIcon size={13} aria-hidden="true" />
-        {t("Sessions")}
+        {t(session.data?.schedule_id ? "Schedule" : "Sessions")}
       </Link>
       <span className={styles.headerRule} aria-hidden="true" />
       <div className={styles.sessionIdentity}>
-        {agent.data ? (
+        {title ? (
+          <span className={styles.sessionTitle} title={title}>
+            {title}
+          </span>
+        ) : agent.data ? (
           <Link
             className={styles.agentLink}
             to={`${basePath}/agents/${agent.data.id}`}
@@ -91,26 +129,11 @@ export function SessionHeader({
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
-        <span className={styles.subNote}>
-          {level === "chat"
-            ? t("Thread")
-            : debugSession
-              ? [
-                  t("Debug session"),
-                  runs.length
-                    ? t("{{count}} runs", { count: runs.length })
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")
-              : run.data
-                ? t("Started by {{trigger}}", {
-                    trigger: t(`trigger.${run.data.trigger}`, {
-                      defaultValue: run.data.trigger,
-                    }),
-                  })
-                : ""}
-        </span>
+        {note && (
+          <span className={styles.subNote} title={note}>
+            {note}
+          </span>
+        )}
       </div>
       <div className={styles.sessionControls}>
         {active && run.data && (
@@ -134,10 +157,43 @@ export function SessionHeader({
             sessionId={sessionId}
             threads={threads}
             thread={thread}
+            runId={runId}
           />
         )}
         {thread && (
           <ThreadBranches thread={thread} threads={threads} level={level} />
+        )}
+        {thread && runId && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={following}
+            title={t(following ? "Pause following" : "Follow latest")}
+            onClick={() =>
+              setSearch(
+                (params) => {
+                  if (following) params.delete("follow");
+                  else params.set("follow", "latest");
+                  return params;
+                },
+                { replace: true },
+              )
+            }
+          >
+            {t(following ? "Following latest" : "Follow latest")}
+          </Button>
+        )}
+        {thread && can("read") && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setTools(true)}
+          >
+            <TerminalIcon size={14} aria-hidden="true" />
+            {t("Tool executions")}
+          </Button>
         )}
         <SegmentedControl
           className={styles.levelSwitch}
@@ -167,6 +223,12 @@ export function SessionHeader({
           <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
         </MenuTrigger>
         <MenuPopup align="end">
+          {can("run") && session.data && (
+            <MenuItem onClick={() => setEditing(true)}>
+              <PencilSimpleIcon size={14} aria-hidden="true" />
+              {t("Edit session details")}
+            </MenuItem>
+          )}
           {level === "debug" && collapse && (
             <MenuItem onClick={() => collapse.setAll(!collapse.allCollapsed)}>
               {collapse.allCollapsed ? (
@@ -183,6 +245,12 @@ export function SessionHeader({
             <MenuItem onClick={() => setMounts(true)}>
               <MonitorIcon size={14} aria-hidden="true" />
               {t("Environments and memory")}
+            </MenuItem>
+          )}
+          {thread && can("run") && !thread.archived_at && (
+            <MenuItem onClick={() => setExecution(true)}>
+              <SlidersHorizontalIcon size={14} aria-hidden="true" />
+              {t("Execution policy")}
             </MenuItem>
           )}
           {can("read") && (
@@ -204,10 +272,31 @@ export function SessionHeader({
         </MenuPopup>
       </Menu>
       {thread && (
+        <ThreadToolExecutionsDialog
+          key={thread.id}
+          threadId={thread.id}
+          open={tools}
+          onOpenChange={setTools}
+        />
+      )}
+      {thread && (
         <ThreadMountsDialog
           thread={thread}
           open={mounts}
           onOpenChange={setMounts}
+        />
+      )}
+      {execution && thread && (
+        <ThreadExecutionDialog
+          key={thread.id}
+          thread={thread}
+          onClose={() => setExecution(false)}
+        />
+      )}
+      {editing && session.data && (
+        <SessionEditor
+          session={session.data}
+          onClose={() => setEditing(false)}
         />
       )}
     </header>

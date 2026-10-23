@@ -1,4 +1,4 @@
-import { Button, ChoiceField, DisclosureSection } from "a13n-ui";
+import { Button, ChoiceField, DisclosureSection, useMediaQuery } from "a13n-ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -35,7 +35,8 @@ import { ObservationTree } from "./observation-tree";
 import { compareObservations, type ObservationSort } from "./sorting";
 import { CopyableId, IconTile } from "../../shared/identity";
 import { observationRows, type TimelineRow } from "./timeline";
-import { Duration, Fact, TracePill } from "./values";
+import { overviewData, type Observation } from "./overview";
+import { Duration, Fact, LevelPill } from "./values";
 import styles from "./traces.module.css";
 
 const TABS = ["observations", "content", "metadata"] as const;
@@ -52,6 +53,8 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const [order, setOrder] = useState("tree");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useTabParam(TABS);
+  // Wide screens keep the inspector beside the timeline, so rows stay clickable.
+  const wide = useMediaQuery("lg");
   const sourceHintId = useId();
   const backend = useTraceBackend();
   const path = { trace_id: traceId };
@@ -69,23 +72,41 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const observationsQuery = useInfiniteQuery({
     queryKey: ["trace-observations", workspace.id, traceId],
     initialPageParam: undefined as string | undefined,
-    enabled: query.isSuccess,
+    enabled: !query.isError,
     queryFn: ({ pageParam, signal }) =>
       client
         .workspace(workspace.id)
         .GET("/api/v1/traces/{trace_id}/spans", {
-          params: { path, query: { limit: 50, cursor: pageParam } },
+          params: {
+            path,
+            query: { view: "overview", limit: 50, cursor: pageParam },
+          },
+          signal,
+        })
+        .then(overviewData),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  });
+  const selectedQuery = useQuery({
+    queryKey: ["trace-observation", workspace.id, traceId, selectedId],
+    enabled:
+      query.isSuccess &&
+      tab === "observations" &&
+      selectedId !== null &&
+      selectedId !== query.data.id,
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/traces/{trace_id}/spans/{span_id}", {
+          params: { path: { ...path, span_id: selectedId! } },
           signal,
         })
         .then(data),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   // Do not display cached content after an authorization/not-found response.
-  const accessError =
-    observationsQuery.error instanceof ApiError &&
-    [401, 403, 404].includes(observationsQuery.error.status)
-      ? observationsQuery.error
-      : undefined;
+  const accessError = [observationsQuery.error, selectedQuery.error].find(
+    (error) =>
+      error instanceof ApiError && [401, 403, 404].includes(error.status),
+  );
   if (query.error || accessError)
     return (
       <Page
@@ -99,6 +120,8 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           retry={() => {
             void query.refetch();
             void observationsQuery.refetch();
+            if (selectedId && selectedId !== query.data?.id)
+              void selectedQuery.refetch();
           }}
         />
       </Page>
@@ -106,7 +129,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   if (!query.data) return <Loading variant="detail" page />;
   const root = query.data,
     correlation = traceCorrelation(root);
-  const byId = new Map(
+  const byId = new Map<string, Observation>(
     observationsQuery.data?.pages
       .flatMap((page) => page.items)
       .map((item) => [item.id, item]),
@@ -135,7 +158,34 @@ export function TraceDetail({ traceId }: { traceId: string }) {
             compareObservations(a, b, { field, direction } as ObservationSort),
           )
           .map((observation) => ({ observation, depth: 0, childCount: 0 }));
-  const selected = selectedId ? byId.get(selectedId) : undefined;
+  const selected =
+    tab === "observations" && selectedId ? byId.get(selectedId) : undefined;
+  const inspector = selected && (
+    <Panel
+      open
+      inline={wide}
+      resizable={!wide}
+      label={t("Observation")}
+      title={<ObservationTitle observation={selected} />}
+      onClose={() => setSelectedId(null)}
+    >
+      {selected.id === root.id ? (
+        <ObservationPanelBody key={root.id} observation={root} />
+      ) : selectedQuery.error ? (
+        <ErrorNotice
+          error={selectedQuery.error}
+          retry={() => void selectedQuery.refetch()}
+        />
+      ) : selectedQuery.data ? (
+        <ObservationPanelBody
+          key={selected.id}
+          observation={selectedQuery.data}
+        />
+      ) : (
+        <Loading variant="detail" />
+      )}
+    </Panel>
+  );
   const provider = backend.data?.type && backendName(backend.data.type);
   const run = runPath(basePath, correlation);
   return (
@@ -202,7 +252,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           <div className={styles.facts}>
             <dl className={styles.factCells}>
               <Fact label={t("Level")}>
-                <TracePill level={root.level} />
+                <LevelPill level={root.level} />
               </Fact>
               <Fact label={t("Duration")}>
                 <Duration observation={root} />
@@ -225,84 +275,91 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           </p>
         </div>
         {tab === "observations" && (
-          <div>
-            <div className={styles.observationToolbar}>
-              <p className={styles.observationCount}>
-                {t("{{count}} observations loaded", {
-                  count: observations.length,
-                })}
-              </p>
-              <div className={styles.observationControls}>
-                <ChoiceField
-                  label={t("Order")}
-                  variant="filter"
-                  value={order}
-                  onValueChange={setOrder}
-                  options={[
-                    { value: "tree", label: t("Call tree") },
-                    {
-                      value: "started:asc",
-                      label: t("Started · oldest first"),
-                    },
-                    {
-                      value: "started:desc",
-                      label: t("Started · newest first"),
-                    },
-                    {
-                      value: "duration:desc",
-                      label: t("Duration · longest first"),
-                    },
-                    {
-                      value: "duration:asc",
-                      label: t("Duration · shortest first"),
-                    },
-                    { value: "cost:desc", label: t("Cost · highest first") },
-                    { value: "cost:asc", label: t("Cost · lowest first") },
-                  ]}
-                />
+          <div className={wide && selected ? styles.inspecting : undefined}>
+            <div>
+              <div className={styles.observationToolbar}>
+                <p className={styles.observationCount}>
+                  {t("{{count}} observations loaded", {
+                    count: observations.length,
+                  })}
+                </p>
+                <div className={styles.observationControls}>
+                  <ChoiceField
+                    label={t("Order")}
+                    variant="filter"
+                    value={order}
+                    onValueChange={setOrder}
+                    options={[
+                      { value: "tree", label: t("Call tree") },
+                      {
+                        value: "started:asc",
+                        label: t("Started · oldest first"),
+                      },
+                      {
+                        value: "started:desc",
+                        label: t("Started · newest first"),
+                      },
+                      {
+                        value: "duration:desc",
+                        label: t("Duration · longest first"),
+                      },
+                      {
+                        value: "duration:asc",
+                        label: t("Duration · shortest first"),
+                      },
+                      { value: "cost:desc", label: t("Cost · highest first") },
+                      { value: "cost:asc", label: t("Cost · lowest first") },
+                    ]}
+                  />
+                </div>
+              </div>
+              <ObservationTree
+                rows={rows}
+                tree={order === "tree"}
+                start={start}
+                duration={duration}
+                loaded={new Set(byId.keys())}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
+              {observationsQuery.isPending && (
+                <Loading variant="list" rows={6} />
+              )}
+              <ErrorNotice
+                error={observationsQuery.error}
+                retry={() =>
+                  void (observationsQuery.isFetchNextPageError
+                    ? observationsQuery.fetchNextPage()
+                    : observationsQuery.refetch())
+                }
+              />
+              <div className={styles.timelineFooter}>
+                {observationsQuery.hasNextPage && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={observationsQuery.isFetching}
+                    onClick={() => void observationsQuery.fetchNextPage()}
+                  >
+                    {t("Load more observations")}
+                  </Button>
+                )}
+                <p className={styles.providerNote}>
+                  {costsComplete
+                    ? t(
+                        "{{reported}} of {{count}} observations report a cost. Sampling, export, and retention can leave gaps.",
+                        { reported: cost.reported, count: observations.length },
+                      )
+                    : t(
+                        "{{reported}} of {{count}} loaded observations report a cost. Load the remaining pages for the trace cost and a complete order.",
+                        { reported: cost.reported, count: observations.length },
+                      )}
+                </p>
               </div>
             </div>
-            <ObservationTree
-              rows={rows}
-              tree={order === "tree"}
-              start={start}
-              duration={duration}
-              loaded={new Set(byId.keys())}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-            />
-            {observationsQuery.isPending && <Loading variant="list" rows={6} />}
-            <ErrorNotice
-              error={observationsQuery.error}
-              retry={() =>
-                void (observationsQuery.isFetchNextPageError
-                  ? observationsQuery.fetchNextPage()
-                  : observationsQuery.refetch())
-              }
-            />
-            <div className={styles.timelineFooter}>
-              {observationsQuery.hasNextPage && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={observationsQuery.isFetching}
-                  onClick={() => void observationsQuery.fetchNextPage()}
-                >
-                  {t("Load more observations")}
-                </Button>
-              )}
-              <p className={styles.providerNote}>
-                {t("Costs reported")}: {cost.reported} / {observations.length}.{" "}
-                {!costsComplete &&
-                  t("Load all observation pages for the trace cost.")}{" "}
-                {t(
-                  "Sampling, export, retention, and unreported costs can leave gaps.",
-                )}{" "}
-                {t(
-                  "Ordering applies to loaded observations only. Call tree preserves parent relationships.",
-                )}
-              </p>
-            </div>
+            {wide && selected && (
+              <div className={styles.inspector}>{inspector}</div>
+            )}
           </div>
         )}
         {tab === "content" && (
@@ -326,7 +383,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         )}
         {tab === "metadata" && (
           <div className={styles.payloads}>
-            <ObservationDiagnostics observation={root} />
+            <ObservationDiagnostics observation={root} summarized />
             <ObservationPayloads observation={root} />
             <DisclosureSection title={<>{t("Correlation")}</>}>
               <dl className={styles.properties}>
@@ -346,16 +403,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           </div>
         )}
       </div>
-      {selected && (
-        <Panel
-          open
-          label={t("Observation")}
-          title={<ObservationTitle observation={selected} />}
-          onClose={() => setSelectedId(null)}
-        >
-          <ObservationPanelBody observation={selected} />
-        </Panel>
-      )}
+      {!wide && inspector}
     </DetailPage>
   );
 }

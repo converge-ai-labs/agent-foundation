@@ -8,24 +8,39 @@ import { ProvidersPage } from "../providers/page";
 import { MediaUnderstandingDefaults } from "../models/media-understanding";
 import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
-import { Invitations } from "./invitations";
 import { ApiKeys } from "./keys";
 import { SettingsLayout } from "./layout";
-import { Members } from "./members";
+import { MemberSettings } from "./members";
 import { Profile } from "./profile";
 import { DeleteWorkspace, Workspaces } from "./workspaces";
+import { Webhooks } from "./webhooks/list";
+import { WebhookDetail } from "./webhooks/detail";
 
 export function WorkspaceSettings() {
   const { workspace, can, organizationCan, basePath } = useWorkspace();
-  const { accountId } = useParams();
+  const { accountId, subscriptionId, section } = useParams();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const cache = useQueryClient();
   const scope = { kind: "workspace", id: workspace.id } as const;
+  if ((subscriptionId || section === "webhooks") && !can("admin"))
+    return (
+      <Page title={t("Webhooks")}>
+        <Empty
+          title={t("Access unavailable")}
+          description={t(
+            "A workspace administrator can manage Webhooks and inspect their deliveries.",
+          )}
+        />
+      </Page>
+    );
   return (
     <SettingsLayout
       scope="workspace"
-      section={accountId ? "service-accounts" : undefined}
-      heading={!accountId}
+      section={
+        subscriptionId ? "webhooks" : accountId ? "service-accounts" : undefined
+      }
+      heading={!accountId && !subscriptionId}
       content={{
         general: (
           <Profile
@@ -48,8 +63,7 @@ export function WorkspaceSettings() {
         "media-understanding": (
           <MediaUnderstandingDefaults key={workspace.id} />
         ),
-        members: <Members scope={scope} />,
-        invitations: <Invitations scope={scope} />,
+        members: <MemberSettings scope={scope} />,
         "api-keys": <ApiKeys />,
         "member-keys": <ApiKeys memberKeys />,
         "service-accounts": accountId ? (
@@ -58,6 +72,14 @@ export function WorkspaceSettings() {
           <ServiceAccounts key={basePath} />
         ),
         audit: <Audit scope={scope} />,
+        webhooks: subscriptionId ? (
+          <WebhookDetail
+            key={`${workspace.id}:${subscriptionId}`}
+            subscriptionId={subscriptionId}
+          />
+        ) : (
+          <Webhooks key={workspace.id} />
+        ),
         providers: <ProvidersPage />,
       }}
     />
@@ -83,8 +105,7 @@ export function OrganizationSettings() {
       scope="organization"
       content={{
         general: <Profile target={scope} />,
-        members: <Members scope={scope} />,
-        invitations: <Invitations scope={scope} />,
+        members: <MemberSettings scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,
       }}

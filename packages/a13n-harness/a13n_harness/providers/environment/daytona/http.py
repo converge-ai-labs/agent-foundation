@@ -1,6 +1,6 @@
 """Fixed-target Daytona routing and credentials for the shared Envd connection."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
@@ -16,10 +16,9 @@ from a13n_harness.providers.environment.native.http import decode_response
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    RemoteEnvdEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.environment import RemoteEnvdExecution
-from a13n_harness.providers.environment.remote_envd.managed import managed_http_session
+from a13n_harness.providers.environment.remote_envd.environment import REQUIRED_METHODS, RemoteEnvdExecution
+from a13n_harness.providers.environment.remote_envd.managed import managed_http_runtime
 
 
 class Preview(BaseModel):
@@ -39,7 +38,7 @@ class HttpReference(DaytonaReference):
 @asynccontextmanager
 async def http_session(
     reference: DaytonaReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSession]:
     try:
         reference.require_target()
         target = await reference.lookup()
@@ -93,19 +92,21 @@ async def http_session(
             except ValueError:
                 raise failure("daytona", "envd_credential_invalid", Category.UNAVAILABLE) from None
 
-        async with managed_http_session(
+        async with managed_http_runtime(
             provider_key="daytona",
-            session_recovery=session_recovery,
+            target_id=target.id,
             connection=connection,
             endpoint_policy=reference.backend._endpoint_policy,
             load_credential=credential,
-            expected_device_id=reference.owner,
-            configuration=RemoteEnvdEnvironmentConfiguration(
+        ) as runtime:
+            async with runtime.open_session(
+                expected_device_id=reference.owner,
+                session_recovery=session_recovery,
                 working_directory="/workspace",
-                required_methods=("computer.describe", "computer.observe") if reference.config.desktop else (),
-            ),
-        ) as session:
-            yield session
+                required_methods=REQUIRED_METHODS
+                | (frozenset({"computer.describe", "computer.observe"}) if reference.config.desktop else frozenset()),
+            ) as session:
+                yield session
     finally:
         await reference.close_transport()
 
@@ -116,6 +117,7 @@ def http_execution(
     reference.require_target()
     assert reference.state is not None
     return RemoteEnvdExecution(
+        environment=reference.config.environment,
         provider_key="daytona",
         environment_id=reference.environment_id,
         state=reference.state,

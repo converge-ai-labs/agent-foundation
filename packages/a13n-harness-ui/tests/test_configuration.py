@@ -172,6 +172,7 @@ async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path:
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
         "enable_codeact": True,
+        "execution": {"mode": "inline", "foreground_wait_seconds": 5.0},
     }
     assert empty.sources[0].content == 'schema_version: "1"\n'
     assert empty.document.webui.sidekick is not None

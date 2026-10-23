@@ -1,13 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { DisplayNormalizer, isItemRef } from "a13n-ui/display";
 import { createClient, type SessionDelta } from "../../service-client";
-import { fixtureRun, fixtureThread } from "./transcript/fixture";
+import { fixtureRun } from "./transcript/fixture";
 import {
   applyDelta,
   comparePositions,
   isOmitted,
   readDisplay,
-  readFullDisplay,
+  readRunDisplay,
+  readEarlierDisplay,
   type DisplayItem,
 } from "./display";
 import { SessionDisplays } from "./session-displays";
@@ -124,12 +125,6 @@ it("does not append live deltas to a saved preview or lose the full-content refe
   expect(items.get("message")?.last_stream_id).toBe("1-2");
 });
 
-const thread = (current?: string) => ({
-  thread: fixtureThread({ id: "thread_2", current_run_id: current ?? null }),
-  current_run: current ? fixtureRun({ id: current }) : null,
-  last_run: null,
-  entries: [],
-});
 const text = (displays: SessionDisplays) =>
   displays.get("run_2")?.items.map((item) => item.content.text);
 
@@ -199,16 +194,35 @@ it("replaces unfinished displays from each new connection's snapshot", () => {
   expect(displays.get("run_2")).toMatchObject({ first: 2 });
   expect(text(displays)).toEqual(["Hello all"]);
   // A held run that ended while disconnected is dropped, so its committed display is read.
-  displays.connected();
-  expect(displays.thread(thread("run_3"))).toEqual(["run_2"]);
+  expect(displays.connected()).toEqual(["run_2"]);
   expect(displays.get("run_2")).toBeUndefined();
   expect(listener).not.toHaveBeenCalled();
   nextFrame();
   expect(listener).toHaveBeenCalledOnce();
   // On a live connection the thread frame precedes the run's final items, which keep it.
   displays.items(snapshot([item(1)]));
-  expect(displays.thread(thread("run_3"))).toEqual([]);
   expect(displays.get("run_2")).toBeDefined();
+});
+
+it("bounds completed history while keeping active and observed output", () => {
+  const displays = new SessionDisplays();
+  displays.items(snapshot([item(1)]));
+  const unsubscribe = displays.subscribe("old", () => undefined);
+  displays.items({ ...snapshot([item(1)], { complete: true }), run_id: "old" });
+  for (let index = 0; index < 25; index++)
+    displays.items({
+      ...snapshot([item(1)], { complete: true }),
+      run_id: `completed_${index}`,
+    });
+  expect(displays.get("run_2")).toBeDefined();
+  expect(displays.get("old")).toBeDefined();
+  expect(displays.get("completed_0")).toBeUndefined();
+  expect(displays.get("completed_24")).toBeDefined();
+  unsubscribe();
+  expect(displays.get("old")).toBeUndefined();
+  // No Thread frame is necessary to invalidate output that ended outside the new window.
+  expect(displays.connected()).toEqual(["run_2"]);
+  expect(displays.get("run_2")).toBeUndefined();
 });
 
 it("normalizes every intact raw suffix identically to the Python producer", async () => {
@@ -381,7 +395,7 @@ const committed = (complete = false) => ({
   complete,
 });
 
-it("loads all pages of a large Run, keeping the newest read's run and completion", async () => {
+it("shows only the latest window of a large Run before any history request", async () => {
   const requests: URL[] = [];
   const items = Array.from({ length: 867 }, (_, index) => ({
     ...item(),
@@ -408,14 +422,10 @@ it("loads all pages of a large Run, keeping the newest read's run and completion
       );
     },
   });
-  const result = await readFullDisplay(client, "ws_1", "run_2");
-  expect(result.items).toEqual(items);
+  const result = await readRunDisplay(client, "ws_1", "run_2");
+  expect(result.items).toEqual(items.slice(-200));
   expect(result).toMatchObject({ complete: false, immutableBefore: 668 });
-  expect(requests.map((url) => url.search)).toEqual([
-    "",
-    "?after=0&limit=500",
-    "?after=500&limit=167",
-  ]);
+  expect(requests.map((url) => url.search)).toEqual([""]);
   client.close();
 });
 
@@ -434,26 +444,36 @@ it("reuses immutable pages but refreshes a former mutable tail before retaining 
       const url = new URL((input as Request).url);
       requests.push(url);
       const after = url.searchParams.get("after");
+      const before = url.searchParams.get("before");
       return Response.json({
         ...committed(),
         items:
-          after === null
-            ? [items[first - 1]]
-            : items.slice(
-                Number(after),
-                Number(after) + Number(url.searchParams.get("limit")),
-              ),
+          before !== null
+            ? items.slice(0, Number(before) - 1)
+            : after === null
+              ? [items[first - 1]]
+              : items.slice(
+                  Number(after),
+                  Number(after) + Number(url.searchParams.get("limit")),
+                ),
       });
     },
   });
-  const previous = await readFullDisplay(client, "ws_1", "run_2");
+  const initial = await readRunDisplay(client, "ws_1", "run_2");
+  const previous = await readEarlierDisplay(
+    client,
+    "ws_1",
+    "run_2",
+    initial,
+    3,
+  );
   first = 5;
   items[2] = {
     ...items[2]!,
     content: { ...items[2]!.content, text: "Final answer" },
     state: "completed",
   };
-  const next = await readFullDisplay(
+  const next = await readRunDisplay(
     client,
     "ws_1",
     "run_2",
@@ -464,7 +484,7 @@ it("reuses immutable pages but refreshes a former mutable tail before retaining 
   expect(previous.items[2]!.content.text).toBe("Hello");
   expect(requests.map((url) => url.search)).toEqual([
     "",
-    "?after=0&limit=2",
+    "?before=3&limit=200",
     "",
     "?after=2&limit=2",
   ]);
@@ -481,7 +501,7 @@ it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
       fetch: async (input) => {
         requests++;
         const historical = new URL((input as Request).url).searchParams.has(
-          "after",
+          "before",
         );
         return Response.json({
           ...committed(),
@@ -492,9 +512,10 @@ it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
         });
       },
     });
-    await expect(readFullDisplay(client, "ws_1", "run_2")).rejects.toThrow(
-      "Run history could not be fully loaded.",
-    );
+    const current = await readRunDisplay(client, "ws_1", "run_2");
+    await expect(
+      readEarlierDisplay(client, "ws_1", "run_2", current, 3),
+    ).rejects.toThrow("Earlier run content could not be loaded.");
     expect(requests).toBe(2);
     client.close();
   },

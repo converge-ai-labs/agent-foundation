@@ -160,8 +160,12 @@ Under the default `"declared"` mode, unmarked tools receive unknown results.
 Native deferred tools and approvals end a root logical Run with `status="suspended"`. The result includes:
 
 - `state`, representing the accepted history and Capability data;
-- `deferred`, the exact native pending request envelope;
+- `deferred`, the complete Harness pending request envelope;
 - `suspend_reason="deferred"`.
+
+Import `DeferredToolRequests` and `DeferredToolCall` from `a13n_harness`. Each entry in `calls` or `approvals` has `model_call`, `target_call`, and `target_identity`. Direct calls have equal model and target calls; a one-to-one proxy retains both. Display `entry.target_call`, and key results and metadata by its `tool_call_id`. Persist the complete entry: Harness uses `model_call` to correlate the final history result and validates the current target identity on resume.
+
+This replaces the old native request arrays. Complete pending waits and incorporate accepted deferred input before upgrading a Host. Old pending checkpoints are not automatically converted; checkpoints without pending or accepted deferred input keep their existing format. Native inline handlers still receive native request objects. `DeferredToolResults` keeps its native value types and is also exported from `a13n_harness`.
 
 The Host performs external interaction after the Run is closed, then starts a new Run:
 
@@ -191,7 +195,7 @@ Resume validates that:
 
 - previous state is present;
 - the deferred request and supplied results correlate exactly;
-- pending calls match the legal message history and current tool category;
+- model calls match legal message history, and targets match the current tool identity and category;
 - overridden arguments validate again;
 - fresh policy and provider enforcement still allow dispatch.
 
@@ -203,7 +207,7 @@ This native resume flow also applies to Host-managed children when current bindi
 
 An external result can be accepted before native history records it. For example, a batch may contain both an external result and a local approved action, and execution can stop at a checkpoint before that action runs. The intermediate `HarnessState` alone is not a complete record of the accepted batch. Harness does not keep a second deferred-result representation inside Capability state.
 
-The Host retains the correlated native `DeferredToolRequests` and `DeferredToolResults` alongside the selected checkpoint, or in its existing durable input records, until history incorporates them. When publishing a new checkpoint, `accepted.remaining(checkpoint.message_history)` returns the unincorporated batch, or `None` when it has been incorporated or superseded by a later response. Persist this value with the checkpoint under the Host's normal publication rules; receiving input or calling `export_state()` alone does not save it.
+The Host retains the complete Harness `DeferredToolRequests` and native `DeferredToolResults` alongside the selected checkpoint, or in its existing durable input records, until history incorporates them. When publishing a new checkpoint, `accepted.remaining(checkpoint.message_history)` returns the unincorporated batch, or `None` when it has been incorporated or superseded by a later response. Persist this value with the checkpoint under the Host's normal publication rules; receiving input or calling `export_state()` alone does not save it.
 
 For recovery from an interrupted resumed Run, provide the retained batch with `recovery=True`:
 
@@ -260,13 +264,13 @@ await context.state.write(
 
 Unknown namespaces can remain opaque across a Run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or `EnvironmentState` in a Capability namespace.
 
-## Run-local Shell Observations
+## Shell Executions and Observations
 
-`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A shell process reference belongs to one Harness Run, not to a durable process service. Queries do not reset output, and native completion does not imply complete capture.
+`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A standalone `process-*` reference belongs to one Harness Run. With a Host-held `ToolExecutionRuntime`, a top-level Shell execution instead retains its original process and capture under an `exec-*` identifier across Runs of the same Thread. Queries do not reset output, and native completion does not imply complete capture.
 
-Run close releases observations without blanket process termination. A fresh adapter restored from Provider state may discover commands the backend retained; a fresh Run assigns new references and cannot use old references from history. No process reference, buffer, watcher or output cursor enters Harness Capability state. Provider state owns native recovery evidence, and the Host owns target lifetime and state publication.
+Run close releases unretained observations without blanket process termination. Live `exec-*` controls continue through the same Host runtime with current authorization and target validation. After Host restart, a fresh adapter restored from Provider state may discover commands the backend retained; that discovery assigns new local references rather than restoring the previous runtime. No process reference, buffer, watcher or output cursor enters Harness Capability state. Provider state owns native recovery evidence, and the Host owns target lifetime and state publication.
 
-See [Environment tools](environments.md) for usage and Provider-specific limitations. No Host process manager, process database, or durable post-Run wake integration is required.
+See [Environment tools](environments.md) for usage and Provider-specific limitations. Live runtime retention and portable checkpoint restoration are separate lifecycles.
 
 ## Host Checkpointing
 

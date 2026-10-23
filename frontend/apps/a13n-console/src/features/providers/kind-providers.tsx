@@ -1,3 +1,4 @@
+import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
@@ -22,6 +23,7 @@ import {
   validateSettings,
 } from "../../shared/forms";
 import { useCredentialSection } from "../../shared/use-credential-section";
+import { VercelChoices } from "./vercel-choices";
 import { AddProviderDialog } from "./add-provider-dialog";
 import type { ProviderCategoryValue } from "./categories";
 import { ConnectionTest, providerTestResult } from "./connection-test";
@@ -191,7 +193,10 @@ function AddKindProvider({
       title={kind === "environment" ? t("Add connection") : undefined}
       trigger={
         kind === "environment" ? (
-          <Button type="button">{t("Add connection")}</Button>
+          <Button type="button">
+            <PlusIcon aria-hidden="true" />
+            {t("Add connection")}
+          </Button>
         ) : undefined
       }
       definitions={definitions}
@@ -394,7 +399,20 @@ export function ProviderForm({
           }
           configurationSchema={configSchema}
           credential={section.credential}
-          onCredentialChange={section.setCredential}
+          onCredentialChange={(next) => {
+            section.setCredential(next);
+            if (kind === "environment" && type === "vercel")
+              setConfiguration({});
+          }}
+          configurationFields={
+            kind === "environment" && type === "vercel" ? (
+              <VercelChoices
+                credential={section.credential}
+                value={configuration}
+                onChange={setConfiguration}
+              />
+            ) : undefined
+          }
           configuration={configuration}
           onConfigurationChange={setConfiguration}
           name={name}

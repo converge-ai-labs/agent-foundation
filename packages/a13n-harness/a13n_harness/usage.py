@@ -822,6 +822,16 @@ class _RunUsageCapability(UsageCapability):
         finally:
             self.context.usage_attribution.summary(tool_calls=ctx.usage.tool_calls)
 
+    async def after_tool_execute(self, ctx, *, call, tool_def, args, result):
+        from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+
+        self.context.usage_attribution.summary(tool_calls=ctx.usage.tool_calls)
+        if _OWNED_TOOL_EXECUTION.get() and self.context._tool_executions.closing:
+            # Detached nested calls still belong to the original accounting
+            # scope. Publish through its retained Host reporter, not a new Run.
+            await self.context.usage_attribution._flush_cleanup()
+        return result
+
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self.context:
             raise DefinitionError("Usage owner cannot cross runs.", code="capability_scope_invalid")

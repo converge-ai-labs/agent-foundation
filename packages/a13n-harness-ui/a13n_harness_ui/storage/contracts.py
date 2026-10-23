@@ -5,15 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
 
-from a13n_harness import DeferredToolResume, HarnessState, SafeFailure
+from a13n_harness import DeferredToolRequests, DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolResults
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 
 from .display import DisplayArchive
 from .objects import ObjectKind, ObjectRef
@@ -150,6 +151,7 @@ class ThreadExecution(StoredContract):
     completed_at: datetime | None = None
     error_code: str | None = Field(default=None, max_length=256)
     error_message: str | None = Field(default=None, max_length=4096)
+    main_account: MainAccountSelection | None = None
 
 
 class RetainedActivity(StoredContract):
@@ -224,7 +226,10 @@ class StoredDeferredInput(StoredContract):
         return cls(
             requests=remaining.requests,
             results=DeferredToolResults(
-                calls={call.tool_call_id: native[call.tool_call_id] for call in remaining.requests.calls},
+                calls={
+                    call.tool_call_id: native[call.tool_call_id]
+                    for call in (entry.target_call for entry in remaining.requests.calls)
+                },
                 approvals=remaining.results.approvals,
                 metadata=remaining.results.metadata,
             ),

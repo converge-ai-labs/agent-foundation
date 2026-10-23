@@ -256,7 +256,7 @@ async def test_new_tool_uses_existing_permission_identity(monkeypatch, mode, kin
     assert [tool.name for tool in seen].count("read_media_url") == 1
     assert calls == ([URL] if mode == "allow" else [])
     if mode == "ask":
-        assert result.deferred.approvals[0].tool_name == "read_media_url"
+        assert result.deferred.approvals[0].target_call.tool_name == "read_media_url"
 
 
 async def test_environment_fallback_records_nested_model_usage(monkeypatch):

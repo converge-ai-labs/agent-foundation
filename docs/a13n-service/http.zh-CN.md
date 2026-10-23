@@ -102,14 +102,16 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 ## 读取摘要和指定详情
 
-使用 `view=compact` 查找相关 run、修订、模型、收件箱记录、显示条目或 span，并结合接口支持的过滤条件。现有调用默认使用 `view=detailed`，保留原来的响应。精简列表默认每页十条；为控制响应大小，实际可能更少。即使过滤后当前页为空，也要按返回的游标或 ordinal 继续读取。
+Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，输入预览最多包含 200 个 Unicode 码点。这些接口不接受 `view`；完整输入、输出、选项等详情通过 `/runs/{run_id}` 读取。线程内的 run 分页支持 `anchor=<run_id>`，可直接从指定运行开始读取，且不能与 `cursor` 同用。响应包含 `total`、`first_number`、指向较早运行的 `next_cursor` 和指向较新运行的 `previous_cursor`。`first_number` 是首条记录的时间顺序编号，从 1 开始，不是已加载的记录数。 `limit` 是条数上限：共享的 10,000 字符响应预算可能使返回条数更少，应始终使用返回的游标继续读取。Usage 汇总包含各 Run 的 `run_number`，无需额外查询 Run 列表。
+
+使用 `view=compact` 查找相关修订、模型、收件箱记录、显示条目或 span，也可读取指定 Run 的摘要，并结合接口支持的过滤条件。这些调用默认使用 `view=detailed`。精简列表默认每页十条；为控制响应大小，实际可能更少。即使过滤后当前页为空，也要按返回的游标或 ordinal 继续读取。
 
 预览包含 `text` 和 `truncated`。`omitted_sections` 列出可以单独读取的字段。`source_truncated` 表示保存的内容已经被截短，继续读取也无法恢复被丢弃的数据。字段被省略或预览被截短，不代表原始数据没有相关信息。
 
 例如，查找失败的 run，再读取其中一次失败：
 
 ```http
-GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs?status=failed&limit=10
 GET /api/v1/runs/{run_id}?section=failure
 GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
 GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0
@@ -123,7 +125,7 @@ GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=
 
 通过 `/toolsets/index`、`/connections/{connection_id}/tools/index` 或 `/connector-providers/{provider_id}/apps/{app}/actions/index` 搜索工具目录。使用对应的 `/definitions` 接口读取定义，每次最多重复传入五个准确的 `name`。检查 `missing` 和 `oversized`。超大的定义可在同一接口中指定一个名称，按版本分段读取；接口不会静默截短定义。模型目录支持精简搜索、能力过滤和分页；读取能力或价格部分时，应准确选择 provider/model。
 
-Trace 列表支持 `status`、`kind` 和 `tool_name`。读取单个 span 的输入或输出时，使用 `/traces/{trace_id}/spans/{span_id}/content` 和 `section=input|output`。若 `items` 为空，应按 `next_cursor` 继续查找。找到后，后续文本分段请求继续使用定位该 span 时的请求游标。Trace 数据仍受部署的保存期限和后端可用性限制。
+Trace 列表支持 `status`、`kind` 和 `tool_name`。读取单个 span 的输入或输出时，使用 `/traces/{trace_id}/spans/{span_id}/content` 和 `section=input|output`。Service 只向后端查询该 span；`items` 为空表示该 trace 中没有此 span。后续文本分段使用 `version` 和 `next_offset` 继续读取。Trace 后端响应超过 8 MiB 上限时返回 `413 payload_too_large`，而不是后端不可用；对此路由而言，这表示该 span 本身超过上限。Trace 数据仍受部署的保存期限和后端可用性限制。
 
 ## 限制
 

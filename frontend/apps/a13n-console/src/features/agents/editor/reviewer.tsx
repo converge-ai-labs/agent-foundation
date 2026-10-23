@@ -1,3 +1,4 @@
+import formStyles from "../../../shared/forms/forms.module.css";
 import {
   Button,
   ChoiceField,
@@ -21,7 +22,6 @@ import {
   TextAreaField,
   validateSettings,
 } from "../../../shared/forms";
-import { Section } from "../../../shared/page";
 import type { Schema } from "../../../shared/api";
 import type { useAgentChoices } from "../choices";
 import {
@@ -31,6 +31,7 @@ import {
 } from "../reviewer";
 import type { AgentDraft } from "./draft";
 import styles from "./editor.module.css";
+import { ModelIcon, providerBrand } from "../../models/model-icon";
 
 const risks = [
   { value: "low", label: "Low risk" },
@@ -58,56 +59,118 @@ export function ReviewerSection({
 }) {
   const { t } = useTranslation();
   const reviewer = draft.reviewer;
-  const model = choices.data?.models.find(
-    (item) => item.key === reviewer?.model,
+  function patch(change: Partial<Reviewer>) {
+    draft.setReviewer({ ...reviewer, model: reviewer?.model ?? "", ...change });
+  }
+  return (
+    <>
+      {mark}
+      <ChoiceField
+        popupClassName={formStyles.compactChoicePopup}
+        label={t("Review model")}
+        readOnly={readOnly}
+        value={reviewer?.model ?? ""}
+        options={[
+          { value: "", label: t("Not configured") },
+          ...(choices.data?.models ?? []).map((model) => ({
+            value: model.key,
+            label: model.name,
+            icon: (
+              <ModelIcon
+                upstream={model.config.model_name}
+                catalogRef={model.catalog_ref}
+                provider={providerBrand(
+                  choices.data?.providers?.find(
+                    (provider) => provider.id === model.provider_id,
+                  ),
+                )}
+                size={20}
+              />
+            ),
+          })),
+        ]}
+        onValueChange={(model) =>
+          model ? patch({ model }) : draft.setReviewer(undefined)
+        }
+      />
+      {reviewer?.model && (
+        <>
+          <ReviewPolicyFields
+            value={reviewer}
+            onChange={patch}
+            readOnly={readOnly}
+            compact
+          />
+          <div>
+            <Button type="button" variant="outline" size="sm" onClick={onOpen}>
+              {t("More options")}
+            </Button>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Common policy rules; each caller keeps ownership of its draft lifecycle. */
+function ReviewPolicyFields({
+  value,
+  onChange,
+  readOnly,
+  compact = false,
+}: {
+  value: Reviewer;
+  onChange: (change: Partial<Reviewer>) => void;
+  readOnly: boolean;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const policy = (
+    <>
+      <ChoiceField
+        popupClassName={formStyles.compactChoicePopup}
+        label={t("Risk threshold")}
+        description={compact ? t("Flag this risk level and above.") : undefined}
+        readOnly={readOnly}
+        value={value.risk_threshold ?? "extra_high"}
+        options={risks.map((item) => ({ ...item, label: t(item.label) }))}
+        onValueChange={(risk) =>
+          onChange({ risk_threshold: risk as Reviewer["risk_threshold"] })
+        }
+      />
+      <ChoiceField
+        popupClassName={formStyles.compactChoicePopup}
+        label={t(compact ? "When flagged" : "At or above threshold")}
+        readOnly={readOnly}
+        value={value.on_flagged ?? "deny"}
+        options={actions.map((item) => ({ ...item, label: t(item.label) }))}
+        onValueChange={(action) =>
+          onChange({ on_flagged: action as Reviewer["on_flagged"] })
+        }
+      />
+    </>
   );
   return (
-    <Section
-      title={t("Automatic review")}
-      description={t(
-        "Only tools with automatic review use this model and policy.",
+    <>
+      {compact ? policy : <div className={styles.grid}>{policy}</div>}
+      {!compact && (
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "Below the threshold, execution continues. At or above it, the selected action applies. Review timeouts always deny execution.",
+          )}
+        </p>
       )}
-      actions={
-        <>
-          {mark}
-          <Button type="button" variant="outline" size="sm" onClick={onOpen}>
-            {readOnly ? t("View review settings") : t("Configure review")}
-          </Button>
-        </>
-      }
-    >
-      <div className={styles.reviewSummary}>
-        <strong>
-          {reviewer?.model
-            ? (model?.name ?? reviewer.model)
-            : t("No review model configured")}
-        </strong>
-        {reviewer && (
-          <span>
-            {t("{{risk}} and above → {{action}}", {
-              risk: t(
-                risks.find(
-                  (risk) =>
-                    risk.value === (reviewer.risk_threshold ?? "extra_high"),
-                )!.label,
-              ),
-              action: t(
-                actions.find(
-                  (action) => action.value === (reviewer.on_flagged ?? "deny"),
-                )!.label,
-              ),
-            })}
-          </span>
+      <TextAreaField
+        label={t(
+          compact ? "Review instructions" : "Custom review instructions",
         )}
-        {!!Object.keys(reviewer?.rules ?? {}).length && (
-          <span>
-            {t("{{count}} tool review rules", {
-              count: Object.keys(reviewer?.rules ?? {}).length,
-            })}
-          </span>
-        )}
-      </div>
-    </Section>
+        readOnly={readOnly}
+        value={value.instruction ?? ""}
+        maxLength={32768}
+        rows={compact ? 3 : 4}
+        onChange={(instruction) => onChange({ instruction })}
+      />
+    </>
   );
 }
 
@@ -214,73 +277,47 @@ export function ReviewerSettings({
         closeProps={{ "aria-label": t("Close") }}
       >
         <SheetHeader>
-          <SheetTitle>{t("Automatic review settings")}</SheetTitle>
+          <SheetTitle>{t("Auto review")}</SheetTitle>
           <SheetDescription>
             {t(
-              "Share one review model and default policy across tools. Changes apply when you save the agent.",
+              "Review tool calls before they run. Save the agent to apply changes.",
             )}
           </SheetDescription>
         </SheetHeader>
         <SheetPanel>
           <ErrorNotice error={error} />
           <div className="grid gap-5">
-            <SearchPicker
-              disabled={readOnly}
-              label={t("Review model")}
-              placeholder={t("Choose a model…")}
-              emptyMessage={t(
-                "No models available. Configure a provider and model first.",
-              )}
-              value={value.model}
-              onValueChange={(model) => patch({ model })}
-              groups={[
-                {
-                  label: t("Available models"),
-                  options: models.map((model) => ({
-                    value: model.key,
-                    label: model.name,
-                  })),
-                },
-              ]}
-            />
+            <FormField label={t("Review model")}>
+              <SearchPicker
+                disabled={readOnly}
+                label={t("Review model")}
+                placeholder={t("Choose a model…")}
+                emptyMessage={t(
+                  "No models available. Configure a provider and model first.",
+                )}
+                value={value.model}
+                onValueChange={(model) => patch({ model })}
+                groups={[
+                  {
+                    label: t("Available models"),
+                    options: models.map((model) => ({
+                      value: model.key,
+                      label: model.name,
+                    })),
+                  },
+                ]}
+              />
+            </FormField>
             {value.model &&
               !models.some((model) => model.key === value.model) && (
                 <p className="text-muted-foreground text-sm">
                   {value.model} · {t("Not in this workspace")}
                 </p>
               )}
-            <div className={styles.grid}>
-              <ChoiceField
-                readOnly={readOnly}
-                label={t("Risk threshold")}
-                value={value.risk_threshold ?? "extra_high"}
-                options={translatedRisks}
-                onValueChange={(risk) =>
-                  patch({ risk_threshold: risk as Reviewer["risk_threshold"] })
-                }
-              />
-              <ChoiceField
-                readOnly={readOnly}
-                label={t("At or above threshold")}
-                value={value.on_flagged ?? "deny"}
-                options={translatedActions}
-                onValueChange={(action) =>
-                  patch({ on_flagged: action as Reviewer["on_flagged"] })
-                }
-              />
-            </div>
-            <p className="text-muted-foreground text-sm">
-              {t(
-                "Below the threshold, execution continues. At or above it, the selected action applies. Review timeouts always deny execution.",
-              )}
-            </p>
-            <TextAreaField
+            <ReviewPolicyFields
+              value={value}
+              onChange={patch}
               readOnly={readOnly}
-              label={t("Custom review instructions")}
-              value={value.instruction ?? ""}
-              maxLength={32768}
-              rows={4}
-              onChange={(instruction) => patch({ instruction })}
             />
             {[
               ...Object.entries(value.rules ?? {}),
@@ -316,6 +353,7 @@ export function ReviewerSettings({
                 )}
                 <div className={styles.grid}>
                   <ChoiceField
+                    popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("Rule risk threshold")}
                     value={rule.risk_threshold ?? "default"}
@@ -333,6 +371,7 @@ export function ReviewerSettings({
                     }
                   />
                   <ChoiceField
+                    popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("Rule action")}
                     value={rule.on_flagged ?? "default"}
@@ -371,6 +410,7 @@ export function ReviewerSettings({
                 />
                 <div className={styles.grid}>
                   <ChoiceField
+                    popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("On review failure")}
                     value={value.on_error ?? "approval_required"}

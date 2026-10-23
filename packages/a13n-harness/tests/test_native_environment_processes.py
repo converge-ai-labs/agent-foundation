@@ -8,7 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings, ToolExecutionConfig
+from a13n_harness.capabilities import ToolExecutionCapability
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentPermissionSet, EnvironmentState
 from a13n_harness.environment.sources import EnvironmentMount
@@ -144,11 +145,14 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
             AgentSpec(),
             output_type=str,
             model=FunctionModel(stream_function=stream),
-            capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
+            capabilities=(
+                DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+                ToolExecutionCapability(ToolExecutionConfig(foreground_wait_seconds=0)),
+            ),
         )
 
     first = Source(E2B.execution_connector(configuration, environment_id="env-test", state=state, runtime=runtime))
-    await executable([lambda _: ("shell_exec", {"command": "sleep 60", "yield_time_seconds": 0})]).run(
+    await executable([lambda _: ("shell_exec", {"command": "sleep 60"})]).run(
         "start", environment=first, bindings=bindings()
     )
     assert native.running

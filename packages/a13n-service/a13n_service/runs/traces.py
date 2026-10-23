@@ -224,6 +224,49 @@ async def get_trace(
     return page.items[0]
 
 
+async def get_trace_span(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    span_id: str,
+) -> Span:
+    """One full observation, selected by both trace and span after workspace authorization."""
+    span = await find_trace_span(storage, traces, actor, workspace_id, trace_id, span_id)
+    if span is None:
+        raise not_found("span", span_id)
+    return span
+
+
+async def find_trace_span(
+    storage: Storage,
+    traces: TraceProvider | None,
+    actor: Principal,
+    workspace_id: str,
+    trace_id: str,
+    span_id: str,
+) -> Span | None:
+    """The one observation the backend query selects by trace and span, never a page of its neighbours.
+
+    A response over the backend bound then means this observation alone exceeds it.
+    """
+    scope = await _read_scope(storage, actor, workspace_id)
+    query = replace(_trace_query(scope, trace_id, 1), span_id=span_id)
+    try:
+        page = await _read(_available(traces), query, cursor=None)
+    except ServiceError as error:
+        if error.code != "payload_too_large":
+            raise
+        limit = error.details.get("limit")
+        message = f"span {span_id} alone exceeds the {limit} byte trace response limit; inspect it in the trace backend"
+        raise ServiceError("payload_too_large", message, {**error.details, "kind": "span", "id": span_id}) from error
+    if not page.items:
+        return None
+    assert isinstance(page.items[0], Span)
+    return page.items[0]
+
+
 @overload
 async def list_trace_spans(
     storage: Storage,
@@ -346,13 +389,18 @@ async def _read(
     if cursor is not None:
         position, after, before = _decode(cursor, owner)
         query = replace(query, cursor=position, started_after=after, started_before=before)
-    values: list[trace_reads.SpanSummary | Span] = []
+    values: list[trace_reads.SpanSummary | trace_reads.SpanOverview | Span] = []
+    if selection is not None and selection.view == "overview":
+        query = replace(query, include_content=False)
     while True:
         page = await provider.query(query)
         items = [_redact(span) for span in page.items if _matches(span, query)]
         if selection is None:
             break
         selected = [span for span in items if selection.matches(span)]
+        if selection.view == "overview":
+            values = [trace_reads.overview(span) for span in selected]
+            break
         values = [trace_reads.summary(span) if selection.view == "compact" else span for span in selected]
         # Retry with a smaller backend page before returning anything. Its own cursor then remains exact.
         count = reads.fit_count(values)
@@ -385,6 +433,7 @@ def _matches(span: Span, query: SpanQuery) -> bool:
     return (
         all(_text(span.attributes.get(key)) == value for key, value in query.attributes.items())
         and (query.trace_id is None or span.trace_id == query.trace_id)
+        and (query.span_id is None or span.id == query.span_id)
         and not (query.roots and span.parent_id is not None)
     )
 

@@ -6,6 +6,10 @@ description: WebUI 服务器的 HTTP API，用于初始化、对话、实时输�
 
 WebUI API 使用与 TUI 相同的 App。调用者共享实例密钥，回执属于当前进程，实时事件尽力投递。它不是 Service 的托管 `/api/v1` API。从 [WebUI](webui.md) 开始，不需要监听器时用 [Python 嵌入](embedding.md)。
 
+根级 `POST /api/operations/{receipt_id}/steer` 和子级 `POST /api/threads/{thread_id}/children/{execution_id}/steer` 使用全局 `input.steering_mode`，默认为 `immediate`，同时保留支持的工具调用。全局设为 `queued` 可等待下一个安全边界。Steering 请求不提供逐条消息的模式字段。
+
+`GET /api/threads/{thread_id}/tool-executions?offset=0&limit=20` 分页返回指定 Thread 的执行状态；`limit` 范围为 1–100。`POST /api/threads/{thread_id}/tool-executions/{execution_id}/cancel` 请求取消。这些接口需要认证，不暴露私有结果内容，也不消耗结果。取消响应报告当前状态，不代表回滚完成。记录只存在于当前进程。Stop 和完成唤醒行为见 [WebUI 控制](webui.md#tool-executions-and-immediate-steering)。
+
 ## 认证与查看协议约定
 
 将 `HUI_URL` 设为监听器的源，将 `HUI_API_KEY` 设为配置的访问密钥：

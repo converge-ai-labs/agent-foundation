@@ -5,6 +5,7 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { ProviderAccount } from "../setup/accounts";
+import { useSubscriptions } from "../setup/subscriptions";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 
@@ -242,6 +243,29 @@ function LoadedModelEditor({
     modelId || (!value ? (selected?.default_model ?? "") : "");
   const effectiveUrl = baseUrl || (!value ? (selected?.base_url ?? "") : "");
   const api = selected?.authentication === "api_key";
+  const nativeProvider =
+    selected?.account?.provider === "codex" ||
+    selected?.account?.provider === "grok"
+      ? selected.account.provider
+      : undefined;
+  const subscriptions = useSubscriptions(!!nativeProvider);
+  const selectedGroup =
+    authentication?.kind === "codex_subscription" ||
+    authentication?.kind === "grok_subscription"
+      ? authentication.group
+      : undefined;
+  const groupId = selectedGroup ?? `${nativeProvider}-default`;
+  const nativeGroup = subscriptions.data?.groups.find(
+    (item) => item.id === groupId && item.provider === nativeProvider,
+  );
+  const groupReady = nativeGroup?.accounts?.some((member) =>
+    subscriptions.data?.accounts.some(
+      (item) =>
+        item.account.id === member.account &&
+        item.account.enabled &&
+        item.authentication.availability === "available",
+    ),
+  );
   const catalog = useQuery({
     queryKey: ["model-directory"],
     queryFn: ({ signal }) =>
@@ -294,7 +318,13 @@ function LoadedModelEditor({
   const authReady = api
     ? authentication?.kind === "api_key" &&
       !!(authentication.env || authentication.credential_ref)
-    : accountReady;
+    : nativeProvider
+      ? nativeGroup
+        ? !!groupReady
+        : !selectedGroup &&
+          !subscriptions.data?.adoption[nativeProvider]?.group_created &&
+          accountReady
+      : accountReady;
   // Publishing a recipe is independent of account login. Never publish the
   // previous recipe while the editor displays unapplied connection choices.
   const recipeReady = matches && (api ? !!authReady : true);
@@ -330,7 +360,9 @@ function LoadedModelEditor({
             connection,
             model_id: effectiveId,
             base_url: effectiveUrl,
-            ...(api ? { authentication } : {}),
+            ...(authentication?.kind === selected?.authentication
+              ? { authentication }
+              : {}),
           },
         }),
       ),
@@ -445,6 +477,61 @@ function LoadedModelEditor({
             value={authentication}
             onChange={setAuth}
           />
+        ) : nativeProvider && selected.account ? (
+          <>
+            <ErrorNotice error={subscriptions.error} />
+            <ChoiceField
+              label="Account group"
+              value={selectedGroup ?? ""}
+              onValueChange={(group) =>
+                setAuth({
+                  kind:
+                    nativeProvider === "codex"
+                      ? "codex_subscription"
+                      : "grok_subscription",
+                  ...(group ? { group } : {}),
+                })
+              }
+              options={[
+                {
+                  value: "",
+                  label: "Provider default group",
+                  hint:
+                    !nativeGroup &&
+                    subscriptions.data?.adoption[nativeProvider]?.group_created
+                      ? "Default group is missing. Select or create a group."
+                      : undefined,
+                },
+                ...(subscriptions.data?.groups
+                  .filter((item) => item.provider === nativeProvider)
+                  .map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                    hint: `${item.accounts?.length ?? 0} accounts · ${item.strategy === "weighted" ? "Weighted balance" : "Ordered consumption"}`,
+                  })) ?? []),
+              ]}
+            />
+            {(!nativeGroup &&
+              !subscriptions.data?.adoption[nativeProvider]?.group_created) ||
+            nativeGroup?.accounts?.some(
+              (member) => member.account === `acct-${nativeProvider}-default`,
+            ) ? (
+              <ProviderAccount
+                key={connection}
+                connection={selected.account}
+                inline
+                onReady={setAccountReady}
+                onIdentity={setAccountIdentity}
+              />
+            ) : (
+              <p>
+                {groupReady
+                  ? "Group has a connected account."
+                  : "This group needs a connected member account."}
+              </p>
+            )}
+            <a href="/settings/accounts">Manage accounts and groups</a>
+          </>
         ) : selected.account ? (
           <ProviderAccount
             key={connection}

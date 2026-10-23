@@ -13,7 +13,6 @@ import { MemoryHistory } from "./detail/history";
 import { SpaceConfiguration, type SpaceResource } from "./space-editor";
 import { SpaceOrganization, SpaceSessions } from "./space-organization";
 import { spaceQueries } from "./spaces-api";
-import styles from "./memories.module.css";
 
 const tabs = [
   "files",
@@ -53,7 +52,7 @@ function SpaceTabs({ resource }: { resource: SpaceResource }) {
   return (
     <DetailPage
       back="../memory-spaces"
-      backLabel={t("Memory Spaces")}
+      backLabel={t("Memory spaces")}
       tabs={tabs.map((value) => ({
         value,
         label: labels[value],
@@ -63,7 +62,6 @@ function SpaceTabs({ resource }: { resource: SpaceResource }) {
       }))}
       tab={tab}
       onTabChange={setTab}
-      contentClassName={tab === "files" ? styles.filesContent : undefined}
       header={
         <DetailHeader
           avatar={

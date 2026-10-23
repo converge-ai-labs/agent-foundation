@@ -5,9 +5,11 @@ import {
   SettingsRow,
   Switch,
 } from "a13n-ui";
-import { Fragment, useId, useRef, useState } from "react";
+import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { SPRITES_DESKTOP_NOTICE } from "./creation-progress";
 import styles from "./environments.module.css";
+import { EnvironmentVariables } from "../../shared/forms/environment-variables";
 import {
   applyDockerPreset,
   dockerMode,
@@ -34,6 +36,7 @@ export function ProviderConfiguration({
   error,
   note,
   variant = "default",
+  children,
 }: {
   schema?: Record<string, unknown>;
   text: string;
@@ -42,14 +45,22 @@ export function ProviderConfiguration({
   error?: string;
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
-  variant?: "default" | "docker" | "e2b" | "daytona";
+  variant?:
+    "default" | "docker" | "e2b" | "daytona" | "modal" | "vercel" | "sprites";
+  /** Template settings that close the group, such as its lifecycle. */
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const desktopId = useId();
-  const internetId = useId();
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
   const [custom, setCustom] = useState(false);
+  const [daytonaCustom, setDaytonaCustom] = useState(false);
+  const daytonaDraft = useRef<string | undefined>(undefined);
+  const [vercelCustom, setVercelCustom] = useState(false);
+  const vercelDraft = useRef<string | undefined>(undefined);
+  const [modalCustom, setModalCustom] = useState(false);
+  const modalDraft = useRef<string | undefined>(undefined);
   const [e2bCustom, setE2bCustom] = useState(false);
   const e2bCustomDraft = useRef<string | undefined>(undefined);
   const customDraft = useRef<Record<string, unknown> | undefined>(undefined);
@@ -59,14 +70,22 @@ export function ProviderConfiguration({
   } catch {
     // An unfinished JSON draft remains editable without losing its text.
   }
-  const e2bDefaultTemplate = "base";
+  const e2bDefaultTemplate = value?.desktop === true ? "auto" : "base";
   const e2bRequiresEnvd =
     value?.execution === "envd_http" || value?.desktop === true;
   const e2bUsesCustomTemplate =
-    e2bRequiresEnvd ||
+    (e2bRequiresEnvd && value?.desktop !== true) ||
     e2bCustom ||
     (typeof value?.template === "string" &&
       value.template !== e2bDefaultTemplate);
+  const daytonaUsesCustom =
+    daytonaCustom ||
+    (typeof value?.snapshot === "string" && value.snapshot !== "auto");
+  const vercelUsesCustom =
+    vercelCustom ||
+    (typeof value?.snapshot === "string" && value.snapshot !== "auto");
+  const modalUsesCustom =
+    modalCustom || (typeof value?.image === "string" && value.image !== "auto");
   const presets = variant === "docker" ? dockerPresets(schema) : undefined;
   const selected: DockerMode =
     presets && value && schema && !custom
@@ -91,9 +110,6 @@ export function ProviderConfiguration({
   const primary = schema?.["x-primary-fields"];
   const image: typeof properties = [];
   const e2bTemplate = properties.find(([key]) => key === "template")?.[1];
-  const internet = properties.find(
-    ([key]) => key === "allow_internet_access",
-  )?.[1];
   const desktop = properties.find(([key]) => key === "desktop")?.[1];
   const execution: typeof properties = [];
   const mounts: typeof properties = [];
@@ -101,6 +117,7 @@ export function ProviderConfiguration({
   const advanced: typeof properties = [];
   for (const property of properties) {
     const key = property[0];
+    if (key === "environment") continue;
     if (
       variant === "e2b" &&
       e2bRequiresEnvd &&
@@ -116,13 +133,23 @@ export function ProviderConfiguration({
       ].includes(key)
     )
       continue;
+    if (variant === "e2b" && key === "template") continue;
     if (
-      variant === "e2b" &&
-      ["template", "allow_internet_access"].includes(key)
+      variant === "vercel" &&
+      ["execution", "snapshot", "desktop"].includes(key)
     )
       continue;
+    if (variant === "sprites" && ["desktop", "execution"].includes(key))
+      continue;
+    if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
+    if (variant === "daytona" && ["snapshot", "desktop"].includes(key))
+      continue;
     if (
-      (variant === "e2b" || variant === "daytona") &&
+      (variant === "e2b" ||
+        variant === "daytona" ||
+        variant === "modal" ||
+        variant === "vercel" ||
+        variant === "sprites") &&
       key.startsWith("desktop_") &&
       value?.desktop !== true
     )
@@ -143,6 +170,14 @@ export function ProviderConfiguration({
     else if ((variant === "docker" || variant === "e2b") && key === "desktop")
       continue;
     else if (variant === "docker" && key === "mounts") mounts.push(property);
+    else if (variant === "e2b" && key === "allow_internet_access")
+      common.push([
+        key,
+        {
+          ...(property[1] as Record<string, unknown>),
+          description: "Allow the sandbox to connect to external services.",
+        },
+      ]);
     else if (
       variant === "docker" &&
       ["environment", "init_script", "disable_network"].includes(key)
@@ -155,7 +190,11 @@ export function ProviderConfiguration({
   const change = (next: Record<string, unknown>) =>
     onChange(
       JSON.stringify(
-        variant === "daytona" && next.desktop !== true
+        (variant === "daytona" ||
+          variant === "modal" ||
+          variant === "vercel" ||
+          variant === "sprites") &&
+          next.desktop !== true
           ? { ...next, desktop_assistance: false }
           : next,
         null,
@@ -163,28 +202,26 @@ export function ProviderConfiguration({
       ),
     );
   const fieldsAvailable = !!schema && !!value;
-  const jsonMode = !builtIn && (mode === "json" || !fieldsAvailable);
+  const jsonMode = mode === "json" || !fieldsAvailable;
   return (
     <FormSection
       title={t("Configuration")}
       description={note}
       actions={
         <>
-          {!builtIn && (
-            <SegmentedControl
-              label={t("Configuration editor")}
-              value={jsonMode ? "json" : "fields"}
-              onValueChange={setMode}
-              options={[
-                {
-                  value: "fields",
-                  label: t("Fields"),
-                  disabled: !fieldsAvailable,
-                },
-                { value: "json", label: "JSON" },
-              ]}
-            />
-          )}
+          <SegmentedControl
+            label={t("Configuration editor")}
+            value={jsonMode ? "json" : "fields"}
+            onValueChange={setMode}
+            options={[
+              {
+                value: "fields",
+                label: t("Fields"),
+                disabled: !fieldsAvailable,
+              },
+              { value: "json", label: "JSON" },
+            ]}
+          />
           {!readOnly && (
             <Button
               type="button"
@@ -194,6 +231,12 @@ export function ProviderConfiguration({
                 onChange("{}");
                 setCustom(false);
                 setE2bCustom(false);
+                setDaytonaCustom(false);
+                setVercelCustom(false);
+                vercelDraft.current = undefined;
+                daytonaDraft.current = undefined;
+                setModalCustom(false);
+                modalDraft.current = undefined;
                 e2bCustomDraft.current = undefined;
                 customDraft.current = undefined;
                 setMode("fields");
@@ -206,7 +249,7 @@ export function ProviderConfiguration({
         </>
       }
     >
-      {presets && (
+      {presets && !jsonMode && (
         <fieldset disabled={readOnly} className={styles.environmentKinds}>
           <legend>{t("Environment type")}</legend>
           <div className={styles.environmentKindChoices}>
@@ -236,7 +279,7 @@ export function ProviderConfiguration({
                 ? "Run commands and work with files. The standard image and execution method are configured automatically."
                 : selected === "desktop"
                   ? "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate."
-                  : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.",
+                  : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.",
             )}
           </p>
         </fieldset>
@@ -254,6 +297,291 @@ export function ProviderConfiguration({
       ) : (
         <Fragment key={reset}>
           <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
+            {variant === "sprites" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Install Envd, desktop dependencies and human control on each new sandbox.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        desktop_assistance: enabled,
+                        execution: enabled ? "envd_http" : "native",
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>
+                )}
+              </>
+            )}
+            {variant === "modal" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        desktop_assistance: enabled,
+                        ...(enabled && !modalUsesCustom
+                          ? {
+                              image: "auto",
+                              cpu: value.cpu ?? 2,
+                              memory: value.memory ?? 4096,
+                              timeout_seconds: value.timeout_seconds ?? 3600,
+                            }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <SegmentedControl
+                    label={t("Modal image")}
+                    value={modalUsesCustom ? "custom" : "automatic"}
+                    options={[
+                      {
+                        value: "automatic",
+                        label: t("Automatic desktop"),
+                        disabled: readOnly,
+                      },
+                      {
+                        value: "custom",
+                        label: t("Custom image"),
+                        disabled: readOnly,
+                      },
+                    ]}
+                    onValueChange={(next) => {
+                      if (modalUsesCustom && typeof value.image === "string")
+                        modalDraft.current = value.image;
+                      setModalCustom(next === "custom");
+                      change({
+                        ...value,
+                        image:
+                          next === "custom"
+                            ? (modalDraft.current ?? "")
+                            : "auto",
+                      });
+                    }}
+                  />
+                )}
+                {(value.desktop !== true || modalUsesCustom) && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: {
+                        image: (schema?.properties as Record<string, unknown>)
+                          ?.image,
+                      },
+                    }}
+                    value={value}
+                    onChange={change}
+                  />
+                )}
+                {value.desktop === true && !modalUsesCustom && (
+                  <p role="note">
+                    {t(
+                      "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
+            {variant === "daytona" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        desktop_assistance: enabled,
+                        ...(enabled && !daytonaUsesCustom
+                          ? {
+                              snapshot: "auto",
+                            }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <SegmentedControl
+                    label={t("Daytona snapshot")}
+                    value={daytonaUsesCustom ? "custom" : "automatic"}
+                    options={[
+                      {
+                        value: "automatic",
+                        label: t("Automatic desktop"),
+                        disabled: readOnly,
+                      },
+                      {
+                        value: "custom",
+                        label: t("Custom snapshot"),
+                        disabled: readOnly,
+                      },
+                    ]}
+                    onValueChange={(next) => {
+                      if (
+                        daytonaUsesCustom &&
+                        typeof value.snapshot === "string"
+                      )
+                        daytonaDraft.current = value.snapshot;
+                      setDaytonaCustom(next === "custom");
+                      change({
+                        ...value,
+                        snapshot:
+                          next === "custom"
+                            ? (daytonaDraft.current ?? "")
+                            : "auto",
+                      });
+                    }}
+                  />
+                )}
+                {(value.desktop !== true || daytonaUsesCustom) && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: {
+                        snapshot: (
+                          schema?.properties as Record<string, unknown>
+                        )?.snapshot,
+                      },
+                    }}
+                    value={value}
+                    onChange={change}
+                  />
+                )}
+                {value.desktop === true && !daytonaUsesCustom && (
+                  <p role="note">
+                    {t(
+                      "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
+            {variant === "vercel" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        execution: enabled ? "envd_http" : "native",
+                        ...(enabled && value.timeout_seconds === undefined
+                          ? { timeout_seconds: 2700 }
+                          : {}),
+                        snapshot: enabled ? (value.snapshot ?? "auto") : null,
+                        desktop_assistance: enabled,
+                        ...(enabled && !vercelUsesCustom
+                          ? {
+                              snapshot: "auto",
+                            }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <SegmentedControl
+                    label={t("Vercel snapshot")}
+                    value={vercelUsesCustom ? "custom" : "automatic"}
+                    options={[
+                      {
+                        value: "automatic",
+                        label: t("Automatic desktop"),
+                        disabled: readOnly,
+                      },
+                      {
+                        value: "custom",
+                        label: t("Custom snapshot"),
+                        disabled: readOnly,
+                      },
+                    ]}
+                    onValueChange={(next) => {
+                      if (
+                        vercelUsesCustom &&
+                        typeof value.snapshot === "string"
+                      )
+                        vercelDraft.current = value.snapshot;
+                      setVercelCustom(next === "custom");
+                      change({
+                        ...value,
+                        snapshot:
+                          next === "custom"
+                            ? (vercelDraft.current ?? "")
+                            : "auto",
+                      });
+                    }}
+                  />
+                )}
+                {value.desktop === true && vercelUsesCustom && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: {
+                        snapshot: (
+                          schema?.properties as Record<string, unknown>
+                        )?.snapshot,
+                      },
+                    }}
+                    value={value}
+                    onChange={change}
+                  />
+                )}
+                {value.desktop === true && !vercelUsesCustom && (
+                  <p role="note">
+                    {t(
+                      "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
             {!builtIn && image.length > 0 && (
               <SchemaFields
                 schema={{ ...schema, properties: Object.fromEntries(image) }}
@@ -339,8 +667,10 @@ export function ProviderConfiguration({
                         ...(enabled &&
                         (!value.template ||
                           ["base", "desktop"].includes(String(value.template)))
-                          ? { template: "" }
-                          : {}),
+                          ? { template: "auto", desktop_assistance: true }
+                          : !enabled && value.template === "auto"
+                            ? { template: "base", execution: "native" }
+                            : {}),
                       })
                     }
                   />
@@ -356,8 +686,14 @@ export function ProviderConfiguration({
                       options={[
                         {
                           value: "official",
-                          label: t("Official default"),
-                          disabled: readOnly || e2bRequiresEnvd,
+                          label: t(
+                            value.desktop === true
+                              ? "Automatic desktop"
+                              : "Official default",
+                          ),
+                          disabled:
+                            readOnly ||
+                            (e2bRequiresEnvd && value.desktop !== true),
                         },
                         {
                           value: "custom",
@@ -381,7 +717,19 @@ export function ProviderConfiguration({
                           if (typeof value.template === "string")
                             e2bCustomDraft.current = value.template;
                           setE2bCustom(false);
-                          change({ ...value, template: e2bDefaultTemplate });
+                          setDaytonaCustom(false);
+                          setVercelCustom(false);
+                          vercelDraft.current = undefined;
+                          daytonaDraft.current = undefined;
+                          setModalCustom(false);
+                          modalDraft.current = undefined;
+                          change({
+                            ...value,
+                            template: e2bDefaultTemplate,
+                            ...(value.desktop === true
+                              ? { desktop_assistance: true }
+                              : {}),
+                          });
                         }
                       }}
                     />
@@ -407,11 +755,15 @@ export function ProviderConfiguration({
                     />
                   ) : (
                     <div className={styles.e2bTemplateSummary}>
-                      <strong>{e2bDefaultTemplate}</strong>
+                      <strong>
+                        {value.desktop === true
+                          ? t("Automatic desktop")
+                          : e2bDefaultTemplate}
+                      </strong>
                       <span>
                         {t(
                           value.desktop === true
-                            ? "Linux desktop with preinstalled desktop components."
+                            ? "The first desktop creation usually takes 1–2 minutes to prepare a private template; it may take longer. Later creations reuse it. You can leave this page while creation continues."
                             : "A standard sandbox for commands and files.",
                         )}
                       </span>
@@ -427,39 +779,28 @@ export function ProviderConfiguration({
                 )}
               </p>
             )}
-            <div className={variant === "e2b" ? styles.e2bRuntime : "contents"}>
-              <SchemaFields
-                schema={{ ...schema, properties: Object.fromEntries(common) }}
-                value={value}
-                onChange={change}
-              />
-              {variant === "e2b" && internet && (
-                <div className={styles.e2bInternet}>
-                  <SettingsRow
-                    label={t("Allow internet access")}
-                    description={t(
-                      "Allow the sandbox to connect to external services.",
-                    )}
-                    controlId={internetId}
-                    stackOnNarrow={false}
-                  >
-                    <Switch
-                      id={internetId}
-                      checked={
-                        (value.allow_internet_access ??
-                          (internet as Record<string, unknown>).default) ===
-                        true
-                      }
-                      disabled={readOnly}
-                      onCheckedChange={(enabled) =>
-                        change({ ...value, allow_internet_access: enabled })
-                      }
-                    />
-                  </SettingsRow>
-                </div>
-              )}
-            </div>
+            <SchemaFields
+              schema={{ ...schema, properties: Object.fromEntries(common) }}
+              value={value}
+              onChange={change}
+            />
           </fieldset>
+          {properties.some(([key]) => key === "environment") && (
+            <EnvironmentVariables
+              value={
+                value.environment &&
+                typeof value.environment === "object" &&
+                !Array.isArray(value.environment) &&
+                Object.values(value.environment).every(
+                  (item) => typeof item === "string",
+                )
+                  ? (value.environment as Record<string, string>)
+                  : {}
+              }
+              readOnly={readOnly}
+              onChange={(environment) => change({ ...value, environment })}
+            />
+          )}
           {mounts.length > 0 && (
             <DisclosureSection title={t("Mounts")}>
               <fieldset disabled={readOnly}>
@@ -495,6 +836,7 @@ export function ProviderConfiguration({
           )}
         </Fragment>
       )}
+      {children}
     </FormSection>
   );
 }

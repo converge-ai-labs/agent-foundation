@@ -15,6 +15,7 @@ from pydantic import BaseModel, JsonValue
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import matches
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, not_found, rate_limited
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.schemas import EntryUpdate, Failure, Message, RunOptions, canonical_json
@@ -175,6 +176,31 @@ async def append_child_result(
     return entry
 
 
+async def append_tool_result(
+    session: AsyncSession, thread: ThreadRow, origin: RunRow, payload: dict[str, JsonValue]
+) -> InboxEntryRow:
+    """Append a completion hint after the caller reserves capacity under the Thread lock."""
+    entry = InboxEntryRow(
+        id=new_object_id("inb"),
+        organization_id=thread.organization_id,
+        workspace_id=thread.workspace_id,
+        thread_id=thread.id,
+        kind="tool_result",
+        delivery="steer",
+        position=await _next_position(session, thread.id),
+        principal_id=origin.principal_id,
+        authority=origin.authority,
+        payload=payload,
+        size=payload_size(payload),
+        options={},
+        origin_run_id=origin.id,
+        status="pending",
+    )
+    session.add(entry)
+    await session.flush()
+    return entry
+
+
 async def get_entry(session: AsyncSession, thread: ThreadRow, entry_id: str, *, lock: bool = False) -> InboxEntryRow:
     query = select(InboxEntryRow).where(InboxEntryRow.thread_id == thread.id, InboxEntryRow.id == entry_id)
     entry = await session.scalar(query.with_for_update() if lock else query)
@@ -298,19 +324,22 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
     A steer that gives no options (the defaults) joins whatever options the run started with. Options it gives
     compare as submitted: the run froze its own at acceptance, so it keeps the digest of what its source submitted.
     """
-    if entry.kind == "child_result":
+    if entry.kind in {"child_result", "tool_result"}:
         # The origin must be this run or a sealed one this run continues: its spawning call was committed before the
         # child could exist, so it is in the origin's last checkpoint.
         return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
     options = RunOptions.model_validate(entry.options)
-    configuration = RunOptions.model_validate(run.options).configuration
+    accepted = RunOptions.model_validate(run.options)
+    configuration = accepted.configuration
     return (
         entry.delivery == "steer"
         and entry.agent_id == run.agent_id
         and entry.agent_revision_id in {None, run.agent_revision_id}
         and (options.configuration is None or options.configuration == configuration)
+        and matches(accepted.execution, options.execution)
         and (
-            options.model_copy(update={"configuration": None}) == RunOptions() or options.digest() == run.options_digest
+            options.model_copy(update={"configuration": None, "execution": None}) == RunOptions()
+            or options.digest() == run.options_digest
         )
     )
 

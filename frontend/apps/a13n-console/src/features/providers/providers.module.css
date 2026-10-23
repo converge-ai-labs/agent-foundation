@@ -14,12 +14,14 @@
 /* The connect step: one column of fields, then the notices and the actions. */
 .connectForm {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
 /* A connect step that disables its fields while the create request is in flight. */
 .connectFields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
   border: 0;
@@ -31,6 +33,7 @@
    The dialog panel sets a 16px gap on any form; an editor breathes more. */
 .editor {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   min-width: 0;
 }
@@ -39,6 +42,7 @@
 }
 .editorFields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   min-width: 0;
   margin: 0;
@@ -47,6 +51,7 @@
 }
 .group {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
 }
@@ -95,6 +100,7 @@
 }
 .credentialEdit {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
   padding-block: 16px;
@@ -134,9 +140,11 @@
 .checkNote {
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
+  text-wrap: balance;
 }
 .checkResult {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   min-width: 0;
 }

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from a13n_harness import DeferredToolCall, DeferredToolRequests
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor
 from a13n_harness_ui.errors import StoreConflictError
@@ -13,7 +14,6 @@ from a13n_harness_ui.storage.database import transaction
 from a13n_harness_ui.storage.models import ThreadRecord
 from a13n_harness_ui.surfaces import RootOperationStatus
 from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.tools import DeferredToolRequests
 from sqlalchemy import update
 
 from .test_app import _reconstructed, _write_configuration
@@ -28,7 +28,14 @@ def reference(character):
 
 async def test_projection_selection_conflict_and_stale_projection_repair(tmp_path):
     first, second = reference("a"), reference("b")
-    projection = ThreadReadModel(deferred_requests=DeferredToolRequests(calls=[ToolCallPart("ask_user_question", {})]))
+    projection = ThreadReadModel(
+        deferred_requests=DeferredToolRequests(
+            calls=[
+                DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+                for call in [ToolCallPart("ask_user_question", {})]
+            ]
+        )
+    )
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
         await store.threads.create(thread_id="thread-one", configuration=_configuration(), initial_state=_initial())
         selected = await store.threads.select_continuation(

@@ -1,4 +1,11 @@
-import { Button, ChoiceField, StatusPill } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  StatusPill,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { CubeIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -6,7 +13,7 @@ import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, type Schema } from "../../shared/api";
+import { type Schema } from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
@@ -24,13 +31,13 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { ProviderIcon } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers";
-import { mediaDefaultsQuery, modelApi } from "./api";
+import { mediaDefaultsQuery, modelApi, workspaceProvidersQuery } from "./api";
 import { ModelEditor } from "./model-editor";
-import { mediaDefaultBadges } from "./media-understanding-fields";
-import { ModelIcon } from "./model-icon";
+import { mediaKinds, type MediaSelection } from "./media-understanding-fields";
+import { inputCapabilities } from "./model-information";
+import { ModelIcon, ModelProviderIcon, providerBrand } from "./model-icon";
 import styles from "./models.module.css";
 
 const FILTER_KEYS = ["q", "provider_id", "status"];
@@ -82,11 +89,7 @@ export function ModelsPage() {
         enabled,
       ),
   });
-  const providers = useQuery({
-    queryKey: ["model-provider-choices", workspace.id],
-    queryFn: ({ signal }) =>
-      allPages((cursor) => api.providers(signal, cursor)),
-  });
+  const providers = useQuery(workspaceProvidersQuery(client, workspace.id));
   const mediaDefaults = useQuery(mediaDefaultsQuery(client, workspace.id));
   const rows = useResourceRows<Schema["Model"]>();
   const { selected } = rows;
@@ -115,35 +118,37 @@ export function ModelsPage() {
           }}
           filters={
             <>
-              <ChoiceField
-                label={t("Provider")}
-                variant="filter"
-                value={providerId || "all"}
-                onValueChange={(value) =>
-                  updateFilters({ provider_id: value === "all" ? "" : value })
-                }
-                options={[
-                  { value: "all", label: t("All providers") },
-                  ...(providers.data ?? []).map((provider) => ({
-                    value: provider.id,
-                    label: provider.name,
-                    icon: <ProviderIcon type={provider.type} />,
-                  })),
-                ]}
-              />
-              <ChoiceField
-                label={t("Status")}
-                variant="filter"
-                value={status ?? "all"}
-                onValueChange={(value) =>
-                  updateFilters({ status: value === "all" ? "" : value })
-                }
-                options={[
-                  { value: "all", label: t("All statuses") },
-                  { value: "enabled", label: t("Enabled") },
-                  { value: "disabled", label: t("Disabled") },
-                ]}
-              />
+              <span className={styles.filters}>
+                <ChoiceField
+                  label={t("Provider")}
+                  variant="filter"
+                  value={providerId || "all"}
+                  onValueChange={(value) =>
+                    updateFilters({ provider_id: value === "all" ? "" : value })
+                  }
+                  options={[
+                    { value: "all", label: t("All providers") },
+                    ...(providers.data ?? []).map((provider) => ({
+                      value: provider.id,
+                      label: provider.name,
+                      icon: <ModelProviderIcon provider={provider} />,
+                    })),
+                  ]}
+                />
+                <ChoiceField
+                  label={t("Status")}
+                  variant="filter"
+                  value={status ?? "all"}
+                  onValueChange={(value) =>
+                    updateFilters({ status: value === "all" ? "" : value })
+                  }
+                  options={[
+                    { value: "all", label: t("All statuses") },
+                    { value: "enabled", label: t("Enabled") },
+                    { value: "disabled", label: t("Disabled") },
+                  ]}
+                />
+              </span>
               {hasFilters && (
                 <Button
                   type="button"
@@ -205,15 +210,13 @@ export function ModelsPage() {
                       <ModelIcon
                         upstream={item.config.model_name}
                         catalogRef={item.catalog_ref}
-                        provider={providerById.get(item.provider_id)?.type}
+                        provider={providerBrand(
+                          providerById.get(item.provider_id),
+                        )}
                         size={20}
                       />
                     }
-                    description={
-                      <span className={styles.modelMeta}>
-                        <span title={item.key}>{item.key}</span>
-                      </span>
-                    }
+                    description={item.key}
                   />
                 ),
               },
@@ -231,7 +234,7 @@ export function ModelsPage() {
                     );
                   return (
                     <span className={styles.providerCell}>
-                      <ProviderIcon type={provider.type} />
+                      <ModelProviderIcon provider={provider} />
                       <span title={provider.name}>{provider.name}</span>
                     </span>
                   );
@@ -239,47 +242,36 @@ export function ModelsPage() {
               },
               {
                 label: t("Capabilities"),
+                render: (item) => (
+                  <CapabilityMarks
+                    model={item}
+                    defaults={mediaDefaults.data?.value}
+                  />
+                ),
+              },
+              {
+                label: t("Status"),
+                // One line: an enabled model its provider can't serve reads as that state.
                 render: (item) => {
-                  const labels = capabilityLabels(item.config.characteristics);
-                  const roles = mediaDefaultBadges(
-                    item.key,
-                    mediaDefaults.data?.value,
-                  );
-                  if (!labels.length && !roles.length)
-                    return <span aria-hidden="true">—</span>;
-                  return (
-                    <span className={styles.chips}>
-                      {roles.map((label) => (
-                        <span key={label} className={styles.chip} data-role="">
-                          {t(label)}
-                        </span>
-                      ))}
-                      {labels.map((label) => (
-                        <span key={label} className={styles.chip}>
-                          {t(label)}
-                        </span>
-                      ))}
-                    </span>
+                  const provider = providerById.get(item.provider_id);
+                  return item.enabled && provider?.enabled === false ? (
+                    <StatusPill
+                      variant="warning"
+                      title={t(
+                        "Agents can't use this model until {{provider}} is enabled.",
+                        { provider: provider.name },
+                      )}
+                    >
+                      {t("Provider disabled")}
+                    </StatusPill>
+                  ) : (
+                    <StatePill state={item.enabled ? "enabled" : "disabled"} />
                   );
                 },
               },
               {
-                label: t("Status"),
-                render: (item) => (
-                  <span className={styles.statusCell}>
-                    <StatePill state={item.enabled ? "enabled" : "disabled"} />
-                    {providerById.get(item.provider_id)?.enabled === false && (
-                      <StatusPill variant="warning">
-                        {t("Provider disabled")}
-                      </StatusPill>
-                    )}
-                  </span>
-                ),
-              },
-              {
                 label: t("Updated"),
                 tone: "muted",
-                align: "right",
                 render: (item) => (
                   <Timestamp value={item.updated_at} relative />
                 ),
@@ -308,12 +300,50 @@ export function ModelsPage() {
   );
 }
 
-/** Neutral chips; the rest of the characteristics stay in the editor. */
-function capabilityLabels(
-  characteristics?: Schema["HarnessModelCharacteristics-Output"],
-) {
-  const labels: string[] = [];
-  if (characteristics?.capabilities?.includes("image_understanding"))
-    labels.push("Vision");
-  return labels;
+/**
+ * The inputs a model declares, as marks named on hover. A kind the model is
+ * the workspace's media understanding default for is accented. There are four
+ * kinds at most, so the marks always fit without a count.
+ */
+function CapabilityMarks({
+  model,
+  defaults,
+}: {
+  model: Schema["Model"];
+  defaults?: MediaSelection;
+}) {
+  const { t } = useTranslation();
+  const declared = inputCapabilities.filter(({ capability }) =>
+    model.config.characteristics?.capabilities?.includes(capability),
+  );
+  if (!declared.length) return <span aria-hidden="true">—</span>;
+  return (
+    <span className={styles.capabilityMarks}>
+      {declared.map(({ capability, label, Icon }) => {
+        const role = mediaKinds.find(
+          (entry) =>
+            `${entry.kind}_understanding` === capability &&
+            defaults?.[entry.kind] === model.key,
+        )?.badge;
+        const name = role ? `${t(label)} · ${t(role)}` : t(label);
+        return (
+          <Tooltip key={capability}>
+            <TooltipTrigger
+              render={
+                <span
+                  role="img"
+                  aria-label={name}
+                  className={styles.capabilityMark}
+                  data-role={role ? "" : undefined}
+                />
+              }
+            >
+              <Icon size={16} aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipPopup>{name}</TooltipPopup>
+          </Tooltip>
+        );
+      })}
+    </span>
+  );
 }

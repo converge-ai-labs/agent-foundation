@@ -1,14 +1,18 @@
+.fieldError {
+  margin: 0;
+  color: var(--a13n-danger);
+  font-size: var(--a13n-text-xs);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
+@media (max-width: 720px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .rowSelect {
   display: flex;
@@ -25,23 +29,6 @@
   box-shadow: var(--a13n-shadow-subtle);
   color: var(--a13n-text);
   font-size: var(--a13n-text-xs);
-}
-.identityGrid {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 16px 20px;
-}
-.identityFields {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-@media (max-width: 720px) {
-  .grid,
-  .identityGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 /* A read-only model reads as the picker's option does: logo, name and key. */
 .readOnlyModel {
@@ -63,16 +50,63 @@
   font-size: var(--a13n-text-xs);
 }
 
-.reviewSummary {
+/* Model settings and tool lists share a quiet outlined surface. */
+.modelSettingsCard [data-slot="collapsible-panel"] > div {
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid var(--a13n-border);
+}
+.modelSettingsCard .modelParameter {
+  border-bottom: 1px solid var(--a13n-border);
+}
+
+/* Model settings: parameters as label/control rows under the disclosure. */
+.modelParameter {
   display: grid;
-  gap: 6px;
-  padding: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 240px);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.modelParameter > label {
+  font-weight: 400;
+}
+@media (width < 480px) {
+  .modelParameter {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Shared surfaces and row insets keep separators flush with card edges. */
+.mediaSection [data-slot="settings-section-content"],
+.advancedBody > section > div {
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
   border-radius: 12px;
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
 }
-.reviewSummary span {
-  color: var(--a13n-secondary);
+.mediaSection [data-slot="settings-section-content"] > div,
+.modelSettingsCard [data-slot="collapsible-panel"] > div > *,
+.advancedBody > section > div > *,
+.advancedBody
+  :is(
+    [data-slot="execution-fields"],
+    [data-slot="tool-discovery-fields"],
+    [data-slot="session-memory-fields"]
+  )
+  > * {
+  padding: 16px;
 }
+.mediaSection [data-slot="settings-section-content"] > div + div,
+.advancedBody > section > div > * + *,
+.advancedBody
+  :is([data-slot="execution-fields"], [data-slot="tool-discovery-fields"])
+  > *
+  + * {
+  border-top: 1px solid var(--a13n-border);
+}
+
 .reviewRule {
   display: grid;
   gap: 12px;
@@ -80,7 +114,8 @@
   border-radius: 12px;
   background: var(--a13n-surface);
 }
-.reviewRuleHeading {
+.reviewRuleHeading,
+.searchGroupHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -96,18 +131,177 @@
   display: grid;
   gap: 16px;
   padding: 16px;
-  border-radius: 12px;
-  background: var(--a13n-surface);
-}
-.searchGroupHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  background: transparent;
 }
 .searchSource {
   display: flex;
   align-items: center;
   gap: 10px;
   overflow-wrap: anywhere;
+}
+
+.mediaTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mediaTrigger > svg {
+  color: var(--a13n-secondary);
+}
+.mediaTrigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.mediaTrigger:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 4px;
+}
+
+.advancedBody {
+  display: grid;
+  gap: 28px;
+}
+/* Headings stay outside; the content owns the outlined rows. */
+.advancedBody > section > div {
+  gap: 0;
+}
+/* Execution, discovery and memory have an inner row collection. */
+.advancedBody
+  > section
+  > div
+  > :is(
+    [data-slot="execution-fields"],
+    [data-slot="tool-discovery-fields"],
+    [data-slot="session-memory-fields"]
+  ) {
+  gap: 0;
+  padding: 0;
+}
+.advancedBody [data-slot="field"] {
+  gap: 8px;
+}
+.advancedBody label {
+  font-size: var(--a13n-text-sm);
+  font-weight: 400;
+  line-height: 20px;
+}
+.advancedBody h3 {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+@media (min-width: 640px) {
+  .parameterSection [data-slot="field"]:not(:has(textarea)) {
+    display: grid;
+    grid-template-columns: minmax(140px, 1fr) minmax(180px, 1fr);
+    align-items: center;
+    gap: 8px 24px;
+  }
+  .parameterSection
+    [data-slot="field"]:has(> [data-slot="field-description"]):not(
+      :has(textarea)
+    ) {
+    row-gap: 4px;
+  }
+  .parameterSection
+    [data-slot="field"]:has(> [data-slot="field-description"])
+    > label {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: end;
+  }
+  .parameterSection
+    [data-slot="field"]:has(> [data-slot="field-description"])
+    > :is(button, input, [data-slot="input-control"]) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+  .parameterSection [data-slot="field-description"] {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    margin: 0;
+  }
+}
+
+.advancedBody [data-slot="session-memory-fields"] > div {
+  padding: 16px;
+}
+
+/* Space selection belongs to the enable row, not a separate setting. */
+.advancedBody [data-slot="session-memory-fields"] > div + div {
+  padding-top: 0;
+}
+
+/* Keep controls at the same type scale when the UI library switches to
+   its larger mobile defaults. Preserve their touch target height. */
+.advancedBody
+  :is(
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="select-button"],
+    [data-slot="input-control"],
+    [data-slot="input"],
+    [data-slot="textarea-control"],
+    [data-slot="textarea"]
+  ) {
+  font-size: var(--a13n-text-sm);
+}
+.advancedBody > section > header p {
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+}
+.advancedBody > section > header h3 {
+  font-weight: 600;
+}
+.advancedBody [data-slot="field-description"] {
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+}
+@media (width < 640px) {
+  .parameterSection
+    [data-slot="field"]:has(> [data-slot="field-description"]):not(
+      :has(textarea)
+    ) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .parameterSection
+    [data-slot="field"]:has(> [data-slot="field-description"])
+    > label {
+    grid-row: 1;
+  }
+  .parameterSection [data-slot="field-description"] {
+    grid-row: 2;
+    margin: 0;
+  }
+  .parameterSection
+    [data-slot="field"]:has(> [data-slot="field-description"])
+    > :is(button, [data-slot="input-control"]) {
+    grid-row: 3;
+    margin-top: 4px;
+  }
+}
+
+.searchFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.searchFooter p {
+  margin: 0;
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+  color: var(--a13n-secondary);
+}
+.searchFooter button {
+  flex: none;
 }

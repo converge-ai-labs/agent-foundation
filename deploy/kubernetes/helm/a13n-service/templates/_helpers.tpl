@@ -71,7 +71,11 @@ volumeMounts:
     mountPath: /app/service.toml
     subPath: service.toml
     readOnly: true
-  # The only writable paths: temporary files and, for local objects, the objects claim.
+  {{- if .monitoringWriter }}
+  - name: monitoring
+    mountPath: /var/lib/a13n-monitoring
+  {{- end }}
+  # Temporary files and, for local objects, the shared objects claim.
   - name: tmp
     mountPath: /tmp
   {{- if eq .Values.objects.backend "local" }}

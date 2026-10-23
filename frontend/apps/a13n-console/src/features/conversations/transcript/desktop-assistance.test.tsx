@@ -95,7 +95,7 @@ it.each(["open", "request"])(
     );
     await user.click(
       await screen.findByRole("button", {
-        name: action === "open" ? "Open desktop" : "Get control",
+        name: action === "open" ? "Open read-only desktop" : "Get control",
       }),
     );
     await screen.findByText(
@@ -139,6 +139,15 @@ it("revokes its read-only viewer before requesting takeover so a competing card 
       password: "private",
       expires_in_seconds: 60,
     }),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open read-only desktop",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
   );
   await user.click(
     await screen.findByRole("button", { name: "Open read-only desktop" }),
@@ -208,6 +217,15 @@ it("read-only grants never enable input and completion waits for confirmed serve
       password: "private",
       expires_in_seconds: 60,
     }),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open read-only desktop",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
   );
   await user.click(
     await screen.findByRole("button", { name: "Open read-only desktop" }),
@@ -374,4 +392,98 @@ it("waits for in-flight renewal before handback while disabling input immediatel
   } finally {
     timers.mockRestore();
   }
+});
+
+it("opens a read-only desktop in one request without caching credentials or pausing", async () => {
+  const user = userEvent.setup();
+  const { cache } = start(true, null);
+  post.mockResolvedValueOnce(
+    reply({
+      assistance: {
+        ...view,
+        cause: "user",
+        tool_call_id: null,
+        state: "viewing",
+      },
+      mode: "view",
+      websocket_url: "wss://desktop.example/?token=secret",
+      password: "private",
+      expires_in_seconds: 60,
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open read-only desktop",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Open read-only desktop" }),
+  );
+  await waitFor(() => expect(viewers).toHaveLength(1));
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith(
+    "/api/v1/runs/{run_id}/desktop-control/view",
+    expect.objectContaining({
+      body: expect.objectContaining({
+        mount: "workspace",
+        session_id: expect.any(String),
+      }),
+    }),
+  );
+  expect(viewers[0].viewOnly).toBe(true);
+  viewers[0].dispatchEvent(new Event("connect"));
+  await screen.findByText("Read-only desktop");
+  expect(
+    JSON.stringify(
+      cache
+        .getQueryCache()
+        .getAll()
+        .map((q) => q.state.data),
+    ),
+  ).not.toMatch(/secret|private|websocket_url/);
+  expect(resolved).not.toHaveBeenCalled();
+});
+
+it("revokes a late initial viewer grant after its panel unmounts", async () => {
+  const user = userEvent.setup();
+  const { unmount } = start(true, null);
+  let respond!: (value: object) => void;
+  post.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        respond = resolve;
+      }),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Open read-only desktop",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Open read-only desktop" }),
+  );
+  unmount();
+  post.mockResolvedValueOnce(reply(view));
+  respond(
+    reply({
+      assistance: { ...view, state: "viewing" },
+      mode: "view",
+      websocket_url: "wss://desktop.example/",
+      password: "private",
+      expires_in_seconds: 60,
+    }),
+  );
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+  expect(post.mock.calls[1][0]).toBe(
+    "/api/v1/desktop-assistance/{assistance_id}/disconnect",
+  );
+  expect(viewers).toHaveLength(0);
 });

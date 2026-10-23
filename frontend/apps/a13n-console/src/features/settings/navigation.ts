@@ -5,15 +5,15 @@ import {
   ClipboardTextIcon,
   KeyIcon,
   StackIcon,
-  EnvelopeIcon,
   EyeIcon,
-  MonitorIcon,
+  DevicesIcon,
   GearSixIcon,
   SlidersIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
   UserIcon,
   UsersIcon,
+  WebhooksLogoIcon,
   type Icon,
 } from "@phosphor-icons/react";
 import { workspacePath } from "../../shared/paths";
@@ -67,7 +67,7 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       value: "sessions",
       label: "Login sessions",
       description: "Manage browsers signed in to your account.",
-      icon: MonitorIcon,
+      icon: DevicesIcon,
     },
     {
       value: "activity",
@@ -106,13 +106,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       permission: "admin",
     },
     {
-      value: "invitations",
-      label: "Invitations",
-      description: "Invite people and manage pending invitations.",
-      icon: EnvelopeIcon,
-      permission: "admin",
-    },
-    {
       value: "api-keys",
       label: "My API keys",
       description:
@@ -131,6 +124,15 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Service accounts",
       description: "Dedicated identities for applications and automation.",
       icon: RobotIcon,
+      permission: "admin",
+    },
+    {
+      value: "webhooks",
+      label: "Webhooks",
+      description:
+        "Send Run and Attempt lifecycle changes to your application.",
+      layout: "collection",
+      icon: WebhooksLogoIcon,
       permission: "admin",
     },
     {
@@ -154,12 +156,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Members",
       description: "Manage the people who belong to this organization.",
       icon: UsersIcon,
-    },
-    {
-      value: "invitations",
-      label: "Invitations",
-      description: "Invite people and manage pending invitations.",
-      icon: EnvelopeIcon,
     },
     {
       value: "workspaces",

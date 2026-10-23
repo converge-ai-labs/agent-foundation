@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any
@@ -79,7 +80,8 @@ class CodeActRunState:
         sequential_names: set[str],
         global_sequential: bool,
         restart: bool,
-    ) -> CodeActExecution:
+        finish: Callable[[CodeActExecution], Awaitable[Any]],
+    ) -> Any:
         if self._inline_lock.locked():
             raise RuntimeError("Another run_code call already owns the inline session")
         async with self._inline_lock:
@@ -97,10 +99,10 @@ class CodeActRunState:
                     sequential_names=sequential_names,
                     global_sequential=global_sequential,
                 )
+                return await finish(result)
             except BaseException:
                 await self.reset_inline()
                 raise
-            return result
 
     async def execute_program(
         self,

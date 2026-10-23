@@ -10,16 +10,11 @@ export function useAgentChoices() {
   return useQuery({
     queryKey: ["agent-choices", workspace.id],
     queryFn: async ({ signal }) => {
-      const [models, skills, connections] = await Promise.all([
-        allPages((cursor) =>
-          modelApi(client, workspace.id).models(
-            signal,
-            cursor,
-            "",
-            undefined,
-            true,
-          ),
-        ),
+      const api = modelApi(client, workspace.id);
+      const [models, providers, skills, connections] = await Promise.all([
+        allPages((cursor) => api.models(signal, cursor, "", undefined, true)),
+        // A model's provider names it in the picker and brands it where its own name does not.
+        allPages((cursor) => api.providers(signal, cursor)),
         allPages((cursor) =>
           client
             .workspace(workspace.id)
@@ -39,7 +34,7 @@ export function useAgentChoices() {
             .then(data),
         ),
       ]);
-      return { models, skills, connections };
+      return { models, providers, skills, connections };
     },
   });
 }

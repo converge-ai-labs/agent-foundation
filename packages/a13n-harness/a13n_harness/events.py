@@ -281,6 +281,7 @@ class SteeringInputEnqueuedPayload(_FirstPartyPayload):
     enqueue_id: str = Field(min_length=1, max_length=256)
     source: Literal["external", "async_subagent", "background_process"]
     references: tuple[str, ...] = Field(default=(), max_length=16)
+    handoff_requested: bool = False
 
     @field_validator("references")
     @classmethod
@@ -585,6 +586,12 @@ class _RunEventEmitter:
 
     async def emit(self, event: HarnessExtensionEvent) -> None:
         if self._closed:
+            from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
+
+            if _OWNED_TOOL_EXECUTION.get():
+                # Detached execution reports completion through its runtime;
+                # the original conversation stream is already terminal.
+                return
             raise RunError("The Harness event emitter is closed.", code="event_emitter_closed")
         if not isinstance(event, HarnessExtensionEvent):
             raise RunError("Harness extension event is invalid.", code="event_invalid")

@@ -213,6 +213,50 @@ def webui_command(
     )
 
 
+@cli.group("envd")
+def envd_group() -> None:
+    """Manage the native Envd installation without starting Harness UI."""
+
+
+@envd_group.command("update")
+@click.option("--executable", type=_PATH, help="Update this standalone executable instead of the configured runtime.")
+@click.option("--version", help="Exact native version; managed installations remain pinned to the client version.")
+@click.option("--check", is_flag=True, help="Inspect the selected update without installing.")
+@click.option("--force", is_flag=True, help="Reinstall the selected version.")
+@click.pass_context
+def envd_update_command(
+    ctx: click.Context, executable: Path | None, version: str | None, check: bool, force: bool
+) -> None:
+    """Update Envd without starting the App. Stop daemons using the installation first."""
+    from a13n_harness_ui.envd_update import update
+    from a13n_harness_ui.errors import HarnessUiError
+
+    if check and force:
+        raise click.UsageError("--check and --force cannot be combined.")
+    context = ctx.find_object(_CliContext)
+    assert context is not None
+    try:
+        asyncio.run(
+            update(
+                config_path=context.config_path,
+                data_root=context.data_root,
+                executable=executable,
+                version=version,
+                check=check,
+                force=force,
+            )
+        )
+    except KeyboardInterrupt:
+        click.echo("Envd update interrupted. Inspect the installation before retrying.", err=True)
+        raise click.exceptions.Exit(130) from None
+    except HarnessUiError as exc:
+        code = exc.details.get("returncode")
+        click.echo(f"Error: {exc}", err=True)
+        raise click.exceptions.Exit(code if isinstance(code, int) and code > 0 else 1) from exc
+    except OSError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 @cli.command("update")
 def update_command() -> None:
     """Update this uv-tool installation now, without starting the TUI or setup."""

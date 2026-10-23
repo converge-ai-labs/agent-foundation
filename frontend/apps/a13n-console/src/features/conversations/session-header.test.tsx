@@ -11,11 +11,13 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
+import { SessionUsage } from "./session-usage";
 import { SessionHeader } from "./session-header";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
   fixtureRun,
+  fixtureRunPage,
   fixtureRunAgent,
   fixtureThread,
   fixtureTimeline,
@@ -75,11 +77,13 @@ const usage = {
   runs: [
     {
       run_id: "run_1",
+      run_number: 1,
       thread_id: "thr_1",
       models: [model("small", 1, 1000, 800, "0.04")],
     },
     {
       run_id: "run_2",
+      run_number: 2,
       thread_id: "thr_1",
       models: [
         model("large", 1, 1000, 600, "0.20", [1.2, 48.6]),
@@ -95,7 +99,12 @@ const child = fixtureThread({
   origin_thread_id: "thr_1",
 });
 
+let contextRequests: URL[];
+let toolRequests: URL[];
+
 beforeEach(() => {
+  contextRequests = [];
+  toolRequests = [];
   labels = { "a13n.console": "debug" };
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = createClient({
@@ -103,16 +112,20 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/tool-executions")) {
+        toolRequests.push(url);
+        return Response.json({ items: [], next_cursor: null });
+      }
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/runs"))
-        return Response.json({
-          items: [fixtureRun({ id: "run_1" }), fixtureRun()],
-          next_cursor: null,
-        });
+        return Response.json(
+          fixtureRunPage([fixtureRun(), fixtureRun({ id: "run_1" })]),
+        );
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
-      if (url.pathname.endsWith("/usage/context"))
+      if (url.pathname.endsWith("/usage/context")) {
+        contextRequests.push(url);
         return Response.json({
           run_id: "run_2",
           record_id: "record",
@@ -120,6 +133,7 @@ beforeEach(() => {
           output_tokens: 2000,
           context_window_tokens: 200000,
         });
+      }
       if (url.pathname.endsWith("/usage")) return Response.json(usage);
       if (url.pathname.endsWith("/models"))
         return Response.json({
@@ -154,6 +168,24 @@ afterEach(() => {
   client.close();
 });
 
+it("opens retained tools for the exact current Thread without a Run filter", async () => {
+  const user = userEvent.setup();
+  show(
+    [fixtureThread(), child],
+    "/sessions/ses_1/threads/thr_child/runs/run_2",
+  );
+  expect(toolRequests).toHaveLength(0);
+  await user.click(
+    await screen.findByRole("button", { name: "Tool executions" }),
+  );
+  expect(await screen.findByText("No retained tool executions.")).toBeTruthy();
+  expect(toolRequests).toHaveLength(1);
+  expect(toolRequests[0].pathname).toBe(
+    "/api/v1/threads/thr_child/tool-executions",
+  );
+  expect(toolRequests[0].searchParams.has("run_id")).toBe(false);
+});
+
 function Location() {
   const { search } = useLocation();
   return <p>{`level:${search}`}</p>;
@@ -169,7 +201,7 @@ function show(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route
-            path="/sessions/:sessionId/threads/:threadId/runs/:runId"
+            path="/sessions/:sessionId/threads/:threadId/runs?/:runId?"
             element={
               <RunCollapseProvider>
                 <SessionHeader threads={threads} />
@@ -197,8 +229,8 @@ it("identifies the session and switches the level in the URL", async () => {
   expect(screen.getByRole("link", { name: /Release Bot/ })).toBeTruthy();
   // The identifier stays one action away instead of leading the header.
   expect(screen.queryByText("ses_1")).toBeNull();
-  expect(await screen.findByText("Thread")).toBeTruthy();
-  expect(screen.queryByText("Debug session · 2 runs")).toBeNull();
+  // How the session started reads the same at both levels.
+  expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   // The header reports the followed run's state; stopping belongs to the dock.
   expect(await screen.findByText("state.running")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -292,6 +324,8 @@ it("shows the session's spend and breaks it down by model and by run", async () 
   const dialog = await screen.findByRole("dialog", { name: "Session usage" });
   expect(await within(dialog).findByText("42k / 200k")).toBeTruthy();
   expect(within(dialog).getByText("21%")).toBeTruthy();
+  expect(contextRequests.at(-1)?.searchParams.get("run_id")).toBe("run_2");
+  expect(contextRequests.at(-1)?.searchParams.has("thread_id")).toBe(false);
   expect(screen.queryByRole("button", { name: /Context window:/ })).toBeNull();
   // Cached input is part of input, so the rate is weighted by input.
   expect(within(dialog).getByText("3k cached · 75.0% cache hit")).toBeTruthy();
@@ -321,6 +355,49 @@ it("shows the session's spend and breaks it down by model and by run", async () 
 
 it("keeps usage out of Chat", async () => {
   show([fixtureThread()], "/sessions/ses_1/threads/thr_1/runs/run_2?view=chat");
-  expect(await screen.findByText("Thread")).toBeTruthy();
+  expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Session usage/ })).toBeNull();
+});
+
+it("uses the latest run of the thread when no run is selected", async () => {
+  show([fixtureThread()], "/sessions/ses_1/threads/thr_1?view=debug");
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Session usage: $0.30" }));
+  await screen.findByText("42k / 200k");
+  expect(contextRequests.at(-1)?.searchParams.get("thread_id")).toBe("thr_1");
+  expect(contextRequests.at(-1)?.searchParams.has("run_id")).toBe(false);
+});
+
+it("numbers old usage rows directly without fetching any Run pages", async () => {
+  const requests: string[] = [];
+  client.close();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      const path = new URL((request as Request).url).pathname;
+      requests.push(path);
+      if (path.endsWith("/usage"))
+        return Response.json({
+          ...usage,
+          runs: [{ ...usage.runs[0], run_number: 42 }],
+        });
+      if (path.endsWith("/models"))
+        return Response.json({ items: [], next_cursor: null });
+      throw new Error(`Unexpected request ${path}`);
+    },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <SessionUsage sessionId="ses_1" threads={[fixtureThread()]} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await userEvent
+    .setup()
+    .click(await screen.findByRole("button", { name: "Session usage: $0.30" }));
+  expect(await screen.findByRole("link", { name: "Run 42" })).toBeTruthy();
+  expect(requests.some((path) => path.endsWith("/runs"))).toBe(false);
 });

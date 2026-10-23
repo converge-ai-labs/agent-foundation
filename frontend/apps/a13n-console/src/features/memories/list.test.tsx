@@ -135,20 +135,19 @@ it("lists memories with their kind and a file memory's size, and filters them", 
   const row = (await screen.findByText("Team handbook")).closest("tr")!;
   expect(within(row).getByText("File")).toBeTruthy();
   expect(within(row).getByText("PostgreSQL")).toBeTruthy();
-  expect(within(row).getByText("4 files")).toBeTruthy();
-  expect(within(row).getByText("3 KB")).toBeTruthy();
+  expect(within(row).getByText("4")).toBeTruthy();
+  expect(within(row).getByText("2.1")).toBeTruthy();
   // The provider keeps a record memory's records, so it has no counts.
   const record = screen.getByText("Team facts").closest("tr")!;
   expect(within(record).getByText("Record")).toBeTruthy();
   expect(await within(record).findByText("Mem0 (self-hosted)")).toBeTruthy();
-  expect(within(record).queryByText(/files?$/)).toBeNull();
-  expect(within(record).queryByText(/ KB$| B$/)).toBeNull();
+  expect(within(record).getAllByText("—")).toHaveLength(2);
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
   await user.click(await screen.findByRole("option", { name: "Record" }));
   await waitFor(() => expect(screen.queryByText("Team handbook")).toBeNull());
   expect(requests.at(-1)?.url.searchParams.get("kind")).toBe("record");
-  // A record memory's types are its providers', not PostgreSQL.
-  await user.click(screen.getByRole("combobox", { name: "Type" }));
+  // A record memory's backends are its providers, not PostgreSQL.
+  await user.click(screen.getByRole("combobox", { name: "Backend" }));
   expect(await screen.findByRole("option", { name: "Mem0 (self-hosted)" }));
   expect(screen.queryByRole("option", { name: "PostgreSQL" })).toBeNull();
   await user.keyboard("{Escape}");

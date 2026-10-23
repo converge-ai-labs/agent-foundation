@@ -41,6 +41,7 @@ beforeEach(() => {
   login = {
     session_id: "login-test",
     provider: "codex",
+    account_id: "acct-codex-default",
     method: "device",
     state: "waiting",
     verification_url: verificationUrl,
@@ -52,7 +53,10 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path.startsWith("/api/auth/accounts/"))
+      if (
+        path.startsWith("/api/auth/accounts/") ||
+        path.startsWith("/api/subscriptions/accounts/")
+      )
         return json({ usable: false, required_action: "login" });
       if (path === "/api/auth/logins" || path === "/api/auth/logins/login-test")
         return json(login);
@@ -205,7 +209,10 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
-      if (path.startsWith("/api/auth/accounts/"))
+      if (
+        path.startsWith("/api/auth/accounts/") ||
+        path.startsWith("/api/subscriptions/accounts/")
+      )
         return json({ usable: false, required_action: "login" });
       if (path.endsWith("/callback")) {
         completed(await request.json());

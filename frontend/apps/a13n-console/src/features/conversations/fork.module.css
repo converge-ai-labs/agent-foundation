@@ -57,9 +57,6 @@
   display: grid;
   gap: 8px;
 }
-.environment [data-slot="disclosure-surface"] {
-  background: transparent;
-}
 .warning {
   margin: 0;
   padding: 10px 12px;

@@ -16,19 +16,27 @@ Agent metadata (name, description, labels) belongs to the Agent head. Configurat
 
 `make_default=true` publishes the new default; use false for a candidate. Selecting an older base Revision is valid, but identify that base to the user and still use the head ETag you originally read. Setting a default does not edit the Revision. Metadata updates do not edit instructions or model settings. Labels are a replacement value.
 
-Models use keys. Skills and subagents use IDs and exact Revision IDs after validation. Connection tools select existing Connections. Platform tools are toolsets named by group (`agents`, `models`, `connections`, `skills`, `environment_templates`, `providers`, `execution`), off by default; each tool is one operation keyed by its MCP tool name, with its own `enabled` and `permission`. `inherit` allows reads and asks before writes. `builtin_skills=["platform-operations"]` independently enables these local instructions. A configuration change affects later runs, never the current run's frozen configuration or delegated authority.
+Models use keys. Skills and subagents use IDs and exact Revision IDs after validation. Connection tools select existing Connections. Platform tools are toolsets named by group (`agents`, `models`, `connections`, `skills`, `environment_templates`, `providers`, `execution`, `schedules`), off by default; each tool is one operation keyed by its MCP tool name, with its own `enabled` and `permission`. `inherit` allows reads and asks before writes. `builtin_skills=["platform-operations"]` independently enables these local instructions. A configuration change affects later runs, never the current run's frozen configuration or delegated authority.
 
 `memory` sets new-session defaults: `enabled` and `spaces[{name, space_id, access}]`, selecting existing workspace Memory Spaces with read or write access. The first accepted business run fills omitted session fields from its Agent Revision; the session then keeps those choices. Each Space owns its organization policy and model. `memory_mounts` selects standalone memories for new threads.
 
 ## Configure tool discovery
 
-`tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, and optionally `platform: true` for the enabled platform tools. Each source belongs to one group. Set `config.mode: native` for provider-native discovery, or `config.mode: proxy` for Harness proxy search and invocation (the default). Native configuration accepts `strategy: bm25`, `strategy: regex`, or omitted/null for the provider default. Proxy configuration accepts only control names and discovery limits. The calling model's actual profile is checked at execution.
+`tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, local `capabilities` (`environment`, `web`), and optionally `platform: true`. Each source belongs to one group. Omit `config.mode` or set it to `proxy`; control names and discovery limits are configurable. The model uses fixed discovery, description, invocation, tool-list, and group-list controls. It can enumerate the complete directory with `list_tools(detail="full")` and `next_offset` without promoting member schemas into model requests.
 
-Grouped connections use the group's discovery mode while retaining their saved `defer_loading` setting. Outside a group, MCP `defer_loading: true` exposes `load_capability` to load the connection's tools together. Keep source selections and permissions intact when changing presentation. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan.
+Ungrouped sources remain direct. Grouping preserves source selection, permissions, credentials, and execution checks; it does not activate disabled capabilities. `client_tools` keep their flat external-call contract. A Run override replaces the entire `tool_search` block; `groups: {}` disables grouping. Each child Agent uses its own Revision's plan.
+
+Connection selections configure execution through `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored.
 
 ## Configure desktop coordinates
 
 The Computer toolset requires explicit enablement and an authorized desktop Environment. `toolsets.computer.config.coordinate_space` defaults to `pixels`. Select `normalized_1000` only when the chosen model supplies relative positions on a 0–1000 scale for each axis. The tool converts pointer positions using the referenced screenshot; model instructions must not ask the model to multiply by image dimensions. Scroll distances retain their declared units. Do not infer or change this setting from the Environment Provider or template. Check the deployed toolset catalog for supported configuration before creating a Revision.
+
+## Execution policy
+
+`execution.environment` sets ordinary command variables, not secrets. Thread and Run maps override per key; an empty string is an explicit empty value. Thread PATCH replaces the whole supplied map, with null/empty clearing that layer. Accepted Runs freeze the overlay and inject it at command dispatch above recipe defaults.
+
+`execution` also sets sparse control defaults for new Runs: `tools.mode` is `inline` or `auto`, `tools.foreground_wait_seconds` is 0–300, and `steering` is `boundary` or `immediate`. Omitted/null leaves inherit the deployment defaults (`auto`, 5 seconds unless configured otherwise, `immediate`). Thread and single-Run choices override each leaf independently. Publishing a Revision affects future ordinary Runs; accepted Runs and their automatic continuations keep their frozen policy. Runtime capacity, result retention and shutdown limits remain deployment settings.
 
 ## Read only the needed configuration
 

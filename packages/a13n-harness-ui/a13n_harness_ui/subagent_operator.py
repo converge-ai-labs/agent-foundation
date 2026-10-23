@@ -19,6 +19,7 @@ from uuid import uuid4
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+    DeferredToolRequests,
     DeferredToolResume,
     HarnessRunResult,
     HarnessRunResultEvent,
@@ -75,7 +76,7 @@ from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import ToolDenied
 from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -130,6 +131,7 @@ from a13n_harness_ui.surfaces import (
     SurfaceModel,
 )
 from a13n_harness_ui.thread_files import ThreadFiles
+from a13n_harness_ui.tool_executions import ToolExecutions
 from a13n_harness_ui.tool_images import ToolImageCollector
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
@@ -213,6 +215,15 @@ class _PreparedSegment:
     display: CompactChildDisplay
 
 
+@dataclass(frozen=True, slots=True)
+class _CompletionContinuation:
+    execution_id: str
+    scope: ParentRunScope
+    identity: AgentIdentityRef
+    usage_limits: UsageLimits | None
+    configuration_version: int
+
+
 class _SubagentRequestError(RunCoordinationError):
     """A caller can correct the requested child operation without ending its Run."""
 
@@ -247,7 +258,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         restart_coordinator: GracefulRestart | None = None,
         thread_files: ThreadFiles | None = None,
         mcp_apps: AppSnapshots | None = None,
+        tool_executions: ToolExecutions | None = None,
     ) -> None:
+        self._tool_executions = tool_executions
         self._thread_files = thread_files
         self._mcp_apps = mcp_apps
         self._observation = observation or UiObservation()
@@ -264,6 +277,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._lock = Lock()
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
         self._active: dict[str, _ActiveSegment] = {}
+        self._completion_continuations: dict[str, _CompletionContinuation] = {}
         self._execution_identities: OrderedDict[tuple[str, ObjectRef], tuple[str, str]] = OrderedDict()
         self._changed = Event()
         self._task_group_context: Any | None = None
@@ -729,6 +743,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent_thread_id=scope.thread_id,
             execution_id=request.execution_id,
             message=request.message,
+            immediate=request.immediate,
         )
 
     async def steer_execution(
@@ -736,7 +751,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         *,
         parent_thread_id: str,
         execution_id: str,
-        message: str,
+        message: RunInputValue,
+        immediate: bool = False,
     ) -> SubagentSteerResult:
         """Steer a locally owned segment scoped to its saved parent relationship."""
 
@@ -747,7 +763,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             if self._restart is not None:
                 self._restart.require_input()
-            enqueue_id = await active.stream.steer(message)
+            enqueue_id = await active.stream.steer(message, immediate=immediate, best_effort=True)
         except Exception:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
         return SubagentSteerResult(
@@ -787,6 +803,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 accepted=False,
                 status=head.status,
             )
+        if self._tool_executions is not None:
+            self._tool_executions.suppress(head.child_thread_id)
         if self._restart is not None:
             self._restart.active.pop(head.child_thread_id, None)
             self._restart.signal()
@@ -815,6 +833,67 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The retained child execution is not resumable from this roster edge.",
                 code="subagent_resume_incompatible",
             )
+        identity = derive_child_identity(
+            scope.instance.identity, plan.child.definition.definition_id, plan.child.declaration.identity
+        )
+        return await self._resume_child(
+            scope=scope,
+            previous=previous,
+            input=plan.context.input,
+            identity=identity,
+            usage_limits=plan.usage_limits,
+        )
+
+    async def deliver_tool_completion(self, thread_id: str, prompt: RunInputValue) -> bool:
+        """Continue the exact child lane without admitting a root or impersonating a parent Run."""
+        retained = self._completion_continuations.get(thread_id)
+        if retained is None or not self._accepting:
+            return False
+        previous = await self._require_execution_for_parent(retained.scope.thread_id, retained.execution_id)
+        active = await self._active_segment(previous)
+        if active is not None:
+            result = await self.steer_execution(
+                parent_thread_id=previous.parent_thread_id,
+                execution_id=previous.execution_id,
+                message=prompt,
+                immediate=False,
+            )
+            return result.accepted
+        if not previous.resumable:
+            return False
+        parent = await self._store.threads.get(previous.parent_thread_id)
+        child = await self._require_child_thread(previous)
+        source = await self._configurations.current()
+        # Automatic continuation uses the admitted delegation ceiling. Changed
+        # authority requires an explicit parent resume with a newly resolved plan.
+        if (
+            parent is None
+            or parent.archived
+            or parent.configuration.version != retained.scope.composition.thread_configuration_version
+            or child.configuration.version != retained.configuration_version
+            or source is None
+            or source.source_digest != retained.scope.composition.generation_digest
+        ):
+            return False
+        await self._resume_child(
+            scope=retained.scope,
+            previous=previous,
+            input=prompt,
+            identity=retained.identity,
+            usage_limits=retained.usage_limits,
+        )
+        return True
+
+    async def _resume_child(
+        self,
+        *,
+        scope: ParentRunScope,
+        previous: ChildExecutionHead,
+        input: RunInputValue,
+        identity: AgentIdentityRef,
+        usage_limits: UsageLimits | None,
+    ) -> AsyncExecutionView:
+        subagent_name, _ = await self._execution_identity(previous)
         checkpoint = await self._read_checkpoint(previous)
         if not checkpoint.terminal or checkpoint.deferred_requests is not None:
             raise _SubagentRequestError(
@@ -843,19 +922,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
         environment = await self._environments.prepare(published.value)
         execution_id = _public_id("execution")
         agent_instance_id = _public_id("agent")
-        identity = derive_child_identity(
-            scope.instance.identity,
-            reconstructed.executable.definition.definition_id,
-            plan.child.declaration.identity,
-        )
-        usage_limits = intersect_usage_limits(
-            plan.usage_limits,
-            reconstructed.executable.definition_usage_limits(),
-        )
+        usage_limits = intersect_usage_limits(usage_limits, reconstructed.executable.definition_usage_limits())
         accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
         stream = self._new_stream(
             reconstructed=reconstructed,
-            input=plan.context.input,
+            input=input,
             deferred_resume=accepted,
             usage_limits=usage_limits,
             identity=identity,
@@ -876,7 +947,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             scope=scope,
             composition=published.value,
             reconstructed=reconstructed,
-            input=plan.context.input,
+            input=input,
             usage_limits=usage_limits,
             identity=identity,
             state=checkpoint.harness_state,
@@ -1004,6 +1075,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         resume_usage: bool = False,
     ) -> HarnessRunStream[Any]:
         bindings = RunBindings(
+            tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
+            codeact_state=self._tool_executions.state(state.thread_id) if self._tool_executions is not None else None,
             configuration=reconstructed.run_configuration,
             instance=AgentInstanceContext(
                 identity=identity,
@@ -1034,6 +1107,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
 
     async def _start_segment(self, prepared: _PreparedSegment) -> None:
+        self._completion_continuations[prepared.state.thread_id] = _CompletionContinuation(
+            execution_id=prepared.head.execution_id,
+            scope=prepared.scope,
+            identity=prepared.identity,
+            usage_limits=prepared.usage_limits,
+            configuration_version=prepared.composition.thread_configuration_version,
+        )
         done = Event()
         active = _ActiveSegment(
             execution_id=prepared.head.execution_id,
@@ -1197,6 +1277,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             with CancelScope(shield=True):
                 async with self._lock:
                     self._active.pop(current.head.execution_id, None)
+                    if self._tool_executions is not None:
+                        self._tool_executions.retry(current.state.thread_id)
                     if self._restart is not None:
                         self._restart.finished(current.state.thread_id)
                     active.done.set()
@@ -1297,7 +1379,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
                         image_events = await tool_images.observe(item)
                         app_events = (
-                            await self._mcp_apps.observe(item, thread_id=prepared.state.thread_id, run_id=stream.run_id)
+                            await self._mcp_apps.observe(
+                                item, thread_id=prepared.state.thread_id, run_id=stream.run_id, context=stream.context
+                            )
                             if self._mcp_apps is not None
                             else ()
                         )
@@ -1317,7 +1401,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_error = exc
 
         if self._mcp_apps is not None:
-            self._mcp_apps.connections.captures.discard_run(prepared.stream.run_id)
+            self._mcp_apps.finish_run(prepared.stream.context)
         finalization_error: BaseException | None = None
         with CancelScope(shield=True):
             try:
@@ -2060,11 +2144,11 @@ def _async_view(
 def _deny_deferred(requests: DeferredToolRequests) -> DeferredToolResume:
     calls: dict[str, Any] = {
         request.tool_call_id: ToolFailed("Deferred interaction is unavailable to an asynchronous child execution.")
-        for request in requests.calls
+        for request in (entry.target_call for entry in requests.calls)
     }
     approvals: dict[str, bool | DeferredToolApprovalResult] = {
         request.tool_call_id: ToolDenied("Approval is unavailable to an asynchronous child execution.")
-        for request in requests.approvals
+        for request in (entry.target_call for entry in requests.approvals)
     }
     return DeferredToolResume(
         requests=requests,

@@ -10,7 +10,7 @@ import ipaddress
 import json
 import os
 import secrets
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -118,7 +118,16 @@ from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResp
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
+from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
+from a13n_harness_ui.model_accounts.provider_usage import CopilotUsage
+from a13n_harness_ui.model_accounts.subscriptions import (
+    SubscriptionAccountCreate,
+    SubscriptionAccountUpdate,
+    SubscriptionCatalog,
+)
+from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest, ResetResult
+from a13n_harness_ui.model_accounts.usage_cache import UsageSnapshot
 from a13n_harness_ui.model_authoring import (
     ModelChoice,
     ModelChoices,
@@ -154,6 +163,7 @@ from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, DraftFrame
 from a13n_harness_ui.sharing import forbidden
 from a13n_harness_ui.storage.shares import unavailable
 from a13n_harness_ui.storage.usage import ThreadUsageView
+from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.surfaces import (
     ChildControlResult,
     ChildExecutionPage,
@@ -186,6 +196,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -542,7 +553,7 @@ def create_webui(
     file_transfers = FileTransfers()
 
     @asynccontextmanager
-    async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
         nonlocal owner, allowed_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             source = await opened.current_configuration()
@@ -1530,6 +1541,56 @@ def create_webui(
             raise HarnessUiError("Environment preflight was cancelled.", code="preflight_cancelled")
         return readiness
 
+    @server.get("/api/subscriptions/copilot/usage", response_model=CopilotUsage)
+    async def copilot_usage() -> CopilotUsage:
+        return await app().copilot_usage()
+
+    @server.get("/api/subscriptions", response_model=SubscriptionCatalog)
+    async def subscriptions() -> SubscriptionCatalog:
+        return await app().subscriptions()
+
+    @server.get("/api/subscriptions/accounts/{account_id}", response_model=AccountProjection)
+    async def subscription_account(account_id: str) -> AccountProjection:
+        return await app().inspect_subscription_account(account_id)
+
+    @server.post(
+        "/api/subscriptions/accounts",
+        response_model=SubscriptionAccount,
+        openapi_extra=_body(SubscriptionAccountCreate),
+    )
+    async def create_subscription_account(request: Request) -> SubscriptionAccount:
+        return await app().create_subscription_account(await _document(request, SubscriptionAccountCreate))
+
+    @server.patch(
+        "/api/subscriptions/accounts/{account_id}",
+        response_model=SubscriptionAccount,
+        openapi_extra=_body(SubscriptionAccountUpdate),
+    )
+    async def update_subscription_account(account_id: str, request: Request) -> SubscriptionAccount:
+        return await app().update_subscription_account(account_id, await _document(request, SubscriptionAccountUpdate))
+
+    @server.delete("/api/subscriptions/accounts/{account_id}")
+    async def delete_subscription_account(account_id: str) -> None:
+        await app().delete_subscription_account(account_id)
+
+    @server.post("/api/subscriptions/accounts/{account_id}/logout", response_model=bool)
+    async def logout_subscription_account(account_id: str) -> bool:
+        return await app().logout_subscription_account(account_id)
+
+    @server.post("/api/subscriptions/accounts/{account_id}/refresh", response_model=UsageSnapshot)
+    async def refresh_subscription_usage(account_id: str) -> UsageSnapshot:
+        return await app().refresh_subscription_usage(account_id)
+
+    @server.get("/api/subscriptions/accounts/{account_id}/reset-vouchers", response_model=CodexUsage)
+    async def subscription_reset_vouchers(account_id: str) -> CodexUsage:
+        return await app().codex_usage(account_id)
+
+    @server.post(
+        "/api/subscriptions/accounts/{account_id}/reset", response_model=ResetResult, openapi_extra=_body(ResetRequest)
+    )
+    async def redeem_subscription_reset(account_id: str, request: Request) -> ResetResult:
+        return await app().redeem_codex_reset(await _document(request, ResetRequest), account_id)
+
     @server.get("/api/auth/accounts/{provider}", response_model=AccountProjection)
     async def account(provider: Provider) -> AccountProjection:
         return await app().inspect_model_account(provider)
@@ -1697,6 +1758,10 @@ def create_webui(
     async def context_usage(thread_id: str) -> ContextUsageView:
         return await app().context_usage(thread_id)
 
+    @server.get("/api/usage", response_model=UsageAnalyticsView)
+    async def usage_analytics(query: Annotated[UsageQuery, Query()]) -> UsageAnalyticsView:
+        return await app().usage_analytics(query)
+
     @server.get("/api/threads/{thread_id}/usage", response_model=ThreadUsageView)
     async def usage(thread_id: str) -> ThreadUsageView:
         return await app().thread_usage(thread_id=thread_id)
@@ -1841,6 +1906,16 @@ def create_webui(
         return await app().steer_child_execution(
             parent_thread_id=thread_id, execution_id=execution_id, message=body.prompt
         )
+
+    @server.get("/api/threads/{thread_id}/tool-executions", response_model=tuple[ToolExecutionView, ...])
+    async def tool_executions(
+        thread_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)
+    ) -> tuple[ToolExecutionView, ...]:
+        return await app().tool_executions(thread_id, offset=offset, limit=limit)
+
+    @server.post("/api/threads/{thread_id}/tool-executions/{execution_id}/cancel", response_model=ToolExecutionView)
+    async def cancel_tool_execution(thread_id: str, execution_id: str) -> ToolExecutionView:
+        return await app().cancel_tool_execution(thread_id, execution_id)
 
     @server.post("/api/threads/{thread_id}/children/{execution_id}/cancel", response_model=ChildControlResult)
     async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:
@@ -2394,6 +2469,7 @@ def create_webui(
             "settings/connections",
             "archived",
             "memory",
+            "usage",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
         recognized = recognized or (
             segments[0] == "share"

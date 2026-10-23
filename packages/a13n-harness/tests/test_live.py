@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -67,6 +67,7 @@ from pydantic_ai.realtime.codec import (
     ToolResult,
     TruncateOutput,
 )
+from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, RealtimeFrame
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
@@ -78,11 +79,17 @@ class _Connection(RealtimeConnection):
     def __init__(self) -> None:
         self.events: asyncio.Queue[RealtimeCodecEvent] = asyncio.Queue()
         self.sent: asyncio.Queue[RealtimeInput] = asyncio.Queue()
+        self.lifecycle = InferredLifecycle()
 
-    async def send(self, content: RealtimeInput) -> None:
-        await self.sent.put(content)
+    async def send(self, content: RealtimeInput) -> list[LifecycleEvent]:
+        with self.lifecycle.sending(content):
+            await self.sent.put(content)
+        return self.lifecycle.take_pending()
 
-    async def __aiter__(self) -> AsyncIterator[RealtimeCodecEvent]:
+    def frames(self) -> AsyncIterator[RealtimeFrame]:
+        return self.lifecycle.frames(self._events())
+
+    async def _events(self) -> AsyncIterator[RealtimeCodecEvent]:
         while True:
             yield await self.events.get()
 
@@ -120,7 +127,7 @@ class _Model(RealtimeModel):
         messages: Sequence[ModelMessage],
         model_settings: RealtimeModelSettings | None,
         model_request_parameters: ModelRequestParameters,
-    ) -> AsyncIterator[RealtimeConnection]:
+    ) -> AsyncGenerator[RealtimeConnection]:
         self.messages = messages
         self.parameters = model_request_parameters
         self.opened = True

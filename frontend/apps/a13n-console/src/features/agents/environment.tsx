@@ -5,6 +5,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
+import { OptionsRefresh } from "../../shared/forms/options-refresh";
 import { Section } from "../../shared/page";
 import { environmentApi, environmentTemplates } from "../environments/api";
 import { useEnvironmentTypes } from "../environments/providers";
@@ -23,7 +24,7 @@ export function AgentEnvironment({
 }) {
   const { t } = useTranslation();
   const client = useClient();
-  const { workspace } = useWorkspace();
+  const { workspace, basePath } = useWorkspace();
   const types = useEnvironmentTypes();
   const providers = useQuery({
     queryKey: ["environment-provider-options", workspace.id],
@@ -63,21 +64,26 @@ export function AgentEnvironment({
   });
   return (
     <Section
-      title={t("Default runtime environment (optional)")}
+      title={t("Environment")}
+      titleActions={
+        <OptionsRefresh
+          onRefresh={() =>
+            Promise.all([
+              templates.refetch({ throwOnError: true }),
+              providers.refetch({ throwOnError: true }),
+              types.refetch({ throwOnError: true }),
+            ])
+          }
+        />
+      }
+      titleLink={{ href: `${basePath}/environments`, label: t("Environments") }}
       description={t(
-        "Choose a template for file access and command execution. Optional for model-only conversations; you can also specify an environment when starting a session.",
+        "Optional. When a session has no environment, its next run creates one from this template. Saving the agent does not start one.",
       )}
     >
       <ChoiceField
-        label={t("Default runtime environment (optional)")}
+        label={t("Environment")}
         hideLabel
-        description={
-          value
-            ? t(
-                "Used when the session has no working environment. Saving the Agent does not start an environment.",
-              )
-            : undefined
-        }
         disabled={disabled}
         readOnly={readOnly}
         value={value ?? "none"}
@@ -87,7 +93,7 @@ export function AgentEnvironment({
         options={[
           {
             value: "none",
-            label: t("Do not create an environment automatically"),
+            label: t("None"),
           },
           ...groups.flatMap((group) =>
             choices

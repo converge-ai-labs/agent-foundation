@@ -32,6 +32,16 @@ flowchart TB
 
 Markdown opens in **Preview**; **Text** switches to the editor. Preview includes unsaved edits. **Add to chat** attaches selected source lines, or the complete file when nothing is selected, without sending. Agent links in the form `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` open the Files drawer. Bare paths and Files API URLs do not; external links open separately.
 
+## Tool executions and immediate steering
+
+While a Run is active, **Steer** interrupts primary model generation or releases supported tool waits by default. Tool review and validation finish first; the current batch returns results or retained-execution receipts, or suspends for approval, before the Agent continues with your guidance. Supported tool calls keep running once under their original ownership. Acceptance confirms that guidance was queued, not that the Agent has already incorporated it. Root and child steering use the same global `input.steering_mode`; select `queued` in configuration to wait for the next safe boundary instead. The composer needs no additional mode control.
+
+Harness UI always enables best-effort delivery for immediate steering, with no separate setting. If an unsupported tool is active, the message is accepted into the ordinary queue immediately and reaches the model at a normal execution boundary. When native steering is not ready during startup or recovery, Harness waits up to five seconds before acceptance. A readiness timeout or a Run that stops first rejects the request. Acceptance confirms receipt, not that the model has already read the message.
+
+Open **Work → Tools** to inspect retained tool executions, view their originating Run and call, page through records, or cancel active work. The panel reads status without consuming results. The Agent retrieves results through `tool_execution_result` or `tool_execution_wait`; completion hints and subsequent input include current execution status. [Automatic background execution](configuration.md#built-in-tools-and-subagents) is opt-in for generic tools; process-backed Shell automatically yields after the configured foreground wait in either mode. Immediate steering can release foreground waits earlier. Shell processes remain in their separate process view.
+
+**Stop** cancels the conversation and suppresses automatic completion wake until new user input. It does not cancel every retained tool; use the execution's **Cancel** action for that. Cancellation acceptance is not proof of remote rollback. Records and results are process-local and expire under bounded retention; restarting the App makes old references unavailable.
+
 ## Organize Projects and work in a conversation
 
 1. Open **Home** or a Project’s **+** to start a draft. Select a Project when the Agent needs its server directories.
@@ -58,6 +68,14 @@ Saved history stays visible while replacement history loads. Live output is prov
 Expand **Explored**, Shell, browsing or **File changes** to inspect grouped activity, arguments, results and observed edit diffs. Failures and missing results remain visible when collapsed; **Awaiting result** is not success. Older omitted content remains unavailable, and **Requested replacement** is not an applied diff. **Open on host** opens an absolute server/container path, not an Agent Environment path. It preserves dirty buffers; current disk content may differ from the recorded content.
 
 Open **Details** for the root operation, child executions, tasks, notes, usage and configuration. Execution, continuation saving and Environment cleanup report separate outcomes. Child controls target the exact parent execution; saved results are paged, while activity previews are bounded. Applying Project defaults requires a reviewed before/after preview. Competing changes retain your edits and require fresh review.
+
+### Review token usage and estimated cost
+
+Open **Usage** from the chart icon in the sidebar header, just left of the collapse button. Use a Project's **View usage** menu action or **Details → Usage → Open analytics** to start with that scope selected.
+
+Choose the last 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model. The summary and daily chart cover all matching records. Switch the breakdown between Projects, Threads, and models, sort by tokens or cost, and select a row to narrow the view. Filters stay in the URL. Use **Refresh** to read newly saved usage; the page does not update continuously.
+
+Totals include retained archived conversations, Memory, Live, child agents, auxiliary model calls, and Coordinator workers. Project attribution follows each root Thread's current Project. Costs are recorded model USD estimates: **—** means unknown, **$0** means a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not additional tokens. Provider receipts remain in Thread details. Coverage begins with persisted observations; older unrecorded consumption is unavailable. Guest sharing links do not grant access to analytics.
 
 ### Shared drafts
 

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, BinaryIO, Literal
 
+from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
 from anyio import CancelScope, Lock, to_thread
 from pydantic import Field, model_validator
 
@@ -229,6 +230,7 @@ def _expect(path: Path, revision: str | None) -> FileEntry | None:
 
 def _open_stream(request: FileReadRequest) -> FileStream:
     path = _path(request.path).resolve(strict=True)
+    check_local_file_read(path)
     entry = _entry(path)
     if entry.kind != "file":
         raise _error("type_invalid", "Only regular files support content operations.")

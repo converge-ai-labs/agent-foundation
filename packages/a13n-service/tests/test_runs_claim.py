@@ -1,6 +1,7 @@
 """Batch claims retain ownership, atomic publication and bounded database work."""
 
 import asyncio
+import base64
 import importlib
 import logging
 from collections.abc import Iterator
@@ -69,7 +70,7 @@ async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_k
                 "name": "Claims",
                 "url": "http://127.0.0.1:9/hook",
                 "kinds": ["run.running", "run_attempt.leased"],
-                "signing_secret": "whsec_batch_claim_signing_secret",
+                "signing_secret": "whsec_" + base64.b64encode(b"batch claim signing secret 32by!").decode(),
             },
         )
         assert response.status_code == 201, response.text

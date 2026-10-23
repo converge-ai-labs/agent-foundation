@@ -1,6 +1,8 @@
 """Runloop execution implementation."""
 
 import shlex
+from collections.abc import AsyncIterator
+from typing import BinaryIO
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
@@ -8,6 +10,7 @@ from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeExecution
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.http import decode_response
+from a13n_harness.providers.environment.native.transfers import CHUNK_BYTES, multipart_file
 from a13n_harness.providers.environment.runloop.shared import (
     Execution,
     RunloopEnvironmentConfiguration,
@@ -24,6 +27,30 @@ class RunloopExecution(RunloopReference, NativeExecution[RunloopEnvironmentConfi
         if target.status != "running":
             raise failure(self.provider_key, "provider_target_stopped", Category.CONFLICT)
         await self.open_operations(self.execute, target.id, execution_id)
+
+    async def read_stream(self, path: str) -> AsyncIterator[bytes]:
+        assert self.target
+        async with self.transport().stream(
+            "POST",
+            f"/v1/devboxes/{self.target.target_id}/download_file",
+            body={"path": path},
+            headers={"Accept": "application/octet-stream"},
+            mutation=False,
+        ) as response:
+            async for chunk in response.aiter_bytes(CHUNK_BYTES):
+                yield chunk
+
+    async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None:
+        del mode  # Existing guest-created candidate retains its permissions.
+        assert self.target
+        content_type, content = multipart_file(path, source)
+        async with self.transport().stream(
+            "POST",
+            f"/v1/devboxes/{self.target.target_id}/upload_file",
+            headers={"Content-Type": content_type},
+            content=content,
+        ):
+            pass
 
     async def execute(self, argv: list[str], timeout: float) -> str:
         assert self.target

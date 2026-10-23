@@ -5,7 +5,7 @@ address pinning. Native transports and operator-configured proxies own resolutio
 The URL and TLS identity are never rewritten.
 """
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import anyio
@@ -50,7 +50,7 @@ async def open_http(
     max_bytes: int,
     before_request: Callable[[httpx2.Request], Awaitable[None]] | None = None,
     after_response: Callable[[httpx2.Response], Awaitable[None]] | None = None,
-) -> AsyncIterator[httpx2.AsyncClient]:
+) -> AsyncGenerator[httpx2.AsyncClient]:
     async def check_request(request: httpx2.Request) -> None:
         await policy.validate(str(request.url))
         if before_request is not None:

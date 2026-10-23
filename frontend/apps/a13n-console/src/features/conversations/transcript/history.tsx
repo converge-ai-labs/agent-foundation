@@ -11,6 +11,8 @@ import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { runExecution } from "../execution";
 import { isOmitted } from "../display";
+import { useRunHistory } from "../run-history";
+import { EarlierContent } from "./earlier-content";
 import { presentItems } from "../projection";
 import { StoredContents } from "../stored-content";
 import { runTimeline } from "../timeline";
@@ -200,6 +202,7 @@ export function HistoryTranscript({
           thread={thread}
           level={level}
           jumpToDock={jumpToDock}
+          preservePosition={preservePosition}
         />
       ))}
     </>
@@ -235,11 +238,13 @@ function HistoricalRun({
   thread,
   level,
   jumpToDock,
+  preservePosition,
 }: {
   runId: string;
   thread: Schema["ThreadView"];
   level: ViewLevel;
   jumpToDock: () => void;
+  preservePosition: () => () => void;
 }) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
@@ -248,7 +253,8 @@ function HistoricalRun({
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
   const own = useOwnThread(runQuery.data, thread);
   const agent = useAgent(runQuery.data?.agent_id);
-  const retained = useQuery(queries.items(runId));
+  const history = useRunHistory(runId);
+  const retained = history.read;
   const attempts = useQuery({
     ...queries.attempts(runId),
     enabled: level === "debug",
@@ -256,6 +262,7 @@ function HistoricalRun({
   });
   const { number } = useThreadRuns(
     level === "debug" ? (runQuery.data?.thread_id ?? "") : "",
+    runId,
   );
   const run = runQuery.data;
   const timeline = useMemo(() => {
@@ -270,7 +277,9 @@ function HistoricalRun({
         (item) => isOmitted(item.content) || item.content.incomplete === true,
       )
         ? "partial"
-        : "complete",
+        : (items[0]?.ordinal ?? 1) > 1
+          ? "window"
+          : "complete",
     });
   }, [run, retained.data, attempts.data]);
   const reload = () => {
@@ -290,6 +299,11 @@ function HistoricalRun({
     );
   return (
     <StoredContents runId={runId} items={retained.data.items}>
+      <EarlierContent
+        history={history}
+        first={retained.data.items[0]?.ordinal ?? 1}
+        preservePosition={preservePosition}
+      />
       {level === "debug" ? (
         <DebugRunSection
           run={run}

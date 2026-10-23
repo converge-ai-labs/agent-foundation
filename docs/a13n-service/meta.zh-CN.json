@@ -12,6 +12,7 @@
     "---构建 agent---",
     "agent-composer",
     "agents-and-runs",
+    "schedules",
     "models",
     "tools",
     "skills",
@@ -28,6 +29,7 @@
     "configuration",
     "operations",
     "monitoring",
+    "environment-monitoring",
     "http",
     "configuration-reference",
     "api-reference"

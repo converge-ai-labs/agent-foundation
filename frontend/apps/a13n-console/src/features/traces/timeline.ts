@@ -1,16 +1,16 @@
-import type { Schema } from "../../shared/api";
+import type { Observation } from "./overview";
 export interface TimelineRow {
-  observation: Schema["Span"];
+  observation: Observation;
   depth: number;
   /** Children placed directly beneath this row in the loaded call tree. */
   childCount: number;
 }
 /** Preserve parent topology, including orphaned or cyclic backend observations, exactly once. */
 export function observationRows(
-  observations: readonly Schema["Span"][],
+  observations: readonly Observation[],
 ): TimelineRow[] {
   const ids = new Set(observations.map((item) => item.id)),
-    children = new Map<string, Schema["Span"][]>();
+    children = new Map<string, Observation[]>();
   const ordered = [...observations].sort(
     (a, b) =>
       a.started_at.localeCompare(b.started_at) || a.id.localeCompare(b.id),

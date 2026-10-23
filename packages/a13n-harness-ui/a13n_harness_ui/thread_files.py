@@ -10,7 +10,7 @@ import re
 import shutil
 import stat
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -158,7 +158,10 @@ def _directory(root: Path, parts: tuple[str, ...], *, create: bool = False) -> I
 
 @contextmanager
 def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[BinaryIO]:
+    from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
+
     path, descriptor = directory
+    check_local_file_read(path / name)
     if descriptor is None:
         target = path / name
         if target.is_symlink() or not target.is_file():
@@ -183,6 +186,13 @@ def _open_file(directory: tuple[Path, int | None], name: str) -> Iterator[Binary
 def _read_file(directory: tuple[Path, int | None], name: str, limit: int) -> bytes:
     with _open_file(directory, name) as stream:
         return stream.read(limit)
+
+
+def _copy_file(source: str, destination: str) -> str:
+    from a13n_harness.providers.environment.direct_local.protected_files import check_local_file_read
+
+    check_local_file_read(Path(source))
+    return shutil.copy2(source, destination)
 
 
 def _write_file(directory: tuple[Path, int | None], name: str, data: bytes) -> None:
@@ -238,7 +248,7 @@ class ThreadFiles:
             return await to_thread.run_sync(self._touch, thread_id)
 
     @asynccontextmanager
-    async def fork(self, source_id: str, destination_id: str) -> AsyncIterator[None]:
+    async def fork(self, source_id: str, destination_id: str) -> AsyncGenerator[None]:
         """Copy owned files before publishing the destination Thread.
 
         Keep scratch protected from pruning. Preserve symlinks as links rather
@@ -248,7 +258,11 @@ class ThreadFiles:
         destination = self.directory(destination_id)
         await to_thread.run_sync(lambda: destination.mkdir())
         try:
-            await to_thread.run_sync(lambda: shutil.copytree(source, destination, symlinks=True, dirs_exist_ok=True))
+            await to_thread.run_sync(
+                lambda: shutil.copytree(
+                    source, destination, symlinks=True, dirs_exist_ok=True, copy_function=_copy_file
+                )
+            )
             yield
         except BaseException:
             with CancelScope(shield=True):

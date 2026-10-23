@@ -157,6 +157,7 @@ class SubagentSteerRequest(BaseModel):
 
     execution_id: str = Field(min_length=1, max_length=256)
     message: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
+    immediate: bool = False
 
 
 class SubagentCancelRequest(BaseModel):

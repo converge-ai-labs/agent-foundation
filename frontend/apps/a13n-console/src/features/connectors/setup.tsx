@@ -10,6 +10,7 @@ import { FormActions } from "../../shared/forms";
 import { SchemaFields, withSchemaValues } from "../../shared/forms";
 import { startBrowserAuthorization } from "../connections/authorization-context";
 import styles from "../../shared/shared.module.css";
+import local from "./connectors.module.css";
 import { jsonObject, validateSettings } from "../../shared/forms";
 import { ConnectorToolPicker, MAX_TOOLS } from "./tool-picker";
 
@@ -129,14 +130,33 @@ export function ConnectionSetup({
       void cache.invalidateQueries({ queryKey: ["connections"] });
     },
   });
+  // Composio auth configs created after this form opened appear on refresh.
+  const refresh = (
+    <Button
+      type="button"
+      variant="outline"
+      loading={definition.isFetching}
+      disabled={launch.isPending}
+      onClick={() => void definition.refetch()}
+    >
+      {t("Refresh configurations")}
+    </Button>
+  );
   return (
     <div className={styles.stack}>
       <p className={styles.muted}>
         {t("Authorize the external account with your provider.")}
       </p>
-      <ErrorNotice error={definition.error ?? launch.error} />
       {definition.isPending ? (
         <Loading variant="form" rows={3} />
+      ) : definition.error ? (
+        <ErrorNotice
+          error={definition.error}
+          description={t(
+            "The provider could not describe this application. Check the provider's credentials, then reload.",
+          )}
+          retry={() => void definition.refetch()}
+        />
       ) : (
         <form
           className={styles.form}
@@ -156,7 +176,7 @@ export function ConnectionSetup({
               />
             </FormField>
           )}
-          {definition.data && !definition.data.unavailable_reason && (
+          {!definition.data.unavailable_reason && (
             <>
               <fieldset disabled={launch.isPending}>
                 <SchemaFields
@@ -182,25 +202,18 @@ export function ConnectionSetup({
               )}
             </>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            loading={definition.isFetching}
-            disabled={launch.isPending}
-            onClick={() => void definition.refetch()}
-          >
-            {t("Refresh configurations")}
-          </Button>
-          {definition.data?.unavailable_reason ? (
-            <p role="status">{t(definition.data.unavailable_reason)}</p>
+          <ErrorNotice error={launch.error} />
+          {definition.data.unavailable_reason ? (
+            <div className={local.unavailable}>
+              <p role="status">{t(definition.data.unavailable_reason)}</p>
+              {refresh}
+            </div>
           ) : (
-            definition.data && (
-              <FormActions
-                pending={launch.isPending}
-                label={t(created.current ? "Authorize connection" : "Connect")}
-              />
-            )
+            <FormActions
+              pending={launch.isPending}
+              leading={refresh}
+              label={t(created.current ? "Authorize connection" : "Connect")}
+            />
           )}
         </form>
       )}

@@ -6,6 +6,7 @@ import type { Schema } from "../../shared/api";
 import { CopyButton } from "../../shared/identity";
 import { downloadBlob } from "../../shared/download";
 import { ErrorToast } from "../../shared/feedback";
+import { ModelKeyLabel } from "../models/model-icon";
 import { agentFile, serializeAgentFile, type AgentFile } from "./transfer";
 import type { AgentConfig } from "./configuration";
 import styles from "./agents.module.css";
@@ -37,7 +38,13 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
           <dl className={styles.previewFacts}>
             <div>
               <dt>{t("Model")}</dt>
-              <dd>{file.config.model}</dd>
+              <dd>
+                <ModelKeyLabel
+                  modelKey={file.config.model}
+                  size={16}
+                  className={styles.modelName}
+                />
+              </dd>
             </div>
             <div>
               <dt>{t("Capabilities")}</dt>
@@ -93,7 +100,7 @@ export function ExportAgent({
       trigger={
         trigger ?? (
           <Button variant="ghost">
-            <DownloadSimpleIcon size={14} />
+            <DownloadSimpleIcon aria-hidden="true" />
             {t("Export agent")}
           </Button>
         )
@@ -110,7 +117,6 @@ export function ExportAgent({
             {t("Close")}
           </Button>
           <Button
-            variant="outline"
             onClick={() => {
               try {
                 downloadBlob(
@@ -125,7 +131,7 @@ export function ExportAgent({
               }
             }}
           >
-            <DownloadSimpleIcon size={15} />
+            <DownloadSimpleIcon aria-hidden="true" />
             {t("Download YAML")}
           </Button>
         </div>

@@ -15,10 +15,12 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    StringConstraints,
     field_validator,
     model_validator,
 )
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
@@ -33,7 +35,7 @@ from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
-type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
+type Trigger = Literal["input", "queued", "resume", "child_result", "tool_result", "spawned"]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
@@ -143,6 +145,7 @@ class RunOptions(_Frozen):
     labels: Labels = Field(default_factory=dict)
     # Omission (or null) on a steer retains the accepted snapshot. A configuration object is explicit.
     configuration: RunConfiguration | None = None
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     max_usage: UsageLimit | None = None
     # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
     # them into the run's options with their pins resolved, validating them again in any later transaction.
@@ -150,7 +153,9 @@ class RunOptions(_Frozen):
 
     def digest(self) -> str:
         """Joining choices as submitted; Run configuration is compared separately to its accepted snapshot."""
-        return hashlib.sha256(canonical_json(self.model_dump(mode="json", exclude={"configuration"}))).hexdigest()
+        return hashlib.sha256(
+            canonical_json(self.model_dump(mode="json", exclude={"configuration", "execution"}))
+        ).hexdigest()
 
 
 def _normalize_mcp_headers(value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
@@ -171,6 +176,25 @@ type McpHeaders = Annotated[
 type InitialMounts = Annotated[tuple[MountCreate, ...], Field(max_length=MAX_MOUNTS)]
 
 
+SessionTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+
+
+class SessionOrigin(_Frozen):
+    """Caller-supplied display context, not execution provenance or an authorization boundary."""
+
+    application: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)] | None = None
+    external_id: str | None = Field(default=None, min_length=1, max_length=512)
+
+
+class SessionCreate(_Frozen):
+    title: SessionTitle | None = None
+    origin: SessionOrigin | None = None
+    labels: Labels = Field(default_factory=dict)
+    # Omitted/null inherits the first accepted business Agent revision's defaults.
+    memory: SessionMemorySettings | None = None
+
+
 class Message(_Frozen):
     kind: Literal["message"] = "message"
     delivery: Delivery = "steer"
@@ -183,10 +207,19 @@ class Message(_Frozen):
 class NewThread(Message):
     message_history: MessageHistory = Field(default_factory=list)
     session_id: ObjectId | None = None
+    # Preserve the canonical digest of requests submitted before this optional field existed.
+    session: SessionCreate | None = Field(default=None, exclude_if=lambda value: value is None)
     mcp_headers: McpHeaders = Field(default_factory=dict)
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     environments: InitialMounts = ()
     # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
     memories: MemoryMounts = ()
+
+    @model_validator(mode="after")
+    def new_or_existing_session(self) -> Self:
+        if self.session_id is not None and self.session is not None:
+            raise ValueError("Session creation details cannot be combined with session_id")
+        return self
 
 
 class Fork(Message):
@@ -201,6 +234,7 @@ class Fork(Message):
 class ThreadUpdate(_Frozen):
     labels: Labels | None = None
     mcp_headers: McpHeaders | None = None
+    execution: ExecutionOverride | None = None
 
 
 class EntryUpdate(_Frozen):
@@ -350,13 +384,10 @@ class SpaceOrganizationStatus(_Frozen):
     failure: Failure | None = None
 
 
-class SessionCreate(_Frozen):
-    labels: Labels = Field(default_factory=dict)
-    # Omitted/null inherits the first accepted business Agent revision's defaults.
-    memory: SessionMemorySettings | None = None
-
-
 class SessionUpdate(_Frozen):
+    # Omission preserves the value; explicit null clears it.
+    title: SessionTitle | None = None
+    origin: SessionOrigin | None = None
     labels: Labels | None = None
     memory: SessionMemorySettings | None = None
 
@@ -368,7 +399,12 @@ class SessionQuery(_Frozen):
     text_query: str | None = Field(
         default=None, max_length=1024, description="All search terms must match one run's retained user/assistant text"
     )
-    q: str | None = Field(default=None, max_length=72, description="A session or thread ID")
+    q: str | None = Field(
+        default=None,
+        max_length=1024,
+        description="Session/thread ID, title, origin, label value or retained conversation text",
+    )
+    application: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, max_length=72)
     status: tuple[RunStatus, ...] = Field(default=(), max_length=6)
     trigger: tuple[Trigger, ...] = Field(default=(), max_length=5)
@@ -393,9 +429,12 @@ class SessionPreview(BaseModel):
 
 
 class SessionView(BaseModel):
+    schedule_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str
+    title: str | None = None
+    origin: SessionOrigin | None = None
     labels: dict[str, str]
     created_by_id: str
     last_run_id: str | None
@@ -414,6 +453,7 @@ class SessionPage(BaseModel):
 
 
 class ThreadView(BaseModel):
+    schedule_occurrence_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     purpose: Literal["conversation", "memory_organization"] = "conversation"
     id: str
@@ -429,6 +469,7 @@ class ThreadView(BaseModel):
     # The most recently sealed run: the history the thread's next run continues.
     last_run_id: str | None
     mcp_headers: dict[str, dict[str, str]]
+    execution: ExecutionOverride | None = None
     labels: dict[str, str]
     archived_at: datetime | None
     version: int
@@ -445,7 +486,7 @@ class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     thread_id: str
-    kind: Literal["message", "child_result"]
+    kind: Literal["message", "child_result", "tool_result"]
     delivery: Delivery
     position: int
     status: EntryStatus
@@ -468,7 +509,13 @@ class EntryPage(BaseModel):
     next_cursor: str | None
 
 
+class ScheduleOrigin(BaseModel):
+    schedule_id: str
+    occurrence_id: str
+
+
 class RunView(BaseModel):
+    schedule_origin: ScheduleOrigin | None = None
     model_config = ConfigDict(from_attributes=True)
     id: str
     workspace_id: str
@@ -523,8 +570,7 @@ class RunQuery(_Frozen):
     status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
     created_after: AwareDatetime | None = None
     created_before: AwareDatetime | None = None
-    view: Literal["detailed", "compact"] = "detailed"
-    limit: int | None = Field(default=None, ge=1, le=100)
+    limit: PageLimit = 50
     cursor: str | None = None
 
     @model_validator(mode="after")
@@ -538,9 +584,50 @@ class RunQuery(_Frozen):
         return self
 
 
+class RunInputPreview(BaseModel):
+    text: str = Field(max_length=200, description="At most 200 Unicode code points of input text, in content order.")
+    truncated: bool
+
+
+class RunListItem(BaseModel):
+    """Run discovery metadata. Full input, results and execution settings belong to the Run detail read."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    workspace_id: str
+    session_id: str
+    thread_id: str
+    agent_id: str
+    agent_revision_id: str
+    principal_id: str
+    status: RunStatus
+    trigger: Trigger
+    lineage: Lineage
+    parent_run_id: str | None
+    source_entry_id: str | None
+    current_attempt_id: str | None
+    attempts: int
+    max_attempts: int
+    wait_reason: WaitReason | None
+    version: int
+    created_at: datetime
+    started_at: datetime | None
+    sealed_at: datetime | None
+    updated_at: datetime
+    input_preview: RunInputPreview
+
+
 class RunPage(BaseModel):
-    items: list[RunView]
+    items: list[RunListItem]
     next_cursor: str | None
+
+
+class ThreadRunPage(RunPage):
+    """Newest first; first_number is the first item's 1-based chronological position in the thread."""
+
+    previous_cursor: str | None
+    total: int
+    first_number: int
 
 
 class RunAgent(BaseModel):

@@ -360,3 +360,79 @@ test("Session stream stops at a refusal or an invalid frame", async () => {
   await deltas.next();
   await assert.rejects(deltas.next(), ProtocolError);
 });
+
+test.each(["succeeded", "failed", "cancelled"])(
+  "Session stream continues after an occurrence completes with outcome %s",
+  async (executionOutcome) => {
+    const occurrence = {
+      session_id: "ses_one",
+      schedule_id: "sch_one",
+      occurrence: {
+        id: "occ_one",
+        version: 3,
+        status: "completed",
+        execution_outcome: executionOutcome,
+        completed_at: "2026-10-21T11:47:04Z",
+        completion_run_id: "run_one",
+      },
+    };
+    const client = createClient({
+      baseUrl,
+      auth: { type: "session" },
+      fetch: async () => sse(frame("occurrence", occurrence) + frame("thread")),
+    });
+    const stream = client.streamSession("ws_one", "ses_one");
+    try {
+      await stream.next();
+      await stream.next();
+      assert.deepEqual((await stream.next()).value, {
+        type: "occurrence",
+        data: occurrence,
+      });
+      assert.deepEqual((await stream.next()).value, {
+        type: "thread",
+        data: frames.thread,
+      });
+    } finally {
+      await stream.return();
+      client.close();
+    }
+  },
+);
+
+test("Session streams use the original URL and parse Schedule frames", async () => {
+  const schedule = {
+    session_id: "ses_one",
+    schedule_id: "sch_one",
+    configuration: { id: "sch_one", version: 1 },
+    progress: {},
+  };
+  const occurrence = {
+    session_id: "ses_one",
+    schedule_id: "sch_one",
+    occurrence: { id: "occ_one", version: 2, status: "failed" },
+  };
+  const requests = [];
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    fetch: async (request) => {
+      requests.push(request);
+      return sse(frame("schedule", schedule) + frame("occurrence", occurrence));
+    },
+  });
+  const stream = client.streamSession("ws_one", "ses_one");
+  await stream.next();
+  await stream.next();
+  assert.deepEqual((await stream.next()).value, {
+    type: "schedule",
+    data: schedule,
+  });
+  assert.deepEqual((await stream.next()).value, {
+    type: "occurrence",
+    data: occurrence,
+  });
+  await stream.return();
+  assert.equal(requests[0].url, `${baseUrl}/api/v1/sessions/ses_one/stream`);
+  client.close();
+});

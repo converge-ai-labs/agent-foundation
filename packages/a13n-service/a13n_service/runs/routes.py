@@ -16,6 +16,7 @@ from a13n_service.runs import (
     authors,
     entries,
     item_reads,
+    listings,
     read_views,
     resume,
     runs,
@@ -55,6 +56,7 @@ from a13n_service.runs.schemas import (
     SessionView,
     Submitted,
     ThreadPage,
+    ThreadRunPage,
     ThreadUpdate,
     ThreadView,
 )
@@ -118,10 +120,14 @@ async def update_session(
     responses={200: {"content": {"text/event-stream": {}}}},
 )
 async def session_stream(
-    request: Request, runtime: CurrentRuntime, workspace_id: WorkspaceId, session_id: str, credential: Credential
+    request: Request,
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    session_id: str,
+    credential: Credential,
 ) -> StreamingResponse:
     """The session's threads and the live output of their runs over SSE: `thread`, `items`, `delta` and `gap`
-    frames. Every connection starts from a snapshot."""
+    frames, plus `schedule` and `occurrence` state for Schedule-owned sessions. Every connection starts from a snapshot."""
     reader = await stream.open_stream(runtime, credential, workspace_id, session_id)
     return StreamingResponse(
         stream.frames(request.app.state.session_hub, reader),
@@ -142,6 +148,12 @@ async def get_message_authors(
     actor: Actor,
     query: Annotated[MessageAuthorQuery, Query()],
 ) -> MessageAuthors:
+    """Get message senders' current display names, emails, account kinds, status and avatar URLs.
+
+    Supply the session ID and 1 to 100 entry IDs from the thread inbox. Requires workspace read permission;
+    only message entries in that session are returned. This is not an arbitrary user or member-directory lookup.
+    Use returned names to identify senders in answers; retain IDs when needed for precise references.
+    """
     return await authors.message_authors(runtime.storage, actor, workspace_id, session_id, query)
 
 
@@ -154,6 +166,7 @@ async def list_threads(
     workspace_id: WorkspaceId,
     actor: Actor,
     session_id: str | None = None,
+    occurrence_id: str | None = None,
     text_query: Annotated[str | None, Query(max_length=1024)] = None,
     label: Annotated[list[str] | None, Query()] = None,
     limit: PageLimit = 50,
@@ -164,6 +177,7 @@ async def list_threads(
         actor,
         workspace_id,
         session_id=session_id,
+        occurrence_id=occurrence_id,
         text_query=text_query,
         label=label or [],
         limit=limit,
@@ -225,7 +239,7 @@ async def archive_thread(
 
 @router.get(
     "/threads/{thread_id}/runs",
-    response_model=RunPage | read_views.RunSummaryPage,
+    response_model=ThreadRunPage,
     openapi_extra=platform_operation("execution", "read"),
 )
 async def list_thread_runs(
@@ -233,13 +247,13 @@ async def list_thread_runs(
     workspace_id: WorkspaceId,
     thread_id: str,
     actor: Actor,
-    view: reads.View = "detailed",
-    limit: Annotated[int | None, Query(ge=1, le=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,
-) -> RunPage | read_views.RunSummaryPage:
-    """Newest first."""
-    return await runs.list_thread_runs(
-        runtime.storage, actor, workspace_id, thread_id, limit=reads.page_limit(view, limit), cursor=cursor, view=view
+    anchor: Annotated[str | None, Query(max_length=72)] = None,
+) -> ThreadRunPage:
+    """Newest first, optionally starting at an anchor run; cursors page towards older or newer runs."""
+    return await listings.list_thread_runs(
+        runtime.storage, actor, workspace_id, thread_id, limit=limit, cursor=cursor, anchor=anchor
     )
 
 
@@ -412,13 +426,11 @@ async def reorder_inbox(
 # Runs
 
 
-@router.get(
-    "/runs", response_model=RunPage | read_views.RunSummaryPage, openapi_extra=platform_operation("execution", "read")
-)
+@router.get("/runs", response_model=RunPage, openapi_extra=platform_operation("execution", "read"))
 async def list_runs(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[RunQuery, Query()]
-) -> RunPage | read_views.RunSummaryPage:
-    return await runs.list_runs(runtime.storage, actor, workspace_id, query)
+) -> RunPage:
+    return await listings.list_runs(runtime.storage, actor, workspace_id, query)
 
 
 @router.get(
@@ -619,7 +631,7 @@ async def get_run_agent(
 
 @router.get(
     "/runs/{run_id}/lineage",
-    response_model=RunPage | read_views.RunSummaryPage,
+    response_model=RunPage,
     openapi_extra=platform_operation("execution", "read"),
 )
 async def get_run_lineage(
@@ -628,13 +640,10 @@ async def get_run_lineage(
     run_id: str,
     actor: Actor,
     cursor: str | None = None,
-    view: reads.View = "detailed",
-    limit: Annotated[int | None, Query(ge=1, le=50)] = None,
-) -> RunPage | read_views.RunSummaryPage:
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+) -> RunPage:
     """The run and its ancestors, nearest first, across fork origins."""
-    return await runs.lineage(
-        runtime.storage, actor, workspace_id, run_id, cursor=cursor, view=view, limit=reads.page_limit(view, limit)
-    )
+    return await listings.lineage(runtime.storage, actor, workspace_id, run_id, cursor=cursor, limit=limit)
 
 
 @router.get(

@@ -61,7 +61,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 
 A value is not private merely because it is absent from the root facade. Its owning module and that module's documented exports are the canonical import route. Removing duplicate root re-exports keeps discovery bounded and prevents unrelated feature families from becoming one coupled compatibility surface. The public async-subagent boundary is imported from `a13n_harness.capabilities`: `SubagentCapability`, `SubagentOperator`, `SubagentOperatorContext`, `SubagentToolCallContext`, `SubagentDelegationPlan`, and the standard request/result/view models. `AsyncSubagentToolset` and the standard Environment Shell Toolset are available from `a13n_harness.toolsets`; the private inline executor and Run process controller are not public operator implementations.
 
-Grouped discovery is imported as `ToolSearchCapability`, `ProxyToolSearchConfig`, `NativeToolSearchConfig`, `ToolSearchGroup`, `ToolSearchPlan`, and `ToolSearchSelection` from `a13n_harness.capabilities`. `ToolSearchCapability(groups=..., config=...)` installs concrete sources; each group descriptor supplies a native Toolset or Capability and a description. Alternatively, `AgentDefinition.tool_search` accepts an immutable build plan whose selections reference existing concrete Capabilities and exact Harness plugin instance IDs. Both use the same composition semantics. There is no separately installed public grouping wrapper. These are code-first composition APIs; they do not add a built-in declarative `AgentSpec` registration. Their behavior belongs to [Tool Execution](07-tool-execution.md#grouped-toolsearch-discovery).
+Grouped discovery is imported as `ToolSearchCapability`, `ProxyToolSearchConfig`, `ToolSearchGroup`, `ToolSearchPlan`, and `ToolSearchSelection` from `a13n_harness.capabilities`. `ToolSearchCapability(groups=..., config=...)` installs concrete sources; each group descriptor supplies a native Toolset or Capability and a description. Alternatively, `AgentDefinition.tool_search` accepts an immutable build plan whose selections reference existing concrete Capabilities and exact Harness plugin instance IDs. Both use the same composition semantics. There is no separately installed public grouping wrapper. These are code-first composition APIs; they do not add a built-in declarative `AgentSpec` registration. Their behavior belongs to [Tool Execution](07-tool-execution.md#grouped-toolsearch-discovery).
 
 File memory APIs are imported from `a13n_harness.capabilities`: `FileMemoryCapability`, `FileMount`, `MemoryCursors`, `FileMemoryLimits`, `DEFAULT_FILE_GUIDE`, `FILE_MEMORY_CAPABILITY_ID`, and the tool keys `FILE_TOOL_KEYS` and `FileToolKey` that select the offered tools. The store contract is imported from `a13n_harness.providers.memory`: `FileStore`, `SearchableFileStore`, `FileEntry`, `FileText`, `Changes`, `FullResync`, `GrepMatch`, `Origin`, `MemoryAccess`, `MemoryErrorCode`, `MemoryStoreError`, `FileFormat`, `validate_path`, `validate_directory`, `describe`, and `DirectoryFileStore`. The file tools' Toolset is internal to the Capability. Behavior belongs to [File Memory](21-file-memory.md).
 
@@ -174,6 +174,8 @@ class RunBindings:
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    tool_execution: ToolExecutionRuntime | None = None
+    codeact_state: CodeActStateOwner | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
@@ -201,6 +203,8 @@ class RunBindings:
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
+        tool_execution: ToolExecutionRuntime | None = None,
+        codeact_state: CodeActStateOwner | None = None,
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
@@ -334,7 +338,9 @@ class HarnessRunStream[OutputT](
 
     def cancel(self) -> None: ...
 
-    async def steer(self, input: RunInputValue, *, input_id: str | None = None) -> str: ...
+    async def steer(
+        self, input: RunInputValue, *, input_id: str | None = None, immediate: bool = False,
+    ) -> str: ...
 
     async def export_state(self) -> HarnessState: ...
 ```
@@ -345,7 +351,7 @@ The stream has exactly one consumer and forbids concurrent `__anext__()` calls. 
 
 `result` remains `None` until the terminal event is actually yielded. After shutdown, `outcome` exposes the nearest validated terminal candidate, including when cleanup failure or external cancellation prevented delivery; before shutdown it is `None`. This is the same candidate authority used by `RunCleanupError.outcome`, not a success receipt. Hosts recovering a suspended candidate preserve its state and deferred requests together and still propagate the original failure or cancellation. Leaving the context earlier establishes the terminal fence and closes resources without synthesizing a normal result. `cancel()` is idempotent and interrupts pre-start, active-attempt, or recovery-backoff work. While active, `export_state()` includes Environment state collection linearized with mount publication. After close it returns the detached shutdown checkpoint, or raises an explicit state-unavailable error if capture failed. `diagnostic_error` exposes the terminal exception only to trusted in-process Hosts for private diagnostics; it is not part of `SafeFailure`, events, state, or any serialized result.
 
-`steer()` accepts one non-empty native `RunInputValue` while an inner Pydantic run is active, records it as user-authored input when compaction is enabled, and delivers it through public `RunContext.enqueue(..., priority="asap")`. It returns the native enqueue ID. An optional host `input_id` (1-256 characters, default a random ID) is recorded in the delivered request's metadata; `a13n_harness.capabilities.steering.steering_input_ids(messages)` reads the delivered IDs back from exported history, which is how a durable host proves a value was incorporated without trusting observer events. Native Pydantic queue timing and `EnqueuedMessagesEvent` own active-run incorporation; the Harness adds no parallel delivery queue or applied-receipt state machine. A steering value retained immediately before an active-run boundary may be replayed by later compaction even when immediate native delivery cannot be confirmed. This context-first behavior deliberately prefers possible duplicate replay to silently losing accepted user intent.
+`steer()` accepts one non-empty native `RunInputValue`, returning an enqueue identity. Ordinary steering uses public `RunContext.enqueue(..., priority="asap")`. An optional Host `input_id` (1–256 characters, default a random ID) identifies incorporation in history; `a13n_harness.capabilities.steering.steering_input_ids(messages)` reads those identities. Accepted inputs remain in ordered pending state until canonical history proves incorporation. Existing state export retains pending inputs and restores them without duplicating delivered identities. `immediate=True` requests phase-aware handoff after accepting input: primary model requests are preempted, while tools settle their native batch cooperatively under the [immediate steering contract](06-execution-context-and-lifecycle.md#immediate-steering). The enqueue identity confirms acceptance; canonical history confirms incorporation. It retains the logical Run and does not consume model-recovery retries.
 
 The Harness exposes no cross-thread marshalling, when-idle queue, safe-pause state machine, durable command receipt, exactly-once reconciliation, or Pydantic private run handle. Run-local Environment mutation is not a durable command protocol and cannot change Host Environment association. External mount authorization and durable desired-mount semantics remain Host concerns.
 
@@ -385,6 +391,8 @@ class HarnessRunResult[OutputT]:
     def output_or_raise(self) -> OutputT: ...
     def output_json(self) -> JsonValue: ...
 ```
+
+`DeferredToolRequests` and `DeferredToolCall` are Harness public types; `DeferredToolResults` is a native re-export. Each pending entry contains `model_call`, `target_call`, and `target_identity`; see [Approval and Deferred Calls](07-tool-execution.md#approval-and-deferred-calls) for correlation, overrides, and compatibility.
 
 All mutable values are copied on construction and access, including the complete nested `RunUsageSummary` and mixed-source usage records. `all_messages()` and `new_messages()` decode detached copies. `replace()` preserves Thread and Run correlation and message views while allowing trusted middleware to replace terminal fields.
 

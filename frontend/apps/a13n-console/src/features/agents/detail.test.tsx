@@ -16,6 +16,7 @@ import { AgentDetail } from "./detail";
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ http, workspace: () => http }),
+  useAuth: () => ({ data: undefined }),
 }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -23,6 +24,7 @@ vi.mock("../../layout/workspace", () => ({
     organization: { id: "org_test" },
     basePath: "/workspace/test",
     can: () => true,
+    organizationCan: () => false,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -95,12 +97,16 @@ it("reloads the selected configuration and version after Set as default", async 
       number: 2,
       config: { ...initialConfig(), instructions: "Second" },
       note: "Second",
+      created_at: "2026-01-02T00:00:00Z",
+      created_by_id: "usr_author",
     },
     {
       id: "apr_v1",
       number: 1,
       config: { ...initialConfig(), instructions: "First" },
       note: null,
+      created_at: "2026-01-01T00:00:00Z",
+      created_by_id: "usr_author",
     },
   ];
   http.GET.mockImplementation(
@@ -154,8 +160,13 @@ it("reloads the selected configuration and version after Set as default", async 
   );
   const user = userEvent.setup();
   await user.click(screen.getByRole("tab", { name: /Versions/ }));
+  // Version actions live in each row's menu; v1 is the second row.
+  const menus = await screen.findAllByRole("button", {
+    name: "Version actions",
+  });
+  await user.click(menus[1]!);
   await user.click(
-    await screen.findByRole("button", { name: "Set as default" }),
+    await screen.findByRole("menuitem", { name: "Set as default" }),
   );
   const confirm = await screen.findByRole("dialog", { name: "Set as default" });
   await user.click(

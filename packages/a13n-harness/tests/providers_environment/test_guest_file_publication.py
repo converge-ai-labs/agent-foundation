@@ -4,6 +4,7 @@ import asyncio
 import stat
 import sys
 from io import BytesIO
+from pathlib import Path
 from zipfile import ZipFile, ZipInfo
 
 import pytest
@@ -41,8 +42,22 @@ def guest_files(tmp_path):
         assert process.returncode == 0, stderr.decode()
         return stdout.decode()
 
+    class LocalTransfer:
+        async def read_stream(self, path):
+            with Path(path).open("rb") as source:
+                while chunk := source.read(65536):
+                    yield chunk
+
+        async def write_stream(self, path, source, *, mode):
+            with Path(path).open("r+b") as destination:
+                destination.truncate(0)
+                while chunk := source.read(65536):
+                    destination.write(chunk)
+
     configuration = CommandConfiguration(root=str(tmp_path), python=sys.executable)
-    return GuestFiles(NativeCommands(execute, configuration, "generation-fixture", "mount-fixture"))
+    return GuestFiles(
+        NativeCommands(execute, configuration, "generation-fixture", "mount-fixture", transfer=LocalTransfer())
+    )
 
 
 @pytest.mark.parametrize("operation", ["replace", "upsert", "append", "patch"])
@@ -289,3 +304,57 @@ async def test_guest_batch_rejects_nul_text_without_writing(tmp_path, guest_file
         await guest_files.batch([FileWriteTextOperation(path="/target", text="new\x00", mode="create")])
     assert error.value.code == "environment_unsupported"
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("damage", ["truncate", "corrupt"])
+async def test_guest_binary_publication_verifies_size_and_checksum_before_replace(
+    tmp_path, guest_files, monkeypatch, damage
+):
+    target = tmp_path / "target"
+    target.write_bytes(b"winner")
+    upload = guest_files.commands.write_stream
+
+    async def damaged(path, source):
+        await upload(path, BytesIO(b"new" if damage == "truncate" else b"broken"))
+
+    monkeypatch.setattr(guest_files.commands, "write_stream", damaged)
+    with pytest.raises(EnvironmentError) as caught:
+        await guest_files.write_text("/target", "change", mode="replace")
+    assert caught.value.code == "environment_request_invalid"
+    assert target.read_bytes() == b"winner"
+    assert not list(tmp_path.glob(".a13n-*"))
+
+
+@pytest.mark.parametrize("failure", ["cancel", "transport"])
+async def test_guest_archive_failed_upload_cleans_candidate(tmp_path, guest_files, monkeypatch, failure):
+    async def fail(path, source):
+        assert Path(path).exists()
+        if failure == "cancel":
+            raise asyncio.CancelledError()
+        raise EnvironmentError("Uncertain transfer", code="environment_unknown_outcome")
+
+    monkeypatch.setattr(guest_files.commands, "write_stream", fail)
+    with pytest.raises(asyncio.CancelledError if failure == "cancel" else EnvironmentError):
+        await guest_files.write_archive("/candidate", archive({"SKILL.md": b"ok"}))
+    assert not list(tmp_path.glob(".a13n-*"))
+    assert not (tmp_path / "candidate").exists()
+
+
+async def test_guest_append_does_not_publish_after_existing_prefix_read_fails(tmp_path, guest_files, monkeypatch):
+    target = tmp_path / "target"
+    target.write_bytes(b"old-prefix-and-suffix")
+    failure = EnvironmentError("Existing file disappeared during read", code="environment_not_found")
+
+    async def interrupted(path, **kwargs):
+        yield b"old-prefix"
+        raise failure
+
+    async def source():
+        yield b"new"
+
+    monkeypatch.setattr(guest_files, "read_bytes_stream", interrupted)
+    with pytest.raises(EnvironmentError) as caught:
+        await guest_files.write_bytes_stream("/target", source(), mode="append")
+    assert caught.value is failure
+    assert target.read_bytes() == b"old-prefix-and-suffix"
+    assert not list(tmp_path.glob(".a13n-*"))

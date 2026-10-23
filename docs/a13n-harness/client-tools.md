@@ -76,7 +76,7 @@ async def main():
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call = requests.calls[0]
+    call = requests.calls[0].target_call
     assert call.tool_name == "open_document"
 
     # A real Host authenticates the client and validates/persists its result here.
@@ -132,3 +132,31 @@ Each Toolset must contain at least one tool. Toolset IDs and effective tool name
 The Host owns approval UI, executor authentication, command idempotency, durable pending records, timeout/cancellation policy, and result acceptance. Client-provided metadata cannot authorize a server-side tool. [Managed tools](managed-tools.md) covers the independent in-process invocation boundary.
 
 Child Runs can defer when the current Host supports feedback. A Host without that lifecycle sets `RunBindings.deferred_tools_supported=False`, which omits declaratively deferred tools, denies dynamic deferral, and fails unexpected terminal deferral with `deferred_tools_unsupported`. Do not create waiting work from an observation event; retain the exact terminal pending batch and checkpoint. [Built-in inline execution](delegation-and-codeact.md#host-managed-feedback) disables deferred tools; a supporting Host resumes its own child directly.
+
+## Proxy discovery
+
+Select the definition's `ClientToolsCapability` in a `ToolSearchPlan` group, just like another capability source:
+
+```python
+from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection
+
+# client_tools is the same ClientToolsCapability instance passed in capabilities.
+search = ToolSearchPlan(
+    groups={"workspace": ToolSearchSelection("Editor actions", capabilities=(client_tools,))}
+)
+# Pass tool_search=search when building the Harness.
+```
+
+`ClientToolsetDefinition.toolset_id` identifies the client source; the ToolSearch group controls discovery. For a declared `select` tool, the model invokes `call_tool(group="workspace", tool="select", arguments={...})`. The internal target is `workspace__select`, and the Run suspends with the usual external call. Use the retained metadata when delivering it to the client:
+
+```python
+from a13n_harness.tools.client import client_tool_name
+
+entry = pending.calls[0]
+call = entry.target_call
+name = client_tool_name(call, pending.metadata.get(call.tool_call_id, {}))
+# Deliver name, call.args_as_dict(), and call.tool_call_id to the client.
+results = pending.build_results(calls={call.tool_call_id: client_result})
+```
+
+The client receives `select`; the stored target keeps `workspace__select` for resume validation. The minimal routing marker contains `declared_name` and `toolset_id`. Other definition metadata is not copied into pending requests. Persist the complete pending requests with the prior state, then start a fresh Run with `DeferredToolResume(pending, results)`. Successful values and native `ToolFailed` use the same target ID. Native inline deferred handlers can use the same name helper with their native call and per-call metadata. Arbitrary renaming wrappers remain unsupported for client declarations.

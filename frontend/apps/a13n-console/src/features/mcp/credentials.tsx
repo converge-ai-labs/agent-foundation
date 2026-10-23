@@ -4,6 +4,7 @@ import type { Schema } from "../../shared/api";
 
 export function MCPCredentialFields({
   mode,
+  replace = false,
   names,
   bearer,
   onBearer,
@@ -11,6 +12,8 @@ export function MCPCredentialFields({
   onHeaders,
 }: {
   mode: Schema["ConnectionAuth"];
+  /** The field replaces a saved credential rather than setting the first. */
+  replace?: boolean;
   names: readonly string[];
   bearer: string;
   onBearer: (value: string) => void;
@@ -20,7 +23,7 @@ export function MCPCredentialFields({
   const { t } = useTranslation();
   if (mode === "bearer")
     return (
-      <FormField label={t("Bearer token")}>
+      <FormField label={t(replace ? "New bearer token" : "Bearer token")}>
         <Input
           required
           type="password"

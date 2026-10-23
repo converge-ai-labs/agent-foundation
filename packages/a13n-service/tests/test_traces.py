@@ -50,6 +50,12 @@ ORGANIZATION = "a13n.observation.metadata.organization_id"
 SLOW = "slow"
 # Closes the connection without answering.
 DROP = "drop"
+# A well-formed answer one byte past the response bound.
+OVERSIZED = httpx2.Response(200, content=b"{" + b" " * (MAX_RESPONSE_BYTES - 1) + b"}")
+
+
+# Answers a recorded request by its content.
+AnswerFor = Callable[[httpx2.Request], httpx2.Response]
 
 
 class Backend:
@@ -57,9 +63,9 @@ class Backend:
     answer, or an empty 200 when none is queued."""
 
     def __init__(self, url: str):
-        self.url, self.answers, self.requests = url, list[httpx2.Response | str](), list[httpx2.Request]()
+        self.url, self.answers, self.requests = url, list[httpx2.Response | str | AnswerFor](), list[httpx2.Request]()
 
-    def answer(self, *answers: httpx2.Response | str) -> "Backend":
+    def answer(self, *answers: httpx2.Response | str | AnswerFor) -> "Backend":
         self.answers.extend(answers)
         return self
 
@@ -77,6 +83,8 @@ class Backend:
             )
         )
         answer = self.answers.pop(0) if self.answers else httpx2.Response(200)
+        if callable(answer):
+            answer = answer(self.requests[-1])
         if answer == DROP:
             return
         if answer == SLOW:
@@ -428,7 +436,9 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
 
     trace = await api.client.get(f"{api.api}/traces/{TRACE}")
     assert (trace.status_code, trace.json()["id"]) == (200, "obs-root")
-    assert backend.requests[2].url.params["traceId"] == TRACE
+    assert {"type": "string", "column": "traceId", "operator": "=", "value": TRACE} in json.loads(
+        backend.requests[2].url.params["filter"]
+    )
     missing = await api.client.get(f"{api.api}/traces/{'f' * 32}")
     assert (missing.status_code, missing.json()["error"]["details"]["kind"]) == (404, "trace")
     spans = (await api.client.get(f"{api.api}/traces/{TRACE}/spans")).json()
@@ -591,6 +601,123 @@ async def test_trace_backend_names_the_configured_backend(api: SimpleNamespace, 
     assert backend.requests == []
 
 
+@pytest.mark.parametrize("provider", ["langfuse", "logfire"])
+async def test_overview_and_single_span_queries_preserve_display_and_select_content(
+    api: SimpleNamespace, backend: Backend, provider: str
+) -> None:
+    identity = "b" * 16
+    own = {**scope(api), "a13n.input": "x" * 1_850_000, "api_key": "private"}
+    if provider == "langfuse":
+        row = langfuse_row(identity, {"attributes": own})
+        body = {"data": [row], "meta": {}}
+        configured = backend.langfuse()
+    else:
+        row = logfire_row(identity, own)
+        body = {"data": [row]}
+        configured = backend.logfire()
+    backend.answer(httpx2.Response(200, json=body), httpx2.Response(200, json=body))
+    query_through(api, configured)
+    listing = await api.client.get(f"{api.api}/traces/{TRACE}/spans", params={"view": "overview"})
+    assert listing.status_code == 200, listing.text
+    (item,) = listing.json()["items"]
+    assert len(listing.content) < 1000 and item["view"] == "overview"
+    detail = await api.client.get(f"{api.api}/traces/{TRACE}/spans/{identity}")
+    assert detail.status_code == 200, detail.text[:1000]
+    full = detail.json()
+    assert full["attributes"]["a13n.input"] == own["a13n.input"]
+    assert full["attributes"]["api_key"] == "[REDACTED]"
+    assert all(full[key] == value for key, value in item.items() if key != "view")
+    first, second = backend.requests
+    if provider == "langfuse":
+        assert "io" not in first.url.params["fields"].split(",")
+        assert first.url.params["expandMetadata"] == "attributes"
+        assert "io" in second.url.params["fields"].split(",")
+        filters = json.loads(second.url.params["filter"])
+        for column, value in (("traceId", TRACE), ("id", identity)):
+            assert {"type": "string", "column": column, "operator": "=", "value": value} in filters
+    else:
+        first_sql, second_sql = (json.loads(request.content)["sql"] for request in (first, second))
+        assert "otel_events" not in first_sql and "otel_events" in second_sql
+        assert f"trace_id = '{TRACE}'" in second_sql and f"span_id = '{identity}'" in second_sql
+
+
+def selects_only(request: httpx2.Request, provider: str, identity: str) -> bool:
+    """Whether the backend request selects exactly the one span `identity` of TRACE."""
+    if provider == "langfuse":
+        filters = json.loads(request.url.params["filter"])
+        return request.url.params["limit"] == "1" and all(
+            {"type": "string", "column": column, "operator": "=", "value": value} in filters
+            for column, value in (("traceId", TRACE), ("id", identity))
+        )
+    sql = json.loads(request.content)["sql"]
+    return f"trace_id = '{TRACE}'" in sql and f"span_id = '{identity}'" in sql and sql.endswith("LIMIT 2")
+
+
+@pytest.mark.parametrize("provider", ["langfuse", "logfire"])
+async def test_span_content_reads_one_span_from_a_trace_whose_pages_exceed_the_bound(
+    api: SimpleNamespace, backend: Backend, provider: str
+) -> None:
+    identity = "c" * 16
+    own = {**scope(api), "a13n.note": "evidence " * 200, "api_key": "private"}
+    row = langfuse_row(identity, {"attributes": own}) if provider == "langfuse" else logfire_row(identity, own)
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        # Any page wider than the selected span holds its neighbours' full content and exceeds the bound.
+        if not selects_only(request, provider, identity):
+            return OVERSIZED
+        return httpx2.Response(200, json={"data": [row], "meta": {}})
+
+    backend.answer(answer, answer)
+    query_through(api, backend.langfuse() if provider == "langfuse" else backend.logfire())
+    path = f"{api.api}/traces/{TRACE}/spans/{identity}/content"
+    response = await api.client.get(path, params={"section": "attributes", "limit": 100})
+    assert response.status_code == 200, response.text[:1000]
+    body = response.json()
+    (fragment,) = body["items"]
+    assert body["next_cursor"] is None and fragment["has_more"] and "private" not in response.text
+    following = await api.client.get(
+        path,
+        params={
+            "section": "attributes",
+            "offset": fragment["next_offset"],
+            "version": fragment["version"],
+            "limit": 100,
+        },
+    )
+    assert following.status_code == 200, following.text[:1000]
+    assert following.json()["items"][0]["offset"] == fragment["next_offset"]
+    assert len(backend.requests) == 2
+    assert all(selects_only(request, provider, identity) for request in backend.requests)
+
+    # A trace without that span is answered without paging through the trace.
+    backend.answer(httpx2.Response(200, json={"data": [], "meta": {}}))
+    missing = await api.client.get(f"{api.api}/traces/{TRACE}/spans/{'e' * 16}/content")
+    assert missing.status_code == 200 and missing.json() == {"items": [], "next_cursor": None}
+    assert len(backend.requests) == 3
+
+
+async def test_span_content_too_large_for_one_response_is_an_explicit_size_error(
+    api: SimpleNamespace, backend: Backend
+) -> None:
+    identity = "c" * 16
+    backend.answer(OVERSIZED)
+    query_through(api, backend.logfire())
+    response = await api.client.get(
+        f"{api.api}/traces/{TRACE}/spans/{identity}/content", params={"section": "input", "limit": 100}
+    )
+    assert response.status_code == 413, response.text
+    error = response.json()["error"]
+    assert error["code"] == "payload_too_large"
+    assert error["details"] == {
+        "dependency": "trace:logfire",
+        "limit": MAX_RESPONSE_BYTES,
+        "kind": "span",
+        "id": identity,
+    }
+    assert identity in error["message"] and "unavailable" not in error["message"]
+    assert len(backend.requests) == 1 and selects_only(backend.requests[0], "logfire", identity)
+
+
 async def test_logfire_pages_continue_after_the_last_row(api: SimpleNamespace, backend: Backend) -> None:
     own = scope(api)
     rows = [
@@ -645,7 +772,6 @@ async def test_backend_failures_are_unavailable(api: SimpleNamespace, backend: B
         "json": httpx2.Response(200, content=b"{"),
         "shape": httpx2.Response(200, json={"rows": []}),
         "row": httpx2.Response(200, json={"data": [{"trace_id": TRACE}]}),
-        "size": httpx2.Response(200, content=b"[" + b" " * MAX_RESPONSE_BYTES + b"]"),
     }
     for sent, (case, answer) in enumerate(failures.items(), start=1):
         provider = backend.answer(answer).logfire()
@@ -656,6 +782,32 @@ async def test_backend_failures_are_unavailable(api: SimpleNamespace, backend: B
         assert (error.value.code, error.value.details) == ("unavailable", {"dependency": "trace:logfire"}), case
         # One request each: a failure is never retried.
         assert len(backend.requests) == sent, case
+
+
+async def test_oversized_backend_responses_are_size_errors_not_outages(api: SimpleNamespace, backend: Backend) -> None:
+    provider = backend.answer(OVERSIZED, OVERSIZED).logfire()
+    storage, actor, workspace_id = api.runtime.storage, admin(api), api.tenant.workspace_id
+    with pytest.raises(ServiceError) as error:
+        await traces.list_trace_spans(storage, provider, actor, workspace_id, TRACE, limit=10, cursor=None)
+    assert (error.value.code, error.value.details) == (
+        "payload_too_large",
+        {"dependency": "trace:logfire", "limit": MAX_RESPONSE_BYTES},
+    )
+    assert "unavailable" not in error.value.message
+
+    # A response selecting one span exceeds the bound only when that span alone does; the error names it.
+    identity = "d" * 16
+    with pytest.raises(ServiceError) as error:
+        await traces.get_trace_span(storage, provider, actor, workspace_id, TRACE, identity)
+    assert error.value.code == "payload_too_large"
+    assert error.value.details == {
+        "dependency": "trace:logfire",
+        "limit": MAX_RESPONSE_BYTES,
+        "kind": "span",
+        "id": identity,
+    }
+    assert identity in error.value.message and str(MAX_RESPONSE_BYTES) in error.value.message
+    assert len(backend.requests) == 2
 
 
 async def test_slow_or_unconfigured_backends_are_unavailable(api: SimpleNamespace, backend: Backend) -> None:

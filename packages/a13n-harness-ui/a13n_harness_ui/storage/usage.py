@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import DateTime, func, literal, select, text, true, type_coerce, union_all
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
@@ -276,7 +277,7 @@ class _Aggregation:
         )
 
 
-def _contributions(root_id: str, *, root_only: bool = False):
+def _contributions(root_id: str | Select[tuple[str]], *, root_only: bool = False):
     """Flatten current scopes and legacy facts, retaining the first receipt attribution."""
     # Extract envelope metadata once per scope, not once per contribution.
     # Without materialization SQLite flattens the CTE and reparses a complete
@@ -284,6 +285,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
     scopes = (
         select(
             ThreadUsageRecord.sequence,
+            ThreadUsageRecord.root_thread_id,
             ThreadUsageRecord.descendant,
             ThreadUsageRecord.payload_json,
             ThreadUsageRecord.observed_at,
@@ -293,7 +295,9 @@ def _contributions(root_id: str, *, root_only: bool = False):
             ).label("observed_through"),
         )
         .where(
-            ThreadUsageRecord.root_thread_id == root_id,
+            ThreadUsageRecord.root_thread_id == root_id
+            if isinstance(root_id, str)
+            else ThreadUsageRecord.root_thread_id.in_(root_id),
             ThreadUsageRecord.descendant.is_(False) if root_only else true(),
         )
         .cte("usage_scopes")
@@ -303,6 +307,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
     entries = func.json_each(table.payload_json, "$.snapshot.records").table_valued("key", "value")
     legacy = select(
         table.sequence,
+        table.root_thread_id,
         literal(0).label("ordinal"),
         table.descendant,
         table.payload_json.label("payload"),
@@ -312,6 +317,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
     current = (
         select(
             table.sequence,
+            table.root_thread_id,
             entries.c.key.label("ordinal"),
             table.descendant,
             entries.c.value.label("payload"),
@@ -327,7 +333,7 @@ def _contributions(root_id: str, *, root_only: bool = False):
         facts,
         func.row_number()
         .over(
-            partition_by=func.json_extract(facts.c.payload, "$.record_id"),
+            partition_by=(facts.c.root_thread_id, func.json_extract(facts.c.payload, "$.record_id")),
             order_by=(facts.c.sequence, facts.c.ordinal),
         )
         .label("position"),

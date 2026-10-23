@@ -124,6 +124,7 @@ class ModelUsage(BaseModel):
 class RunUsage(BaseModel):
     run_id: str
     thread_id: str
+    run_number: int = Field(ge=1, description="One-based chronological position among all Runs in the Thread.")
     models: list[ModelUsage]
 
 
@@ -156,10 +157,10 @@ class ContextUsageQuery(BaseModel):
 
 
 class ContextUsage(BaseModel):
-    """One reported generation, compared with its currently configured window."""
+    """A Run's configured window and its latest eligible generation, when available."""
 
     run_id: str
-    record_id: str
+    record_id: str | None
     input_tokens: int | None
     output_tokens: int | None
     context_window_tokens: int | None

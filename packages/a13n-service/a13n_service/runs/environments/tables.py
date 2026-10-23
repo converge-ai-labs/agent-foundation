@@ -42,6 +42,11 @@ class EnvironmentRow(Stamped, Base):
         ForeignKeyConstraint(
             ["workspace_id", "template_id"], ["environment_templates.workspace_id", "environment_templates.id"]
         ),
+        ForeignKeyConstraint(
+            ["workspace_id", "metrics_data_source_id"],
+            ["metrics_data_sources.workspace_id", "metrics_data_sources.id"],
+            name="fk_environments_metrics_data_source",
+        ),
         CheckConstraint(f"status IN {STATUSES}", name="status"),
         CheckConstraint(
             "template_id IS NULL OR status NOT IN ('ready', 'starting', 'stopping', 'stopped') OR handle IS NOT NULL",
@@ -86,6 +91,11 @@ class EnvironmentRow(Stamped, Base):
             postgresql_where=text("template_id IS NOT NULL AND status IN ('reserved', 'ready', 'stopped')"),
         ),
         Index("ix_environments_renewals", "renew_at", postgresql_where=text("renew_at IS NOT NULL")),
+        Index(
+            "ix_environments_metrics_data_source",
+            "metrics_data_source_id",
+            postgresql_where=text("metrics_data_source_id IS NOT NULL"),
+        ),
         rules(
             identity_guarded("environments"),
             # Renewals reschedule themselves every few minutes without changing what a client sees.
@@ -111,6 +121,13 @@ class EnvironmentRow(Stamped, Base):
     # External targets belong to the principal that registered them; workspace-managed sandboxes have no owner.
     owner_principal_id: Mapped[str | None] = mapped_column(ForeignKey("principals.id"))
     name: Mapped[str]
+    metrics_data_source_id: Mapped[str | None]
+    metrics_labels: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
+    # Frozen creation input, encrypted for this row/column; erased after successful
+    # creation or deletion. Retries reuse it even if the desired source changes.
+    metrics_launch: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # Secret-free sampler/exporter receipt, independent of the live desired binding.
+    metrics_application: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     status: Mapped[str]
     # The recipe a managed instance was built from, the provider's portable state for reaching it and the version of
     # the credential that last did; NULL for an external target, which its endpoint and device ID reach.

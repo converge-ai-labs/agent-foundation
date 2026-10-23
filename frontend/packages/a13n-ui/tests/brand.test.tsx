@@ -117,3 +117,24 @@ it.each([
     expect(brand.darkIcon || brand.invertInDark).toBeTruthy();
   },
 );
+
+it.each(["cloudflare", "cloudflare_ai_gateway", "cloudflare-ai-gateway"])(
+  "renders the Cloudflare logo for %s",
+  (type) => {
+    const { container } = render(<BrandIcon identity={type} alias={type} />);
+    expect(container.querySelector("img")?.src).toBe(brands.cloudflare.icon);
+    expect(brands.cloudflare.icon).toMatch(/cloudflare-color\.svg$/);
+  },
+);
+
+it.each(["api.cloudflare.com", "gateway.ai.cloudflare.com"])(
+  "resolves the Cloudflare API host %s",
+  (host) => {
+    expect(resolveBrand({ endpoint: `https://${host}/account/path` })).toBe(
+      brands.cloudflare,
+    );
+    expect(
+      resolveBrand({ endpoint: `https://${host}.example.org/account/path` }),
+    ).toBeUndefined();
+  },
+);

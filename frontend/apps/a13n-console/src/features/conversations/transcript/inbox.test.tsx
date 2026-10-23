@@ -56,7 +56,6 @@ function mount(
   requests: Request[],
   respond: (request: Request) => Response,
   canRunNext = false,
-  quiet = false,
 ) {
   client = createClient({
     baseUrl: "https://service.example",
@@ -79,11 +78,7 @@ function mount(
       }
     >
       <MemoryRouter>
-        <ThreadInbox
-          thread={fixtureThread()}
-          canRunNext={canRunNext}
-          quiet={quiet}
-        />
+        <ThreadInbox thread={fixtureThread()} canRunNext={canRunNext} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -108,7 +103,9 @@ it("withdraws a pending message against the Thread it was read with", async () =
     });
   });
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /Queued messages/ }));
+  await user.click(
+    await screen.findByRole("button", { name: /Queued messages/ }),
+  );
   expect(await screen.findByText("Queued input")).toBeTruthy();
   const list = requests.find((request) => request.method === "GET")!;
   expect(new URL(list.url).searchParams.getAll("status")).toEqual(["pending"]);
@@ -120,9 +117,11 @@ it("withdraws a pending message against the Thread it was read with", async () =
     await screen.findByRole("button", { name: "Delete queued message" }),
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(
-    await screen.findByText("No messages in this inbox state."),
-  ).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: /Queued messages/ }),
+    ).toBeNull(),
+  );
   const removal = requests.find((request) => request.method === "DELETE")!;
   expect(new URL(removal.url).pathname).toBe(
     "/api/v1/threads/thr_1/inbox/inb_1",
@@ -141,7 +140,9 @@ it("reorders pending messages as one order against the Thread", async () => {
         }),
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /Queued messages/ }));
+  await user.click(
+    await screen.findByRole("button", { name: /Queued messages/ }),
+  );
   await screen.findByText("Second");
   await user.click(
     screen.getAllByRole("button", { name: "Move message up" })[1]!,
@@ -192,7 +193,9 @@ it("runs the next message of a paused Thread by withdrawing and resubmitting it"
     true,
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /Queued messages/ }));
+  await user.click(
+    await screen.findByRole("button", { name: /Queued messages/ }),
+  );
   await screen.findByText("Try again");
   expect(
     screen.queryByText(
@@ -235,7 +238,9 @@ it("says when queued messages run while the Thread advances on its own", async (
     }),
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /Queued messages/ }));
+  await user.click(
+    await screen.findByRole("button", { name: /Queued messages/ }),
+  );
   await screen.findByText("Later");
   expect(
     screen.getByText(
@@ -249,15 +254,10 @@ it("says when queued messages run while the Thread advances on its own", async (
   ).toBe(true);
 });
 
-it("says nothing in a quiet queue that is known to be empty", async () => {
+it("does not flash a queue while loading or show a known-empty queue", async () => {
   const requests: Request[] = [];
-  mount(
-    requests,
-    () => Response.json({ items: [], next_cursor: null }),
-    false,
-    true,
-  );
-  expect(screen.getByRole("button", { name: /Queued messages/ })).toBeTruthy();
+  mount(requests, () => Response.json({ items: [], next_cursor: null }), false);
+  expect(screen.queryByRole("button", { name: /Queued messages/ })).toBeNull();
   await waitFor(() =>
     expect(
       screen.queryByRole("button", { name: /Queued messages/ }),

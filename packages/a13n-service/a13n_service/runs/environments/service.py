@@ -33,6 +33,7 @@ from a13n_service.runs.environments.lifecycle import (
     supports,
     unusable,
 )
+from a13n_service.runs.environments.monitoring.bindings import Selection, select_source
 from a13n_service.runs.environments.mounts import require_usable
 from a13n_service.runs.environments.schemas import (
     ComputerCheck,
@@ -123,6 +124,7 @@ async def reserve_environment(
         scope = await workspace_scope(session, actor, workspace_id, "run")
         limit = runtime.settings.environments.managed_count
         environment = await reserve(session, actor, scope, body.template_id, limit=limit, name=body.name)
+        await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels)
         await begin(session, environment, "creating")
         await session.flush()
         _audit(session, actor, environment, "create")
@@ -154,6 +156,7 @@ async def register_external(
             generation=0,
             created_by_id=actor.id,
         )
+        await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels)
         environment.token = external.seal(runtime.keys, environment, token)
         session.add(environment)
         await session.flush()
@@ -176,6 +179,25 @@ async def _writable(
     require_match(if_match, environment.id, environment.version)
     _require_manager(actor, scope, environment)
     return environment
+
+
+async def select_metrics_source(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    environment_id: str,
+    body: Selection,
+    *,
+    if_match: str | None,
+) -> EnvironmentView:
+    async with transaction(runtime.storage) as session:
+        environment = await _writable(session, actor, workspace_id, environment_id, if_match)
+        if environment.status == "deleted" and body.metrics_data_source_id is not None:
+            raise conflict("environment", environment.id, "environment_deleted")
+        if await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels):
+            await session.flush()
+            _audit(session, actor, environment, "metrics_binding.update")
+        return EnvironmentView.model_validate(environment)
 
 
 async def update_environment(

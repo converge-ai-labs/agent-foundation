@@ -195,15 +195,18 @@ tool_search:
       harness_plugins: [plugin-memory]
   config:
     mode: proxy
-    search_name: search_proxy_tools
-    call_name: call_proxy_tool
+    search_name: discover_tools
+    describe_name: describe_tool
+    call_name: call_tool
+    list_name: list_tools
+    groups_name: list_tool_groups
     max_results: 10
     max_search_bytes: 32768
 ```
 
-`config.mode: proxy` is the default and uses Harness search and call tools. To use native discovery and direct local calls, replace `config` with `{mode: native, strategy: bm25}`. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default. Native mode rejects proxy control names and limits; proxy mode rejects native strategy settings. Both modes retain grouped tool names and local execution.
+`config.mode` may be omitted or set to `proxy`. The model uses fixed `discover_tools`, `describe_tool`, `call_tool`, `list_tools`, and `list_tool_groups` controls. Use `list_tools(detail="full")` and follow `next_offset` to retrieve the complete directory. Discovery and listing never add member schemas to subsequent requests. Migrate old `mode: native` settings to `proxy` and remove `strategy`.
 
-For native mode, select a Model that supports native tool search. Unsupported Models fail before the model request, without fallback. See [native tool search](../a13n-harness/tool-search.md#select-native-tool-search) for execution details.
+A group's `capabilities` selects enabled local Capability keys, for example `capabilities: [dynamic_environment]`. These sources share the proxy and their original execution path with MCP and plugins. See [the fixed proxy](../a13n-harness/tool-search.md#use-the-fixed-proxy).
 
 `config` is optional. Group names start with a letter, contain up to 32 letters, digits, underscores or hyphens, and cannot contain `__`. Descriptions must be nonblank and at most 512 characters. Select exact resource IDs, including distinct IDs for multiple instances of the same plugin. A source belongs to one group only. Different sources in a group must have distinct tool names; collisions fail rather than inventing aliases.
 
@@ -218,7 +221,7 @@ a13n-harness-ui config show --format json
 
 `config show` includes `tool_search_previews` for configured Agents. Preview and validation do not connect to MCP or discover tools.
 
-When using an exact `tools` allowlist, list the canonical target names such as `knowledge__lookup`, not just `call_proxy_tool`. Proxy controls do not authorize every member. Renaming a group changes those canonical names, so update any affected allowlists. Existing CodeAct policy is preserved; grouping does not make an ineligible tool CodeAct-callable. See [ToolSearch discovery and execution](../a13n-harness/tool-search.md).
+When using an exact `tools` allowlist, list the canonical target names such as `knowledge__lookup`, not just `call_tool`. Proxy controls do not authorize every member. Renaming a group changes those canonical names, so update any affected allowlists. Existing CodeAct policy is preserved; grouping does not make an ineligible tool CodeAct-callable. See [ToolSearch discovery and execution](../a13n-harness/tool-search.md).
 
 Independent Agent children use their own groups. Markdown subagents inherit the parent's grouping plan and their existing source/tool restrictions. Older saved Runs without a grouping plan retain direct presentation.
 

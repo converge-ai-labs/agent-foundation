@@ -103,7 +103,7 @@ export function DialogPopup({
           {showCloseButton && (
             <DialogPrimitive.Close
               aria-label="Close"
-              className="absolute end-4 top-4"
+              className="absolute end-4 top-5"
               render={<Button size="icon" variant="ghost" />}
               {...closeProps}
             >

@@ -1,0 +1,297 @@
+.collection {
+  container-type: inline-size;
+}
+.table {
+  table-layout: fixed;
+}
+.table [data-column="source"] {
+  width: 27%;
+}
+.table [data-column="state"] {
+  width: 128px;
+}
+.table [data-column="runs"] {
+  width: 64px;
+}
+.table [data-column="activity"] {
+  width: 120px;
+  padding-left: 28px;
+}
+.table tbody td {
+  height: 60px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  vertical-align: middle;
+}
+
+/* Identity ------------------------------------------------------------------ */
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.identity .avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+/* Sized to its text, so the reference marker follows it as in other collections. */
+.identityText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-md);
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none;
+}
+.title[data-untitled] {
+  color: var(--a13n-secondary);
+}
+.title:hover,
+.application:hover {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+}
+.metadata {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+}
+.agent {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Chips that do not fit wrap onto the clipped second line instead of being cut. */
+.tags {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  height: 18px;
+  margin-left: 2px;
+  overflow: hidden;
+}
+/* Translucent, so a chip stays visible on the hovered row. */
+.tag {
+  max-width: 100%;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--a13n-radius-chip);
+  background: color-mix(in srgb, var(--a13n-text) 5.5%, transparent);
+  color: var(--a13n-text-supporting);
+  font: inherit;
+  font-size: var(--a13n-text-2xs);
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background-color 120ms var(--a13n-ease),
+    color 120ms var(--a13n-ease);
+}
+button.tag {
+  cursor: pointer;
+}
+button.tag:hover {
+  background: color-mix(in srgb, var(--a13n-text) 10%, transparent);
+  color: var(--a13n-text);
+}
+.tagKey {
+  color: var(--a13n-tertiary);
+}
+button.tag:hover .tagKey {
+  color: var(--a13n-secondary);
+}
+
+/* Source -------------------------------------------------------------------- */
+/* One column track, so long names truncate inside the cell instead of widening it. */
+.source {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  justify-items: start;
+}
+.sourceName {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
+}
+.application {
+  cursor: pointer;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  font: inherit;
+  font-size: var(--a13n-text-xs);
+  line-height: 18px;
+}
+.application[data-lead] {
+  color: var(--a13n-text-supporting);
+  font-size: var(--a13n-text-sm);
+  line-height: 20px;
+}
+.application:hover {
+  color: var(--a13n-text);
+}
+
+/* Run summary --------------------------------------------------------------- */
+.state {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+}
+.runCount,
+.activity {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.runCount {
+  color: var(--a13n-text-supporting);
+}
+.activity {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.unspecified {
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-sm);
+}
+.state .unspecified {
+  font-size: var(--a13n-text-xs);
+}
+
+/* Session editor ------------------------------------------------------------ */
+.editor,
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.fields {
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.originFields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  background: var(--a13n-surface);
+  border-radius: 12px;
+}
+
+/* Narrow collections --------------------------------------------------------- */
+@container (max-width: 880px) {
+  .table [data-column="runs"] {
+    display: none;
+  }
+}
+@container (max-width: 760px) {
+  .table [data-column="source"] {
+    width: 32%;
+  }
+  .table [data-column="activity"] {
+    display: none;
+  }
+}
+@container (max-width: 560px) {
+  .table,
+  .table tbody {
+    display: block;
+  }
+  .table thead {
+    display: none;
+  }
+  .table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 32px;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 12px 0;
+  }
+  .table tbody td,
+  .table tbody [data-column] {
+    display: block;
+    height: auto;
+    width: auto;
+    padding: 0;
+    min-width: 0;
+  }
+  /* Each line names itself, so the shared column captions stay off. */
+  .table tbody td::before {
+    content: none;
+  }
+  .table [data-column="identity"] {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+  .table [data-column="source"] {
+    grid-column: 1;
+    grid-row: 2;
+    margin-left: 44px;
+  }
+  .table [data-column="state"] {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .table tbody [data-column="activity"],
+  .table tbody [data-column="runs"] {
+    display: none;
+  }
+  .table tbody td:last-child {
+    grid-column: 3;
+    grid-row: 1;
+    padding: 0;
+  }
+  .table tbody td:last-child > div {
+    opacity: 1;
+  }
+  .sourceName {
+    display: none;
+  }
+  .application,
+  .application[data-lead] {
+    color: var(--a13n-secondary);
+    font-size: var(--a13n-text-xs);
+    line-height: 18px;
+  }
+}

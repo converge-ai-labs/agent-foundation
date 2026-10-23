@@ -1,4 +1,6 @@
 import {
+  InfoIcon,
+  MagnifyingGlassIcon,
   NotePencilIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -10,7 +12,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { Button, MenuItem, ModalFrame } from "a13n-ui";
+import { Button, MenuItem, MenuSeparator, ModalFrame } from "a13n-ui";
 import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
@@ -126,6 +128,7 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
                     source.activate(item, event.currentTarget)
                   }
                 >
+                  <InfoIcon size={14} aria-hidden="true" />
                   {t("View source")}
                 </MenuItem>
                 {can("run") && (
@@ -183,7 +186,7 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
         </>
       ) : search ? (
         <Empty
-          icon={<NotePencilIcon size={20} />}
+          icon={<MagnifyingGlassIcon size={20} />}
           title={t("No matching records")}
           description={t("Try other words.")}
         />
@@ -232,6 +235,7 @@ function RecordActions({
         <PencilSimpleIcon size={14} aria-hidden="true" />
         {t("Edit")}
       </MenuItem>
+      <MenuSeparator />
       <Confirm
         danger
         title={t("Delete record")}

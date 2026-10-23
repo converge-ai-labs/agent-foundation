@@ -123,7 +123,7 @@ executable = HarnessBuilder(
 | `CodeActCapability`            | 受限 Python runner 和显式键到 JSON 存储值                            | 明确选定的适用工具，以及用于程序的环境文件           |
 | `ContextualMCP`                | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次                        | Harness 提供的当前 `AgentContext`                    |
 
-大型本地工具集合可使用 [ToolSearchCapability](tool-search.md)，它接受由被动 `ToolSearchGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口支持分组发现、动态 schema 和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-search.md#host-integration)。
+大型本地工具集合可使用 [ToolSearchCapability](tool-search.md)，它接受由被动 `ToolSearchGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口通过固定代理 schema 支持分组发现、完整列表和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-search.md#host-integration)。
 
 每个功能只公开一个 Capability。其内部绑定执行的实例保持私有，在同一逻辑执行的模型尝试之间复用，不跨执行复用。Host 协作对象通过 `RunBindings.web`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets` 提供。`WebBinding` 和 `TaskStateBinding` 是被动冻结值，不是 Capability。这些字段不会启用缺失功能，也绝不进入 `HarnessState`。Host 负责 provider 生命周期，在 provider 契约允许时可以共享传输。
 
@@ -371,11 +371,11 @@ bindings = RunBindings.embedded(
 
 精确 `*_BACKEND` 忽略对应 `*_BACKEND_PRIORITY`，禁用回退。环境变量只选择模式和后端 ID；provider 对象和凭据仍来自 `RunBindings.web` 中的新 `WebBinding`。显式传入 `WebCapability(WebConfiguration(...))` 是权威配置，不合并环境默认值，使加载预设保持确定性。
 
-## 执行内 shell 观测
+## Shell 执行与观测
 
 `DynamicEnvironmentCapability` 根据当前挂载操作派生 shell 执行、通过 `shell_info` 进行原生发现/检查、显式偏移量 `shell_wait`，以及支持的输入/控制工具。工具接口不要求 Host 进程 operator，也不要求全有或全无的交互权限。
 
-执行清理释放本地观测，不统一终止所有命令。引用和缓冲只在本次执行有效；后续执行可通过新引用发现 provider 实际保留的命令。完成提示报告原生退出，不代表输出完整捕获。不引入进程数据库或执行后的唤醒服务。
+使用 Host 持有的工具 runtime 时，顶层 Shell 执行跨 Run 保留原进程和捕获，直到原生终结且输出观测关闭。独立的 `process-*` 引用和缓冲仍只属于一个 Run，提供尽力而为的原生退出提示。资源范围丢失后的恢复由 Provider 发现负责；保留执行的结果和完成观测由 Harness 工具 runtime 负责。
 
 签名、输出来源、观测限制和 provider 专属恢复见[环境工具](environments.md)。
 

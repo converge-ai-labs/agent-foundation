@@ -470,3 +470,47 @@ def test_completed_tool_correlation_is_bounded_and_releases_argument_budget(rend
     assert all(
         not preview.arguments and preview.parts is None and preview.size == 0 for preview in renderer._tools.values()
     )
+
+
+def test_execution_waits_group_without_claiming_completion_or_hiding_errors(renderer):
+    observed = {"execution_id": "exec-one", "run_id": "run-one", "tool_name": "shell_exec", "status": "running"}
+    for index in range(3):
+        call(renderer, "tool_execution_wait", {"execution_id": "exec-one"}, call_id=f"wait-{index}", result=observed)
+    concise = render(renderer)
+    assert "Tool executions · 3 operations" in concise
+    assert concise.count("running at last check") == 1 and "(3 checks)" in concise
+    call(renderer, "tool_execution_wait", {"execution_id": "exec-one"}, call_id="pending")
+    assert "…" in render(renderer)
+    finish(renderer, "pending", {"ok": False, "error": {"code": "unavailable"}})
+    assert "failed: unavailable" in render(renderer)
+    assert all(f"Arguments | wait-{index}" in render(renderer, detailed=True) for index in range(3))
+    call(renderer, "view", {"file_path": "one"}, call_id="read", result={"ok": True})
+    call(renderer, "tool_execution_cancel", {"execution_id": "exec-one"}, call_id="cancel", result=observed)
+    concise = render(renderer)
+    assert "Read one" in concise and "cancellation requested" in concise
+    assert "cancelled at last check" not in concise
+
+
+def test_execution_groups_keep_message_and_run_boundaries(renderer):
+    for index in range(2):
+        call(renderer, "tool_execution_info", {}, call_id=f"inspect-{index}", result=[])
+    renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "boundary", "delta": "Still working"})
+    call(
+        renderer,
+        "tool_execution_result",
+        {"execution_id": "exec-one"},
+        call_id="result",
+        result={"status": {"phase": "exited"}},
+    )
+    call(
+        renderer,
+        "tool_execution_wait",
+        {"execution_id": "exec-two"},
+        call_id="next",
+        run_id="other",
+        result={"status": "unavailable"},
+    )
+    concise = render(renderer)
+    assert concise.count("Tool executions ·") == 1
+    assert concise.index("Still working") < concise.index("Retrieve result") < concise.index("unavailable")
+    assert "at last check" not in concise

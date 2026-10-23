@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncIterator, Collection, Iterator, Sequence
+from collections.abc import AsyncGenerator, Collection, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -298,7 +298,7 @@ async def open_observation(
     instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
     *,
     shutdown_timeout_seconds: float = 10.0,
-) -> AsyncIterator[UiObservation]:
+) -> AsyncGenerator[UiObservation]:
     """Resolve once per App; never replace or shut down a caller's providers."""
     selected = HarnessInstrumentation.from_environment() if instrumentation == "environment" else instrumentation
     owned: TracerProvider | None = None

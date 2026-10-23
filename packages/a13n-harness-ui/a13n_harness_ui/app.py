@@ -7,11 +7,11 @@ import json
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from itertools import chain
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 import httpx2
@@ -119,6 +119,7 @@ from a13n_harness_ui.errors import (
     EnvironmentLifecycleError,
     HarnessUiError,
     LivePresentationError,
+    RunCoordinationError,
     ThreadError,
 )
 from a13n_harness_ui.extensions import (
@@ -171,7 +172,6 @@ from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputRequestView, McpI
 from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
 from a13n_harness_ui.memory_organization import MemoryOrganizationStatus, MemoryOrganizer
 from a13n_harness_ui.model_accounts import (
-    DEFAULT_GROK_OAUTH_SCOPE,
     AccountProjection,
     AccountStoreError,
     CodexAccountStore,
@@ -179,17 +179,28 @@ from a13n_harness_ui.model_accounts import (
     GrokAccountStore,
     GrokLoginCallback,
     Provider,
-    resolve_codex_policy,
-    resolve_grok_policy,
-    resolve_grok_scope,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
-from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
+from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
+
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
+from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
+from a13n_harness_ui.model_accounts.provider_usage import CopilotUsage, read_copilot_usage
+from a13n_harness_ui.model_accounts.subscriptions import (
+    SubscriptionAccountCreate,
+    SubscriptionAccountUpdate,
+    SubscriptionAccountView,
+    SubscriptionCatalog,
+)
 from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
+from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage, UsageSnapshot
 from a13n_harness_ui.model_authoring import (
     ModelChoice,
     ModelChoices,
@@ -203,9 +214,8 @@ from a13n_harness_ui.model_authoring import (
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
 from a13n_harness_ui.model_runtime import (
     ChatGPTSubscriptionSource,
-    CodexSubscriptionSource,
     CopilotSubscriptionSource,
-    GrokSubscriptionSource,
+    ManagedSubscriptionSource,
     SubscriptionSource,
 )
 from a13n_harness_ui.observation import open_observation
@@ -252,6 +262,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.storage.shares import ShareRepository
 from a13n_harness_ui.storage.usage import ThreadUsageView
+from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
@@ -294,6 +305,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSelectorCatalog,
     ThreadSummary,
     ThreadWork,
+    ToolExecutionView,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -311,6 +323,7 @@ from a13n_harness_ui.thread_files import (
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
+from a13n_harness_ui.tool_executions import ToolExecutions, execution_view
 from a13n_harness_ui.voice import VoiceController
 from a13n_harness_ui.web_push import WebPush
 
@@ -386,6 +399,7 @@ class HarnessUiApp:
         terminal_projections: TerminalProjectionService,
         work: ThreadWorkService,
         root_runs: RootRunCoordinator,
+        tool_executions: ToolExecutions,
         thread_files: ThreadFiles,
         subagent_operator: HarnessUiSubagentOperator,
         live_hub: HarnessUiLiveHub,
@@ -454,12 +468,19 @@ class HarnessUiApp:
         self._shared_drafts: dict[str, SharedDraft] = {}
         self._page_presence = PagePresence()
         self._root_runs = root_runs
+        self._tool_executions = tool_executions
+        tool_executions.deliver = self._deliver_tool_completion
+        tool_executions.changed = self._tool_execution_changed
         self._subagent_operator = subagent_operator
         self._live_hub = live_hub
         self._summary_hub = summary_hub
         self._copilot_account = copilot_account
         self._copilot_login = copilot_login
+        self.subscription_accounts = SubscriptionAccounts(store.layout.root)
+        self.subscription_usage = SubscriptionUsage(self.subscription_accounts)
         self._codex_account = codex_account
+        from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
         self._chatgpt_account = ChatGPTAccountStore(store.layout.root / "auth.json")
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
@@ -488,20 +509,35 @@ class HarnessUiApp:
             raise HarnessUiError("Live is available in WebUI with a configuration directory.", code="live_unavailable")
         return self._voice
 
-    def _voice_model(self, source: LoadedHarnessUiConfiguration) -> CodexLiveModel:
-        assert source.document.live is not None
+    async def _voice_model(self, source: LoadedHarnessUiConfiguration) -> tuple[CodexLiveModel, str]:
+        from a13n_harness_ui.model_accounts.routing import account_order, choose_account
+
+        assert source.document.live is not None and source.document.live.model is not None
         voice = source.document.live.voice
         if voice == "marin" or voice == "cedar":
             raise ThreadError(
                 "Choose cove or another Codex V3 voice in Live settings before starting voice.",
                 code="live_voice_incompatible",
             )
-        if self._codex_account is None:
-            raise ThreadError("Connect a Codex subscription account before starting Live.", code="live_account_missing")
-        return CodexLiveModel(
-            BoundCodexCredentialSource(self._codex_account),
-            voice=voice,
-            configuration=source.document.run_configuration,
+        recipe = AgentCompositionResolver().model_recipe(source.models[source.document.live.model], source)
+        group = recipe.subscription_group
+        assert group is not None
+        account = await choose_account(
+            group,
+            self.subscription_accounts,
+            self.subscription_usage,
+            recipe.route.partition(":")[2],
+            account_order(group),
+        )
+        store = self.subscription_accounts.store(account)
+        assert isinstance(store, CodexAccountStore)
+        return (
+            CodexLiveModel(
+                BoundCodexCredentialSource(store, account_id=account.upstream_account_id),
+                voice=voice,
+                configuration=source.document.run_configuration,
+            ),
+            account.id,
         )
 
     def _push(self) -> WebPush:
@@ -534,6 +570,19 @@ class HarnessUiApp:
         async with self._operation():
             if self._logins is None:
                 raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            if request.provider in {"codex", "grok"}:
+                account_id = request.account_id or f"acct-{request.provider}-default"
+                account = await self.subscription_accounts.get(account_id)
+                if account.provider != request.provider:
+                    raise AppStateError(
+                        "The subscription provider does not match this account.", code="account_provider_mismatch"
+                    )
+                return self._logins.start(
+                    request.model_copy(update={"account_id": account_id}),
+                    account=self.subscription_accounts.store(account),
+                )
+            if request.account_id is not None:
+                raise AppStateError("This provider does not use subscription groups.", code="account_provider_mismatch")
             return self._logins.start(request)
 
     async def active_login(self) -> LoginStatus | None:
@@ -622,6 +671,17 @@ class HarnessUiApp:
                 path,
                 content_plugin_root=self._content_plugin_root,
             )
+            published = await self.subscription_accounts.publish_default_groups(
+                path.parent,
+                frozenset(
+                    model.authentication.kind.removesuffix("_subscription")
+                    for model in candidate.models.values()
+                    if model.authentication.kind in {"codex_subscription", "grok_subscription"}
+                ),
+                existing_groups=frozenset(candidate.subscription_groups),
+            )
+            if published:
+                candidate = await load_harness_ui_configuration(path, content_plugin_root=self._content_plugin_root)
             current = await self._store.configurations.current_digest()
             if candidate.source_digest != current:
                 await self._configurations.accept(
@@ -707,8 +767,7 @@ class HarnessUiApp:
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
-            await self._accept_mutation(result)
-            return result
+            return await self._accept_mutation(result)
 
     async def delete_configuration(
         self,
@@ -723,8 +782,7 @@ class HarnessUiApp:
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
-            await self._accept_mutation(result)
-            return result
+            return await self._accept_mutation(result)
 
     async def preview_subagent_import(
         self,
@@ -757,8 +815,7 @@ class HarnessUiApp:
                 validate_candidate=self._configurations.validate,
                 content_plugin_root=self._content_plugin_root,
             )
-            await self._accept_mutation(result)
-            return result
+            return await self._accept_mutation(result)
 
     async def list_catalog(self) -> tuple[CatalogReference, ...]:
         async with self._operation():
@@ -952,6 +1009,12 @@ class HarnessUiApp:
                 root_operations=root_operations,
                 child_executions=child_executions,
             )
+
+    async def usage_analytics(self, query: UsageQuery) -> UsageAnalyticsView:
+        async with self._operation():
+            source = await self._configurations.current()
+            names = {item.id: item.name for item in source.projects.values()} if source is not None else {}
+            return await self._store.usage_analytics.snapshot(query, project_names=names)
 
     async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
         async with self._operation():
@@ -1598,6 +1661,7 @@ class HarnessUiApp:
                 await self._threads.clear_context(
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
+                self._tool_executions.clear_state(thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             await self._summary_hub.publish(kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes"))
             return await self._projections.detail(thread_id)
@@ -2151,6 +2215,7 @@ class HarnessUiApp:
                 human_input=True,
                 authorize=authorize_app_message if mcp_app_view is not None else None,
             )
+            self._tool_executions.user_input(thread_id)
             await self._clear_submitted_draft(thread_id, draft_clear)
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -2236,6 +2301,52 @@ class HarnessUiApp:
             model_overrides=model_overrides,
         )
 
+    async def tool_executions(
+        self, thread_id: str, *, offset: int = 0, limit: int = 20
+    ) -> tuple[ToolExecutionView, ...]:
+        async with self._operation():
+            await self._threads.get(thread_id)
+            records = await self._tool_executions.runtime.summarize(thread_id, offset=offset, limit=limit)
+            return tuple(execution_view(record) for record in records)
+
+    async def cancel_tool_execution(self, thread_id: str, execution_id: str) -> ToolExecutionView:
+        async with self._operation():
+            await self._threads.require_interactive(thread_id)
+            record = await self._tool_executions.runtime.cancel(thread_id, execution_id)
+            if record is None:
+                raise RunCoordinationError(
+                    "The tool execution is unavailable in this Thread.", code="tool_execution_unavailable"
+                )
+            await self._tool_execution_changed(thread_id)
+            return execution_view(record)
+
+    async def _tool_execution_changed(self, thread_id: str) -> None:
+        thread = await self._store.threads.get(thread_id)
+        if thread is not None:
+            await self._summary_hub.publish(
+                kind="thread", thread_id=thread_id, root_thread_id=await self._subagent_operator._root_thread_id(thread)
+            )
+
+    async def _deliver_tool_completion(self, thread_id: str, prompt: str) -> bool:
+        if self._state is not AppState.ready:
+            return False
+        detail = await self._projections.detail(thread_id)
+        if detail.thread.archived or detail.thread.memory_scope is not None or detail.deferred_requests:
+            return False
+        # Lifecycle hints are model context, not human-authored messages. Keep
+        # the annotation through active steering and idle continuation alike.
+        content = (ContentItem(prompt, ContentMetadata(display=False, source_id="tool_execution.completion")),)
+        if detail.thread.parent_thread_id is not None:
+            return await self._subagent_operator.deliver_tool_completion(thread_id, content)
+        operation = await self._root_runs.active(thread_id)
+        if operation is not None:
+            result = await self._root_runs.steer(
+                receipt_id=operation.receipt.receipt_id, message=content, immediate=False
+            )
+            return result.accepted
+        await self._root_runs.submit_prompt(thread_id=thread_id, prompt=content)
+        return True
+
     async def get_root_operation(self, receipt_id: str) -> RootOperationView:
         async with self._operation():
             return await self._root_runs.get(receipt_id)
@@ -2288,8 +2399,15 @@ class HarnessUiApp:
             )
             if catalog is not None:
                 prepared = prepare_skill_input(prepared, catalog, selected_skills)
-            result = await self._root_runs.steer(receipt_id=receipt_id, message=prepared, touch=True)
+            source = await self._configurations.current()
+            result = await self._root_runs.steer(
+                receipt_id=receipt_id,
+                message=prepared,
+                immediate=source is None or source.document.input.steering_mode == "immediate",
+                touch=True,
+            )
             if result.accepted:
+                self._tool_executions.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
             return result
 
@@ -2342,11 +2460,17 @@ class HarnessUiApp:
     ) -> ChildControlResult:
         async with self._operation():
             await self._threads.require_interactive(parent_thread_id)
+            source = await self._configurations.current()
             result = await self._subagent_operator.steer_execution(
                 parent_thread_id=parent_thread_id,
                 execution_id=execution_id,
                 message=message,
+                immediate=source is None or source.document.input.steering_mode == "immediate",
             )
+            if result.accepted:
+                head = await self._store.child_executions.get(execution_id)
+                if head is not None:
+                    self._tool_executions.user_input(head.child_thread_id)
             return ChildControlResult(
                 execution_id=result.execution_id,
                 accepted=result.accepted,
@@ -2442,11 +2566,15 @@ class HarnessUiApp:
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():
             account = self._account(Provider(provider))
+            from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
             return await account.candidates() if isinstance(account, CopilotAccountStore | ChatGPTAccountStore) else ()
 
     async def select_model_account(self, provider: Provider | str, selection: AccountSelection) -> AccountProjection:
         async with self._operation():
             account = self._account(Provider(provider))
+            from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
             if not isinstance(account, CopilotAccountStore | ChatGPTAccountStore):
                 raise AppStateError(
                     "This account has no source-selection action.", code="account_selection_unsupported"
@@ -2462,7 +2590,7 @@ class HarnessUiApp:
                 from a13n_harness.providers.model.chatgpt import discover_chatgpt_models
 
                 try:
-                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account)
+                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account.source())
                     return tuple(ModelChoice(value=item.slug, label=item.display_name) for item in models)
                 except Exception:
                     raise AppStateError(
@@ -2737,12 +2865,7 @@ class HarnessUiApp:
                         "No Codex login flow is registered.",
                         code="model_account_login_unavailable",
                     )
-                account = self._account(Provider.CODEX)
-                assert isinstance(account, CodexAccountStore)
-                return await account.login(
-                    self._codex_login,
-                    allow_account_switch=allow_account_switch,
-                )
+                return await self.subscription_accounts.login_codex("acct-codex-default", self._codex_login)
             account = self._account(Provider.GROK)
             assert isinstance(account, GrokAccountStore)
             if self._grok_login is None:
@@ -2750,13 +2873,12 @@ class HarnessUiApp:
                     "No Grok login flow is registered.",
                     code="model_account_login_unavailable",
                 )
-            return await account.login(
-                self._grok_login,
-                allow_account_switch=allow_account_switch,
-            )
+            return await self.subscription_accounts.login_grok("acct-grok-default", self._grok_login)
 
     async def logout_model_account(self, provider: Provider | str) -> bool:
         async with self._operation():
+            if Provider(provider) in {Provider.CODEX, Provider.GROK}:
+                return await self.subscription_accounts.logout(f"acct-{provider}-default")
             return await self._account(Provider(provider)).logout()
 
     @asynccontextmanager
@@ -2818,6 +2940,7 @@ class HarnessUiApp:
                     thread=thread,
                     root_operation=root_operation,
                     mcp_inputs=await self.mcp_input_requests(root_thread_id),
+                    tool_executions=await self.tool_executions(root_thread_id),
                     recent_events=tuple(reversed(retained_events)),
                     root_stream=root_stream.summary if root_stream is not None else None,
                 ),
@@ -2835,7 +2958,22 @@ class HarnessUiApp:
         async with self._summary_hub.subscribe(after=after) as subscription:
             yield subscription
 
-    async def _accept_mutation(self, result: ConfigurationMutationResult) -> None:
+    async def _accept_mutation(self, result: ConfigurationMutationResult) -> ConfigurationMutationResult:
+        candidate = result.configuration
+        path = self._require_configuration_path()
+        if await self.subscription_accounts.publish_default_groups(
+            path.parent,
+            frozenset(
+                model.authentication.kind.removesuffix("_subscription")
+                for model in candidate.models.values()
+                if model.authentication.kind in {"codex_subscription", "grok_subscription"}
+            ),
+            existing_groups=frozenset(candidate.subscription_groups),
+        ):
+            result = replace(
+                result,
+                configuration=await load_harness_ui_configuration(path, content_plugin_root=self._content_plugin_root),
+            )
         await self._devices.synchronize_registrations(result.configuration.devices.values())
         expected = await self._store.configurations.current_digest()
         try:
@@ -2855,6 +2993,7 @@ class HarnessUiApp:
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
         await self._summary_hub.publish(kind="project")
+        return result
 
     async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
         if self._mcp_connections is not None:
@@ -2887,25 +3026,111 @@ class HarnessUiApp:
         self._candidate_error = replacement
         return current != previous
 
-    async def codex_usage(self) -> CodexUsage:
-        """Read subscription windows and reset eligibility without redeeming anything."""
+    async def subscriptions(self) -> SubscriptionCatalog:
+        """Read native accounts and cached usage without contacting providers."""
         async with self._operation():
-            account = self._account(Provider.CODEX)
-            assert isinstance(account, CodexAccountStore)
-            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
-                return await CodexUsageClient(account, client).read()
+            views = []
+            for account in await self.subscription_accounts.list():
+                views.append(
+                    SubscriptionAccountView(
+                        account=account,
+                        authentication=await self.subscription_accounts.store(account).inspect(),
+                        usage=await self.subscription_usage.read(account),
+                    )
+                )
+            current = await self._configurations.current()
+            return SubscriptionCatalog(
+                accounts=tuple(views),
+                groups=tuple(current.subscription_groups.values()) if current else (),
+                adoption=await self.subscription_accounts.adoption(),
+            )
 
-    async def redeem_codex_reset(self, request: ResetRequest) -> ResetResult:
-        """Consume the explicitly selected credit on the confirmed account only."""
+    async def inspect_subscription_account(self, account_id: str) -> AccountProjection:
         async with self._operation():
-            account = self._account(Provider.CODEX)
-            assert isinstance(account, CodexAccountStore)
-            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
-                return await CodexUsageClient(
-                    account,
-                    client,
-                    expected_account_id=request.account_id,
-                ).redeem(request)
+            account = await self.subscription_accounts.get(account_id)
+            return await self.subscription_accounts.store(account).inspect()
+
+    async def create_subscription_account(self, request: SubscriptionAccountCreate) -> SubscriptionAccount:
+        async with self._operation():
+            return await self.subscription_accounts.create(request.provider, request.name)
+
+    async def update_subscription_account(
+        self, account_id: str, request: SubscriptionAccountUpdate
+    ) -> SubscriptionAccount:
+        async with self._operation():
+            return await self.subscription_accounts.update(account_id, name=request.name, enabled=request.enabled)
+
+    async def delete_subscription_account(self, account_id: str) -> None:
+        async with self._operation():
+            await self.subscription_accounts.delete(account_id)
+
+    async def logout_subscription_account(self, account_id: str) -> bool:
+        async with self._operation():
+            return await self.subscription_accounts.logout(account_id)
+
+    async def refresh_subscription_usage(self, account_id: str) -> UsageSnapshot:
+        async with self._operation():
+            return await self.subscription_usage.refresh(account_id, force=True)
+
+    async def copilot_usage(self) -> CopilotUsage:
+        """Read the currently selected Copilot account, independently of managed groups."""
+        async with self._operation():
+            try:
+                async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
+                    return await read_copilot_usage(self._copilot_account, client)
+            except (ValueError, ModelAuthenticationError, AccountStoreError):
+                raise AppStateError(
+                    "Copilot usage could not be read. Check the selected account or try again later.",
+                    code="subscription_usage_failed",
+                ) from None
+
+    async def codex_usage(self, account_id: str = "acct-codex-default") -> CodexUsage:
+        """Explicitly inspect a selected account's windows and reset vouchers."""
+        async with self._operation():
+            native = await self.subscription_accounts.get(account_id)
+            account = self.subscription_accounts.store(native)
+            if not isinstance(account, CodexAccountStore):
+                raise AppStateError(
+                    "Reset vouchers require a Codex subscription account.", code="subscription_provider_mismatch"
+                )
+            try:
+                async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
+                    return await CodexUsageClient(
+                        account, client, expected_account_id=native.upstream_account_id
+                    ).read()
+            except ValueError as exc:
+                raise AppStateError(str(exc), code="subscription_usage_failed") from None
+
+    async def redeem_codex_reset(self, request: ResetRequest, account_id: str = "acct-codex-default") -> ResetResult:
+        """Consume the explicitly selected voucher on the confirmed native account."""
+        async with self._operation():
+            native = await self.subscription_accounts.get(account_id)
+            account = self.subscription_accounts.store(native)
+            if not isinstance(account, CodexAccountStore):
+                raise AppStateError(
+                    "Reset vouchers require a Codex subscription account.", code="subscription_provider_mismatch"
+                )
+            if native.upstream_account_id != request.account_id:
+                raise AppStateError(
+                    "The reset confirmation does not match the selected account.",
+                    code="subscription_reset_identity_mismatch",
+                )
+            try:
+                async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
+                    result = await CodexUsageClient(
+                        account,
+                        client,
+                        expected_account_id=request.account_id,
+                    ).redeem(request)
+            except ValueError as exc:
+                raise AppStateError(str(exc), code="subscription_reset_unconfirmed") from None
+            # A confirmed redemption stays successful even if a concurrent logout
+            # prevents updating its advisory usage snapshot.
+            try:
+                await self.subscription_usage.refresh(account_id, force=True)
+            except AccountStoreError:
+                pass
+            return result
 
     def _account(
         self, provider: Provider
@@ -2969,6 +3194,7 @@ class HarnessUiApp:
                 return
             self._state = AppState.stopping
             idle = self._operations_idle
+        self._tool_executions.stop()
         self._memory_organizer.stop()
         if self._voice is not None:
             await self._voice.stop()
@@ -3013,9 +3239,12 @@ class HarnessUiApp:
                 get_logger(__name__).debug("Closing live subscriptions…")
                 with CancelScope(shield=True):
                     try:
-                        await self._live_hub.close()
+                        await self._tool_executions.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
                     finally:
-                        await self._summary_hub.close()
+                        try:
+                            await self._live_hub.close()
+                        finally:
+                            await self._summary_hub.close()
 
     def _require_ready(self) -> None:
         if self._state is not AppState.ready:
@@ -3071,6 +3300,7 @@ async def open_harness_ui_app(
         ):
             if settings.pricing_auto_update:
                 resources.enter_context(prices.update_in_background())
+            subscription_accounts = SubscriptionAccounts(store.layout.root)
             selected_integrations = integrations or HarnessUiIntegrations()
             catalog = HarnessUiExtensionCatalog(
                 provider_plugins=settings.provider_plugins,
@@ -3094,6 +3324,22 @@ async def open_harness_ui_app(
                     candidate_error = None
                 except HarnessUiError as exc:
                     candidate_error = exc
+            await subscription_accounts.adopt_once(
+                configuration_path.expanduser().resolve().parent if configuration_path is not None else None,
+                grok_scope=grok_scope,
+                existing_groups=frozenset(candidate.subscription_groups) if candidate else frozenset(),
+                group_providers=frozenset(
+                    model.authentication.kind.removesuffix("_subscription")
+                    for model in candidate.models.values()
+                    if model.authentication.kind in {"codex_subscription", "grok_subscription"}
+                )
+                if candidate is not None
+                else frozenset(),
+            )
+            if candidate is not None and configuration_path is not None:
+                candidate = await load_harness_ui_configuration(
+                    configuration_path, content_plugin_root=store.layout.content_plugins
+                )
             _raise_startup_model_error(candidate_error)
             current_digest = await store.configurations.current_digest()
             if candidate is not None:
@@ -3192,32 +3438,32 @@ async def open_harness_ui_app(
             )
             codex_account_error: AccountStoreError | None = None
             try:
-                codex_account = CodexAccountStore(await resolve_codex_policy())
+                codex_account = subscription_accounts.store(await subscription_accounts.get("acct-codex-default"))
+                assert isinstance(codex_account, CodexAccountStore)
             except AccountStoreError as exc:
                 codex_account = None
                 codex_account_error = exc
             grok_account_error: AccountStoreError | None = None
             try:
-                grok_policy = resolve_grok_policy()
-                selected_grok_scope = grok_scope or await resolve_grok_scope(grok_policy) or DEFAULT_GROK_OAUTH_SCOPE
-                grok_account = GrokAccountStore(grok_policy, scope=selected_grok_scope)
+                grok_account = subscription_accounts.store(await subscription_accounts.get("acct-grok-default"))
+                assert isinstance(grok_account, GrokAccountStore)
             except AccountStoreError as exc:
                 grok_account = None
                 grok_account_error = exc
             copilot_account = CopilotAccountStore(store.layout.root / "oauth" / "copilot.json")
+            from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
             subscription_sources: dict[str, SubscriptionSource] = {
                 "chatgpt_subscription": ChatGPTSubscriptionSource(
-                    source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                    create_source=ChatGPTAccountStore(store.layout.root / "auth.json").source
                 ),
                 "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
             }
-            if codex_account is not None:
-                subscription_sources["codex_subscription"] = CodexSubscriptionSource(source=codex_account)
-            if grok_account is not None:
-                subscription_sources["grok_subscription"] = GrokSubscriptionSource(
-                    source=grok_account,
-                    refresh=grok_refresh,
-                )
+            managed_source = ManagedSubscriptionSource(
+                subscription_accounts, SubscriptionUsage(subscription_accounts), grok_refresh=grok_refresh
+            )
+            subscription_sources["codex_subscription"] = managed_source
+            subscription_sources["grok_subscription"] = managed_source
 
             mcp_operations = None
             if mcp_apps is not None and configuration_path is not None:
@@ -3230,7 +3476,9 @@ async def open_harness_ui_app(
                 resources.push_async_callback(mcp_operations.close)
 
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
+            tool_executions = ToolExecutions()
             operator = HarnessUiSubagentOperator(
+                tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 thread_files=thread_files,
                 restart_coordinator=restart_coordinator,
@@ -3271,6 +3519,7 @@ async def open_harness_ui_app(
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
                 browsers=browsers,
+                tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 restart_coordinator=restart_coordinator,
                 work=work,
@@ -3331,6 +3580,7 @@ async def open_harness_ui_app(
 
             root_runs = RootRunCoordinator(
                 root_executor,
+                tool_executions=tool_executions,
                 restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
@@ -3367,24 +3617,26 @@ async def open_harness_ui_app(
                 errors: dict[Provider, AccountStoreError] = {}
                 sources: dict[str, SubscriptionSource] = {
                     "chatgpt_subscription": ChatGPTSubscriptionSource(
-                        source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                        create_source=ChatGPTAccountStore(store.layout.root / "auth.json").source
                     ),
                     "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
                 }
                 discovered_codex: CodexAccountStore | None = None
                 discovered_grok: GrokAccountStore | None = None
                 try:
-                    discovered_codex = CodexAccountStore(await resolve_codex_policy())
-                    sources["codex_subscription"] = CodexSubscriptionSource(source=discovered_codex)
+                    native_codex = subscription_accounts.store(await subscription_accounts.get("acct-codex-default"))
+                    assert isinstance(native_codex, CodexAccountStore)
+                    discovered_codex = native_codex
                 except AccountStoreError as exc:
                     errors[Provider.CODEX] = exc
                 try:
-                    policy = resolve_grok_policy()
-                    scope = grok_scope or await resolve_grok_scope(policy) or DEFAULT_GROK_OAUTH_SCOPE
-                    discovered_grok = GrokAccountStore(policy, scope=scope)
-                    sources["grok_subscription"] = GrokSubscriptionSource(source=discovered_grok, refresh=grok_refresh)
+                    native_grok = subscription_accounts.store(await subscription_accounts.get("acct-grok-default"))
+                    assert isinstance(native_grok, GrokAccountStore)
+                    discovered_grok = native_grok
                 except AccountStoreError as exc:
                     errors[Provider.GROK] = exc
+                sources["codex_subscription"] = managed_source
+                sources["grok_subscription"] = managed_source
                 root_executor.replace_subscription_sources(sources)
                 operator.replace_subscription_sources(sources)
                 return discovered_codex, discovered_grok, errors
@@ -3404,6 +3656,7 @@ async def open_harness_ui_app(
                 terminal_projections=terminal_projections,
                 work=work,
                 root_runs=root_runs,
+                tool_executions=tool_executions,
                 thread_files=thread_files,
                 subagent_operator=operator,
                 live_hub=live_hub,
@@ -3464,7 +3717,8 @@ async def open_harness_ui_app(
                     memory_organizer.start(background)
                     if app._voice is not None:
                         app._voice.start(background)
-                    app._logins = LoginSessions(background, app._account)
+                    app._logins = LoginSessions(background, app._account, app.subscription_accounts)
+                    background.start_soon(app.subscription_usage.poll)
                     background.start_soon(app._prune_thread_files_periodically)
                     background.start_soon(app._maintain_read_models)
                     if host_mode == "webui":

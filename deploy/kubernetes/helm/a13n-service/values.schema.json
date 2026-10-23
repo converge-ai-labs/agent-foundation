@@ -1,21 +1,20 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": [
-    "image",
-    "existingSecret",
-    "publicUrl",
-    "roles",
-    "objects"
-  ],
+  "required": ["image", "existingSecret", "publicUrl", "roles", "objects"],
   "definitions": {
+    "secretKey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "key"],
+      "properties": {
+        "name": { "type": "string" },
+        "key": { "type": "string", "minLength": 1 }
+      }
+    },
     "image": {
       "type": "object",
-      "required": [
-        "repository",
-        "tag",
-        "pullPolicy"
-      ],
+      "required": ["repository", "tag", "pullPolicy"],
       "properties": {
         "repository": {
           "type": "string",
@@ -29,20 +28,14 @@
           "pattern": "^$|^sha256:[0-9a-f]{64}$"
         },
         "pullPolicy": {
-          "enum": [
-            "Always",
-            "IfNotPresent",
-            "Never"
-          ]
+          "enum": ["Always", "IfNotPresent", "Never"]
         }
       },
       "additionalProperties": false
     },
     "role": {
       "type": "object",
-      "required": [
-        "replicaCount"
-      ],
+      "required": ["replicaCount"],
       "additionalProperties": false,
       "properties": {
         "replicaCount": {
@@ -84,6 +77,67 @@
     }
   },
   "properties": {
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vmagent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "image": { "$ref": "#/definitions/image" },
+            "prometheusUrl": {
+              "type": "string",
+              "pattern": "^$|^https?://[^/?#@,\\s]+(/[^?#,\\s]*)?$"
+            },
+            "remoteWriteUrl": {
+              "type": "string",
+              "pattern": "^$|^https?://[^/?#@,\\s]+(/[^?#,\\s]*)?$"
+            },
+            "remoteWriteBearerTokenSecret": {
+              "$ref": "#/definitions/secretKey"
+            },
+            "remoteWriteCASecret": { "$ref": "#/definitions/secretKey" },
+            "maxDiskUsage": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*(MB|GB|TB|MiB|GiB|TiB)$"
+            },
+            "resources": { "type": "object" },
+            "writerResources": { "type": "object" },
+            "persistence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "existingClaim": { "type": "string" },
+                "storageClassName": { "type": ["string", "null"] },
+                "size": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "deploymentPreset": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "collector": { "enum": ["vmagent", "alloy"] },
+            "queryEndpoint": {
+              "type": "string",
+              "pattern": "^$|^https?://[^/?#@,\\s]+(/[^?#,\\s]*)?$"
+            },
+            "workspaceIds": {
+              "type": "array",
+              "maxItems": 1024,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "queryBearerTokenSecret": { "$ref": "#/definitions/secretKey" }
+          }
+        }
+      }
+    },
     "image": {
       "$ref": "#/definitions/image"
     },
@@ -108,11 +162,7 @@
     },
     "serviceAccount": {
       "type": "object",
-      "required": [
-        "create",
-        "name",
-        "annotations"
-      ],
+      "required": ["create", "name", "annotations"],
       "additionalProperties": false,
       "properties": {
         "create": {
@@ -153,10 +203,7 @@
     },
     "roles": {
       "type": "object",
-      "required": [
-        "control",
-        "worker"
-      ],
+      "required": ["control", "worker"],
       "additionalProperties": false,
       "properties": {
         "control": {
@@ -169,16 +216,11 @@
     },
     "objects": {
       "type": "object",
-      "required": [
-        "backend"
-      ],
+      "required": ["backend"],
       "additionalProperties": false,
       "properties": {
         "backend": {
-          "enum": [
-            "local",
-            "s3"
-          ]
+          "enum": ["local", "s3"]
         },
         "bucket": {
           "type": "string"
@@ -193,21 +235,13 @@
           "type": "string"
         },
         "addressingStyle": {
-          "enum": [
-            "",
-            "auto",
-            "path",
-            "virtual"
-          ]
+          "enum": ["", "auto", "path", "virtual"]
         }
       }
     },
     "metrics": {
       "type": "object",
-      "required": [
-        "enabled",
-        "port"
-      ],
+      "required": ["enabled", "port"],
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -247,10 +281,7 @@
       "additionalProperties": false,
       "properties": {
         "type": {
-          "enum": [
-            "ClusterIP",
-            "NodePort"
-          ]
+          "enum": ["ClusterIP", "NodePort"]
         },
         "nodePort": {
           "type": "integer",

@@ -91,6 +91,52 @@ metrics:
 # Additional non-secret TOML sections, such as [providers] or [telemetry]. The chart writes [server], [database],
 # [objects] and, with bundled Redis, [redis]; set their other fields as A13N_<SECTION>__<FIELD> Secret keys.
 extraConfig: ""
+# Optional Environment metrics collection; separate from Service process metrics above.
+monitoring:
+  vmagent:
+    enabled: false
+    image:
+      repository: victoriametrics/vmagent
+      tag: v1.128.0
+      digest: ""
+      pullPolicy: IfNotPresent
+    # Convenience for a Prometheus server with its remote-write receiver enabled.
+    # Derives /api/v1/write only when remoteWriteUrl is empty; never inferred from queryEndpoint.
+    prometheusUrl: ""
+    remoteWriteUrl: ""
+    remoteWriteBearerTokenSecret:
+      name: ""
+      key: token
+    remoteWriteCASecret:
+      name: ""
+      key: ca.crt
+    persistence:
+      existingClaim: ""
+      storageClassName: null
+      size: 10Gi
+    # Leave space for fragment files, queue chunks and filesystem overhead.
+    maxDiskUsage: 8GiB
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "1"
+        memory: 512Mi
+    # This is a full control process, isolated from the public API Service and HPA.
+    writerResources: {}
+  deploymentPreset:
+    enabled: false
+    name: Deployment metrics
+    collector: vmagent
+    # Query API base, independently configured from the ingestion destination.
+    # Empty uses vmagent.prometheusUrl, when provided.
+    queryEndpoint: ""
+    # Only these workspaces' administrators can view or confirm the preset.
+    workspaceIds: []
+    queryBearerTokenSecret:
+      name: ""
+      key: token
 redis:
   enabled: false
   image: redis:7-alpine

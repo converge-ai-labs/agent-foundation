@@ -7,7 +7,7 @@ false), and every write is confirmed by reading the record back.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, ClassVar
@@ -308,7 +308,7 @@ async def _open_platform(
     credential: Mem0Credential | None,
     namespace: str,
     http: httpx2.AsyncClient,
-) -> AsyncIterator[RecordStore]:
+) -> AsyncGenerator[RecordStore]:
     if credential is None:
         raise ValueError("Mem0 Platform requires an API key.")
     headers = {"Authorization": f"Token {credential.api_key.get_secret_value()}"}
@@ -318,7 +318,7 @@ async def _open_platform(
 @asynccontextmanager
 async def _open_oss(
     configuration: Mem0OSSConfiguration, credential: Mem0Credential | None, namespace: str, http: httpx2.AsyncClient
-) -> AsyncIterator[RecordStore]:
+) -> AsyncGenerator[RecordStore]:
     headers = {} if credential is None else {"X-API-Key": credential.api_key.get_secret_value()}
     yield _OSSStore(http, configuration.base_url, headers, namespace)
 

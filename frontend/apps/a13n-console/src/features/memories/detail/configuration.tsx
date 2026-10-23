@@ -8,6 +8,7 @@ import { useWorkspace } from "../../../layout/workspace";
 import { ifMatch, representation, type Schema } from "../../../shared/api";
 import { Confirm, ConflictNotice } from "../../../shared/dialogs";
 import { ErrorNotice } from "../../../shared/feedback";
+import { CopyableId } from "../../../shared/identity";
 import { TextAreaField } from "../../../shared/forms";
 import { SaveBar, Section } from "../../../shared/page";
 import {
@@ -135,6 +136,7 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
         >
           <GuideField
             kind={memory.kind}
+            hideLabel
             readOnly={readOnly}
             value={draft.guide}
             onChange={(guide) => change({ guide })}
@@ -258,19 +260,25 @@ function MemoryStorage({ memory }: { memory: Schema["Memory"] }) {
       <ReadOnlyField label={t("Kind")}>
         {t(kindLabel(memory.kind))}
       </ReadOnlyField>
-      <ReadOnlyField label={t("Type")}>{typeName(memory.type)}</ReadOnlyField>
+      <ReadOnlyField label={t("Backend")}>
+        {typeName(memory.type)}
+      </ReadOnlyField>
       {memory.provider_id && (
         <ReadOnlyField label={t("Memory provider")}>
-          {provider
-            ? provider.enabled
-              ? provider.name
-              : `${provider.name} · ${t("Disabled")}`
-            : memory.provider_id}
+          {provider ? (
+            provider.enabled ? (
+              provider.name
+            ) : (
+              `${provider.name} · ${t("Disabled")}`
+            )
+          ) : (
+            <CopyableId value={memory.provider_id} />
+          )}
         </ReadOnlyField>
       )}
       {memory.namespace && (
         <ReadOnlyField label={t("Namespace")}>
-          <code>{memory.namespace}</code>
+          <CopyableId value={memory.namespace} />
         </ReadOnlyField>
       )}
     </div>

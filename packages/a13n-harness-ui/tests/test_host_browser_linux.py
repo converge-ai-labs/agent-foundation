@@ -117,7 +117,7 @@ async def wait_value(runtime, page, expression, expected):
 
 
 async def wait_input_paint(reader, writer, point):
-    """Wait for the white fixture input to reach the native desktop before clicking."""
+    """Wait for the fixture input's distinct color, not the white page behind it."""
     async with asyncio.timeout(5):
         while True:
             writer.write(struct.pack(">BBHHHH", 3, 0, round(point["x"]), round(point["y"]), 1, 1))
@@ -128,7 +128,7 @@ async def wait_input_paint(reader, writer, point):
                 _, _, width, height, encoding = struct.unpack(">HHHHi", await reader.readexactly(12))
                 assert encoding == 0
                 pixels = await reader.readexactly(width * height * 4)
-                if pixels[:3] == b"\xff\xff\xff":
+                if pixels[:3] == b"\x5b\xad\x25":
                     return
 
 
@@ -148,7 +148,9 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
                 while (await runtime.window(page))["bounds"]["windowState"] != "maximized":
                     await asyncio.sleep(0.025)
         assert stat.S_IMODE(os.stat(browsers.desktop.control_socket).st_mode) == 0o600
-        await runtime.evaluate(page, "document.querySelector('input').focus()")
+        await runtime.evaluate(
+            page, "const input=document.querySelector('input');input.style.background='rgb(37,173,91)';input.focus()"
+        )
         reader, readonly, dimensions = await rfb(browsers, "thread-a", state.session_id)
         assert min(dimensions) > 100
         readonly.write(b"\x03\0\0\0\0\0\0\x20\0\x20")
@@ -194,6 +196,7 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         )
         await writable.drain()
         await wait_value(runtime, page, "window.nativePointer", True)
+        await wait_value(runtime, page, "document.activeElement.name", "username")
         key(writable, ord("a"))
         await writable.drain()
         await wait_value(runtime, page, "document.querySelector('input').value", "a")
@@ -260,7 +263,7 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         observation = await backend.observe()
         target = next(element.target for element in observation.elements if element.description == "Message")
         await backend.act("click", target=target, revision=observation.revision)
-        assert await runtime.evaluate(page, "scrollY>0 && document.activeElement.name==='username'")
+        await wait_value(runtime, page, "scrollY>0 && document.activeElement.name==='username'", True)
     finally:
         await browsers.close()
 

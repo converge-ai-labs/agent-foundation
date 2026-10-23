@@ -1,5 +1,7 @@
 # The HTTP API
 
+[Schedule management](13-schedules.md#management-api) adds HTTP configuration, preview, status and paginated trigger history. These routes intentionally have no MCP admission.
+
 ## Design position
 
 The Service exposes one HTTP namespace, `/api/v1`. The exported OpenAPI document is the exact contract for paths, parameters and request and response shapes. This chapter owns what applies across routes: authentication at the HTTP boundary, path resolution, collections, preconditions, request-key replay, errors and statuses. It also indexes every route with the chapter that owns its behavior; it does not repeat that behavior.
@@ -10,7 +12,7 @@ Resource routes are served by the `all` and `control` roles; the `worker` role s
 
 `/api/v1/mcp/` serves Streamable HTTP MCP on API-serving roles. It is an alternate transport for workspace resource management and read-only execution queries, not an execution engine or an arbitrary HTTP proxy. The original HTTP operations retain ownership of authentication, authorization, validation, audit, preconditions, pagination and trace redaction.
 
-The assembled application's OpenAPI admits operations individually through `x-a13n-mcp: true`. Admission covers JSON workspace resource operations, including resources that reference existing upload IDs, environment management, read-only Session, Thread, inbox, Run, Attempt, display-content and trace lookup, the scoped usage summary (`GET /usage`), and per-record model request metrics (`GET /usage/records/{record_id}/metrics`). Agent execution/submission/resume/cancellation/waiting, live output/SSE, file transfers and binary content, organization/member/permission administration, and browser login/OAuth authorization flows remain outside this surface. Findings list/detail and Analysis history are admitted read-only JSON queries. Finding submission is admitted as the `execution` group's only write; a Run credential makes that Run the finding's source. Finding review and analysis start/preset preparation remain direct HTTP operations. Distribution routes follow the same explicit admission and JSON constraints. Unmarked operations stay absent; invalid admitted operations and tool-name collisions fail assembly. Each operation ID is its route name, such as `list_agent_revisions`, and duplicate route names fail assembly. Tool names are deterministic for their operation IDs, independent of route traversal order. Arguments cannot redirect dispatch to a different operation.
+The assembled application's OpenAPI admits operations individually through `x-a13n-mcp: true`. Admission covers JSON workspace resource operations, including resources that reference existing upload IDs, environment management, read-only Session, Thread, inbox, Run, Attempt, display-content and trace lookup, the scoped usage summary (`GET /usage`), and per-record model request metrics (`GET /usage/records/{record_id}/metrics`). Schedule configuration, enable/pause/archive, time preview, trigger history and manual dispatch are admitted under the [Schedule delegation contract](13-schedules.md#management-api). Direct Agent execution/submission/resume/cancellation/waiting, live output/SSE, file transfers and binary content, organization/member/permission administration, and browser login/OAuth authorization flows remain outside this surface. Findings list/detail and Analysis history are admitted read-only JSON queries. Finding submission is admitted as the `execution` group's only write; a Run credential makes that Run the finding's source. Finding review and analysis start/preset preparation remain direct HTTP operations. Distribution routes follow the same explicit admission and JSON constraints. Unmarked operations stay absent; invalid admitted operations and tool-name collisions fail assembly. Each operation ID is its route name, such as `list_agent_revisions`, and duplicate route names fail assembly. Tool names are deterministic for their operation IDs, independent of route traversal order. Arguments cannot redirect dispatch to a different operation.
 
 Discovery and invocation require a Bearer credential: the selected Distribution authenticator supplies external workspace credentials; the application validates [Run platform credentials](03-tenancy.md#run-platform-credentials) for internal Agents. Both yield a workspace-confined principal. Browser cookies are not used. An explicit `X-Workspace-ID` must agree with confinement. Credentials and workspace selection are connection context, not tool arguments. Each generated call forwards the caller's credential to the original HTTP application, which authorizes again; neither identities nor cookies are shared across invocations. The transport supplies no additional approval authority.
 
@@ -72,7 +74,9 @@ Some reads are bounded catalogues and return all their items with `next_cursor: 
 
 ### Bounded read representations
 
-Run lists/details, thread Runs, lineage, Agent revisions, Run configuration, inbox, display items/content, model catalog and trace reads accept `view=detailed|compact`. Omission keeps the original detailed response and behavior. HTTP owns these representations; MCP forwards the same body and defaults. New read routes require explicit MCP/platform admission and reuse the original business authorization. ETags and write preconditions do not change.
+Run details, Agent revisions, Run configuration, inbox, display items/content, model catalog and trace reads accept `view=detailed|compact`. Omission keeps the original detailed response and behavior. HTTP owns these representations; MCP forwards the same body and defaults. New read routes require explicit MCP/platform admission and reuse the original business authorization. ETags and write preconditions do not change.
+
+Run collections use the single metadata representation defined in [Runs](05-runs.md#reads), without a `view` parameter. Workspace, Thread and lineage discovery pages use the same whole-record response budget below, and input previews retain at most 200 Unicode code points. Thread pages additionally report their total, chronological position and both directional cursors. The page membership and counts share one database snapshot. `limit` is a maximum record count; the character budget can return fewer records, and callers continue with the returned cursor rather than assuming a full page.
 
 Compact collections default to ten records and stop at whole-record boundaries when the serialized body approaches 10,000 characters, reserving space toward a 12,000-character model-visible response target. This is a character budget, not a token count. Continuation resumes before every unreturned matching record. Individual summaries shorten only their text previews to fit; identity and state remain exact. Existing unfiltered detailed calls can still exceed that budget. Scoped detailed calls may refuse an oversized record with `payload_too_large`, directing callers to its section/fragment read.
 
@@ -302,6 +306,15 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Sessions, threads and runs
 
+Retained-execution list, detail and bounded-result queries are admitted to MCP under execution/read. Cancellation remains an HTTP command outside MCP.
+
+| Path                                                   | Methods | Owner                                     |
+| ------------------------------------------------------ | ------- | ----------------------------------------- |
+| `/threads/{thread}/tool-executions`                    | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}`        | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}/result` | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}/cancel` | POST    | [05](05-runs.md#retained-tool-executions) |
+
 | Path                                  | Methods            | Owner                                             |
 | ------------------------------------- | ------------------ | ------------------------------------------------- |
 | `/sessions`                           | GET, POST          | [05](05-runs.md#reads)                            |
@@ -383,6 +396,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 | `/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}/spans`                | GET     | [07](07-facts-and-delivery.md#trace-query)              |
+| `/traces/{trace}/spans/{span}`         | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/traces/{trace}/spans/{span}/content` | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 | `/trace-backend`                       | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 
@@ -391,7 +405,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 `proto/a13n-service/` holds the two wire contracts generated from the code:
 
 - `openapi.json`, the OpenAPI document the application serves at `/api/v1/openapi.json`;
-- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`).
+- `session-stream.schema.json`, the JSON Schema of each session-stream frame's `data`, keyed by SSE event name (`thread`, `items`, `delta`, `gap`, plus `schedule` and `occurrence` in Schedule view).
 - `thread-stream.schema.json`, the JSON Schema of each thread-stream frame's `data`, keyed by SSE event name (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 `make service-contract-generate` exports both and regenerates the Console's typed client; `make service-contract-check` fails when either export or the client differs from the code. A change to a route, schema or frame updates these exports in the same change.

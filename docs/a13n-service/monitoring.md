@@ -14,6 +14,8 @@ The Service produces three signals (logs, metrics and traces) and records usage 
 
 Logs and metrics never contain credentials, request or response bodies, URLs or query strings. Metrics never name an organization, a workspace or an object: per-workspace numbers come from PostgreSQL.
 
+For target CPU, memory, network and disk metrics, use [Environment monitoring](environment-monitoring.md). Those data sources and collection paths are independent of Service telemetry.
+
 ## Logs
 
 Every process logs to stdout by default, as JSON or, with `telemetry.log_format = "pretty"`, as readable text. `a13n-service run` can also write a JSON file that it rotates by size:

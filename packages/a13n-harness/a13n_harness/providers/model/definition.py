@@ -21,8 +21,7 @@ from .types import ModelConnection, ProviderConfiguration, ValidatedProviderConf
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.providers import Provider
-
-    from .oauth.chatgpt import OpenAIChatGPTCredentialSource
+    from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
 
 
 _PROBE_TIMEOUT_SECONDS = 10

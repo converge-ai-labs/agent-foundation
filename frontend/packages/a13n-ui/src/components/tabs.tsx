@@ -95,9 +95,9 @@ export function TabsTab({
         "relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap border border-transparent font-medium outline-none transition-[color,background-color,box-shadow] focus-visible:ring-1 focus-visible:ring-ring/80 data-disabled:pointer-events-none data-[orientation=vertical]:w-full data-[orientation=vertical]:justify-start data-active:text-foreground data-disabled:opacity-64",
         segmentedControlItemLayoutClassName,
         underline
-          ? "h-9 rounded-none px-0 text-[14px] hover:text-foreground"
+          ? "h-9 rounded-none px-0 text-[14px] hover:text-foreground focus-visible:rounded-md focus-visible:ring-offset-4 focus-visible:ring-offset-background"
           : cn(
-              "rounded-md text-base hover:text-muted-foreground sm:text-sm",
+              "rounded-md text-base hover:text-foreground sm:text-sm",
               segmentedControlItemSizeClassNames[resolvedSize],
             ),
         className,
@@ -115,7 +115,10 @@ export function TabsPanel({
 }: TabsPrimitive.Panel.Props): React.ReactElement {
   return (
     <TabsPrimitive.Panel
-      className={cn("flex-1 outline-none", className)}
+      className={cn(
+        "flex-1 outline-none focus-visible:rounded-md focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-4 focus-visible:ring-offset-background",
+        className,
+      )}
       data-slot="tabs-content"
       {...props}
     />

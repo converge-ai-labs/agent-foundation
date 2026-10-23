@@ -17,9 +17,11 @@ from .input_display import composer_piece
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
 from .tool_rows import (
     CONTEXT_TOOLS,
-    EXPLORATION_TOOLS,
-    ExplorationGroup,
-    ExplorationMember,
+    ToolActivityGroup,
+    ToolActivityMember,
+    activity_kind,
+    arguments_object,
+    execution_result_row,
     failure_reason,
     semantic_tool_row,
     subagent_result_row,
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
     from a13n_stream_protocol.display import Item, ItemRef, StreamPosition
 
     from a13n_harness_ui.goal import GoalView
+    from a13n_harness_ui.model_accounts.models import MainAccountSelection
     from a13n_harness_ui.storage.usage import UsageTotals
     from a13n_harness_ui.surfaces import NotePage, StructuredQuestionRequestView
 
@@ -67,6 +70,7 @@ class Status:
     state: str = "starting"
     execution_status: str | None = None
     goal: GoalView | None = None
+    main_account: MainAccountSelection | None = None
     agent: str = "not configured"
     model: str = "not configured"
     thinking: str = "default"
@@ -198,7 +202,9 @@ class Status:
         token_count = "--"
         if total is not None:
             token_count = (
-                f"{total / 1_000_000:.1f}M"
+                f"{total / 1_000_000_000:.1f}B"
+                if total >= 1_000_000_000
+                else f"{total / 1_000_000:.1f}M"
                 if total >= 1_000_000
                 else f"{total / 1_000:.1f}K"
                 if total >= 1000
@@ -220,6 +226,7 @@ class Status:
         fields = [
             state,
             *((goal_label,) if goal_label is not None else ()),
+            *((f"MAIN {self.main_account.account_name}",) if self.main_account else ()),
             *((speed_label,) if not compact and speed_label is not None else ()),
             *(("Pro",) if not compact and self.reasoning_mode == "pro" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
@@ -227,7 +234,6 @@ class Status:
             f"cache {self.cache_rate_text}",
             cost,
             f"{'think' if compact else 'Thinking'} {self.thinking}",
-            *((f"Fast {self.fast_label}",) if speed_label is None else ()),
             *((f"Mode {self.reasoning_mode_label}",) if self.reasoning_mode != "pro" else ()),
             self.model.split(":")[-1],
             _elapsed_text(elapsed),
@@ -270,13 +276,14 @@ class _ToolPreview:
     truncated: bool = False
     block_id: int | None = None
     summary: str = ""
+    shell_reference: str = ""
     edit_applied: bool = False
     native_result_seen: bool = False
     protocol_result_seen: bool = False
     semantic: str = ""
     read_path: str | None = None
-    group: ExplorationGroup | None = None
-    member: ExplorationMember | None = None
+    group: ToolActivityGroup | None = None
+    member: ToolActivityMember | None = None
 
 
 @dataclass(slots=True)
@@ -339,12 +346,26 @@ class StreamRenderer:
         self._display_items: dict[str, Item] = {}
         self._display_blocks: dict[str, int] = {}
         self._display_staged: list[Item] = []
-        self._exploration: ExplorationGroup | None = None
+        self._activity: ToolActivityGroup | None = None
         self._context: dict[tuple[str, str], ContextActivity] = {}
         self._write_notices: dict[tuple[str, str, str], None] = {}
         # Root deferred call IDs survive a fresh response Run. Other tools and
         # child executions keep their ordinary Run-local correlation.
         self._questions: dict[str, _QuestionReceipt] = {}
+
+    @property
+    def gap(self) -> bool:
+        return self._gap or self.display_gap
+
+    @gap.setter
+    def gap(self, value: bool) -> None:
+        self._gap = value
+        if not value:
+            self.display_gap = False
+
+    def begin_display_snapshot(self) -> None:
+        """Start a fresh baseline, keeping item identities and pending child frames."""
+        self._display_staged.clear()
 
     def register_questions(self, request: StructuredQuestionRequestView) -> None:
         """Retain a typed root request, not a local answer or acceptance receipt.
@@ -490,20 +511,27 @@ class StreamRenderer:
         if name in {"shell_exec", "shell_start"}:
             command = value.get("command")
             return " ".join(command.split())[:500] if isinstance(command, str) else ""
-        process_id = value.get("process_id")
+        process_id = value.get(
+            "execution_id" if name in {"tool_execution_result", "tool_execution_wait"} else "process_id"
+        )
         if isinstance(process_id, str):
             observation = self._shell_processes.get((run_id, process_id))
             return observation.command if observation else ""
         return ""
 
-    def _observe_shell_result(self, text: str, command: str, run_id: str) -> None:
+    def _observe_shell_result(self, text: str, command: str, run_id: str, *, reference: str = "") -> None:
         try:
             result = json.loads(text)
         except ValueError:
             return
-        if not isinstance(result, dict) or not isinstance(result.get("process_id"), str):
+        if not isinstance(result, dict):
             return
-        observation = self._shell_observation(run_id, result["process_id"])
+        observed_reference = reference or result.get("process_id")
+        if result.get("type") == "tool_execution_receipt" and result.get("tool_name") == "shell_exec":
+            observed_reference = result.get("execution_id")
+        if not isinstance(observed_reference, str):
+            return
+        observation = self._shell_observation(run_id, observed_reference)
         if command:
             observation.command = " ".join(command.split())[:500]
         status = result.get("status")
@@ -697,6 +725,8 @@ class StreamRenderer:
         for item in items:
             key = item.id
             before = self._display_items.get(key)
+            if before == item:
+                continue
             self._display_items[key] = item
             content = item.content
             scope = content.get("subagentRunId")
@@ -848,7 +878,10 @@ class StreamRenderer:
         from a13n_stream_protocol.display import DisplayFold, DisplaySnapshot, Item
 
         if payload is None:
-            self.gap = True
+            if display_position is not None:
+                self.display_gap = True
+            else:
+                self.gap = True
             return
         if display_position is not None:
             fold = self._display_fold
@@ -857,8 +890,8 @@ class StreamRenderer:
             if display_position.sequence <= fold.sequence:
                 return
             if display_position.sequence != fold.sequence + 1:
-                # Do not pretend printed output can be rewound or missing bytes recovered.
-                self.gap = True
+                # Only a new compact baseline can repair a missing raw suffix.
+                self.display_gap = True
                 return
             fold.fold([dict(payload)])
             if item is not None and item.id in fold.items:
@@ -877,11 +910,12 @@ class StreamRenderer:
             return
         if event_type == "CUSTOM":
             payload = self._custom_events.accept(payload)
-            self.gap |= self._custom_events.gap
+            if self._custom_events.gap:
+                self.gap = True
             if payload is None:
                 return
         if event_type == "CUSTOM" and payload.get("name") == "a13n.display.reset":
-            self.gap = True
+            self.display_gap = True
             return
         if event_type == "CUSTOM" and payload.get("name") == "a13n.display.snapshot":
             value = payload.get("value")
@@ -896,6 +930,7 @@ class StreamRenderer:
             self._display_fold = DisplayFold.restore(snapshot)
             self._display_fold.changed.clear()
             self._display_rows(snapshot.items, run_id=run_id)
+            self.display_gap = False
             return
         inline_child = payload.get("subagentRunId")
         if isinstance(inline_child, str):
@@ -991,7 +1026,7 @@ class StreamRenderer:
         assistant = message and not user
         identity = terminal_text(execution_id or run_id)
         if thinking or message:
-            self._exploration = None
+            self._activity = None
             if not user and not child and self.status.state != "cancelling":
                 self.status.state = "thinking" if thinking else "responding"
             if child and not detailed:
@@ -1052,13 +1087,14 @@ class StreamRenderer:
             preview = self._tools.get(key)
             label = f"{identity} / {call_id}" if child else call_id
             if event_type.endswith("START"):
-                if self._exploration is not None and self._exploration.members:
-                    if next(reversed(self.transcript.blocks), None) != self._exploration.members[-1].block_id:
-                        self._exploration = None
+                if self._activity is not None and self._activity.members:
+                    if next(reversed(self.transcript.blocks), None) != self._activity.members[-1].block_id:
+                        self._activity = None
                 preview = _ToolPreview(str(payload.get("toolCallName") or "tool")[:60], time.monotonic())
                 preview.semantic, preview.read_path = semantic_tool_row(preview.name, "", self.status.directory)
-                if preview.name not in EXPLORATION_TOOLS:
-                    self._exploration = None
+                group_kind = activity_kind(preview.name)
+                if group_kind is None:
+                    self._activity = None
                 self._tools[key] = preview
                 if not child and self.status.state != "cancelling":
                     self.status.state = preview.name
@@ -1076,16 +1112,17 @@ class StreamRenderer:
                     self.transcript.preview(preview.block_id, brief)
                     if preview.name in CONTEXT_TOOLS or preview.name == "ask_user_question":
                         self.transcript.blocks[preview.block_id].concise_hidden = True
-                    elif preview.name in EXPLORATION_TOOLS:
+                    elif group_kind is not None:
                         group_identity = (run_id, execution_id if child else None)
                         if (
-                            self._exploration is None
-                            or self._exploration.identity != group_identity
-                            or len(self._exploration.members) >= 16
+                            self._activity is None
+                            or self._activity.identity != group_identity
+                            or self._activity.kind != group_kind
+                            or len(self._activity.members) >= 16
                         ):
-                            self._exploration = ExplorationGroup(group_identity)
-                        preview.group = self._exploration
-                        preview.member = ExplorationMember(preview.block_id, brief)
+                            self._activity = ToolActivityGroup(group_identity, kind=group_kind)
+                        preview.group = self._activity
+                        preview.member = ToolActivityMember(preview.block_id, brief)
                         preview.group.members.append(preview.member)
                         preview.group.refresh(self.transcript)
                     self.append(header + "\n", display=False)
@@ -1119,14 +1156,22 @@ class StreamRenderer:
                     if native_state is not None
                     else text
                 )
-                if name.startswith("shell"):
+                retrieved_shell = bool(
+                    preview
+                    and preview.shell_reference
+                    and isinstance(arguments_object(result_text).get("status"), dict)
+                )
+                if name.startswith("shell") or retrieved_shell:
                     command = preview.summary if preview else ""
                     self._observe_shell_result(
-                        result_text, command if name in {"shell_exec", "shell_start"} else "", run_id
+                        result_text,
+                        command if name in {"shell_exec", "shell_start"} else "",
+                        run_id,
+                        reference=preview.shell_reference if retrieved_shell and preview else "",
                     )
                 if not child or detailed:
                     elapsed = f" | {time.monotonic() - preview.started:.1f}s" if preview else ""
-                    state = tool_result(name, result_text).partition("\n")[0]
+                    state = tool_result("shell_exec" if retrieved_shell else name, result_text).partition("\n")[0]
                     if native_state is not None and native_state != "returned":
                         state = native_state
                     # Interpret the value, retaining the native envelope in details.
@@ -1136,23 +1181,32 @@ class StreamRenderer:
                     summary = preview.summary if preview else ""
                     brief = header + (f" | {' '.join(summary.split())}" if summary else "") + elapsed
                     shell_preview = None
-                    if name in {"shell_exec", "shell_start", "shell_wait"} and native_state in {None, "returned"}:
+                    if (name in {"shell_exec", "shell_start", "shell_wait"} or retrieved_shell) and native_state in {
+                        None,
+                        "returned",
+                    }:
                         shell_preview = shell_result_preview(result_text, summary, separator=" · ")
                     if shell_preview is not None:
                         brief = f"{name} | {shell_preview}"
                         if child:
                             brief += f" | {identity}"
                     failed = state.startswith("failed") or state in {"retry", "denied"}
-                    if name not in {"edit", "multi_edit"}:
+                    if name not in {"edit", "multi_edit"} and not state.startswith("execution handed off"):
                         semantic = (
                             preview.semantic if preview else semantic_tool_row(name, "", self.status.directory)[0]
                         )
                         if shell_preview is not None:
-                            brief = "Run " + shell_preview
+                            brief = (
+                                preview.semantic + " · " if retrieved_shell and preview else "Run "
+                            ) + shell_preview
                         elif failed:
                             brief = f"{semantic.split(' ', 1)[0]} {state}: {failure_reason(result_text, state)} — {semantic}"
                         else:
-                            brief = subagent_result_row(name, semantic, text) or semantic
+                            brief = (
+                                execution_result_row(name, semantic, result_text)
+                                or subagent_result_row(name, semantic, text)
+                                or semantic
+                            )
                             if name in {"note_write", "note_delete"} and state in {
                                 "created",
                                 "updated",
@@ -1248,6 +1302,12 @@ class StreamRenderer:
                     preview.summary = tool_preview(
                         preview.arguments, name=preview.name, directory=self.status.directory
                     )
+                    if preview.name in {"tool_execution_result", "tool_execution_wait"}:
+                        command = self._shell_command(preview.name, preview.arguments, run_id)
+                        if command:
+                            preview.summary = command
+                            value = json.loads(preview.arguments)
+                            preview.shell_reference = value["execution_id"]
                     if preview.name.startswith("shell"):
                         preview.summary = self._shell_command(preview.name, preview.arguments, run_id)
                         if preview.name in {"shell_info", "shell_input", "shell_signal"} and preview.summary:
@@ -1283,7 +1343,7 @@ class StreamRenderer:
                 self._tools.pop(next(iter(self._tools)))
             return
         if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
-            self._exploration = None
+            self._activity = None
             self.end_process_observations(run_id)
         if event_type == "RUN_FINISHED":
             outcome = payload.get("outcome")
@@ -1376,7 +1436,7 @@ class StreamRenderer:
                 if context_content or (
                     name == "a13n.harness.context" and context_kind.startswith(("compaction_", "handoff_"))
                 ):
-                    self._exploration = None
+                    self._activity = None
                     if not child or detailed:
                         observation = event if context_content else mutation
                         assert isinstance(observation, dict)

@@ -28,15 +28,30 @@
   border-radius: 12px;
   background: var(--a13n-surface);
 }
-.selection p {
+.participation p,
+.spacesHeader p {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
   margin: 4px 0 0;
 }
-.heading h3 {
-  font-size: 13px;
+/* Selected spaces: headed like the editor's sections, rows close below. */
+.spaces {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.spacesHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.spacesHeader h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
+  line-height: 20px;
 }
 .rows {
   display: grid;
@@ -71,15 +86,7 @@
   gap: 6px;
   min-width: 0;
 }
-.empty {
-  padding: 20px;
-  border-radius: 8px;
-  background: var(--a13n-surface);
-}
 @media (width < 480px) {
-  .heading {
-    align-items: start;
-  }
   .controls {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -88,10 +95,9 @@
   }
 }
 
-.participation p,
 .organization p {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
   margin-top: 4px;
 }
@@ -107,4 +113,34 @@
   flex-wrap: wrap;
   font-size: 12px;
   color: var(--a13n-secondary);
+}
+
+@media (width < 480px) {
+  .spacesHeader {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .spacesHeader > :first-child {
+    flex-basis: 100%;
+  }
+}
+
+.compact .participation {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.compact .participation label {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+
+.compact .spacesHeader {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+.compact .spacesHeader > :first-child {
+  flex-basis: auto;
+  min-width: 0;
 }

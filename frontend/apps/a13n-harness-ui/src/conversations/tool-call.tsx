@@ -16,6 +16,7 @@ import {
   Chats,
   ListChecks,
   UsersThree,
+  Hourglass,
 } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
@@ -256,6 +257,13 @@ function ToolDetails({ tool }: { tool: ToolView }) {
           {info.errorText}
         </p>
       )}
+      {info.executionReceipt && (
+        <p role="status">
+          Execution <code>{info.executionReceipt.execution_id}</code> was handed
+          off ({info.executionReceipt.status} at handoff). This is a receipt;
+          the retained result is retrieved separately.
+        </p>
+      )}
       {tool.provider && <small>Provider-run tool · {tool.provider}</small>}
       <CollaborationDetails tool={tool} />
       {((tool.images?.length ?? 0) > 0 || tool.imageUnavailable) && (
@@ -300,14 +308,10 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             )}
           </section>
         )}
-      {info.kind === "shell" && (
+      {info.shell && (
         <>
-          {typeof info.args.command === "string" && (
-            <CodeContent
-              title="Command"
-              value={info.args.command}
-              language="bash"
-            />
+          {info.command && (
+            <CodeContent title="Command" value={info.command} language="bash" />
           )}
           {record(info.result.status) && (
             <small>
@@ -734,6 +738,7 @@ export const ToolActivity = memo(function ToolActivity({
     edit: PencilSimple,
     work: ListChecks,
     subagents: UsersThree,
+    executions: Hourglass,
   }[kind];
   return (
     <section
@@ -742,6 +747,7 @@ export const ToolActivity = memo(function ToolActivity({
       data-tool-id={tools[0].id}
     >
       <DisclosureSection
+        className={styles.groupDisclosure}
         open={expanded}
         onOpenChange={setExpanded}
         title={

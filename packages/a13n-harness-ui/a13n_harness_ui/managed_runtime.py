@@ -8,8 +8,10 @@ import re
 import stat
 import subprocess
 import tarfile
+import tempfile
 import zipfile
 from collections.abc import Callable
+from contextlib import nullcontext
 from importlib import metadata
 from pathlib import Path
 from typing import IO, Literal
@@ -17,7 +19,7 @@ from uuid import uuid4
 
 import httpx2
 from a13n_harness.http import outbound_tls_verify
-from anyio import CancelScope, Lock, open_file, to_thread
+from anyio import CancelScope, Lock, fail_after, open_file, run_process, to_thread
 from pydantic import BaseModel, ConfigDict
 
 from a13n_harness_ui.errors import RuntimeResolutionError
@@ -145,9 +147,29 @@ class ManagedEnvdRuntime:
         if not reinstall and await to_thread.run_sync(
             _matches_version, destination, self._version, self._settings.command_timeout_seconds
         ):
+            await to_thread.run_sync(_pin_installation, destination, self._version)
             self._selected = destination
             return destination
 
+        self._selected = None
+        updater = await self._find_updater(target)
+        if updater is not None:
+            await to_thread.run_sync(_pin_installation, destination, self._version)
+            self._phase = "downloading"
+            await run_native_update(updater, version=self._version, directory=destination.parent, force=reinstall)
+            self._phase = "verifying"
+            if not await to_thread.run_sync(
+                _matches_version, destination, self._version, self._settings.command_timeout_seconds
+            ):
+                raise RuntimeResolutionError(
+                    "The updated a13n-envd executable does not report the selected version.",
+                    code="local_eip_runtime_invalid",
+                )
+            self._selected = destination
+            return destination
+
+        # First installation and migration from binaries without `update` still
+        # need a bootstrap downloader. Never fall back after a native update fails.
         await to_thread.run_sync(_prepare_private_directories, self._cache_root, self._staging_root)
         archive_path = self._staging_root / f"{archive}.{uuid4().hex}.download"
         candidate_path = self._staging_root / f"{executable}.{uuid4().hex}.candidate"
@@ -176,6 +198,7 @@ class ManagedEnvdRuntime:
                     code="local_eip_runtime_invalid",
                     details={"target": target, "release": self._version},
                 )
+            await to_thread.run_sync(_pin_installation, destination, self._version)
             await to_thread.run_sync(_publish_executable, candidate_path, destination)
         except RuntimeResolutionError:
             raise
@@ -191,6 +214,90 @@ class ManagedEnvdRuntime:
                 await to_thread.run_sync(_remove_if_present, candidate_path)
         self._selected = destination
         return destination
+
+    async def _find_updater(self, target: str) -> Path | None:
+        versions = await to_thread.run_sync(_cached_versions, self._cache_root, target)
+        name = "a13n-envd.exe" if target.endswith("windows-msvc") else "a13n-envd"
+        for version in reversed(versions):
+            executable = self._cache_root / version / target / name
+            if await to_thread.run_sync(
+                _matches_version, executable, version, self._settings.command_timeout_seconds
+            ) and await supports_native_update(executable):
+                return executable
+        return None
+
+
+async def supports_native_update(executable: Path) -> bool:
+    """Probe only help; older daemons reject the command before opening a carrier."""
+    try:
+        with fail_after(10):
+            result = await run_process([str(executable), "update", "--help"], check=False)
+    except (OSError, TimeoutError):
+        return False
+    return result.returncode == 0 and all(
+        token in result.stdout for token in (b"a13n-envd update", b"--install-dir", b"--staging-dir")
+    )
+
+
+async def run_native_update(
+    executable: Path,
+    *,
+    version: str | None = None,
+    directory: Path | None = None,
+    check: bool = False,
+    force: bool = False,
+) -> str:
+    """One bounded native updater invocation, shared by explicit CLI and Runtime actions."""
+    arguments = [str(executable), "update"]
+    if version is not None:
+        arguments += ["--version", version]
+    if directory is not None:
+        arguments += ["--install-dir", str(directory)]
+    if check:
+        arguments.append("--check")
+    if force:
+        arguments.append("--force")
+    try:
+        # run_process joins the child on cancellation before this caller-owned
+        # directory is removed. Never sweep another updater's staging files.
+        with nullcontext() if check else tempfile.TemporaryDirectory(prefix="a13n-envd-update-") as staging:
+            if staging is not None:
+                arguments += ["--staging-dir", staging]
+            with fail_after(600):
+                result = await run_process(arguments, check=False)
+    except (OSError, TimeoutError) as exc:
+        raise RuntimeResolutionError(
+            "Envd update could not complete. Inspect the installation before retrying.",
+            code="envd_update_failed",
+        ) from exc
+    output = result.stdout.decode("utf-8", errors="replace") + result.stderr.decode("utf-8", errors="replace")
+    if result.returncode:
+        raise RuntimeResolutionError(
+            output.strip() or "Envd update failed. No automatic retry was attempted.",
+            code="envd_update_failed",
+            details={"returncode": result.returncode},
+        )
+    return output
+
+
+def _pin_installation(destination: Path, version: str) -> None:
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    marker = destination.parent / ".a13n-envd-version"
+    if marker.is_symlink():
+        raise RuntimeResolutionError("Envd version pin must not be a symlink.", code="local_eip_runtime_invalid")
+    if marker.exists():
+        if marker.read_text().strip() != version:
+            raise RuntimeResolutionError("Envd cache version pin does not match.", code="local_eip_runtime_invalid")
+        return
+    # Exclusive creation avoids truncating a concurrent publisher's pin.
+    try:
+        with marker.open("x") as stream:
+            stream.write(version + "\n")
+    except FileExistsError as exc:
+        if marker.read_text().strip() != version:
+            raise RuntimeResolutionError(
+                "Envd cache version pin does not match.", code="local_eip_runtime_invalid"
+            ) from exc
 
 
 def _cached_versions(cache_root: Path, target: str) -> tuple[str, ...]:

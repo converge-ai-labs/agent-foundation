@@ -18,10 +18,12 @@ from a13n_harness.providers.environment.e2b.configuration import (
 from a13n_harness.providers.environment.e2b.provider import E2BProviderRuntime
 from pydantic import BaseModel, Field
 
+from a13n_service.providers.environment.e2b_build import E2BDesktopPreparation
 from a13n_service.settings import RENEWAL_HORIZON_SECONDS
 
 from .configuration import E2BRecipe
 from .definition import E2B as BASE_E2B
+from .desktop_build import DesktopBuildAPI, revision, specification
 
 
 class Account(EnvironmentProviderConfiguration):
@@ -74,6 +76,7 @@ def _connector(
 
 E2B = replace(
     BASE_E2B,
+    e2b_desktop_preparation=E2BDesktopPreparation(specification, revision, DesktopBuildAPI),
     configuration_model=Account,
     environment_model=CloudRecipe,
     provider_factory=_provider,

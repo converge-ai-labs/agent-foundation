@@ -429,6 +429,40 @@ async def test_desktop_creation_uses_image_startup_and_private_eip(native, monke
     ready.assert_awaited_once()
 
 
+@pytest.mark.parametrize("exporter", [True, False])
+async def test_metrics_launch_stays_outside_recipe_fingerprint_and_restart(native, monkeypatch, exporter):
+    import json
+
+    from a13n_service.providers.environment.metrics import MetricsLaunch
+
+    _old, engine, container = native
+    config = DockerRecipe(image="sandbox:envd", execution="envd_http")
+    runtime = DockerProviderRuntime(engine, DockerHttpConfiguration(host="127.0.0.1"))
+    monkeypatch.setattr(DockerManagement, "_wait_envd", AsyncMock())
+    async with await DOCKER.open_provider(runtime=runtime) as provider:
+        plain = DockerManagement(config, "env_metrics", None, runtime)
+        container.labels = plain.labels
+        values = {"OTEL_EXPORTER_OTLP_METRICS_HEADERS": "authorization=private-write-token"} if exporter else {}
+        metrics = MetricsLaunch(values)
+        state = await provider.create(config, environment_id="env_metrics", operation_id="create", metrics=metrics)
+        options = engine.client.containers.create.call_args.kwargs
+        assert options["environment"].get("OTEL_EXPORTER_OTLP_METRICS_HEADERS") == values.get(
+            "OTEL_EXPORTER_OTLP_METRICS_HEADERS"
+        )
+        daemon_config = json.loads(options["environment"]["A13N_ENVD_CONFIG_JSON"])
+        assert daemon_config["monitoring"] == {"sample_interval_ms": 10_000}
+        assert daemon_config["limits"]["max_file_bytes"] == config.max_file_bytes
+        if not exporter:
+            assert not any(key.startswith("OTEL_") for key in options["environment"])
+        assert state.state["configuration_fingerprint"] == plain.fingerprint
+        assert "private-write-token" not in config.model_dump_json() + state.model_dump_json() + repr(metrics)
+        engine.client.containers.get.side_effect = None
+        engine.client.containers.get.return_value = container
+        await provider.create(config, environment_id="env_metrics", operation_id="create", state=state, metrics=metrics)
+        await provider.start(config, environment_id="env_metrics", operation_id="start", state=state)
+        engine.client.containers.create.assert_called_once()
+
+
 async def test_desktop_readiness_failure_retains_target_and_retry_does_not_initialize_again(native, monkeypatch):
     _old, engine, container = native
     config = DockerRecipe(image="sandbox:desktop", desktop=True, execution="envd_http", init_script="echo initialized")

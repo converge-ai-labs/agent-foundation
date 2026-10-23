@@ -372,9 +372,9 @@ it("checks default memory mounts and remaps only the memory", async () => {
 it("remaps grouped membership together with its selected connection", () => {
   const config = {
     model: "test",
-    connection_tools: [{ connection_id: "con_source", defer_loading: true }],
+    connection_tools: [{ connection_id: "con_source" }],
     tool_search: {
-      config: { mode: "native" as const },
+      config: { mode: "proxy" as const },
       groups: {
         knowledge: {
           description: "Lookup",
@@ -388,9 +388,7 @@ it("remaps grouped membership together with its selected connection", () => {
     (item) => item.kind === "connection",
   )!;
   const replaced = dependency.replace("con_target");
-  expect(replaced.connection_tools).toEqual([
-    { connection_id: "con_target", defer_loading: true },
-  ]);
+  expect(replaced.connection_tools).toEqual([{ connection_id: "con_target" }]);
   expect(replaced.tool_search?.groups?.knowledge).toEqual({
     description: "Lookup",
     connections: ["con_target"],

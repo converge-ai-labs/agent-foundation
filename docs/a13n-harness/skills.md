@@ -89,7 +89,7 @@ manager = SkillManager.default(
 
 Pass `SkillsCapability(manager)` in the Agent's capabilities to use these sources. Constructing `SkillManager(...)` directly replaces the default sources. Set `SkillsPolicy(conflict="error")` to reject duplicate names instead of applying source precedence.
 
-With `required=False`, each missing, unroutable, or unsupported root is skipped independently. Permission denial, malformed paths or frontmatter, provider failures, and catalog overflow remain errors.
+With `required=False`, each missing, unroutable, or unsupported root is skipped independently. By default, `skip_invalid=True` skips individual entries whose bounded catalog read or frontmatter validation fails and logs a warning. Valid siblings remain available, and a Run can continue even when all entries are skipped. Set `skip_invalid=False` for strict validation. Root access failures, malformed paths, catalog overflow, and mount-incarnation checks remain errors.
 
 ## Design
 

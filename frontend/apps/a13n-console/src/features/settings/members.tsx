@@ -5,11 +5,14 @@ import {
   MenuItem,
   ModalFrame,
   SearchPicker,
+  Tabs,
+  TabsList,
+  TabsTab,
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactElement } from "react";
-import { PageActions } from "../../shared/page";
+import { useState, type ReactElement, type ReactNode } from "react";
+import { PageActions, useTabParam } from "../../shared/page";
 
 import { ApiError, type Client } from "../../service-client";
 import {
@@ -36,10 +39,50 @@ import { ConflictNotice, Confirm } from "../../shared/dialogs";
 import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
-import { InvitationEditor } from "./invitations";
+import { InvitationEditor, Invitations } from "./invitations";
 import { roles, type MembershipScope, type Role } from "./roles";
 
 export type { MembershipScope };
+
+/** Members and invitations share one navigation entry and scoped header. */
+export function MemberSettings({ scope }: { scope: MembershipScope }) {
+  const { t } = useTranslation(),
+    { organization, organizationCan } = useAccess();
+  const [tab, setTab] = useTabParam(["members", "invitations"]);
+  // Both tabs offer the same actions, so the header holds still between them.
+  const actions = (
+    <>
+      {scope.kind === "workspace" && organizationCan("admin") && (
+        <AddMember scope={scope} organizationId={organization.id} />
+      )}
+      <InvitationEditor scope={scope} />
+    </>
+  );
+  return (
+    <div className={styles.stack}>
+      <PageActions>{actions}</PageActions>
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="underline">
+          <TabsTab value="members">{t("Members")}</TabsTab>
+          <TabsTab value="invitations">{t("Invitations")}</TabsTab>
+        </TabsList>
+      </Tabs>
+      {tab === "invitations" ? (
+        <Invitations
+          key={`${scope.kind}:${scope.id}`}
+          scope={scope}
+          actions={actions}
+        />
+      ) : (
+        <Members
+          key={`${scope.kind}:${scope.id}`}
+          scope={scope}
+          actions={actions}
+        />
+      )}
+    </div>
+  );
+}
 
 /** One page of the grants held at exactly this scope, each naming its principal. */
 function grants(
@@ -66,10 +109,15 @@ function roleOf(grant: Schema["GrantView"]): Role {
   return roles.find((role) => role === grant.role) ?? "viewer";
 }
 
-export function Members({ scope }: { scope: MembershipScope }) {
+function Members({
+  scope,
+  actions,
+}: {
+  scope: MembershipScope;
+  actions: ReactNode;
+}) {
   const { t } = useTranslation(),
     client = useClient(),
-    { organization, organizationCan } = useAccess(),
     page = useCursor();
   const bindings = useQuery({
     queryKey: ["bindings", scope.kind, scope.id, page.cursor],
@@ -77,17 +125,8 @@ export function Members({ scope }: { scope: MembershipScope }) {
       grants(client, scope, { cursor: page.cursor, limit: 30 }, signal),
   });
   const items = bindings.data?.items ?? [];
-  const action =
-    scope.kind === "workspace" ? (
-      organizationCan("admin") && (
-        <AddMember scope={scope} organizationId={organization.id} />
-      )
-    ) : (
-      <InvitationEditor scope={scope} />
-    );
   return (
     <div className={styles.stack}>
-      <PageActions>{action}</PageActions>
       {bindings.isPending ? (
         <Loading variant="table" columns={3} rows={5} />
       ) : bindings.error ? (
@@ -205,7 +244,11 @@ export function Members({ scope }: { scope: MembershipScope }) {
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} members", { count: items.length })}
+            count={
+              page.previous || bindings.data?.next_cursor
+                ? t("{{count}} members on this page", { count: items.length })
+                : t("{{count}} members", { count: items.length })
+            }
           >
             <Pagination page={page} next={bindings.data?.next_cursor} />
           </CollectionFooter>
@@ -215,7 +258,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
           icon={<UsersIcon aria-hidden="true" />}
           title={t("No members")}
           description={t("Invite a teammate to start collaborating.")}
-          action={action}
+          action={actions}
         />
       )}
     </div>
@@ -399,7 +442,7 @@ function AddMember({
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button variant="default" type="button">
+        <Button variant="outline" type="button">
           <PlusIcon size={14} />
           {t("Add member")}
         </Button>

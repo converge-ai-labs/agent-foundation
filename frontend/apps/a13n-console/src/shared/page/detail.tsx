@@ -101,10 +101,13 @@ export function DetailPage({
  */
 export function DetailLayout({
   rail,
+  foldedRail = "above",
   className,
   children,
 }: {
   rail?: ReactNode;
+  /** Where a narrow layout puts the rail: above the content, or nowhere. */
+  foldedRail?: "above" | "hidden";
   className?: string;
   children: ReactNode;
 }) {
@@ -112,6 +115,7 @@ export function DetailLayout({
     <div
       className={`${styles.layout} ${className ?? ""}`}
       data-rail={rail ? "true" : "false"}
+      data-folded-rail={foldedRail}
     >
       <div className={styles.main}>{children}</div>
       {rail && <aside className={styles.rail}>{rail}</aside>}

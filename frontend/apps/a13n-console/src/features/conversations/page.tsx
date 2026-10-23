@@ -1,6 +1,6 @@
 import { Button, Label, SearchPicker, Switch } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -34,6 +34,7 @@ import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
 import { SessionStreamProvider } from "./session-stream";
+import { useSession } from "./queries";
 import {
   defaultSessionMemory,
   SessionMemoryFields,
@@ -83,6 +84,7 @@ export function NewConversation() {
       await client.workspace(workspace.id).POST("/api/v1/sessions", {
         body: {
           labels: CONSOLE_SESSION_LABELS,
+          origin: { application: "a13n-console", name: "Console" },
           ...(memory === null ? {} : { memory }),
         },
       }),
@@ -249,7 +251,7 @@ export function NewConversation() {
                     session_id: run.session_id,
                     thread_id: run.thread_id,
                     run_id: run.id,
-                  })
+                  }) + "?follow=latest"
                 : `${basePath}/sessions/${thread.session_id}/threads/${thread.id}`,
             );
           }}
@@ -260,12 +262,60 @@ export function NewConversation() {
 }
 
 export function SessionLayout() {
+  const { sessionId = "", threadId, runId } = useParams(),
+    { basePath, workspace } = useWorkspace();
+  const client = useClient(),
+    cache = useQueryClient();
+  useEffect(() => {
+    const queries = conversationQueries(client, workspace.id);
+    if (threadId) {
+      void cache.prefetchQuery(queries.thread(threadId));
+      void cache.prefetchQuery(queries.runs(threadId, { anchor: runId }));
+    }
+    if (runId) {
+      void cache.prefetchQuery(queries.run(runId));
+      void cache.prefetchQuery(queries.items(runId));
+    }
+  }, [client, cache, workspace.id, threadId, runId]);
+  const session = useSession(sessionId);
+  if (session.isPending) return <Loading variant="detail" />;
+  if (!session.data)
+    return (
+      <ErrorNotice error={session.error} retry={() => void session.refetch()} />
+    );
+  if (session.data.schedule_id && !threadId)
+    return (
+      <Navigate
+        to={`${basePath}/schedules/${session.data.schedule_id}`}
+        replace
+      />
+    );
+  return <SessionContent scheduleId={session.data.schedule_id ?? undefined} />;
+}
+
+function SessionContent({ scheduleId }: { scheduleId?: string }) {
   const { t } = useTranslation(),
-    { sessionId = "", threadId } = useParams(),
+    { sessionId = "", threadId, runId } = useParams(),
     { workspace } = useWorkspace(),
     client = useClient(),
+    cache = useQueryClient(),
     queries = conversationQueries(client, workspace.id);
-  const threads = useQuery(queries.threads(sessionId));
+  const ordinary = useQuery({
+    ...queries.threads(sessionId),
+    enabled: !scheduleId,
+  });
+  const selectedThread = useQuery({
+    ...queries.thread(threadId ?? ""),
+    enabled: !!scheduleId && !!threadId,
+  });
+  const threads = scheduleId
+    ? {
+        data: selectedThread.data ? [selectedThread.data] : undefined,
+        error: selectedThread.error,
+        isPending: selectedThread.isPending,
+        refetch: selectedThread.refetch,
+      }
+    : ordinary;
   // Chat returns to the main conversation, never the most recently listed child.
   // An explicit Thread URL remains authoritative, including forks and children.
   const { search } = useLocation();
@@ -282,7 +332,23 @@ export function SessionLayout() {
       key={`${workspace.id}:${sessionId}`}
       sessionId={sessionId}
     >
-      <SessionStreamProvider sessionId={sessionId}>
+      <SessionStreamProvider
+        sessionId={sessionId}
+        onEvent={(event) => {
+          if (
+            scheduleId &&
+            event.type === "connection" &&
+            event.state === "live"
+          )
+            void invalidateConversation(cache, workspace.id, {
+              threadId,
+              runId:
+                runId ??
+                selectedThread.data?.current_run_id ??
+                selectedThread.data?.last_run_id,
+            });
+        }}
+      >
         <RunCollapseProvider>
           <div className={styles.sessionDetail}>
             <SessionHeader threads={threads.data ?? []} />
@@ -364,7 +430,10 @@ export function ThreadLayout() {
       ) : runId ? (
         <Outlet />
       ) : selected ? (
-        <Navigate to={`runs/${selected}${search}`} replace />
+        <Navigate
+          to={`runs/${selected}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
+          replace
+        />
       ) : (
         thread.data && (
           <div className={styles.emptyThread}>

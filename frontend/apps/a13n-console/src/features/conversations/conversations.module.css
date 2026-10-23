@@ -91,6 +91,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The title takes the room the controls leave, and gives it up last. */
+.sessionTitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .agentName {
   min-width: 0;
   overflow: hidden;
@@ -112,6 +123,7 @@ a.agentLink:focus-visible {
   font-size: var(--a13n-text-2xs);
 }
 .subNote {
+  flex: 0 999 auto;
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
@@ -202,6 +214,9 @@ a.agentLink:focus-visible {
 .agentFilter {
   width: 168px;
 }
+.agentFilterPopup {
+  min-width: 240px;
+}
 .filterLabel {
   color: var(--a13n-secondary);
 }
@@ -217,9 +232,53 @@ a.agentLink:focus-visible {
   border-radius: 50%;
   background: currentColor;
 }
+/* Facets chosen from rows; each stays removable until cleared. */
+.activeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.activeFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 3px 0 10px;
+  border-radius: var(--a13n-radius-chip);
+  background: color-mix(in srgb, var(--a13n-text) 5.5%, transparent);
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-xs);
+}
+.activeFilterName {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.activeFilterValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activeFilter button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--a13n-secondary);
+  cursor: pointer;
+}
+.activeFilter button:hover {
+  background: color-mix(in srgb, var(--a13n-text) 8%, transparent);
+  color: var(--a13n-text);
+}
 .updatedPopup {
-  width: 22rem;
-  max-width: calc(100vw - 2rem);
+  width: min(22rem, calc(100vw - 32px));
 }
 .updatedBody {
   display: grid;
@@ -302,7 +361,15 @@ a.agentLink:focus-visible {
     display: none;
   }
   .agentFilter {
-    width: 100%;
+    flex: 1 1 60%;
+    width: auto;
+  }
+  /* Clear joins the Agent row instead of wrapping alone under the menus. */
+  .agentFilter ~ * {
+    order: 1;
+  }
+  .agentFilter ~ .clearFilters {
+    order: 0;
   }
   .startPage {
     padding: 24px 16px 64px;

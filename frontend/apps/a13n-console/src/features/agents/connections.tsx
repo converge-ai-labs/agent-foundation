@@ -1,4 +1,4 @@
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
 import {
   BrandIcon,
   Button,
@@ -8,6 +8,9 @@ import {
   CollapsibleTrigger,
   Label,
   Spinner,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
 } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -32,6 +35,13 @@ export function displayName(connection: Connection) {
   return connection.name.endsWith(suffix)
     ? connection.name.slice(0, -suffix.length)
     : connection.name;
+}
+
+/** Where a connection's tools come from: its MCP endpoint or connector app. */
+export function connectionEndpoint(connection: Connection) {
+  return "url" in connection.config
+    ? connection.config.url
+    : connection.config.app;
 }
 
 export function ConnectionBrandIcon({
@@ -60,7 +70,7 @@ export function ConnectionGroup({
   onRequireReviewer,
   discovery,
 }: {
-  discovery?: "proxy" | "native";
+  discovery?: "proxy";
   onReview?: (target?: ReviewTarget) => void;
   onRequireReviewer?: () => void;
   connection?: Connection;
@@ -152,58 +162,31 @@ export function ConnectionGroup({
   }
   const state = connection && connectionState(connection);
   const editingDisabled = readOnly || state !== "ready";
+  const name = connection ? displayName(connection) : selection.connection_id;
+  // A connection that cannot serve tools says why where others name their endpoint.
+  const detail = !connection
+    ? t("Unavailable")
+    : state === "ready"
+      ? connectionEndpoint(connection)
+      : t(connectionState(connection));
   return (
     <section className={styles.toolsetGroup}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <div className={styles.toolsetGroupHeader}>
-          <Label className={styles.toolsetGroupSwitch}>
-            <Checkbox
-              aria-label={t("Enable {{group}} tools", {
-                group: connection
-                  ? displayName(connection)
-                  : selection.connection_id,
-              })}
-              disabled={editingDisabled}
-              checked={selection.tools == null || selection.tools.length > 0}
-              onCheckedChange={(checked) =>
-                onChange((current) => ({
-                  ...current,
-                  tools: checked === true ? null : [],
-                  permissions: checked === true ? current.permissions : {},
-                }))
-              }
-            />
-          </Label>
           <CollapsibleTrigger
             render={
-              <button type="button" className={styles.connectionNameTrigger} />
+              <button type="button" className={styles.toolsetGroupTrigger} />
             }
           >
-            {connection && <ConnectionBrandIcon connection={connection} />}
-            <span
-              className={styles.toolsetGroupName}
-              title={
-                connection ? displayName(connection) : selection.connection_id
-              }
-            >
-              {connection ? displayName(connection) : selection.connection_id}
+            <span className={styles.connectionName} title={name}>
+              {connection && <ConnectionBrandIcon connection={connection} />}
+              <span className={styles.toolsetGroupName}>{name}</span>
             </span>
-          </CollapsibleTrigger>
-          <CollapsibleTrigger
-            render={
-              <button
-                type="button"
-                className={styles.connectionSummaryTrigger}
-              />
-            }
-          >
-            {state !== "ready" && (
-              <span className={styles.toolsetGroupCount}>
-                {state ? t(state) : t("Unavailable")}
-              </span>
-            )}
+            <span className={styles.toolsetGroupDescription} title={detail}>
+              {detail}
+            </span>
             {catalog.isPending && connection ? (
-              <Spinner size={16} aria-label={t("Loading…")} />
+              <Spinner size={14} aria-label={t("Loading…")} />
             ) : (
               <span className={styles.toolsetGroupCount}>{count}</span>
             )}
@@ -216,60 +199,31 @@ export function ConnectionGroup({
             />
           </CollapsibleTrigger>
           {!readOnly && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={t("Remove {{name}}", {
-                name: connection
-                  ? displayName(connection)
-                  : selection.connection_id,
-              })}
-              onClick={onRemove}
-            >
-              {t("Remove")}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className={styles.connectionRemove}
+                    aria-label={t("Remove {{name}}", { name })}
+                    onClick={onRemove}
+                  />
+                }
+              >
+                <XIcon size={16} aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipPopup>{t("Remove connection")}</TooltipPopup>
+            </Tooltip>
           )}
         </div>
         <CollapsiblePanel>
           <div className={styles.toolsetGroupBody}>
             <div className={styles.connectionOptions}>
-              <div className={styles.connectionOption}>
-                <span>
-                  <strong>
-                    {t(
-                      discovery === "native"
-                        ? "Native tool search"
-                        : discovery === "proxy"
-                          ? "Grouped proxy search"
-                          : "Load tools on demand",
-                    )}
-                  </strong>
-                  <small>
-                    {t(
-                      discovery
-                        ? "This connection uses its tool discovery group. Its saved loading setting applies when it leaves the group."
-                        : "Load this Connection's tools only when the agent needs them.",
-                    )}
-                  </small>
-                </span>
-                {!discovery && (
-                  <Checkbox
-                    aria-label={t("Load tools on demand")}
-                    disabled={
-                      editingDisabled ||
-                      (!!connection && "app" in connection.config)
-                    }
-                    checked={selection.defer_loading ?? false}
-                    onCheckedChange={(checked) =>
-                      onChange((current) => ({
-                        ...current,
-                        defer_loading: checked === true,
-                      }))
-                    }
-                  />
-                )}
-              </div>
+              {discovery && (
+                <p>{t("This connection uses grouped proxy search.")}</p>
+              )}
               <div className={styles.connectionOption}>
                 <span>
                   <strong>{t("Default tool permission")}</strong>

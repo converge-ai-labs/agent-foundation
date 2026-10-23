@@ -83,6 +83,8 @@ The deterministic source IDs continue to use `workspace`, `workspace-2`, and lat
 
 Plugin files use the whole-directory mount defined by [Skill and File Access](01b-content-plugin-repositories.md#skill-and-file-access), including editable subagent files. Skill sources resolve the manifest-declared subdirectory beneath that mount. Mount availability does not depend on selecting `skills`; catalog construction does. Plugin Skill sources are optional and skip invalid individual entries with diagnostics without hiding valid siblings.
 
+All Skill sources use the Harness default of warning and skipping invalid individual entries while retaining valid siblings. Interactive catalog previews follow the same policy. Root availability requirements and catalog-size limits remain unchanged.
+
 The catalog is prepared after initial Environment entry and frozen for the logical Harness Run. A mount added, replaced, or removed after preparation does not silently change it. Harness mount-incarnation checks reject a selected Skill whose route changes while it is being prepared or read. A later root or child Run reconstructs and rescans its own current source set.
 
 ## Interactive Skill References

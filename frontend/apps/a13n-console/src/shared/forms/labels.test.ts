@@ -1,5 +1,6 @@
+import i18next from "i18next";
 import { expect, it } from "vitest";
-import { fieldLabel } from "./labels";
+import { fieldLabel, translatedFieldLabel } from "./labels";
 
 it("writes schema titles in sentence case", () => {
   expect(fieldLabel("Sandbox Domain")).toBe("Sandbox domain");
@@ -14,6 +15,21 @@ it("restores acronyms the title case flattened", () => {
   expect(fieldLabel("Base Url")).toBe("Base URL");
   expect(fieldLabel("Token Id")).toBe("Token ID");
   expect(fieldLabel("Url Prefix")).toBe("URL prefix");
+  expect(fieldLabel("Aws Session Token")).toBe("AWS session token");
+});
+
+it("prefers the sentence case form over a catalog entry that repeats the title", async () => {
+  const i18n = i18next.createInstance();
+  await i18n.init({
+    lng: "en",
+    resources: {
+      en: { translation: { "Api Version": "Api Version" } },
+      zh: { translation: { "Api Version": "API 版本" } },
+    },
+  });
+  expect(translatedFieldLabel(i18n.t, "Api Version")).toBe("API version");
+  await i18n.changeLanguage("zh");
+  expect(translatedFieldLabel(i18n.t, "Api Version")).toBe("API 版本");
 });
 
 it("keeps tokens the schema spells itself", () => {

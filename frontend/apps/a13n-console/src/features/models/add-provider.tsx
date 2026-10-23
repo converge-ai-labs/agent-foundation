@@ -40,7 +40,7 @@ const featured = [
   "ollama",
 ];
 function hint(definition: Definition) {
-  if (definition.oauth_scheme) return "ChatGPT subscription";
+  if (definition.oauth_scheme) return "Subscription";
   if (definition.authentication.mode === "forbidden") return "Local endpoint";
   return credentialHint(definition.credential_schema);
 }

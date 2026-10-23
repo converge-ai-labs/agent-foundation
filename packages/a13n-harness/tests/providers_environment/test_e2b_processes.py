@@ -703,3 +703,57 @@ async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path
             assert call[0] == "run" and call[2]["cwd"] == str(tmp_path / directory)
             native.emit(native.next_pid - 1, exit_code=0)
             await bound.processes.wait(started.process.handle, condition="initial_terminal", timeout_seconds=1)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="E2B commands use a POSIX guest shell")
+async def test_native_defaults_execute_in_parent_and_child_without_leaking(tmp_path):
+    """Run real processes behind the SDK event adapter; live Service E2E covers the vendor transport."""
+    import json
+    import os
+    import shlex
+
+    class ExecutingCommands(NativeCommands):
+        async def run(self, script, **kwargs):
+            handle = await super().run(script, **kwargs)
+            process = await asyncio.create_subprocess_shell(
+                script,
+                cwd=tmp_path,
+                env={**os.environ, **kwargs["envs"]},
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+            self.emit(handle.pid, stdout=stdout, stderr=stderr, exit_code=process.returncode)
+            return handle
+
+    defaults = {"APP_MODE": "default '中文;$HOME", "EMPTY": ""}
+    native = ExecutingCommands()
+    processes = adapter(native, environment=defaults)
+    script = (
+        "import os,sys,json,subprocess; "
+        "child=subprocess.check_output([sys.executable,'-c',\"import os,json; print(json.dumps([os.environ['APP_MODE'],os.environ['EMPTY']]))\"],text=True); "
+        "print(json.dumps([[os.environ['APP_MODE'],os.environ['EMPTY']],json.loads(child)]))"
+    )
+    try:
+        for patch, expected in [
+            ({}, defaults["APP_MODE"]),
+            ({"APP_MODE": "override"}, "override"),
+            ({"APP_MODE": ""}, ""),
+            ({}, defaults["APP_MODE"]),
+        ]:
+            started = await processes.start(
+                request(shlex.join([sys.executable, "-c", script]), environment=CommandEnvironment(set=patch))
+            )
+            result = await processes.wait(started.process.handle, condition="initial_terminal", timeout_seconds=5)
+            assert result.status.exit_code == 0
+            output = await processes.read_output(result.handle, policy=policy())
+            assert json.loads(output.stdout.capture.inline) == [[expected, ""], [expected, ""]]
+            await processes.release(started.process.handle)
+        before = len(native.calls)
+        with pytest.raises(EnvironmentError) as error:
+            await processes.start(request(environment=CommandEnvironment(unset=("APP_MODE",))))
+        assert error.value.code == "environment_unsupported"
+        assert len(native.calls) == before
+        assert defaults == {"APP_MODE": "default '中文;$HOME", "EMPTY": ""}
+    finally:
+        await processes.close()

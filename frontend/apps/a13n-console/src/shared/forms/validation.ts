@@ -34,6 +34,23 @@ export const validateJson = ajv.compile<Schema["JsonValue"]>({
   $ref: "service#/components/schemas/JsonValue",
 });
 
+const validateScheduleInvocation = ajv.compile<
+  Schema["ScheduleInvocation-Input"]
+>({ $ref: "service#/components/schemas/ScheduleInvocation-Input" });
+export function scheduleInvocation(
+  text: string,
+): Schema["ScheduleInvocation-Input"] {
+  const value: unknown = JSON.parse(text);
+  if (!validateScheduleInvocation(value))
+    throw new Error(
+      ajv.errorsText(validateScheduleInvocation.errors, {
+        separator: "\n",
+        dataVar: "invocation",
+      }),
+    );
+  return value;
+}
+
 export function jsonObject(text: string): Record<string, Schema["JsonValue"]> {
   const value: unknown = JSON.parse(text);
   if (!validateJsonObject(value)) throw new Error("Enter a JSON object.");

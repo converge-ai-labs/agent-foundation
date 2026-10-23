@@ -2,16 +2,18 @@
 
 from datetime import timedelta
 
+import anyio
 from sqlalchemy import exists, or_, select
 
 from a13n_service.infra.db import lock, now, transaction
-from a13n_service.infra.errors import conflict, not_found
+from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.environment import desktop_access as wire
 from a13n_service.runs.desktop_assistance import service
 from a13n_service.runs.desktop_assistance.admission import aliases, environment_key, target
-from a13n_service.runs.desktop_assistance.schemas import Request, View, viewer_url
+from a13n_service.runs.desktop_assistance.schemas import Access, Control, OpenView, Request, View, viewer_url
 from a13n_service.runs.desktop_assistance.tables import DesktopAssistanceRow, DesktopExecutionRow
+from a13n_service.runs.environments.adapters import Target
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
@@ -32,7 +34,9 @@ async def read(runtime: Runtime, actor: Principal, workspace_id: str, run_id: st
         return View.model_validate(row) if row else None
 
 
-async def open_desktop(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, body: Request) -> View:
+async def select_desktop(
+    runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, body: Request
+) -> tuple[Target, str]:
     async with transaction(runtime.storage) as session:
         await workspace_scope(session, actor, workspace_id, "run")
         run = await get_run(session, workspace_id, run_id)
@@ -47,7 +51,19 @@ async def open_desktop(runtime: Runtime, actor: Principal, workspace_id: str, ru
         key = environment_key(environment)
         if key is None:
             raise conflict("environment", environment.id, "desktop_identity_unavailable")
-    description = await service.dispatch(runtime, selected, wire.Describe(), operation_id=new_object_id("dtop"))
+    return selected, key
+
+
+async def register_desktop(
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    run_id: str,
+    body: Request,
+    selected: Target,
+    key: str,
+    description: wire.Reply,
+) -> View:
     if (
         not isinstance(description, wire.Description)
         or not description.read_only_enforced
@@ -103,6 +119,48 @@ async def open_desktop(runtime: Runtime, actor: Principal, workspace_id: str, ru
         await session.flush()
         await service.audit_transition(session, actor, row, "open")
         return View.model_validate(row)
+
+
+async def open_desktop(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, body: Request) -> View:
+    selected, key = await select_desktop(runtime, actor, workspace_id, run_id, body)
+    description = await service.dispatch(runtime, selected, wire.Describe(), operation_id=new_object_id("dtop"))
+    return await register_desktop(runtime, actor, workspace_id, run_id, body, selected, key, description)
+
+
+async def view_desktop(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, body: OpenView) -> Access:
+    """Initialize assistance and grant read-only access in one bounded discovery scope."""
+    operation_id = new_object_id("dtop")
+    claim: service.AccessClaim | None = None
+    try:
+        with anyio.fail_after(service._ACCESS_TIMEOUT_SECONDS):
+            selected, key = await select_desktop(runtime, actor, workspace_id, run_id, body)
+            async with service.access_dispatch(runtime, selected, operation_id=operation_id) as send:
+                description = await send(wire.Describe())
+                view = await register_desktop(runtime, actor, workspace_id, run_id, body, selected, key, description)
+                claim = await service.claim_access(
+                    runtime,
+                    actor,
+                    workspace_id,
+                    view.id,
+                    Control(session_id=body.session_id, epoch=view.epoch),
+                    mode="view",
+                    renew=False,
+                    operation_id=operation_id,
+                )
+                # Discovery happened outside storage: do not grant against a changed target or account.
+                if claim.selected != selected:
+                    raise conflict("environment", selected.environment_id, "desktop_target_changed")
+                result, route = await service.grant_access(claim, description, send)
+            # The provider scope must finish cleanup before access is published.
+            return await service.publish_access(runtime, actor, workspace_id, claim, result, route)
+    except BaseException as error:
+        if claim is not None:
+            await service.blocked(runtime, claim.identity, operation_id)
+        if isinstance(error, Exception) and not isinstance(error, ServiceError):
+            raise ServiceError(
+                "unavailable", "Desktop transition could not be confirmed", {"dependency": "desktop_access"}
+            ) from error
+        raise
 
 
 async def acquire(runtime: Runtime, actor: Principal, workspace_id: str, identity: str) -> View:

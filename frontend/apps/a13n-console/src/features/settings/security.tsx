@@ -126,7 +126,7 @@ export function Security() {
                 controlId={`${id}-email`}
               >
                 <FormField
-                  className="min-w-0 w-60 max-w-full"
+                  className={settings.control}
                   label={t("New email address")}
                   hideLabel={true}
                 >
@@ -145,7 +145,7 @@ export function Security() {
                 controlId={`${id}-email-password`}
               >
                 <FormField
-                  className="min-w-0 w-60 max-w-full"
+                  className={settings.control}
                   label={t("Current password")}
                   hideLabel={true}
                 >

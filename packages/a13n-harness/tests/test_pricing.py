@@ -272,11 +272,16 @@ def test_official_context_merge_preserves_explicit_supplements_and_missing_media
         ("moonshotai:kimi-k3", 1048576, "3", "15"),
         ("x-ai:grok-4.7", 500000, "2", "6"),
         ("x-ai:grok-4.20-0309-reasoning", 1000000, "1.25", "2.5"),
-        ("mistral:mistral-large-4", 1000000, "0.68", "2.09"),
+        ("mistral:mistral-large-4", 1000000, "1.36", "4.18"),
         ("fireworks:accounts/fireworks/models/ember-1", 1040000, "3", "15"),
         ("together:moonshotai/Kimi-K3", 1048576, "3", "15"),
         ("together:deepseek-ai/DeepSeek-V4.1-Flash", 1000000, "0.3", "1.2"),
         ("minimax:MiniMax-M3", 1000000, "0.3", "1.2"),
+        ("minimax:MiniMax-M3.1-Flash", 1000000, "0.15", "0.6"),
+        ("anthropic:claude-opus-5-5", 1000000, "4", "20"),
+        ("google:gemini-4-argon", 1048576, "2", "10"),
+        ("openai:gpt-5.5-pro", 1050000, "30", "180"),
+        ("openai:gpt-4.1", 1047576, "2", "8"),
     ],
 )
 def test_reviewed_provider_prices_and_context(key, context, input_price, output_price):

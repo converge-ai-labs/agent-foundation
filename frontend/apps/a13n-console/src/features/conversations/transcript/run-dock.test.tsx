@@ -6,13 +6,15 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
 import { fixtureRun, fixtureThread } from "./fixture";
-import { RunDock } from "./run-dock";
+import type { ComponentProps } from "react";
+import { RunDock, ThreadDock } from "./run-dock";
 import { useRun } from "../queries";
 
 let client: Client;
@@ -160,7 +162,7 @@ it("replaces a racing user takeover panel with the Agent assistance card without
     const live = useRun("run");
     if (!live.data) return null;
     return (
-      <RunDock
+      <TestDock
         run={live.data}
         thread={fixtureThread({
           id: "thread",
@@ -205,6 +207,7 @@ function mount({
   historical = false,
   origin = "new",
   reject = false,
+  loseAcknowledgement = false,
   resubmit,
   question = false,
   search = "",
@@ -213,6 +216,7 @@ function mount({
   historical?: boolean;
   origin?: Schema["ThreadView"]["origin"];
   reject?: boolean;
+  loseAcknowledgement?: boolean;
   resubmit?: Resubmission;
   question?: boolean;
   search?: string;
@@ -274,6 +278,7 @@ function mount({
           body: text ? JSON.parse(text) : null,
           key: req.headers.get("Idempotency-Key"),
         });
+        if (loseAcknowledgement) throw new TypeError("Lost acknowledgement");
         if (reject)
           return Response.json(
             {
@@ -330,7 +335,7 @@ function mount({
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
-        <RunDock run={current} thread={thread} resubmit={resubmit} />
+        <TestDock run={current} thread={thread} resubmit={resubmit} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -412,7 +417,9 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
       await screen.findByText("Waiting for the application");
     if (status === "running")
       expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Queued messages/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Queued messages/ }),
+    );
     await screen.findByText("Queued test");
     for (const name of [
       "Queued message actions",
@@ -570,7 +577,79 @@ it.each(["chat", "debug"])(
         .getByRole("link", { name: "Return to latest messages" })
         .getAttribute("href"),
     ).toBe(
-      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}`,
+      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}&follow=latest`,
     );
   },
 );
+
+it("keeps retry identity until the message or execution policy changes", async () => {
+  const posts = mount({ loseAcknowledgement: true });
+  const user = userEvent.setup();
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "Retry this message" },
+  });
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(2));
+  expect(posts[0].key).toBeTruthy();
+  expect(posts[1]).toEqual(posts[0]);
+
+  await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: "Foreground wait (seconds)" }),
+    {
+      target: { value: "2" },
+    },
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(3));
+  expect(posts[2].key).not.toBe(posts[1].key);
+  expect(posts[2].body).toMatchObject({
+    options: { execution: { tools: { foreground_wait_seconds: 2 } } },
+  });
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(4));
+  expect(posts[3]).toEqual(posts[2]);
+});
+
+it("sends execution overrides once with next_run and returns the next message to inheritance", async () => {
+  const posts = mount();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  screen.getByRole("combobox", { name: "Tool execution" }).focus();
+  await user.keyboard("[ArrowDown]");
+  await user.click(
+    await screen.findByRole("option", { name: "Inline — wait for tools" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Steering" }));
+  await user.click(
+    await screen.findByRole("option", { name: "At the next boundary" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "One run" },
+  });
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].body).toMatchObject({
+    delivery: "next_run",
+    options: { execution: { tools: { mode: "inline" }, steering: "boundary" } },
+  });
+  await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  expect(
+    screen.getByRole("combobox", { name: "Tool execution" }).textContent,
+  ).toBe("Inherit");
+  expect(screen.getByRole("combobox", { name: "Steering" }).textContent).toBe(
+    "Inherit",
+  );
+});
+
+function TestDock(props: ComponentProps<typeof RunDock>) {
+  return (
+    <ThreadDock thread={props.thread}>
+      <RunDock {...props} />
+    </ThreadDock>
+  );
+}

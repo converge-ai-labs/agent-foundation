@@ -68,11 +68,13 @@ export function usageSummary(
     tokens:
       totalTokens === undefined
         ? "—"
-        : totalTokens >= 1_000_000
-          ? `${(totalTokens / 1_000_000).toFixed(1)}M`
-          : totalTokens >= 1000
-            ? `${(totalTokens / 1000).toFixed(1)}K`
-            : String(totalTokens),
+        : totalTokens >= 1_000_000_000
+          ? `${(totalTokens / 1_000_000_000).toFixed(1)}B`
+          : totalTokens >= 1_000_000
+            ? `${(totalTokens / 1_000_000).toFixed(1)}M`
+            : totalTokens >= 1000
+              ? `${(totalTokens / 1000).toFixed(1)}K`
+              : String(totalTokens),
     context:
       used != null && window != null && window > 0
         ? `${Math.round((100 * used) / window)}%`

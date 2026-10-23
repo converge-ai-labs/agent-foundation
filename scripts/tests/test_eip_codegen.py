@@ -58,6 +58,13 @@ def test_generated_manifest_uses_portable_paths(tmp_path: Path) -> None:
 
 def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]
+    for model, field, maximum in [
+        ("NetworkMetrics", "interfaces", 64),
+        ("DiskMetrics", "devices", 64),
+        ("FilesystemInventory", "filesystems", 16),
+        ("ConnectionMetrics", "tcp_states", 16),
+    ]:
+        assert schema[model]["properties"][field]["maxProperties"] == maximum
     assert schema["EIPPath"]["properties"]["path"]["format"] == "eip-absolute-path"
     assert schema["EncodedBytes"]["properties"]["data"]["format"] == "eip-base64-unpadded"
     generation = schema["SessionDescriptor"]["properties"]["generation"]

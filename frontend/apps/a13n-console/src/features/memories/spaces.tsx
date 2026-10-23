@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
@@ -46,7 +46,7 @@ export function MemorySpacesPage() {
   const filtered = !!term || enabled !== undefined;
   return (
     <Page
-      title={t("Memory Spaces")}
+      title={t("Memory spaces")}
       description={t(
         "Shared knowledge, session notes and automatic organization in one place.",
       )}
@@ -55,7 +55,7 @@ export function MemorySpacesPage() {
         <Toolbar
           search={search}
           onSearchChange={setSearch}
-          searchLabel={t("Search Spaces")}
+          searchLabel={t("Search spaces")}
           filters={
             <ChoiceField
               label={t("Status")}
@@ -71,14 +71,6 @@ export function MemorySpacesPage() {
               }
             />
           }
-          trailing={
-            <Button
-              variant="ghost"
-              render={<Link to={`${basePath}/memories`} />}
-            >
-              {t("Standalone memories")}
-            </Button>
-          }
         />
       }
     >
@@ -88,7 +80,7 @@ export function MemorySpacesPage() {
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
-            caption={t("Memory Spaces")}
+            caption={t("Memory spaces")}
             items={query.data.items}
             onRowActivate={(space) => navigate(space.id)}
             columns={[
@@ -118,8 +110,8 @@ export function MemorySpacesPage() {
               },
               {
                 label: t("Files"),
-                render: (space) =>
-                  t("{{count}} files", { count: space.file_count }),
+                align: "right",
+                render: (space) => space.file_count.toLocaleString(),
               },
               {
                 label: t("Updated"),
@@ -131,7 +123,7 @@ export function MemorySpacesPage() {
             ]}
           />
           <CollectionFooter
-            count={t("{{count}} Spaces on this page", {
+            count={t("{{count}} spaces on this page", {
               count: query.data.items.length,
             })}
           >
@@ -142,11 +134,11 @@ export function MemorySpacesPage() {
         !query.error && (
           <Empty
             icon={<BrainIcon size={20} />}
-            title={t(filtered ? "No matching Spaces" : "No Memory Spaces yet")}
+            title={t(filtered ? "No matching spaces" : "No memory spaces yet")}
             description={t(
               filtered
                 ? "Change or clear the search and filters."
-                : "Create a Space, then select it in an agent's defaults or a session.",
+                : "Create a space, then select it in an agent's defaults or a session.",
             )}
             action={!filtered && create}
           />
@@ -163,7 +155,7 @@ function CreateSpace({ onCreated }: { onCreated: (id: string) => void }) {
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title={t("Create Memory Space")}
+      title={t("Create memory space")}
       description={t(
         "Start with a name. Add organization and memory instructions in configuration.",
       )}
@@ -171,7 +163,7 @@ function CreateSpace({ onCreated }: { onCreated: (id: string) => void }) {
       trigger={
         <Button>
           <PlusIcon size={14} />
-          {t("Create Space")}
+          {t("Create space")}
         </Button>
       }
     >
@@ -238,7 +230,7 @@ function CreateSpaceForm({
       <FormActions
         pending={create.isPending}
         disabled={!name.trim()}
-        label={t("Create Space")}
+        label={t("Create space")}
         onCancel={onCancel}
       />
     </form>

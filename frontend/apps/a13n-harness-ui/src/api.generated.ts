@@ -1349,6 +1349,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subscriptions/copilot/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Copilot Usage */
+        get: operations["copilot_usage_api_subscriptions_copilot_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Subscriptions */
+        get: operations["subscriptions_api_subscriptions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscriptions/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Subscription Account */
+        get: operations["subscription_account_api_subscriptions_accounts__account_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Subscription Account */
+        delete: operations["delete_subscription_account_api_subscriptions_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Subscription Account */
+        patch: operations["update_subscription_account_api_subscriptions_accounts__account_id__patch"];
+        trace?: never;
+    };
+    "/api/subscriptions/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Subscription Account */
+        post: operations["create_subscription_account_api_subscriptions_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscriptions/accounts/{account_id}/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout Subscription Account */
+        post: operations["logout_subscription_account_api_subscriptions_accounts__account_id__logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscriptions/accounts/{account_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Subscription Usage */
+        post: operations["refresh_subscription_usage_api_subscriptions_accounts__account_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscriptions/accounts/{account_id}/reset-vouchers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Subscription Reset Vouchers */
+        get: operations["subscription_reset_vouchers_api_subscriptions_accounts__account_id__reset_vouchers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subscriptions/accounts/{account_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redeem Subscription Reset */
+        post: operations["redeem_subscription_reset_api_subscriptions_accounts__account_id__reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/accounts/{provider}": {
         parameters: {
             query?: never;
@@ -1731,6 +1869,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage Analytics */
+        get: operations["usage_analytics_api_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/usage": {
         parameters: {
             query?: never;
@@ -1967,6 +2122,40 @@ export interface paths {
         put?: never;
         /** Steer Child */
         post: operations["steer_child_api_threads__thread_id__children__execution_id__steer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/tool-executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tool Executions */
+        get: operations["tool_executions_api_threads__thread_id__tool_executions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Tool Execution */
+        post: operations["cancel_tool_execution_api_threads__thread_id__tool_executions__execution_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2588,6 +2777,31 @@ export interface components {
             /** Occurred At */
             occurred_at?: string | null;
         };
+        /** AdditionalUsageLimit */
+        AdditionalUsageLimit: {
+            /** Limit Name */
+            limit_name: string;
+            /** Metered Feature */
+            metered_feature?: string | null;
+            /** Normal Model Slug */
+            normal_model_slug?: string | null;
+            rate_limit?: components["schemas"]["UsageLimits"] | null;
+        };
+        /** Adoption */
+        Adoption: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "adopted" | "absent" | "unsupported" | "invalid";
+            /** Message */
+            message?: string | null;
+            /**
+             * Group Created
+             * @default false
+             */
+            group_created?: boolean;
+        };
         /** AgentResourceSource */
         AgentResourceSource: {
             /**
@@ -2635,6 +2849,11 @@ export interface components {
         AgentToolSearchGroup: {
             /** Description */
             description: string;
+            /**
+             * Capabilities
+             * @default []
+             */
+            capabilities?: string[];
             /**
              * Mcp Servers
              * @default []
@@ -3566,6 +3785,32 @@ export interface components {
              * @enum {string}
              */
             kind: "codex_subscription";
+            group?: components["schemas"]["ResourceId"] | null;
+        };
+        /** CodexUsage */
+        CodexUsage: {
+            /**
+             * Provider
+             * @default codex
+             * @constant
+             */
+            provider?: "codex";
+            /** Account Id */
+            account_id: string;
+            /** Plan Type */
+            plan_type: string;
+            rate_limit?: components["schemas"]["UsageLimits"] | null;
+            credits?: components["schemas"]["PaidCredits"] | null;
+            /**
+             * Additional Rate Limits
+             * @default []
+             */
+            additional_rate_limits?: components["schemas"]["AdditionalUsageLimit"][] | null;
+            spend_control?: components["schemas"]["SpendControl"] | null;
+            rate_limit_reset_credits?: components["schemas"]["ResetCreditSummary"] | null;
+            reset_credits?: components["schemas"]["ResetCredits"] | null;
+            /** Reset Unavailable */
+            reset_unavailable?: string | null;
         };
         /** ConfigurationProvenance */
         ConfigurationProvenance: {
@@ -3695,6 +3940,25 @@ export interface components {
             /** Udp Sockets */
             udp_sockets?: number | null;
         };
+        /** ConsumptionTotals */
+        ConsumptionTotals: {
+            /** Model Requests */
+            model_requests: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Cache Read Tokens */
+            cache_read_tokens: number;
+            /** Cache Write Tokens */
+            cache_write_tokens: number;
+            /** Model Cost Usd */
+            model_cost_usd: string | null;
+            /** Unknown Model Costs */
+            unknown_model_costs: number;
+        };
         /**
          * ContentMetadata
          * @description Presentation and opaque Host references; never instructions or authority.
@@ -3796,6 +4060,26 @@ export interface components {
             /** Auto Followup */
             auto_followup: boolean;
         };
+        /** CopilotQuota */
+        CopilotQuota: {
+            /** Quota Id */
+            quota_id?: string | null;
+            /** Entitlement */
+            entitlement?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /**
+             * Unlimited
+             * @default false
+             */
+            unlimited?: boolean;
+            /** Overage Count */
+            overage_count?: number | null;
+            /** Overage Permitted */
+            overage_permitted?: boolean | null;
+            /** Percent Remaining */
+            percent_remaining?: number | null;
+        };
         /** CopilotSubscriptionAuthentication */
         CopilotSubscriptionAuthentication: {
             /**
@@ -3803,6 +4087,17 @@ export interface components {
              * @enum {string}
              */
             kind: "copilot_subscription";
+        };
+        /** CopilotUsage */
+        CopilotUsage: {
+            /** Copilot Plan */
+            copilot_plan?: string | null;
+            /** Quota Reset Date */
+            quota_reset_date?: string | null;
+            /** Quota Snapshots */
+            quota_snapshots?: {
+                [key: string]: components["schemas"]["CopilotQuota"];
+            } | null;
         };
         CpuLimit: components["schemas"]["UnlimitedCpuLimit"] | components["schemas"]["LimitedCpuLimit"];
         /** CpuTimeSeconds */
@@ -4649,6 +4944,38 @@ export interface components {
          * @enum {string}
          */
         GrantAccess: "read_only" | "read_write";
+        /** GrokBilling */
+        GrokBilling: {
+            /** Credit Usage Percent */
+            credit_usage_percent?: number | null;
+            current_period?: components["schemas"]["GrokPeriod"] | null;
+            prepaid_balance?: components["schemas"]["GrokMoney"] | null;
+            /** Is Unified Billing User */
+            is_unified_billing_user?: boolean | null;
+            on_demand_cap?: components["schemas"]["GrokMoney"] | null;
+            on_demand_used?: components["schemas"]["GrokMoney"] | null;
+            monthly_limit?: components["schemas"]["GrokMoney"] | null;
+            used?: components["schemas"]["GrokMoney"] | null;
+            /** Billing Period End */
+            billing_period_end?: string | null;
+        };
+        /** GrokMoney */
+        GrokMoney: {
+            /**
+             * Val
+             * @default 0
+             */
+            val?: number;
+        };
+        /** GrokPeriod */
+        GrokPeriod: {
+            /** Type */
+            type?: string | null;
+            /** Start */
+            start?: string | null;
+            /** End */
+            end?: string | null;
+        };
         /** GrokSubscriptionAuthentication */
         GrokSubscriptionAuthentication: {
             /**
@@ -4656,6 +4983,17 @@ export interface components {
              * @enum {string}
              */
             kind: "grok_subscription";
+            group?: components["schemas"]["ResourceId"] | null;
+        };
+        /** GrokUsage */
+        GrokUsage: {
+            /**
+             * Provider
+             * @default grok
+             * @constant
+             */
+            provider?: "grok";
+            config?: components["schemas"]["GrokBilling"] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4856,6 +5194,8 @@ export interface components {
         LoginStatus: {
             /** Session Id */
             session_id: string;
+            /** Account Id */
+            account_id?: string | null;
             /**
              * Provider
              * @enum {string}
@@ -4885,6 +5225,22 @@ export interface components {
             error_code?: string | null;
             /** Message */
             message?: string | null;
+        };
+        /**
+         * MainAccountSelection
+         * @description Actual subscription identity for the latest successful MAIN request.
+         */
+        MainAccountSelection: {
+            /** Model Id */
+            model_id: string;
+            /** Group Id */
+            group_id: string;
+            /** Account Id */
+            account_id: string;
+            /** Account Name */
+            account_name: string;
+            /** Reason */
+            reason: string;
         };
         /** MarkdownSubagentSource */
         MarkdownSubagentSource: {
@@ -5323,19 +5679,6 @@ export interface components {
         };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
-        /**
-         * NativeToolSearchConfig
-         * @description Provider-native discovery; omitted strategy uses the provider default.
-         */
-        NativeToolSearchConfig: {
-            /** Strategy */
-            strategy?: ("bm25" | "regex") | null;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            mode: "native";
-        };
         /** NetworkInterfaceMetrics */
         NetworkInterfaceMetrics: {
             /** Identity */
@@ -5441,6 +5784,21 @@ export interface components {
             root_thread_id?: string | null;
         };
         PageTarget: components["schemas"]["WorkbenchPage"] | components["schemas"]["ConversationPage"] | components["schemas"]["ProjectPage"] | components["schemas"]["ResourcePage"] | components["schemas"]["FilePage"] | components["schemas"]["ChangesPage"] | components["schemas"]["TerminalPage"];
+        /** PaidCredits */
+        PaidCredits: {
+            /**
+             * Has Credits
+             * @default false
+             */
+            has_credits?: boolean;
+            /**
+             * Unlimited
+             * @default false
+             */
+            unlimited?: boolean;
+            /** Balance */
+            balance?: string | null;
+        };
         /** PairingApproved */
         PairingApproved: {
             /**
@@ -5680,37 +6038,6 @@ export interface components {
          * @enum {string}
          */
         Provider: "codex" | "grok" | "copilot" | "chatgpt";
-        /**
-         * ProxyToolSearchConfig
-         * @description Names and bounded discovery settings for one Agent's proxy surface.
-         */
-        ProxyToolSearchConfig: {
-            /**
-             * Search Name
-             * @default search_proxy_tools
-             */
-            search_name?: string;
-            /**
-             * Call Name
-             * @default call_proxy_tool
-             */
-            call_name?: string;
-            /**
-             * Max Results
-             * @default 10
-             */
-            max_results?: number;
-            /**
-             * Max Search Bytes
-             * @default 32768
-             */
-            max_search_bytes?: number;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            mode: "proxy";
-        };
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -5781,6 +6108,49 @@ export interface components {
          * @enum {string}
          */
         RequiredAction: "none" | "login" | "refresh" | "reauthenticate" | "switch_to_file";
+        /** ResetCredit */
+        ResetCredit: {
+            /** Id */
+            id: string;
+            /** Reset Type */
+            reset_type: string;
+            /** Status */
+            status: string;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+        };
+        /** ResetCreditSummary */
+        ResetCreditSummary: {
+            /** Available Count */
+            available_count: number;
+        };
+        /** ResetCredits */
+        ResetCredits: {
+            /** Available Count */
+            available_count: number;
+            /**
+             * Credits
+             * @default []
+             */
+            credits?: components["schemas"]["ResetCredit"][];
+        };
+        /** ResetResult */
+        ResetResult: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "reset" | "nothing_to_reset" | "no_credit" | "already_redeemed";
+            /**
+             * Windows Reset
+             * @default 0
+             */
+            windows_reset?: number;
+        };
         /** ResourceHistory */
         ResourceHistory: {
             /**
@@ -5916,6 +6286,8 @@ export interface components {
             failure?: components["schemas"]["FailureView"] | null;
             /** @default null */
             goal?: components["schemas"]["GoalView"] | null;
+            /** @default null */
+            main_account?: components["schemas"]["MainAccountSelection"] | null;
             /**
              * Available Actions
              * @default []
@@ -6341,6 +6713,25 @@ export interface components {
             /** Items */
             items: components["schemas"]["SkillCatalogItemView"][];
         };
+        /** SpendControl */
+        SpendControl: {
+            /** Reached */
+            reached: boolean;
+            individual_limit?: components["schemas"]["SpendControlLimit"] | null;
+        };
+        /** SpendControlLimit */
+        SpendControlLimit: {
+            /** Limit */
+            limit: string;
+            /** Used */
+            used: string;
+            /** Remaining */
+            remaining: string;
+            /** Used Percent */
+            used_percent: number;
+            /** Reset At */
+            reset_at: number;
+        };
         /**
          * StoreKind
          * @enum {string}
@@ -6369,6 +6760,104 @@ export interface components {
              */
             metadata_omitted?: boolean;
         };
+        /**
+         * SubscriptionAccount
+         * @description Nonsecret local identity; credentials retain their provider-owned envelope.
+         */
+        SubscriptionAccount: {
+            /** Id */
+            id: string;
+            provider: components["schemas"]["SubscriptionProvider"];
+            /** Name */
+            name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled?: boolean;
+            /** Scope */
+            scope?: string | null;
+            /**
+             * Deleted
+             * @default false
+             */
+            deleted?: boolean;
+            /** Upstream Account Id */
+            upstream_account_id?: string | null;
+            /**
+             * Login Revision
+             * @default 0
+             */
+            login_revision?: number;
+        };
+        /** SubscriptionAccountView */
+        SubscriptionAccountView: {
+            account: components["schemas"]["SubscriptionAccount"];
+            authentication: components["schemas"]["AccountProjection"];
+            usage: components["schemas"]["UsageSnapshot"];
+        };
+        /** SubscriptionCatalog */
+        SubscriptionCatalog: {
+            /** Accounts */
+            accounts: components["schemas"]["SubscriptionAccountView"][];
+            /** Groups */
+            groups: components["schemas"]["SubscriptionGroupResource"][];
+            /** Adoption */
+            adoption: {
+                [key: string]: components["schemas"]["Adoption"];
+            };
+        };
+        /** SubscriptionGroupMember */
+        SubscriptionGroupMember: {
+            /** Account */
+            account: string;
+            /**
+             * Weight
+             * @default 1
+             */
+            weight?: number;
+        };
+        /** SubscriptionGroupResource */
+        SubscriptionGroupResource: {
+            /**
+             * Schema Version
+             * @constant
+             */
+            schema_version: "1";
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "subscription_group";
+            id: components["schemas"]["ResourceId"];
+            /** Name */
+            name: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "codex" | "grok";
+            /**
+             * Strategy
+             * @default ordered
+             * @enum {string}
+             */
+            strategy?: "ordered" | "weighted";
+            /**
+             * Allow Credits
+             * @default false
+             */
+            allow_credits?: boolean;
+            /**
+             * Accounts
+             * @default []
+             */
+            accounts?: components["schemas"]["SubscriptionGroupMember"][];
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
+        /** @enum {string} */
+        SubscriptionProvider: "codex" | "grok";
         /** SystemInfo */
         SystemInfo: {
             os: components["schemas"]["OperatingSystem"];
@@ -6847,6 +7336,8 @@ export interface components {
              * @default null
              */
             error_message?: string | null;
+            /** @default null */
+            main_account?: components["schemas"]["MainAccountSelection"] | null;
         };
         /** ThreadPage */
         ThreadPage: {
@@ -7029,6 +7520,57 @@ export interface components {
             children: components["schemas"]["ChildStatusCounts"];
         };
         /**
+         * ToolExecutionView
+         * @description Detached status only; native results stay behind Harness result tools.
+         */
+        ToolExecutionView: {
+            /** Execution Id */
+            execution_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /** Tool Name */
+            tool_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "lost";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Completed At
+             * @default null
+             */
+            completed_at?: string | null;
+            /**
+             * Result Available
+             * @default false
+             */
+            result_available?: boolean;
+            /**
+             * Foreground Released
+             * @default false
+             */
+            foreground_released?: boolean;
+            /**
+             * Delivery Acknowledged
+             * @default false
+             */
+            delivery_acknowledged?: boolean;
+            /**
+             * Available Actions
+             * @default []
+             */
+            available_actions?: "cancel"[];
+        };
+        /**
          * ToolImageView
          * @description Host-retained tool image, served through authenticated Thread attachment access.
          */
@@ -7037,7 +7579,53 @@ export interface components {
             thread_id: string;
             attachment: components["schemas"]["ThreadAttachment"];
         };
-        ToolSearchConfig: components["schemas"]["ProxyToolSearchConfig"] | components["schemas"]["NativeToolSearchConfig"];
+        /**
+         * ProxyToolSearchConfig
+         * @description Names and bounded discovery settings for one Agent's proxy surface.
+         */
+        ToolSearchConfig: {
+            /**
+             * Search Name
+             * @default discover_tools
+             */
+            search_name?: string;
+            /**
+             * Call Name
+             * @default call_tool
+             */
+            call_name?: string;
+            /**
+             * Max Results
+             * @default 10
+             */
+            max_results?: number;
+            /**
+             * Max Search Bytes
+             * @default 32768
+             */
+            max_search_bytes?: number;
+            /**
+             * Describe Name
+             * @default describe_tool
+             */
+            describe_name?: string;
+            /**
+             * List Name
+             * @default list_tools
+             */
+            list_name?: string;
+            /**
+             * Groups Name
+             * @default list_tool_groups
+             */
+            groups_name?: string;
+            /**
+             * Mode
+             * @default proxy
+             * @constant
+             */
+            mode?: "proxy";
+        };
         /** ToolSearchSourceView */
         ToolSearchSourceView: {
             /** Resource Id */
@@ -7048,7 +7636,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "mcp_server" | "harness_plugin";
+            kind: "mcp_server" | "harness_plugin" | "capability";
             /** Enabled */
             enabled: boolean;
             /** Group */
@@ -7249,6 +7837,115 @@ export interface components {
             /** Video */
             video?: components["schemas"]["VideoUrlType"][];
         };
+        /** UsageAnalyticsView */
+        UsageAnalyticsView: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** First Observed At */
+            first_observed_at: string | null;
+            /** Observed Through */
+            observed_through: string | null;
+            summary: components["schemas"]["ConsumptionTotals"];
+            /** Daily */
+            daily: components["schemas"]["UsageDay"][];
+            /** Groups */
+            groups: components["schemas"]["UsageGroup"][];
+            /** Group Count */
+            group_count: number;
+            /** Projects */
+            projects: components["schemas"]["UsageOption"][];
+            /** Threads */
+            threads: components["schemas"]["UsageThreadOption"][];
+            /** Models */
+            models: components["schemas"]["UsageOption"][];
+        };
+        /** UsageDay */
+        UsageDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            totals: components["schemas"]["ConsumptionTotals"];
+        };
+        /** UsageGroup */
+        UsageGroup: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Thread Id */
+            thread_id?: string | null;
+            /** Model */
+            model?: string | null;
+            totals: components["schemas"]["ConsumptionTotals"];
+        };
+        /** UsageLimits */
+        UsageLimits: {
+            /** Allowed */
+            allowed: boolean;
+            /** Limit Reached */
+            limit_reached: boolean;
+            primary_window?: components["schemas"]["UsageWindow"] | null;
+            secondary_window?: components["schemas"]["UsageWindow"] | null;
+        };
+        /** UsageOption */
+        UsageOption: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** UsageSnapshot */
+        UsageSnapshot: {
+            /**
+             * Login Revision
+             * @default 0
+             */
+            login_revision?: number;
+            /**
+             * Checked At
+             * @default 0
+             */
+            checked_at?: number;
+            /**
+             * Observed At
+             * @default 0
+             */
+            observed_at?: number;
+            /** Usage */
+            usage?: components["schemas"]["CodexUsage"] | components["schemas"]["GrokUsage"] | null;
+            /** Error */
+            error?: string | null;
+            /** Rejected */
+            rejected?: {
+                [key: string]: number;
+            };
+        };
+        /** UsageThreadOption */
+        UsageThreadOption: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Project Id */
+            project_id: string | null;
+        };
         /** UsageTotals */
         UsageTotals: {
             /** Model Requests */
@@ -7273,6 +7970,15 @@ export interface components {
             unknown_provider_costs: number;
             /** Omitted Currency Receipts */
             omitted_currency_receipts: number;
+        };
+        /** UsageWindow */
+        UsageWindow: {
+            /** Used Percent */
+            used_percent: number;
+            /** Limit Window Seconds */
+            limit_window_seconds: number;
+            /** Reset At */
+            reset_at: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -7343,6 +8049,8 @@ export interface components {
             start_id?: string | null;
             /** Model Id */
             model_id?: string | null;
+            /** Account Id */
+            account_id?: string | null;
             /** Answer Sdp */
             answer_sdp?: string | null;
             /** Error */
@@ -7786,6 +8494,11 @@ export interface components {
              * @default []
              */
             mcp_inputs?: components["schemas"]["McpInputRequestView"][];
+            /**
+             * Tool Executions
+             * @default []
+             */
+            tool_executions?: components["schemas"]["ToolExecutionView"][];
             /**
              * Recent Events
              * @default []
@@ -8330,6 +9043,31 @@ export interface components {
             /** Project Path */
             project_path?: string | null;
         };
+        /** SubscriptionAccountUpdate */
+        SubscriptionAccountUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+        };
+        /** SubscriptionAccountCreate */
+        SubscriptionAccountCreate: {
+            provider: components["schemas"]["SubscriptionProvider"];
+            /** Name */
+            name: string;
+        };
+        /** ResetRequest */
+        ResetRequest: {
+            /** Account Id */
+            account_id: string;
+            /** Credit Id */
+            credit_id: string;
+            /**
+             * Redeem Request Id
+             * Format: uuid
+             */
+            redeem_request_id: string;
+        };
         /** ApiKeyInput */
         ApiKeyInput: {
             credential_ref: components["schemas"]["ResourceId"];
@@ -8357,6 +9095,8 @@ export interface components {
              * @default false
              */
             allow_account_switch?: boolean;
+            /** Account Id */
+            account_id?: string | null;
         };
         /** LoginCallbackInput */
         LoginCallbackInput: {
@@ -11144,6 +11884,295 @@ export interface operations {
             };
         };
     };
+    copilot_usage_api_subscriptions_copilot_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopilotUsage"];
+                };
+            };
+        };
+    };
+    subscriptions_api_subscriptions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionCatalog"];
+                };
+            };
+        };
+    };
+    subscription_account_api_subscriptions_accounts__account_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountProjection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_subscription_account_api_subscriptions_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_subscription_account_api_subscriptions_accounts__account_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionAccountUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionAccount"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_subscription_account_api_subscriptions_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionAccountCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionAccount"];
+                };
+            };
+        };
+    };
+    logout_subscription_account_api_subscriptions_accounts__account_id__logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_subscription_usage_api_subscriptions_accounts__account_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subscription_reset_vouchers_api_subscriptions_accounts__account_id__reset_vouchers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodexUsage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    redeem_subscription_reset_api_subscriptions_accounts__account_id__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResetResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     account_api_auth_accounts__provider__get: {
         parameters: {
             query?: never;
@@ -12041,6 +13070,46 @@ export interface operations {
             };
         };
     };
+    usage_analytics_api_usage_get: {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+                project_id?: string | null;
+                projectless?: boolean;
+                thread_id?: string | null;
+                model?: string | null;
+                group_by?: "project" | "thread" | "model";
+                order_by?: "tokens" | "cost";
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageAnalyticsView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     usage_api_threads__thread_id__usage_get: {
         parameters: {
             query?: never;
@@ -12589,6 +13658,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChildControlResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tool_executions_api_threads__thread_id__tool_executions_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_tool_execution_api_threads__thread_id__tool_executions__execution_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolExecutionView"];
                 };
             };
             /** @description Validation Error */

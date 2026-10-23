@@ -266,7 +266,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 "Observe desktop",
                 "environment.computer.observe",
                 "computer_observe",
-                description="Capture the desktop for the model and conversation",
+                description="Capture the desktop for the model and the session",
             ),
             _Tool(
                 "zoom",
@@ -460,7 +460,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 description="Delete a memory record",
             ),
         ),
-        description="Read and change the memories a conversation mounts.",
+        description="Read and change the memories a session mounts.",
     ),
     _Toolset(
         "assets",
@@ -478,6 +478,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
     _platform(
         "execution", "Execution", "Sessions, threads, runs, traces and findings; its only write submits a finding."
     ),
+    _platform("schedules", "Schedules", "One-time and recurring Agent schedules, manual dispatch and trigger history."),
 )
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 
