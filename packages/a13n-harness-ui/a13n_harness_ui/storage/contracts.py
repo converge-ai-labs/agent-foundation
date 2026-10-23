@@ -14,6 +14,7 @@ from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 
 from .display import DisplayArchive
 from .objects import ObjectKind, ObjectRef
@@ -150,6 +151,7 @@ class ThreadExecution(StoredContract):
     completed_at: datetime | None = None
     error_code: str | None = Field(default=None, max_length=256)
     error_message: str | None = Field(default=None, max_length=4096)
+    main_account: MainAccountSelection | None = None
 
 
 class RetainedActivity(StoredContract):

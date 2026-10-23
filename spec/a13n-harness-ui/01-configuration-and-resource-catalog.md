@@ -18,6 +18,8 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
   AGENTS.md
   models/
     <resource>.yaml
+  subscription_groups/
+    <resource>.yaml
   extensions/
     <resource>.yaml
   mcp/

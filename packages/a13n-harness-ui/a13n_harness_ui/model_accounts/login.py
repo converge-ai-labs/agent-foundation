@@ -35,6 +35,7 @@ from .grok import (
     GrokAccountStore,
     GrokLoginRequest,
 )
+from .managed import SubscriptionAccounts
 from .models import AccountStoreError, Provider
 
 if TYPE_CHECKING:
@@ -47,6 +48,7 @@ class LoginRequest(StrictModel):
     provider: Literal["chatgpt", "codex", "grok", "copilot"]
     method: Literal["device", "browser", "manual_callback"] = "device"
     allow_account_switch: bool = False
+    account_id: str | None = Field(default=None, pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
 
 
 class LoginCallbackInput(StrictModel):
@@ -55,6 +57,7 @@ class LoginCallbackInput(StrictModel):
 
 class LoginStatus(StrictModel):
     session_id: str
+    account_id: str | None = None
     provider: Literal["chatgpt", "codex", "grok", "copilot"]
     method: Literal["device", "browser", "manual_callback"]
     state: Literal["starting", "waiting", "succeeded", "failed", "cancelled", "expired"] = "starting"
@@ -146,25 +149,32 @@ class LoginSessions:
         self,
         tasks: TaskGroup,
         account: Callable[[Provider], ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore],
+        subscriptions: SubscriptionAccounts | None = None,
     ) -> None:
         self._tasks = tasks
         self._account = account
+        self._subscriptions = subscriptions
         self._sessions: dict[str, _Session] = {}
 
-    def start(self, request: LoginRequest) -> LoginStatus:
+    def start(
+        self, request: LoginRequest, *, account: CodexAccountStore | GrokAccountStore | None = None
+    ) -> LoginStatus:
         if request.method not in account_connection(request.provider).login_methods:
             raise HarnessUiError("This account does not support that login method.", code="login_method_unsupported")
         if any(not session.done.is_set() for session in self._sessions.values()):
             raise HarnessUiError("A login is already active. Finish or cancel it first.", code="login_active")
-        account = self._account(Provider(request.provider))
+        selected_account = account or self._account(Provider(request.provider))
         while len(self._sessions) >= 16:
             del self._sessions[next(iter(self._sessions))]
         status = LoginStatus(
-            session_id="login-" + secrets.token_hex(12), provider=request.provider, method=request.method
+            session_id="login-" + secrets.token_hex(12),
+            provider=request.provider,
+            method=request.method,
+            account_id=request.account_id,
         )
         session = _Session(status, CancelScope(), Event())
         self._sessions[status.session_id] = session
-        self._tasks.start_soon(self._run, session, request, account)
+        self._tasks.start_soon(self._run, session, request, selected_account)
         return status
 
     def _get(self, session_id: str) -> _Session:
@@ -269,7 +279,23 @@ class LoginSessions:
         try:
             with session.scope:
                 with fail_after(900):
-                    if isinstance(account, ChatGPTAccountStore):
+                    if (
+                        request.account_id is not None
+                        and self._subscriptions is not None
+                        and isinstance(account, CodexAccountStore)
+                    ):
+                        await self._subscriptions.login_codex(
+                            request.account_id, lambda request: authorize(authorize_codex(request, method, present))
+                        )
+                    elif (
+                        request.account_id is not None
+                        and self._subscriptions is not None
+                        and isinstance(account, GrokAccountStore)
+                    ):
+                        await self._subscriptions.login_grok(
+                            request.account_id, lambda request: authorize(authorize_grok(request, method, present))
+                        )
+                    elif isinstance(account, ChatGPTAccountStore):
                         with fail_after(600):
                             await self._chatgpt(session, account, request, present)
                     elif isinstance(account, CodexAccountStore):

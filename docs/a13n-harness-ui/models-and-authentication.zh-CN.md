@@ -25,7 +25,7 @@ Model 资源定义提供方连接、请求设置和工作上下文预算。将�
 在 WebUI 打开 **Settings → Models**，添加、编辑或克隆已保存的 Model。首次设置和 Agent 的 **Add model** 使用相同流程。保存 Model 不改变任何活动 Run。
 
 1. 选择 **ChatGPT subscription**、**Codex subscription**、**Grok subscription**、**GitHub Copilot subscription** 或 API 连接。订阅保留原生账户存储和传输，不是 API 密钥预设。
-2. 连接共享订阅账户、选择已保存 API 密钥、保存新密钥，或指定服务器环境变量名。凭据写入独立进行；取消 Model 草稿不会撤销已完成登录或密钥保存。
+2. 选择 Codex/Grok 账户组、连接订阅账户、选择已保存 API 密钥、保存新密钥，或指定服务器环境变量名。凭据写入独立进行；取消 Model 草稿不会撤销已完成登录或密钥保存。
 3. 选择建议项或输入区分大小写的模型 ID。建议描述已知路由，不代表账户权限；目录获取失败时仍可手动填写 ID。
 4. 选择 **Use this model**，调整提供的推理、速度和工作上下文预算选项。修改已保存 Model 的连接、模型 ID 或基础 URL 时，此按钮显示为 **Apply connection & defaults**，并将模型专属设置重置为经审查的默认值。
 5. 保存 Model YAML。只有已保存 Model 出现在对话选择器中；仍可高级编辑 YAML。
@@ -383,7 +383,7 @@ authentication:
 ```
 
 ```yaml
-# Compatible account store, no literal token:
+# Native default account group, no literal token:
 authentication:
   kind: codex_subscription
 ```
@@ -428,9 +428,40 @@ model_characteristics:
 
 ### 账户存储位置
 
-Codex 在 `CODEX_HOME`（默认 `~/.codex`）下共享受支持的文件存储。Harness UI 遵循上游凭据存储策略，对不支持存储报告错误，不替换。Grok 优先使用 `GROK_AUTH_PATH`，再用 `GROK_HOME` 或默认文件；内联 `GROK_AUTH` 不是共享可写登录模式。账户检查不登录或刷新凭据。Codex 模型请求使用显式共享存储凭据来源。进程内的 Codex model provider 在自身生命周期内缓存凭据，并在刷新前重读存储，不是每次请求都读。新 Run 或账户操作获得新的 model provider。刷新凭据无法保存时，请求失败，但 model provider 在内存保留轮换凭据；应解决存储冲突并启动新 Run，不要假定轮换已持久化。Grok 保留由 Harness 负责的刷新生命周期。
+Codex 和 Grok 凭据由 `<data-root>/oauth/accounts/<account-id>.json` 纳管。非敏感目录位于 `oauth/accounts.json`，用量快照位于 `oauth/state/`。这些文件以私有权限保存明文凭据，请保护 Host 和备份。
 
-官方 Codex provider 没有等效功能时，Harness 保留设备登录、Thread 亲和性、路由提示和每 Run 的轮次状态。浏览器 PKCE 和回调使用官方流程；小型登录交换适配器保留原生 Codex `auth.json` 要求的真实 ID token。新登录和账户切换写入该 token，同账户刷新保留它。不会创建第二个 Codex 订阅存储。
+升级后首次启动 App 时，Harness UI 一次性导入受支持的已有 Codex/Grok 登录。Codex 发现遵循 `CODEX_HOME` 和文件存储策略；Grok 依次检查 `GROK_AUTH_PATH`、`GROK_HOME`。不支持或无效的来源显示在 **Migration from existing CLI logins** 中，可通过原生登录恢复。原 CLI 文件保持不变。之后的刷新、登录、退出和删除只操作原生文件，不再导入外部登录。复制的刷新凭据可能随后与原 CLI 分化；失效时请重新原生登录。
+
+已有 `codex_subscription` 或 `grok_subscription` Model 无需修改 YAML：省略 `group` 时选择 `codex-default` 或 `grok-default`，默认组初始包含迁移账户。删除默认组会被尊重；请恢复该组或显式选择其他组。
+
+打开 **Settings → Accounts & API keys**，添加并登录账户、重命名或暂停账户，以及创建同提供方账户组。**Ordered consumption** 按成员顺序使用，**Weighted balance** 按正整数权重分配 Run。在 **Settings → Models** 中为订阅 Model 选择账户组：
+
+```yaml
+authentication:
+  kind: codex_subscription
+  group: codex-work
+```
+
+账户组保存为 `subscription_groups/work.yaml` 等普通文件。从账户页面复制账户 ID，不要在配置中保存凭据：
+
+```yaml
+schema_version: "1"
+kind: subscription_group
+id: codex-work
+name: Work accounts
+provider: codex
+strategy: weighted
+allow_credits: false
+accounts:
+  - account: acct-work
+    weight: 3
+  - account: acct-personal
+    weight: 1
+```
+
+Run 捕获组成员和策略，每次请求前检查账户暂停、退出、删除和凭据变化。优先使用套餐内额度；充值余额需要开启 **Allow rechargeable credits**。提供方快照可能落后于并发消耗，因此这是尽力控制，不是严格费用上限。认证或额度错误仅在响应交付前换号，不重放工具或已显示的流。对话的 **MAIN** 状态显示实际账户和选择原因，辅助推理不会覆盖它。Live 在连接时选择可用账户，并在该会话内固定使用。
+
+用量固定每 **3 分钟**刷新，不依赖重置时间。点击账户的 **Refresh**，或在 TUI 使用 `/usage accounts` 可立即刷新。`/usage subscription` 紧凑显示缓存的账户和组。刷新失败时保留最近成功快照并显示时间和错误。共享数据目录的多个 TUI 最终收敛到同一快照。**Reset voucher…** 和 `/usage reset` 单独要求选择账户、兑换券并明确确认；轮询和自动换号不会消耗兑换券。
 
 ```console
 a13n-harness-ui auth status codex --format json
@@ -438,7 +469,7 @@ a13n-harness-ui auth logout codex
 a13n-harness-ui login codex --allow-account-switch
 ```
 
-退出和账户替换是显式凭据修改；先确认正在改变哪个共享账户/存储。不要将账户文件、token 或已存密钥文件放入诊断报告。
+退出和账户替换是显式凭据修改；先确认正在改变哪个原生账户。不要将账户文件、token 或已存密钥文件放入诊断报告。
 
 ## 在 TUI 中切换 Agent 或 Model
 

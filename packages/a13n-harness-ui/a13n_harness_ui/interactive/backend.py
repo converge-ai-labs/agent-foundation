@@ -150,11 +150,19 @@ class SessionBackend:
         thread_id = self.thread_id
         if thread_id is None:
             self.status.goal = None
+            self.status.main_account = None
             return
         operation = await self.app.active_root_operation(thread_id)
-        goal = operation.goal if operation is not None else (await self.app.get_thread(thread_id)).thread.goal
+        thread = None if operation is not None else (await self.app.get_thread(thread_id)).thread
         if thread_id == self.thread_id:
-            self.status.goal = goal
+            self.status.goal = operation.goal if operation else thread.goal if thread else None
+            self.status.main_account = (
+                operation.main_account
+                if operation
+                else thread.last_execution.main_account
+                if thread and thread.last_execution
+                else None
+            )
 
     async def _draft_configuration(self) -> ThreadConfiguration:
         projects = await self.app.cwd_project_ids(self.directory)
@@ -179,6 +187,7 @@ class SessionBackend:
             thread.last_execution.status if thread is not None and thread.last_execution is not None else None
         )
         self.status.goal = None if thread is None else thread.goal
+        self.status.main_account = thread.last_execution.main_account if thread and thread.last_execution else None
         agent_id = None if draft is None else draft.agent_source.id
         if thread is not None:
             agent_id = thread.configuration.agent_source.id
@@ -982,12 +991,15 @@ class SessionBackend:
                 self.status.execution_status = attached.status.value if attached is not None else "preparing"
                 if admitted is not None:
                     admitted()
-                self.status.goal = (await self.app.get_root_operation(receipt.receipt_id)).goal
+                current_operation = await self.app.get_root_operation(receipt.receipt_id)
+                self.status.goal = current_operation.goal
+                self.status.main_account = current_operation.main_account
                 if self.cancel_requested:
                     await self.app.cancel_root_operation(receipt.receipt_id)
                 operation = await self.app.wait_root_operation(receipt.receipt_id)
                 self.status.execution_status = operation.status.value
                 self.status.goal = operation.goal
+                self.status.main_account = operation.main_account
             finally:
                 pump.cancel()
                 with suppress(asyncio.CancelledError):

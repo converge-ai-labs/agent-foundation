@@ -64,6 +64,8 @@ from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
+from a13n_harness_ui.model_accounts.provenance import MainAccountCapability
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     phase,
@@ -334,6 +336,7 @@ class RootRunExecutor:
         on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
+        on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
         thread = admission.thread
         thread_id = thread.thread_id
@@ -432,6 +435,7 @@ class RootRunExecutor:
                 organization=admission.organization,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
+                    MainAccountCapability(published.value.root.model.model_id, on_main_account),
                     goal_capability,
                     RootCheckpointCapability(save_checkpoint),
                     _ToolPresentationCapability(retain_tool_presentation),

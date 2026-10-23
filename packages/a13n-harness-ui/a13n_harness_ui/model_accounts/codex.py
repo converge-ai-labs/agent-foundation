@@ -315,9 +315,18 @@ class CodexAccountStore:
             expiry=expiry,
             expires_at=_expires_at(loaded.credential),
             account_id=loaded.credential.account_id,
-            shared_with_cli=True,
+            shared_with_cli=self.policy.shared_with_cli,
             required_action=RequiredAction.NONE if expiry is ExpiryStatus.VALID else RequiredAction.REFRESH,
         )
+
+    async def export_login(self) -> dict[str, Any] | None:
+        """Export one validated login for the Host's one-time native adoption."""
+        loaded = await self._load()
+        if loaded.credential is None:
+            return None
+        document = loaded.snapshot.document
+        assert document is not None
+        return {"auth_mode": "chatgpt", "tokens": dict(document["tokens"])}
 
     async def load(self) -> OpenAICodexCredentials:
         """Load the current compatible credential set for Pydantic AI model authentication."""

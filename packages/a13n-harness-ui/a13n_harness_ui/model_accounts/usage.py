@@ -22,7 +22,7 @@ class _ProviderView(BaseModel):
 
 
 class UsageWindow(_ProviderView):
-    used_percent: int
+    used_percent: float
     limit_window_seconds: int = Field(ge=1)
     reset_at: int = Field(ge=0)
 
@@ -48,10 +48,24 @@ class ResetCredits(_ProviderView):
     credits: tuple[ResetCredit, ...] = Field(default=(), max_length=256)
 
 
+class PaidCredits(_ProviderView):
+    has_credits: bool = False
+    unlimited: bool = False
+    balance: str | None = None
+
+
+class AdditionalUsageLimit(_ProviderView):
+    limit_name: str
+    metered_feature: str | None = None
+    rate_limit: UsageLimits | None = None
+
+
 class CodexUsage(_ProviderView):
     account_id: str
     plan_type: str
     rate_limit: UsageLimits | None = None
+    credits: PaidCredits | None = None
+    additional_rate_limits: tuple[AdditionalUsageLimit, ...] = ()
     reset_credits: ResetCredits | None = None
     reset_unavailable: str | None = None
 
@@ -126,8 +140,10 @@ class CodexUsageClient:
                 "Codex account API could not confirm the outcome. Retry explicitly; a reset retry must reuse the same redemption ID."
             ) from None
 
-    async def read(self) -> CodexUsage:
+    async def read(self, *, include_reset_credits: bool = True) -> CodexUsage:
         value, account_id = await self._request("GET", "/usage")
+        if not include_reset_credits:
+            return CodexUsage.model_validate({**value, "account_id": account_id})
         credits = None
         diagnostic = None
         try:
@@ -139,9 +155,8 @@ class CodexUsageClient:
             diagnostic = str(exc)
         return CodexUsage.model_validate(
             {
+                **value,
                 "account_id": account_id,
-                "plan_type": value.get("plan_type"),
-                "rate_limit": value.get("rate_limit"),
                 "reset_credits": credits,
                 "reset_unavailable": diagnostic,
             }

@@ -1,0 +1,123 @@
+.section {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.heading h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.heading p,
+.migration p {
+  margin: 6px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+}
+.search {
+  max-width: 300px;
+}
+.rows {
+  display: grid;
+  gap: 6px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--a13n-surface);
+  border-radius: 8px;
+}
+.identity {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.identity strong {
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.identity > span,
+.usage,
+.members {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.actions,
+.usage,
+.members {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.actions {
+  justify-content: flex-end;
+}
+.usage {
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.meter {
+  display: grid;
+  gap: 2px;
+  min-width: 100px;
+}
+.meter meter {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--a13n-signal);
+}
+.more summary,
+.migration summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  padding: 6px 0;
+}
+.more[open] {
+  flex-basis: 100%;
+}
+.members > span {
+  background: var(--a13n-elevated);
+  padding: 3px 7px;
+  border-radius: 6px;
+}
+.form {
+  display: grid;
+  gap: 16px;
+}
+.member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.member > span {
+  flex: 1;
+  min-width: 100px;
+}
+.member input {
+  width: 72px;
+}
+@media (max-width: 700px) {
+  .row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .actions {
+    justify-content: flex-start;
+  }
+  .heading {
+    align-items: flex-start;
+  }
+}

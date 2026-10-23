@@ -1,0 +1,792 @@
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import { useTransport } from "../transport/context";
+import { result, type Schema } from "../transport/client";
+import { ErrorNotice, TextField } from "../shell/ui";
+import styles from "./subscriptions.module.css";
+
+type Account = Schema<"SubscriptionAccount">;
+type AccountView = Schema<"SubscriptionAccountView">;
+type Group = Schema<"SubscriptionGroupResource">;
+
+export function useSubscriptions(enabled = true) {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: ["subscriptions"],
+    enabled,
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/subscriptions", { signal })),
+    // This reads the shared cache; provider polling belongs to the Host.
+    refetchInterval: 15_000,
+  });
+}
+
+function WindowUsage({
+  window,
+  label,
+}: {
+  window: Schema<"UsageWindow">;
+  label: string;
+}) {
+  const remaining = Math.max(0, 100 - window.used_percent);
+  return (
+    <span
+      className={styles.meter}
+      title={`Resets ${new Date(window.reset_at * 1000).toLocaleString()}`}
+    >
+      <span>
+        {label} · {Math.round(remaining)}% left
+      </span>
+      <meter
+        min={0}
+        max={100}
+        value={remaining}
+        aria-label={`${label} remaining`}
+      />
+    </span>
+  );
+}
+
+export function AccountUsage({ view }: { view: AccountView }) {
+  const usage = view.usage.usage;
+  return (
+    <div className={styles.usage}>
+      {usage?.rate_limit?.primary_window && (
+        <WindowUsage window={usage.rate_limit.primary_window} label="Primary" />
+      )}
+      {usage?.rate_limit?.secondary_window && (
+        <WindowUsage
+          window={usage.rate_limit.secondary_window}
+          label="Secondary"
+        />
+      )}
+      {!usage?.rate_limit && <span>Usage unknown</span>}
+      {usage?.credits && (
+        <span>
+          Credits:{" "}
+          {usage.credits.unlimited
+            ? "Unlimited"
+            : (usage.credits.balance ??
+              (usage.credits.has_credits ? "Available" : "None"))}
+        </span>
+      )}
+      <span title={view.usage.error ?? undefined}>
+        {view.usage.error
+          ? "Refresh failed · showing last known usage"
+          : view.usage.observed_at
+            ? `Updated ${new Date(view.usage.observed_at * 1000).toLocaleTimeString()}`
+            : "Not refreshed yet"}
+      </span>
+    </div>
+  );
+}
+
+export function SubscriptionAccounts({
+  renderLogin,
+}: {
+  renderLogin: (account: Account) => ReactNode;
+}) {
+  const { client } = useTransport();
+  const queries = useQueryClient();
+  const catalog = useSubscriptions();
+  const [creating, setCreating] = useState(false);
+  const [provider, setProvider] = useState<"codex" | "grok">("codex");
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState<Account | null>(null);
+  const [login, setLogin] = useState<Account | null>(null);
+  const [deleting, setDeleting] = useState<Account | null>(null);
+  const [reset, setReset] = useState<Account | null>(null);
+  const [group, setGroup] = useState<Group | "new" | null>(null);
+  const [filter, setFilter] = useState("");
+  const invalidate = () =>
+    queries.invalidateQueries({ queryKey: ["subscriptions"] });
+  const create = useMutation({
+    mutationFn: () =>
+      result(
+        client.POST("/api/subscriptions/accounts", {
+          body: { provider, name: name.trim() },
+        }),
+      ),
+    onSuccess: (account) => {
+      setCreating(false);
+      setLogin(account);
+      setName("");
+      void invalidate();
+    },
+  });
+  const update = useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      enabled?: boolean;
+    }) =>
+      result(
+        client.PATCH("/api/subscriptions/accounts/{account_id}", {
+          params: { path: { account_id: id } },
+          body,
+        }),
+      ),
+    onSuccess: () => {
+      setEditing(null);
+      void invalidate();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (account: Account) =>
+      result(
+        client.DELETE("/api/subscriptions/accounts/{account_id}", {
+          params: { path: { account_id: account.id } },
+        }),
+      ),
+    onSuccess: () => {
+      setDeleting(null);
+      void invalidate();
+    },
+  });
+  const refresh = useMutation({
+    mutationFn: (id: string) =>
+      result(
+        client.POST("/api/subscriptions/accounts/{account_id}/refresh", {
+          params: { path: { account_id: id } },
+        }),
+      ),
+    onSuccess: () => {
+      void invalidate();
+    },
+  });
+  const accounts = catalog.data?.accounts ?? [];
+  return (
+    <section className={styles.section} aria-label="Subscription accounts">
+      <header className={styles.heading}>
+        <div>
+          <h2>Subscription accounts</h2>
+          <p>
+            Managed here. Usage refreshes every 3 minutes; refresh any account
+            now to check sooner.
+          </p>
+        </div>
+        <Button
+          onClick={() => {
+            setName("");
+            create.reset();
+            setCreating(true);
+          }}
+        >
+          Add account
+        </Button>
+      </header>
+      <ErrorNotice error={catalog.error || update.error || refresh.error} />
+      <Input
+        aria-label="Filter subscription accounts"
+        placeholder="Find an account…"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+        className={styles.search}
+      />
+      {catalog.isPending && <p role="status">Loading accounts…</p>}
+      <div className={styles.rows}>
+        {accounts
+          .filter(({ account }) =>
+            `${account.name} ${account.provider}`
+              .toLowerCase()
+              .includes(filter.toLowerCase()),
+          )
+          .map((view) => {
+            const { account, authentication } = view;
+            return (
+              <article key={account.id} className={styles.row}>
+                <div className={styles.identity}>
+                  <strong>{account.name}</strong>
+                  <span>
+                    {account.provider} ·{" "}
+                    {account.enabled
+                      ? authentication.availability === "available"
+                        ? "Connected"
+                        : "Sign-in required"
+                      : "Paused"}
+                  </span>
+                  <AccountUsage view={view} />
+                </div>
+                <div className={styles.actions}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={
+                      refresh.isPending && refresh.variables === account.id
+                    }
+                    onClick={() => refresh.mutate(account.id)}
+                  >
+                    Refresh
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setLogin(account)}
+                  >
+                    Sign-in & logout
+                  </Button>
+                  <details className={styles.more}>
+                    <summary>Manage</summary>
+                    <div className={styles.actions}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setName(account.name);
+                          setEditing(account);
+                        }}
+                      >
+                        Rename
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={update.isPending}
+                        onClick={() =>
+                          update.mutate({
+                            id: account.id,
+                            enabled: !account.enabled,
+                          })
+                        }
+                      >
+                        {account.enabled ? "Pause" : "Enable"}
+                      </Button>
+                      {account.provider === "codex" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setReset(account)}
+                        >
+                          Reset voucher…
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleting(account)}
+                      >
+                        Delete…
+                      </Button>
+                    </div>
+                  </details>
+                </div>
+              </article>
+            );
+          })}
+        {!catalog.isPending && !accounts.length && (
+          <p>Add an account, sign in, then include it in a group.</p>
+        )}
+      </div>
+      {!!catalog.data?.adoption && (
+        <details className={styles.migration}>
+          <summary>Migration from existing CLI logins</summary>
+          <p>
+            Imported once on first startup. Original CLI files are unchanged;
+            logout and deletion here never re-import them.
+          </p>
+          {Object.entries(catalog.data.adoption).map(([key, value]) => (
+            <p key={key}>
+              {key}: {value.status}
+              {value.message ? ` · ${value.message}` : ""}
+            </p>
+          ))}
+        </details>
+      )}
+      <header className={styles.heading}>
+        <div>
+          <h2>Account groups</h2>
+          <p>
+            Models select a same-provider group. Changes apply to the next Run.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setGroup("new")}>
+          Add group
+        </Button>
+      </header>
+      <div className={styles.rows}>
+        {catalog.data?.groups.map((item) => (
+          <article key={item.id} className={styles.row}>
+            <div className={styles.identity}>
+              <strong>{item.name}</strong>
+              <span>
+                {item.provider} ·{" "}
+                {item.strategy === "weighted"
+                  ? "Weighted balance"
+                  : "Ordered consumption"}{" "}
+                · {item.accounts?.length ?? 0} accounts
+                {item.allow_credits
+                  ? " · Credits allowed"
+                  : " · Included allowance only"}
+              </span>
+              <div className={styles.members}>
+                {item.accounts?.map((member) => {
+                  const view = accounts.find(
+                    (entry) => entry.account.id === member.account,
+                  );
+                  return (
+                    <span key={member.account}>
+                      {view?.account.name ?? "Deleted account"}
+                      {item.strategy === "weighted"
+                        ? ` ×${member.weight ?? 1}`
+                        : ""}
+                      {view?.usage.usage?.rate_limit?.primary_window
+                        ? ` · ${Math.max(0, Math.round(100 - view.usage.usage.rate_limit.primary_window.used_percent))}%`
+                        : ""}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+            <Button variant="ghost" onClick={() => setGroup(item)}>
+              Edit group
+            </Button>
+          </article>
+        ))}
+        {!catalog.isPending && !catalog.data?.groups.length && (
+          <p>No groups yet. Create one to combine accounts.</p>
+        )}
+      </div>
+      <ModalFrame
+        open={creating || !!editing}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreating(false);
+            setEditing(null);
+          }
+        }}
+        title={editing ? "Rename account" : "Add subscription account"}
+        closeLabel="Cancel"
+        footer={
+          <Button
+            loading={create.isPending || update.isPending}
+            disabled={!name.trim()}
+            onClick={() =>
+              editing
+                ? update.mutate({ id: editing.id, name: name.trim() })
+                : create.mutate()
+            }
+          >
+            {editing ? "Save name" : "Create & sign in"}
+          </Button>
+        }
+      >
+        <div className={styles.form}>
+          <ErrorNotice error={create.error || update.error} />
+          {!editing && (
+            <ChoiceField
+              label="Provider"
+              value={provider}
+              onValueChange={(value) => setProvider(value as "codex" | "grok")}
+              options={[
+                { value: "codex", label: "Codex" },
+                { value: "grok", label: "Grok" },
+              ]}
+            />
+          )}
+          <TextField label="Account name" value={name} onChange={setName} />
+        </div>
+      </ModalFrame>
+      <ModalFrame
+        open={!!login}
+        onOpenChange={(open) => {
+          if (!open) setLogin(null);
+        }}
+        title={login?.name ?? "Sign in"}
+        closeLabel="Done"
+      >
+        {login && renderLogin(login)}
+      </ModalFrame>
+      <ModalFrame
+        open={!!deleting}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+        title={`Delete ${deleting?.name ?? "account"}?`}
+        description="Removes the managed credentials and stops future requests from using this account, including captured groups. Original CLI files remain unchanged."
+        closeLabel="Cancel"
+        footer={
+          <Button
+            variant="destructive"
+            loading={remove.isPending}
+            onClick={() => deleting && remove.mutate(deleting)}
+          >
+            Delete account
+          </Button>
+        }
+      >
+        <ErrorNotice error={remove.error} />
+      </ModalFrame>
+      {reset && <ResetVoucher account={reset} close={() => setReset(null)} />}
+      {group && (
+        <GroupEditor
+          initial={group === "new" ? undefined : group}
+          accounts={accounts}
+          close={() => setGroup(null)}
+        />
+      )}
+    </section>
+  );
+}
+
+function ResetVoucher({
+  account,
+  close,
+}: {
+  account: Account;
+  close: () => void;
+}) {
+  const { client } = useTransport();
+  const queries = useQueryClient();
+  const [credit, setCredit] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [requestId] = useState(() => crypto.randomUUID());
+  const vouchers = useQuery({
+    queryKey: ["reset-vouchers", account.id],
+    queryFn: () =>
+      result(
+        client.GET("/api/subscriptions/accounts/{account_id}/reset-vouchers", {
+          params: { path: { account_id: account.id } },
+        }),
+      ),
+    retry: false,
+  });
+  const redeem = useMutation({
+    mutationFn: () =>
+      result(
+        client.POST("/api/subscriptions/accounts/{account_id}/reset", {
+          params: { path: { account_id: account.id } },
+          body: {
+            account_id: vouchers.data!.account_id,
+            credit_id: credit,
+            redeem_request_id: requestId,
+          },
+        }),
+      ),
+    retry: false,
+    onSuccess: () => {
+      void queries.invalidateQueries({ queryKey: ["subscriptions"] });
+    },
+  });
+  const available =
+    vouchers.data?.reset_credits?.credits?.filter(
+      (item) =>
+        item.status === "available" && item.reset_type === "codex_rate_limits",
+    ) ?? [];
+  return (
+    <ModalFrame
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      title={`Reset voucher · ${account.name}`}
+      description="Vouchers reset included allowance. They are separate from rechargeable credits and are never used automatically."
+      closeLabel="Close"
+      footer={
+        !redeem.isSuccess && (
+          <Button
+            disabled={!credit || !vouchers.data || redeem.isPending}
+            loading={redeem.isPending}
+            onClick={() => (confirming ? redeem.mutate() : setConfirming(true))}
+          >
+            {confirming ? "Confirm redeem voucher" : "Review redemption"}
+          </Button>
+        )
+      }
+    >
+      <div className={styles.form}>
+        <ErrorNotice error={vouchers.error || redeem.error} />
+        {vouchers.isPending && (
+          <p role="status">Checking available vouchers…</p>
+        )}
+        {vouchers.data?.reset_unavailable && (
+          <p>{vouchers.data.reset_unavailable}</p>
+        )}
+        {!vouchers.isPending && !available.length && (
+          <p>No available reset vouchers.</p>
+        )}
+        {!!available.length && (
+          <ChoiceField
+            label="Voucher"
+            value={credit}
+            disabled={confirming || redeem.isSuccess}
+            onValueChange={setCredit}
+            options={available.map((item) => ({
+              value: item.id,
+              label: item.title ?? item.reset_type,
+              hint: item.expires_at
+                ? `Expires ${item.expires_at}`
+                : (item.description ?? undefined),
+            }))}
+          />
+        )}
+        {confirming && !redeem.isSuccess && (
+          <p>
+            Redeem the selected voucher for <strong>{account.name}</strong> (
+            {vouchers.data?.account_id}) now? This consumes the voucher.
+          </p>
+        )}
+        {redeem.isSuccess && (
+          <p role="status">
+            {redeem.data.code.replaceAll("_", " ")} ·{" "}
+            {redeem.data.windows_reset} windows reset
+          </p>
+        )}
+      </div>
+    </ModalFrame>
+  );
+}
+
+function GroupEditor({
+  initial,
+  accounts,
+  close,
+}: {
+  initial?: Group;
+  accounts: AccountView[];
+  close: () => void;
+}) {
+  const { client } = useTransport();
+  const queries = useQueryClient();
+  const [draft, setDraft] = useState<Group>(
+    () =>
+      initial ?? {
+        schema_version: "1",
+        kind: "subscription_group",
+        id: `group-${crypto.randomUUID().slice(0, 8)}`,
+        name: "New group",
+        provider: "codex",
+        strategy: "ordered",
+        allow_credits: false,
+        accounts: [],
+      },
+  );
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const sources = useQuery({
+    queryKey: ["configuration-sources"],
+    queryFn: () => result(client.GET("/api/configuration/sources")),
+  });
+  const source = sources.data?.sources.find(
+    (item) =>
+      item.resource_ids.includes(draft.id) &&
+      item.resource_kind === "subscription_group",
+  );
+  const relativePath =
+    source?.relative_path ?? `subscription_groups/${draft.id}.yaml`;
+  const writable = !initial || !!source?.writable;
+  const saved = () => {
+    void queries.invalidateQueries();
+    close();
+  };
+  const save = useMutation({
+    mutationFn: () =>
+      result(
+        client.PUT("/api/configuration/sources/{relative_path}", {
+          params: { path: { relative_path: relativePath } },
+          body: { content: JSON.stringify(draft, null, 2) },
+        }),
+      ),
+    onSuccess: saved,
+  });
+  const remove = useMutation({
+    mutationFn: () =>
+      result(
+        client.DELETE("/api/configuration/sources/{relative_path}", {
+          params: { path: { relative_path: relativePath } },
+        }),
+      ),
+    onSuccess: saved,
+  });
+  const members = draft.accounts ?? [];
+  const setMembers = (value: typeof members) =>
+    setDraft({ ...draft, accounts: value });
+  function move(index: number, offset: number) {
+    const next = [...members];
+    const other = index + offset;
+    [next[index], next[other]] = [next[other], next[index]];
+    setMembers(next);
+  }
+  return (
+    <ModalFrame
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      title={initial ? `Edit ${initial.name}` : "New account group"}
+      description="Members and policy are captured for each Run. Pausing, logout, deletion, and refreshed usage take effect at the next request."
+      closeLabel="Cancel"
+      footer={
+        <div className={styles.actions}>
+          {initial && (
+            <Button
+              variant="ghost"
+              disabled={!writable}
+              loading={remove.isPending}
+              onClick={() =>
+                deleteConfirm ? remove.mutate() : setDeleteConfirm(true)
+              }
+            >
+              {deleteConfirm ? "Confirm delete group" : "Delete group…"}
+            </Button>
+          )}
+          <Button
+            loading={save.isPending}
+            disabled={!draft.name.trim() || !writable || sources.isPending}
+            onClick={() => save.mutate()}
+          >
+            Save group
+          </Button>
+        </div>
+      }
+    >
+      <div className={styles.form}>
+        <ErrorNotice error={sources.error || save.error || remove.error} />
+        <TextField
+          label="Group name"
+          value={draft.name}
+          onChange={(name) => setDraft({ ...draft, name })}
+        />
+        <ChoiceField
+          label="Provider"
+          value={draft.provider}
+          disabled={!!initial}
+          onValueChange={(provider) =>
+            setDraft({
+              ...draft,
+              provider: provider as "codex" | "grok",
+              accounts: [],
+              allow_credits: false,
+            })
+          }
+          options={[
+            { value: "codex", label: "Codex" },
+            { value: "grok", label: "Grok" },
+          ]}
+        />
+        <ChoiceField
+          label="Scheduling"
+          value={draft.strategy ?? "ordered"}
+          onValueChange={(strategy) =>
+            setDraft({ ...draft, strategy: strategy as "ordered" | "weighted" })
+          }
+          options={[
+            {
+              value: "ordered",
+              label: "Ordered consumption",
+              hint: "Use accounts in order, moving on when unavailable or exhausted.",
+            },
+            {
+              value: "weighted",
+              label: "Weighted balance",
+              hint: "Spread Runs by weight; keep the selected account while eligible.",
+            },
+          ]}
+        />
+        {draft.provider === "codex" && (
+          <ChoiceField
+            label="Rechargeable credits"
+            value={draft.allow_credits ? "allow" : "deny"}
+            onValueChange={(value) =>
+              setDraft({ ...draft, allow_credits: value === "allow" })
+            }
+            options={[
+              { value: "deny", label: "Included allowance only" },
+              {
+                value: "allow",
+                label: "Allow credits after included allowance",
+                hint: "Best-effort client scheduling; small overshoot is possible.",
+              },
+            ]}
+          />
+        )}
+        <FormField label="Members in selection order">
+          <div className={styles.form}>
+            {members.map((member, index) => (
+              <div className={styles.member} key={member.account}>
+                <span>
+                  {accounts.find((item) => item.account.id === member.account)
+                    ?.account.name ?? "Deleted account"}
+                </span>
+                {draft.strategy === "weighted" && (
+                  <Input
+                    aria-label={`Weight for member ${index + 1}`}
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={member.weight ?? 1}
+                    onChange={(event) =>
+                      setMembers(
+                        members.map((item, i) =>
+                          i === index
+                            ? { ...item, weight: Number(event.target.value) }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  Up
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={index === members.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  Down
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setMembers(members.filter((_, i) => i !== index))
+                  }
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            {!members.length && (
+              <p>No members. This group cannot run until you add an account.</p>
+            )}
+            <ChoiceField
+              label="Add member"
+              value=""
+              onValueChange={(account) => {
+                if (account) setMembers([...members, { account, weight: 1 }]);
+              }}
+              options={accounts
+                .filter(
+                  ({ account }) =>
+                    account.provider === draft.provider &&
+                    !members.some((item) => item.account === account.id),
+                )
+                .map(({ account }) => ({
+                  value: account.id,
+                  label: account.name,
+                }))}
+            />
+          </div>
+        </FormField>
+        {!writable && (
+          <p>This group is read-only. Edit its owning configuration source.</p>
+        )}
+        {deleteConfirm && (
+          <p>
+            Delete this group? Models explicitly referencing it must be updated
+            first.
+          </p>
+        )}
+      </div>
+    </ModalFrame>
+  );
+}

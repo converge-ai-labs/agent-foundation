@@ -17,6 +17,7 @@ from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
@@ -442,6 +443,7 @@ class RootOperationView(SurfaceModel):
     outcome: RootRunOutcomeView | None = None
     failure: FailureView | None = None
     goal: GoalView | None = None
+    main_account: MainAccountSelection | None = None
     available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
 
     @field_validator("started_at", "completed_at")
