@@ -123,7 +123,7 @@ GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=
 
 通过 `/toolsets/index`、`/connections/{connection_id}/tools/index` 或 `/connector-providers/{provider_id}/apps/{app}/actions/index` 搜索工具目录。使用对应的 `/definitions` 接口读取定义，每次最多重复传入五个准确的 `name`。检查 `missing` 和 `oversized`。超大的定义可在同一接口中指定一个名称，按版本分段读取；接口不会静默截短定义。模型目录支持精简搜索、能力过滤和分页；读取能力或价格部分时，应准确选择 provider/model。
 
-Trace 列表支持 `status`、`kind` 和 `tool_name`。读取单个 span 的输入或输出时，使用 `/traces/{trace_id}/spans/{span_id}/content` 和 `section=input|output`。若 `items` 为空，应按 `next_cursor` 继续查找。找到后，后续文本分段请求继续使用定位该 span 时的请求游标。Trace 数据仍受部署的保存期限和后端可用性限制。
+Trace 列表支持 `status`、`kind` 和 `tool_name`。读取单个 span 的输入或输出时，使用 `/traces/{trace_id}/spans/{span_id}/content` 和 `section=input|output`。Service 只向后端查询该 span；`items` 为空表示该 trace 中没有此 span。后续文本分段使用 `version` 和 `next_offset` 继续读取。Trace 后端响应超过 8 MiB 上限时返回 `413 payload_too_large`，而不是后端不可用；对此路由而言，这表示该 span 本身超过上限。Trace 数据仍受部署的保存期限和后端可用性限制。
 
 ## 限制
 

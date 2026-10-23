@@ -3590,8 +3590,8 @@ export interface paths {
     };
     /**
      * Read Span Content
-     * @description Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
-     *     cursor while continuing fragments with version and next_offset.
+     * @description Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the
+     *     trace has no such span. Continue fragments with version and next_offset.
      */
     get: operations["read_span_content"];
     put?: never;
@@ -10847,7 +10847,7 @@ export interface components {
     };
     /**
      * SpanContentPage
-     * @description A matching span's selected content, or a continuation to keep locating that span.
+     * @description A matching span's selected content, or no items when the trace has no such span.
      */
     SpanContentPage: {
       /** Items */
@@ -20431,7 +20431,6 @@ export interface operations {
           | "events"
           | "links"
           | "usage";
-        cursor?: string | null;
         /** @description Unicode code-point offset; continue with next_offset. */
         offset?: number;
         /** @description Maximum Unicode code points in this fragment. */

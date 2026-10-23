@@ -105,6 +105,8 @@ async def test_selected_span_fragments_are_redacted_versioned_and_authorized(ser
         path, params={"section": "input", "offset": fragment["next_offset"], "version": fragment["version"]}
     )
     assert changed.status_code == 409 and changed.json()["error"]["details"]["reason"] == "content_changed"
+    # Every read selects the one span, so no neighbour's content is fetched.
+    assert all((query.span_id, query.limit) == (backend.values[0].id, 1) for query in backend.queries)
     refused = await service.client.get(path, headers={"X-Workspace-ID": "ws_" + "f" * 20})
     assert refused.status_code in {403, 404}
 

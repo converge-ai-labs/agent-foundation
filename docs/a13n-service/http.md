@@ -123,7 +123,7 @@ To inspect configuration, read a revision with `section=all` or a configuration 
 
 Search tool catalogs through `/toolsets/index`, `/connections/{connection_id}/tools/index` or `/connector-providers/{provider_id}/apps/{app}/actions/index`. Read the matching `/definitions` endpoint with up to five repeated exact `name` values. Check `missing` and `oversized`. An oversized definition is read through that same endpoint with one name and versioned fragments; it is never silently shortened. The model catalog accepts compact search, capability filters and paging; select the exact provider/model for characteristics or pricing sections.
 
-Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. Follow `next_cursor` while `items` is empty. Once found, keep the request cursor that located the span while continuing its text fragments. Trace data remains subject to the deployment's retention and backend availability.
+Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. The Service queries the backend for that span alone; empty `items` means the trace has no such span. Continue its text fragments with `version` and `next_offset`. A trace response over the backend's 8 MiB limit is `413 payload_too_large`, not an outage; for this route it means the span alone exceeds the limit. Trace data remains subject to the deployment's retention and backend availability.
 
 ## Limits
 
