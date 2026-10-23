@@ -56,10 +56,6 @@
   padding: 0;
   border-top: 1px solid var(--a13n-border);
 }
-/* The row owns its inset, so separators reach both edges of the card. */
-.modelSettingsCard [data-slot="collapsible-panel"] > div > * {
-  padding: 16px;
-}
 .modelSettingsCard .modelParameter {
   border-bottom: 1px solid var(--a13n-border);
 }
@@ -82,17 +78,32 @@
   }
 }
 
-/* Keep row separators flush with the outlined media container. */
-.mediaSection [data-slot="settings-section-content"] {
+/* Shared surfaces and row insets keep separators flush with card edges. */
+.mediaSection [data-slot="settings-section-content"],
+.advancedBody > section > div {
   overflow: hidden;
   border: 1px solid var(--a13n-border);
   border-radius: 12px;
   background: var(--a13n-canvas);
 }
-.mediaSection [data-slot="settings-section-content"] > div {
+.mediaSection [data-slot="settings-section-content"] > div,
+.modelSettingsCard [data-slot="collapsible-panel"] > div > *,
+.advancedBody > section > div > *,
+.advancedBody
+  :is(
+    [data-slot="execution-fields"],
+    [data-slot="tool-discovery-fields"],
+    [data-slot="session-memory-fields"]
+  )
+  > * {
   padding: 16px;
 }
-.mediaSection [data-slot="settings-section-content"] > div + div {
+.mediaSection [data-slot="settings-section-content"] > div + div,
+.advancedBody > section > div > * + *,
+.advancedBody
+  :is([data-slot="execution-fields"], [data-slot="tool-discovery-fields"])
+  > *
+  + * {
   border-top: 1px solid var(--a13n-border);
 }
 
@@ -103,7 +114,8 @@
   border-radius: 12px;
   background: var(--a13n-surface);
 }
-.reviewRuleHeading {
+.reviewRuleHeading,
+.searchGroupHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -120,12 +132,6 @@
   gap: 16px;
   padding: 16px;
   background: transparent;
-}
-.searchGroupHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 .searchSource {
   display: flex;
@@ -164,16 +170,6 @@
 /* Headings stay outside; the content owns the outlined rows. */
 .advancedBody > section > div {
   gap: 0;
-  overflow: hidden;
-  border: 1px solid var(--a13n-border);
-  border-radius: 12px;
-  background: var(--a13n-canvas);
-}
-.advancedBody > section > div > * {
-  padding: 16px;
-}
-.advancedBody > section > div > * + * {
-  border-top: 1px solid var(--a13n-border);
 }
 /* Execution, discovery and memory have an inner row collection. */
 .advancedBody
@@ -186,21 +182,6 @@
   ) {
   gap: 0;
   padding: 0;
-}
-.advancedBody
-  :is(
-    [data-slot="execution-fields"],
-    [data-slot="tool-discovery-fields"],
-    [data-slot="session-memory-fields"]
-  )
-  > * {
-  padding: 16px;
-}
-.advancedBody
-  :is([data-slot="execution-fields"], [data-slot="tool-discovery-fields"])
-  > *
-  + * {
-  border-top: 1px solid var(--a13n-border);
 }
 .advancedBody [data-slot="field"] {
   gap: 8px;

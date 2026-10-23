@@ -1,3 +1,4 @@
+import formStyles from "../../../shared/forms/forms.module.css";
 import {
   Button,
   ChoiceField,
@@ -65,7 +66,7 @@ export function ReviewerSection({
     <>
       {mark}
       <ChoiceField
-        popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+        popupClassName={formStyles.compactChoicePopup}
         label={t("Review model")}
         readOnly={readOnly}
         value={reviewer?.model ?? ""}
@@ -94,33 +95,11 @@ export function ReviewerSection({
       />
       {reviewer?.model && (
         <>
-          <ChoiceField
-            popupClassName="[&_[data-slot=select-item]]:text-[13px]"
-            label={t("Risk threshold")}
-            description={t("Flag this risk level and above.")}
+          <ReviewPolicyFields
+            value={reviewer}
+            onChange={patch}
             readOnly={readOnly}
-            value={reviewer.risk_threshold ?? "extra_high"}
-            options={risks.map((item) => ({ ...item, label: t(item.label) }))}
-            onValueChange={(risk) =>
-              patch({ risk_threshold: risk as Reviewer["risk_threshold"] })
-            }
-          />
-          <ChoiceField
-            popupClassName="[&_[data-slot=select-item]]:text-[13px]"
-            label={t("When flagged")}
-            readOnly={readOnly}
-            value={reviewer.on_flagged ?? "deny"}
-            options={actions.map((item) => ({ ...item, label: t(item.label) }))}
-            onValueChange={(action) =>
-              patch({ on_flagged: action as Reviewer["on_flagged"] })
-            }
-          />
-          <TextAreaField
-            label={t("Review instructions")}
-            readOnly={readOnly}
-            value={reviewer.instruction ?? ""}
-            rows={3}
-            onChange={(instruction) => patch({ instruction })}
+            compact
           />
           <div>
             <Button type="button" variant="outline" size="sm" onClick={onOpen}>
@@ -129,6 +108,68 @@ export function ReviewerSection({
           </div>
         </>
       )}
+    </>
+  );
+}
+
+/** Common policy rules; each caller keeps ownership of its draft lifecycle. */
+function ReviewPolicyFields({
+  value,
+  onChange,
+  readOnly,
+  compact = false,
+}: {
+  value: Reviewer;
+  onChange: (change: Partial<Reviewer>) => void;
+  readOnly: boolean;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const policy = (
+    <>
+      <ChoiceField
+        popupClassName={formStyles.compactChoicePopup}
+        label={t("Risk threshold")}
+        description={compact ? t("Flag this risk level and above.") : undefined}
+        readOnly={readOnly}
+        value={value.risk_threshold ?? "extra_high"}
+        options={risks.map((item) => ({ ...item, label: t(item.label) }))}
+        onValueChange={(risk) =>
+          onChange({ risk_threshold: risk as Reviewer["risk_threshold"] })
+        }
+      />
+      <ChoiceField
+        popupClassName={formStyles.compactChoicePopup}
+        label={t(compact ? "When flagged" : "At or above threshold")}
+        readOnly={readOnly}
+        value={value.on_flagged ?? "deny"}
+        options={actions.map((item) => ({ ...item, label: t(item.label) }))}
+        onValueChange={(action) =>
+          onChange({ on_flagged: action as Reviewer["on_flagged"] })
+        }
+      />
+    </>
+  );
+  return (
+    <>
+      {compact ? policy : <div className={styles.grid}>{policy}</div>}
+      {!compact && (
+        <p className="text-muted-foreground text-sm">
+          {t(
+            "Below the threshold, execution continues. At or above it, the selected action applies. Review timeouts always deny execution.",
+          )}
+        </p>
+      )}
+      <TextAreaField
+        label={t(
+          compact ? "Review instructions" : "Custom review instructions",
+        )}
+        readOnly={readOnly}
+        value={value.instruction ?? ""}
+        maxLength={32768}
+        rows={compact ? 3 : 4}
+        onChange={(instruction) => onChange({ instruction })}
+      />
     </>
   );
 }
@@ -273,40 +314,10 @@ export function ReviewerSettings({
                   {value.model} · {t("Not in this workspace")}
                 </p>
               )}
-            <div className={styles.grid}>
-              <ChoiceField
-                popupClassName="[&_[data-slot=select-item]]:text-[13px]"
-                readOnly={readOnly}
-                label={t("Risk threshold")}
-                value={value.risk_threshold ?? "extra_high"}
-                options={translatedRisks}
-                onValueChange={(risk) =>
-                  patch({ risk_threshold: risk as Reviewer["risk_threshold"] })
-                }
-              />
-              <ChoiceField
-                popupClassName="[&_[data-slot=select-item]]:text-[13px]"
-                readOnly={readOnly}
-                label={t("At or above threshold")}
-                value={value.on_flagged ?? "deny"}
-                options={translatedActions}
-                onValueChange={(action) =>
-                  patch({ on_flagged: action as Reviewer["on_flagged"] })
-                }
-              />
-            </div>
-            <p className="text-muted-foreground text-sm">
-              {t(
-                "Below the threshold, execution continues. At or above it, the selected action applies. Review timeouts always deny execution.",
-              )}
-            </p>
-            <TextAreaField
+            <ReviewPolicyFields
+              value={value}
+              onChange={patch}
               readOnly={readOnly}
-              label={t("Custom review instructions")}
-              value={value.instruction ?? ""}
-              maxLength={32768}
-              rows={4}
-              onChange={(instruction) => patch({ instruction })}
             />
             {[
               ...Object.entries(value.rules ?? {}),
@@ -342,7 +353,7 @@ export function ReviewerSettings({
                 )}
                 <div className={styles.grid}>
                   <ChoiceField
-                    popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+                    popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("Rule risk threshold")}
                     value={rule.risk_threshold ?? "default"}
@@ -360,7 +371,7 @@ export function ReviewerSettings({
                     }
                   />
                   <ChoiceField
-                    popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+                    popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("Rule action")}
                     value={rule.on_flagged ?? "default"}
@@ -399,7 +410,7 @@ export function ReviewerSettings({
                 />
                 <div className={styles.grid}>
                   <ChoiceField
-                    popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+                    popupClassName={formStyles.compactChoicePopup}
                     readOnly={readOnly}
                     label={t("On review failure")}
                     value={value.on_error ?? "approval_required"}

@@ -1,3 +1,4 @@
+import formStyles from "./forms.module.css";
 import { ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
@@ -110,9 +111,7 @@ export function ExecutionFields({
         </ReadOnlyField>
       ) : (
         <ChoiceField
-          popupClassName={
-            compact ? "[&_[data-slot=select-item]]:text-[13px]" : undefined
-          }
+          popupClassName={compact ? formStyles.compactChoicePopup : undefined}
           id={`${id}-tools`}
           label={t(compact ? "Tool calls" : "Tool execution")}
           value={value.tools?.mode ?? "inherit"}
@@ -138,9 +137,7 @@ export function ExecutionFields({
         </ReadOnlyField>
       ) : (
         <ChoiceField
-          popupClassName={
-            compact ? "[&_[data-slot=select-item]]:text-[13px]" : undefined
-          }
+          popupClassName={compact ? formStyles.compactChoicePopup : undefined}
           id={`${id}-steering`}
           label={t(compact ? "New messages" : "Steering")}
           value={value.steering ?? "inherit"}

@@ -84,6 +84,11 @@ it("keeps existing wildcard rules while editing one tool and discards cancelled 
   };
   const user = userEvent.setup();
   const view = render(<ReviewerSettings {...props} />);
+  expect(
+    screen
+      .getByLabelText("Custom review instructions")
+      .getAttribute("maxlength"),
+  ).toBe("32768");
   await user.type(
     screen.getByLabelText("Custom review instructions"),
     "Temporary edit",
@@ -180,6 +185,18 @@ it("edits review policy inline while preserving rules, and can clear the reviewe
   expect(draft!.reviewer).toEqual({
     model: "review-model",
     on_flagged: "approval_required",
+    rules: { "shell.*": { on_flagged: "deny" } },
+  });
+  const instructions = screen.getByLabelText("Review instructions");
+  expect(instructions.getAttribute("maxlength")).toBe("32768");
+  await user.type(instructions, "Check destructive commands");
+  await user.click(screen.getByRole("combobox", { name: "Risk threshold" }));
+  await user.click(await screen.findByRole("option", { name: "High risk" }));
+  expect(draft!.reviewer).toEqual({
+    model: "review-model",
+    risk_threshold: "high",
+    on_flagged: "approval_required",
+    instruction: "Check destructive commands",
     rules: { "shell.*": { on_flagged: "deny" } },
   });
   await user.click(screen.getByRole("button", { name: "More options" }));

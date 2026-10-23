@@ -1,3 +1,4 @@
+import formStyles from "../../../shared/forms/forms.module.css";
 import { Button, Checkbox, ChoiceField, FormField, Input } from "a13n-ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -87,7 +88,7 @@ export function ToolSearchSection({
       {mark}
       <div data-slot="tool-discovery-fields" className="grid gap-4">
         <ChoiceField
-          popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+          popupClassName={formStyles.compactChoicePopup}
           label={t("Mode")}
           readOnly={readOnly}
           value={value.mode}
