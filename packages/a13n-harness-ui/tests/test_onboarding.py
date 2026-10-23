@@ -675,7 +675,8 @@ async def test_inline_login_uses_shared_sessions_and_survives_setup_cancellation
             assert not await run_setup(app, tmp_path, ask_user=ask, emit=emit)
             assert await app.active_login() is None
             assert (await app.setup_status()).providers[0].available
-    assert (home / "auth.json").exists()
+    assert (tmp_path / "data/oauth/accounts/acct-codex-default.json").exists()
+    assert not (home / "auth.json").exists()
     assert not configuration.exists()
     assert "secret-refresh" not in "\n".join(messages)
 

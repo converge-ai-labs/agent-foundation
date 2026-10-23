@@ -145,7 +145,7 @@ async def test_usage_manual_refresh_and_cross_instance_convergence(tmp_path):
     assert len(reads) == 1
     await second.refresh(accounts[0].id, force=True)
     assert len(reads) == 2
-    now[0] += 180
+    now[0] += 600
     fail[0] = True
     snapshot = await first.refresh(accounts[0].id)
     assert snapshot.usage is not None and snapshot.error is not None
@@ -380,3 +380,92 @@ async def test_main_stream_binding_does_not_leak_to_consumer(tmp_path):
                     pass
         assert len(events) == 1
         assert events[0].account_id == accounts[0].id
+
+
+async def test_request_refreshes_stale_usage_before_idle_poll(tmp_path):
+    catalog, accounts, _ = await _accounts(tmp_path)
+    now = [1000.0]
+    reads = []
+
+    async def reader(account):
+        reads.append(account.id)
+        return CodexUsage(account_id=account.id, plan_type="plus")
+
+    usage = SubscriptionUsage(catalog, reader=reader, clock=lambda: now[0])
+    assert await usage.tier(accounts[0], "test-model", allow_credits=False) == 0
+    now[0] += 59
+    await usage.tier(accounts[0], "test-model", allow_credits=False)
+    assert len(reads) == 1
+    now[0] += 1
+    await usage.tier(accounts[0], "test-model", allow_credits=False)
+    assert len(reads) == 2
+    await usage.refresh(accounts[0].id)
+    assert len(reads) == 2  # The idle fallback is independently longer.
+
+
+def _usage_headers(percent="100"):
+    return {
+        "x-codex-primary-used-percent": percent,
+        "x-codex-primary-window-minutes": "300",
+        "x-codex-primary-reset-at": "9999",
+    }
+
+
+async def test_response_usage_is_immediate_revision_scoped_and_preserves_other_buckets(tmp_path):
+    catalog, accounts, _ = await _accounts(tmp_path)
+    now = [1000.0]
+
+    async def reader(account):
+        return CodexUsage.model_validate(
+            {
+                "account_id": account.id,
+                "plan_type": "plus",
+                "rate_limit": {"allowed": True, "limit_reached": False},
+                "additional_rate_limits": [
+                    {
+                        "limit_name": "Special",
+                        "metered_feature": "special-model",
+                        "rate_limit": {"allowed": True, "limit_reached": False},
+                    }
+                ],
+            }
+        )
+
+    usage = SubscriptionUsage(catalog, reader=reader, clock=lambda: now[0])
+    await usage.refresh(accounts[0].id)
+    now[0] += 1
+    await usage.observe_headers(accounts[0], _usage_headers())
+    assert await usage.tier(accounts[0], "test-model", allow_credits=False) is None
+    assert await usage.tier(accounts[0], "special-model", allow_credits=False) == 0
+    snapshot = await usage.read(accounts[0])
+    assert snapshot.checked_at == 1000 and snapshot.observed_at == 1001
+    for invalid in ({}, _usage_headers("NaN"), _usage_headers("bad")):
+        await usage.observe_headers(accounts[0], invalid)
+        assert await usage.read(accounts[0]) == snapshot
+    await catalog.logout(accounts[0].id)
+    await usage.observe_headers(accounts[0], _usage_headers("1"))
+    assert (await usage.read(await catalog.get(accounts[0].id))).usage is None
+
+
+async def test_slow_api_refresh_cannot_overwrite_response_usage(tmp_path):
+    from anyio import Event, create_task_group
+
+    catalog, accounts, _ = await _accounts(tmp_path)
+    started, release = Event(), Event()
+    now = [1000.0]
+
+    async def reader(account):
+        started.set()
+        await release.wait()
+        return CodexUsage(account_id=account.id, plan_type="plus")
+
+    usage = SubscriptionUsage(catalog, reader=reader, clock=lambda: now[0])
+    async with create_task_group() as tasks:
+        tasks.start_soon(usage.refresh, accounts[0].id)
+        await started.wait()
+        now[0] += 1
+        await usage.observe_headers(accounts[0], _usage_headers())
+        release.set()
+    snapshot = await usage.read(accounts[0])
+    assert snapshot.usage.rate_limit.primary_window.used_percent == 100
+    assert snapshot.observed_at == 1001

@@ -45,7 +45,11 @@ def no_background_subscription_requests(monkeypatch: pytest.MonkeyPatch) -> None
     async def idle(self) -> None:
         await sleep_forever()
 
+    async def unavailable(self, account):
+        raise ValueError("Subscription usage network is disabled in unit tests")
+
     monkeypatch.setattr(SubscriptionUsage, "poll", idle)
+    monkeypatch.setattr(SubscriptionUsage, "_read_provider", unavailable)
 
 
 @pytest.fixture

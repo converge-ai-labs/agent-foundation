@@ -17,7 +17,6 @@ from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model, ModelRequestContext, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
-from pydantic_ai.providers.openai_codex import CredentialsPersistenceError, CredentialsRefreshError
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage
 
@@ -38,6 +37,8 @@ class AccountSelectionEvent:
 
 
 def account_failure(error: Exception) -> str | None:
+    from pydantic_ai.providers.openai_codex import CredentialsPersistenceError, CredentialsRefreshError
+
     if isinstance(
         error, (CredentialsRefreshError, CredentialsPersistenceError, ModelAuthenticationError, AccountStoreError)
     ):

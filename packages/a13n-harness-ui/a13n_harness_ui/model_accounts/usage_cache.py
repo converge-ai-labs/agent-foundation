@@ -1,9 +1,10 @@
-"""Shared usage snapshots, refreshed manually or on a fixed polling interval."""
+"""Shared usage snapshots from responses, request-time reads, and idle fallback polling."""
 
 from __future__ import annotations
 
+import math
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 import httpx2
 from a13n_harness.http import outbound_tls_verify
@@ -15,9 +16,11 @@ from .codex import CodexAccountStore
 from .coordination import store_lock
 from .managed import SubscriptionAccount, SubscriptionAccounts
 from .models import AccountStoreError, Provider
-from .usage import CodexUsage, CodexUsageClient, UsageLimits
+from .usage import CodexUsage, CodexUsageClient, PaidCredits, UsageLimits, UsageWindow
 
-POLL_SECONDS = 180
+POLL_SECONDS = 600
+REQUEST_REFRESH_SECONDS = 60
+REJECTION_SECONDS = 180
 
 
 class UsageSnapshot(BaseModel):
@@ -65,11 +68,13 @@ class SubscriptionUsage:
                 include_reset_credits=False
             )
 
-    async def refresh(self, account_id: str, *, force: bool = False) -> UsageSnapshot:
+    async def refresh(self, account_id: str, *, force: bool = False, max_age: float = POLL_SECONDS) -> UsageSnapshot:
         account = await self.accounts.get(account_id)
         previous = await self.read(account)
         started = self.clock()
-        if account.provider != "codex" or (not force and started - previous.checked_at < POLL_SECONDS):
+        if account.provider != "codex" or (
+            not force and previous.checked_at > 0 and started - previous.checked_at < max_age
+        ):
             return previous
         usage = None
         error = None
@@ -84,7 +89,7 @@ class SubscriptionUsage:
                 return await self.read(current_account)
             raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
             current = await self.read(account)
-            if current.checked_at > started:
+            if max(current.checked_at, current.observed_at) > started:
                 return current
             updated = current.model_copy(
                 update={
@@ -102,6 +107,62 @@ class SubscriptionUsage:
             )
             return updated
 
+    async def observe_headers(self, account: SubscriptionAccount, headers: Mapping[str, str]) -> None:
+        """Merge the default Codex bucket only; named buckets need an API feature mapping."""
+        headers = {key.lower(): value for key, value in headers.items()}
+        windows: dict[str, UsageWindow] = {}
+        for name in ("primary", "secondary"):
+            prefix = f"x-codex-{name}"
+            try:
+                window = UsageWindow(
+                    used_percent=float(headers[f"{prefix}-used-percent"]),
+                    limit_window_seconds=int(headers[f"{prefix}-window-minutes"]) * 60,
+                    reset_at=int(headers[f"{prefix}-reset-at"]),
+                )
+                if not math.isfinite(window.used_percent):
+                    continue
+            except (KeyError, ValueError):
+                continue
+            windows[f"{name}_window"] = window
+        credits = None
+        if all(headers.get(f"x-codex-credits-{key}") in {"true", "false"} for key in ("has-credits", "unlimited")):
+            credits = PaidCredits(
+                has_credits=headers["x-codex-credits-has-credits"] == "true",
+                unlimited=headers["x-codex-credits-unlimited"] == "true",
+                balance=headers.get("x-codex-credits-balance"),
+            )
+        if not windows and credits is None:
+            return
+        observed = self.clock()
+        async with store_lock(self._path(account)):
+            latest = await self.accounts.get(account.id)
+            if latest.login_revision != account.login_revision:
+                return
+            raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
+            current = await self.read(account)
+            if max(current.checked_at, current.observed_at) > observed:
+                return
+            usage = current.usage or CodexUsage(
+                account_id=account.upstream_account_id or account.id, plan_type="unknown"
+            )
+            limits = usage.rate_limit
+            if windows:
+                limits = (limits or UsageLimits(allowed=True, limit_reached=False)).model_copy(update=windows)
+                reached = any(
+                    window is not None and window.used_percent >= 100
+                    for window in (limits.primary_window, limits.secondary_window)
+                )
+                limits = limits.model_copy(update={"allowed": not reached, "limit_reached": reached})
+            updated = current.model_copy(
+                update={
+                    "observed_at": observed,
+                    "usage": usage.model_copy(update={"rate_limit": limits, "credits": credits or usage.credits}),
+                }
+            )
+            await write_json_if_unchanged(
+                self._path(account), updated.model_dump(mode="json"), raw.digest, provider=Provider(account.provider)
+            )
+
     async def reject(self, account: SubscriptionAccount, model_name: str) -> None:
         async with store_lock(self._path(account)):
             latest = await self.accounts.get(account.id)
@@ -110,7 +171,7 @@ class SubscriptionUsage:
             raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
             current = await self.read(account)
             now = self.clock()
-            rejected = {key: stamp for key, stamp in current.rejected.items() if now - stamp < POLL_SECONDS}
+            rejected = {key: stamp for key, stamp in current.rejected.items() if now - stamp < REJECTION_SECONDS}
             rejected[model_name] = now
             await write_json_if_unchanged(
                 self._path(account),
@@ -131,9 +192,9 @@ class SubscriptionUsage:
             await sleep(POLL_SECONDS)
 
     async def tier(self, account: SubscriptionAccount, model_name: str, *, allow_credits: bool) -> int | None:
-        snapshot = await self.read(account)
+        snapshot = await self.refresh(account.id, max_age=REQUEST_REFRESH_SECONDS)
         rejected = snapshot.rejected.get(model_name)
-        if rejected is not None and self.clock() - rejected < POLL_SECONDS:
+        if rejected is not None and self.clock() - rejected < REJECTION_SECONDS:
             return None
         usage = snapshot.usage
         if usage is None:

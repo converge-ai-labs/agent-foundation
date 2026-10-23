@@ -216,6 +216,7 @@ class HarnessUiModelResolver:
                     _model_name(recipe),
                     credential_source=BoundCodexCredentialSource(store, account_id=account.upstream_account_id),
                     thread_id=thread_id,
+                    response_headers=lambda headers: source.usage.observe_headers(account, headers),
                 )
             assert isinstance(store, GrokAccountStore)
             return build_grok_model(_model_name(recipe), credential_source=store, refresh=source.grok_refresh)

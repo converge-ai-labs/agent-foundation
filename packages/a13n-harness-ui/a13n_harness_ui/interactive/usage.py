@@ -260,7 +260,7 @@ async def show_subscription_usage(shell: CliShell) -> str:
 
 
 def subscription_text(catalog: SubscriptionCatalog) -> str:
-    lines = ["Managed subscription accounts · refresh every 3 minutes", ""]
+    lines = ["Managed subscription accounts · request-driven updates · 10-minute idle refresh", ""]
     names = {view.account.id: view.account.name for view in catalog.accounts}
     for view in catalog.accounts:
         account = view.account

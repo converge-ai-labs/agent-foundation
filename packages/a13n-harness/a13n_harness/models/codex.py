@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import AsyncGenerator, Iterator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -11,6 +11,7 @@ from types import TracebackType
 from typing import Any, Self, cast
 
 import httpx2
+from a13n_logging import get_logger
 from anyio import Lock
 from pydantic_ai import RunContext
 from pydantic_ai.messages import ModelMessage, ModelResponse
@@ -141,7 +142,9 @@ class CodexRequestModel(WrapperModel):
         credential_source: OpenAICodexCredentialSource,
         http_client: httpx2.AsyncClient | None = None,
         thread_id: str | None = None,
+        response_headers: Callable[[Mapping[str, str]], Awaitable[None]] | None = None,
     ) -> None:
+        self._response_headers = response_headers
         self._thread_id = thread_id
         self._model_name = model_name
         self._credential_source = credential_source
@@ -169,8 +172,15 @@ class CodexRequestModel(WrapperModel):
                 request.headers.pop(name, None)
 
     async def _capture_response(self, response: httpx2.Response) -> None:
-        if response.url.scheme == "https" and response.url.host == "chatgpt.com" and response.is_success:
-            self._request_headers.capture(response.headers)
+        if response.url.scheme == "https" and response.url.host == "chatgpt.com" and response.url.port in (None, 443):
+            if response.is_success:
+                self._request_headers.capture(response.headers)
+            if self._response_headers is not None:
+                try:
+                    await self._response_headers(response.headers)
+                except Exception:
+                    # Observational failures must never turn a delivered response into a retry.
+                    get_logger("a13n_harness.models.codex").warning("Codex response-header observer failed")
 
     async def __aenter__(self) -> Self:
         async with self._entry_lock:

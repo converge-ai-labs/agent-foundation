@@ -40,14 +40,31 @@ async def test_chatgpt_subscription_status_is_nonmodal_and_does_not_query_accoun
         assert "Selected account:" not in text and "login chatgpt" not in text
 
 
-async def test_chatgpt_cannot_redeem_codex_reset_credits():
-    app = SimpleNamespace(inspect_model_account=AsyncMock(), codex_usage=AsyncMock(), redeem_codex_reset=AsyncMock())
+async def test_reset_selects_codex_account_independently_of_current_chatgpt_model():
+    catalog = SimpleNamespace(
+        accounts=tuple(
+            SimpleNamespace(account=SimpleNamespace(id=f"acct-{provider}", name=provider, provider=provider))
+            for provider in ("codex", "grok")
+        )
+    )
+    app = SimpleNamespace(
+        subscriptions=AsyncMock(return_value=catalog),
+        inspect_model_account=AsyncMock(),
+        codex_usage=AsyncMock(),
+        redeem_codex_reset=AsyncMock(),
+    )
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace(app=app)
         shell.status.model = "openai-chatgpt:fixture"
-        with pytest.raises(ValueError, match="Reset credits are available for Codex Models only"):
+        try:
             await shell.command(shell.registry.parse("/usage reset"))
-        app.inspect_model_account.assert_not_awaited()
-        app.codex_usage.assert_not_awaited()
-        app.redeem_codex_reset.assert_not_awaited()
+            await shell.job
+            assert shell.selection is not None
+            assert [choice.value for choice in shell.selection.choices] == ["close", "acct-codex"]
+            app.subscriptions.assert_awaited_once()
+            app.inspect_model_account.assert_not_awaited()
+            app.codex_usage.assert_not_awaited()
+            app.redeem_codex_reset.assert_not_awaited()
+        finally:
+            shell.renderer.transcript.close()

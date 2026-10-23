@@ -165,8 +165,8 @@ export function SubscriptionAccounts({
         <div>
           <h2>Subscription accounts</h2>
           <p>
-            Managed here. Usage refreshes every 3 minutes; refresh any account
-            now to check sooner.
+            Usage updates during requests, with a 10-minute idle refresh.
+            Refresh any account now to check sooner.
           </p>
         </div>
         <Button
