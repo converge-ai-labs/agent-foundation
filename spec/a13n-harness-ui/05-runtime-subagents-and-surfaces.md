@@ -58,6 +58,14 @@ The App owns:
 
 It does not expose database sessions, storage paths as authority, native Models, credentials, Provider objects, Environment adapters, Harness contexts or results, Pydantic AI message objects, runtime task or lock objects, callbacks, or Python exceptions through a surface API.
 
+### Consumption Query
+
+The App exposes a detached consumption analytics view through instance-authenticated `GET /api/usage`. Guest links and agent tools do not expose this query. It follows [consumption analytics](03-local-storage-and-recovery.md#consumption-analytics) without changing the existing Thread usage endpoint.
+
+Required `start` and exclusive `end` select 1–366 UTC days. Optional `project_id`, `projectless`, `thread_id` (a root), and `model` filters intersect; `project_id` and `projectless=true` are mutually exclusive. `model` is the compact JSON encoding of the actual `[provider_name, model_name]` tuple, preserving nulls. `group_by` selects `project`, `thread`, or `model`; `order_by` selects descending `tokens` or `cost`, with stable identity tie-breaking and unknown-only cost groups last. `offset` is nonnegative; `limit` is 1–100, default 25. Invalid query shapes return validation errors.
+
+The response includes `as_of`, the selected range, observation coverage, summary, one bucket per UTC day, paginated groups and their full count. Project choices include current configured and retained historical identifiers. Root choices follow the Project filter, including roots without matching records. Actual-model choices follow date, Project, and root scope before the model filter. The response completes its read transaction before HTTP serialization and has no live subscription.
+
 ## App Lifetime
 
 One App lifetime:

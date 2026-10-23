@@ -247,6 +247,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.storage.shares import ShareRepository
 from a13n_harness_ui.storage.usage import ThreadUsageView
+from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import (
     ActiveWorkSummary,
@@ -953,6 +954,12 @@ class HarnessUiApp:
                 root_operations=root_operations,
                 child_executions=child_executions,
             )
+
+    async def usage_analytics(self, query: UsageQuery) -> UsageAnalyticsView:
+        async with self._operation():
+            source = await self._configurations.current()
+            names = {item.id: item.name for item in source.projects.values()} if source is not None else {}
+            return await self._store.usage_analytics.snapshot(query, project_names=names)
 
     async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
         async with self._operation():

@@ -1527,6 +1527,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage Analytics */
+        get: operations["usage_analytics_api_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/usage": {
         parameters: {
             query?: never;
@@ -3335,6 +3352,25 @@ export interface components {
             };
             /** Udp Sockets */
             udp_sockets?: number | null;
+        };
+        /** ConsumptionTotals */
+        ConsumptionTotals: {
+            /** Model Requests */
+            model_requests: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+            /** Cache Read Tokens */
+            cache_read_tokens: number;
+            /** Cache Write Tokens */
+            cache_write_tokens: number;
+            /** Model Cost Usd */
+            model_cost_usd: string | null;
+            /** Unknown Model Costs */
+            unknown_model_costs: number;
         };
         /**
          * ContentMetadata
@@ -6937,6 +6973,80 @@ export interface components {
         UrlInputSupport: {
             /** Video */
             video?: components["schemas"]["VideoUrlType"][];
+        };
+        /** UsageAnalyticsView */
+        UsageAnalyticsView: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** First Observed At */
+            first_observed_at: string | null;
+            /** Observed Through */
+            observed_through: string | null;
+            summary: components["schemas"]["ConsumptionTotals"];
+            /** Daily */
+            daily: components["schemas"]["UsageDay"][];
+            /** Groups */
+            groups: components["schemas"]["UsageGroup"][];
+            /** Group Count */
+            group_count: number;
+            /** Projects */
+            projects: components["schemas"]["UsageOption"][];
+            /** Threads */
+            threads: components["schemas"]["UsageThreadOption"][];
+            /** Models */
+            models: components["schemas"]["UsageOption"][];
+        };
+        /** UsageDay */
+        UsageDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            totals: components["schemas"]["ConsumptionTotals"];
+        };
+        /** UsageGroup */
+        UsageGroup: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Thread Id */
+            thread_id?: string | null;
+            /** Model */
+            model?: string | null;
+            totals: components["schemas"]["ConsumptionTotals"];
+        };
+        /** UsageOption */
+        UsageOption: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+        };
+        /** UsageThreadOption */
+        UsageThreadOption: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Project Id */
+            project_id: string | null;
         };
         /** UsageTotals */
         UsageTotals: {
@@ -11277,6 +11387,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContextUsageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    usage_analytics_api_usage_get: {
+        parameters: {
+            query: {
+                start: string;
+                end: string;
+                project_id?: string | null;
+                projectless?: boolean;
+                thread_id?: string | null;
+                model?: string | null;
+                group_by?: "project" | "thread" | "model";
+                order_by?: "tokens" | "cost";
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageAnalyticsView"];
                 };
             };
             /** @description Validation Error */

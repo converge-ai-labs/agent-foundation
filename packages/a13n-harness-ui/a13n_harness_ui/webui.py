@@ -143,6 +143,7 @@ from a13n_harness_ui.shared_drafts import DraftCapture, DraftCommand, DraftFrame
 from a13n_harness_ui.sharing import forbidden
 from a13n_harness_ui.storage.shares import unavailable
 from a13n_harness_ui.storage.usage import ThreadUsageView
+from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsView, UsageQuery
 from a13n_harness_ui.surfaces import (
     ChildControlResult,
     ChildExecutionPage,
@@ -1542,6 +1543,10 @@ def create_webui(
     async def context_usage(thread_id: str) -> ContextUsageView:
         return await app().context_usage(thread_id)
 
+    @server.get("/api/usage", response_model=UsageAnalyticsView)
+    async def usage_analytics(query: Annotated[UsageQuery, Query()]) -> UsageAnalyticsView:
+        return await app().usage_analytics(query)
+
     @server.get("/api/threads/{thread_id}/usage", response_model=ThreadUsageView)
     async def usage(thread_id: str) -> ThreadUsageView:
         return await app().thread_usage(thread_id=thread_id)
@@ -2249,6 +2254,7 @@ def create_webui(
             "settings/connections",
             "archived",
             "memory",
+            "usage",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
         recognized = recognized or (
             segments[0] == "share"

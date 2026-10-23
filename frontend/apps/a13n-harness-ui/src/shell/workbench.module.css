@@ -30,6 +30,15 @@
   gap: 8px;
   padding: 0 0 12px 8px;
 }
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.usageSelected {
+  background: var(--a13n-selected);
+}
 .brand {
   display: flex;
   align-items: center;

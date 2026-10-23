@@ -69,6 +69,14 @@ Expand **Explored**, Shell, browsing or **File changes** to inspect grouped acti
 
 Open **Details** for the root operation, child executions, tasks, notes, usage and configuration. Execution, continuation saving and Environment cleanup report separate outcomes. Child controls target the exact parent execution; saved results are paged, while activity previews are bounded. Applying Project defaults requires a reviewed before/after preview. Competing changes retain your edits and require fresh review.
 
+### Review token usage and estimated cost
+
+Open **Usage** from the chart icon in the sidebar header, just left of the collapse button. Use a Project's **View usage** menu action or **Details → Usage → Open analytics** to start with that scope selected.
+
+Choose the last 7, 30, or 90 UTC days, or a custom range up to 366 days. Filter by Project, root Thread, or actual provider/model. The summary and daily chart cover all matching records. Switch the breakdown between Projects, Threads, and models, sort by tokens or cost, and select a row to narrow the view. Filters stay in the URL. Use **Refresh** to read newly saved usage; the page does not update continuously.
+
+Totals include retained archived conversations, Memory, Live, child agents, auxiliary model calls, and Coordinator workers. Project attribution follows each root Thread's current Project. Costs are recorded model USD estimates: **—** means unknown, **$0** means a known zero, and **+** marks a partial known subtotal. Cache tokens are subsets of input/output, not additional tokens. Provider receipts remain in Thread details. Coverage begins with persisted observations; older unrecorded consumption is unavailable. Guest sharing links do not grant access to analytics.
+
 ### Shared drafts
 
 Draft collaboration lives only in this App instance. In-app navigation retains the browser's editor state, and reconnecting to the same instance resynchronizes it. After server restart, explicitly rejoin the replacement draft and choose whether to restore this browser's text. Edits that this browser has not yet synchronized are lost on reload or browser crash; synchronized text stays in the shared draft while the server runs. Display names are not authenticated identities; undo is local to the editor, and accepted Send establishes a new undo boundary.
