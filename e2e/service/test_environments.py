@@ -126,9 +126,9 @@ async def hosted_account(provider: str, config: pytest.Config) -> AsyncGenerator
         [key] = variables(config, provider, "E2B_API_KEY")
         yield {}, {"api_key": key}, {"timeout_seconds": 900}
     elif provider == "daytona":
-        [key] = variables(config, provider, "DAYTONA_API_KEY")
+        key, snapshot = variables(config, provider, "DAYTONA_API_KEY", "DAYTONA_ENVD_SNAPSHOT")
         organization = os.environ.get("DAYTONA_ORGANIZATION_ID") or await daytona_organization(key)
-        yield {"organization_id": organization}, {"api_key": key}, {}
+        yield {"organization_id": organization}, {"api_key": key}, {"snapshot": snapshot}
     elif provider == "modal":
         token_id, token_secret, image = variables(
             config, provider, "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET", "MODAL_ENVD_IMAGE"
@@ -184,6 +184,14 @@ async def test_a_run_uses_its_environment_across_its_lifecycle(stack, provider, 
     directory = stack.directory / "environments"
     directory.mkdir()
     async with backend(provider, directory, request.config) as account:
+        account = replace(
+            account,
+            recipe={
+                **account.recipe,
+                "environment": DEFAULT_VARIABLES,
+                **({"allowed_environment_keys": list(DEFAULT_VARIABLES)} if account.type == "local" else {}),
+            },
+        )
         cleanup: list[str] = []
         try:
             await use_environment(stack, account, cleanup)
@@ -237,14 +245,6 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     api, model = stack.api, stack.model
     # Hosted sandboxes take longer to create, stop and delete than a local container.
     timeout = 120 if account.type in {"local", "docker"} else 300
-    account = replace(
-        account,
-        recipe={
-            **account.recipe,
-            "environment": DEFAULT_VARIABLES,
-            **({"allowed_environment_keys": list(DEFAULT_VARIABLES)} if account.type == "local" else {}),
-        },
-    )
     template_id = await create_template(api, account)
     types = expect(await api.client.get("/api/v1/provider-types/environment"), 200)["items"]
     [described] = [item for item in types if item["type"] == account.type]
@@ -262,7 +262,9 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
         )
     await model.call("shell_exec", {"command": command}, call_id="call_write", to="[write]")
     await model.say("Written.", to="[write]")
-    receipt = await api.start(agent, "[write] Write the proof")
+    # This scripted journey consumes results directly rather than dynamically polling receipts.
+    execution = {"tools": {"mode": "inline", "foreground_wait_seconds": 60}}
+    receipt = await api.start(agent, "[write] Write the proof", execution=execution)
     thread_id = receipt["thread"]["id"]
     [mount] = receipt["run"]["environment_mounts"]
     environment_id, path = mount["environment_id"], f"/api/v1/environments/{mount['environment_id']}"

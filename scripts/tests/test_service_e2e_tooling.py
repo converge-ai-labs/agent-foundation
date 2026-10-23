@@ -1,5 +1,6 @@
 """Service E2E support checks that run without Docker."""
 
+import asyncio
 import base64
 import json
 import os
@@ -8,7 +9,9 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -19,6 +22,61 @@ from e2e.service.scripted import user_texts
 from e2e.service.stack import LEASE_SECONDS, Stores, write_config
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture
+def environment_journeys(pytestconfig):
+    pytestconfig.addinivalue_line("markers", "hosted(type): requires a hosted sandbox vendor account")
+    from e2e.service import test_environments
+
+    return test_environments
+
+
+def test_failed_environment_journey_cleans_up_with_its_frozen_recipe(tmp_path, monkeypatch, environment_journeys):
+    environments = environment_journeys
+    original = environments.Backend("daytona", {}, None, {"snapshot": "fixture-envd"}, tmp_path)
+    used = []
+    removed = []
+
+    @asynccontextmanager
+    async def backend(*args):
+        yield original
+
+    async def fail_after_creation(stack, account, cleanup):
+        used.append(account)
+        cleanup.append("env_created")
+        raise AssertionError("guest assertion failed")
+
+    async def remove(account, environment_id):
+        removed.append((account, environment_id))
+
+    monkeypatch.setattr(environments, "backend", backend)
+    monkeypatch.setattr(environments, "use_environment", fail_after_creation)
+    monkeypatch.setattr(environments.Backend, "remove", remove)
+    with pytest.raises(AssertionError, match="guest assertion failed"):
+        asyncio.run(
+            environments.test_a_run_uses_its_environment_across_its_lifecycle(
+                SimpleNamespace(directory=tmp_path), "daytona", SimpleNamespace(config=None)
+            )
+        )
+    assert removed == [(used[0], "env_created")]
+    assert used[0].recipe["environment"] == environments.DEFAULT_VARIABLES
+    assert original.recipe == {"snapshot": "fixture-envd"}
+
+
+def test_daytona_journey_uses_the_operator_envd_snapshot(monkeypatch, pytestconfig, environment_journeys):
+    from a13n_service.providers.environments.daytona.configuration import DaytonaRecipe
+
+    monkeypatch.setenv("DAYTONA_API_KEY", "fixture-key")
+    monkeypatch.setenv("DAYTONA_ORGANIZATION_ID", "fixture-org")
+    monkeypatch.setenv("DAYTONA_ENVD_SNAPSHOT", "fixture-envd")
+
+    async def check():
+        async with environment_journeys.hosted_account("daytona", pytestconfig) as (config, _, recipe):
+            assert config["organization_id"] == "fixture-org"
+            assert DaytonaRecipe.model_validate(recipe).snapshot == "fixture-envd"
+
+    asyncio.run(check())
 
 
 @pytest.mark.parametrize("structured", [False, True])
