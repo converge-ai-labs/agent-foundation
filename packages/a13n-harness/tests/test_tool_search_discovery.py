@@ -84,6 +84,24 @@ async def test_exact_identity_precedes_fuzzy_candidates_and_disambiguates_groups
     assert [x["tool"] for x in results[4].content["tools"]] == ["lookup_extra"]
 
 
+@pytest.mark.parametrize("query, expected_group", [("a_u__b", "a_"), (" A_UU__B ", "a_u")])
+async def test_exact_escaped_canonical_name_ranks_first_on_single_item_page(query, expected_group):
+    search = ToolSearchCapability(
+        groups={
+            group: ToolSearchGroup(FunctionToolset([Tool(_operation, name="b")], id=group), "Operations")
+            for group in ("a_", "a_u")
+        }
+    )
+    _, results = await _run(
+        (search,),
+        [("discover_tools", {"query": query, "limit": 1})],
+    )
+    page = results[0].content
+    assert [(entry["group"], entry["tool"]) for entry in page["tools"]] == [(expected_group, "b")]
+    assert page["total"] == 2
+    assert page["next_offset"] == 1
+
+
 async def test_ranking_prefers_name_words_then_whole_words_with_stable_ties():
     _, results = await _run(
         (

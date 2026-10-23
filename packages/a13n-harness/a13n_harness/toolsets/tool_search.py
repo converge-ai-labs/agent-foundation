@@ -443,9 +443,7 @@ def _search_matches(
     query = query.strip()
     scoped = {key: name for key, name in directory.items() if group is None or key[0] == group}
     exact = {
-        name
-        for (group_name, local_name), name in scoped.items()
-        if query.casefold() in (local_name.casefold(), f"{group_name}__{local_name}".casefold())
+        name for (_, local_name), name in scoped.items() if query.casefold() in (local_name.casefold(), name.casefold())
     }
     tokens = set(_words(query))
     if not tokens:
