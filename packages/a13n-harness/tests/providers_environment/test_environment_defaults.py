@@ -20,7 +20,11 @@ from a13n_harness.providers.environment.vercel.shared import VercelEnvironmentCo
 pytestmark = pytest.mark.anyio
 VARIABLE = "A13N_TEST_TOOL_ENDPOINT"
 VALUE = "https://example.test/a?quote=';中文=$HOME"
-SCRIPT = f"import os,sys,subprocess,json; print(json.dumps([os.getenv({VARIABLE!r}), subprocess.check_output([sys.executable,'-c',\"import os; print(os.getenv('{VARIABLE}', 'missing'))\"],text=True).strip()],ensure_ascii=False))"
+CHILD_SCRIPT = f"import os,json; print(json.dumps(os.getenv({VARIABLE!r}, 'missing')))"
+SCRIPT = (
+    f"import os,sys,subprocess,json; print(json.dumps([os.getenv({VARIABLE!r}), "
+    f"json.loads(subprocess.check_output([sys.executable,'-c',{CHILD_SCRIPT!r}],text=True))]))"
+)
 
 
 def request(environment=None):
@@ -60,6 +64,7 @@ async def test_local_defaults_override_unset_children_and_host_isolation(tmp_pat
         DirectLocalEnvironmentConfiguration(root={"path": str(tmp_path)}, environment={VARIABLE: "denied"})
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Fixture executes POSIX guest helpers on the Host")
 @pytest.mark.parametrize(
     "model", [SpritesEnvironmentConfiguration, RunloopEnvironmentConfiguration, VercelEnvironmentConfiguration]
 )
