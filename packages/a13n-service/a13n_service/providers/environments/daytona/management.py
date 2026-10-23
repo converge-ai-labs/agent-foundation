@@ -7,7 +7,6 @@ from urllib.parse import urlsplit, urlunsplit
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.providers.environment.daytona.diagnostics import measure, timed
 from a13n_harness.providers.environment.daytona.http import HttpReference, http_execution
 from a13n_harness.providers.environment.daytona.shared import (
     DaytonaEnvironmentConfiguration,
@@ -46,7 +45,6 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
         self.recipe = configuration
         del operation_id
 
-    @timed("sandbox.wait_state")
     async def wait_for(self, desired: str) -> Sandbox:
         async with asyncio.timeout(self.config.request_timeout_seconds):
             while True:
@@ -59,7 +57,6 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                     raise failure(self.provider_key, "provider_unavailable", Category.UNAVAILABLE)
                 await asyncio.sleep(0.5)
 
-    @timed("sandbox.create")
     async def create(self) -> None:
         if self.config.snapshot == "auto":
             raise failure(self.provider_key, "desktop_snapshot_not_prepared", Category.INVALID)
@@ -99,7 +96,6 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
             self.accept(target)
         await self.start()
 
-    @timed("sandbox.start")
     async def start(self) -> None:
         target = await self.lookup()
         if target is None:
@@ -111,7 +107,6 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
         if self.recipe.desktop_assistance:
             await self.desktop_access(access.Describe())
 
-    @timed("envd.readiness")
     async def _check_envd(self, target: Sandbox) -> None:
         # Snapshot boot owns startup on create and restart. Attachment only reads
         # credentials and checks EIP; it cannot repair a failed daemon.
@@ -146,15 +141,11 @@ else: raise RuntimeError('a13n-envd did not become ready')
         runtime = NativeRuntime(self.backend, TokenCredential(api_key=self.token))
         execution = http_execution(HttpReference(self.config, self.environment_id, self.state, runtime))
         try:
-            with measure("envd.open"):
-                await execution.open(execution_id="exec-readiness")
-            with measure("envd.check_ready"):
-                await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
+            await execution.open(execution_id="exec-readiness")
+            await execution.check_ready(frozenset({"computer"}) if self.config.desktop else frozenset())
         finally:
-            with measure("envd.close"):
-                await execution.close()
+            await execution.close()
 
-    @timed("desktop.access")
     async def desktop_access(self, request: access.Request) -> access.Reply:
         if not self.recipe.desktop_assistance or not self.config.desktop or self.target is None:
             raise failure(self.provider_key, "desktop_access_unavailable", Category.UNSUPPORTED)

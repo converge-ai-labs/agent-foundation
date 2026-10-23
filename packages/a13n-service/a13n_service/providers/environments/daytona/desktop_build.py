@@ -3,24 +3,18 @@
 import base64
 import hashlib
 import json
-import shlex
 from urllib.parse import quote
 
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
-from a13n_harness.providers.environment.daytona.diagnostics import TimedHTTP as NativeHTTP
-from a13n_harness.providers.environment.daytona.diagnostics import timed
 from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionConfiguration, organization
 from a13n_harness.providers.environment.native.configuration import TokenCredential
 from a13n_harness.providers.environment.native.errors import failure
-from a13n_harness.providers.environment.native.http import decode_response
-from a13n_logging import get_logger
+from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
 from pydantic import BaseModel, Field, JsonValue
 
 from a13n_service.providers.environment.daytona_build import Snapshot
-
-_logger = get_logger(__name__)
 
 BASE_IMAGE = "debian:trixie-slim@sha256:4876fdea29cac1a33a3195f1eb1952feb1fca7dd6dd00be3e2f1879cf20d34d2"
 SOURCE_REVISION = "25bab435d27e3d30fc038bfa8d2f20e5d70cf783"
@@ -50,16 +44,6 @@ FILES = (
 )
 
 
-def _timed_command(stage: str, command: str) -> str:
-    return (
-        "started=$(date +%s%N); "
-        f"printf 'A13N_BUILD stage={stage} event=start at_ns=%s\\n' \"$started\"; "
-        f"sh -c {shlex.quote(command)}; status=$?; finished=$(date +%s%N); "
-        f"printf 'A13N_BUILD stage={stage} event=end at_ns=%s duration_ms=%s exit_code=%s\\n' "
-        '"$finished" "$(((finished-started)/1000000))" "$status"; exit "$status"'
-    )
-
-
 def _assets() -> dict[str, JsonValue]:
     install = (
         "DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "
@@ -72,31 +56,19 @@ def _assets() -> dict[str, JsonValue]:
         "&& install -d -m 0700 /var/lib/a13n-envd /run/a13n-envd-state "
         "&& rm -rf /var/lib/apt/lists/*"
     )
-    # Keep apt installation and cleanup in one layer, including when timed.
+    # Keep apt installation and cleanup in one layer.
     commands: list[JsonValue] = [
-        " && ".join(
-            "( " + _timed_command(stage, command) + " )"
-            for stage, command in (
-                ("apt.index", "apt-get update"),
-                ("apt.install", install),
-                ("guest.configure", configure),
-            )
-        ),
+        " && ".join(("apt-get update", install, configure)),
         f"curl -fL --retry 2 --max-time 120 '{RELEASE_URL}' -o /tmp/envd.tar.gz && echo '{RELEASE_SHA256}  /tmp/envd.tar.gz' | sha256sum -c - && tar -xOzf /tmp/envd.tar.gz a13n-envd > /usr/local/bin/a13n-envd && chmod 0755 /usr/local/bin/a13n-envd && rm /tmp/envd.tar.gz",
     ]
-    commands[1] = _timed_command("envd.download_verify_install", str(commands[1]))
     for source, destination, digest in FILES:
         url = f"https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/{SOURCE_REVISION}/{source}"
         commands.append(
-            _timed_command(
-                "helper." + source.rsplit("/", 1)[-1],
-                f"curl -fL --retry 2 --max-time 60 '{url}' -o '{destination}' && echo '{digest}  {destination}' | sha256sum -c - && chmod 0755 '{destination}'",
-            )
+            f"curl -fL --retry 2 --max-time 60 '{url}' -o '{destination}' && echo '{digest}  {destination}' | sha256sum -c - && chmod 0755 '{destination}'"
         )
     commands.append(
         "test ! -e /var/lib/a13n-envd/http-token && test ! -e /run/a13n-desktop-access/control.sock && /usr/local/bin/a13n-envd --version"
     )
-    commands[-1] = _timed_command("guest.validate", str(commands[-1]))
     return {"base": BASE_IMAGE, "commands": commands}
 
 
@@ -152,25 +124,13 @@ class DesktopBuildAPI:
             or (identity is not None and snapshot.id != identity)
         ):
             raise failure("daytona", "desktop_snapshot_identity_mismatch", Category.CONFLICT)
-        _logger.info(
-            "Daytona snapshot observed",
-            extra={
-                "snapshot_id": snapshot.id,
-                "snapshot_state": snapshot.state
-                if snapshot.state
-                in {"pending", "building", "pulling", "snapshotting", "active", "error", "build_failed"}
-                else "other",
-            },
-        )
         return Snapshot(id=snapshot.id, state=snapshot.state)
 
-    @timed("snapshot.find")
     async def find(self, name: str, manifest: dict[str, JsonValue], identity: str | None = None) -> Snapshot | None:
         await self._account()
         raw = await self.http.request("GET", "snapshots/" + quote(identity or name, safe=""), missing=True)
         return None if raw is None else await self._validate(raw, name, manifest, identity)
 
-    @timed("snapshot.create")
     async def create(self, name: str, manifest: dict[str, JsonValue]) -> Snapshot:
         await self._account()
         raw = await self.http.request(
@@ -195,7 +155,6 @@ class DesktopBuildAPI:
                 certainty=Certainty.UNKNOWN,
             ) from None
 
-    @timed("snapshot.delete")
     async def delete(self, name: str, manifest: dict[str, JsonValue], identity: str) -> None:
         if await self.find(name, manifest, identity) is None:
             return

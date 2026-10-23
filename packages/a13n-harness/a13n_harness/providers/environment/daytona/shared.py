@@ -13,10 +13,7 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.native.configuration import TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
-from a13n_harness.providers.environment.native.http import decode_response
-
-from .diagnostics import TimedHTTP as NativeHTTP
-from .diagnostics import timed
+from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
 
 
 class DaytonaConnectionConfiguration(BaseModel):
@@ -80,7 +77,6 @@ async def organization(http: NativeHTTP, expected: str | None) -> str:
     return current.organizationId
 
 
-@timed("account.resolve")
 async def resolved_runtime(configuration: DaytonaConnectionConfiguration, credential: TokenCredential) -> NativeRuntime:
     if configuration.organization_id is not None:
         return NativeRuntime(configuration, credential)
