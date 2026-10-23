@@ -275,6 +275,218 @@ async def test_grouped_client_declaration_waits_and_resumes(name, value):
     assert result.outcome == ("failed" if isinstance(value, ToolFailed) else "success")
 
 
+@pytest.mark.parametrize(
+    "resume_surface, value, accepted",
+    [
+        ("same", "selected", True),
+        ("different-id", "selected", False),
+        ("different-name", "selected", False),
+        ("empty", "selected", False),
+        ("empty", ToolFailed("Client disconnected"), True),
+    ],
+)
+async def test_grouped_client_run_override_survives_serialized_resume(resume_surface, value, accepted):
+    from a13n_harness import HarnessState, RunBindings
+    from a13n_harness.tools.client import (
+        ClientToolDefinition,
+        ClientToolsCapability,
+        ClientToolsetDefinition,
+        ClientToolsSpec,
+    )
+
+    def toolset(toolset_id="editor", name="selection"):
+        return ClientToolsetDefinition(
+            toolset_id=toolset_id,
+            tools=(
+                ClientToolDefinition(
+                    name=name, description="Read selection", parameters_json_schema={"type": "object"}
+                ),
+            ),
+        )
+
+    def build():
+        source = ClientToolsCapability(
+            spec=ClientToolsSpec(default_toolsets=(toolset(name="default_selection"),), allow_run_override=True)
+        )
+        return _build(source, plan=True, calls=[("invoke", {"group": "tools", "tool": "selection", "arguments": {}})])
+
+    first = await build().run("go", bindings=RunBindings.embedded(client_toolsets=(toolset(),)))
+    assert first.status == "suspended" and first.deferred is not None and first.state is not None
+    requests = _roundtrip(first.deferred)
+    state = HarnessState.model_validate_json(first.state.model_dump_json())
+    (item,) = requests.calls
+    assert item.target_identity == "tool/editor/selection"
+    assert item.target_call.tool_name == "tools__selection"
+    assert item.model_call.tool_call_id == "model-0"
+    assert item.target_call.tool_call_id != item.model_call.tool_call_id
+    toolsets = {
+        "same": (toolset(),),
+        "different-id": (toolset(toolset_id="other-editor"),),
+        "different-name": (toolset(name="other_selection"),),
+        "empty": (),
+    }[resume_surface]
+    executable = build()
+    bindings = RunBindings.embedded(client_toolsets=toolsets)
+    resume = DeferredToolResume(requests, requests.build_results(calls={item.target_call.tool_call_id: value}))
+    if not accepted:
+        with pytest.raises(DefinitionError) as error:
+            await executable.run(previous_state=state, bindings=bindings, deferred_resume=resume)
+        assert error.value.code == "deferred_surface_mismatch"
+        return
+
+    result = await executable.run(previous_state=state, bindings=bindings, deferred_resume=resume)
+    assert result.output_or_raise() == "done"
+    assert result.usage.tool_calls == 0
+    returns = [
+        part
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert [(part.tool_call_id, part.tool_name, part.content, part.outcome) for part in returns] == [
+        (
+            "model-0",
+            "invoke",
+            value.message if isinstance(value, ToolFailed) else value,
+            "failed" if isinstance(value, ToolFailed) else "success",
+        )
+    ]
+
+
+async def test_grouped_client_batch_correlates_results_after_serialized_resume():
+    from a13n_harness import HarnessState
+    from a13n_harness.tools.client import (
+        ClientToolDefinition,
+        ClientToolsCapability,
+        ClientToolsetDefinition,
+        ClientToolsSpec,
+    )
+
+    names = ("selection", "document", "clipboard")
+
+    def build():
+        source = ClientToolsCapability(
+            spec=ClientToolsSpec(
+                default_toolsets=(
+                    ClientToolsetDefinition(
+                        toolset_id="editor",
+                        tools=tuple(
+                            ClientToolDefinition(name=name, description=name, parameters_json_schema={"type": "object"})
+                            for name in names
+                        ),
+                    ),
+                )
+            )
+        )
+        calls = [("invoke", {"group": "tools", "tool": name, "arguments": {}}) for name in names]
+        return _build(source, plan=True, calls=calls)
+
+    first = await build().run("go")
+    assert first.status == "suspended" and first.deferred is not None and first.state is not None
+    requests = _roundtrip(first.deferred)
+    state = HarnessState.model_validate_json(first.state.model_dump_json())
+    assert len(requests.calls) == 3 and not requests.approvals
+    assert len({item.target_call.tool_call_id for item in requests.calls}) == 3
+    assert [(item.model_call.tool_call_id, item.target_identity) for item in requests.calls] == [
+        (f"model-{i}", f"tool/editor/{name}") for i, name in enumerate(names)
+    ]
+    values = {
+        "tools__selection": "selected text",
+        "tools__document": {"title": "Draft"},
+        "tools__clipboard": ToolFailed("Clipboard unavailable"),
+    }
+    # Supply the complete batch in reverse order: target IDs, not insertion order, own correlation.
+    results = requests.build_results(
+        calls={item.target_call.tool_call_id: values[item.target_call.tool_name] for item in reversed(requests.calls)}
+    )
+    resumed = await build().run(previous_state=state, deferred_resume=DeferredToolResume(requests, results))
+    assert resumed.output_or_raise() == "done"
+    assert resumed.usage.tool_calls == 0
+    returns = [
+        part
+        for message in resumed.all_messages()
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert [(part.tool_call_id, part.tool_name, part.content, part.outcome) for part in returns] == [
+        ("model-0", "invoke", "selected text", "success"),
+        ("model-1", "invoke", {"title": "Draft"}, "success"),
+        ("model-2", "invoke", "Clipboard unavailable", "failed"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "declaration, policy, rules, suspended",
+    [
+        ("allow", "inherit", {}, True),
+        ("deny", "inherit", {}, False),
+        ("allow", "deny", {}, False),
+        ("deny", "allow", {}, True),
+        ("deny", "inherit", {"*": "allow"}, True),
+        ("allow", "inherit", {"*": "allow", "tool/editor/*": "deny"}, False),
+        ("deny", "inherit", {"*": "deny", "tool/editor/*": "deny", "tool/editor/selection": "allow"}, True),
+        ("allow", "inherit", {"tool/tool-search-controls/invoke": "deny"}, False),
+    ],
+)
+async def test_grouped_client_permission_uses_target_identity(declaration, policy, rules, suspended):
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+    from a13n_harness.tools.client import (
+        ClientToolDefinition,
+        ClientToolsCapability,
+        ClientToolsetDefinition,
+        ClientToolsSpec,
+    )
+
+    source = ClientToolsCapability(
+        spec=ClientToolsSpec(
+            default_toolsets=(
+                ClientToolsetDefinition(
+                    toolset_id="editor",
+                    tools=(
+                        ClientToolDefinition(
+                            name="selection",
+                            description="Read selection",
+                            parameters_json_schema={"type": "object"},
+                            permission=declaration,
+                        ),
+                    ),
+                ),
+            )
+        )
+    )
+    result = await _build(
+        source,
+        plan=True,
+        calls=[("invoke", {"group": "tools", "tool": "selection", "arguments": {}})],
+        # Allow the envelope independently so target-denial cases reach the client declaration.
+        extra=(
+            ToolPermissionsCapability(
+                ToolPermissions(default=policy, rules={"tool/tool-search-controls/invoke": "allow", **rules})
+            ),
+        ),
+    ).run("go")
+    if suspended:
+        assert result.status == "suspended" and result.deferred is not None
+        (item,) = result.deferred.calls
+        assert item.target_identity == "tool/editor/selection"
+        assert item.target_call.tool_name == "tools__selection"
+        assert not result.deferred.approvals
+    else:
+        assert result.output_or_raise() == "done" and result.deferred is None
+        returns = [
+            part
+            for message in result.all_messages()
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        assert [(part.tool_call_id, part.outcome, part.content) for part in returns] == [
+            ("model-0", "failed", "Tool invocation is denied by its permission configuration.")
+        ]
+
+
 @pytest.mark.parametrize("external_first", [False, True])
 async def test_proxy_uses_uniform_names_for_function_and_external_targets(external_first):
     def change(value: int):
