@@ -13,7 +13,7 @@ from a13n_service.infra.db import now, transaction
 from a13n_service.providers.environment.e2b_build import Build, BuildStatus, Template
 from a13n_service.providers.environments.e2b.configuration import E2BRecipe
 from a13n_service.runs.environments import e2b_templates as builds
-from a13n_service.runs.environments import lifecycle
+from a13n_service.runs.environments import lifecycle, maintenance
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 
@@ -72,6 +72,8 @@ class Cloud:
 
 @pytest.fixture
 async def setup(service, monkeypatch):
+    # These tests advance lifecycle operations explicitly; the control sweep must not race their claims or ETags.
+    monkeypatch.setattr(maintenance, "advance", AsyncMock())
     cloud = Cloud()
     monkeypatch.setattr(builds, "_builder", lambda *_: cloud)
     client = service.client
