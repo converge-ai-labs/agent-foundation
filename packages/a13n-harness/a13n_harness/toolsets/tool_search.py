@@ -34,6 +34,7 @@ from a13n_harness.tools.tool_search import (
     ProxyToolSearchConfig,
     ToolSearchMembership,
     active_proxy_tools,
+    grouped_tool_name,
     proxy_control,
     proxy_directory,
     proxy_membership,
@@ -95,7 +96,15 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                 validate_proxy_target(definition)
             if proxy_membership(definition) is not None:
                 raise UserError(f"Tool {name!r} already belongs to a ToolSearch group; wrap each source only once.")
-            canonical = f"{self.group}__{name}"
+            canonical = f"{self.group}__{name}" if self.native_search else grouped_tool_name(self.group, name)
+            metadata = dict(definition.metadata or {})
+            if not self.native_search and definition.kind == "external":
+                from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
+
+                metadata.setdefault(
+                    CLIENT_TOOL_MARKER_KEY,
+                    {"declared_name": name, "toolset_id": definition.toolset_id or tool.toolset.id},
+                )
             result[canonical] = _GroupTool(
                 toolset=self,
                 tool_def=replace(
@@ -103,7 +112,7 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
                     name=canonical,
                     defer_loading=True if self.native_search else definition.defer_loading,
                     metadata={
-                        **(definition.metadata or {}),
+                        **metadata,
                         **(
                             {}
                             if self.native_search

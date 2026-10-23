@@ -291,8 +291,17 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
                     **requests.metadata.get(call.tool_call_id, {}),
                     **captured,
                 }
+        from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
+
         for call in requests.calls:
             definition = ctx.tools.get(call.tool_name)
+            if definition is not None and definition.kind == "external":
+                marker = (definition.metadata or {}).get(CLIENT_TOOL_MARKER_KEY)
+                if marker is not None:
+                    requests.metadata.setdefault(call.tool_call_id, {})[CLIENT_TOOL_MARKER_KEY] = {
+                        "declared_name": marker["declared_name"],
+                        "toolset_id": marker["toolset_id"],
+                    }
             if definition is not None and definition.kind in {"function", "unapproved"}:
                 requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = (
                     tool_identity(definition).tool_id
@@ -953,7 +962,16 @@ def _validate_client_marker(tool_name: str, metadata: Mapping[str, Any]) -> None
     marker = metadata.get(CLIENT_TOOL_MARKER_KEY)
     if marker is None:
         return
-    if not isinstance(marker, Mapping) or marker.get("declared_name") != tool_name:
+    from a13n_harness.tools.tool_search import PROXY_MEMBERSHIP_KEY, ToolSearchMembership, grouped_tool_name
+
+    membership = metadata.get(PROXY_MEMBERSHIP_KEY)
+    declared = marker.get("declared_name") if isinstance(marker, Mapping) else None
+    grouped = (
+        isinstance(membership, ToolSearchMembership)
+        and membership.tool == declared
+        and grouped_tool_name(membership.group, membership.tool) == tool_name
+    )
+    if not isinstance(marker, Mapping) or (declared != tool_name and not grouped):
         raise DefinitionError(
             "A client tool was renamed after its declaration was materialized.",
             code="client_tool_name_changed",
@@ -993,6 +1011,12 @@ def _validate_resume_surface(
         validate_forwarded_call(item, tools)
         if tool is not None and tool_identity(tool.tool_def).tool_id != item.target_identity:
             raise DefinitionError("The pending target identity changed.", code="deferred_surface_mismatch")
+        from a13n_harness.tools.client import CLIENT_TOOL_MARKER_KEY
+
+        retained_marker = requests.metadata.get(call.tool_call_id, {}).get(CLIENT_TOOL_MARKER_KEY)
+        current_marker = (tool.tool_def.metadata or {}).get(CLIENT_TOOL_MARKER_KEY) if tool is not None else None
+        if retained_marker != current_marker:
+            raise DefinitionError("The pending client declaration changed.", code="deferred_surface_mismatch")
         matches = tool is not None and (
             (tool.tool_def.kind == "external" and function_id is None)
             or (

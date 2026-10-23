@@ -52,7 +52,8 @@ async def test_approval_projection_preserves_omission_and_override_capabilities(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("question", [False, True])
-async def test_external_and_question_projection_disclose_metadata_omissions(question):
+@pytest.mark.parametrize("forwarded", [False, True])
+async def test_external_and_question_projection_disclose_metadata_omissions(question, forwarded):
     args = (
         {
             "questions": [
@@ -66,10 +67,17 @@ async def test_external_and_question_projection_disclose_metadata_omissions(ques
         if question
         else {}
     )
-    request = ToolCallPart("ask_user_question" if question else "lookup", args, "call")
+    name = "ask_user_question" if question else "lookup"
+    request = ToolCallPart("clients__" + name if forwarded else name, args, "call")
     pending = DeferredToolRequests(
-        calls=[DeferredToolCall(request, request, "tool/test/" + request.tool_name)],
-        metadata={"call": {"note": "x" * 70_000}},
+        calls=[
+            DeferredToolCall(
+                ToolCallPart("call_tool", {}, "model") if forwarded else request, request, "tool/test/" + name
+            )
+        ],
+        metadata={
+            "call": {"note": "x" * 70_000, "a13n.harness.client-tool": {"declared_name": name, "toolset_id": "editor"}}
+        },
     )
     thread = SimpleNamespace(
         continuation=SimpleNamespace(logical_digest="a" * 64), read_model=SimpleNamespace(deferred_requests=pending)
@@ -84,5 +92,7 @@ async def test_external_and_question_projection_disclose_metadata_omissions(ques
     )
     batch = await projection.decisions(thread_id="thread-one")
     assert batch is not None
+    assert batch.requests[0].tool_name == name and batch.requests[0].request_id == "call"
+    assert batch.requests[0].kind == ("question" if question else "external")
     assert batch.requests[0].metadata is None
     assert batch.requests[0].metadata_omitted

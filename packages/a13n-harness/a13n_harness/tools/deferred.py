@@ -225,6 +225,8 @@ def preflight_deferred_resume(
                 "Deferred approval results must use the native approval value types.",
                 code="deferred_approval_invalid",
             )
+    from a13n_harness.tools.client import client_tool_name
+
     try:
         pending_calls = {item.target_call.tool_call_id: item.target_call for item in detached.requests.calls}
         for call_id, call_result in tuple(detached.results.calls.items()):
@@ -232,7 +234,7 @@ def preflight_deferred_resume(
             if isinstance(call_result, ToolFailed):
                 require_finite_json(call_result.message)
                 continue
-            if request.tool_name == "ask_user_question":
+            if client_tool_name(request, detached.requests.metadata.get(call_id, {})) == "ask_user_question":
                 from a13n_harness.toolsets.interaction import validate_user_question_result
 
                 if isinstance(call_result, ToolReturn):

@@ -6,6 +6,7 @@ model/target correlation, identity and metadata. The public `Pending` projection
 
 from a13n_harness import DeferredToolRequests, DeferredToolResume
 from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
+from a13n_harness.tools.client import client_tool_name
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import ToolDenied, ToolFailed
 from pydantic_ai.messages import ToolCallPart
@@ -33,7 +34,7 @@ def pending(requests: DeferredToolRequests) -> Pending:
         return PendingCall.model_validate(
             {
                 "tool_call_id": part.tool_call_id,
-                "tool_name": part.tool_name,
+                "tool_name": part.tool_name if approval else client_tool_name(part, metadata),
                 "arguments": part.args_as_dict(),
                 "presentation": presentation,
             }

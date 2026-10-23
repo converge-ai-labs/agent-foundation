@@ -28,6 +28,8 @@ Host 配置使用 `tool_search.config.mode: native|proxy`。每个分支只接�
 
 以下示例使用默认代理模式。
 
+Proxy 模式先将分组名中的每个 `_` 转为 `_u`，再拼接 `__` 和不变的工具本地名称。例如，`my_tools` 分组中的 `select` 注册为 `my_utools__select`。这样 `a_` 分组的 `b` 与 `a` 分组的 `_b` 不会重名。客户端工具遵循同一规则；发送给客户端时从保存的元数据读取原始名称，不拆分生成的名称。
+
 ## 为 Toolset 分组
 
 添加一个 `ToolSearchCapability`，显式将领域名称映射到来源。每个 `ToolSearchGroup` 是被动配置值，不是独立安装的 Capability：
@@ -85,7 +87,7 @@ agent = HarnessBuilder().build(
 }
 ```
 
-原来准备好的验证器检查并转换 `arguments`。工具仍以组内规范名称 `crm__customer_name` 注册，但不直接向模型公开成员 schema。未分组工具仍直接可见。受管理工具 ID 不变。
+函数工具保留原来准备好的参数验证器。外部工具保持原生外部调用语义，由客户端在执行前验证参数。工具仍以组内规范名称 `crm__customer_name` 注册，但不直接向模型公开成员 schema。未分组工具仍直接可见。受管理工具 ID 不变。
 
 按 `crm`、`knowledge`、`billing` 等领域分组，不要每个工具一组。组标识以字母开头，最多 32 个字母、数字、连字符或下划线，不得含 `__`。描述非空，最多 512 字符。不同组可含相同本地工具名。同组多个来源可用原生 `CombinedToolset`、`Capability(toolsets=[...])` 或 `CombinedCapability` 作为来源。成员本地名必须唯一；重复会使准备失败。名称可能冲突时，先为来源添加前缀，再分组。
 
@@ -348,6 +350,6 @@ class HostToolsPlugin(AbstractHarnessPlugin):
 - **原生统计：** 成功的普通代理调用计算 `call_tool` 调用和目标，共两次成功工具调用。CodeAct 解析 `call_tool` 调用时不执行额外代理层：runner 加一个目标也算两次；再搜索一次则算三次。用量限制在目标派发前检查。
 - **重试：** 普通目标验证和 `ModelRetry` 保留目标原生重试状态。ToolSearch 不重放副作用，也不维护重试引擎。CodeAct 保留有上限的 runner 失败语义。
 - **审批和函数的延迟结果：** 原生内联处理器只接收一次实际目标。普通代理调用遇到未解决审批或函数抛出 `CallDeferred` 时会暂停；Host 保留完整 Harness 请求，并按目标调用 ID 提交结果。界面展示目标工具，历史仍关联原来的代理调用。参见[结构化挂起](state-and-resume.md#structured-suspension)。CodeAct 仍不支持跨 Run 恢复解释器。
-- **支持的目标：** 本地函数工具（包括本地执行 MCP 和需要审批的工具）使用 `group__local_name` 命名。外部/客户端工具、提供方原生工具、控制/输出工具、CodeAct runner 和延迟加载工具不能作为分组目标。客户端工具继续直接公开。
+- **支持的目标：** 本地函数工具（包括本地执行 MCP 和需要审批的工具）与外部/客户端工具使用相同的分组命名规则。提供方原生工具、控制/输出工具、CodeAct runner 和延迟加载工具不能作为分组目标。
 - **不确定副作用：** 取消和意外失败不回滚工作。重试修改前检查提供方状态。
 - **组合范围：** API 通过 `HarnessBuilder` 或 `AgentDefinition` 组合，不是内置 `AgentSpec` 序列化名称。Harness UI 定义自己的每 Agent YAML 选择 schema，不创建独立代理分组资源。

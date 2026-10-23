@@ -1,6 +1,7 @@
 """Explicit failed responses for Host-owned interaction expiry."""
 
 from a13n_harness import DeferredToolRequests
+from a13n_harness.tools.client import client_tool_name
 
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, ThreadDeferredResponse
 
@@ -23,7 +24,7 @@ def timeout_response(continuation_id: str, requests: DeferredToolRequests) -> Th
                 request_id=request.tool_call_id,
                 denied=True,
                 denial_message=QUESTION_TIMEOUT_MESSAGE
-                if request.tool_name == "ask_user_question"
+                if client_tool_name(request, requests.metadata.get(request.tool_call_id, {})) == "ask_user_question"
                 else INTERACTION_TIMEOUT_MESSAGE,
             )
             for request in (entry.target_call for entry in requests.calls)

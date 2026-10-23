@@ -764,8 +764,9 @@ def test_proxy_configuration_errors_explain_how_to_fix_the_source() -> None:
         validate_proxy_target(ToolDefinition(name="lookup", defer_loading=True))
     with pytest.raises(UserError, match="native=False, local=True"):
         validate_proxy_target(ToolDefinition(name="lookup", unless_native=True))
-    with pytest.raises(UserError, match="Leave control, output, external, and provider-native tools directly exposed"):
-        validate_proxy_target(ToolDefinition(name="lookup", kind="external"))
+    validate_proxy_target(ToolDefinition(name="lookup", kind="external"))
+    with pytest.raises(UserError, match="Leave control, output, and provider-native tools directly exposed"):
+        validate_proxy_target(ToolDefinition(name="lookup", kind="output"))
 
 
 async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_executing() -> None:

@@ -119,13 +119,15 @@ def test_public_pending_preserves_approval_details_without_exposing_call_metadat
                 call,
                 "tool/test/" + call.tool_name,
             )
-            for call in [ToolCallPart("review_invoice", {"invoice": 7}, "review")]
+            for call in [
+                ToolCallPart("clients__review_invoice" if forwarded else "review_invoice", {"invoice": 7}, "review")
+            ]
         ],
         metadata={
             "approval": {APPROVAL_PRESENTATION_KEY: details, "internal": "private approval"},
             "review": {
                 APPROVAL_PRESENTATION_KEY: details,
-                "a13n.harness.deferred-function-id": "tool/private/review",
+                "a13n.harness.client-tool": {"declared_name": "review_invoice", "toolset_id": "editor"},
                 "internal": {"retained": True},
             },
         },
@@ -136,6 +138,7 @@ def test_public_pending_preserves_approval_details_without_exposing_call_metadat
     assert public.approvals[0].tool_call_id == "approval"
     assert public.approvals[0].tool_name == "delete_file"
     assert public.calls[0].tool_call_id == "review"
+    assert public.calls[0].tool_name == "review_invoice"
     assert public.approvals[0].presentation == details
     assert public.calls[0].presentation is None
     assert public.calls[0].arguments == {"invoice": 7}

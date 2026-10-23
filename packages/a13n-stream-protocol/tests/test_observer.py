@@ -1042,11 +1042,20 @@ async def test_terminal_statuses_map_from_explicit_harness_results(forwarded: bo
         usage=RunUsageSummary(),
         suspend_reason="deferred",
         deferred=DeferredToolRequests(
+            metadata={
+                "call-external": {"a13n.harness.client-tool": {"declared_name": "external", "toolset_id": "editor"}}
+            },
             calls=[
                 DeferredToolCall(
                     ToolCallPart("call_tool", {}, "model-external") if forwarded else call, call, "tool/test/external"
                 )
-                for call in [ToolCallPart(tool_name="external", args={"x": 1}, tool_call_id="call-external")]
+                for call in [
+                    ToolCallPart(
+                        tool_name="clients__external" if forwarded else "external",
+                        args={"x": 1},
+                        tool_call_id="call-external",
+                    )
+                ]
             ],
             approvals=[
                 DeferredToolCall(
@@ -1097,6 +1106,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results(forwarded: bo
         ("call-approval", "model-approval" if forwarded else "call-approval", "approval"),
         ("call-external", "model-external" if forwarded else "call-external", "external"),
     ]
+    assert suspended_event.outcome.interrupts[1].metadata["tool_name"] == "external"
     assert isinstance(failed_event, RunErrorEvent)
     assert failed_event.code == "model_failed"
     assert failed_event.message == "The model failed."
