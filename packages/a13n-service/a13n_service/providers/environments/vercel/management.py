@@ -35,6 +35,8 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         runtime: NativeRuntime | None,
         operation_id: str,
     ):
+        if configuration.snapshot == "auto":
+            raise failure("vercel", "desktop_snapshot_not_prepared", Category.INVALID)
         if runtime is None:
             raise TypeError("Vercel management requires a runtime")
         super().__init__(configuration, environment_id, state, runtime)

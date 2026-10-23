@@ -250,6 +250,7 @@ class Operation:
     e2b_desktop_template: str | None = None
     modal_desktop_image: str | None = None
     daytona_desktop_snapshot: str | None = None
+    vercel_desktop_snapshot: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,11 +355,20 @@ async def _refusal(
                 daytona_preparation = await bind(runtime, session, environment, provider)
             except (EnvironmentProviderError, ServiceError) as error:
                 return fault_of(error, dispatched=False)
+        vercel_preparation = None
+        if provider.type == "vercel" and getattr(recipe, "snapshot", None) == "auto":
+            from a13n_service.runs.environments.vercel_snapshots import bind
+
+            try:
+                vercel_preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
         environment.handle = Handle(
             recipe=recipe.model_dump(mode="json"),
             e2b_desktop_template=preparation,
             modal_desktop_image=modal_preparation,
             daytona_desktop_snapshot=daytona_preparation,
+            vercel_desktop_snapshot=vercel_preparation,
         ).model_dump(mode="json")
         environment.provider_identity = identity
     elif environment.provider_identity != identity:
@@ -414,6 +424,15 @@ async def claim_locked(
             build = await session.get(DaytonaDesktopSnapshotRow, handle.daytona_desktop_snapshot)
             if build is not None and build.phase == "failed":
                 return None
+        if handle.vercel_desktop_snapshot and handle.recipe.get("snapshot") != "auto":
+            # A known startup rejection needs an explicit retry, not repeated allocations.
+            return None
+        if handle.recipe.get("snapshot") == "auto" and handle.vercel_desktop_snapshot:
+            from a13n_service.runs.environments.vercel_snapshots import VercelDesktopSnapshotRow
+
+            build = await session.get(VercelDesktopSnapshotRow, handle.vercel_desktop_snapshot)
+            if build is not None and build.phase == "failed":
+                return None
     # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
     if provider is None:
         provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
@@ -443,6 +462,7 @@ async def claim_locked(
         e2b_desktop_template=handle.e2b_desktop_template,
         modal_desktop_image=handle.modal_desktop_image,
         daytona_desktop_snapshot=handle.daytona_desktop_snapshot,
+        vercel_desktop_snapshot=handle.vercel_desktop_snapshot,
     )
 
 
@@ -549,6 +569,25 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
                     await _pin_daytona_snapshot(runtime, operation, snapshot)
                     # Persist first; the next claim gets a full operation deadline for sandbox startup.
                     return Outcome(None, pending=True)
+            if operation.vercel_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto":
+                if operation.phase == "deleting":
+                    from a13n_service.runs.environments.vercel_snapshots import cancel
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    done = await cancel(
+                        runtime, operation.vercel_desktop_snapshot, operation.target.account, operation.environment_id
+                    )
+                    return Outcome(None, pending=not done)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.vercel_snapshots import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    snapshot = await prepare(runtime, operation.vercel_desktop_snapshot, operation.target.account)
+                    if snapshot is None:
+                        return Outcome(None, pending=True)
+                    await _pin_vercel_snapshot(runtime, operation, snapshot)
+                    # Persist first; the next claim gets a full operation deadline for sandbox startup.
+                    return Outcome(None, pending=True)
             if operation.metrics is not None:
                 endpoint = operation.metrics.environment.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
                 if endpoint is not None:
@@ -578,6 +617,7 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
             (operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto")
             or (operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto")
             or (operation.daytona_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto")
+            or (operation.vercel_desktop_snapshot is not None and operation.target.recipe.get("snapshot") == "auto")
         ):
             # Build uncertainty is retained by its own ledger; no sandbox allocation was dispatched yet.
             fault = replace(fault, certainty="not_dispatched")
@@ -612,6 +652,7 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
                 (handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto")
                 or (handle.modal_desktop_image is not None and handle.recipe.get("image") == "auto")
                 or (handle.daytona_desktop_snapshot is not None and handle.recipe.get("snapshot") == "auto")
+                or (handle.vercel_desktop_snapshot is not None and handle.recipe.get("snapshot") == "auto")
             )
             fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
             record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
@@ -687,6 +728,26 @@ async def _pin_modal_image(runtime: Runtime, operation: Operation, image: str) -
 
 
 async def _pin_daytona_snapshot(runtime: Runtime, operation: Operation, snapshot: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("snapshot") not in {"auto", snapshot}:
+            raise conflict("environment", row.id, "desktop_snapshot_changed")
+        recipe = {**handle.recipe, "snapshot": snapshot}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
+
+
+async def _pin_vercel_snapshot(runtime: Runtime, operation: Operation, snapshot: str) -> Operation:
     """Resolve the frozen preparation before allocation; later retries use this same native identity."""
     async with transaction(runtime.storage) as session:
         row = await lock(session, EnvironmentRow, operation.environment_id)

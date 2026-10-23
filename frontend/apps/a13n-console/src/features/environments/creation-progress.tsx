@@ -17,6 +17,9 @@ export const MODAL_FIRST_DESKTOP_NOTICE =
 export const DAYTONA_FIRST_DESKTOP_NOTICE =
   "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
 
+export const VERCEL_FIRST_DESKTOP_NOTICE =
+  "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
+
 const STAGES = {
   preparing: "Preparing desktop template",
   building: "Building desktop template in E2B",
@@ -99,7 +102,9 @@ export function CreationProgress({
             ? "Building desktop image in Modal"
             : stage === "building" && providerType === "daytona"
               ? "Building desktop snapshot in Daytona"
-              : STAGES[stage],
+              : stage === "building" && providerType === "vercel"
+                ? "Building desktop snapshot in Vercel"
+                : STAGES[stage],
         )}
       </h3>
       {environment.status === "creating" && (

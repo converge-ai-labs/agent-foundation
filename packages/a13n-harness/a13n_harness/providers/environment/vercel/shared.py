@@ -33,11 +33,13 @@ class VercelEnvironmentConfiguration(CommandConfiguration):
         json_schema_extra={"x-primary-fields": ["execution", "snapshot", "desktop", "timeout_seconds", "vcpus"]},
     )
     execution: Literal["native", "envd_http"] = "native"
-    snapshot: str | None = Field(default=None, min_length=1, max_length=256, pattern=r"^snap_[A-Za-z0-9_-]+$")
+    snapshot: str | None = Field(default=None, min_length=1, max_length=256, pattern=r"^(auto|snap_[A-Za-z0-9_-]+)$")
     desktop: bool = False
 
     @model_validator(mode="after")
     def execution_requirements(self) -> Self:
+        if self.snapshot == "auto" and not self.desktop:
+            raise ValueError("Automatic snapshots require desktop=True")
         if self.execution == "envd_http" and self.snapshot is None:
             raise ValueError("Envd execution requires an operator-built compatible snapshot")
         if self.execution == "native" and (self.desktop or self.snapshot is not None):

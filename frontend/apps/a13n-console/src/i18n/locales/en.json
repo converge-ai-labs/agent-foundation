@@ -3354,5 +3354,14 @@
   "Daytona snapshot": "Daytona snapshot",
   "Custom snapshot": "Custom snapshot",
   "Building desktop snapshot in Daytona": "Building desktop snapshot in Daytona",
-  "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues."
+  "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+  "Load Vercel teams": "Load Vercel teams",
+  "Vercel team": "Vercel team",
+  "Vercel project": "Vercel project",
+  "Load more teams": "Load more teams",
+  "Load more projects": "Load more projects",
+  "No projects found. Create a project in Vercel or check the token permissions, then reload teams.": "No projects found. Create a project in Vercel or check the token permissions, then reload teams.",
+  "Vercel snapshot": "Vercel snapshot",
+  "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+  "Building desktop snapshot in Vercel": "Building desktop snapshot in Vercel"
 }

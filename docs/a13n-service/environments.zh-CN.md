@@ -87,6 +87,15 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
 
+### 自动创建 Vercel 桌面
+
+1. 添加 Vercel 环境连接，填写 Vercel access token，点击“加载 Vercel 团队”，选择该 Token 可访问的团队和项目。Token 需要沙箱和快照的创建、读取、删除权限。如果项目列表为空，请先在 Vercel 创建项目。
+2. 创建 Vercel 环境模板，选择该连接，勾选“桌面环境”，保留“自动桌面”。无需下载本地二进制、运行构建脚本或手填快照 ID。
+3. 从模板创建实例。首次创建会构建桌面快照，可能需要数分钟。Console 展示当前阶段和已等待时间；离开页面后仍会在后台继续，稍后可回到“环境实例”查看。
+4. 就绪后可以查看桌面预览。使用该环境的运行支持 Computer 操作和 Console 人工接管。如果创建失败，修正提示的配置或权限问题，待“重试创建”可用后重试。
+
+同一工作区、Provider、凭据版本、团队、项目和构建版本下，后续创建会复用经过校验的快照。上述输入变化会单独准备快照。临时构建沙箱会被清理，成功快照保留在 Vercel 项目中供后续复用。请使用有效期合适的 Vercel access token；短期 CLI 登录 Token 不适合无人值守的长期 Provider 连接。管理员仍可选择自定义快照，无桌面的原生环境保持原有行为。
+
 ### Docker 镜像版本
 
 不设置 `recipe.image` 时，使用 Service 审定的 `ghcr.io/converge-ai-labs/a13n-sandbox` 版本。sandbox 版本由 Envd 管理，不跟随 Service 版本号：

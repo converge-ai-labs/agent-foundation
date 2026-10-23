@@ -917,6 +917,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environment-provider-options/vercel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Vercel Provider Options
+     * @description List accessible teams, or projects in a selected team, using an unsaved credential.
+     */
+    post: operations["vercel_provider_options"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-providers": {
     parameters: {
       query?: never;
@@ -11939,6 +11959,32 @@ export interface components {
     };
     /** @enum {string} */
     Verb: "read" | "run" | "write" | "admin";
+    /** VercelOption */
+    VercelOption: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /** VercelOptions */
+    VercelOptions: {
+      /** Cursor */
+      cursor?: number | null;
+      /** Items */
+      items: components["schemas"]["VercelOption"][];
+    };
+    /** VercelOptionsRequest */
+    VercelOptionsRequest: {
+      /**
+       * Api Key
+       * Format: password
+       */
+      api_key: string;
+      /** Cursor */
+      cursor?: number | null;
+      /** Team Id */
+      team_id?: string | null;
+    };
     /**
      * VideoInputPolicy
      * @description Base64-after byte budget for both one video and all inline videos in a request.
@@ -14019,6 +14065,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["DeviceCredential"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  vercel_provider_options: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["VercelOptionsRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VercelOptions"];
         };
       };
       400: components["responses"]["Error"];

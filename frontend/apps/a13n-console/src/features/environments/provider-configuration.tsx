@@ -43,7 +43,7 @@ export function ProviderConfiguration({
   error?: string;
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
-  variant?: "default" | "docker" | "e2b" | "daytona" | "modal";
+  variant?: "default" | "docker" | "e2b" | "daytona" | "modal" | "vercel";
   /** Template settings that close the group, such as its lifecycle. */
   children?: ReactNode;
 }) {
@@ -54,6 +54,8 @@ export function ProviderConfiguration({
   const [custom, setCustom] = useState(false);
   const [daytonaCustom, setDaytonaCustom] = useState(false);
   const daytonaDraft = useRef<string | undefined>(undefined);
+  const [vercelCustom, setVercelCustom] = useState(false);
+  const vercelDraft = useRef<string | undefined>(undefined);
   const [modalCustom, setModalCustom] = useState(false);
   const modalDraft = useRef<string | undefined>(undefined);
   const [e2bCustom, setE2bCustom] = useState(false);
@@ -75,6 +77,9 @@ export function ProviderConfiguration({
       value.template !== e2bDefaultTemplate);
   const daytonaUsesCustom =
     daytonaCustom ||
+    (typeof value?.snapshot === "string" && value.snapshot !== "auto");
+  const vercelUsesCustom =
+    vercelCustom ||
     (typeof value?.snapshot === "string" && value.snapshot !== "auto");
   const modalUsesCustom =
     modalCustom || (typeof value?.image === "string" && value.image !== "auto");
@@ -125,11 +130,19 @@ export function ProviderConfiguration({
     )
       continue;
     if (variant === "e2b" && key === "template") continue;
+    if (
+      variant === "vercel" &&
+      ["execution", "snapshot", "desktop"].includes(key)
+    )
+      continue;
     if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
     if (variant === "daytona" && ["snapshot", "desktop"].includes(key))
       continue;
     if (
-      (variant === "e2b" || variant === "daytona" || variant === "modal") &&
+      (variant === "e2b" ||
+        variant === "daytona" ||
+        variant === "modal" ||
+        variant === "vercel") &&
       key.startsWith("desktop_") &&
       value?.desktop !== true
     )
@@ -170,7 +183,10 @@ export function ProviderConfiguration({
   const change = (next: Record<string, unknown>) =>
     onChange(
       JSON.stringify(
-        (variant === "daytona" || variant === "modal") && next.desktop !== true
+        (variant === "daytona" ||
+          variant === "modal" ||
+          variant === "vercel") &&
+          next.desktop !== true
           ? { ...next, desktop_assistance: false }
           : next,
         null,
@@ -208,6 +224,8 @@ export function ProviderConfiguration({
                 setCustom(false);
                 setE2bCustom(false);
                 setDaytonaCustom(false);
+                setVercelCustom(false);
+                vercelDraft.current = undefined;
                 daytonaDraft.current = undefined;
                 setModalCustom(false);
                 modalDraft.current = undefined;
@@ -438,6 +456,95 @@ export function ProviderConfiguration({
                 )}
               </>
             )}
+            {variant === "vercel" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        execution: enabled ? "envd_http" : "native",
+                        ...(enabled && value.timeout_seconds === undefined
+                          ? { timeout_seconds: 2700 }
+                          : {}),
+                        snapshot: enabled ? (value.snapshot ?? "auto") : null,
+                        desktop_assistance: enabled,
+                        ...(enabled && !vercelUsesCustom
+                          ? {
+                              snapshot: "auto",
+                            }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <SegmentedControl
+                    label={t("Vercel snapshot")}
+                    value={vercelUsesCustom ? "custom" : "automatic"}
+                    options={[
+                      {
+                        value: "automatic",
+                        label: t("Automatic desktop"),
+                        disabled: readOnly,
+                      },
+                      {
+                        value: "custom",
+                        label: t("Custom snapshot"),
+                        disabled: readOnly,
+                      },
+                    ]}
+                    onValueChange={(next) => {
+                      if (
+                        vercelUsesCustom &&
+                        typeof value.snapshot === "string"
+                      )
+                        vercelDraft.current = value.snapshot;
+                      setVercelCustom(next === "custom");
+                      change({
+                        ...value,
+                        snapshot:
+                          next === "custom"
+                            ? (vercelDraft.current ?? "")
+                            : "auto",
+                      });
+                    }}
+                  />
+                )}
+                {value.desktop === true && vercelUsesCustom && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: {
+                        snapshot: (
+                          schema?.properties as Record<string, unknown>
+                        )?.snapshot,
+                      },
+                    }}
+                    value={value}
+                    onChange={change}
+                  />
+                )}
+                {value.desktop === true && !vercelUsesCustom && (
+                  <p role="note">
+                    {t(
+                      "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
             {!builtIn && image.length > 0 && (
               <SchemaFields
                 schema={{ ...schema, properties: Object.fromEntries(image) }}
@@ -574,6 +681,8 @@ export function ProviderConfiguration({
                             e2bCustomDraft.current = value.template;
                           setE2bCustom(false);
                           setDaytonaCustom(false);
+                          setVercelCustom(false);
+                          vercelDraft.current = undefined;
                           daytonaDraft.current = undefined;
                           setModalCustom(false);
                           modalDraft.current = undefined;

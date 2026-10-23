@@ -44,7 +44,7 @@ description: Independent target management and portable execution across local, 
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-> Implementation status: Docker, E2B, Daytona, Modal and Vercel support Envd/EIP and desktop access with compatible runtimes. Service can automatically prepare E2B desktop templates, Modal desktop images and Daytona desktop snapshots; the other providers retain their documented image or snapshot setup. Sprites and Runloop currently provide native Files & Shell. See the [configuration reference](configuration-reference.md) for existing fields.
+> Implementation status: Docker, E2B, Daytona, Modal and Vercel support Envd/EIP and desktop access with compatible runtimes. Service can automatically prepare E2B desktop templates, Modal desktop images, and Daytona and Vercel desktop snapshots. Docker retains its documented image and host setup. Sprites and Runloop currently provide native Files & Shell. See the [configuration reference](configuration-reference.md) for existing fields.
 
 [Try the remote examples locally](remote-envd.md) without a model, Docker or cloud account.
 

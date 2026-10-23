@@ -163,6 +163,8 @@ Daytona requires an operator-built Envd snapshot for both headless and desktop e
 
 Desktop-enabled targets supply the Envd Computer backend and its required OS runtime. Screenshot identity, geometry, observation lifetime, input validation and dispatch use the [Envd Computer contract](../a13n-envd/10-computer-use.md), not a separate vendor Computer API. Templates and snapshots supply desktop packages and fonts. Management prepares them; execution attachment only checks readiness. Human viewing and control require the separate desktop-access contract and do not follow from enabling Computer operations.
 
+Vercel accepts the `auto` desktop snapshot selector for recipe description, but execution refuses it before connecting. Service must resolve it to an immutable native snapshot ID before attachment.
+
 Host-selected working directories use the EIP Device path model. Vendor target names, lifecycle sessions, and Envd Session identities remain distinct; a resumed or replaced daemon does not validate old observations. Durable disk, automatic sleep/wake, stop/resume, snapshot ownership, expiry, and deletion semantics belong to [Service management](../a13n-service/06a-environment-management.md#daytona-modal-vercel-sandbox-sprites-and-runloop).
 
 ### Remote Envd

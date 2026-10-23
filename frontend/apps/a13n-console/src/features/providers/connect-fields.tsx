@@ -22,6 +22,7 @@ import {
  * settings that already have an answer folded away.
  */
 export function ProviderConnectFields({
+  configurationFields,
   credentialSchema,
   configurationSchema,
   credential,
@@ -36,6 +37,7 @@ export function ProviderConnectFields({
   onAdvancedOpenChange,
   children,
 }: {
+  configurationFields?: ReactNode;
   credentialSchema?: Record<string, unknown> | null;
   configurationSchema?: Record<string, unknown> | null;
   credential: Record<string, unknown>;
@@ -67,8 +69,9 @@ export function ProviderConnectFields({
           onChange={onCredentialChange}
         />
       )}
+      {configurationFields}
       <ProviderConfigurationFields
-        schema={configurationSchema}
+        schema={configurationFields ? undefined : configurationSchema}
         value={configuration}
         onChange={onConfigurationChange}
         advancedOpen={advancedOpen}

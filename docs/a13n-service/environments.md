@@ -87,6 +87,15 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
 
+### Automatic Vercel desktops
+
+1. Add a Vercel environment connection, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
+2. Create a Vercel environment template, choose that connection and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
+3. Create an instance from the template. The first creation builds a desktop snapshot and can take several minutes. Console shows its current phase and elapsed time. You can leave the page and return to **Environment instances** while creation continues.
+4. When ready, open the desktop preview. Runs using this environment can use Computer operations and Console human control. If creation fails, correct the reported configuration or permissions and use **Retry creation** when available.
+
+Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
+
 ### Docker image versions
 
 Leave `recipe.image` unset to use the Service-reviewed `ghcr.io/converge-ai-labs/a13n-sandbox` release. Sandbox versions belong to Envd, not to Service:

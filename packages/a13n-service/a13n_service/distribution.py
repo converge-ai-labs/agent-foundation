@@ -92,6 +92,7 @@ from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
 from a13n_service.runs.environments.provider_routes import router as environment_provider_lifecycle_router
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.environments.vercel_snapshots import VercelDesktopSnapshotRow
 from a13n_service.runs.findings.routes import router as findings_router
 from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.memories.organization import organization_sweep
@@ -371,6 +372,7 @@ OSS = Distribution(
         E2BDesktopTemplateRow,
         ModalDesktopImageRow,
         DaytonaDesktopSnapshotRow,
+        VercelDesktopSnapshotRow,
         DesktopExecutionRow,
         DesktopTargetRow,
         DesktopAssistanceRow,
