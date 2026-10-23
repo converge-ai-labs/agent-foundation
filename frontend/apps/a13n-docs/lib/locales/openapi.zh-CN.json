@@ -552,5 +552,6 @@
   "Run discovery metadata. Full input, results and execution settings belong to the Run detail read.": "运行检索元数据。完整输入、结果和执行设置通过运行详情读取。",
   "One-based chronological position among all Runs in the Thread.": "在 Thread 的全部 Run 中按时间排序的位置，从 1 开始。",
   "Vercel Provider Options": "列出 Vercel 团队或项目",
-  "List accessible teams, or projects in a selected team, using an unsaved credential.": "使用尚未保存的凭据列出可访问的团队，或所选团队下的项目。"
+  "List accessible teams, or projects in a selected team, using an unsaved credential.": "使用尚未保存的凭据列出可访问的团队，或所选团队下的项目。",
+  "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.": "Agent 命令的默认环境变量。作为普通可读配置保存，不用于保存密钥。命令显式指定的变量优先。"
 }

@@ -1236,10 +1236,28 @@
       "title": "EnvironmentPermissionSet",
       "type": "object"
     },
+    "EnvironmentVariables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+      "type": "object"
+    },
     "ExecutionOverride": {
       "additionalProperties": false,
       "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
       "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvironmentVariables"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "steering": {
           "anyOf": [
             {

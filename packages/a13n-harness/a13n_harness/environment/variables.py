@@ -1,4 +1,4 @@
-"""Ordinary environment defaults shared by managed execution adapters."""
+"""Ordinary command environment defaults shared by Hosts and execution adapters."""
 
 import re
 from collections.abc import Mapping
@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import AfterValidator, Field
 
 from a13n_harness.environment.commands import CommandEnvironment, CommandRequest
+from a13n_harness.environment.models import EnvironmentError
 
 
 def validate_variables(values: dict[str, str]) -> dict[str, str]:
@@ -39,7 +40,15 @@ def with_defaults(request: CommandRequest, defaults: Mapping[str, str], *, windo
     def key(name: str) -> str:
         return name.upper() if windows else name
 
+    if windows and len({key(name) for name in defaults}) != len(defaults):
+        raise EnvironmentError(
+            "Environment defaults contain names differing only by case; use one spelling on Windows.",
+            code="environment_request_invalid",
+        )
     unset = {key(name) for name in request.environment.unset}
     values = {key(name): value for name, value in defaults.items() if key(name) not in unset}
     values.update({key(name): value for name, value in request.environment.set.items()})
-    return request.model_copy(update={"environment": CommandEnvironment(set=values, unset=request.environment.unset)})
+    updated = request.model_copy(
+        update={"environment": CommandEnvironment(set=values, unset=request.environment.unset)}
+    )
+    return CommandRequest.model_validate(updated)

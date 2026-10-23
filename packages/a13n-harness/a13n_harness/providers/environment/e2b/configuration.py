@@ -10,8 +10,8 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field_validator, model_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
+from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment._variables import EnvironmentVariables
 
 PROVIDER_KEY = "e2b"
 

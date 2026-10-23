@@ -369,6 +369,7 @@ it("combines sparse execution choices with overrides without turning them into t
     result.current.setExecution({
       tools: { mode: "inline", foreground_wait_seconds: 0 },
       steering: "boundary",
+      environment: { APP_MODE: "run", EMPTY: "" },
     });
   });
   expect(result.current.build()).toMatchObject({
@@ -377,6 +378,7 @@ it("combines sparse execution choices with overrides without turning them into t
       execution: {
         tools: { mode: "inline", foreground_wait_seconds: 0 },
         steering: "boundary",
+        environment: { APP_MODE: "run", EMPTY: "" },
       },
     },
   });

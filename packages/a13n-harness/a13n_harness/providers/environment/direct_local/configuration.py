@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from a13n_harness.providers.environment._variables import EnvironmentVariables
+from a13n_harness.environment.variables import EnvironmentVariables
 
 _MIB = 1024 * 1024
 _GIB = 1024 * _MIB

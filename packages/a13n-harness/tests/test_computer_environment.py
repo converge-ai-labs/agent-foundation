@@ -542,9 +542,12 @@ async def test_zoom_permission_binding_and_invalid_regions_reject_before_provide
         ),
     ],
 )
-def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods, expected):
+@pytest.mark.parametrize("path_style", ["posix", "windows"])
+def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods, expected, path_style):
+    from types import SimpleNamespace
+
     from a13n_envd_client.eip import v1 as eip
-    from a13n_harness.providers.environment.eip.binding import _convert_descriptor
+    from a13n_harness.providers.environment.eip.binding import EIPEnvironmentSession, _convert_descriptor
 
     descriptor = eip.SessionDescriptor(
         boundary=eip.ExecutionBoundary.model_validate(
@@ -584,6 +587,13 @@ def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods
         ),
     )
     assert _convert_descriptor(descriptor).permissions.operations == expected
+    adapter = EIPEnvironmentSession(
+        session=SimpleNamespace(descriptor=descriptor, device_descriptor=SimpleNamespace(path_style=path_style)),
+        provider_key="http_envd",
+        environment_id="env-test",
+        execution_id="exec-test",
+    )
+    assert adapter.descriptor.environment_case_sensitive == (path_style == "posix")
 
 
 async def test_clipboard_permissions_are_independent_and_empty_text_is_content():

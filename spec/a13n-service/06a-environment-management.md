@@ -46,7 +46,7 @@ All eight built-in managed providers accept `recipe.environment`, a string-to-st
 
 The first create claim freezes these defaults with the rest of the recipe. Retries, execution attachment, stop/start and snapshot resume retain them; later template edits apply only to instances whose recipe has not yet been frozen. Providers with a native creation environment receive the defaults during allocation. All managed execution paths also apply them when dispatching Agent shell/process requests, including EIP paths where the daemon need not inherit its launch environment. This does not mutate the Service process environment or a shared sandbox's global environment during a Run.
 
-Explicit command values take precedence. A command unset removes a default where the execution provider supports unset; existing unsupported-operation errors remain unchanged. Ordinary child processes inherit the resulting command environment. Local defaults must satisfy `allowed_environment_keys`; command authorization and Envd bound-secret protections remain authoritative. No Agent, Thread or Run-level default layers are introduced.
+Explicit command values take precedence. A command unset removes a default where the execution provider supports unset; existing unsupported-operation errors remain unchanged. Ordinary child processes inherit the resulting command environment. Local defaults must satisfy `allowed_environment_keys`; command authorization and Envd bound-secret protections remain authoritative. Agent, Thread and Run defaults overlay the frozen recipe at command dispatch under the [Run execution policy](05-runs.md#execution-policy); they do not reconfigure or recreate the instance.
 
 ### Desktop Access Enforcement
 

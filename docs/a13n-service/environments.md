@@ -98,7 +98,7 @@ Later creations reuse the validated snapshot within the same workspace, Provider
 
 ### Default environment variables
 
-Every built-in provider supports `config.recipe.environment`, for example `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`. Add these in the template editor's **Environment variables** section. Commands and their normal child processes receive these defaults; explicit command values override them, and supported command unsets remove them. This does not add Agent, Thread or Run-level variable settings.
+Every built-in provider supports `config.recipe.environment`, for example `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`. Add these in the template editor's **Environment variables** section. Commands and their normal child processes receive these defaults; explicit command values override them, and supported command unsets remove them. Agent, Thread and single-Run variables can override these defaults through [execution policy](agents-and-runs.md#execution-policy), without changing the shared sandbox.
 
 Defaults freeze with the recipe when creation is first dispatched. Editing a template does not update an existing instance, including after stop/start or snapshot resume. Create a new instance to use changed defaults. Local providers also require each name in `allowed_environment_keys` (or an unrestricted null allowlist).
 

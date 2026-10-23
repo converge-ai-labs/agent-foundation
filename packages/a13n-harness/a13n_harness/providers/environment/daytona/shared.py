@@ -9,8 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment._variables import EnvironmentVariables
 from a13n_harness.providers.environment.native.configuration import TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure

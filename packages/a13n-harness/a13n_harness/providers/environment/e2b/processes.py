@@ -30,7 +30,7 @@ from a13n_harness.environment.retention import (
     OpaqueProcessHandle,
     _unwrap_opaque,
 )
-from a13n_harness.providers.environment._variables import with_defaults
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
 from a13n_harness.providers.environment.e2b.errors import sdk_errors
 from a13n_harness.providers.environment.e2b.output import CommandObservation, ObservationPool

@@ -38,7 +38,7 @@ from a13n_harness.environment.retention import (
     _unwrap_opaque,
     materialize_capture,
 )
-from a13n_harness.providers.environment._variables import with_defaults
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment.eip._common import (
     convert_receipt,
     encode_bytes,
@@ -125,8 +125,10 @@ class _ProcessConversions:
         execution_id: str,
         generation: str,
         environment: dict[str, str] | None = None,
+        windows: bool = False,
     ) -> None:
         self._environment = dict(environment or {})
+        self._windows = windows
         self._session = session
         self._files = files
         self._outputs = outputs
@@ -334,7 +336,8 @@ class EIPShellOperations:
                 eip.ShellExecParams(
                     context=new_context(),
                     request=convert_command_request(
-                        with_defaults(request, self._conversions._environment), files=self._conversions._files
+                        with_defaults(request, self._conversions._environment, windows=self._conversions._windows),
+                        files=self._conversions._files,
                     ),
                 )
             )
@@ -389,7 +392,8 @@ class EIPProcessOperations:
                 eip.ProcessStartParams(
                     context=new_context(),
                     request=convert_command_request(
-                        with_defaults(request, self._conversions._environment), files=self._conversions._files
+                        with_defaults(request, self._conversions._environment, windows=self._conversions._windows),
+                        files=self._conversions._files,
                     ),
                 )
             )

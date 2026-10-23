@@ -3,6 +3,7 @@
 from typing import Literal
 
 from a13n_harness.capabilities.tool_execution import ToolExecutionConfig
+from a13n_harness.environment.variables import EnvironmentVariables
 from pydantic import BaseModel, ConfigDict, Field
 
 type Steering = Literal["boundary", "immediate"]
@@ -20,6 +21,7 @@ class ExecutionOverride(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    environment: EnvironmentVariables | None = Field(default=None, exclude_if=lambda value: not value)
     tools: ToolExecutionOverride | None = None
     steering: Steering | None = None
 
@@ -40,20 +42,26 @@ class ExecutionPolicy(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    environment: EnvironmentVariables = Field(default_factory=dict, exclude_if=lambda value: not value)
     tools: ToolExecutionConfig = Field(default_factory=lambda: ToolExecutionConfig(mode="auto"))
     steering: Steering = "immediate"
 
     def overlay(self, *layers: ExecutionOverride | None) -> "ExecutionPolicy":
         tools = self.tools.model_dump()
         steering = self.steering
+        environment = dict(self.environment)
         for layer in layers:
             if layer is None:
                 continue
+            if layer.environment is not None:
+                environment.update(layer.environment)
             if layer.tools is not None:
                 tools.update(layer.tools.model_dump(exclude_none=True))
             if layer.steering is not None:
                 steering = layer.steering
-        return ExecutionPolicy(tools=ToolExecutionConfig.model_validate(tools), steering=steering)
+        return ExecutionPolicy(
+            tools=ToolExecutionConfig.model_validate(tools), steering=steering, environment=environment
+        )
 
     def override(self) -> ExecutionOverride:
         return ExecutionOverride.model_validate(self.model_dump())

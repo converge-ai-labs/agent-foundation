@@ -6746,6 +6746,13 @@
         "title": "EnvironmentUpdate",
         "type": "object"
       },
+      "EnvironmentVariables": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+        "type": "object"
+      },
       "EnvironmentView": {
         "properties": {
           "created_at": {
@@ -7082,6 +7089,16 @@
         "additionalProperties": false,
         "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
         "properties": {
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentVariables"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "steering": {
             "anyOf": [
               {

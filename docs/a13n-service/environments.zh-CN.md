@@ -98,7 +98,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 
 ### 默认环境变量
 
-所有内置 Provider 都支持 `config.recipe.environment`，例如 `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`。在模板编辑器的**环境变量**区域添加即可。命令及其普通子进程会收到这些默认值；命令显式指定的值优先，支持 unset 的执行路径也可移除默认值。本功能不增加 Agent、Thread 或 Run 层的变量配置。
+所有内置 Provider 都支持 `config.recipe.environment`，例如 `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`。在模板编辑器的**环境变量**区域添加即可。命令及其普通子进程会收到这些默认值；命令显式指定的值优先，支持 unset 的执行路径也可移除默认值。Agent、Thread 和单次 Run 可通过[执行策略](agents-and-runs.md#execution-policy)覆盖这些默认值，不会修改共享 sandbox。
 
 首次派发创建时，默认变量随 recipe 一起冻结。修改模板不会更新已有实例，停止后启动或从快照恢复也继续使用原值。要使用新值，请创建新实例。Local Provider 还要求变量名列入 `allowed_environment_keys`（或将该白名单设为不限制的 null）。
 

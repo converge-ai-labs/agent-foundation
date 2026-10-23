@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from a13n_harness.environment.commands import ArgvCommand, CommandEnvironment, CommandRequest
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
-from a13n_harness.providers.environment._variables import with_defaults
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
 from a13n_harness.providers.environment.native.commands import NativeCommands
@@ -95,3 +95,108 @@ def test_windows_case_insensitive_merge_does_not_resurrect_unset_defaults():
     updated = with_defaults(original, {"PATH": "default", "FOO": "remove", "BAR": "keep"}, windows=True)
     assert dict(updated.environment.set) == {"PATH": "command", "BAR": "keep"}
     assert dict(original.environment.set) == {"Path": "command"}
+
+
+async def test_run_defaults_real_processes_are_isolated_on_shared_target(tmp_path, monkeypatch):
+    from a13n_harness import AgentIdentityRef, AgentInstanceContext
+    from a13n_harness.environment import EnvironmentAction, EnvironmentError, EnvironmentMount, EnvironmentPermissionSet
+    from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.providers.environment.configuration import EnvironmentProviderConfiguration
+    from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+
+    monkeypatch.setenv(VARIABLE, "host")
+    recipe = DirectLocalEnvironmentConfiguration(
+        root={"path": str(tmp_path)},
+        allowed_executables=[sys.executable],
+        allowed_environment_keys=[VARIABLE],
+        environment={VARIABLE: "recipe"},
+    )
+    connector = DIRECT_LOCAL.connector_factory(
+        configuration=EnvironmentProviderConfiguration(),
+        credential=None,
+        environment=recipe,
+        environment_id="shared-target",
+        state=None,
+        runtime=None,
+    )
+    from types import SimpleNamespace
+
+    async def ready():
+        return connector
+
+    source = SimpleNamespace(
+        provider_key=connector.provider_key,
+        environment_id=connector.environment_id,
+        descriptor=connector.descriptor,
+        state=connector.state,
+        ensure_ready=ready,
+    )
+    permissions = EnvironmentPermissionSet(
+        operations=frozenset(
+            {
+                EnvironmentAction.SHELL_EXEC,
+                EnvironmentAction.PROCESS_START,
+                EnvironmentAction.PROCESS_INSPECT,
+                EnvironmentAction.PROCESS_RELEASE,
+            }
+        )
+    )
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-1"
+    )
+
+    async def execute(label):
+        values = {VARIABLE: label}
+        runtime = create_environment_runtime(
+            mounts={"workspace": EnvironmentMount(source=source, permission_ceiling=permissions)},
+            default_mount="workspace",
+            command_environment=values,
+        )
+        values[VARIABLE] = "mutated-after-construction"
+        async with runtime.bind(thread_id=label, run_id=label, instance=instance, host_refs={}) as environment:
+            await runtime._activate()
+            for patch, expected in [
+                (CommandEnvironment(), label),
+                (CommandEnvironment(set={VARIABLE: ""}), ""),
+                (CommandEnvironment(unset=(VARIABLE,)), None),
+                (CommandEnvironment(), label),
+            ]:
+                result = await environment.shell.exec(request(patch))
+                assert result.status.exit_code == 0
+                assert json.loads(result.output.stdout.inline) == [
+                    expected,
+                    expected if expected is not None else "missing",
+                ]
+            started = await environment.processes.start(request())
+            async with asyncio.timeout(10):
+                while True:
+                    info = await environment.processes.inspect(started.process.handle)
+                    if info.status.phase == "exited":
+                        break
+                    await asyncio.sleep(0.01)
+            assert info.status.exit_code == 0
+            assert json.loads(info.output.stdout.inline) == [label, label]
+            await environment.processes.release(started.process.handle)
+            # Injection must still pass through the provider's allowlist.
+            with pytest.raises(EnvironmentError) as denied:
+                await environment.shell.exec(request(CommandEnvironment(set={"DENIED": "value"})))
+            assert denied.value.code == "environment_denied"
+
+    await asyncio.gather(execute("run-a"), execute("run-b"))
+    assert recipe.environment == {VARIABLE: "recipe"}
+    assert os.environ[VARIABLE] == "host"
+
+
+def test_merged_defaults_retain_command_bounds_and_windows_ambiguity_errors():
+    from a13n_harness.environment import EnvironmentError
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="too many entries"):
+        with_defaults(request(CommandEnvironment(set={"EXTRA": "value"})), {f"K{i}": "v" for i in range(1024)})
+    with pytest.raises(EnvironmentError, match="differing only by case"):
+        with_defaults(request(), {"PATH": "first", "Path": "second"}, windows=True)
+    # POSIX retains distinct spellings.
+    assert dict(with_defaults(request(), {"PATH": "first", "Path": "second"}).environment.set) == {
+        "PATH": "first",
+        "Path": "second",
+    }

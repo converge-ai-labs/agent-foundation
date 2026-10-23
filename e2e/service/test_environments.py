@@ -249,10 +249,13 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     types = expect(await api.client.get("/api/v1/provider-types/environment"), 200)["items"]
     [described] = [item for item in types if item["type"] == account.type]
     agent = await api.create_agent(
-        "Builder", await api.create_model(model.base_url), default_environment_template_id=template_id
+        "Builder",
+        await api.create_model(model.base_url),
+        default_environment_template_id=template_id,
+        execution={"environment": {"APP_MODE": "agent"}},
     )
 
-    command = check_defaults() + " && echo live-$((6 * 7)) > proof.txt && cat proof.txt"
+    command = check_defaults("run") + " && echo live-$((6 * 7)) > proof.txt && cat proof.txt"
     if account.type == "docker":
         # Native execution must not inherit the sandbox image's root daemon identity.
         command = (
@@ -263,8 +266,13 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     await model.call("shell_exec", {"command": command}, call_id="call_write", to="[write]")
     await model.say("Written.", to="[write]")
     # This scripted journey consumes results directly rather than dynamically polling receipts.
-    execution = {"tools": {"mode": "inline", "foreground_wait_seconds": 60}}
-    receipt = await api.start(agent, "[write] Write the proof", execution=execution)
+    execution = {"tools": {"mode": "inline", "foreground_wait_seconds": 60}, "environment": {"APP_MODE": "thread"}}
+    receipt = await api.start(
+        agent,
+        "[write] Write the proof",
+        execution=execution,
+        options={"execution": {"environment": {"APP_MODE": "run"}}},
+    )
     thread_id = receipt["thread"]["id"]
     [mount] = receipt["run"]["environment_mounts"]
     environment_id, path = mount["environment_id"], f"/api/v1/environments/{mount['environment_id']}"
@@ -278,7 +286,7 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     assert await account.exists(environment_id)
 
     # Command values override defaults without leaking into the next command in the same Run.
-    for index, value in enumerate(("override", "", "agent-default")):
+    for index, value in enumerate(("override", "", "thread")):
         await model.call(
             "shell_exec",
             {"command": check_defaults(value), **({"environment": {"APP_MODE": value}} if index < 2 else {})},
@@ -290,6 +298,18 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     assert (await api.sealed(overrides["id"], timeout=timeout))["status"] == "completed"
     for answered in (await model.requests("[defaults]"))[1:]:
         assert "defaults-ok" in tool_results(answered)[-1]
+
+    # Clearing the Thread layer affects future Runs only; it falls back to the Agent.
+    thread_path = f"/api/v1/threads/{thread_id}"
+    saved_thread = await api.client.get(thread_path)
+    expect(
+        await api.client.patch(
+            thread_path, json={"execution": {"environment": None}}, headers={"if-match": saved_thread.headers["etag"]}
+        ),
+        200,
+    )
+    frozen = await api.run(receipt["run"]["id"])
+    assert frozen["options"]["execution"]["environment"] == {"APP_MODE": "run"}
 
     # Template edits must not change the retained instance, including after resume.
     template_path = f"/api/v1/environment-templates/{template_id}"
@@ -318,7 +338,7 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
         await model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="call_read", to="[read]")
     else:
         await model.call("shell_exec", {"command": "cat proof.txt"}, call_id="call_read", to="[read]")
-    await model.call("shell_exec", {"command": check_defaults()}, call_id="call_defaults_resumed", to="[read]")
+    await model.call("shell_exec", {"command": check_defaults("agent")}, call_id="call_defaults_resumed", to="[read]")
     await model.say("Read.", to="[read]")
     again = (await api.send(thread_id, agent, "[read] Read the proof"))["run"]
     assert again["environment_mounts"] == [mount]

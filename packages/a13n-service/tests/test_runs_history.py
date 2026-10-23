@@ -73,8 +73,10 @@ async def test_a_resume_explicitly_skips_a_question(service, scripted_model, run
 
 
 async def test_a_fork_continues_a_runs_history_in_a_new_thread(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.create_agent(service, scripted_model)
-    origin = await runs_kit.start_thread(service, agent, "remember seven")
+    agent = await runs_kit.create_agent(service, scripted_model, execution={"environment": {"MODE": "agent"}})
+    origin = await runs_kit.start_thread(
+        service, agent, "remember seven", options={"execution": {"environment": {"MODE": "origin"}}}
+    )
     scripted_model.say("Noted")
     await (await runs_kit.attempt(service))
 
@@ -91,6 +93,7 @@ async def test_a_fork_continues_a_runs_history_in_a_new_thread(service, scripted
         origin["thread"]["session_id"],
     )
     assert (run["lineage"], run["parent_run_id"]) == ("fork", origin["run"]["id"])
+    assert run["options"]["execution"]["environment"] == {"MODE": "agent"}
     scripted_model.say("Seven")
     await (await runs_kit.attempt(service))
     assert (await runs_kit.get_run(service, run["id"]))["output"] == "Seven"

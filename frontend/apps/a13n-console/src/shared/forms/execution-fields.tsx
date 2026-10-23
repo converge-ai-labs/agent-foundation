@@ -2,6 +2,7 @@ import { ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../api";
+import { EnvironmentVariables } from "./environment-variables";
 
 export type ExecutionOverride = Schema["ExecutionOverride"];
 
@@ -12,16 +13,32 @@ export function executionOverride(
   const mode = value.tools?.mode;
   const wait = value.tools?.foreground_wait_seconds;
   const steering = value.steering;
+  const environment = value.environment;
+  if (
+    environment &&
+    Object.entries(environment).some(
+      ([name, value]) =>
+        !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || value.includes("\0"),
+    )
+  )
+    throw new Error(
+      "Environment variables require portable names and values without NUL.",
+    );
   if (wait != null && (!Number.isFinite(wait) || wait < 0 || wait > 300))
     throw new Error("Foreground wait must be between 0 and 300 seconds.");
   const tools = {
     ...(mode ? { mode } : {}),
     ...(wait != null ? { foreground_wait_seconds: wait } : {}),
   };
-  return Object.keys(tools).length || steering
+  return Object.keys(tools).length ||
+    steering ||
+    (environment && Object.keys(environment).length)
     ? {
         ...(Object.keys(tools).length ? { tools } : {}),
         ...(steering ? { steering } : {}),
+        ...(environment && Object.keys(environment).length
+          ? { environment }
+          : {}),
       }
     : undefined;
 }
@@ -39,6 +56,7 @@ export function executionPatch(
             override.tools?.foreground_wait_seconds ?? null,
         },
         steering: override.steering ?? null,
+        environment: override.environment ?? null,
       }
     : null;
 }
@@ -66,6 +84,11 @@ export function ExecutionFields({
   ];
   return (
     <div className="grid gap-4">
+      <EnvironmentVariables
+        value={value.environment ?? {}}
+        onChange={(environment) => onChange?.({ ...value, environment })}
+        readOnly={readOnly}
+      />
       {readOnly ? (
         <ReadOnlyField label={t("Tool execution")}>
           {

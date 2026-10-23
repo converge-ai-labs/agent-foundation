@@ -1,7 +1,7 @@
 import { Button, Input } from "a13n-ui";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import styles from "./environments.module.css";
+import styles from "./environment-variables.module.css";
 
 type Row = { id: number; name: string; value: string };
 

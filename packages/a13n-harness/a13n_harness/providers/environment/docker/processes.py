@@ -33,8 +33,8 @@ from a13n_harness.environment.retention import (
     OpaqueProcessHandle,
     _unwrap_opaque,
 )
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment._local_retention import LocalRetentionStore
-from a13n_harness.providers.environment._variables import with_defaults
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_harness.providers.environment.docker.errors import engine_errors
 from a13n_harness.providers.environment.docker.observation import (

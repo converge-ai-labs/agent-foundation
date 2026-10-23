@@ -47,8 +47,8 @@ from a13n_harness.environment.retention import (
     _unwrap_opaque,
     materialize_capture,
 )
+from a13n_harness.environment.variables import with_defaults
 from a13n_harness.providers.environment._local_retention import LocalRetentionStore, LocalRetentionWriter
-from a13n_harness.providers.environment._variables import with_defaults
 
 if TYPE_CHECKING:
     from a13n_harness.providers.environment._windows_job import WindowsJob

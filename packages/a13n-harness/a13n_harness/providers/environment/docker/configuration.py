@@ -8,7 +8,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
-from a13n_harness.providers.environment._variables import EnvironmentVariables
+from a13n_harness.environment.variables import EnvironmentVariables
 
 DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:dev"
 

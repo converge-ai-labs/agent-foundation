@@ -15,8 +15,8 @@ from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment._variables import EnvironmentVariables
 from a13n_harness.providers.environment.modal.pool import Transport, TransportKey, TransportPool
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime

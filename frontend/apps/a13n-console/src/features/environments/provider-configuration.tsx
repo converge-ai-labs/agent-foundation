@@ -8,7 +8,7 @@ import {
 import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./environments.module.css";
-import { EnvironmentVariables } from "./environment-variables";
+import { EnvironmentVariables } from "../../shared/forms/environment-variables";
 import {
   applyDockerPreset,
   dockerMode,

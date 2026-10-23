@@ -6590,6 +6590,10 @@ export interface components {
       /** Token */
       token?: string | null;
     };
+    /** @description Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults. */
+    EnvironmentVariables: {
+      [key: string]: string;
+    };
     /** EnvironmentView */
     EnvironmentView: {
       /**
@@ -6701,6 +6705,7 @@ export interface components {
      * @description Sparse choices: null inherits; Thread PATCH distinguishes omission from null.
      */
     ExecutionOverride: {
+      environment?: components["schemas"]["EnvironmentVariables"] | null;
       steering?: components["schemas"]["Steering"] | null;
       tools?: components["schemas"]["ToolExecutionOverride"] | null;
     };
