@@ -18,7 +18,6 @@ def host(monkeypatch):
     monkeypatch.setattr(module, "linux_distribution", lambda: {})
     monkeypatch.setattr(module.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(module, "executable_path", lambda path: path)
-    monkeypatch.setattr(module.importlib.util, "find_spec", lambda name: object())
     monkeypatch.setattr(
         module,
         "probe",
@@ -111,12 +110,11 @@ async def test_authentication_utilities_are_not_required(host, monkeypatch):
 
 
 async def test_missing_components_only_produce_manual_guidance(host, monkeypatch):
-    monkeypatch.setattr(module.importlib.util, "find_spec", lambda name: None)
     monkeypatch.setattr(module.shutil, "which", lambda name: "/usr/bin/apt-get" if name == "apt-get" else None)
     setup = await module.inspect_browser()
     assert setup.supported and not setup.ready
     assert not any(requirement.installed for requirement in setup.requirements)
-    assert any("a13n-harness-ui" in step.command for step in setup.steps)
+    assert setup.steps and all("apt-get" in step.command for step in setup.steps)
     module.probe.assert_not_awaited()
 
 
@@ -290,7 +288,6 @@ async def test_requirement_purposes_and_optional_components_follow_selected_adap
     setup = await module.inspect_browser(host)
     checks = {item.name: item for item in setup.requirements}
     assert all(item.purpose for item in setup.requirements)
-    assert checks["VNC authentication"].managed and checks["VNC transport"].managed
     display = checks["Display server"]
     assert display.installed and display.required
     if kind == "tigervnc":

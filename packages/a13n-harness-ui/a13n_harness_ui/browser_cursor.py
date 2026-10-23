@@ -121,7 +121,6 @@ class Cursor:
                 if target is not None:
                     node = await runtime.send("DOM.resolveNode", {"backendNodeId": target}, page)
                     identity = node["object"]["objectId"]
-                    await runtime.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": target}, page)
                     await runtime.send(
                         "Runtime.callFunctionOn",
                         {

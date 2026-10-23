@@ -25,8 +25,6 @@ dev = [
     "mdformat-gfm-alerts==2.1.0",
     "opentelemetry-distro[otlp]==0.65b0",
     "opentelemetry-sdk>=1.39,<2",
-    # Exercise the optional Host browser adapter without downloading Chromium.
-    "playwright>=1.58,<2",
     "pre-commit>=4.3,<5",
     "protobuf>=6.32,<7",
     "pyright>=1.1,<2",

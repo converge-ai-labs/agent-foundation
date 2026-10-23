@@ -50,13 +50,17 @@ beforeEach(() => {
           ready: kind === "tigervnc",
           vnc: { kind },
           requirements: [
-            {
-              name: "Browser automation",
-              required: true,
-              installed: true,
-              managed: true,
-              detail: "cdp-use is included",
-            },
+            ...(kind === "tigervnc"
+              ? [
+                  {
+                    name: "Display server",
+                    required: true,
+                    installed: true,
+                    managed: true,
+                    detail: "TigerVNC includes its display server",
+                  },
+                ]
+              : []),
             {
               name: "Browser",
               required: true,
@@ -247,7 +251,7 @@ it("checks unsaved VNC selections, switches requirements and preserves optional 
     ),
   ).toBeTruthy();
   expect(screen.queryByText("Desktop viewer")).toBeNull();
-  expect(screen.queryByText("Browser automation")).toBeNull();
+  expect(screen.queryByText("Display server")).toBeNull();
   expect(screen.queryByText(/Browsers: /)).toBeNull();
   await user.click(screen.getByRole("combobox", { name: "VNC executable" }));
   await user.click(

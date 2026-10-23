@@ -12,18 +12,15 @@ import pytest
 from a13n_harness.capabilities import BrowserUseCapability
 from a13n_harness.capabilities.browser.cdp import CdpBrowserBackend, Chromium
 
-pytestmark = [
-    pytest.mark.anyio,
-    pytest.mark.skipif(os.environ.get("A13N_BROWSER_REAL_TEST") != "1", reason="Opt-in native Chromium test"),
-]
+pytestmark = pytest.mark.anyio
 HTML = b"""<!doctype html><title>Harness CDP fixture</title><input aria-label="Message"><button onclick="document.querySelector('output').textContent='clicked'">Submit</button><output></output>"""
 
 
 @pytest.fixture
-async def native_browser(request):
+async def native_browser(request, browser_executable):
     with TemporaryDirectory(prefix="harness-cdp-") as directory:
         arguments = [
-            os.environ["A13N_BROWSER_EXECUTABLE"],
+            browser_executable,
             f"--user-data-dir={directory}",
             "--remote-debugging-address=127.0.0.1",
             "--remote-debugging-port=0",

@@ -20,7 +20,7 @@ from a13n_harness_ui.errors import HarnessUiError
 pytestmark = [
     pytest.mark.anyio,
     pytest.mark.skipif(
-        sys.platform != "linux" or os.environ.get("A13N_BROWSER_REAL_TEST") != "1",
+        sys.platform != "linux",
         reason="Opt-in headed Linux VNC validation",
     ),
 ]
@@ -55,14 +55,13 @@ async def site():
 
 
 @pytest.fixture(params=["tigervnc", "x11vnc", "wayvnc"])
-def browser_configuration(request):
+def browser_configuration(request, browser_executable):
     if request.param == "wayvnc" and os.geteuid() == 0:
         pytest.skip("Headless Sway requires a non-root process")
     vnc = shutil.which({"tigervnc": "Xtigervnc", "x11vnc": "x11vnc", "wayvnc": "wayvnc"}[request.param])
-    executable = os.environ.get("A13N_BROWSER_EXECUTABLE")
-    if not vnc or not executable:
-        pytest.skip("Explicit Chromium path and selected native VNC server are required")
-    return BrowserConfiguration(executable=executable, vnc_executable=vnc)
+    if not vnc:
+        pytest.skip("Selected native VNC server is not installed")
+    return BrowserConfiguration(executable=browser_executable, vnc_executable=vnc)
 
 
 async def rfb(browsers, thread, binding, token="", *, native_password=None):
@@ -248,6 +247,16 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
             await browsers.runtime.evaluate(browsers.bindings["after-restart"].page, "document.cookie")
             == "login=retained"
         )
+        # The real action owns scrolling; the cosmetic cursor must not be
+        # needed to bring an offscreen element into view or focus it.
+        backend = browsers.backend("after-restart", fresh.session_id)
+        runtime = browsers.runtime
+        page = browsers.bindings["after-restart"].page
+        await runtime.evaluate(page, "document.querySelector('input').style.marginTop='1500px'")
+        observation = await backend.observe()
+        target = next(element.target for element in observation.elements if element.description == "Message")
+        await backend.act("click", target=target, revision=observation.revision)
+        assert await runtime.evaluate(page, "scrollY>0 && document.activeElement.name==='username'")
     finally:
         await browsers.close()
 

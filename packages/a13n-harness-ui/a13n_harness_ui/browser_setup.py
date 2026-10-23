@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import ntpath
 import os
 import re
-import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -164,7 +162,6 @@ class BrowserScan(SurfaceModel):
 
 async def scan_browsers() -> BrowserScan:
     """Enumerate supported installed executables only when explicitly requested."""
-    importlib.invalidate_caches()
     platform = host_platform()
     candidates = await asyncio.to_thread(system_browsers, platform)
     browsers = []
@@ -210,7 +207,6 @@ async def probe(path: str, argument: str) -> str:
 
 async def inspect_browser(configuration: BrowserConfiguration | None = None) -> BrowserSetup:
     configuration = configuration or BrowserConfiguration()
-    importlib.invalidate_caches()
     platform = host_platform()
     supported = platform == "linux"
     distribution = await asyncio.to_thread(linux_distribution) if supported else {}
@@ -221,7 +217,6 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
         if path:
             browser = BrowserExecutable(name="Configured browser", path=path, source="custom")
         browser_detail = "Configured browser executable is missing or not executable"
-    automation = importlib.util.find_spec("cdp_use") is not None
     if browser:
         version = await probe(browser.path, "--version")
         if not supported_browser(version):
@@ -270,23 +265,6 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
             purpose="Streams the private browser desktop and accepts human keyboard and pointer input.",
         ),
     ]
-    for name, module, purpose in (
-        ("Browser automation", "cdp_use", "cdp-use lets the Agent inspect and operate Chromium through CDP."),
-        ("VNC transport", "websockets", "websockets carries desktop traffic between Harness UI and the viewer."),
-        ("VNC authentication", "cryptography", "cryptography generates native VNC authentication credentials."),
-    ):
-        installed = automation if module == "cdp_use" else importlib.util.find_spec(module) is not None
-        requirements.append(
-            BrowserRequirement(
-                name=name,
-                installed=installed,
-                purpose=purpose,
-                managed=True,
-                detail="Included with Harness and Harness UI; no executable path is needed."
-                if installed
-                else "Reinstall Harness UI to restore its Python dependencies.",
-            )
-        )
     if vnc:
         requirements.append(
             BrowserRequirement(
@@ -339,13 +317,6 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
         )
     ready = supported and all(requirement.installed for requirement in requirements if requirement.required)
     steps = []
-    if supported and any(item.managed and not item.installed for item in requirements):
-        steps.append(
-            BrowserInstallStep(
-                title="Restore bundled Python dependencies",
-                command=f"uv pip install --python {shlex.quote(sys.executable)} 'a13n-harness-ui'",
-            )
-        )
     if supported and vnc is None and shutil.which("apt-get"):
         steps.append(
             BrowserInstallStep(

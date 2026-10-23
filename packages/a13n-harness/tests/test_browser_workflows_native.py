@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, urlsplit
@@ -15,10 +14,7 @@ from a13n_harness.capabilities.browser.cdp import CdpBrowserBackend
 
 from .test_browser_cdp_native import native_browser as native_browser
 
-pytestmark = [
-    pytest.mark.anyio,
-    pytest.mark.skipif(os.environ.get("A13N_BROWSER_REAL_TEST") != "1", reason="Opt-in native Chromium test"),
-]
+pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture

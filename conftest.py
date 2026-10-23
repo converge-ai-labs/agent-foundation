@@ -8,6 +8,24 @@ import pytest
 from anyio import lowlevel as anyio_lowlevel
 
 _REPOSITORY_ROOT = Path(__file__).parent
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--browser-executable",
+        metavar="PATH",
+        help="Run native browser tests with an installed Chromium executable; no browser is downloaded.",
+    )
+
+
+@pytest.fixture
+def browser_executable(request: pytest.FixtureRequest) -> str:
+    executable = request.config.getoption("--browser-executable")
+    if not executable:
+        pytest.skip("Native browser tests require --browser-executable=PATH")
+    return executable
+
+
 # Developer machines often export an HTTP proxy, and macOS falls back to the system
 # proxy when no variable is set. Tests talk only to local fakes, so bypass every proxy.
 for _name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
