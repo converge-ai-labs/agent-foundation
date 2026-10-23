@@ -595,6 +595,95 @@ async def test_grok_provider_refresh_failure_switches_accounts(tmp_path):
             await client.aclose()
 
 
+async def test_grok_same_generation_overlap_keeps_owned_client_open(tmp_path, monkeypatch):
+    import httpx2
+    from a13n_harness.providers.model.oauth import build_grok_model
+    from anyio import Event, create_task_group, fail_after
+
+    from .test_model_accounts import _grok_entry
+
+    catalog = SubscriptionAccounts(tmp_path)
+    account = await catalog.create("grok", "Shared")
+    store = catalog.store(account)
+    path = store.policy.path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                store.scope: {
+                    **_grok_entry(account_id=account.id, expires_at=_NOW + timedelta(days=3650), marker="shared"),
+                    "oidc_issuer": store.scope.split("::")[0],
+                    "oidc_client_id": store.scope.split("::")[1],
+                }
+            }
+        )
+    )
+    group = SubscriptionGroupResource(
+        schema_version="1",
+        kind="subscription_group",
+        id="grok-test",
+        name="Shared",
+        provider="grok",
+        accounts=(SubscriptionGroupMember(account=account.id),),
+    )
+    entered, release = Event(), Event()
+    requests = []
+    clients = []
+    instances = []
+
+    async def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            entered.set()
+            await release.wait()
+            assert not clients[-1].is_closed
+        return httpx2.Response(
+            200,
+            json={
+                "id": "resp-test",
+                "object": "response",
+                "created_at": 1,
+                "model": "grok-test",
+                "status": "completed",
+                "output": [],
+            },
+        )
+
+    original_init = httpx2.AsyncClient.__init__
+
+    def mock_transport(client, *args, **kwargs):
+        kwargs["transport"] = httpx2.MockTransport(respond)
+        original_init(client, *args, **kwargs)
+        clients.append(client)
+
+    monkeypatch.setattr(httpx2.AsyncClient, "__init__", mock_transport)
+
+    def factory(selected):
+        # Omit http_client: exercise the real provider-owned, reentrant lifecycle.
+        instance = build_grok_model("grok-test", credential_source=catalog.store(selected))
+        instances.append(instance)
+        return instance
+
+    with fail_after(10):
+        async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
+            async with create_task_group() as tasks:
+                tasks.start_soon(model.request, [], None, PARAMETERS)
+                await entered.wait()
+                shared_client = clients[-1]
+                await model.request([], None, PARAMETERS)
+                assert len(instances) == 2  # Stable template and one cached account generation.
+                assert clients[-1] is shared_client
+                assert not shared_client.is_closed
+                release.set()
+            assert shared_client.is_closed
+            await model.request([], None, PARAMETERS)
+            assert len(instances) == 2
+            assert clients[-1] is not shared_client
+            assert clients[-1].is_closed
+    assert len(requests) == 3
+    assert all(client.is_closed for client in clients)
+
+
 async def test_main_stream_binding_does_not_leak_to_consumer(tmp_path):
     from a13n_harness_ui.model_accounts.provenance import _MainAccountModel, main_request
 

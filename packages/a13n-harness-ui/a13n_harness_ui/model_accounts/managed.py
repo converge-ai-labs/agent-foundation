@@ -170,44 +170,52 @@ class SubscriptionAccounts:
                         id=f"acct-{provider}-default", provider=provider, name=f"{provider.title()} default"
                     )
                     result = Adoption(status="absent")
-                    document = None
+                    native_policy = self.store(account).policy
+                    target = native_policy.path
+                    assert target is not None
+                    current = await read_json_snapshot(target, provider=Provider(provider))
+                    document = current.document
                     try:
-                        if provider == "codex":
-                            external = CodexAccountStore(
-                                await resolve_codex_policy(environ=environ, user_home=user_home)
-                            )
+                        # A previous bootstrap may have published credentials before its catalog.
+                        # Recover that copy, including its scope, without rediscovering the CLI.
+                        if document is not None:
+                            if provider == "grok":
+                                scope = await resolve_grok_scope(native_policy) or DEFAULT_GROK_OAUTH_SCOPE
+                                account = account.model_copy(update={"scope": scope})
                         else:
-                            policy = resolve_grok_policy(environ=environ, user_home=user_home)
-                            scope = grok_scope or await resolve_grok_scope(policy) or DEFAULT_GROK_OAUTH_SCOPE
-                            account = account.model_copy(update={"scope": scope})
-                            external = GrokAccountStore(policy, scope=scope)
-                        if not external.policy.supported:
-                            result = Adoption(
-                                status="unsupported", message="Sign in to create a managed subscription account."
-                            )
-                        else:
-                            document = await external.export_login()
-                            if document is not None:
-                                identity = (await external.inspect()).account_id
-                                account = account.model_copy(update={"upstream_account_id": identity})
-                                result = Adoption(
-                                    status="adopted",
-                                    message=(
-                                        "Imported the existing login. Its refresh grant is still shared with the original CLI; "
-                                        "sign in again here if that grant is rejected."
-                                    ),
+                            if provider == "codex":
+                                external = CodexAccountStore(
+                                    await resolve_codex_policy(environ=environ, user_home=user_home)
                                 )
+                            else:
+                                policy = resolve_grok_policy(environ=environ, user_home=user_home)
+                                scope = grok_scope or await resolve_grok_scope(policy) or DEFAULT_GROK_OAUTH_SCOPE
+                                account = account.model_copy(update={"scope": scope})
+                                external = GrokAccountStore(policy, scope=scope)
+                            if not external.policy.supported:
+                                result = Adoption(
+                                    status="unsupported", message="Sign in to create a managed subscription account."
+                                )
+                            else:
+                                document = await external.export_login()
                     except AccountStoreError:
                         result = Adoption(
                             status="invalid", message="The external login could not be imported. Sign in here."
                         )
+                        document = None
                     if document is not None:
-                        target = self.store(account).policy.path
-                        assert target is not None
-                        # If publication succeeded before a crash, preserve that native copy.
-                        current = await read_json_snapshot(target, provider=Provider(provider))
                         if current.document is None:
                             await write_json_if_unchanged(target, document, None, provider=Provider(provider))
+                        # Bind to the published native credential, not a later external snapshot.
+                        identity = (await self.store(account).load()).account_id
+                        account = account.model_copy(update={"upstream_account_id": identity})
+                        result = Adoption(
+                            status="adopted",
+                            message=(
+                                "Imported the existing login. Its refresh grant is still shared with the original CLI; "
+                                "sign in again here if that grant is rejected."
+                            ),
+                        )
                     index.accounts.setdefault(account.id, account)
                     index.adoption[provider] = result
                     await write_json_if_unchanged(

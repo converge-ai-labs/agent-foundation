@@ -923,9 +923,12 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         defaults = self.document.defaults
         for model in self.models.values():
             auth = model.authentication
-            if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)) and auth.group:
-                _require_reference(auth.group, self.subscription_groups, f"{model.id}.authentication.group")
-                if self.subscription_groups[auth.group].provider != auth.kind.removesuffix("_subscription"):
+            if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
+                provider = auth.kind.removesuffix("_subscription")
+                if auth.group:
+                    _require_reference(auth.group, self.subscription_groups, f"{model.id}.authentication.group")
+                group = self.subscription_groups.get(auth.group or f"{provider}-default")
+                if group is not None and group.provider != provider:
                     raise ValueError(f"{model.id} requires a same-provider subscription group")
         for item in self.document.mcp.host_owned_servers:
             _require_reference(item, self.mcp_servers, "mcp.host_owned_servers")
