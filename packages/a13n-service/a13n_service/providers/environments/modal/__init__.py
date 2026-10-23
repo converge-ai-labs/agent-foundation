@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.providers.environment.modal.diagnostics import desktop_operation
 from a13n_harness.providers.environment.modal.provider import MODAL as EXECUTION
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
@@ -37,15 +36,14 @@ class ModalProvider(BackendProvider[ModalConnectionConfiguration, ModalCredentia
     ) -> AsyncGenerator[ModalManagement]:
         """Own one fixed-target connection for a single desktop transition request."""
         # Retain the existing validation, error translation and shielded cleanup.
-        with desktop_operation(operation_id, "session"):
-            async with self._operation(environment, environment_id, state, operation_id) as target:
-                assert isinstance(target, ModalManagement)
-                target.reuse_transport = True
-                try:
-                    yield target
-                except BaseException:
-                    target.discard_transport()
-                    raise
+        async with self._operation(environment, environment_id, state, operation_id) as target:
+            assert isinstance(target, ModalManagement)
+            target.reuse_transport = True
+            try:
+                yield target
+            except BaseException:
+                target.discard_transport()
+                raise
 
 
 async def provider(

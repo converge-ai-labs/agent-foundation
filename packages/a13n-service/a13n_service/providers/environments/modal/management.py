@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
-from a13n_harness.providers.environment.modal.diagnostics import measure
 from a13n_harness.providers.environment.modal.http import HttpReference, http_execution, tunnel_connection
 from a13n_harness.providers.environment.modal.shared import (
     ModalEnvironmentConfiguration,
@@ -194,7 +193,7 @@ else: raise RuntimeError('a13n-envd did not become ready')
                 self.provider_key, request, await execute_command(sandbox, access.command(request), 25)
             )
             if isinstance(reply, access.Description):
-                with measure("sandbox_tunnels"), sdk_errors():
+                with sdk_errors():
                     tunnels = await sandbox.tunnels.aio(timeout=int(self.config.request_timeout_seconds))
                 tunnel = tunnels.get(access.PORT)
                 if tunnel is None:
