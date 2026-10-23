@@ -373,19 +373,21 @@ sequenceDiagram
 
     PAI->>Compact: RunContext and complete history before model request
     Compact->>Compact: resolve native window and usage, then Harness fallbacks
-    alt threshold reached
+    alt threshold reached and request budget permits compaction
         Compact->>Compact: remove owned overlays from a detached history view
         Compact->>Model: same Agent and Model, full unchanged history plus plain-text compact request
         Model-->>Compact: plain-text summary
         Compact->>State: read retained semantic inputs and user steering
         Compact->>Compact: rebuild deterministic replay boundary
         Compact-->>PAI: compacted canonical history
-    else no usage or below threshold
+    else no usage, below threshold, or insufficient request budget
         Compact-->>PAI: original history
     end
 ```
 
-After the threshold is reached, Compaction sends one detached copy of the complete history to the nested summary request, including committed overlays, thinking parts, and tool traffic. It does not trim history or select a retained suffix before summarization. The successful replacement builder consumes that same history view. On success, the Capability explicitly replaces `RunContext.messages` and returns the same replacement through `before_model_request`. Subsequent tool rounds and exported `HarnessState` therefore continue from the compacted history; returning a request-only snapshot does not replace durable continuation history. The original request context is not modified, so a failed compaction remains fail-open. The nested compact run is implemented by the same Pydantic Capability and a shallow copy of the current Agent. It keeps the effective Model, system prompts, instructions, and tool definitions cache-compatible, requests `str` output, preserves the effective `tool_choice` setting and explicitly instructs the model not to call any tools, and permits only one additional model request within all outer usage ceilings. The mandatory execution boundary also rejects any function-tool dispatch if a provider violates that request. It does not call or depend on the `summarize` tool or Handoff Capability. A run-local recursion guard prevents nested compaction.
+When fewer than two requests remain under the native finite request limit, Compaction skips the summary request and leaves the original history unchanged, preserving the remaining opportunity for the pending ordinary request. A skip emits no compaction lifecycle or summary events. This boundary check uses current shared usage; native usage ceilings and Host admission still govern each subsequent dispatch.
+
+After the threshold and request-budget checks pass, Compaction sends one detached copy of the complete history to the nested summary request, including committed overlays, thinking parts, and tool traffic. It does not trim history or select a retained suffix before summarization. The successful replacement builder consumes that same history view. On success, the Capability explicitly replaces `RunContext.messages` and returns the same replacement through `before_model_request`. Subsequent tool rounds and exported `HarnessState` therefore continue from the compacted history; returning a request-only snapshot does not replace durable continuation history. The original request context is not modified, so a failed compaction remains fail-open. The nested compact run is implemented by the same Pydantic Capability and a shallow copy of the current Agent. It keeps the effective Model, system prompts, instructions, and tool definitions cache-compatible, requests `str` output, preserves the effective `tool_choice` setting and explicitly instructs the model not to call any tools, and permits only one additional model request within all outer usage ceilings. The mandatory execution boundary also rejects any function-tool dispatch if a provider violates that request. It does not call or depend on the `summarize` tool or Handoff Capability. A run-local recursion guard prevents nested compaction.
 
 The summary uses the cache-friendly continuation format: a `Condensed conversation summary` heading, `Analysis` and `Context` sections, and eleven numbered context entries covering intent, technical concepts, files/code, problem solving, pending tasks, current work, next step, past interactions, skills for continuation, files to inspect, and optional relevant note keys. Skill references and reread reminders follow [Skills and Discovery](#skills-and-discovery). The summary request prohibits tool calls and investigation: uncertainties are recorded in the summary for the resumed Agent to investigate.
 

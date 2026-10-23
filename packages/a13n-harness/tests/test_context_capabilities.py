@@ -1252,14 +1252,18 @@ async def test_compaction_blocks_function_tool_dispatch() -> None:
     assert "Original task" in _user_text(list(result.all_messages()))
 
 
-async def test_compaction_preserves_outer_request_limit() -> None:
-    calls = 0
+@pytest.mark.parametrize("request_limit", [0, 1, 2, None])
+async def test_compaction_preserves_outer_request_limit(request_limit: int | None) -> None:
+    calls: list[str] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal calls
-        del messages, info
-        calls += 1
-        yield "unexpected"
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            calls.append("summary")
+            yield "Condensed conversation summary"
+        else:
+            calls.append("answer")
+            yield "done"
 
     previous = HarnessState.new(
         message_history=(
@@ -1277,18 +1281,78 @@ async def test_compaction_preserves_outer_request_limit() -> None:
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    result = await executable.run(
+    events: list[HarnessEvent] = []
+    async with executable.stream(
         "Continue",
         bindings=RunBindings.embedded(),
         previous_state=previous,
-        usage_limits=UsageLimits(request_limit=0),
+        usage_limits=UsageLimits(request_limit=request_limit),
+    ) as run:
+        result = await _consume_run(run, events)
+
+    if request_limit == 0:
+        assert result.status == "failed"
+        assert result.failure is not None
+        assert result.failure.code == "usage_limit_exceeded"
+        assert calls == []
+    else:
+        assert result.output_or_raise() == "done"
+        assert calls == (["answer"] if request_limit == 1 else ["summary", "answer"])
+    assert result.usage.requests == len(calls)
+    if request_limit in (0, 1):
+        from a13n_harness.capabilities.context import CompactionSummaryEvent, ContextRestoredEvent
+
+        assert "Original task" in _user_text(list(result.all_messages()))
+        assert not any(isinstance(item.event, (CompactionSummaryEvent, ContextRestoredEvent)) for item in events)
+        assert not any(
+            isinstance(item.event, HarnessExtensionEvent)
+            and item.event.kind == "context"
+            and str(item.event.payload.get("type", "")).startswith("compaction_")
+            for item in events
+        )
+
+
+async def test_compaction_leaves_last_request_after_current_run_usage() -> None:
+    calls: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            calls.append("summary")
+            yield "Condensed conversation summary"
+        else:
+            calls.append("answer")
+            yield "long response " * 2_000 if len(calls) == 1 else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    assert result.status == "failed"
-    assert result.failure is not None
-    assert result.failure.code == "usage_limit_exceeded"
-    assert result.usage.requests == 0
-    assert calls == 0
+    @executable._agent.output_validator
+    def validate_output(output: str) -> str:
+        if output != "done":
+            raise ModelRetry("Try again")
+        return output
+
+    events: list[HarnessEvent] = []
+    async with executable.stream(
+        "Original task", bindings=RunBindings.embedded(), usage_limits=UsageLimits(request_limit=2)
+    ) as run:
+        result = await _consume_run(run, events)
+
+    assert result.output_or_raise() == "done"
+    assert calls == ["answer", "answer"]
+    assert result.usage.requests == 2
+    snapshots = [
+        item.event.payload
+        for item in events
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.payload.get("type") == "context_snapshot"
+    ]
+    assert any(snapshot["request_tokens"] >= 2_000 for snapshot in snapshots)
+    assert "Original task" in _user_text(list(result.all_messages()))
 
 
 async def test_compaction_fails_open_on_blank_summary() -> None:
