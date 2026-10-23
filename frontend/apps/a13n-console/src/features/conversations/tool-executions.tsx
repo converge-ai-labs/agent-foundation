@@ -1,4 +1,4 @@
-import { Button, DisclosureSection, ModalFrame } from "a13n-ui";
+import { Button, DisclosureSection } from "a13n-ui";
 import { ArrowClockwiseIcon, TerminalIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -20,30 +20,6 @@ import { conversationQueries } from "./api";
 import styles from "./tool-executions.module.css";
 
 type Execution = Schema["ExecutionView"];
-
-export function ThreadToolExecutionsDialog({
-  threadId,
-  open,
-  onOpenChange,
-}: {
-  threadId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <ModalFrame
-      size="xl"
-      title={t("Tool executions")}
-      description={t("Retained tool calls across this thread's runs.")}
-      open={open}
-      onOpenChange={onOpenChange}
-      closeLabel={t("Close")}
-    >
-      {open && <ToolExecutions key={threadId} threadId={threadId} />}
-    </ModalFrame>
-  );
-}
 
 /** Open inspectors fetch their own bounded pages; execution updates do not rely on Run versions. */
 export function ToolExecutions({
