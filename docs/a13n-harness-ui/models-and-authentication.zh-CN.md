@@ -127,9 +127,9 @@ settings: {}
 model_configuration: {}
 ```
 
-登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖、静态 API 密钥、previous-response ID、temperature、Top P、输出 token 上限，以及策略允许的网页搜索之外的托管工具。
+登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖或静态 API 密钥。官方 profile 忽略通用 temperature、Top P 和输出 token 上限；其他设置和工具序列化遵循原生 Model。
 
-凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除 token，保留已颁发注册信息供后续登录，并请求 OpenAI 撤销授权；未确认撤销会单独报告。更换账户会影响使用此 Host 的所有人。
+凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除本地 token，保留已颁发注册信息供后续登录。请在 ChatGPT 设置中管理远端访问。活动 Model 可能仍使用缓存的 access token。到期和 401 刷新由官方 provider 处理，完整凭据保存到 Host 存储，不提供跨进程刷新互斥。更换账户会影响使用此 Host 的所有人。
 
 ## GitHub Copilot 订阅
 

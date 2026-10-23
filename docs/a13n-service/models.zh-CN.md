@@ -52,27 +52,25 @@ Cloudflare AI Gateway 使用 `cloudflare_ai_gateway` provider 类型和 models.d
 
 默认流程中，授权后将浏览器地址栏的完整回调 URL 复制到 **Complete callback URL**，即使回环页面显示连接失败也可以。Service 可以部署在远端：它校验并交换粘贴的回调，不请求该 URL，也不要求浏览器访问服务器的回环监听器。
 
-API 客户端先以 `{}` 调用 `POST /api/v1/model-providers/{id}/authorize`，再以 `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}` 调用 `POST …/authorization/callback`。完整回调必须保密。无效输入可修正重试；授权码交换开始后若失败，必须重新开始登录。`GET …/authorization` 返回不含凭据的状态。`DELETE …/authorization` 先清除 token，再请求撤销，并报告未确认的撤销结果。保留的注册信息支持再次登录；`{"new_registration": true}` 重新选择账户（创建新的动态 client 注册，或使用相同的配置 client 而不保留账户提示）。
+API 客户端先以 `{}` 调用 `POST /api/v1/model-providers/{id}/authorize`，再以 `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}` 调用 `POST …/authorization/callback`。完整回调必须保密。无效输入可修正重试；授权码交换开始后若失败，必须重新开始登录。`GET …/authorization` 返回不含凭据的状态。`DELETE …/authorization` 清除本地 token；远端访问在 ChatGPT 设置中管理。保留的注册信息支持再次登录；`{"new_registration": true}` 重新选择账户（创建新的动态 client 注册，或使用相同的配置 client 而不保留账户提示）。
 
-此 provider 使用 `openai.responses` 和账户模型 slug。`GET …/models` 返回账户可见 slug 和显示名，Console 仍支持手动输入 ID。列表中出现的 slug 不代表账户有权用它推理。端点固定，token 和待完成授权加密保存在 provider 自有状态中，不进入模型配置或运行快照。每次请求都设置 `store: false` 并以流式返回响应；非流式调用在返回前收集该流。发往此 provider 的请求不发送 temperature、Top P 和输出 token 上限；previous-response ID 和不支持的托管工具明确失败，不会改成 API 密钥调用。Codex 凭据与此无关，不能代替该授权。
+此 provider 使用 `openai.responses` 和账户模型 slug。`GET …/models` 返回账户可见 slug 和显示名，Console 仍支持手动输入 ID。列表中出现的 slug 不代表账户有权用它推理。端点固定，token 和待完成授权加密保存在 provider 自有状态中，不进入模型配置或运行快照。每次请求都设置 `store: false` 并以流式返回响应；非流式调用在返回前收集该流。发往此 provider 的请求不发送 temperature、Top P 和输出 token 上限；其他设置和工具序列化遵循官方 ChatGPT profile，不会改成 API 密钥调用。Codex 凭据与此无关，不能代替该授权。
 
 ### 自托管回调
 
-默认动态注册流程即使拿到 OpenAI 签发的 client ID，也仍使用 HTTP `127.0.0.1`，只能变更端口。使用单独申请的 client 时，在创建或编辑 ChatGPT provider 时配置 **OAuth client ID**、**Callback URL** 和 **Token endpoint authentication**。公共 client 使用 `none`，不填写 secret；机密 client 使用 `client_secret_basic`，并必须填写 **OAuth client secret**。先保存修改，再重启登录。provider 的 `config.client_id` 和 `config.redirect_uri` 优先于部署默认值，留空则继承默认值。secret 使用现有加密字段 `credential.client_secret` 保存，不进入普通配置，也不会通过 API 返回。
-
-部署级公共 client 默认值可以在启动 Service 前配置：
+动态注册和显式选择的公共 client 都使用 `http://127.0.0.1:<port>/auth/callback`。Provider 编辑器中的 **OAuth client ID** 和 **Callback URL** 覆盖部署默认值；留空则继承默认值。先保存配置，再重新登录。
 
 ```sh
-export A13N_SERVER__PUBLIC_URL="https://agent.example.com"
-export A13N_PROVIDERS__CHATGPT_CLIENT_ID="approved-public-client"
-export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="https://agent.example.com/api/v1/model-providers/oauth/callback"
+export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="http://127.0.0.1:1456/auth/callback"
+# 可选：复用已签发的公共 client 注册。
+export A13N_PROVIDERS__CHATGPT_CLIENT_ID="issued-public-client"
 ```
 
-HTTPS 回调必须与 `server.public_url` 同源，并由用户登录会话发起，不能使用 API key。Console 自动完成流程，也仍可手动粘贴。要自定义回调路径，请注册准确的 URI，在 provider 或部署中配置，并将该路径代理到 `GET /api/v1/model-providers/oauth/callback`，保留 query 与 cookie。访问日志应排除回调 query。
+官方集成不支持机密 client、client secret 或 HTTPS 托管回调。使用这些模式的现有部署需清除旧凭据，将配置改为公共 client 回环流程，然后重新授权。旧托管回调路由已移除。已有公共 client token 记录仍可读取；升级后请重新开始待完成登录。
 
-修改 client ID 会发起新登录，不复用其他 client 的账户绑定；配置或 secret 修改会取消待完成及交换中的登录；现有授权仍使用该授权保存的 client 身份认证刷新。**Use another ChatGPT account** 保留配置的 client。没有自定义 client 时，`A13N_PROVIDERS__CHATGPT_REDIRECT_URI` 只能覆盖回环端口，不能变更 scheme、host 或 `/auth/callback` 路径。
+官方 provider 负责到期刷新和 401 刷新。Service 将每组完整替换凭据加密保存，并拒绝断开或替换授权后的过期保存。多个 Worker 之间不再串行化刷新 token 的使用。共享订阅高并发时，应关注刷新失败并在需要时重新授权。本地断开不会立即停止使用缓存 token 的活动 provider。授权码交换使用官方固定端点 HTTP 客户端；Service 的模型传输限制仍用于推理、刷新和发现。
 
-只有网站登录权限的 client 无法使用 ChatGPT 订阅额度。此集成需要可刷新的 token 和模型调用 scope；托管/商业使用需要另获 OpenAI 批准。OAuth 限制请参阅[模型认证](../a13n-harness/model-authentication.md)。
+修改 client ID 时不会复用另一 client 的账户提示。**Use another ChatGPT account** 保留显式配置的 client。只有网站身份权限的授权不能调用模型；登录时请批准使用 ChatGPT 订阅额度。参见[模型认证](../a13n-harness/model-authentication.md)。
 
 ## 添加模型
 

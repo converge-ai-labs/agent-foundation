@@ -22,9 +22,9 @@ from a13n_harness.providers.model.oauth import (
     GrokCredentials,
     GrokCredentialSource,
 )
-from a13n_harness.providers.model.oauth.chatgpt import OpenAIChatGPTCredentialSource
 from a13n_harness.providers.model.routes import build_api_key_model
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
 
 from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class ChatGPTSubscriptionSource:
-    source: OpenAIChatGPTCredentialSource
+    create_source: Callable[[], OpenAIChatGPTCredentialSource]
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,12 +127,12 @@ class HarnessUiModelResolver:
                 code="model_configuration_unsupported",
             )
         if isinstance(authentication, ChatGPTSubscriptionAuthentication):
-            from a13n_harness.models.chatgpt import OpenAIChatGPTResponsesModel
-            from a13n_harness.providers.model.chatgpt import OpenAIChatGPTProvider
+            from pydantic_ai.models.openai import OpenAIResponsesModel
+            from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTProvider
 
             source = self._required_subscription_source("chatgpt_subscription", ChatGPTSubscriptionSource)
-            return OpenAIChatGPTResponsesModel(
-                _model_name(recipe), provider=OpenAIChatGPTProvider(credential_source=source.source)
+            return OpenAIResponsesModel(
+                _model_name(recipe), provider=OpenAIChatGPTProvider(credential_source=source.create_source())
             )
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.models.codex import CodexRequestModel

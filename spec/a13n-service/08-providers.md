@@ -55,7 +55,7 @@ Connections use the registry through `type` too: `mcp` is the built-in Remote MC
 | `setup_url`, `setup_label`                  | where an operator obtains credentials, when the type names a place                                          |
 | `supports_test`                             | whether a resource test makes a non-billable probe ([04](04-resources.md#provider-resources))               |
 
-Model types additionally expose nullable `oauth_scheme`. `openai_chatgpt` declares `openai-chatgpt`, rejects user-supplied access tokens and tenant endpoint overrides, and builds the shared native ChatGPT Responses Model with an explicit Service credential source. Its workspace authorization lifecycle is owned by [Model Provider OAuth](04-resources.md#model-provider-oauth), separate from resource metadata and personal Connections. Calling APIs remain native; ordinary requests collect the required stream through the native Model lifecycle.
+Model types additionally expose nullable `oauth_scheme`. `openai_chatgpt` declares `openai-chatgpt`, rejects user-supplied access tokens and tenant endpoint overrides, and builds the official `OpenAIResponsesModel` with `OpenAIChatGPTProvider` with an explicit Service credential source. Its workspace authorization lifecycle is owned by [Model Provider OAuth](04-resources.md#model-provider-oauth), separate from resource metadata and personal Connections. Calling APIs remain native; ordinary requests collect the required stream through the native Model lifecycle.
 
 Each kind adds its own fields:
 

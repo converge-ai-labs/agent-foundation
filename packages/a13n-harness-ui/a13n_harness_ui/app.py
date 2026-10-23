@@ -2469,7 +2469,7 @@ class HarnessUiApp:
                 from a13n_harness.providers.model.chatgpt import discover_chatgpt_models
 
                 try:
-                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account)
+                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account.source())
                     return tuple(ModelChoice(value=item.slug, label=item.display_name) for item in models)
                 except Exception:
                     raise AppStateError(
@@ -3219,7 +3219,7 @@ async def open_harness_ui_app(
             copilot_account = CopilotAccountStore(store.layout.root / "oauth" / "copilot.json")
             subscription_sources: dict[str, SubscriptionSource] = {
                 "chatgpt_subscription": ChatGPTSubscriptionSource(
-                    source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                    create_source=ChatGPTAccountStore(store.layout.root / "auth.json").source
                 ),
                 "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
             }
@@ -3363,7 +3363,7 @@ async def open_harness_ui_app(
                 errors: dict[Provider, AccountStoreError] = {}
                 sources: dict[str, SubscriptionSource] = {
                     "chatgpt_subscription": ChatGPTSubscriptionSource(
-                        source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                        create_source=ChatGPTAccountStore(store.layout.root / "auth.json").source
                     ),
                     "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
                 }

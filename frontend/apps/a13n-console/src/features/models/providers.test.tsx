@@ -30,10 +30,9 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it.each(["default", "public", "confidential"])(
+it.each(["default", "public"])(
   "saves %s OAuth registration and keeps first-provider authorization open",
   async (registration) => {
-    const confidential = registration === "confidential";
     const provider = {
       id: "mprov_test",
       workspace_id: "ws_test",
@@ -52,25 +51,9 @@ it.each(["default", "public", "confidential"])(
       oauth_scheme: "chatgpt",
       authentication: {
         mode: "forbidden",
-        cases: [
-          {
-            field: "token_endpoint_auth_method",
-            equals: "client_secret_basic",
-            mode: "required",
-          },
-        ],
+        cases: [],
       },
-      credential_schema: {
-        type: "object",
-        required: ["client_secret"],
-        properties: {
-          client_secret: {
-            type: "string",
-            title: "OAuth client secret",
-            minLength: 1,
-          },
-        },
-      },
+      credential_schema: null,
       configuration_schema: {
         type: "object",
         properties: {
@@ -83,12 +66,6 @@ it.each(["default", "public", "confidential"])(
             anyOf: [{ type: "string" }, { type: "null" }],
             title: "Callback URL",
             default: null,
-          },
-          token_endpoint_auth_method: {
-            type: "string",
-            enum: ["none", "client_secret_basic"],
-            title: "Token endpoint authentication",
-            default: "none",
           },
         },
       },
@@ -155,24 +132,10 @@ it.each(["default", "public", "confidential"])(
       );
       await user.type(
         screen.getByLabelText(/Callback URL/i),
-        "https://agent.example.com/registered/callback",
+        "http://127.0.0.1:1456/auth/callback",
       );
     }
     expect(screen.queryByLabelText(/OAuth client secret/i)).toBeNull();
-    if (confidential) {
-      await user.click(
-        screen.getByRole("combobox", {
-          name: /Token endpoint authentication/i,
-        }),
-      );
-      await user.click(
-        await screen.findByRole("option", { name: "Client secret basic" }),
-      );
-      await user.type(
-        screen.getByLabelText(/OAuth client secret/i),
-        "synthetic-secret",
-      );
-    }
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     await screen.findByRole("table", { hidden: true });
     await user.click(
@@ -186,17 +149,14 @@ it.each(["default", "public", "confidential"])(
       redirect_uri:
         registration === "default"
           ? null
-          : "https://agent.example.com/registered/callback",
-      token_endpoint_auth_method: confidential ? "client_secret_basic" : "none",
+          : "http://127.0.0.1:1456/auth/callback",
     });
-    if (confidential)
-      expect(body.credential).toEqual({ client_secret: "synthetic-secret" });
-    else expect(body).not.toHaveProperty("credential");
+    expect(body).not.toHaveProperty("credential");
     expect(screen.getByRole("dialog")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    // Editing keeps the custom registration and write-only secret intact while collapsed.
+    // Editing keeps the public registration intact while collapsed.
     state.PATCH.mockResolvedValue({ data: provider });
     render(
       <QueryClientProvider
@@ -209,7 +169,7 @@ it.each(["default", "public", "confidential"])(
             value: {
               ...provider,
               config: body.config,
-              credential_configured: confidential,
+              credential_configured: false,
             },
             etag: '"provider:1"',
           }}

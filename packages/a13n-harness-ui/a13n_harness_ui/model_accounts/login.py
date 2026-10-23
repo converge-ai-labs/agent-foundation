@@ -16,7 +16,7 @@ from a13n_harness.providers.model.oauth import (
     GrokDeviceAuthorizationFlow,
     GrokOAuthFlow,
 )
-from a13n_harness.providers.model.oauth.chatgpt import OpenAIChatGPTOAuthFlow
+from a13n_harness.providers.model.oauth.chatgpt import ChatGPTAuthorization
 from anyio import CancelScope, Event, create_task_group, create_tcp_listener, fail_after
 from anyio.abc import SocketAttribute, TaskGroup
 from pydantic import Field, SecretStr
@@ -69,7 +69,7 @@ class _Session:
     done: Event
     callback_ready: Event = field(default_factory=Event)
     callback_url: str | None = field(default=None, repr=False)
-    flow: OpenAIChatGPTOAuthFlow | None = field(default=None, repr=False)
+    flow: ChatGPTAuthorization | None = field(default=None, repr=False)
 
 
 async def authorize_codex(request: CodexLoginRequest, method: str, present: Callable[..., None]) -> CodexLoginResult:

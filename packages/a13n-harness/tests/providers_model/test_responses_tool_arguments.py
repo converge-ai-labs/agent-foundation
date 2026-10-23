@@ -8,10 +8,7 @@ from unittest.mock import AsyncMock
 import httpx2
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
-from a13n_harness.models.chatgpt import OpenAIChatGPTResponsesModel
 from a13n_harness.models.codex import CodexRequestModel
-from a13n_harness.providers.model.chatgpt import OpenAIChatGPTProvider
-from a13n_harness.providers.model.oauth.chatgpt import SCOPES, OpenAIChatGPTCredentials
 from a13n_harness.providers.model.oauth.models import GrokCredentials
 from a13n_harness.providers.model.oauth.runtime import build_grok_model
 from pydantic_ai.capabilities import Capability
@@ -19,6 +16,7 @@ from pydantic_ai.messages import ModelRequest, PartStartEvent, ToolCallPart, Use
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentials, OpenAIChatGPTProvider
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 from pydantic_ai.tools import ToolDefinition
 
@@ -37,16 +35,13 @@ def _model(route, client):
     if route == "chatgpt":
         source = AsyncMock()
         source.load.return_value = OpenAIChatGPTCredentials(
-            subject="synthetic-subject",
             client_id="synthetic-client",
-            ext_agent_host_id="synthetic-host",
-            expires_at=datetime.now(UTC) + timedelta(hours=1),
-            scopes=SCOPES,
+            scope="resource.invoke chatgpt.tokens.use.direct",
             access_token="synthetic-access",
             refresh_token="synthetic-refresh",
             id_token="synthetic-id",
         )
-        return OpenAIChatGPTResponsesModel(
+        return OpenAIResponsesModel(
             "gpt-5", provider=OpenAIChatGPTProvider(credential_source=source, http_client=client)
         )
     if route == "grok":

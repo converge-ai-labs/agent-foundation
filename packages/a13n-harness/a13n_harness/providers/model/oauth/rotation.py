@@ -11,7 +11,6 @@ from typing import Protocol
 
 from anyio import CancelScope
 
-from .chatgpt import OpenAIChatGPTCredentials
 from .copilot import CopilotCredentials
 from .models import (
     CredentialPersistenceError,
@@ -21,7 +20,7 @@ from .models import (
     RefreshNotDispatched,
 )
 
-type RotatingCredentials = GrokCredentials | CopilotCredentials | OpenAIChatGPTCredentials
+type RotatingCredentials = GrokCredentials | CopilotCredentials
 
 
 def grant_fingerprint(refresh_token: str | None) -> str:
@@ -30,9 +29,6 @@ def grant_fingerprint(refresh_token: str | None) -> str:
 
 
 def same_account(expected: RotatingCredentials, actual: RotatingCredentials) -> bool:
-    if isinstance(expected, OpenAIChatGPTCredentials) and isinstance(actual, OpenAIChatGPTCredentials):
-        if expected.ext_agent_host_id != actual.ext_agent_host_id:
-            return False
     if isinstance(expected, CopilotCredentials) and isinstance(actual, CopilotCredentials):
         if expected.source_id != actual.source_id:
             return False

@@ -621,7 +621,7 @@
   "Model discovery unavailable. Enter a model ID to continue.": "Model discovery unavailable. Enter a model ID to continue.",
   "Choose a model available to this provider, or enter a model ID.": "Choose a model available to this provider, or enter a model ID.",
   "Use another ChatGPT account": "Use another ChatGPT account",
-  "Local tokens were cleared. OpenAI revocation was not confirmed.": "Local tokens were cleared. OpenAI revocation was not confirmed.",
+  "Local tokens were cleared. Manage remote access in ChatGPT settings.": "Local tokens were cleared. Manage remote access in ChatGPT settings.",
   "Create a workspace-shared provider, then sign in with ChatGPT.": "Create a workspace-shared provider, then sign in with ChatGPT.",
   "Provider default": "Provider default",
   "Default (off)": "Default (off)",

@@ -753,7 +753,7 @@
   "Model discovery unavailable. Enter a model ID to continue.": "暂时无法发现模型。输入模型 ID 以继续。",
   "Choose a model available to this provider, or enter a model ID.": "选择此供应商可用的模型，或输入模型 ID。",
   "Use another ChatGPT account": "使用另一个 ChatGPT 账号",
-  "Local tokens were cleared. OpenAI revocation was not confirmed.": "本地 token 已清除，尚未确认 OpenAI 授权已撤销。",
+  "Local tokens were cleared. Manage remote access in ChatGPT settings.": "本地 token 已清除。请在 ChatGPT 设置中管理远程授权。",
   "Create a workspace-shared provider, then sign in with ChatGPT.": "创建工作区共享的供应商，再使用 ChatGPT 登录。",
   "Provider default": "使用供应商默认值",
   "Default (off)": "默认（关闭）",
