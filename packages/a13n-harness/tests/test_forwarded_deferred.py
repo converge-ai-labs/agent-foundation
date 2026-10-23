@@ -364,7 +364,7 @@ async def test_runtime_deferred_target_retains_function_identity():
 
 
 @pytest.mark.parametrize("proxy", [False, True])
-@pytest.mark.parametrize("stage", ["arguments", "validated", "execution"])
+@pytest.mark.parametrize("stage", ["arguments", "validated", "execution", "wrapper"])
 @pytest.mark.parametrize("remount", ["unchanged", "identity", "category"])
 async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_effect(proxy, stage, remount):
     from a13n_harness import HarnessState
@@ -385,9 +385,17 @@ async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_e
                 defer()
             return args
 
+        async def wrap_tool_execute(self, ctx, *, call, tool_def, args, handler):
+            result = await handler(args)
+            if call.tool_name.endswith("change") and stage == "wrapper":
+                defer()
+            return result
+
     def change(value: int):
         effects.append(value)
-        defer()
+        if stage == "execution":
+            defer()
+        return value
 
     async def handler(ctx, requests):
         approvals.append(requests)
@@ -428,7 +436,7 @@ async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_e
         with pytest.raises(DefinitionError) as error:
             await build(resumed=True).run(previous_state=state, deferred_resume=resume)
         assert error.value.code == "deferred_surface_mismatch"
-    assert effects == ([3] if stage == "execution" else [])
+    assert effects == ([3] if stage in {"execution", "wrapper"} else [])
     assert len(approvals) == 1 and approvals[0].approvals == [item.target_call]
 
 

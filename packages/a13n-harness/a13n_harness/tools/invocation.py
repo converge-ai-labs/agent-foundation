@@ -21,6 +21,7 @@ from pydantic_ai.capabilities import (
     AgentNode,
     CapabilityOrdering,
     ValidatedToolArgs,
+    WrapToolExecuteHandler,
 )
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
@@ -250,9 +251,21 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     ) -> Any:
         # The final native settlement owns model rendering. Nested CodeAct calls
         # retain their structured values until the outer runner returns.
-        result = _render_tool_return(result) if isinstance(result, ToolReturn) else result
-        # Local completion no longer needs deferred-function provenance. Calls
-        # completed by an external result bypass this hook and keep the marker.
+        return _render_tool_return(result) if isinstance(result, ToolReturn) else result
+
+    async def wrap_tool_execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: ValidatedToolArgs,
+        handler: WrapToolExecuteHandler,
+    ) -> Any:
+        result = await handler(args)
+        # Retire provenance only after the complete execution chain returns:
+        # inner wrappers can still defer after after_tool_execute has run.
+        # External completion bypasses execution and retains its marker.
         if (state := ctx.deps._deferred_input) is not None:
             state.metadata.get(call.tool_call_id, {}).pop("a13n.harness.deferred-function-id", None)
         return result
