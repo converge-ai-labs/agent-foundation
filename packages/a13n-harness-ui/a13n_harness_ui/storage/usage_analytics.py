@@ -7,15 +7,31 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from a13n_harness.usage import ModelUsageRecord
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import func, select, text
+from a13n_harness.usage import ModelUsageRecord, UsageRecord
+from anyio.to_thread import run_sync
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from sqlalchemy import select, text
 
 from .database import DatabaseSessions, short_session
-from .models import ThreadConfigurationRecord, ThreadRecord
-from .usage import _BATCH, _contributions, _Totals
+from .models import ThreadConfigurationRecord, ThreadRecord, ThreadUsageRecord
+from .usage import _Totals
+
+
+class _SnapshotRecords(BaseModel):
+    # Writes validate the complete UsageSnapshot, including its serialized size.
+    # Reads need only the typed records, without reserializing the whole snapshot.
+    records: tuple[UsageRecord, ...]
+
+
+class _SnapshotEnvelope(BaseModel):
+    kind: Literal["snapshot"]
+    snapshot: _SnapshotRecords
+    observed_through: datetime
+
+
+_ENVELOPE = TypeAdapter(Annotated[_SnapshotEnvelope | UsageRecord, Field(discriminator="kind")])
 
 
 class UsageQuery(BaseModel):
@@ -166,15 +182,34 @@ class UsageAnalyticsRepository:
                     label = "Live"
                 threads[thread_id] = UsageThreadOption(key=thread_id, label=label, project_id=project_id)
 
-            facts = _contributions(roots)
             rows = await session.stream(
-                select(facts.c.root_thread_id, facts.c.payload, facts.c.observed_at, facts.c.observed_through).where(
-                    func.json_extract(facts.c.payload, "$.kind") == "model"
-                )
+                select(ThreadUsageRecord.root_thread_id, ThreadUsageRecord.payload_json, ThreadUsageRecord.observed_at)
+                .where(ThreadUsageRecord.root_thread_id.in_(roots))
+                .order_by(ThreadUsageRecord.root_thread_id, ThreadUsageRecord.sequence)
             )
-            async for batch in rows.partitions(_BATCH):
-                for root_id, payload, observed, observed_through in batch:
-                    record = ModelUsageRecord.model_validate_json(payload)
+            previous_root: str | None = None
+            seen: set[str] = set()
+            # Stream one scope at a time: a single payload can contain many records.
+            # This avoids SQLite's per-record JSON expansion and window-sort spool.
+            async for root_id, payload, observed in rows.yield_per(1):
+                if previous_root != root_id:
+                    seen.clear()
+                    previous_root = root_id
+                envelope = await run_sync(_ENVELOPE.validate_json, payload)
+                if isinstance(envelope, _SnapshotEnvelope):
+                    records = envelope.snapshot.records
+                    observed_through = envelope.observed_through.astimezone(UTC)
+                else:
+                    records = (envelope,)
+                    observed_through = observed.replace(tzinfo=UTC)
+                for record in records:
+                    # Match the ledger's first (sequence, ordinal) winner per root,
+                    # including provider receipts, before applying any filters.
+                    if record.record_id in seen:
+                        continue
+                    seen.add(record.record_id)
+                    if not isinstance(record, ModelUsageRecord):
+                        continue
                     day = record.response_timestamp.astimezone(UTC).date()
                     # Date and actual-model selection happen after contribution deduplication.
                     if not query.start <= day < query.end:

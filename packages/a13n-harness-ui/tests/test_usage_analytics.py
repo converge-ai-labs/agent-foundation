@@ -1,11 +1,11 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 from a13n_harness.usage import BoundedRequestUsage, UsageSnapshot
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage.database import open_database, transaction
-from a13n_harness_ui.storage.models import ThreadConfigurationRecord
+from a13n_harness_ui.storage.models import ThreadConfigurationRecord, ThreadUsageRecord
 from a13n_harness_ui.storage.usage import ThreadUsageRepository
 from a13n_harness_ui.storage.usage_analytics import UsageAnalyticsRepository, UsageQuery, model_key
 from pydantic import ValidationError
@@ -122,6 +122,57 @@ async def test_latest_snapshot_response_date_and_actual_model_filters(tmp_path):
         boundary = await reader.snapshot(UsageQuery(start=date(2026, 9, 7), end=date(2026, 9, 8)), project_names={})
         assert boundary.summary.model_requests == 1
         assert boundary.summary.model_cost_usd is None
+
+
+@pytest.mark.parametrize("snapshot_first", [False, True])
+async def test_scope_and_legacy_duplicates_are_selected_before_filters(tmp_path, snapshot_first):
+    async with open_database(tmp_path / "db.sqlite", StorageSettings(data_root=tmp_path)) as db:
+        async with transaction(db.sessions) as session:
+            session.add(_thread("root"))
+        writer = ThreadUsageRepository(db.sessions)
+        winner = _model(0, cost=Decimal("0.000000000123"))
+        later = winner.model_copy(
+            update={"model_name": "later", "response_timestamp": datetime(2026, 9, 8, tzinfo=UTC)}
+        )
+        snapshot = UsageSnapshot(
+            usage_id="scope",
+            thread_id="root",
+            run_id=winner.run_id,
+            agent_instance_id=winner.agent_instance_id,
+            sequence=1,
+            records=(winner if snapshot_first else later, _model(1)),
+        )
+        if snapshot_first:
+            await writer.save(thread_id="root", snapshot=snapshot)
+            # Seed a retained legacy row directly; current append rejects conflicting facts.
+            async with transaction(db.sessions) as session:
+                session.add(
+                    ThreadUsageRecord(
+                        root_thread_id="root",
+                        origin_thread_id="root",
+                        record_id=later.record_id,
+                        run_id=later.run_id,
+                        descendant=False,
+                        payload_json=later.model_dump_json(),
+                        observed_at=datetime.now(UTC),
+                    )
+                )
+        else:
+            await writer.append(thread_id="root", records=(winner,))
+            await writer.save(thread_id="root", snapshot=snapshot)
+        # A second scope repeats both IDs; neither should be counted again.
+        await writer.save(thread_id="root", snapshot=snapshot.model_copy(update={"usage_id": "second"}))
+        reader = UsageAnalyticsRepository(db.sessions)
+        view = await reader.snapshot(_query(), project_names={})
+        ledger = await writer.snapshot(thread_id="root")
+        assert view.summary.model_requests == ledger.combined.model_requests == 2
+        assert Decimal(view.summary.model_cost_usd) == Decimal("0.000000000123")
+        assert view.summary.unknown_model_costs == 1
+        assert len(view.models) == 1
+        filtered = await reader.snapshot(_query(model=model_key(later)), project_names={})
+        assert filtered.summary.model_requests == 0
+        next_day = await reader.snapshot(UsageQuery(start=date(2026, 9, 8), end=date(2026, 9, 9)), project_names={})
+        assert next_day.summary.model_requests == 0
 
 
 async def test_metadata_and_usage_share_one_read_snapshot(tmp_path, monkeypatch):

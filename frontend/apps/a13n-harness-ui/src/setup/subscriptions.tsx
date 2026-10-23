@@ -1,5 +1,10 @@
-import { useState, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   BrandIcon,
   Button,
@@ -28,7 +33,11 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
-import { GrokAllowance } from "./provider-usage";
+import {
+  ChatGPTAllowance,
+  CopilotAllowance,
+  GrokAllowance,
+} from "./provider-usage";
 import {
   availableVouchers,
   compactAllowance,
@@ -220,14 +229,64 @@ function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
 
 export function SubscriptionAccounts({
   renderLogin,
+  connections,
+  renderConnection,
 }: {
   renderLogin: (account: Account) => ReactNode;
+  connections: Schema<"AccountConnection">[];
+  renderConnection: (connection: Schema<"AccountConnection">) => ReactNode;
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
   const catalog = useSubscriptions();
+  const activeLogin = useQuery({
+    queryKey: ["active-login"],
+    queryFn: ({ signal }) => result(client.GET("/api/auth/logins", { signal })),
+    refetchInterval: (query) => (query.state.data?.session_id ? 2000 : false),
+  });
+  const previousLogin = useRef<string | null>(null);
+  useEffect(() => {
+    const session = activeLogin.data?.session_id ?? null;
+    if (previousLogin.current && previousLogin.current !== session) {
+      // Login can complete while its dialog is closed. Refresh the list even
+      // when the provider-specific completion observer is no longer mounted.
+      for (const key of [
+        "account",
+        "account-sources",
+        "subscriptions",
+        "setup",
+      ])
+        void queries.invalidateQueries({ queryKey: [key] });
+    }
+    previousLogin.current = session;
+  }, [activeLogin.data?.session_id, queries]);
   const [creating, setCreating] = useState(false);
-  const [provider, setProvider] = useState<"codex" | "grok">("codex");
+  const [provider, setProvider] =
+    useState<Schema<"AccountConnection">["provider"]>("codex");
+  const [connectionLogin, setConnectionLogin] =
+    useState<Schema<"AccountConnection"> | null>(null);
+  const singleConnections = connections.filter(
+    (item) => item.provider !== "codex" && item.provider !== "grok",
+  );
+  const singleAccounts = useQueries({
+    queries: singleConnections.map((connection) => ({
+      queryKey: ["account", connection.provider],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        result(
+          client.GET("/api/auth/accounts/{provider}", {
+            params: { path: { provider: connection.provider } },
+            signal,
+          }),
+        ),
+    })),
+  });
+  const connected = singleConnections.flatMap((connection, index) => {
+    const status = singleAccounts[index].data;
+    return status?.availability === "available" || status?.account_id
+      ? [{ connection, status }]
+      : [];
+  });
+  const namedProvider = provider === "codex" || provider === "grok";
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<Account | null>(null);
   const [login, setLogin] = useState<Account | null>(null);
@@ -238,7 +297,7 @@ export function SubscriptionAccounts({
   const invalidate = () =>
     queries.invalidateQueries({ queryKey: ["subscriptions"] });
   const create = useMutation({
-    mutationFn: () =>
+    mutationFn: (provider: "codex" | "grok") =>
       result(
         client.POST("/api/subscriptions/accounts", {
           body: { provider, name: name.trim() },
@@ -295,6 +354,12 @@ export function SubscriptionAccounts({
     },
   });
   const accounts = catalog.data?.accounts ?? [];
+  const pendingAccount = accounts.find(
+    ({ account }) => account.id === activeLogin.data?.account_id,
+  )?.account;
+  const pendingConnection = singleConnections.find(
+    (item) => item.provider === activeLogin.data?.provider,
+  );
   return (
     <section className={styles.section} aria-label="Subscription accounts">
       <header className={styles.heading}>
@@ -305,6 +370,7 @@ export function SubscriptionAccounts({
         <Button
           onClick={() => {
             setName("");
+            setProvider(connections[0]?.provider ?? "codex");
             create.reset();
             setCreating(true);
           }}
@@ -312,7 +378,33 @@ export function SubscriptionAccounts({
           Add account
         </Button>
       </header>
-      <ErrorNotice error={catalog.error || update.error || refresh.error} />
+      <ErrorNotice
+        error={
+          catalog.error ||
+          update.error ||
+          refresh.error ||
+          singleAccounts.find((item) => item.error)?.error
+        }
+      />
+      {activeLogin.data?.session_id &&
+        (pendingAccount || pendingConnection) && (
+          <div className={styles.row} role="status">
+            <span>
+              Sign-in in progress ·{" "}
+              {pendingAccount?.name ?? pendingConnection?.label}
+            </span>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (pendingAccount) setLogin(pendingAccount);
+                else if (pendingConnection)
+                  setConnectionLogin(pendingConnection);
+              }}
+            >
+              Continue sign-in
+            </Button>
+          </div>
+        )}
       <Input
         aria-label="Filter subscription accounts"
         placeholder="Find an account…"
@@ -439,9 +531,62 @@ export function SubscriptionAccounts({
               </article>
             );
           })}
-        {!catalog.isPending && !accounts.length && (
-          <p>Add an account, sign in, then include it in a group.</p>
-        )}
+        {connected
+          .filter(({ connection, status }) =>
+            `${connection.label} ${status.account_id ?? ""}`
+              .toLowerCase()
+              .includes(filter.toLowerCase()),
+          )
+          .map(({ connection, status }) => (
+            <article key={connection.provider} className={styles.accountCard}>
+              <header className={styles.accountHeader}>
+                <div className={styles.accountIdentity}>
+                  <BrandIcon
+                    identity={
+                      connection.provider === "copilot" ? "github" : "openai"
+                    }
+                    size={24}
+                  />
+                  <div className={styles.identity}>
+                    <strong>{connection.label}</strong>
+                    <span className={styles.accountMeta}>
+                      {status.account_id ?? "Server account"}
+                      <span
+                        className={styles.status}
+                        data-connected={status.usable}
+                      >
+                        {status.usable
+                          ? "Connected"
+                          : status.required_action === "refresh"
+                            ? "Refreshes on first use"
+                            : "Sign-in required"}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => setConnectionLogin(connection)}
+                >
+                  Manage account
+                </Button>
+              </header>
+              {connection.provider === "copilot" ? (
+                <CopilotAllowance
+                  identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
+                  ready={status.usable || status.required_action === "refresh"}
+                />
+              ) : (
+                <ChatGPTAllowance />
+              )}
+            </article>
+          ))}
+        {!catalog.isPending &&
+          !accounts.length &&
+          !connected.length &&
+          !singleAccounts.some((item) => item.isPending) && (
+            <p>No accounts connected. Add an account to get started.</p>
+          )}
       </div>
       {!!catalog.data?.adoption && (
         <details className={styles.migration}>
@@ -519,19 +664,33 @@ export function SubscriptionAccounts({
             setEditing(null);
           }
         }}
-        title={editing ? "Rename account" : "Add subscription account"}
+        title={editing ? "Rename account" : "Add account"}
         closeLabel="Cancel"
         footer={
           <Button
             loading={create.isPending || update.isPending}
-            disabled={!name.trim()}
-            onClick={() =>
+            disabled={
               editing
-                ? update.mutate({ id: editing.id, name: name.trim() })
-                : create.mutate()
+                ? !name.trim()
+                : !connections.some((item) => item.provider === provider) ||
+                  (namedProvider && !name.trim())
             }
+            onClick={() => {
+              if (editing) update.mutate({ id: editing.id, name: name.trim() });
+              else if (provider === "codex" || provider === "grok")
+                create.mutate(provider);
+              else {
+                const connection = connections.find(
+                  (item) => item.provider === provider,
+                );
+                if (connection) {
+                  setCreating(false);
+                  setConnectionLogin(connection);
+                }
+              }
+            }}
           >
-            {editing ? "Save name" : "Create & sign in"}
+            {editing ? "Save name" : "Continue"}
           </Button>
         }
       >
@@ -541,15 +700,34 @@ export function SubscriptionAccounts({
             <ChoiceField
               label="Provider"
               value={provider}
-              onValueChange={(value) => setProvider(value as "codex" | "grok")}
-              options={[
-                { value: "codex", label: "Codex" },
-                { value: "grok", label: "Grok" },
-              ]}
+              onValueChange={(value) =>
+                setProvider(value as Schema<"AccountConnection">["provider"])
+              }
+              options={connections.map((item) => ({
+                value: item.provider,
+                label: item.label,
+              }))}
             />
           )}
-          <TextField label="Account name" value={name} onChange={setName} />
+          {editing || namedProvider ? (
+            <TextField label="Account name" value={name} onChange={setName} />
+          ) : (
+            <p>
+              This provider uses one server-wide account. Continue to connect or
+              manage it.
+            </p>
+          )}
         </div>
+      </ModalFrame>
+      <ModalFrame
+        open={!!connectionLogin}
+        onOpenChange={(open) => {
+          if (!open) setConnectionLogin(null);
+        }}
+        title={connectionLogin?.label ?? "Sign in"}
+        closeLabel="Done"
+      >
+        {connectionLogin && renderConnection(connectionLogin)}
       </ModalFrame>
       <ModalFrame
         open={!!login}

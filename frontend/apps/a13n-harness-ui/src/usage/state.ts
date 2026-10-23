@@ -58,13 +58,25 @@ export function rangeError(filters: UsageFilters): string | undefined {
   if (filters.project_id && filters.projectless)
     return "Choose either a project or No project.";
 }
-export function estimatedCost(totals: Schema<"ConsumptionTotals">): string {
+const compact = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 2,
+});
+export function compactNumber(value: number): string {
+  return compact.format(value);
+}
+export function estimatedCost(
+  totals: Schema<"ConsumptionTotals">,
+  abbreviated = true,
+): string {
   if (totals.model_cost_usd === null) return "—";
   const cost = Number(totals.model_cost_usd);
   const value =
     cost > 0 && cost < 0.0001
       ? "<$0.0001"
-      : `$${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: cost < 1 ? 4 : 2 })}`;
+      : abbreviated && cost >= 1000
+        ? `$${compactNumber(cost)}`
+        : `$${cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: cost < 1 ? 4 : 2 })}`;
   return `${value}${totals.unknown_model_costs ? "+" : ""}`;
 }
 export function usageLink(scope: {

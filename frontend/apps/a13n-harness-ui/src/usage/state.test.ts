@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import {
+  compactNumber,
   estimatedCost,
   presetRange,
   rangeError,
@@ -8,6 +9,17 @@ import {
   usageLink,
 } from "./state";
 
+it.each([
+  [0, "0"],
+  [999, "999"],
+  [1000, "1K"],
+  [123357, "123.36K"],
+  [999999, "1M"],
+  [37385116, "37.39M"],
+  [11931980116, "11.93B"],
+])("formats %s as %s", (value, expected) => {
+  expect(compactNumber(value as number)).toBe(expected);
+});
 it("restores UTC presets and custom scopes from URLs", () => {
   const now = new Date("2026-09-08T00:30:00+09:00");
   expect(presetRange(7, now)).toEqual({
@@ -61,6 +73,13 @@ it("keeps missing, partial, tiny and recorded zero costs distinct", () => {
     model_cost_usd: "0",
   };
   expect(estimatedCost(totals)).toBe("$0.00");
+  const large = {
+    ...totals,
+    model_cost_usd: "17047.94",
+    unknown_model_costs: 1,
+  };
+  expect(estimatedCost(large)).toBe("$17.05K+");
+  expect(estimatedCost(large, false)).toBe("$17,047.94+");
   expect(
     estimatedCost({ ...totals, model_cost_usd: null, unknown_model_costs: 1 }),
   ).toBe("—");

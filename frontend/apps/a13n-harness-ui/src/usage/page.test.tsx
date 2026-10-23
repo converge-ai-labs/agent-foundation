@@ -154,3 +154,39 @@ it("shows invalid custom dates without sending a query", async () => {
   expect(screen.getByRole("alert").textContent).toContain("366");
   expect(fetcher).not.toHaveBeenCalled();
 });
+
+it("abbreviates large totals while keeping exact counts and costs accessible", async () => {
+  const large = {
+    ...totals,
+    total_tokens: 11931980116,
+    input_tokens: 11894595000,
+    output_tokens: 37385116,
+    model_requests: 123357,
+    model_cost_usd: "17047.94",
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      json({
+        ...payload,
+        summary: large,
+        groups: [{ ...payload.groups[0], totals: large }],
+        daily: [{ day: "2026-09-07", totals: large }],
+      }),
+    ),
+  );
+  mount();
+  await screen.findByRole("button", { name: "Example project" });
+  expect(screen.getByText("11.93B").getAttribute("title")).toBe(
+    "11,931,980,116",
+  );
+  expect(screen.getAllByText("123.36K")[0].getAttribute("aria-label")).toBe(
+    "123,357",
+  );
+  expect(screen.getAllByText("$17.05K+")[0].getAttribute("title")).toBe(
+    "$17047.94+",
+  );
+  expect(
+    screen.getByRole("button", { name: "2026-09-07 · 11,931,980,116 tokens" }),
+  ).toBeTruthy();
+});

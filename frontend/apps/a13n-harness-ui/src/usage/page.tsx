@@ -7,6 +7,7 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, TextField } from "../shell/ui";
 import {
+  compactNumber,
   estimatedCost,
   pageSize,
   rangeError,
@@ -16,6 +17,24 @@ import {
 import styles from "./usage.module.css";
 
 const number = (value: number) => value.toLocaleString();
+function Count({ value }: { value: number }) {
+  return (
+    <span title={number(value)} aria-label={number(value)}>
+      {compactNumber(value)}
+    </span>
+  );
+}
+function Cost({ totals }: { totals: Schema<"ConsumptionTotals"> }) {
+  const exact =
+    totals.model_cost_usd === null
+      ? "Unknown"
+      : `$${totals.model_cost_usd}${totals.unknown_model_costs ? "+" : ""}`;
+  return (
+    <span title={exact} aria-label={exact}>
+      {estimatedCost(totals)}
+    </span>
+  );
+}
 const options = (items: Schema<"UsageOption">[] = []) =>
   items.map((item) => ({
     value: item.key,
@@ -214,7 +233,9 @@ export function UsagePage() {
           <dl className={styles.summary}>
             <div>
               <dt>Model estimated cost</dt>
-              <dd>{estimatedCost(data.summary)}</dd>
+              <dd>
+                <Cost totals={data.summary} />
+              </dd>
               <small>
                 USD ·{" "}
                 {data.summary.unknown_model_costs
@@ -224,21 +245,29 @@ export function UsagePage() {
             </div>
             <div>
               <dt>Total tokens</dt>
-              <dd>{number(data.summary.total_tokens)}</dd>
+              <dd>
+                <Count value={data.summary.total_tokens} />
+              </dd>
               <small>Input + output</small>
             </div>
             <div>
               <dt>Input tokens</dt>
-              <dd>{number(data.summary.input_tokens)}</dd>
+              <dd>
+                <Count value={data.summary.input_tokens} />
+              </dd>
               <small>Includes cache reads / writes</small>
             </div>
             <div>
               <dt>Output tokens</dt>
-              <dd>{number(data.summary.output_tokens)}</dd>
+              <dd>
+                <Count value={data.summary.output_tokens} />
+              </dd>
             </div>
             <div>
               <dt>Model requests</dt>
-              <dd>{number(data.summary.model_requests)}</dd>
+              <dd>
+                <Count value={data.summary.model_requests} />
+              </dd>
               <small>Recorded contributions</small>
             </div>
           </dl>
@@ -316,15 +345,27 @@ export function UsagePage() {
                           )}
                         </div>
                       </th>
-                      <td>{number(group.totals.model_requests)}</td>
-                      <td>{number(group.totals.input_tokens)}</td>
-                      <td>{number(group.totals.output_tokens)}</td>
-                      <td>{number(group.totals.cache_read_tokens)}</td>
-                      <td>{number(group.totals.cache_write_tokens)}</td>
-                      <td title={group.totals.model_cost_usd ?? "Unknown"}>
-                        {estimatedCost(group.totals)}
+                      <td>
+                        <Count value={group.totals.model_requests} />
                       </td>
-                      <td>{number(group.totals.unknown_model_costs)}</td>
+                      <td>
+                        <Count value={group.totals.input_tokens} />
+                      </td>
+                      <td>
+                        <Count value={group.totals.output_tokens} />
+                      </td>
+                      <td>
+                        <Count value={group.totals.cache_read_tokens} />
+                      </td>
+                      <td>
+                        <Count value={group.totals.cache_write_tokens} />
+                      </td>
+                      <td>
+                        <Cost totals={group.totals} />
+                      </td>
+                      <td>
+                        <Count value={group.totals.unknown_model_costs} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -399,12 +440,12 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
       ? day.totals.total_tokens
       : Number(day.totals.model_cost_usd ?? 0);
   const maximum = Math.max(...days.map(value), 0);
-  const description = (day: Schema<"UsageDay">) =>
+  const description = (day: Schema<"UsageDay">, exact = false) =>
     !day.totals.model_requests
       ? "No records"
       : metric === "tokens"
-        ? `${number(day.totals.total_tokens)} tokens`
-        : `${estimatedCost(day.totals)}${day.totals.unknown_model_costs ? ` · ${number(day.totals.unknown_model_costs)} unknown-cost requests` : ""}`;
+        ? `${exact ? number(day.totals.total_tokens) : compactNumber(day.totals.total_tokens)} tokens`
+        : `${estimatedCost(day.totals, !exact)}${day.totals.unknown_model_costs ? ` · ${number(day.totals.unknown_model_costs)} unknown-cost requests` : ""}`;
   const current = days[selected];
   return (
     <section className={styles.trend} aria-label="Daily usage">
@@ -419,14 +460,17 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
             { value: "cost", label: "Cost" },
           ]}
         />
-        <span className={styles.chartReadout}>
+        <span
+          className={styles.chartReadout}
+          title={current ? description(current, true) : undefined}
+        >
           {current ? `${current.day} · ${description(current)}` : "No records"}
         </span>
       </div>
       <div className={styles.chartScale}>
         {metric === "tokens"
-          ? `${number(maximum)} tokens`
-          : `$${maximum.toLocaleString(undefined, { maximumFractionDigits: 4 })} known`}
+          ? `${compactNumber(maximum)} tokens`
+          : `$${maximum >= 1000 ? compactNumber(maximum) : maximum.toLocaleString(undefined, { maximumFractionDigits: 4 })} known`}
       </div>
       <div className={styles.chartScroll}>
         <div className={styles.bars} style={{ minWidth: days.length * 6 }}>
@@ -434,8 +478,8 @@ function DailyChart({ days }: { days: Schema<"UsageDay">[] }) {
             <button
               key={day.day}
               className={styles.barTarget}
-              title={`${day.day} · ${description(day)}`}
-              aria-label={`${day.day} · ${description(day)}`}
+              title={`${day.day} · ${description(day, true)}`}
+              aria-label={`${day.day} · ${description(day, true)}`}
               onMouseEnter={() => setSelected(index)}
               onFocus={() => setSelected(index)}
               onClick={() => setSelected(index)}

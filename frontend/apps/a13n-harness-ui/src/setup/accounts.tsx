@@ -702,7 +702,20 @@ export function AccountsPage() {
   return (
     <>
       <PageHeader title="Accounts & API keys" />
+      <ErrorNotice error={choices.error} />
       <SubscriptionAccounts
+        connections={
+          choices.data?.connections?.flatMap((item) =>
+            item.account ? [item.account] : [],
+          ) ?? []
+        }
+        renderConnection={(connection) => (
+          <ProviderAccount
+            key={connection.provider}
+            connection={connection}
+            inline
+          />
+        )}
         renderLogin={(account) => {
           const connection = choices.data?.connections?.find(
             (item) => item.account?.provider === account.provider,
@@ -717,19 +730,6 @@ export function AccountsPage() {
           ) : null;
         }}
       />
-      <div className={styles.twoColumns}>
-        <ErrorNotice error={choices.error} />
-        {choices.data?.connections?.map(
-          (connection) =>
-            connection.account &&
-            !["codex", "grok"].includes(connection.account.provider) && (
-              <ProviderAccount
-                key={connection.id}
-                connection={connection.account}
-              />
-            ),
-        )}
-      </div>
       <CredentialKeys />
     </>
   );

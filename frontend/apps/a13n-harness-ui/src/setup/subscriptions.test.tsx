@@ -102,6 +102,12 @@ function mount() {
     >
       <TransportContext value={createTransport("", () => {})}>
         <SubscriptionAccounts
+          connections={[
+            { provider: "codex", label: "Codex", login_methods: ["device"] },
+          ]}
+          renderConnection={(connection) => (
+            <p>Connect: {connection.provider}</p>
+          )}
           renderLogin={(item) => <p>Login target: {item.id}</p>}
         />
       </TransportContext>
@@ -126,7 +132,7 @@ it("refreshes the selected account and opens login for the newly created native 
   fireEvent.change(screen.getByLabelText("Account name"), {
     target: { value: "Work" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Create & sign in" }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Login target: acct-work");
   expect(writes[1]?.body).toEqual({ provider: "codex", name: "Work" });
 });
