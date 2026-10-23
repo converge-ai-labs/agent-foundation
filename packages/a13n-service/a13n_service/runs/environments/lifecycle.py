@@ -405,6 +405,12 @@ async def claim_locked(
     unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
     if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:
         handle = Handle.model_validate(environment.handle)
+        if (
+            environment.provider_identity
+            and environment.provider_identity.get("type") == "sprites"
+            and handle.recipe.get("desktop")
+        ):
+            return None
         if handle.recipe.get("template") == "auto" and handle.e2b_desktop_template:
             from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
 
@@ -596,6 +602,13 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
             dispatched = True
             return Outcome(await _call(provider, operation))
     except Exception as error:
+        if (
+            operation.phase == "creating"
+            and isinstance(error, EnvironmentProviderError)
+            and error.context.provider_key == "sprites"
+            and error.code == "sprites_desktop_pending"
+        ):
+            return Outcome(observed_environment_state(error, operation.target.state), pending=True)
         logger.warning(
             "Environment operation failed",
             extra={
@@ -644,6 +657,10 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.operation_deadline = None
         handle = Handle.model_validate(environment.handle)
         if outcome.pending:
+            if outcome.state is not None:
+                environment.handle = handle.model_copy(
+                    update={"state": outcome.state, "credential_version": operation.credential_version}
+                ).model_dump(mode="json")
             environment.failure = None
             return
         if outcome.fault is not None:

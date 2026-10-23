@@ -120,6 +120,8 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
             if provider_key == "modal"
             else {"team_id": "test-team", "project_id": "test-project"}
             if provider_key == "vercel"
+            else {"organization": "test-org"}
+            if provider_key == "sprites"
             else {},
         },
     )
@@ -132,7 +134,9 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
     if provider_key == "vercel":
         recipe.pop("template")
         recipe["snapshot"] = "snap_test"
-    if provider_key in {"e2b", "vercel"}:
+    if provider_key == "sprites":
+        recipe.pop("template")
+    if provider_key in {"e2b", "vercel", "sprites"}:
         recipe["execution"] = "envd_http"
     response = await service.client.post(
         f"{service.api}/environment-templates",
@@ -156,7 +160,7 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
                 state_version="1",
                 state={
                     "backing_id"
-                    if provider_key == "vercel"
+                    if provider_key in {"vercel", "sprites"}
                     else "target_id"
                     if provider_key in {"daytona", "modal"}
                     else "sandbox_id": "test-" + uuid4().hex,
@@ -276,7 +280,7 @@ async def test_expired_access_claim_cannot_publish_late_credentials(service, scr
     assert all(grant.state == "revoked" for grant in endpoint.grants.values())
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel", "sprites"])
 async def test_human_grants_revoke_before_exact_resume(service, scripted_model, runs_kit, monkeypatch, provider_key):
     run, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     resume = {"approvals": {}, "calls": {"help": {"status": "returned", "value": {"outcome": "completed"}}}}
@@ -330,7 +334,7 @@ async def test_expired_controller_is_revoked_without_answering_wait(service, scr
     assert all(grant.state == "revoked" for grant in endpoint.grants.values())
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel", "sprites"])
 async def test_lost_revoke_blocks_resume_and_reconciles(service, scripted_model, runs_kit, monkeypatch, provider_key):
     _, view, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, provider_key=provider_key)
     claimed = await post(service, view, "control", control(view))
@@ -442,7 +446,7 @@ async def test_successor_requires_observation_and_next_model_boundary(service, s
         assert target.inflight == 3
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel", "sprites"])
 async def test_alias_admission_and_lifecycle_share_native_reservation(
     service, scripted_model, runs_kit, monkeypatch, provider_key
 ):

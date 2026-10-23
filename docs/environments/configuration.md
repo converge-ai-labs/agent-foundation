@@ -97,6 +97,8 @@ The first automatic E2B desktop creation usually takes 1–2 minutes and can tak
 
 `SpritesEnvironmentConfiguration` selects region and defaults to `/home/sprite`. `SpritesConnectionConfiguration` identifies the organization; `TokenCredential` holds the Sprites token. Do not schedule an explicit stop: the Sprites Provider does not support `stop()`, and Sprites sleep automatically.
 
+Service `desktop=true` automatically selects `execution="envd_http"` and installs the desktop on each new Sprite. Execution attaches through a private TCP tunnel to Envd at `/workspace`; Service enables human control by default. See [automatic Sprites desktops](../a13n-service/environments.md#automatic-sprites-desktops).
+
 ### Runloop
 
 `RunloopEnvironmentConfiguration` selects blueprint, resource size, and idle suspension interval, with root `/home/user`. `RunloopConnectionConfiguration` identifies the organization; `TokenCredential` supplies the API key.

@@ -71,12 +71,12 @@ Execution uses a Native basic path or the general Envd path; resource management
 | Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
 | Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
 | Native / Envd  | `vercel`         | Native Files & Shell / explicit HTTP EIP                      | Vercel provider                 |
-| Native         | `sprites`        | Vendor Files & Shell; EIP not integrated                      | Sprites provider                |
+| Native or EIP  | `sprites`        | Native Files & Shell or private-tunnel EIP                    | Sprites provider                |
 | Native         | `runloop`        | Vendor Files & Shell; EIP not integrated                      | Runloop provider                |
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-Daytona and Modal use Envd/EIP. Docker, E2B and Vercel offer explicit Native and Envd paths. Sprites and Runloop currently provide vendor-native Files & Shell only; their Envd, Computer and human desktop access integrations are not implemented. Local execution remains separate.
+Daytona and Modal use Envd/EIP. Docker, E2B, Vercel and Sprites offer explicit Native and Envd paths. Sprites installs the desktop on each new sandbox through Service. Runloop currently provides vendor-native Files & Shell only; its Envd, Computer and human desktop access integrations are not implemented. Local execution remains separate.
 
 Before deploying Envd, check the [sandbox validation record](../a13n-envd/egress.md#cloud-platform-validation-record) for launch identities, egress coverage, and platform limits. Available execution capabilities follow daemon negotiation and Host policy.
 
@@ -131,7 +131,7 @@ With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the 
 
 ## Cloud Providers
 
-E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. Daytona and Modal use Envd. E2B and Vercel retain Native Files & Shell and offer an explicit Envd path for advanced capabilities. Sprites and Runloop currently expose Native Files & Shell only. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
+E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. Daytona and Modal use Envd. E2B, Vercel and Sprites retain Native Files & Shell and offer an explicit Envd path for advanced capabilities. Runloop currently exposes Native Files & Shell only. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
 
 | Provider       | Backend settings                                                                                 | Credential fields               | Common recipe settings                                                                                                        |
 | -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -144,7 +144,7 @@ E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a r
 
 Organization and team settings describe backend namespaces, not permission grants. Modal credentials select the workspace; its optional `workspace` field is a descriptive label. Credentials are never part of a recipe or reconnect state.
 
-Daytona, Modal and explicitly configured Vercel Envd management providers prepare the target, compatible Envd runtime, and authorized connection. Sprites and Runloop do not yet prepare Envd. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
+Daytona, Modal and explicitly configured Vercel and Sprites Envd management providers prepare the target, compatible Envd runtime, and authorized connection. Runloop does not yet prepare Envd. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
 
 ### Reconnection and lifecycle
 
@@ -327,11 +327,13 @@ The builder creates a temporary billable sandbox, installs desktop prerequisites
 
 Envd uses `/workspace` as UID/GID 1001; native execution retains `/vercel/sandbox`. Create and explicit resume start the preinstalled components and verify EIP and Computer readiness. Attachment and access never install, repair or resume a desktop. Port 8888 carries authenticated EIP; port 6081 carries the revocable desktop viewer. Browser clients receive short-lived supervisor credentials, never the Vercel access token or Envd guest token. Service validates ownership, native identity, current session and endpoint policy. Stop preserves files but recreates desktop processes on resume; old observations and grants become invalid.
 
-Sprites and Runloop remain command-backed Files & Shell providers. A historical standalone Envd runtime probe does not establish current Provider or Console integration.
+Runloop remains a command-backed Files & Shell provider. A historical standalone Envd runtime probe does not establish current Provider or Console integration.
 
 ### Fly.io Sprites
 
 Default root: `/home/sprite`; Python: guest-PATH `python3`. [Sprites' environment guide](https://docs.sprites.dev/working-with-sprites/) documents the writable home and preinstalled tools. Native automatic sleep preserves disk; explicit stop is unsupported. Destruction waits for confirmed absence.
+
+For Computer Use and human control, Service can [install the desktop automatically on each new Sprite](../a13n-service/environments.md#automatic-sprites-desktops). Harness then attaches to the prepared target with `execution="envd_http"`; native execution remains unchanged.
 
 ### Runloop
 

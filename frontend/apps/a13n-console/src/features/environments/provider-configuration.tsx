@@ -7,6 +7,7 @@ import {
 } from "a13n-ui";
 import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { SPRITES_DESKTOP_NOTICE } from "./creation-progress";
 import styles from "./environments.module.css";
 import { EnvironmentVariables } from "./environment-variables";
 import {
@@ -44,7 +45,8 @@ export function ProviderConfiguration({
   error?: string;
   /** Provider-specific guidance, read as the group's description. */
   note?: string;
-  variant?: "default" | "docker" | "e2b" | "daytona" | "modal" | "vercel";
+  variant?:
+    "default" | "docker" | "e2b" | "daytona" | "modal" | "vercel" | "sprites";
   /** Template settings that close the group, such as its lifecycle. */
   children?: ReactNode;
 }) {
@@ -137,6 +139,8 @@ export function ProviderConfiguration({
       ["execution", "snapshot", "desktop"].includes(key)
     )
       continue;
+    if (variant === "sprites" && ["desktop", "execution"].includes(key))
+      continue;
     if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
     if (variant === "daytona" && ["snapshot", "desktop"].includes(key))
       continue;
@@ -144,7 +148,8 @@ export function ProviderConfiguration({
       (variant === "e2b" ||
         variant === "daytona" ||
         variant === "modal" ||
-        variant === "vercel") &&
+        variant === "vercel" ||
+        variant === "sprites") &&
       key.startsWith("desktop_") &&
       value?.desktop !== true
     )
@@ -187,7 +192,8 @@ export function ProviderConfiguration({
       JSON.stringify(
         (variant === "daytona" ||
           variant === "modal" ||
-          variant === "vercel") &&
+          variant === "vercel" ||
+          variant === "sprites") &&
           next.desktop !== true
           ? { ...next, desktop_assistance: false }
           : next,
@@ -291,6 +297,35 @@ export function ProviderConfiguration({
       ) : (
         <Fragment key={reset}>
           <fieldset disabled={readOnly} className="grid min-w-0 gap-5">
+            {variant === "sprites" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Install Envd, desktop dependencies and human control on each new sandbox.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        desktop_assistance: enabled,
+                        execution: enabled ? "envd_http" : "native",
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>
+                )}
+              </>
+            )}
             {variant === "modal" && (
               <>
                 <SettingsRow

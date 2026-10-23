@@ -244,12 +244,13 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
-              {["e2b", "modal", "daytona", "vercel"].includes(
+              {["e2b", "modal", "daytona", "vercel", "sprites"].includes(
                 provider.data?.type ?? "",
               ) &&
                 template.data?.config.recipe?.desktop === true && (
                   <>
-                    {(template.data.config.recipe?.template === "auto" ||
+                    {(provider.data?.type === "sprites" ||
+                      template.data.config.recipe?.template === "auto" ||
                       template.data.config.recipe?.image === "auto" ||
                       template.data.config.recipe?.snapshot === "auto") && (
                       <CreationProgress

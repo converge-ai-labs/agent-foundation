@@ -47,6 +47,7 @@ import {
 import instanceStyles from "./environments.module.css";
 import {
   FIRST_DESKTOP_NOTICE,
+  SPRITES_DESKTOP_NOTICE,
   MODAL_FIRST_DESKTOP_NOTICE,
   DAYTONA_FIRST_DESKTOP_NOTICE,
   VERCEL_FIRST_DESKTOP_NOTICE,
@@ -483,6 +484,18 @@ function EnvironmentForm({
             )}
           </p>
         )}
+      {kind === "managed" &&
+        (() => {
+          const recipe = templates.data?.find((item) => item.id === templateId)
+            ?.config?.recipe;
+          return (
+            recipe?.desktop === true &&
+            recipe?.execution === "envd_http" &&
+            !recipe?.snapshot &&
+            !recipe?.template &&
+            !recipe?.image
+          );
+        })() && <p role="note">{t(SPRITES_DESKTOP_NOTICE)}</p>}
       <MetricsSourcePicker
         value={metricsSource}
         onChange={setMetricsSource}

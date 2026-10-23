@@ -13,7 +13,7 @@ from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.native.http import NativeHTTP
-from a13n_harness.providers.environment.sprites import execution as sprites
+from a13n_harness.providers.environment.sprites import commands as sprites
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve

@@ -20,6 +20,9 @@ export const DAYTONA_FIRST_DESKTOP_NOTICE =
 export const VERCEL_FIRST_DESKTOP_NOTICE =
   "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
 
+export const SPRITES_DESKTOP_NOTICE =
+  "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.";
+
 const STAGES = {
   preparing: "Preparing desktop template",
   building: "Building desktop template in E2B",
@@ -98,13 +101,17 @@ export function CreationProgress({
     <section className={styles.factGroup}>
       <h3 aria-live="polite">
         {t(
-          stage === "building" && providerType === "modal"
-            ? "Building desktop image in Modal"
-            : stage === "building" && providerType === "daytona"
-              ? "Building desktop snapshot in Daytona"
-              : stage === "building" && providerType === "vercel"
-                ? "Building desktop snapshot in Vercel"
-                : STAGES[stage],
+          providerType === "sprites" && stage === "preparing"
+            ? "Allocating Sprite"
+            : providerType === "sprites" && stage === "building"
+              ? "Installing Envd and desktop dependencies"
+              : stage === "building" && providerType === "modal"
+                ? "Building desktop image in Modal"
+                : stage === "building" && providerType === "daytona"
+                  ? "Building desktop snapshot in Daytona"
+                  : stage === "building" && providerType === "vercel"
+                    ? "Building desktop snapshot in Vercel"
+                    : STAGES[stage],
         )}
       </h3>
       {environment.status === "creating" && (

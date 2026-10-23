@@ -71,12 +71,12 @@ manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 | Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
 | Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
 | Native / Envd | `vercel`         | Native Files & Shell；显式选择 HTTP EIP              | Vercel provider       |
-| Native        | `sprites`        | 厂商命令接口提供 Files & Shell；尚未接入 EIP         | Sprites provider      |
-| Native        | `runloop`        | 厂商命令接口提供 Files & Shell；尚未接入 EIP         | Runloop provider      |
+| Native 或 EIP | `sprites`        | 原生 Files & Shell 或私有隧道 EIP                    | Sprites provider      |
+| Native        | `runloop`        | 原生 Files & Shell 或私有隧道 EIP                    | Runloop provider      |
 | Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
 | Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
-Daytona 和 Modal 使用 Envd/EIP。Docker、E2B 和 Vercel 提供显式的 Native 与 Envd 路径。Sprites 和 Runloop 当前仅通过厂商接口提供 Files & Shell，尚未接入 Envd、Computer 和人工桌面访问。本地执行是独立路径。
+Daytona 和 Modal 使用 Envd/EIP。Docker、E2B、Vercel 和 Sprites 提供显式的 Native 与 Envd 路径。Sprites 由 Service 在每个新沙箱内安装桌面。Runloop 当前仅通过厂商接口提供 Files & Shell，尚未接入 Envd、Computer 和人工桌面访问。本地执行是独立路径。
 
 部署 Envd 前，检查[沙箱验证记录](../a13n-envd/egress.md#cloud-platform-validation-record)中的启动身份、出站网络覆盖和平台限制。执行能力由守护进程协商结果与 Host 策略决定。
 
@@ -131,7 +131,7 @@ Native Docker 提供 Files & Shell，包括进程控制和输出观察。端口�
 
 ## 云 provider
 
-E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。Daytona 和 Modal 使用 Envd。E2B 和 Vercel 保留 Native Files & Shell，并通过显式的 Envd 路径提供进阶能力。Sprites 和 Runloop 当前仅提供 Native Files & Shell。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
+E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 保留 Native Files & Shell，并通过显式的 Envd 路径提供进阶能力。Runloop 当前仅提供 Native Files & Shell。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
 
 | Provider       | 后端设置                                                                                 | 凭据字段                         | 常用目标配置设置                                                                                               |
 | -------------- | ---------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -144,7 +144,7 @@ E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留
 
 组织和团队配置描述后端命名空间，不授予权限。Modal 账号由凭据决定，可选的 `workspace` 字段仅作说明。凭据绝不属于目标配置或重连状态。
 
-Daytona、Modal 和显式选择 Envd 路径的 Vercel 管理 provider 负责准备目标、兼容的 Envd 运行时和授权连接。Sprites 和 Runloop 尚未实现 Envd 准备流程。镜像和快照可预装守护进程。文件路径、命令、进程和输出语义由 EIP 提供；OS sandbox 和 Egress 按 Host 选择的策略执行。能力以实际协商结果为准。现有目标引用与配置的迁移必须显式进行，不能将旧的原生执行配置静默解释为 Envd 配置。
+Daytona、Modal 和显式选择 Envd 路径的 Vercel、Sprites 管理 provider 负责准备目标、兼容的 Envd 运行时和授权连接。Runloop 尚未实现 Envd 准备流程。镜像和快照可预装守护进程。文件路径、命令、进程和输出语义由 EIP 提供；OS sandbox 和 Egress 按 Host 选择的策略执行。能力以实际协商结果为准。现有目标引用与配置的迁移必须显式进行，不能将旧的原生执行配置静默解释为 Envd 配置。
 
 ### 重连与生命周期
 
@@ -327,11 +327,13 @@ uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py 
 
 Envd 使用 `/workspace` 和 UID/GID 1001；原生执行仍使用 `/vercel/sandbox`。创建和显式恢复启动预装组件，并检查 EIP 与 Computer 就绪状态。连接和访问授权不会安装、修复或恢复桌面。8888 端口承载认证后的 EIP；6081 端口承载可撤销桌面访问。浏览器仅收到短期 supervisor 凭据，不会收到 Vercel access token 或 Envd guest token。Service 校验所有权、原生身份、当前 session 和端点策略。停止保留文件；恢复会重建桌面进程，旧截图引用与授权失效。
 
-Sprites 和 Runloop 仍通过厂商命令接口提供 Files & Shell。历史独立 Envd 运行时探测不能证明当前 Provider 或 Console 已完成接入。
+Runloop 仍通过厂商命令接口提供 Files & Shell。历史独立 Envd 运行时探测不能证明当前 Provider 或 Console 已完成接入。
 
 ### Fly.io Sprites
 
 默认根目录：`/home/sprite`；Python：客体 PATH 上的 `python3`。[Sprites 环境指南](https://docs.sprites.dev/working-with-sprites/)介绍可写 home 和预装工具。原生自动休眠保留磁盘；不支持显式停止。销毁等待确认不存在。
+
+需要 Computer Use 和人工接管时，Service 可[在每个新 Sprite 内自动安装桌面](../a13n-service/environments.md#automatic-sprites-desktops)。Harness 随后以 `execution="envd_http"` 连接已准备的目标；原生执行方式保持不变。
 
 ### Runloop
 

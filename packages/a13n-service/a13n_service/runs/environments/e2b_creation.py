@@ -1,4 +1,4 @@
-"""User-visible automatic E2B/Modal/Daytona/Vercel creation progress and fenced retry; no cloud I/O on reads."""
+"""User-visible automatic E2B/Modal/Daytona/Vercel/Sprites creation progress and fenced retry; no cloud I/O on reads."""
 
 from datetime import datetime
 from typing import Literal
@@ -40,7 +40,8 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
             or (
                 row.provider_identity
                 and (
-                    (row.provider_identity.get("type") == "e2b" and handle.recipe.get("template") == "auto")
+                    row.provider_identity.get("type") == "sprites"
+                    or (row.provider_identity.get("type") == "e2b" and handle.recipe.get("template") == "auto")
                     or (row.provider_identity.get("type") == "modal" and handle.recipe.get("image") == "auto")
                     or (row.provider_identity.get("type") == "daytona" and handle.recipe.get("snapshot") == "auto")
                     or (row.provider_identity.get("type") == "vercel" and handle.recipe.get("snapshot") == "auto")
@@ -71,6 +72,15 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
             stage = "inactive"
         elif row.failure and row.failure["permanent"]:
             stage, ended = "failed", row.failure["at"]
+        elif row.provider_identity and row.provider_identity.get("type") == "sprites":
+            phase = (
+                handle.state.state.get("desktop_phase")
+                if handle.state and isinstance(handle.state.state, dict)
+                else None
+            )
+            stage = (
+                "building" if phase == "installing" else "starting" if phase in {"starting", "ready"} else "preparing"
+            )
         elif handle.modal_desktop_image:
             image = await session.get(modal_images.ModalDesktopImageRow, handle.modal_desktop_image)
             if image and image.workspace_id == row.workspace_id and image.provider_id == row.provider_id:

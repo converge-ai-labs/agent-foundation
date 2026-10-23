@@ -278,3 +278,12 @@ After changing the desktop, choose **Return control and continue**. Service revo
 Closing the page, disconnecting, or choosing **End control, keep paused** does not resume the agent. Reconnect explicitly to complete handback. If the entire assistance interval has expired, **Continue agent** becomes usable only after Service confirms access cleanup; expiry itself never continues the task. Uncertain execution, lost worker ownership, unmanaged background commands, and configured subagent graphs block takeover; there is no force-control fallback. Completed tasks allow desktop interaction without starting another Run. Each Run selects one desktop mount for control. The same protocol applies to E2B, Docker, Daytona and Modal with the compatible endpoint and routing described above; remote Docker deployments still require validation of browser reachability and TLS.
 
 Deploy this update to Service control and worker roles together before enabling user takeover. Old workers do not honor the new execution fence or desktop pause checkpoint. Database rollback after user-control history has been created is rejected; use a forward repair.
+
+### Automatic Sprites desktops
+
+1. Add a Fly.io Sprites connection with your organization and API token. The token must allow creation with ownership labels, execution, deletion and URL settings. A name/quantity-restricted token may reject labels; use a suitable Sprites token rather than removing the ownership checks.
+2. Create a template, select that connection and enable **Desktop environment**. No local binary, prebuilt image or template ID is required.
+3. Create an instance. **Every new Sprite** installs Envd, desktop dependencies and Chrome, which can take several minutes. Console displays allocation, installation and desktop checks with elapsed time. You can leave the page; return to Environment instances to inspect progress or retry a confirmed failure.
+4. When ready, choose **View desktop** for a read-only snapshot. Interactive control is available from a conversation using that environment.
+
+A new Sprite installs again; reopening an existing Sprite after sleep retains its files and installation. The Envd route stays private. Browser desktop connections require short-lived guest grants and VNC authentication; the cloud API token stays in Service. Failed installation retains its owned target for explicit retry or deletion. Sprites does not support explicit stop; configure idle deletion if needed.

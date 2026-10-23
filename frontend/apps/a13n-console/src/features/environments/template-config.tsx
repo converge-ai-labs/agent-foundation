@@ -331,7 +331,9 @@ export function TemplateConfig({
                         ? "modal"
                         : definition?.type === "vercel"
                           ? "vercel"
-                          : "default"
+                          : definition?.type === "sprites"
+                            ? "sprites"
+                            : "default"
               }
             >
               <DisclosureSection

@@ -3370,5 +3370,9 @@
   "No projects found. Create a project in Vercel or check the token permissions, then reload teams.": "No projects found. Create a project in Vercel or check the token permissions, then reload teams.",
   "Vercel snapshot": "Vercel snapshot",
   "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
-  "Building desktop snapshot in Vercel": "Building desktop snapshot in Vercel"
+  "Building desktop snapshot in Vercel": "Building desktop snapshot in Vercel",
+  "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.": "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.",
+  "Allocating Sprite": "Allocating Sprite",
+  "Installing Envd and desktop dependencies": "Installing Envd and desktop dependencies",
+  "Install Envd, desktop dependencies and human control on each new sandbox.": "Install Envd, desktop dependencies and human control on each new sandbox."
 }

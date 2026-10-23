@@ -27,6 +27,7 @@ TARGET_FIELDS = {
     "daytona": "target_id",
     "modal": "target_id",
     "vercel": "backing_id",
+    "sprites": "backing_id",
 }
 
 

@@ -97,6 +97,8 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 `SpritesEnvironmentConfiguration` 选择区域，默认目录为 `/home/sprite`。`SpritesConnectionConfiguration` 指定组织；`TokenCredential` 保存 Sprites token。不要调度显式停止：Sprites provider 不支持 `stop()`，且 Sprites 会自动休眠。
 
+Service 中设置 `desktop=true` 会自动选择 `execution="envd_http"`，并在每个新 Sprite 内安装桌面。执行通过私有 TCP 隧道连接 Envd，工作目录为 `/workspace`，默认启用人工接管。参见[自动创建 Sprites 桌面](../a13n-service/environments.md#automatic-sprites-desktops)。
+
 ### Runloop
 
 `RunloopEnvironmentConfiguration` 选择 blueprint、资源规格和空闲挂起间隔，根目录为 `/home/user`。`RunloopConnectionConfiguration` 指定组织；`TokenCredential` 提供 API key。

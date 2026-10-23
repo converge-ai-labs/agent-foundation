@@ -321,17 +321,19 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `SpritesEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices       | Constraints and default                                |
-| ------------------------- | -------- | -------------------- | ------------------------------------------------------ |
-| `environment`             | false    | EnvironmentVariables | —; default from model factory                          |
-| `root`                    | false    | string               | default="/home/sprite"                                 |
-| `python`                  | false    | string               | default="python3"                                      |
-| `shell`                   | false    | string               | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false    | number               | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false    | integer              | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false    | integer              | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false    | integer              | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `region`                  | false    | string or null       | maxLength=64; default=null                             |
+| Field                     | Required | Type / choices        | Constraints and default                                |
+| ------------------------- | -------- | --------------------- | ------------------------------------------------------ |
+| `environment`             | false    | EnvironmentVariables  | —; default from model factory                          |
+| `root`                    | false    | string                | default="/home/sprite"                                 |
+| `python`                  | false    | string                | default="python3"                                      |
+| `shell`                   | false    | string                | default="/bin/bash"                                    |
+| `request_timeout_seconds` | false    | number                | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer               | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null        | maxLength=64; default=null                             |
+| `execution`               | false    | "native", "envd_http" | default="native"                                       |
+| `desktop`                 | false    | boolean               | default=false                                          |
 
 ## `RunloopEnvironmentConfiguration`
 

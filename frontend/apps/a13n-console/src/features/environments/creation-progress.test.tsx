@@ -161,3 +161,21 @@ it("labels Modal build progress without changing the durable progress endpoint",
   view.unmount();
   view.cache.clear();
 });
+
+it("shows Sprites installation rather than a reusable template build", async () => {
+  http.GET.mockResolvedValue({
+    data: {
+      stage: "building",
+      started_at: environment.created_at,
+      observed_at: "2026-10-22T10:01:05Z",
+      retryable: false,
+    },
+  });
+  const view = mount(
+    <CreationProgress environment={environment} providerType="sprites" />,
+  );
+  await screen.findByText("Installing Envd and desktop dependencies");
+  expect(screen.queryByText("Building desktop template in E2B")).toBeNull();
+  view.unmount();
+  view.cache.clear();
+});

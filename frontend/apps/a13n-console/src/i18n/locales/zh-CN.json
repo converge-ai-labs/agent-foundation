@@ -3370,5 +3370,9 @@
   "No projects found. Create a project in Vercel or check the token permissions, then reload teams.": "没有找到项目。请在 Vercel 创建项目或检查 Token 权限，然后重新加载团队。",
   "Vercel snapshot": "Vercel 快照",
   "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "首次创建 Vercel 桌面需要构建快照，可能耗时数分钟，后续创建会复用。你可以离开此页面，创建会在后台继续。",
-  "Building desktop snapshot in Vercel": "正在 Vercel 构建桌面快照"
+  "Building desktop snapshot in Vercel": "正在 Vercel 构建桌面快照",
+  "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.": "每个新的 Sprites 桌面都需要安装 Envd 和桌面依赖，可能耗时数分钟。已有 Sprite 休眠后会保留安装结果。创建期间可以离开此页面。",
+  "Allocating Sprite": "正在分配 Sprite",
+  "Installing Envd and desktop dependencies": "正在安装 Envd 和桌面依赖",
+  "Install Envd, desktop dependencies and human control on each new sandbox.": "在每个新沙箱内安装 Envd、桌面依赖和人工接管服务。"
 }
