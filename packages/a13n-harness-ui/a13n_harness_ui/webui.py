@@ -109,6 +109,7 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
+from a13n_harness_ui.model_accounts.provider_usage import CopilotUsage
 from a13n_harness_ui.model_accounts.subscriptions import (
     SubscriptionAccountCreate,
     SubscriptionAccountUpdate,
@@ -1382,6 +1383,10 @@ def create_webui(
         if readiness is None:
             raise HarnessUiError("Environment preflight was cancelled.", code="preflight_cancelled")
         return readiness
+
+    @server.get("/api/subscriptions/copilot/usage", response_model=CopilotUsage)
+    async def copilot_usage() -> CopilotUsage:
+        return await app().copilot_usage()
 
     @server.get("/api/subscriptions", response_model=SubscriptionCatalog)
     async def subscriptions() -> SubscriptionCatalog:

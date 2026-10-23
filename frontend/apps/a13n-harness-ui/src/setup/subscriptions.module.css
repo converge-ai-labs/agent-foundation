@@ -29,10 +29,10 @@
 }
 .row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 16px;
+  padding: 16px;
   background: var(--a13n-surface);
   border-radius: 8px;
 }
@@ -64,13 +64,36 @@
   justify-content: flex-end;
 }
 .usage {
-  margin-top: 3px;
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
   font-variant-numeric: tabular-nums;
+}
+.quotaGroup,
+.voucherSummary {
+  display: grid;
+  gap: 5px;
+}
+.quotaLabel {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.quotaWindows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.quotaDetail {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.voucherSummary {
+  gap: 3px;
 }
 .meter {
   display: grid;
   gap: 2px;
-  min-width: 100px;
+  min-width: 180px;
 }
 .meter meter {
   width: 100%;

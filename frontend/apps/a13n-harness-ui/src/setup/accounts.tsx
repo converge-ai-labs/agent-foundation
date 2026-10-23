@@ -8,6 +8,7 @@ import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
 import accountStyles from "./accounts.module.css";
 import { SubscriptionAccounts } from "./subscriptions";
+import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -298,6 +299,14 @@ export function ProviderAccount({
             </p>
           )}
           {account.data?.message && <p role="status">{account.data.message}</p>}
+          {!inline && provider === "copilot" && (
+            <CopilotAllowance
+              key={identity}
+              identity={identity}
+              ready={ready}
+            />
+          )}
+          {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
               <summary>Choose account source</summary>

@@ -176,11 +176,14 @@ from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, A
 if TYPE_CHECKING:
     from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 
+from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
+
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
+from a13n_harness_ui.model_accounts.provider_usage import CopilotUsage, read_copilot_usage
 from a13n_harness_ui.model_accounts.subscriptions import (
     SubscriptionAccountCreate,
     SubscriptionAccountUpdate,
@@ -3000,6 +3003,18 @@ class HarnessUiApp:
     async def refresh_subscription_usage(self, account_id: str) -> UsageSnapshot:
         async with self._operation():
             return await self.subscription_usage.refresh(account_id, force=True)
+
+    async def copilot_usage(self) -> CopilotUsage:
+        """Read the currently selected Copilot account, independently of managed groups."""
+        async with self._operation():
+            try:
+                async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
+                    return await read_copilot_usage(self._copilot_account, client)
+            except (ValueError, ModelAuthenticationError, AccountStoreError):
+                raise AppStateError(
+                    "Copilot usage could not be read. Check the selected account or try again later.",
+                    code="subscription_usage_failed",
+                ) from None
 
     async def codex_usage(self, account_id: str = "acct-codex-default") -> CodexUsage:
         """Explicitly inspect a selected account's windows and reset vouchers."""

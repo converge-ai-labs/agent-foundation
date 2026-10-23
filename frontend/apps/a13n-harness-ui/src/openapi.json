@@ -2940,6 +2940,24 @@
         }
       }
     },
+    "/api/subscriptions/copilot/usage": {
+      "get": {
+        "summary": "Copilot Usage",
+        "operationId": "copilot_usage_api_subscriptions_copilot_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotUsage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/subscriptions": {
       "get": {
         "summary": "Subscriptions",
@@ -7784,6 +7802,17 @@
             ],
             "title": "Metered Feature"
           },
+          "normal_model_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normal Model Slug"
+          },
           "rate_limit": {
             "anyOf": [
               {
@@ -10089,6 +10118,12 @@
       },
       "CodexUsage": {
         "properties": {
+          "provider": {
+            "type": "string",
+            "const": "codex",
+            "title": "Provider",
+            "default": "codex"
+          },
           "account_id": {
             "type": "string",
             "title": "Account Id"
@@ -10118,12 +10153,39 @@
             ]
           },
           "additional_rate_limits": {
-            "items": {
-              "$ref": "#/components/schemas/AdditionalUsageLimit"
-            },
-            "type": "array",
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AdditionalUsageLimit"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Additional Rate Limits",
             "default": []
+          },
+          "spend_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpendControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rate_limit_reset_credits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetCreditSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reset_credits": {
             "anyOf": [
@@ -10762,6 +10824,83 @@
         ],
         "title": "CoordinatorUpdate"
       },
+      "CopilotQuota": {
+        "properties": {
+          "quota_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Id"
+          },
+          "entitlement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitlement"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          },
+          "unlimited": {
+            "type": "boolean",
+            "title": "Unlimited",
+            "default": false
+          },
+          "overage_count": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overage Count"
+          },
+          "overage_permitted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overage Permitted"
+          },
+          "percent_remaining": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent Remaining"
+          }
+        },
+        "type": "object",
+        "title": "CopilotQuota"
+      },
       "CopilotSubscriptionAuthentication": {
         "properties": {
           "kind": {
@@ -10776,6 +10915,48 @@
           "kind"
         ],
         "title": "CopilotSubscriptionAuthentication"
+      },
+      "CopilotUsage": {
+        "properties": {
+          "copilot_plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copilot Plan"
+          },
+          "quota_reset_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Reset Date"
+          },
+          "quota_snapshots": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/CopilotQuota"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Snapshots"
+          }
+        },
+        "type": "object",
+        "title": "CopilotUsage"
       },
       "CpuLimit": {
         "oneOf": [
@@ -13307,6 +13488,155 @@
         "title": "GrantAccess",
         "type": "string"
       },
+      "GrokBilling": {
+        "properties": {
+          "credit_usage_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Usage Percent"
+          },
+          "current_period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prepaid_balance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "is_unified_billing_user": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Unified Billing User"
+          },
+          "on_demand_cap": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "on_demand_used": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "monthly_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "used": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokMoney"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "billing_period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Period End"
+          }
+        },
+        "type": "object",
+        "title": "GrokBilling"
+      },
+      "GrokMoney": {
+        "properties": {
+          "val": {
+            "type": "integer",
+            "title": "Val",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "GrokMoney"
+      },
+      "GrokPeriod": {
+        "properties": {
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          }
+        },
+        "type": "object",
+        "title": "GrokPeriod"
+      },
       "GrokSubscriptionAuthentication": {
         "properties": {
           "kind": {
@@ -13331,6 +13661,28 @@
           "kind"
         ],
         "title": "GrokSubscriptionAuthentication"
+      },
+      "GrokUsage": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "grok",
+            "title": "Provider",
+            "default": "grok"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrokBilling"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "GrokUsage"
       },
       "HTTPValidationError": {
         "properties": {
@@ -16390,6 +16742,20 @@
         ],
         "title": "ResetCredit"
       },
+      "ResetCreditSummary": {
+        "properties": {
+          "available_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Available Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available_count"
+        ],
+        "title": "ResetCreditSummary"
+      },
       "ResetCredits": {
         "properties": {
           "available_count": {
@@ -17802,6 +18168,62 @@
           "items"
         ],
         "title": "SkillCatalogView"
+      },
+      "SpendControl": {
+        "properties": {
+          "reached": {
+            "type": "boolean",
+            "title": "Reached"
+          },
+          "individual_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpendControlLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "reached"
+        ],
+        "title": "SpendControl"
+      },
+      "SpendControlLimit": {
+        "properties": {
+          "limit": {
+            "type": "string",
+            "title": "Limit"
+          },
+          "used": {
+            "type": "string",
+            "title": "Used"
+          },
+          "remaining": {
+            "type": "string",
+            "title": "Remaining"
+          },
+          "used_percent": {
+            "type": "number",
+            "title": "Used Percent"
+          },
+          "reset_at": {
+            "type": "integer",
+            "title": "Reset At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "limit",
+          "used",
+          "remaining",
+          "used_percent",
+          "reset_at"
+        ],
+        "title": "SpendControlLimit"
       },
       "StoreKind": {
         "type": "string",
@@ -20930,9 +21352,13 @@
                 "$ref": "#/components/schemas/CodexUsage"
               },
               {
+                "$ref": "#/components/schemas/GrokUsage"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Usage"
           },
           "error": {
             "anyOf": [

@@ -11,6 +11,7 @@ from uuid import uuid4
 from a13n_harness.providers.model.openai_chatgpt import DEFINITION as CHATGPT_DEFINITION
 from pydantic_ai.exceptions import UserError
 
+from a13n_harness_ui.model_accounts.provider_usage import GrokUsage
 from a13n_harness_ui.model_accounts.subscriptions import SubscriptionAccountUpdate, SubscriptionCatalog
 from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest
 from a13n_harness_ui.storage.usage import ModelUsageView, ThreadUsageView, UsageTotals
@@ -212,6 +213,12 @@ def _diagnostic_lines(view: ThreadUsageView) -> list[str]:
     return lines
 
 
+def window_label(seconds: int, fallback: str) -> str:
+    return {18000: "5h", 86400: "Daily", 604800: "Weekly", 2592000: "30-day"}.get(
+        seconds, f"{fallback} ({seconds // 60}m)"
+    )
+
+
 def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
     now = (now or datetime.now(UTC)).astimezone()
     lines = [f"Codex subscription · {usage.plan_type} · account {usage.account_id}"]
@@ -224,14 +231,7 @@ def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
         for fallback, window in (("Primary", limits.primary_window), ("Secondary", limits.secondary_window)):
             if window is None:
                 continue
-            name = next(
-                (
-                    label
-                    for seconds, label in ((18000, "5h"), (86400, "Daily"), (604800, "Weekly"), (2592000, "Monthly"))
-                    if abs(window.limit_window_seconds - seconds) <= seconds * 0.05
-                ),
-                f"{fallback} ({window.limit_window_seconds // 60}m)",
-            )
+            name = window_label(window.limit_window_seconds, fallback)
             remaining = max(0, min(100, 100 - window.used_percent))
             reset = datetime.fromtimestamp(window.reset_at, UTC).astimezone()
             reset_text = reset.strftime("%H:%M" if reset.date() == now.date() else "%H:%M on %d %b %Y")
@@ -266,17 +266,30 @@ def subscription_text(catalog: SubscriptionCatalog) -> str:
         account = view.account
         state = "paused" if not account.enabled else view.authentication.availability.value
         usage = view.usage.usage
-        windows = usage.rate_limit if usage else None
+        windows = usage.rate_limit if isinstance(usage, CodexUsage) else None
         remaining = (
             " · ".join(
-                f"{label} {max(0, 100 - window.used_percent):g}% left"
+                window_label(window.limit_window_seconds, label)
+                + f" {max(0, min(100, 100 - window.used_percent)):g}% left · resets "
+                + datetime.fromtimestamp(window.reset_at, UTC).astimezone().strftime("%d %b %H:%M %Z")
                 for label, window in (("Primary", windows.primary_window), ("Secondary", windows.secondary_window))
                 if window is not None
             )
-            if windows
+            if windows and (windows.primary_window is not None or windows.secondary_window is not None)
             else "Usage unknown"
         )
-        credits = usage.credits if usage else None
+        if isinstance(usage, GrokUsage) and usage.config is not None:
+            billing = usage.config
+            percent = billing.usage_percent
+            remaining = (
+                f"Allowance {max(0, min(100, 100 - percent)):g}% left" if percent is not None else "Allowance unknown"
+            )
+            reset = (billing.current_period.end if billing.current_period else None) or billing.billing_period_end
+            if reset:
+                remaining += f" · resets {reset}"
+            if billing.prepaid_balance is not None:
+                remaining += f" · Purchased credits ${abs(billing.prepaid_balance.val) / 100:.2f}"
+        credits = usage.credits if isinstance(usage, CodexUsage) else None
         balance = f" · Credits {credits.balance or ('available' if credits.has_credits else 'none')}" if credits else ""
         observed = (
             datetime.fromtimestamp(view.usage.observed_at, UTC).astimezone().strftime("%H:%M:%S")
@@ -284,6 +297,10 @@ def subscription_text(catalog: SubscriptionCatalog) -> str:
             else "never"
         )
         lines.append(f"{account.name} · {account.provider} · {state} · {remaining}{balance} · updated {observed}")
+        if isinstance(usage, CodexUsage):
+            vouchers = usage.reset_credits or usage.rate_limit_reset_credits
+            if vouchers is not None:
+                lines.append(f"  Reset vouchers: {vouchers.available_count} available")
         if view.usage.error:
             lines.append(f"  Refresh failed: {view.usage.error}")
     lines.extend(["", "Account groups"])

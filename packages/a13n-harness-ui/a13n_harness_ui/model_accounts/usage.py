@@ -43,8 +43,11 @@ class ResetCredit(_ProviderView):
     description: str | None = None
 
 
-class ResetCredits(_ProviderView):
+class ResetCreditSummary(_ProviderView):
     available_count: int = Field(ge=0)
+
+
+class ResetCredits(ResetCreditSummary):
     credits: tuple[ResetCredit, ...] = Field(default=(), max_length=256)
 
 
@@ -57,15 +60,32 @@ class PaidCredits(_ProviderView):
 class AdditionalUsageLimit(_ProviderView):
     limit_name: str
     metered_feature: str | None = None
+    normal_model_slug: str | None = None
     rate_limit: UsageLimits | None = None
 
 
+class SpendControlLimit(_ProviderView):
+    limit: str
+    used: str
+    remaining: str
+    used_percent: float
+    reset_at: int
+
+
+class SpendControl(_ProviderView):
+    reached: bool
+    individual_limit: SpendControlLimit | None = None
+
+
 class CodexUsage(_ProviderView):
+    provider: Literal["codex"] = "codex"
     account_id: str
     plan_type: str
     rate_limit: UsageLimits | None = None
     credits: PaidCredits | None = None
-    additional_rate_limits: tuple[AdditionalUsageLimit, ...] = ()
+    additional_rate_limits: tuple[AdditionalUsageLimit, ...] | None = ()
+    spend_control: SpendControl | None = None
+    rate_limit_reset_credits: ResetCreditSummary | None = None
     reset_credits: ResetCredits | None = None
     reset_unavailable: str | None = None
 

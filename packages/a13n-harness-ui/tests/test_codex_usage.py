@@ -348,3 +348,32 @@ async def test_account_picker_targets_selected_native_identity(action):
                 app.redeem_codex_reset.assert_not_awaited()
         finally:
             shell.renderer.transcript.close()
+
+
+async def test_usage_summary_spend_control_and_nullable_additional_limits():
+    payload = {
+        **_USAGE,
+        "additional_rate_limits": None,
+        "rate_limit_reset_credits": {"available_count": 3},
+        "spend_control": {
+            "reached": False,
+            "individual_limit": {
+                "limit": "100",
+                "used": "25",
+                "remaining": "75",
+                "used_percent": 25,
+                "reset_at": 1900000000,
+            },
+        },
+    }
+
+    def handle(request):
+        assert "x-openai-codex-luna-reserve" not in request.headers
+        return httpx2.Response(200, json=payload) if request.url.path.endswith("/usage") else httpx2.Response(503)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        result = await CodexUsageClient(_source(), client).read()
+    assert result.rate_limit_reset_credits.available_count == 3
+    assert result.spend_control.individual_limit.remaining == "75"
+    assert result.additional_rate_limits is None
+    assert result.reset_unavailable

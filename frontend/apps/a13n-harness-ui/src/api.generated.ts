@@ -1145,6 +1145,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subscriptions/copilot/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Copilot Usage */
+        get: operations["copilot_usage_api_subscriptions_copilot_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subscriptions": {
         parameters: {
             query?: never;
@@ -2545,6 +2562,8 @@ export interface components {
             limit_name: string;
             /** Metered Feature */
             metered_feature?: string | null;
+            /** Normal Model Slug */
+            normal_model_slug?: string | null;
             rate_limit?: components["schemas"]["UsageLimits"] | null;
         };
         /** Adoption */
@@ -3355,6 +3374,12 @@ export interface components {
         };
         /** CodexUsage */
         CodexUsage: {
+            /**
+             * Provider
+             * @default codex
+             * @constant
+             */
+            provider?: "codex";
             /** Account Id */
             account_id: string;
             /** Plan Type */
@@ -3365,7 +3390,9 @@ export interface components {
              * Additional Rate Limits
              * @default []
              */
-            additional_rate_limits?: components["schemas"]["AdditionalUsageLimit"][];
+            additional_rate_limits?: components["schemas"]["AdditionalUsageLimit"][] | null;
+            spend_control?: components["schemas"]["SpendControl"] | null;
+            rate_limit_reset_credits?: components["schemas"]["ResetCreditSummary"] | null;
             reset_credits?: components["schemas"]["ResetCredits"] | null;
             /** Reset Unavailable */
             reset_unavailable?: string | null;
@@ -3599,6 +3626,26 @@ export interface components {
             /** Auto Followup */
             auto_followup: boolean;
         };
+        /** CopilotQuota */
+        CopilotQuota: {
+            /** Quota Id */
+            quota_id?: string | null;
+            /** Entitlement */
+            entitlement?: number | null;
+            /** Remaining */
+            remaining?: number | null;
+            /**
+             * Unlimited
+             * @default false
+             */
+            unlimited?: boolean;
+            /** Overage Count */
+            overage_count?: number | null;
+            /** Overage Permitted */
+            overage_permitted?: boolean | null;
+            /** Percent Remaining */
+            percent_remaining?: number | null;
+        };
         /** CopilotSubscriptionAuthentication */
         CopilotSubscriptionAuthentication: {
             /**
@@ -3606,6 +3653,17 @@ export interface components {
              * @enum {string}
              */
             kind: "copilot_subscription";
+        };
+        /** CopilotUsage */
+        CopilotUsage: {
+            /** Copilot Plan */
+            copilot_plan?: string | null;
+            /** Quota Reset Date */
+            quota_reset_date?: string | null;
+            /** Quota Snapshots */
+            quota_snapshots?: {
+                [key: string]: components["schemas"]["CopilotQuota"];
+            } | null;
         };
         CpuLimit: components["schemas"]["UnlimitedCpuLimit"] | components["schemas"]["LimitedCpuLimit"];
         /** CpuTimeSeconds */
@@ -4452,6 +4510,38 @@ export interface components {
          * @enum {string}
          */
         GrantAccess: "read_only" | "read_write";
+        /** GrokBilling */
+        GrokBilling: {
+            /** Credit Usage Percent */
+            credit_usage_percent?: number | null;
+            current_period?: components["schemas"]["GrokPeriod"] | null;
+            prepaid_balance?: components["schemas"]["GrokMoney"] | null;
+            /** Is Unified Billing User */
+            is_unified_billing_user?: boolean | null;
+            on_demand_cap?: components["schemas"]["GrokMoney"] | null;
+            on_demand_used?: components["schemas"]["GrokMoney"] | null;
+            monthly_limit?: components["schemas"]["GrokMoney"] | null;
+            used?: components["schemas"]["GrokMoney"] | null;
+            /** Billing Period End */
+            billing_period_end?: string | null;
+        };
+        /** GrokMoney */
+        GrokMoney: {
+            /**
+             * Val
+             * @default 0
+             */
+            val?: number;
+        };
+        /** GrokPeriod */
+        GrokPeriod: {
+            /** Type */
+            type?: string | null;
+            /** Start */
+            start?: string | null;
+            /** End */
+            end?: string | null;
+        };
         /** GrokSubscriptionAuthentication */
         GrokSubscriptionAuthentication: {
             /**
@@ -4460,6 +4550,16 @@ export interface components {
              */
             kind: "grok_subscription";
             group?: components["schemas"]["ResourceId"] | null;
+        };
+        /** GrokUsage */
+        GrokUsage: {
+            /**
+             * Provider
+             * @default grok
+             * @constant
+             */
+            provider?: "grok";
+            config?: components["schemas"]["GrokBilling"] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5584,6 +5684,11 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** ResetCreditSummary */
+        ResetCreditSummary: {
+            /** Available Count */
+            available_count: number;
+        };
         /** ResetCredits */
         ResetCredits: {
             /** Available Count */
@@ -6168,6 +6273,25 @@ export interface components {
             receipt_id?: string | null;
             /** Items */
             items: components["schemas"]["SkillCatalogItemView"][];
+        };
+        /** SpendControl */
+        SpendControl: {
+            /** Reached */
+            reached: boolean;
+            individual_limit?: components["schemas"]["SpendControlLimit"] | null;
+        };
+        /** SpendControlLimit */
+        SpendControlLimit: {
+            /** Limit */
+            limit: string;
+            /** Used */
+            used: string;
+            /** Remaining */
+            remaining: string;
+            /** Used Percent */
+            used_percent: number;
+            /** Reset At */
+            reset_at: number;
         };
         /**
          * StoreKind
@@ -7300,7 +7424,8 @@ export interface components {
              * @default 0
              */
             observed_at?: number;
-            usage?: components["schemas"]["CodexUsage"] | null;
+            /** Usage */
+            usage?: components["schemas"]["CodexUsage"] | components["schemas"]["GrokUsage"] | null;
             /** Error */
             error?: string | null;
             /** Rejected */
@@ -10797,6 +10922,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EnvironmentReadiness"];
+                };
+            };
+        };
+    };
+    copilot_usage_api_subscriptions_copilot_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopilotUsage"];
                 };
             };
         };

@@ -5,6 +5,14 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
+import { GrokAllowance } from "./provider-usage";
+import {
+  availableVouchers,
+  compactAllowance,
+  quotaTime,
+  voucherSummary,
+  windowLabel,
+} from "./subscription-usage";
 
 type Account = Schema<"SubscriptionAccount">;
 type AccountView = Schema<"SubscriptionAccountView">;
@@ -26,15 +34,12 @@ function WindowUsage({
   window,
   label,
 }: {
-  window: Schema<"UsageWindow">;
+  window: Pick<Schema<"UsageWindow">, "used_percent" | "reset_at">;
   label: string;
 }) {
-  const remaining = Math.max(0, 100 - window.used_percent);
+  const remaining = Math.max(0, Math.min(100, 100 - window.used_percent));
   return (
-    <span
-      className={styles.meter}
-      title={`Resets ${new Date(window.reset_at * 1000).toLocaleString()}`}
-    >
+    <div className={styles.meter}>
       <span>
         {label} · {Math.round(remaining)}% left
       </span>
@@ -44,41 +49,140 @@ function WindowUsage({
         value={remaining}
         aria-label={`${label} remaining`}
       />
-    </span>
+      <span className={styles.quotaDetail}>
+        {window.reset_at > 0
+          ? `Resets ${quotaTime(window.reset_at * 1000)}`
+          : "Reset time unavailable"}
+      </span>
+    </div>
+  );
+}
+
+function LimitUsage({
+  limits,
+  label,
+}: {
+  limits: Schema<"UsageLimits"> | null | undefined;
+  label: string;
+}) {
+  const windows = [limits?.primary_window, limits?.secondary_window].filter(
+    (window) => window != null,
+  );
+  return (
+    <div className={styles.quotaGroup}>
+      <span className={styles.quotaLabel}>{label}</span>
+      <div className={styles.quotaWindows}>
+        {windows.map((window, index) => (
+          <WindowUsage
+            key={index}
+            window={window}
+            label={windowLabel(window.limit_window_seconds)}
+          />
+        ))}
+        {!windows.length && <span>Usage windows unavailable</span>}
+      </div>
+      {limits && (!limits.allowed || limits.limit_reached) && (
+        <span>Included allowance unavailable</span>
+      )}
+    </div>
+  );
+}
+
+function VoucherSummary({
+  usage,
+}: {
+  usage: Schema<"CodexUsage"> | null | undefined;
+}) {
+  const vouchers = voucherSummary(usage);
+  return (
+    <div className={styles.voucherSummary}>
+      <span>
+        Reset vouchers ·{" "}
+        {vouchers.count === null
+          ? "Unavailable"
+          : `${vouchers.count} available`}
+      </span>
+      {vouchers.expiresAt !== null && (
+        <span>Earliest expiry {quotaTime(vouchers.expiresAt)}</span>
+      )}
+      {vouchers.count !== null &&
+        vouchers.count > 0 &&
+        vouchers.expiresAt === null && <span>Expiry not provided</span>}
+      {usage?.reset_unavailable && (
+        <span>Voucher details could not be refreshed</span>
+      )}
+    </div>
   );
 }
 
 export function AccountUsage({ view }: { view: AccountView }) {
-  const usage = view.usage.usage;
+  const observed = view.usage.usage;
+  const usage = observed && "account_id" in observed ? observed : null;
+  if (view.account.provider === "grok" || observed?.provider === "grok") {
+    return (
+      <div className={styles.usage}>
+        <GrokAllowance
+          usage={observed?.provider === "grok" ? observed : null}
+        />
+        <UsageFreshness snapshot={view.usage} />
+      </div>
+    );
+  }
+  const monthly = usage?.spend_control?.individual_limit;
   return (
     <div className={styles.usage}>
-      {usage?.rate_limit?.primary_window && (
-        <WindowUsage window={usage.rate_limit.primary_window} label="Primary" />
-      )}
-      {usage?.rate_limit?.secondary_window && (
-        <WindowUsage
-          window={usage.rate_limit.secondary_window}
-          label="Secondary"
+      <span>
+        {usage?.plan_type && usage.plan_type !== "unknown"
+          ? `${usage.plan_type} plan`
+          : "Plan unavailable"}
+      </span>
+      <LimitUsage limits={usage?.rate_limit} label="Codex included allowance" />
+      {(usage?.additional_rate_limits ?? []).map((limit, index) => (
+        <LimitUsage
+          key={`${limit.metered_feature}-${index}`}
+          limits={limit.rate_limit}
+          label={
+            limit.normal_model_slug
+              ? `${limit.limit_name} · ${limit.normal_model_slug}`
+              : limit.limit_name
+          }
         />
+      ))}
+      {monthly && (
+        <div className={styles.quotaGroup}>
+          <WindowUsage window={monthly} label="Monthly credit limit" />
+          <span>
+            {monthly.used} / {monthly.limit} credits used · {monthly.remaining}{" "}
+            remaining
+          </span>
+        </div>
       )}
-      {!usage?.rate_limit && <span>Usage unknown</span>}
+      {usage?.spend_control?.reached && (
+        <span>Workspace spending limit reached</span>
+      )}
       {usage?.credits && (
         <span>
-          Credits:{" "}
+          Rechargeable credits ·{" "}
           {usage.credits.unlimited
             ? "Unlimited"
             : (usage.credits.balance ??
               (usage.credits.has_credits ? "Available" : "None"))}
         </span>
       )}
-      <span title={view.usage.error ?? undefined}>
-        {view.usage.error
-          ? "Refresh failed · showing last known usage"
-          : view.usage.observed_at
-            ? `Updated ${new Date(view.usage.observed_at * 1000).toLocaleTimeString()}`
-            : "Not refreshed yet"}
-      </span>
+      <VoucherSummary usage={usage} />
+      <UsageFreshness snapshot={view.usage} />
     </div>
+  );
+}
+
+function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
+  return (
+    <span className={styles.quotaDetail}>
+      {snapshot.error ? "Refresh failed · " : ""}
+      {snapshot.observed_at
+        ? `Updated ${quotaTime(snapshot.observed_at * 1000)}`
+        : "Not refreshed yet"}
+    </span>
   );
 }
 
@@ -330,11 +434,10 @@ export function SubscriptionAccounts({
                   return (
                     <span key={member.account}>
                       {view?.account.name ?? "Deleted account"}
+                      {compactAllowance(view?.usage.usage) &&
+                        ` · ${compactAllowance(view?.usage.usage)}`}
                       {item.strategy === "weighted"
                         ? ` ×${member.weight ?? 1}`
-                        : ""}
-                      {view?.usage.usage?.rate_limit?.primary_window
-                        ? ` · ${Math.max(0, Math.round(100 - view.usage.usage.rate_limit.primary_window.used_percent))}%`
                         : ""}
                     </span>
                   );
@@ -471,11 +574,7 @@ function ResetVoucher({
       void queries.invalidateQueries({ queryKey: ["subscriptions"] });
     },
   });
-  const available =
-    vouchers.data?.reset_credits?.credits?.filter(
-      (item) =>
-        item.status === "available" && item.reset_type === "codex_rate_limits",
-    ) ?? [];
+  const available = availableVouchers(vouchers.data?.reset_credits);
   return (
     <ModalFrame
       open
@@ -505,7 +604,8 @@ function ResetVoucher({
         {vouchers.data?.reset_unavailable && (
           <p>{vouchers.data.reset_unavailable}</p>
         )}
-        {!vouchers.isPending && !available.length && (
+        {vouchers.data && <VoucherSummary usage={vouchers.data} />}
+        {vouchers.data?.reset_credits && !available.length && (
           <p>No available reset vouchers.</p>
         )}
         {!!available.length && (
@@ -517,9 +617,14 @@ function ResetVoucher({
             options={available.map((item) => ({
               value: item.id,
               label: item.title ?? item.reset_type,
-              hint: item.expires_at
-                ? `Expires ${item.expires_at}`
-                : (item.description ?? undefined),
+              hint: [
+                item.description,
+                item.expires_at
+                  ? `Expires ${quotaTime(Date.parse(item.expires_at))}`
+                  : "Expiry not provided",
+              ]
+                .filter(Boolean)
+                .join(" · "),
             }))}
           />
         )}

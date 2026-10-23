@@ -463,6 +463,13 @@ A Run captures membership and policy. Account pause, logout, deletion and change
 
 Codex responses update reported usage windows immediately. Before a request, accounts whose last usage API check is at least **60 seconds** old are refreshed. A **10-minute** background refresh covers idle accounts; reset timestamps do not schedule refreshes. Use **Refresh** on an account, or `/usage accounts` in the TUI, for an immediate update. `/usage subscription` shows compact cached accounts and groups. Failed refreshes retain the last successful observation with a timestamp and error. Multiple TUIs sharing the data root eventually converge on the shared snapshots. **Reset voucher…** and `/usage reset` separately require an account, voucher and explicit confirmation; polling and failover never consume a voucher.
 
+The account cards show provider-specific allowance:
+
+- **Codex:** actual-duration windows such as **5h** and **Weekly**, each with its reset date, local time and timezone. Named/model limits and monthly credit limits appear separately. Available reset vouchers and their earliest known expiry are visible without opening **Manage**; rechargeable credits are a separate balance. Failed voucher-detail reads preserve any count reported by the usage API.
+- **Grok:** its current weekly/monthly billing allowance and next reset, with purchased credits in USD and legacy pay-as-you-go details where reported. It uses the Grok Build billing endpoint, not Codex windows. Missing billing configuration is unavailable, not zero. The same managed-account refresh controls apply.
+- **GitHub Copilot:** the selected account's returned quota buckets, including unlimited allowance, remaining percentage/count, additional usage and reset date. Its card refreshes on entry and every ten minutes, with **Refresh allowance** for an immediate check. This uses an internal endpoint used by the official client; a provider rejection appears as unavailable.
+- **ChatGPT:** a direct link to its official usage settings. This independent connection does not currently expose numeric allowance; it never borrows Codex quota.
+
 ```console
 a13n-harness-ui auth status codex --format json
 a13n-harness-ui auth logout codex

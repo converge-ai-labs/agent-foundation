@@ -14,8 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from ._common import read_json_snapshot, write_json_if_unchanged
 from .codex import CodexAccountStore
 from .coordination import store_lock
+from .grok import GrokAccountStore
 from .managed import SubscriptionAccount, SubscriptionAccounts
 from .models import AccountStoreError, Provider
+from .provider_usage import GrokUsage, read_grok_usage
 from .usage import CodexUsage, CodexUsageClient, PaidCredits, UsageLimits, UsageWindow
 
 POLL_SECONDS = 600
@@ -29,7 +31,7 @@ class UsageSnapshot(BaseModel):
     login_revision: int = 0
     checked_at: float = 0
     observed_at: float = 0
-    usage: CodexUsage | None = None
+    usage: CodexUsage | GrokUsage | None = None
     error: str | None = None
     # A rejected request suppresses this model briefly, not unrelated model buckets.
     rejected: dict[str, float] = Field(default_factory=dict)
@@ -40,7 +42,7 @@ class SubscriptionUsage:
         self,
         accounts: SubscriptionAccounts,
         *,
-        reader: Callable[[SubscriptionAccount], Awaitable[CodexUsage]] | None = None,
+        reader: Callable[[SubscriptionAccount], Awaitable[CodexUsage | GrokUsage]] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.accounts = accounts
@@ -60,21 +62,19 @@ class SubscriptionUsage:
             return UsageSnapshot(login_revision=account.login_revision)
         return value
 
-    async def _read_provider(self, account: SubscriptionAccount) -> CodexUsage:
+    async def _read_provider(self, account: SubscriptionAccount) -> CodexUsage | GrokUsage:
         store = self.accounts.store(account)
-        assert isinstance(store, CodexAccountStore)
         async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
-            return await CodexUsageClient(store, client, expected_account_id=account.upstream_account_id).read(
-                include_reset_credits=False
-            )
+            if isinstance(store, GrokAccountStore):
+                return await read_grok_usage(store, client, expected_account_id=account.upstream_account_id)
+            assert isinstance(store, CodexAccountStore)
+            return await CodexUsageClient(store, client, expected_account_id=account.upstream_account_id).read()
 
     async def refresh(self, account_id: str, *, force: bool = False, max_age: float = POLL_SECONDS) -> UsageSnapshot:
         account = await self.accounts.get(account_id)
         previous = await self.read(account)
         started = self.clock()
-        if account.provider != "codex" or (
-            not force and previous.checked_at > 0 and started - previous.checked_at < max_age
-        ):
+        if not force and previous.checked_at > 0 and started - previous.checked_at < max_age:
             return previous
         usage = None
         error = None
@@ -109,6 +109,8 @@ class SubscriptionUsage:
 
     async def observe_headers(self, account: SubscriptionAccount, headers: Mapping[str, str]) -> None:
         """Merge the default Codex bucket only; named buckets need an API feature mapping."""
+        if account.provider != "codex":
+            return
         headers = {key.lower(): value for key, value in headers.items()}
         windows: dict[str, UsageWindow] = {}
         for name in ("primary", "secondary"):
@@ -145,6 +147,8 @@ class SubscriptionUsage:
             usage = current.usage or CodexUsage(
                 account_id=account.upstream_account_id or account.id, plan_type="unknown"
             )
+            if not isinstance(usage, CodexUsage):
+                return
             limits = usage.rate_limit
             if windows:
                 limits = (limits or UsageLimits(allowed=True, limit_reached=False)).model_copy(update=windows)
@@ -183,7 +187,7 @@ class SubscriptionUsage:
     async def poll(self) -> None:
         while True:
             for account in await self.accounts.list():
-                if account.enabled and account.provider == "codex":
+                if account.enabled:
                     try:
                         await self.refresh(account.id)
                     except AccountStoreError:
@@ -197,11 +201,11 @@ class SubscriptionUsage:
         if rejected is not None and self.clock() - rejected < REJECTION_SECONDS:
             return None
         usage = snapshot.usage
-        if usage is None:
+        if not isinstance(usage, CodexUsage):
             return 0  # Unknown usage remains eligible; the provider is authoritative.
         limits = usage.rate_limit
         # Only an exact metered-feature match can gate this model.
-        for additional in usage.additional_rate_limits:
+        for additional in usage.additional_rate_limits or ():
             if additional.metered_feature == model_name:
                 limits = additional.rate_limit
                 break
