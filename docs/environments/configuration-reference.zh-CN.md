@@ -382,10 +382,10 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DaytonaConnectionConfiguration`
 
-| 字段              | 必填  | 类型 / 可选值 | 约束与默认值                            |
-| ----------------- | ----- | ------------- | --------------------------------------- |
-| `organization_id` | true  | string        | minLength=1; maxLength=128              |
-| `target`          | false | string        | minLength=1; maxLength=64; default="us" |
+| 字段              | 必填  | 类型 / 可选值  | 约束与默认值                             |
+| ----------------- | ----- | -------------- | ---------------------------------------- |
+| `organization_id` | false | string or null | minLength=1; maxLength=128; default=null |
+| `target`          | false | string         | minLength=1; maxLength=64; default="us"  |
 
 ## `ModalConnectionConfiguration`
 

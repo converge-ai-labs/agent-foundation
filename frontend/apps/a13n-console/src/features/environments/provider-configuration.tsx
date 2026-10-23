@@ -52,6 +52,8 @@ export function ProviderConfiguration({
   const [mode, setMode] = useState("fields");
   const [reset, setReset] = useState(0);
   const [custom, setCustom] = useState(false);
+  const [daytonaCustom, setDaytonaCustom] = useState(false);
+  const daytonaDraft = useRef<string | undefined>(undefined);
   const [modalCustom, setModalCustom] = useState(false);
   const modalDraft = useRef<string | undefined>(undefined);
   const [e2bCustom, setE2bCustom] = useState(false);
@@ -71,6 +73,9 @@ export function ProviderConfiguration({
     e2bCustom ||
     (typeof value?.template === "string" &&
       value.template !== e2bDefaultTemplate);
+  const daytonaUsesCustom =
+    daytonaCustom ||
+    (typeof value?.snapshot === "string" && value.snapshot !== "auto");
   const modalUsesCustom =
     modalCustom || (typeof value?.image === "string" && value.image !== "auto");
   const presets = variant === "docker" ? dockerPresets(schema) : undefined;
@@ -121,6 +126,8 @@ export function ProviderConfiguration({
       continue;
     if (variant === "e2b" && key === "template") continue;
     if (variant === "modal" && ["image", "desktop"].includes(key)) continue;
+    if (variant === "daytona" && ["snapshot", "desktop"].includes(key))
+      continue;
     if (
       (variant === "e2b" || variant === "daytona" || variant === "modal") &&
       key.startsWith("desktop_") &&
@@ -200,6 +207,8 @@ export function ProviderConfiguration({
                 onChange("{}");
                 setCustom(false);
                 setE2bCustom(false);
+                setDaytonaCustom(false);
+                daytonaDraft.current = undefined;
                 setModalCustom(false);
                 modalDraft.current = undefined;
                 e2bCustomDraft.current = undefined;
@@ -345,6 +354,90 @@ export function ProviderConfiguration({
                 )}
               </>
             )}
+            {variant === "daytona" && (
+              <>
+                <SettingsRow
+                  label={t("Desktop environment")}
+                  controlId={desktopId}
+                  stackOnNarrow={false}
+                  description={t(
+                    "Automatically prepare Envd, desktop dependencies and human control on first creation.",
+                  )}
+                >
+                  <Switch
+                    id={desktopId}
+                    checked={value.desktop === true}
+                    disabled={readOnly}
+                    onCheckedChange={(enabled) =>
+                      change({
+                        ...value,
+                        desktop: enabled,
+                        desktop_assistance: enabled,
+                        ...(enabled && !daytonaUsesCustom
+                          ? {
+                              snapshot: "auto",
+                            }
+                          : {}),
+                      })
+                    }
+                  />
+                </SettingsRow>
+                {value.desktop === true && (
+                  <SegmentedControl
+                    label={t("Daytona snapshot")}
+                    value={daytonaUsesCustom ? "custom" : "automatic"}
+                    options={[
+                      {
+                        value: "automatic",
+                        label: t("Automatic desktop"),
+                        disabled: readOnly,
+                      },
+                      {
+                        value: "custom",
+                        label: t("Custom snapshot"),
+                        disabled: readOnly,
+                      },
+                    ]}
+                    onValueChange={(next) => {
+                      if (
+                        daytonaUsesCustom &&
+                        typeof value.snapshot === "string"
+                      )
+                        daytonaDraft.current = value.snapshot;
+                      setDaytonaCustom(next === "custom");
+                      change({
+                        ...value,
+                        snapshot:
+                          next === "custom"
+                            ? (daytonaDraft.current ?? "")
+                            : "auto",
+                      });
+                    }}
+                  />
+                )}
+                {(value.desktop !== true || daytonaUsesCustom) && (
+                  <SchemaFields
+                    schema={{
+                      ...schema,
+                      properties: {
+                        snapshot: (
+                          schema?.properties as Record<string, unknown>
+                        )?.snapshot,
+                      },
+                    }}
+                    value={value}
+                    onChange={change}
+                  />
+                )}
+                {value.desktop === true && !daytonaUsesCustom && (
+                  <p role="note">
+                    {t(
+                      "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
             {!builtIn && image.length > 0 && (
               <SchemaFields
                 schema={{ ...schema, properties: Object.fromEntries(image) }}
@@ -480,6 +573,8 @@ export function ProviderConfiguration({
                           if (typeof value.template === "string")
                             e2bCustomDraft.current = value.template;
                           setE2bCustom(false);
+                          setDaytonaCustom(false);
+                          daytonaDraft.current = undefined;
                           setModalCustom(false);
                           modalDraft.current = undefined;
                           change({

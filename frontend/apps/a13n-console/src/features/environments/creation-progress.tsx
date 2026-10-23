@@ -14,6 +14,9 @@ export const FIRST_DESKTOP_NOTICE =
 export const MODAL_FIRST_DESKTOP_NOTICE =
   "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
 
+export const DAYTONA_FIRST_DESKTOP_NOTICE =
+  "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.";
+
 const STAGES = {
   preparing: "Preparing desktop template",
   building: "Building desktop template in E2B",
@@ -94,7 +97,9 @@ export function CreationProgress({
         {t(
           stage === "building" && providerType === "modal"
             ? "Building desktop image in Modal"
-            : STAGES[stage],
+            : stage === "building" && providerType === "daytona"
+              ? "Building desktop snapshot in Daytona"
+              : STAGES[stage],
         )}
       </h3>
       {environment.status === "creating" && (

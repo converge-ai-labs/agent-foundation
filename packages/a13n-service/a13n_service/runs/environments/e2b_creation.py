@@ -1,4 +1,4 @@
-"""User-visible automatic E2B/Modal creation progress and fenced retry; no cloud I/O on reads."""
+"""User-visible automatic E2B/Modal/Daytona creation progress and fenced retry; no cloud I/O on reads."""
 
 from datetime import datetime
 from typing import Literal
@@ -11,7 +11,7 @@ from a13n_service.infra.errors import conflict
 from a13n_service.infra.http import require_match
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import e2b_templates, lifecycle, modal_images
+from a13n_service.runs.environments import daytona_snapshots, e2b_templates, lifecycle, modal_images
 from a13n_service.runs.environments.adapters import provider_identity
 from a13n_service.runs.environments.schemas import EnvironmentView, Handle
 from a13n_service.runs.environments.service import _audit, _find
@@ -35,11 +35,13 @@ def _automatic(row: EnvironmentRow, handle: Handle | None) -> bool:
         and (
             handle.e2b_desktop_template
             or handle.modal_desktop_image
+            or handle.daytona_desktop_snapshot
             or (
                 row.provider_identity
                 and (
                     (row.provider_identity.get("type") == "e2b" and handle.recipe.get("template") == "auto")
                     or (row.provider_identity.get("type") == "modal" and handle.recipe.get("image") == "auto")
+                    or (row.provider_identity.get("type") == "daytona" and handle.recipe.get("snapshot") == "auto")
                 )
                 and handle.recipe.get("desktop")
             )
@@ -76,6 +78,15 @@ async def progress(runtime: Runtime, actor: Principal, workspace_id: str, identi
                     stage = "building"
                 elif image.phase == "failed":
                     stage, ended = "failed", image.updated_at
+        elif handle.daytona_desktop_snapshot:
+            snapshot = await session.get(daytona_snapshots.DaytonaDesktopSnapshotRow, handle.daytona_desktop_snapshot)
+            if snapshot and snapshot.workspace_id == row.workspace_id and snapshot.provider_id == row.provider_id:
+                if handle.recipe.get("snapshot") != "auto" or snapshot.phase == "ready":
+                    stage = "starting"
+                elif snapshot.phase in {"submitting", "building"}:
+                    stage = "building"
+                elif snapshot.phase in {"failed", "cleanup"}:
+                    stage, ended = "failed", snapshot.updated_at
         elif handle.recipe.get("template") != "auto":
             stage = "starting"
         elif handle.e2b_desktop_template:
@@ -124,6 +135,11 @@ async def retry(
             if image is not None and image.phase == "failed":
                 key = await modal_images.bind(runtime, session, row, provider)
                 row.handle = handle.model_copy(update={"modal_desktop_image": key}).model_dump(mode="json")
+        if handle.recipe.get("snapshot") == "auto" and handle.daytona_desktop_snapshot:
+            snapshot = await session.get(daytona_snapshots.DaytonaDesktopSnapshotRow, handle.daytona_desktop_snapshot)
+            if snapshot is not None and snapshot.phase == "failed":
+                key = await daytona_snapshots.bind(runtime, session, row, provider)
+                row.handle = handle.model_copy(update={"daytona_desktop_snapshot": key}).model_dump(mode="json")
         await lifecycle.begin(session, row, "creating")
         await session.flush()
         _audit(session, actor, row, "retry_creation")

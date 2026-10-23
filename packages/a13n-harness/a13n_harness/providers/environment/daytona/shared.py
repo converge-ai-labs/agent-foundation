@@ -4,6 +4,7 @@ import hashlib
 from typing import Literal
 from urllib.parse import quote, urlsplit
 
+import anyio
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
@@ -12,13 +13,22 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.native.configuration import TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
-from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
+from a13n_harness.providers.environment.native.http import decode_response
+
+from .diagnostics import TimedHTTP as NativeHTTP
+from .diagnostics import timed
 
 
 class DaytonaConnectionConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     _endpoint_policy: EndpointPolicy = PrivateAttr(default_factory=EndpointPolicy)
-    organization_id: str = Field(min_length=1, max_length=128, title="Organization ID")
+    organization_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        title="Organization ID",
+        description="Optional account constraint. When omitted, resolve the organization from the current API key.",
+    )
     target: str = Field(default="us", min_length=1, max_length=64, title="Target region")
 
 
@@ -56,6 +66,31 @@ class Sandbox(BaseModel):
 
 class Proxy(BaseModel):
     url: str
+
+
+class CurrentKey(BaseModel):
+    organizationId: str = Field(min_length=1)
+
+
+async def organization(http: NativeHTTP, expected: str | None) -> str:
+    """Read only the account identity; never retain or expose the API key response."""
+    current = decode_response(CurrentKey, await http.request("GET", "api-keys/current"), "daytona")
+    if expected is not None and current.organizationId != expected:
+        raise failure("daytona", "provider_account_conflict", Category.CONFLICT)
+    return current.organizationId
+
+
+@timed("account.resolve")
+async def resolved_runtime(configuration: DaytonaConnectionConfiguration, credential: TokenCredential) -> NativeRuntime:
+    if configuration.organization_id is not None:
+        return NativeRuntime(configuration, credential)
+    http = NativeHTTP("daytona", "https://app.daytona.io/api/", credential.api_key.get_secret_value(), 20)
+    try:
+        identity = await organization(http, None)
+        return NativeRuntime(configuration.model_copy(update={"organization_id": identity}), credential)
+    finally:
+        with anyio.CancelScope(shield=True), anyio.move_on_after(5):
+            await http.close()
 
 
 class Execution(BaseModel):
