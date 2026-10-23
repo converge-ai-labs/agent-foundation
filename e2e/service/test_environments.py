@@ -234,7 +234,7 @@ def check_defaults(mode: str = "agent-default") -> str:
         "import os,sys,subprocess,json; "
         f"expected={expected!r}; "
         "assert {key:os.environ[key] for key in expected} == expected; "
-        "child=subprocess.check_output([sys.executable,'-c','import os,json; print(json.dumps(dict(os.environ)))'],text=True); "
+        "child=subprocess.check_output([sys.executable or 'python3','-c','import os,json; print(json.dumps(dict(os.environ)))'],text=True); "
         "assert all(json.loads(child)[key] == value for key,value in expected.items()); "
         "print('defaults-ok')"
     )

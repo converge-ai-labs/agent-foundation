@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -30,6 +31,23 @@ def environment_journeys(pytestconfig):
     from e2e.service import test_environments
 
     return test_environments
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Guest probe invokes POSIX python3")
+@pytest.mark.parametrize("empty_executable", [False, True])
+def test_environment_probe_checks_real_children_with_minimal_python_environment(environment_journeys, empty_executable):
+    _, _, source = shlex.split(environment_journeys.check_defaults())
+    if empty_executable:
+        source = "import sys; sys.executable=''; " + source
+    result = subprocess.run(
+        [sys.executable, "-c", source],
+        env={**environment_journeys.DEFAULT_VARIABLES, "PATH": str(Path(sys.executable).parent)},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "defaults-ok"
 
 
 def test_failed_environment_journey_cleans_up_with_its_frozen_recipe(tmp_path, monkeypatch, environment_journeys):
