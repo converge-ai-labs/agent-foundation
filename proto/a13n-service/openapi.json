@@ -2615,11 +2615,8 @@
             "type": "string"
           },
           "method": {
+            "const": "manual_callback",
             "default": "manual_callback",
-            "enum": [
-              "manual_callback",
-              "browser_callback"
-            ],
             "title": "Method",
             "type": "string"
           }
@@ -2692,7 +2689,6 @@
             "enum": [
               "disconnected",
               "connected",
-              "refreshing",
               "reauthentication_required"
             ],
             "title": "State",

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import chain
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 import httpx2
@@ -176,7 +176,10 @@ from a13n_harness_ui.model_accounts import (
     resolve_grok_scope,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
-from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
 from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
@@ -456,6 +459,8 @@ class HarnessUiApp:
         self._copilot_account = copilot_account
         self._copilot_login = copilot_login
         self._codex_account = codex_account
+        from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
         self._chatgpt_account = ChatGPTAccountStore(store.layout.root / "auth.json")
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
@@ -2449,11 +2454,15 @@ class HarnessUiApp:
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():
             account = self._account(Provider(provider))
+            from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
             return await account.candidates() if isinstance(account, CopilotAccountStore | ChatGPTAccountStore) else ()
 
     async def select_model_account(self, provider: Provider | str, selection: AccountSelection) -> AccountProjection:
         async with self._operation():
             account = self._account(Provider(provider))
+            from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
             if not isinstance(account, CopilotAccountStore | ChatGPTAccountStore):
                 raise AppStateError(
                     "This account has no source-selection action.", code="account_selection_unsupported"
@@ -2469,7 +2478,7 @@ class HarnessUiApp:
                 from a13n_harness.providers.model.chatgpt import discover_chatgpt_models
 
                 try:
-                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account)
+                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account.source())
                     return tuple(ModelChoice(value=item.slug, label=item.display_name) for item in models)
                 except Exception:
                     raise AppStateError(
@@ -3217,9 +3226,11 @@ async def open_harness_ui_app(
                 grok_account = None
                 grok_account_error = exc
             copilot_account = CopilotAccountStore(store.layout.root / "oauth" / "copilot.json")
+            from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
             subscription_sources: dict[str, SubscriptionSource] = {
                 "chatgpt_subscription": ChatGPTSubscriptionSource(
-                    source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                    create_source=ChatGPTAccountStore(store.layout.root / "auth.json").source
                 ),
                 "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
             }
@@ -3363,7 +3374,7 @@ async def open_harness_ui_app(
                 errors: dict[Provider, AccountStoreError] = {}
                 sources: dict[str, SubscriptionSource] = {
                     "chatgpt_subscription": ChatGPTSubscriptionSource(
-                        source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                        create_source=ChatGPTAccountStore(store.layout.root / "auth.json").source
                     ),
                     "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
                 }

@@ -44,7 +44,7 @@ description: 独立的环境管理、连接和执行接口，支持本地、容�
 | Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
 | Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
-> 实现状态：Docker、E2B、Daytona、Modal 和 Vercel 已支持兼容运行环境下的 Envd/EIP 与桌面访问。Service 可自动准备 E2B 桌面模板和 Modal 桌面镜像；其他 Provider 仍按各自文档准备镜像或快照。Sprites 和 Runloop 当前提供原生 Files & Shell。已有字段详见[配置参考](configuration-reference.md)。
+> 实现状态：Docker、E2B、Daytona、Modal 和 Vercel 已支持兼容运行环境下的 Envd/EIP 与桌面访问。Service 可自动准备 E2B 桌面模板、Modal 桌面镜像和 Daytona 桌面快照；其他 Provider 仍按各自文档准备镜像或快照。Sprites 和 Runloop 当前提供原生 Files & Shell。已有字段详见[配置参考](configuration-reference.md)。
 
 [在本地试用远程示例](remote-envd.md)，无需模型、Docker 或云账号。
 

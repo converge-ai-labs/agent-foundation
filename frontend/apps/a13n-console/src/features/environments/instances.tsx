@@ -48,6 +48,7 @@ import instanceStyles from "./environments.module.css";
 import {
   FIRST_DESKTOP_NOTICE,
   MODAL_FIRST_DESKTOP_NOTICE,
+  DAYTONA_FIRST_DESKTOP_NOTICE,
 } from "./creation-progress";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
@@ -468,6 +469,11 @@ function EnvironmentForm({
         templates.data?.find((item) => item.id === templateId)?.config?.recipe
           ?.image === "auto" && (
           <p role="note">{t(MODAL_FIRST_DESKTOP_NOTICE)}</p>
+        )}
+      {kind === "managed" &&
+        templates.data?.find((item) => item.id === templateId)?.config?.recipe
+          ?.snapshot === "auto" && (
+          <p role="note">{t(DAYTONA_FIRST_DESKTOP_NOTICE)}</p>
         )}
       <MetricsSourcePicker
         value={metricsSource}

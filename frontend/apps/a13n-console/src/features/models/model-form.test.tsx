@@ -1026,7 +1026,7 @@ it("opens saved account models without discovery and clears stale catalog metada
   });
 });
 
-it.each(["manual_callback", "browser_callback"])(
+it.each(["manual_callback"])(
   "refreshes account choices after %s and clears them on disconnect",
   async (method) => {
     accountProvider();
@@ -1049,7 +1049,7 @@ it.each(["manual_callback", "browser_callback"])(
     state.DELETE.mockImplementation(async () => {
       state.authorization = { state: "disconnected", pending: false };
       return {
-        data: { local_tokens_cleared: true, revocation_confirmed: true },
+        data: { local_tokens_cleared: true, revocation_confirmed: null },
       };
     });
     mount({ providerId: provider.id });

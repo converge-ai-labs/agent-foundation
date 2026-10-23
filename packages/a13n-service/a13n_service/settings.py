@@ -15,10 +15,10 @@ from urllib.parse import urlsplit
 
 from a13n_harness.http import OUTBOUND_TLS_VERIFY_ENV, outbound_tls_verify
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.model.oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
 
 from a13n_service.infra.outbox import OutboxKind, Policy
 from a13n_service.providers.collectors import Configuration as CollectorConfiguration
@@ -443,27 +443,21 @@ class Providers(Section):
     # Per-read timeout of one model exchange; reasoning models can stay silent for minutes.
     model_timeout: float = Field(default=300, gt=0, le=3600)
     response_bytes: int = Field(default=16777216, ge=65536, le=268435456)
-    # Explicitly provisioned public SIWC client; an OSS-issued ID does not authorize HTTPS callbacks.
+    # Public ChatGPT registration and loopback callback.
     chatgpt_client_id: str | None = Field(default=None, min_length=1, max_length=256)
     chatgpt_redirect_uri: str = Field(default="http://127.0.0.1:1456/auth/callback", max_length=2048)
 
     @model_validator(mode="after")
     def chatgpt_callback(self) -> "Providers":
         if self.chatgpt_client_id is not None and (
-            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == DYNAMIC_CLIENT_ID
+            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == "dynamic_agent_client"
         ):
-            raise ValueError("providers.chatgpt_client_id must be an explicitly provisioned client ID")
+            raise ValueError("providers.chatgpt_client_id must be an issued public client ID")
         try:
-            validate_chatgpt_redirect_uri(
-                self.chatgpt_redirect_uri, preconfigured_client=self.chatgpt_client_id is not None
-            )
+            OpenAIChatGPTOAuthFlow(app_name="Agent Foundation OSS", redirect_uri=self.chatgpt_redirect_uri)
         except UserError as error:
             raise ValueError(f"providers.chatgpt_redirect_uri: {error}") from None
         return self
-
-    @property
-    def chatgpt_browser_callback(self) -> bool:
-        return urlsplit(self.chatgpt_redirect_uri).scheme == "https"
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:
@@ -626,17 +620,6 @@ class Settings(Section):
     monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def chatgpt_callback_origin(self) -> "Settings":
-        if self.providers.chatgpt_browser_callback:
-            parts = urlsplit(self.providers.chatgpt_redirect_uri)
-            origin = f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}"
-            if origin != self.server.public_origin:
-                raise ValueError(
-                    "providers.chatgpt_redirect_uri must share server.public_url's origin for browser cookies"
-                )
-        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":

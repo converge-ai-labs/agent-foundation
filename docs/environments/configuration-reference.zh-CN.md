@@ -395,10 +395,10 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 
 ## `DaytonaConnectionConfiguration`
 
-| 字段              | 必填  | 类型 / 可选值 | 约束与默认值                            |
-| ----------------- | ----- | ------------- | --------------------------------------- |
-| `organization_id` | true  | string        | minLength=1; maxLength=128              |
-| `target`          | false | string        | minLength=1; maxLength=64; default="us" |
+| 字段              | 必填  | 类型 / 可选值  | 约束与默认值                             |
+| ----------------- | ----- | -------------- | ---------------------------------------- |
+| `organization_id` | false | string or null | minLength=1; maxLength=128; default=null |
+| `target`          | false | string         | minLength=1; maxLength=64; default="us"  |
 
 ## `ModalConnectionConfiguration`
 

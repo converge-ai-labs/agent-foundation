@@ -127,9 +127,9 @@ settings: {}
 model_configuration: {}
 ```
 
-Discover model slugs after login or enter one manually. Account visibility is not a guarantee of inference access. ChatGPT uses the public Responses endpoint with `store: false`, `stream: true`, full input history and developer instructions; ordinary calls collect the required stream through the native Model. It does not support endpoint overrides, static API keys, previous-response IDs, temperature, Top P, output-token limits, or hosted tools other than policy-permitted web search.
+Discover model slugs after login or enter one manually. Account visibility is not a guarantee of inference access. ChatGPT uses the public Responses endpoint with `store: false`, `stream: true`, full input history and developer instructions; ordinary calls collect the required stream through the native Model. It does not support endpoint overrides or static API keys. The official profile omits generic temperature, Top P and output-token limits; other settings and tool serialization follow the native Model.
 
-Credentials are plaintext in the Host data root's private `auth.json`, alongside but separate from API keys. They never use `~/.codex` or Codex credentials. `a13n-harness-ui auth logout chatgpt` clears tokens, keeps the issued registration for future login, and requests OpenAI revocation; an unconfirmed revocation is reported separately. Replacing the account affects everyone using this Host.
+Credentials are plaintext in the Host data root's private `auth.json`, alongside but separate from API keys. They never use `~/.codex` or Codex credentials. `a13n-harness-ui auth logout chatgpt` clears local tokens and keeps the issued registration for future login. Manage remote access in ChatGPT settings. Active Models may retain cached access tokens. Expiry and 401 refresh use the official provider, with complete-set saves to the Host store and no cross-process refresh exclusion. Replacing the account affects everyone using this Host.
 
 ## GitHub Copilot subscription
 

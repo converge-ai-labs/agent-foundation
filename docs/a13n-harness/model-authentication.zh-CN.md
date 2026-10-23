@@ -98,31 +98,39 @@ Harness UI 提供更强的文件存储协调：协作进程共享一个锁和持
 
 ## ChatGPT 登录与原生 Model
 
-此集成将 OAuth、Provider 和 Model 请求方言与 Host 存储分离：
-
-- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., client_id=None, credentials=None)` 创建有期限的 PKCE 注册或再次授权。显示 `authorization_url()`，再将完整回调 URL 交给 `validate_callback()` 和 `exchange_callback()`。两者均不请求该 URL。Host 必须在交换前持久化有效待完成授权的消费状态，在报告成功前保存完整且经过验证的凭据。
-- `OpenAIChatGPTCredentials` 和 `OpenAIChatGPTCredentialSource` 定义边界。Source 实现 `async load()` 和 `async rotate(expected, exchange)`，负责同账户仲裁和持久化发布。`refresh_chatgpt_credentials` 与 `revoke_chatgpt_credentials` 执行协议操作，不拥有存储。
-- `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` 是原生 OpenAI Provider，端点固定，每次请求重新读取身份，通过协调轮换以及一次 401 重放工作。注入的客户端仍由调用者管理，且不能已有身份验证。
-- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` 继承原生 Responses 渲染，保留普通请求的流收集器。它强制 `store=false`、`stream=true`、完整输入历史、developer 指令、受支持工具位置和自然 `response.completed` 终止事件。不支持的 Sign in with ChatGPT（SIWC）设置与托管工具明确失败。
-
-这些 API 不发现本地账户文件，也不嵌入 Harness UI 或 Service 存储。`discover_chatgpt_models(credential_source=..., http_client=None)` 按服务器顺序返回账户可见 slug 和显示名，仍可手动输入 ID。ChatGPT 订阅资格与模型权限由 OpenAI 决定，与 Codex 和 API 密钥授权分离。
-
-### 预配置的 client
-
-默认流程通过 OpenAI 的 OSS 动态注册来注册 client。该流程（包括使用已签发 client ID 的再次登录）要求 `http://127.0.0.1:<port>/auth/callback`，只能变更端口。若需使用其他已注册的回调，显式选择单独申请的**公共** client：
+使用官方集成，并由 Host 管理存储：
 
 ```python
-flow = OpenAIChatGPTOAuthFlow.start(
-    ext_agent_host_id=host_id,
-    agent_name="My Agent",
-    client_id="approved-public-client",
-    redirect_uri="https://agent.example.com/auth/openai/callback",
+from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.providers.openai_chatgpt import (
+    OpenAIChatGPTOAuthFlow,
+    OpenAIChatGPTProvider,
+)
+
+flow = OpenAIChatGPTOAuthFlow(
+    app_name="My Agent",
+    host_id=host_id,  # 每次安装生成一次 uuid.uuid4().urn，并持久保存。
+    redirect_uri="http://127.0.0.1:1456/auth/callback",
+)
+# 显示 flow.authorization_url()，接收回调并保存凭据。
+# source 实现 async load() 和 async save(credentials)。
+model = OpenAIResponsesModel(
+    "YOUR_ACCOUNT_MODEL_SLUG",
+    provider=OpenAIChatGPTProvider(credential_source=source),
 )
 ```
 
-URI 必须与此 client 在 OpenAI 注册的值完全一致，使用 HTTPS 或 HTTP `127.0.0.1`，包含路径且不能有用户信息、query 或 fragment。Host 从受保护存储恢复完整 `flow.authorization`，包括 `preconfigured_client` 标记。再次授权只能传入同一 client、同一 Host 的凭据；切换账户时不传保留凭据，但仍保留显式 `client_id`。
+从 `pydantic_ai.providers.openai_chatgpt` 导入 `OpenAIChatGPTCredentials` 和 `OpenAIChatGPTCredentialSource`。每次一起保存所有凭据字段。Provider 处理到期刷新，刷新前采用存储中的较新 token，并在 401 后重试一次身份认证。锁只属于单个 provider 实例，多进程仍可能同时刷新同一授权。保存失败会抛出错误，但轮换后的凭据仍留在 provider 内存中。解决持久化冲突后应启动新的 Run。
 
-此配置不授予 ChatGPT 订阅额度调用权限。集成仍要求可刷新的 token 及 `resource.invoke` / `chatgpt.tokens.use.direct`，因此仅身份登录的网站授权会被拒绝。托管/商业使用需要另获 OpenAI 批准。若已注册机密 client，还需传入 `token_endpoint_auth_method="client_secret_basic"` 和从受保护服务端存储读取的 `client_secret`。公共 client 使用 `none`，不传 secret。待完成授权和可刷新凭据在代码交换、刷新和撤销时沿用该认证方式。secret 只放在服务端 HTTP Basic 请求头中，绝不放入授权 URL 或表单正文。完整待完成状态与凭据必须加密保存。部署覆盖参数和浏览器接收流程请参阅 [Service 配置](../a13n-service/models.md#self-hosted-callback)。
+Harness UI 和 Service 使用 `providers.model.oauth.chatgpt.ChatGPTAuthorization` 持久保存公开流程属性并验证粘贴的回调。有效待完成授权在交换前被消费。官方流程负责 PKCE 和 token 验证。`providers.model.chatgpt.discover_chatgpt_models()` 按服务器顺序返回账户可见 slug 和显示名。仍可手动输入 ID；可见不代表有推理权限。
+
+官方 Responses profile 强制流式响应和 `store=false`，普通请求使用原生流收集器。工具序列化、支持的设置和流结束行为遵循官方 Model，不再叠加 Harness 自定义 ChatGPT 方言。
+
+### 预配置的 client
+
+再次登录可传入已签发的公共 `client_id` 和保留的 `id_token_hint`。所有回调都使用 `http://127.0.0.1:<port>/auth/callback`，只能变更端口。不支持机密 client 和 HTTPS 托管回调；升级前需将这些配置改为公共 client 回环流程。已有公共 client 凭据仍可读取。
+
+若曾拒绝订阅额度使用权限，请重新登录并批准；Host 在这次重试中显式请求同意。本地退出会清除已存 token，但不会撤销 OpenAI 授权，也不会停止使用缓存 token 的活动 provider。请在 ChatGPT 设置中管理远端访问。参见 [Service 回调配置](../a13n-service/models.md#self-hosted-callback)。
 
 ## 身份验证失败
 

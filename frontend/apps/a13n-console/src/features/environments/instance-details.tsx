@@ -244,11 +244,14 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
-              {["e2b", "modal"].includes(provider.data?.type ?? "") &&
+              {["e2b", "modal", "daytona"].includes(
+                provider.data?.type ?? "",
+              ) &&
                 template.data?.config.recipe?.desktop === true && (
                   <>
                     {(template.data.config.recipe?.template === "auto" ||
-                      template.data.config.recipe?.image === "auto") && (
+                      template.data.config.recipe?.image === "auto" ||
+                      template.data.config.recipe?.snapshot === "auto") && (
                       <CreationProgress
                         environment={value}
                         providerType={provider.data?.type}
