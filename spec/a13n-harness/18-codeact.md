@@ -230,6 +230,10 @@ Argument validation failures before dispatch do not count as started nested call
 
 A completed earlier callback is never rolled back. Failure and timeout metadata therefore preserve a side-effect-uncertain flag once any nested call has started.
 
+Once execution starts, runner failures return a JSON diagnostic envelope bounded to 4 KiB of UTF-8, including JSON escaping and all fields. Its version-`1` `codeact` object retains `status=failed`, `execution_id`, the exact started `tool_call_count`, `cumulative_bytes`, and `side_effect_uncertain`. It also includes `calls`, an ordinal-ordered prefix of started calls, and `omitted_call_count`, the exact number of started calls outside that prefix. Each entry contains only `call_id`, `ordinal`, `canonical_tool_name`, and the observed `outcome` (`completed`, `failed`, `cancelled`, or `deferred`). Whole entries are omitted when the envelope would exceed its bound; identities are never shortened. Calls rejected before dispatch are absent, so ordinals may have gaps. The `error` object contains a safe `type` and `message`, bounded to 128 and 256 UTF-8 bytes respectively before JSON encoding.
+
+The projection is produced after callback cleanup from the same observations used by lifecycle events. A completed call means its callback returned successfully, not that an external business transaction committed; a failed, cancelled, or deferred call does not imply rollback. These observations help the model inspect prior work before deciding on a new explicit call and confer no replay authority.
+
 ## Events and Data Safety
 
 CodeAct emits typed Harness `diagnostic` extension payloads for execution start/completion and nested call start/completion. Correlation includes a fresh execution ID, the outer tool-call ID, nested call IDs and ordinals, canonical and sandbox names, execution kind, source digest and optional logical path, terminal status, durations, byte counts, error category, and side-effect uncertainty.
