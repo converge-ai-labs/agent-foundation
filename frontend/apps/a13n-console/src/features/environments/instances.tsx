@@ -253,7 +253,7 @@ export function EnvironmentInstances() {
               filtered
                 ? t("Change or clear the search and filters.")
                 : t(
-                    "Choose an environment template when starting a conversation, or register an external environment.",
+                    "Choose an environment template when starting a session, or register an external environment.",
                   )
             }
             action={

@@ -13,6 +13,7 @@ export function TextAreaField({
   onChange,
   rows = 5,
   hint,
+  placeholder,
   required,
   code = false,
   hideLabel = false,
@@ -28,6 +29,7 @@ export function TextAreaField({
   onChange: (value: string) => void;
   rows?: number;
   hint?: string;
+  placeholder?: string;
   required?: boolean;
   code?: boolean;
   hideLabel?: boolean;
@@ -62,11 +64,11 @@ export function TextAreaField({
       <Textarea
         ref={ref}
         aria-invalid={invalid || undefined}
-        variant="soft"
         className={code ? styles.code : ""}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={rows}
+        placeholder={placeholder}
         required={required}
         maxLength={maxLength}
       />

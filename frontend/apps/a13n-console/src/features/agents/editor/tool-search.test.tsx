@@ -55,9 +55,9 @@ it("selects proxy discovery and groups local tools with a connection", async () 
   }
   const user = userEvent.setup();
   render(<Editor />);
-  await user.click(screen.getByRole("combobox", { name: "Discovery mode" }));
+  await user.click(screen.getByRole("combobox", { name: "Mode" }));
   await user.click(
-    await screen.findByRole("option", { name: "Grouped proxy search" }),
+    await screen.findByRole("option", { name: "Search groups" }),
   );
   await user.click(screen.getByRole("button", { name: "Add group" }));
   await user.clear(screen.getByLabelText("Group name"));

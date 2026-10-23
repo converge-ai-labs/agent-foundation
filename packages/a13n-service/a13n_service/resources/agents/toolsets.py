@@ -266,7 +266,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 "Observe desktop",
                 "environment.computer.observe",
                 "computer_observe",
-                description="Capture the desktop for the model and conversation",
+                description="Capture the desktop for the model and the session",
             ),
             _Tool(
                 "zoom",
@@ -460,7 +460,7 @@ _TOOLSETS: tuple[_Toolset, ...] = (
                 description="Delete a memory record",
             ),
         ),
-        description="Read and change the memories a conversation mounts.",
+        description="Read and change the memories a session mounts.",
     ),
     _Toolset(
         "assets",

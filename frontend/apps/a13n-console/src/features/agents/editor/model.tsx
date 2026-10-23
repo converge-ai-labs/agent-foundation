@@ -6,7 +6,6 @@ import {
   Input,
   ReadOnlyField,
   SearchPicker,
-  SettingsSection,
 } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useRef, useState, type ReactNode } from "react";
@@ -22,49 +21,53 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
 import { Section } from "../../../shared/page";
 import {
-  MediaUnderstandingFields,
   modelOption,
   modelPopupWidth,
-  useMediaSummary,
-  useWorkspaceMediaDefault,
 } from "../../models/media-understanding-fields";
 import type { useAgentChoices } from "../choices";
+import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import styles from "./editor.module.css";
+import agentStyles from "../agents.module.css";
 import type { AgentDraft } from "./draft";
 
 /** The model that powers this agent and how it reasons. */
 export function ModelSection({
+  id,
   draft,
   choices,
-  thinkingOptions,
   readOnly,
   mark,
-  expanded,
-  onExpandedChange,
-  validation,
+  settings,
+  error,
 }: {
+  id?: string;
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
-  thinkingOptions: { value: string; label: string }[];
   readOnly: boolean;
   /** Says how a read-only view's value differs, beside the title. */
   mark?: ReactNode;
-  expanded: boolean;
-  onExpandedChange: (value: boolean) => void;
-  validation?: Error;
+  settings?: ReactNode;
+  /** Why saving needs a model, after a save without one. */
+  error?: string;
 }) {
   const { t } = useTranslation();
-  const [mediaExpanded, setMediaExpanded] = useState(false);
   const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const modelPicker = useRef<HTMLButtonElement>(null);
-  const { can } = useWorkspace();
-  const workspaceDefault = useWorkspaceMediaDefault();
-  const mediaSummary = useMediaSummary();
+  const { can, basePath } = useWorkspace();
   return (
     <Section
+      id={id}
       title={t("Model")}
-      description={t("The model that powers this agent and how it reasons.")}
+      titleActions={
+        <OptionsRefresh
+          onRefresh={() => choices.refetch({ throwOnError: true })}
+        />
+      }
+      titleLink={{ href: `${basePath}/models`, label: t("Manage models") }}
+      description={t(
+        "The model that powers the agent, with its reasoning and output limits.",
+      )}
       actions={mark}
     >
       {readOnly ? (
@@ -110,24 +113,32 @@ export function ModelSection({
           onOpenChange={setPickerOpen}
           triggerRef={modelPicker}
           footer={
-            !readOnly && can("write") ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  setPickerOpen(false);
-                  setAdding(true);
-                }}
-              >
-                <PlusIcon size={14} aria-hidden="true" />
-                {t("Add model")}
-              </Button>
-            ) : undefined
+            <>
+              {!readOnly && can("write") ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setAdding(true);
+                  }}
+                >
+                  <PlusIcon size={14} aria-hidden="true" />
+                  {t("Add model")}
+                </Button>
+              ) : undefined}
+            </>
           }
         />
       )}
+      {error && !draft.model && (
+        <p role="alert" className={styles.fieldError}>
+          {error}
+        </p>
+      )}
+      {settings}
       {adding && (
         <AddModel
           controlledOpen
@@ -137,71 +148,82 @@ export function ModelSection({
           onSaved={(model) => draft.setModel(model.key)}
         />
       )}
-      <div className={styles.grid}>
-        <ChoiceField
-          label={t("Thinking effort")}
-          readOnly={readOnly}
-          value={draft.thinking}
-          onValueChange={draft.setThinking}
-          options={thinkingOptions}
-        />
-        <FormField label={t("Max output tokens")} readOnly={readOnly}>
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            placeholder={t("Model default")}
-            value={draft.maxTokens}
-            onChange={(event) => draft.setMaxTokens(event.target.value)}
-          />
-        </FormField>
-      </div>
-      <DisclosureSection
-        title={t("Provider-specific settings")}
-        summary={
-          Object.keys(draft.initialExtraSettings).length ||
-          draft.settings.trim() !== "{}"
-            ? t("Customized")
-            : t("Defaults")
-        }
-        open={expanded}
-        onOpenChange={onExpandedChange}
-      >
-        <TextAreaField
-          readOnly={readOnly}
-          label={t("Provider-specific settings")}
-          hideLabel
-          hint={t(
-            "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
-          )}
-          code
-          value={draft.settings}
-          onChange={draft.setSettings}
-          rows={5}
-        />
-        <ErrorNotice error={validation} />
-      </DisclosureSection>
-      <DisclosureSection
-        title={t("Media understanding")}
-        summary={mediaSummary(
-          draft.mediaUnderstanding,
-          t("Workspace defaults"),
-        )}
-        open={mediaExpanded}
-        onOpenChange={setMediaExpanded}
-      >
-        <SettingsSection variant="plain">
-          <MediaUnderstandingFields
-            value={draft.mediaUnderstanding}
-            onChange={draft.setMediaUnderstanding}
-            inherit={{
-              label: t("Workspace default"),
-              describe: (kind) => workspaceDefault(kind) ?? t("Not configured"),
-            }}
-            disabled={readOnly}
-          />
-        </SettingsSection>
-      </DisclosureSection>
     </Section>
+  );
+}
+
+/** Optional parameters expand beneath the model, inside its section. */
+export function ModelSettings({
+  draft,
+  thinkingOptions,
+  readOnly,
+  expanded,
+  onExpandedChange,
+  validation,
+}: {
+  draft: AgentDraft;
+  thinkingOptions: { value: string; label: string }[];
+  readOnly: boolean;
+  expanded: boolean;
+  onExpandedChange: (value: boolean) => void;
+  validation?: Error;
+}) {
+  const { t, i18n } = useTranslation();
+  const summary = [
+    draft.thinking !== "default" &&
+      thinkingOptions.find((option) => option.value === draft.thinking)?.label,
+    draft.maxTokens &&
+      t("{{value}} tokens", {
+        value: new Intl.NumberFormat(i18n?.language).format(
+          Number(draft.maxTokens),
+        ),
+      }),
+    draft.settings.trim() !== "{}" && t("Request overrides"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <DisclosureSection
+      className={`${agentStyles.outlinedDisclosure} ${styles.modelSettingsCard}`}
+      open={expanded}
+      onOpenChange={onExpandedChange}
+      title={t("Model settings")}
+      summary={summary || t("Defaults")}
+    >
+      <ChoiceField
+        className={styles.modelParameter}
+        label={t("Thinking effort")}
+        readOnly={readOnly}
+        value={draft.thinking}
+        onValueChange={draft.setThinking}
+        options={thinkingOptions}
+      />
+      <FormField
+        className={styles.modelParameter}
+        label={t("Max output tokens")}
+        readOnly={readOnly}
+      >
+        <Input
+          type="number"
+          min={1}
+          step={1}
+          placeholder={t("Model default")}
+          value={draft.maxTokens}
+          onChange={(event) => draft.setMaxTokens(event.target.value)}
+        />
+      </FormField>
+      <TextAreaField
+        readOnly={readOnly}
+        label={t("Request parameters JSON")}
+        hint={t(
+          "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
+        )}
+        code
+        value={draft.settings}
+        onChange={draft.setSettings}
+        rows={4}
+      />
+      <ErrorNotice error={validation} />
+    </DisclosureSection>
   );
 }

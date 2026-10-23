@@ -220,7 +220,7 @@ export function EnvironmentPanel({
                   subject={name}
                   title={t("Delete environment")}
                   description={t(
-                    "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
+                    "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a session while still usable, cannot be deleted.",
                   )}
                   danger
                   triggerElement={
@@ -265,7 +265,7 @@ export function EnvironmentPanel({
                   <h3>{t("Environment lost")}</h3>
                   <p>
                     {t(
-                      "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.",
+                      "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Session history is retained.",
                     )}
                   </p>
                 </section>

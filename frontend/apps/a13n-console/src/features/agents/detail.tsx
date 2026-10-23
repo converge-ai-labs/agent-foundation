@@ -6,33 +6,24 @@ import {
   PencilSimpleIcon,
   PlayIcon,
 } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data, ifMatch, representation } from "../../shared/api";
+import { data, ifMatch, representation } from "../../shared/api";
 import {
   ErrorNotice,
   ErrorToast,
   Loading,
   StatePill,
-  Timestamp,
 } from "../../shared/feedback";
-import { CopyButton } from "../../shared/identity";
-import {
-  DetailHeader,
-  DetailPage,
-  RailNote,
-  RailRow,
-  RailSection,
-  useTabParam,
-} from "../../shared/page";
-import { environmentTemplates } from "../environments/api";
+import { ResourceReference } from "../../shared/identity";
+import { DetailHeader, DetailPage, useTabParam } from "../../shared/page";
 import { useAgentComposer } from "./composer";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
-import { AgentEditor, type AgentDraftSummary } from "./editor";
+import { AgentEditor } from "./editor";
 import { editableAgent } from "./queries";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
@@ -81,13 +72,6 @@ export function AgentDetail() {
       return { ...resource, revision };
     },
   });
-  const templates = useQuery({
-    queryKey: ["environment-template-choices", workspace.id],
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        environmentTemplates(client, workspace.id, signal, cursor),
-      ),
-  });
   const save = useMutation({
     mutationFn: async (body: {
       config: AgentConfig;
@@ -134,69 +118,6 @@ export function AgentDetail() {
   };
   const state = agent.archived_at ? "archived" : "enabled";
   const editable = can("write") && editableAgent(agent);
-  const rail = (summary: AgentDraftSummary): ReactNode => {
-    const environment = summary.environmentId
-      ? (templates.data?.find((item) => item.id === summary.environmentId)
-          ?.name ?? summary.environmentId)
-      : t("None");
-    return (
-      <>
-        <RailSection title={t("Overview")}>
-          <RailRow label={t("Status")}>
-            <StatePill state={state} />
-          </RailRow>
-          <RailRow label={t("Default version")}>
-            <button
-              type="button"
-              className={styles.railLink}
-              onClick={() => setTab("versions")}
-            >
-              v{revision.number}
-            </button>
-            {summary.dirty && (
-              <span className="text-muted-foreground">
-                → v{revision.number + 1}
-              </span>
-            )}
-          </RailRow>
-          <RailRow label={t("Model")}>
-            {summary.modelIcon}
-            <span>{summary.modelName}</span>
-          </RailRow>
-          <RailRow label={t("Environment")}>
-            <span>{environment}</span>
-          </RailRow>
-          <RailRow label={t("Capabilities")}>
-            {t("{{count}} skills", { count: summary.skillCount })}
-            <span className={styles.railDot}>·</span>
-            {t("{{count}} connections", { count: summary.connectionCount })}
-          </RailRow>
-          <RailRow label={t("Updated")}>
-            <Timestamp value={agent.updated_at} relative />
-          </RailRow>
-          <RailRow label={t("ID")}>
-            <span title={agent.id}>{agent.id}</span>
-            <CopyButton
-              value={agent.id}
-              iconOnly
-              copyLabel={t("Copy resource ID")}
-            />
-          </RailRow>
-        </RailSection>
-        <RailNote>
-          {t("Versions are immutable. Every save creates a new version.")}
-          <br />
-          <button
-            type="button"
-            className={styles.railLink}
-            onClick={() => setTab("versions")}
-          >
-            {t("View version history")}
-          </button>
-        </RailNote>
-      </>
-    );
-  };
   return (
     <DetailPage
       back={`${basePath}/agents`}
@@ -222,7 +143,12 @@ export function AgentDetail() {
             />
           }
           name={agent.name}
-          status={<StatePill state={state} />}
+          status={
+            <>
+              <ResourceReference id={agent.id} />
+              <StatePill state={state} />
+            </>
+          }
           description={agent.description}
           edit={
             editable && (
@@ -316,7 +242,6 @@ export function AgentDetail() {
           readonly={!editable}
           submit={(config, etag, note) => save.mutate({ config, etag, note })}
           discard={() => void reload()}
-          rail={rail}
         />
       ) : (
         <AgentVersions

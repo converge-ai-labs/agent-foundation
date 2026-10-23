@@ -375,7 +375,7 @@ it("shows why a lost sandbox cannot be used, and that deleting it is allowed whi
   await lifecycle(user, "Delete");
   expect(
     await screen.findByText(
-      "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
+      "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a session while still usable, cannot be deleted.",
     ),
   ).toBeTruthy();
   cache.clear();

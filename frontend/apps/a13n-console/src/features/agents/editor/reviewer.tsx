@@ -15,14 +15,12 @@ import {
 } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ListRowsEmpty } from "../../../shared/collection";
 import { ErrorNotice } from "../../../shared/feedback";
 import {
   jsonObject,
   TextAreaField,
   validateSettings,
 } from "../../../shared/forms";
-import { Section } from "../../../shared/page";
 import type { Schema } from "../../../shared/api";
 import type { useAgentChoices } from "../choices";
 import {
@@ -32,6 +30,7 @@ import {
 } from "../reviewer";
 import type { AgentDraft } from "./draft";
 import styles from "./editor.module.css";
+import { ModelIcon, providerBrand } from "../../models/model-icon";
 
 const risks = [
   { value: "low", label: "Low risk" },
@@ -59,55 +58,78 @@ export function ReviewerSection({
 }) {
   const { t } = useTranslation();
   const reviewer = draft.reviewer;
-  const model = choices.data?.models.find(
-    (item) => item.key === reviewer?.model,
-  );
+  function patch(change: Partial<Reviewer>) {
+    draft.setReviewer({ ...reviewer, model: reviewer?.model ?? "", ...change });
+  }
   return (
-    <Section
-      title={t("Automatic review")}
-      description={t(
-        "Only tools with automatic review use this model and policy.",
-      )}
-      actions={
+    <>
+      {mark}
+      <ChoiceField
+        popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+        label={t("Review model")}
+        readOnly={readOnly}
+        value={reviewer?.model ?? ""}
+        options={[
+          { value: "", label: t("Not configured") },
+          ...(choices.data?.models ?? []).map((model) => ({
+            value: model.key,
+            label: model.name,
+            icon: (
+              <ModelIcon
+                upstream={model.config.model_name}
+                catalogRef={model.catalog_ref}
+                provider={providerBrand(
+                  choices.data?.providers?.find(
+                    (provider) => provider.id === model.provider_id,
+                  ),
+                )}
+                size={20}
+              />
+            ),
+          })),
+        ]}
+        onValueChange={(model) =>
+          model ? patch({ model }) : draft.setReviewer(undefined)
+        }
+      />
+      {reviewer?.model && (
         <>
-          {mark}
-          <Button type="button" variant="outline" size="sm" onClick={onOpen}>
-            {readOnly ? t("View review settings") : t("Configure review")}
-          </Button>
+          <ChoiceField
+            popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+            label={t("Risk threshold")}
+            description={t("Flag this risk level and above.")}
+            readOnly={readOnly}
+            value={reviewer.risk_threshold ?? "extra_high"}
+            options={risks.map((item) => ({ ...item, label: t(item.label) }))}
+            onValueChange={(risk) =>
+              patch({ risk_threshold: risk as Reviewer["risk_threshold"] })
+            }
+          />
+          <ChoiceField
+            popupClassName="[&_[data-slot=select-item]]:text-[13px]"
+            label={t("When flagged")}
+            readOnly={readOnly}
+            value={reviewer.on_flagged ?? "deny"}
+            options={actions.map((item) => ({ ...item, label: t(item.label) }))}
+            onValueChange={(action) =>
+              patch({ on_flagged: action as Reviewer["on_flagged"] })
+            }
+          />
+          <TextAreaField
+            label={t("Review instructions")}
+            readOnly={readOnly}
+            value={reviewer.instruction ?? ""}
+            rows={3}
+            onChange={(instruction) => patch({ instruction })}
+          />
+          <div>
+            <Button type="button" variant="outline" size="sm" onClick={onOpen}>
+              {t("More options")}
+            </Button>
+          </div>
         </>
-      }
-    >
-      {reviewer?.model ? (
-        <div className={styles.reviewSummary}>
-          <strong>{model?.name ?? reviewer.model}</strong>
-          <span>
-            {t("{{risk}} and above → {{action}}", {
-              risk: t(
-                risks.find(
-                  (risk) =>
-                    risk.value === (reviewer.risk_threshold ?? "extra_high"),
-                )!.label,
-              ),
-              action: t(
-                actions.find(
-                  (action) => action.value === (reviewer.on_flagged ?? "deny"),
-                )!.label,
-              ),
-            })}
-          </span>
-          {!!Object.keys(reviewer.rules ?? {}).length && (
-            <span>
-              {t("{{count}} tool review rules", {
-                count: Object.keys(reviewer.rules ?? {}).length,
-              })}
-            </span>
-          )}
-        </div>
-      ) : (
-        // Without a model nothing is reviewed, so the policy has nothing to say.
-        <ListRowsEmpty>{t("No review model configured")}</ListRowsEmpty>
       )}
-    </Section>
+    </>
   );
 }
 
@@ -214,10 +236,10 @@ export function ReviewerSettings({
         closeProps={{ "aria-label": t("Close") }}
       >
         <SheetHeader>
-          <SheetTitle>{t("Automatic review settings")}</SheetTitle>
+          <SheetTitle>{t("Auto review")}</SheetTitle>
           <SheetDescription>
             {t(
-              "Share one review model and default policy across tools. Changes apply when you save the agent.",
+              "Review tool calls before they run. Save the agent to apply changes.",
             )}
           </SheetDescription>
         </SheetHeader>
@@ -253,6 +275,7 @@ export function ReviewerSettings({
               )}
             <div className={styles.grid}>
               <ChoiceField
+                popupClassName="[&_[data-slot=select-item]]:text-[13px]"
                 readOnly={readOnly}
                 label={t("Risk threshold")}
                 value={value.risk_threshold ?? "extra_high"}
@@ -262,6 +285,7 @@ export function ReviewerSettings({
                 }
               />
               <ChoiceField
+                popupClassName="[&_[data-slot=select-item]]:text-[13px]"
                 readOnly={readOnly}
                 label={t("At or above threshold")}
                 value={value.on_flagged ?? "deny"}
@@ -318,6 +342,7 @@ export function ReviewerSettings({
                 )}
                 <div className={styles.grid}>
                   <ChoiceField
+                    popupClassName="[&_[data-slot=select-item]]:text-[13px]"
                     readOnly={readOnly}
                     label={t("Rule risk threshold")}
                     value={rule.risk_threshold ?? "default"}
@@ -335,6 +360,7 @@ export function ReviewerSettings({
                     }
                   />
                   <ChoiceField
+                    popupClassName="[&_[data-slot=select-item]]:text-[13px]"
                     readOnly={readOnly}
                     label={t("Rule action")}
                     value={rule.on_flagged ?? "default"}
@@ -373,6 +399,7 @@ export function ReviewerSettings({
                 />
                 <div className={styles.grid}>
                   <ChoiceField
+                    popupClassName="[&_[data-slot=select-item]]:text-[13px]"
                     readOnly={readOnly}
                     label={t("On review failure")}
                     value={value.on_error ?? "approval_required"}

@@ -189,7 +189,7 @@ export function DesktopPreview({
         <>
           <p>
             {t(
-              "Read-only snapshot. Refresh to see changes; use a conversation for interactive desktop control.",
+              "Read-only snapshot. Refresh to see changes; use a session for interactive desktop control.",
             )}
           </p>
           <img

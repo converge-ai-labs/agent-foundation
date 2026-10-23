@@ -182,7 +182,8 @@ export function MemoryMountRows({
   onRemove,
 }: {
   mounts: readonly Mount[];
-  empty: ReactNode;
+  /** Shown when there are none; an editor whose Add says it omits it. */
+  empty?: ReactNode;
   /** Links each file memory's history to the changes of this run. */
   runId?: string;
   /** Holds the controls while a change is saved. */
@@ -194,7 +195,8 @@ export function MemoryMountRows({
   const { t } = useTranslation();
   const { basePath } = useWorkspace();
   const choices = useMemoryChoices();
-  if (!mounts.length) return <ListRowsEmpty>{empty}</ListRowsEmpty>;
+  if (!mounts.length)
+    return empty ? <ListRowsEmpty>{empty}</ListRowsEmpty> : null;
   return (
     <ListRows>
       {mounts.map((mount) => {

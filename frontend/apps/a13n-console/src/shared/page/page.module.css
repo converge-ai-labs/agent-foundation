@@ -237,7 +237,15 @@
   font-size: var(--a13n-text-lg);
   font-weight: 600;
   letter-spacing: var(--a13n-tracking-heading);
-  line-height: 1.3;
+  line-height: 20px;
+}
+/* A section action centres on the title line, not on title and summary. */
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-block: -4px;
 }
 .sectionHeader p {
   margin: 4px 0 0;
@@ -249,6 +257,67 @@
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+.sectionBody:empty {
+  display: none;
+}
+.sectionGroup > .sectionBody {
+  gap: 32px;
+}
+/* A subsection reads as a labelled field of its group. */
+.subsection {
+  gap: 10px;
+}
+.subsection > .sectionHeader {
+  align-items: center;
+  min-height: 28px;
+}
+.subsection > .sectionHeader h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 600;
+  line-height: 20px;
+}
+.subsection > .sectionHeader p {
+  margin-top: 1px;
+}
+.subsection > .sectionHeader .sectionActions {
+  margin-block: 0;
+}
+
+/* Sections as rows ------------------------------------------------------ */
+.sections {
+  --sections-title: clamp(176px, 26cqi, 248px);
+  container-type: inline-size;
+  display: grid;
+  gap: 56px;
+  min-width: 0;
+}
+@container (min-width: 720px) {
+  .sections > .section {
+    grid-template-columns: var(--sections-title) minmax(0, 1fr);
+    gap: 0 48px;
+  }
+  .sections > .section > .sectionHeader {
+    position: sticky;
+    top: var(--sections-sticky-top, 24px);
+    align-self: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sections > .section > .sectionHeader .sectionActions {
+    margin-block: 0;
+  }
+}
+@container (max-width: 719px) {
+  .sections > .section {
+    gap: 16px;
+  }
+}
+@media (width < 640px) {
+  .sections {
+    gap: 40px;
+  }
 }
 
 /* Save bar -------------------------------------------------------------- */
@@ -318,6 +387,9 @@
     position: static;
     order: -1;
   }
+  .layout[data-folded-rail="hidden"] .rail {
+    display: none;
+  }
   .railSection {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -343,6 +415,9 @@
   }
   .actions {
     justify-content: flex-start;
+  }
+  .toolbar {
+    margin-top: 16px;
   }
   .detailPage {
     padding: 20px var(--a13n-page-gutter-mobile) 140px;
@@ -482,4 +557,35 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: 4px;
   border-radius: 4px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sectionTitleActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-block: -2px;
+}
+.sectionTitleLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--a13n-secondary);
+}
+.sectionTitleLink:hover {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+}
+.sectionTitleLink:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
 }

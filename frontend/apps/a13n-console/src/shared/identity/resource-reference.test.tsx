@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
+import { ResourceTable } from "../collection/resource-table";
 import { ResourceReference } from "./resource-reference";
 
 vi.mock("react-i18next", () => ({
@@ -46,4 +47,49 @@ it("closes after leaving a hovered reference and can be opened again", async () 
   await screen.findByText("agt_hover");
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByText("agt_hover")).toBeNull());
+});
+
+it("keeps reference interactions inside the popover without activating its table row", async () => {
+  const user = userEvent.setup();
+  const activate = vi.fn();
+  const write = vi.spyOn(navigator.clipboard, "writeText");
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ResourceTable
+        items={[{ id: "sess_reference" }]}
+        columns={[
+          {
+            label: "Session",
+            render: (item) => (
+              <>
+                <span>Session name</span>
+                <ResourceReference id={item.id} idLabel="Session ID" />
+              </>
+            ),
+          },
+        ]}
+        onRowActivate={activate}
+      />
+    </QueryClientProvider>,
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Show resource reference" }),
+  );
+  const value = await screen.findByText("sess_reference");
+  await user.click(value);
+  await user.dblClick(value);
+  await user.click(screen.getByText("Session ID"));
+  await user.click(value.closest('[data-slot="popover-popup"]')!);
+  expect(activate).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Copy resource ID" }));
+  expect(write).toHaveBeenCalledWith("sess_reference");
+  expect(activate).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByText("sess_reference")).toBeNull());
+  await user.click(screen.getByText("Session name"));
+  expect(activate).toHaveBeenCalledTimes(1);
+  const row = screen.getByText("Session name").closest("tr")!;
+  row.focus();
+  await user.keyboard("{Enter}");
+  expect(activate).toHaveBeenCalledTimes(2);
 });

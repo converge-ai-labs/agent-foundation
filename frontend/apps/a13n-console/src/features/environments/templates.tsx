@@ -227,7 +227,7 @@ export function EnvironmentTemplates() {
               filtered
                 ? t("Change or clear the search and filters.")
                 : t(
-                    "Create a template, then choose it when starting a conversation.",
+                    "Create a template, then choose it when starting a session.",
                   )
             }
             action={!filtered && manage ? create : undefined}

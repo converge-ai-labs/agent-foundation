@@ -34,6 +34,7 @@ export function ChoiceField({
   error,
   id,
   className,
+  popupClassName,
   "aria-describedby": describedBy,
 }: {
   label: string;
@@ -50,6 +51,7 @@ export function ChoiceField({
   error?: ReactNode;
   id?: string;
   className?: string;
+  popupClassName?: string;
   "aria-describedby"?: string;
 }) {
   if (readOnly) {
@@ -87,6 +89,7 @@ export function ChoiceField({
         aria-describedby={describedBy}
         disabled={disabled}
         options={options}
+        popupClassName={popupClassName}
         value={value}
         onValueChange={onValueChange}
         required={required}
@@ -106,6 +109,7 @@ function ChoiceControl({
   required,
   placeholder,
   inlineLabel,
+  popupClassName,
   ...props
 }: Pick<
   React.ComponentProps<typeof ChoiceField>,
@@ -116,6 +120,7 @@ function ChoiceControl({
   | "disabled"
   | "required"
   | "placeholder"
+  | "popupClassName"
   | "aria-describedby"
 > & { "aria-invalid"?: boolean; inlineLabel?: string }) {
   const selected = options.find((option) => option.value === value);
@@ -144,7 +149,7 @@ function ChoiceControl({
           </span>
         )}
       </SelectTrigger>
-      <SelectPopup>
+      <SelectPopup className={popupClassName}>
         {groups.map((group) => (
           <SelectGroup key={group ?? "ungrouped"}>
             {group && <SelectGroupLabel>{group}</SelectGroupLabel>}
