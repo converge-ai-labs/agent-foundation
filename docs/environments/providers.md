@@ -243,13 +243,17 @@ Automatic desktop enables `desktop_assistance=true` by default. For custom templ
 
 Daytona runs all Agent files, shell, process, port and Computer operations through Envd/EIP. Its provider retains sandbox creation, inspection, stop/start, deletion and private connection setup. The working directory is `/workspace`; absolute file paths address the sandbox filesystem. Native stop/start preserves files, not desktop processes or old screenshot observations. Stop requires confirmed disabled auto-delete; deletion waits for terminal destruction.
 
-Both headless and desktop environments require an operator-built snapshot containing compatible Envd. Build one from this source checkout with a Linux amd64 binary and a private `DAYTONA_API_KEY` that can create snapshots:
+In Service / Console, enter a Daytona API key and enable Desktop. The organization is discovered from the key; `organization_id` is an optional account constraint and the default region is `us`. Saving a template does not build anything. First creation automatically builds a private snapshot with Envd, desktop dependencies and human access components; later creations reuse its recorded snapshot ID. No local binary or build script is required. The key needs Sandbox operations and Snapshot read/write/delete permissions.
+
+Console warns that the first build can take several minutes, displays actual stages and elapsed time, and keeps creating after you leave the page. Return to Environment instances to view the ready desktop or retry a confirmed failure after fixing its cause. Automatic snapshots use 2 CPUs, 4 GiB memory and 10 GiB disk. Reuse is isolated by Workspace, Provider, backend, credential version and manifest revision, and revalidates ownership, identity and build contents. Failed builds are cleaned up only after validation; uncertain submissions are reconciled without blind duplicate builds. Ready snapshots remain reusable after an instance is stopped or deleted.
+
+For a custom snapshot, including headless environments or runtime-only keys, build from this checkout with a Linux amd64 binary and a private `DAYTONA_API_KEY` with snapshot authority:
 
 ```bash
 uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-Use `{"snapshot": "my-envd"}` for Files & Shell, or `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}` for Computer and human access. Snapshot boot starts Envd and, when enabled, the shared X11 desktop and access supervisor. Service checks EIP readiness after create/start. Connecting and granting access never installs, restarts or repairs services. Runtime sandbox keys do not need snapshot-build permission.
+Use `{"snapshot": "my-envd"}` for Files & Shell, or `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}` for Computer and human access. Snapshot boot starts Envd and, when enabled, the shared X11 desktop and access supervisor. Service checks EIP readiness after create/start. Connecting and granting access never installs, restarts or repairs services. Keys used only with custom snapshots do not need snapshot-build permission.
 
 Private HTTP port 8888 carries Agent EIP operations. Daytona proxy authentication and the guest Envd credential remain separate, in memory only. The Host validates the discovered endpoint against its deployment and Run policy. There is no native execution fallback. Enable Agent Computer tools and mount permissions separately. The snapshot includes CJK fonts; current Envd X11 input supports physical keys but rejects literal text, including Chinese and multiline text.
 

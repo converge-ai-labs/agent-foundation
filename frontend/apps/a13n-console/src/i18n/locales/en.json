@@ -3351,6 +3351,10 @@
   "Building desktop image in Modal": "Building desktop image in Modal",
   "Automatically prepare Envd, desktop dependencies and human control on first creation.": "Automatically prepare Envd, desktop dependencies and human control on first creation.",
   "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
+  "Daytona snapshot": "Daytona snapshot",
+  "Custom snapshot": "Custom snapshot",
+  "Building desktop snapshot in Daytona": "Building desktop snapshot in Daytona",
+  "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.",
   "Load earlier content": "Load earlier content",
   "Load newer runs": "Load newer runs"
 }

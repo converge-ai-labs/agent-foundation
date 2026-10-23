@@ -3351,6 +3351,10 @@
   "Building desktop image in Modal": "正在 Modal 构建桌面镜像",
   "Automatically prepare Envd, desktop dependencies and human control on first creation.": "首次创建时自动准备 Envd、桌面依赖和人工控制组件。",
   "The first Modal desktop creation builds an image and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "首次创建 Modal 桌面需要构建镜像，可能耗时数分钟。后续创建会复用镜像。创建会在后台继续，可以离开此页面。",
+  "Daytona snapshot": "Daytona 快照",
+  "Custom snapshot": "自定义快照",
+  "Building desktop snapshot in Daytona": "正在 Daytona 构建桌面快照",
+  "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "首次创建 Daytona 桌面需要构建快照，可能需要几分钟。后续创建会复用快照。创建期间可以离开此页面。",
   "Load earlier content": "加载更早的内容",
   "Load newer runs": "加载较新的运行"
 }

@@ -94,10 +94,6 @@ In a seeded checkout, the seeded reset and every application start (`make dev`, 
 
 ## Tracing
 
-For local Modal desktop latency diagnosis, use `make dev-stop`, then `MODAL_SDK_TIMINGS=1 make dev TRACES=none`. This development-only probe supports the reviewed Modal SDK version 1.5.5 and rejects other versions. It temporarily wraps SDK/private asyncio boundaries in the Service process; no installed SDK files or production providers are changed. Restart normally to disable it.
-
-`Modal SDK stage finished` events appear only inside existing Modal desktop operation contexts. They include operation IDs, nested span/parent IDs, fixed stage names, duration, outcome and exception type; they exclude URLs, credentials, arguments, responses and exception messages. Stages cover client channel attempts, proxy selection, TLS context creation, DNS, TCP connect, transport/TLS setup, task lookup, command-router initialization and allowlisted individual RPC attempts. Use parent IDs and outcomes to identify retries: `channel_attempt` also includes acquisition of an already-connected channel for each RPC. Parent durations include children: do not sum them together. `transport_tls` includes transport construction and handshake (or plain transport setup for non-TLS connections). The probe adds logging overhead and is intended for diagnosis, not benchmarking. It makes no timeout or retry policy changes.
-
 With `TRACES=auto` (the default), `make dev`, `make service-dev` and resets export traces to the machine-shared Langfuse (`make langfuse-up`, `http://127.0.0.1:3000`) when it is already running and its local project keys authenticate; otherwise tracing is off. Starting the shared stack takes minutes, so it never starts implicitly: run `make langfuse-up` and restart, or pass `TRACES=langfuse` to start it first. `TRACES=none` turns tracing off. Spans carry the deployment environment `local-<instance>`, which separates checkouts in Langfuse; the Console's trace views query the same backend. The public Langfuse account is `dev@agent-foundation.local` / `agent-foundation-local`.
 
 ## Other checkouts

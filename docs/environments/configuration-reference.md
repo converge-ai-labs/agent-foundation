@@ -382,10 +382,10 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaConnectionConfiguration`
 
-| Field             | Required | Type / choices | Constraints and default                 |
-| ----------------- | -------- | -------------- | --------------------------------------- |
-| `organization_id` | true     | string         | minLength=1; maxLength=128              |
-| `target`          | false    | string         | minLength=1; maxLength=64; default="us" |
+| Field             | Required | Type / choices | Constraints and default                  |
+| ----------------- | -------- | -------------- | ---------------------------------------- |
+| `organization_id` | false    | string or null | minLength=1; maxLength=128; default=null |
+| `target`          | false    | string         | minLength=1; maxLength=64; default="us"  |
 
 ## `ModalConnectionConfiguration`
 

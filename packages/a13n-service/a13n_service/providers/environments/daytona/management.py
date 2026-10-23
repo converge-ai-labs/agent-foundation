@@ -58,6 +58,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                 await asyncio.sleep(0.5)
 
     async def create(self) -> None:
+        if self.config.snapshot == "auto":
+            raise failure(self.provider_key, "desktop_snapshot_not_prepared", Category.INVALID)
         target = await self.lookup()
         if target is None:
             if self.target is not None:

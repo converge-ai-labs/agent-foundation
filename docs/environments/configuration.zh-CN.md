@@ -83,7 +83,7 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 ### Daytona
 
-`DaytonaEnvironmentConfiguration` 选择决定沙箱资源的快照。根目录默认为可写的 `/home/daytona`。`DaytonaConnectionConfiguration` 提供组织和目标区域；`TokenCredential` 提供 API key。
+`DaytonaEnvironmentConfiguration` 选择决定沙箱资源的快照。工作目录为 `/workspace`。`DaytonaConnectionConfiguration` 提供可选组织约束和目标区域；`TokenCredential` 提供 API key，省略组织时从 Key 识别。Harness 需要具体快照；Service 桌面配方可以省略快照，首次创建自动构建、后续复用。
 
 ### Modal
 
