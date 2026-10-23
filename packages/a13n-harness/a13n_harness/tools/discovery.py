@@ -67,7 +67,7 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         self._saved = self._state.model_dump_json()
         self._lock = asyncio.Lock()
         self._retained: list[_CalledTool] | None = None
-        self._unprepared_completions: list[str] = []
+        self._unprepared_completions: list[_CalledTool] = []
 
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.capabilities.context import CompactionCapability, HandoffCapability
@@ -112,25 +112,30 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         return result
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: Any) -> None:
-        # External results bypass execution hooks, both inline and after resume.
+        # Successful deferred results bypass the target's execution-completed hook.
+        # Resolve their actual target before the boundary retires call associations.
         if (
             isinstance(event, FunctionToolResultEvent)
             and isinstance(event.part, ToolReturnPart)
             and event.part.outcome == "success"
         ):
-            definition = ctx.tools.get(event.part.tool_name)
+            completed = _completed_deferred_tool(ctx, event.part)
+            if completed is None:
+                return
+            definition = ctx.tools.get(completed.name)
             if definition is None:
-                # Resumed external results can settle before tools are prepared.
-                self._unprepared_completions.append(event.part.tool_name)
-            elif definition.kind == "external":
+                # Resumed results can settle before tools are prepared. Retain
+                # the captured identity, not just a name that might be remounted.
+                self._unprepared_completions.append(completed)
+            elif tool_identity(definition).tool_id == completed.tool_id:
                 await self._record_call(ctx, definition)
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        for name in self._unprepared_completions:
-            definition = ctx.tools.get(name)
-            if definition is not None and definition.kind == "external":
+        for completed in self._unprepared_completions:
+            definition = ctx.tools.get(completed.name)
+            if definition is not None and tool_identity(definition).tool_id == completed.tool_id:
                 await self._record_call(ctx, definition)
         self._unprepared_completions.clear()
         return request_context
@@ -180,6 +185,30 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         # Commit eviction only after the owning context capability installs history.
         self._retained = list(reversed(selected))
         return _discovery_messages(native, proxy, proxy_search, call_id), native
+
+
+def _completed_deferred_tool(ctx: RunContext[AgentContext], part: ToolReturnPart) -> _CalledTool | None:
+    """Resolve accepted and inline deferred completions without re-recording normal execution."""
+    state = ctx.deps._deferred_input
+    if state is not None and state.pending is not None:
+        for item in state.pending.requests.calls:
+            if item.model_call.tool_call_id == part.tool_call_id and item.model_call.tool_name == part.tool_name:
+                return _CalledTool(name=item.target_call.tool_name, tool_id=item.target_identity)
+
+    item = state.calls.get(part.tool_call_id) if state is not None else None
+    if item is not None and item.model_call.tool_name != part.tool_name:
+        return None
+    name = item.target_call.tool_name if item is not None else part.tool_name
+    definition = ctx.tools.get(name)
+    if definition is None:
+        return None
+    identity = tool_identity(definition).tool_id
+    if item is not None and item.target_identity != identity:
+        return None
+    metadata = state.metadata.get(item.target_call.tool_call_id, {}) if state is not None and item is not None else {}
+    if definition.kind == "external" or metadata.get("a13n.harness.deferred-function-id") == identity:
+        return _CalledTool(name=name, tool_id=identity)
+    return None
 
 
 def _discovery_messages(

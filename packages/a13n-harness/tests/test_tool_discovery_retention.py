@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import replace
 
 import pytest
-from a13n_harness import AgentSpec, DeferredToolResume, HarnessBuilder, HarnessState, RunBindings
+from a13n_harness import AgentSpec, DeferredToolRequests, DeferredToolResume, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import (
     CodeActCapability,
     CompactionCapability,
@@ -18,7 +18,8 @@ from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.content import request_input_content
 from a13n_harness.tools import discovery
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
-from pydantic_ai import FunctionToolset, Tool
+from pydantic import TypeAdapter
+from pydantic_ai import CallDeferred, FunctionToolset, Tool
 from pydantic_ai.capabilities import AbstractCapability, Capability, ToolSearch
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
@@ -718,9 +719,11 @@ async def test_approval_only_retains_tools_that_execute(approved):
         assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None
 
 
+@pytest.mark.parametrize("proxy", [False, True])
+@pytest.mark.parametrize("runtime_function", [False, True])
 @pytest.mark.parametrize("inline", [False, True])
 @pytest.mark.parametrize("failed", [False, True])
-async def test_external_completion_retains_called_tool_but_failure_does_not(inline, failed):
+async def test_deferred_completion_retains_actual_tool_but_failure_does_not(proxy, runtime_function, inline, failed):
     returned = ToolFailed("External execution failed") if failed else {"value": 42}
 
     class ResolveExternal(AbstractCapability):
@@ -729,18 +732,28 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
                 return DeferredToolResults(calls={call.tool_call_id: returned for call in requests.calls})
             return None
 
-    external = ExternalToolset([ToolDefinition(name="lookup", defer_loading=True)], id="external-source")
+    effects = []
+
+    def lookup():
+        effects.append("started")
+        raise CallDeferred()
+
+    source = (
+        FunctionToolset([Tool(lookup, defer_loading=not proxy)], id="external-source")
+        if runtime_function
+        else ExternalToolset([ToolDefinition(name="lookup", defer_loading=not proxy)], id="external-source")
+    )
     index = 0
     snapshots = []
     calls = [
-        ("search_tools", {"queries": ["lookup"]}),
-        ("lookup", {}),
+        ("discover_tools", {"query": "lookup"}) if proxy else ("search_tools", {"queries": ["lookup"]}),
+        ("call_tool", {"group": "editor", "tool": "lookup", "arguments": {}}) if proxy else ("lookup", {}),
         ("summarize", {"content": "Continue after external result"}),
     ]
 
     def model(messages, info):
         nonlocal index
-        snapshots.append(info)
+        snapshots.append((deepcopy(messages), info))
         if index == len(calls):
             return ModelResponse(parts=[TextPart("done")])
         name, args = calls[index]
@@ -752,8 +765,11 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
         model=_scripted_model(model),
         output_type=str,
         capabilities=(
-            Capability(toolsets=[external]),
-            ToolSearch(strategy="keywords"),
+            *(
+                (ToolSearchCapability(groups={"editor": ToolSearchGroup(source, "Editor tools")}),)
+                if proxy
+                else (Capability(toolsets=[source]), ToolSearch(strategy="keywords"))
+            ),
             HandoffCapability(),
             ResolveExternal(),
         ),
@@ -763,20 +779,47 @@ async def test_external_completion_retains_called_tool_but_failure_does_not(inli
         assert result.deferred is not None
         assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None
         state = HarnessState.model_validate_json(result.state.model_dump_json())
+        adapter = TypeAdapter(DeferredToolRequests)
+        pending = adapter.validate_json(adapter.dump_json(result.deferred))
         result = await executable.run(
             previous_state=state,
             deferred_resume=DeferredToolResume(
-                result.deferred,
-                result.deferred.build_results(calls={"step-2": returned}),
+                pending,
+                pending.build_results(calls={pending.calls[0].target_call.tool_call_id: returned}),
             ),
         )
     assert result.output_or_raise() == "done"
-    assert snapshots[-1].model_request_parameters.revealed_tool_names == (set() if failed else {"lookup"})
+    assert effects == (["started"] if runtime_function else [])
+    returns = [
+        part
+        for message in snapshots[-2][0]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == "step-2"
+    ]
+    assert len(returns) == 1
+    assert returns[0].tool_name == ("call_tool" if proxy else "lookup")
+    assert returns[0].outcome == ("failed" if failed else "success")
+    if proxy:
+        entries = [
+            entry
+            for message in snapshots[-1][0]
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict) and part.content.get("retained")
+            for entry in part.content["tools"]
+        ]
+        assert [entry["tool"] for entry in entries] == ([] if failed else ["lookup"])
+        if not failed:
+            assert entries[0]["group"] == "editor"
+            assert entries[0]["parameters_json_schema"]["type"] == "object"
+    else:
+        assert snapshots[-1][1].model_request_parameters.revealed_tool_names == (set() if failed else {"lookup"})
     saved = result.state.agent_context_state.get(discovery._DISCOVERY_ID)
     if failed:
         assert saved is None
     else:
-        assert [item["name"] for item in saved.data["called"]] == ["lookup"]
+        assert saved.data["called"] == [
+            {"name": "editor__lookup" if proxy else "lookup", "tool_id": "tool/external-source/lookup"}
+        ]
 
 
 async def test_proxy_call_without_search_reconstructs_current_schema():
