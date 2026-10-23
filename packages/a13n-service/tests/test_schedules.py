@@ -213,6 +213,8 @@ async def test_progress_does_not_change_etag_and_scope_is_enforced(service, scri
 
 
 async def test_pause_records_elapsed_range_and_history_pages(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    # Only the pause command should consume the overdue position installed by this test.
+    await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     base = f"{service.api}/schedules"
     created = await service.client.post(
