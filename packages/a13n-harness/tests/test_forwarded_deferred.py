@@ -364,42 +364,71 @@ async def test_runtime_deferred_target_retains_function_identity():
 
 
 @pytest.mark.parametrize("proxy", [False, True])
-async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_effect(proxy):
+@pytest.mark.parametrize("stage", ["arguments", "validated", "execution"])
+@pytest.mark.parametrize("remount", ["unchanged", "identity", "category"])
+async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_effect(proxy, stage, remount):
+    from a13n_harness import HarnessState
     from pydantic_ai import CallDeferred
 
     effects, approvals = [], []
 
+    def defer():
+        raise CallDeferred(metadata={"receipt": "job-1", "a13n.harness.deferred-function-id": "not-the-target"})
+
+    def validate(ctx, value):
+        if ctx.tool_call_approved and stage == "arguments":
+            defer()
+
+    class Validation(Capability):
+        async def after_tool_validate(self, ctx, *, call, tool_def, args):
+            if ctx.tool_call_approved and call.tool_name.endswith("change") and stage == "validated":
+                defer()
+            return args
+
     def change(value: int):
         effects.append(value)
-        raise CallDeferred(metadata={"receipt": "job-1"})
+        defer()
 
     async def handler(ctx, requests):
         approvals.append(requests)
+        for call in requests.approvals:
+            requests.metadata[call.tool_call_id] = {
+                "handler": "approved",
+                "a13n.harness.deferred-function-id": "not-the-target",
+            }
         return requests.build_results(approve_all=True)
 
-    def build():
-        return _build(
-            FunctionToolset([Tool(change, requires_approval=True)], id="operations"),
-            proxy=proxy,
-            handler=handler,
+    def build(*, resumed=False):
+        source = (
+            ExternalToolset([ToolDefinition(name="change")], id="operations")
+            if resumed and remount == "category"
+            else FunctionToolset(
+                [Tool(change, requires_approval=True, args_validator=validate)],
+                id="replacement" if resumed and remount == "identity" else "operations",
+            )
         )
+        return _build(source, proxy=proxy, handler=handler, extra=(Validation(),))
 
     first = await build().run("go")
     assert first.status == "suspended" and first.deferred is not None
     requests = _roundtrip(first.deferred)
     item = requests.calls[0]
     assert requests.metadata[item.target_call.tool_call_id]["receipt"] == "job-1"
+    assert requests.metadata[item.target_call.tool_call_id]["handler"] == "approved"
     assert requests.metadata[item.target_call.tool_call_id]["a13n.harness.deferred-function-id"] == (
         "tool/operations/change"
     )
-    resumed = await build().run(
-        previous_state=first.state,
-        deferred_resume=DeferredToolResume(
-            requests, requests.build_results(calls={item.target_call.tool_call_id: "job finished"})
-        ),
-    )
-    assert resumed.output_or_raise() == "done"
-    assert effects == [3]
+    state_adapter = TypeAdapter(HarnessState)
+    state = state_adapter.validate_json(state_adapter.dump_json(first.state))
+    resume = DeferredToolResume(requests, requests.build_results(calls={item.target_call.tool_call_id: "job finished"}))
+    if remount == "unchanged":
+        resumed = await build(resumed=True).run(previous_state=state, deferred_resume=resume)
+        assert resumed.output_or_raise() == "done"
+    else:
+        with pytest.raises(DefinitionError) as error:
+            await build(resumed=True).run(previous_state=state, deferred_resume=resume)
+        assert error.value.code == "deferred_surface_mismatch"
+    assert effects == ([3] if stage == "execution" else [])
     assert len(approvals) == 1 and approvals[0].approvals == [item.target_call]
 
 

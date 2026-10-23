@@ -164,6 +164,14 @@ class DeferredInputState:
     calls: dict[str, DeferredToolCall] = field(default_factory=dict)
     metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+    def record_metadata(self, call_id: str, metadata: Mapping[str, Any]) -> None:
+        """Merge handler metadata without replacing the captured function identity."""
+        captured = self.metadata.setdefault(call_id, {})
+        function_id = captured.get("a13n.harness.deferred-function-id")
+        captured.update(deepcopy(metadata))
+        if function_id is not None:
+            captured["a13n.harness.deferred-function-id"] = function_id
+
     def reconcile(self, messages: Sequence[ModelMessage]) -> None:
         if self.pending is not None:
             self.pending = self.pending.remaining(messages)
@@ -172,7 +180,7 @@ class DeferredInputState:
         """Detach the final native pending batch with its captured target associations."""
         metadata: dict[str, dict[str, Any]] = {}
 
-        def entries(parts: list[ToolCallPart]) -> list[DeferredToolCall]:
+        def entries(parts: list[ToolCallPart], *, approval: bool = False) -> list[DeferredToolCall]:
             result = []
             for part in parts:
                 item = self.calls.get(part.tool_call_id)
@@ -185,11 +193,13 @@ class DeferredInputState:
                     **requests.metadata.get(part.tool_call_id, {}),
                     **self.metadata.get(target_id, {}),
                 }
+                if approval:
+                    metadata[target_id].pop("a13n.harness.deferred-function-id", None)
                 result.append(deepcopy(item))
             return result
 
         result = DeferredToolRequests(
-            calls=entries(requests.calls), approvals=entries(requests.approvals), metadata=metadata
+            calls=entries(requests.calls), approvals=entries(requests.approvals, approval=True), metadata=metadata
         )
         validate_deferred_requests(result)
         return deepcopy(result)

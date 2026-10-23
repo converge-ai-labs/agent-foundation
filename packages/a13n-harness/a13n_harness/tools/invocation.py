@@ -21,7 +21,6 @@ from pydantic_ai.capabilities import (
     AgentNode,
     CapabilityOrdering,
     ValidatedToolArgs,
-    WrapToolExecuteHandler,
 )
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
@@ -42,7 +41,7 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError, EnvironmentActivationError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION
-from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, capture_tool_call, validate_forwarded_call
+from a13n_harness.tools._deferred_dispatch import capture_tool_call, validate_forwarded_call
 from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
@@ -251,29 +250,12 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     ) -> Any:
         # The final native settlement owns model rendering. Nested CodeAct calls
         # retain their structured values until the outer runner returns.
-        return _render_tool_return(result) if isinstance(result, ToolReturn) else result
-
-    async def wrap_tool_execute(
-        self,
-        ctx: RunContext[AgentContext],
-        *,
-        call: ToolCallPart,
-        tool_def: ToolDefinition,
-        args: ValidatedToolArgs,
-        handler: WrapToolExecuteHandler,
-    ) -> Any:
-        try:
-            return await handler(args)
-        except CallDeferred as exc:
-            # Inline approval executes without another deferred-handler pass.
-            # Capture the actual function here; a forwarding envelope must not
-            # replace its target's identity as the exception propagates outward.
-            if tool_def.kind in {"function", "unapproved"} and FORWARDED_TOOL_KEY not in (tool_def.metadata or {}):
-                exc.metadata = {
-                    **(exc.metadata or {}),
-                    "a13n.harness.deferred-function-id": tool_identity(tool_def).tool_id,
-                }
-            raise
+        result = _render_tool_return(result) if isinstance(result, ToolReturn) else result
+        # Local completion no longer needs deferred-function provenance. Calls
+        # completed by an external result bypass this hook and keep the marker.
+        if (state := ctx.deps._deferred_input) is not None:
+            state.metadata.get(call.tool_call_id, {}).pop("a13n.harness.deferred-function-id", None)
+        return result
 
     async def handle_deferred_tool_calls(
         self,
@@ -302,10 +284,14 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
                         "declared_name": marker["declared_name"],
                         "toolset_id": marker["toolset_id"],
                     }
-            if definition is not None and definition.kind in {"function", "unapproved"}:
-                requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = (
-                    tool_identity(definition).tool_id
-                )
+            state = ctx.deps._deferred_input
+            function_id = (
+                state.metadata.get(call.tool_call_id, {}).get("a13n.harness.deferred-function-id")
+                if state is not None
+                else None
+            )
+            if function_id is not None:
+                requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = function_id
         if ctx.deps.deferred_tools_supported:
             return None
         message = "Deferred tool interaction is unavailable for this Run."

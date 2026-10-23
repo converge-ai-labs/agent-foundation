@@ -220,7 +220,7 @@ class ThreadMetadataMutation(SurfaceModel):
 class DeferredRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["approval", "external"]
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     arguments: JsonValue | None = None
     arguments_omitted: bool = False
     metadata: dict[str, JsonValue] | None = None
@@ -266,7 +266,7 @@ class TranscriptPart(SurfaceModel):
         "other",
     ]
     text: str | None = None
-    tool_name: str | None = Field(default=None, max_length=128)
+    tool_name: str | None = None
     tool_call_id: str | None = Field(default=None, max_length=256)
     outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
     provider: str | None = None
@@ -902,7 +902,7 @@ class QuestionView(SurfaceModel):
 class StructuredQuestionRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["question"] = "question"
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     questions: tuple[QuestionView, ...] = Field(min_length=1, max_length=4)
     metadata: dict[str, JsonValue] | None = None
     metadata_omitted: bool = False
@@ -911,7 +911,7 @@ class StructuredQuestionRequestView(SurfaceModel):
 class ApprovalRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["approval"] = "approval"
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     arguments: JsonValue | None = None
     arguments_omitted: bool = False
     metadata: dict[str, JsonValue] | None = None
@@ -922,7 +922,7 @@ class ApprovalRequestView(SurfaceModel):
 class ExternalRequestView(SurfaceModel):
     request_id: str = Field(min_length=1, max_length=256)
     kind: Literal["external"] = "external"
-    tool_name: str = Field(min_length=1, max_length=128)
+    tool_name: str = Field(min_length=1)
     arguments: JsonValue | None = None
     arguments_omitted: bool = False
     metadata: dict[str, JsonValue] | None = None

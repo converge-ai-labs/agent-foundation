@@ -43,10 +43,12 @@ def capture_tool_call(ctx: RunContext[AgentContext], call: ToolCallPart, definit
             manager.root_capability = _DeferredDispatch(manager.root_capability)
     state = ctx.deps._deferred_input
     if state is not None and TOOL_IDENTITY_KEY in (definition.metadata or {}):
-        state.calls.setdefault(
-            call.tool_call_id,
-            DeferredToolCall(deepcopy(call), deepcopy(call), tool_identity(definition).tool_id),
-        )
+        identity = tool_identity(definition).tool_id
+        state.calls.setdefault(call.tool_call_id, DeferredToolCall(deepcopy(call), deepcopy(call), identity))
+        if definition.kind in {"function", "unapproved"} and FORWARDED_TOOL_KEY not in (definition.metadata or {}):
+            # Capture before validation: inline approval can defer there without
+            # executing the tool or revisiting the native deferred handler.
+            state.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = identity
 
 
 @dataclass
@@ -72,7 +74,7 @@ class _DeferredDispatch(WrapperCapability["AgentContext"]):
             return None
         result = await self.wrapped.handle_deferred_tool_calls(ctx, requests=remaining)
         for call in (*remaining.calls, *remaining.approvals):
-            state.metadata[call.tool_call_id] = deepcopy(remaining.metadata.get(call.tool_call_id, {}))
+            state.record_metadata(call.tool_call_id, remaining.metadata.get(call.tool_call_id, {}))
         return result
 
 
@@ -132,5 +134,5 @@ async def forward_tool_call(ctx: RunContext[AgentContext], name: str, arguments:
     except (ApprovalRequired, CallDeferred) as exc:
         # The native graph suspends the original call. The Host-facing batch uses
         # the captured target and the same native approval/external-result category.
-        state.metadata[target.tool_call_id] = {**state.metadata.get(target.tool_call_id, {}), **(exc.metadata or {})}
+        state.record_metadata(target.tool_call_id, exc.metadata or {})
         raise
