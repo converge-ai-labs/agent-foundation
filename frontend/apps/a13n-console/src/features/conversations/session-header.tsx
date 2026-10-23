@@ -16,11 +16,10 @@ import {
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
   PencilSimpleIcon,
-  TerminalIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
@@ -38,7 +37,6 @@ import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
 import { sessionTitle } from "./session-identity";
-import { ThreadToolExecutionsDialog } from "./tool-executions";
 import styles from "./conversations.module.css";
 
 /**
@@ -55,8 +53,6 @@ export function SessionHeader({
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
   const { basePath, can } = useWorkspace();
-  const [search, setSearch] = useSearchParams();
-  const following = search.get("follow") === "latest";
   const thread = threads.find((entry) => entry.id === threadId);
   const root = threads.find(
     (entry) => entry.origin === "new" && entry.session_id === sessionId,
@@ -71,7 +67,6 @@ export function SessionHeader({
   const [mounts, setMounts] = useState(false);
   const [editing, setEditing] = useState(false);
   const title = session.data && sessionTitle(session.data);
-  const [tools, setTools] = useState(false);
   const [execution, setExecution] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
@@ -163,38 +158,6 @@ export function SessionHeader({
         {thread && (
           <ThreadBranches thread={thread} threads={threads} level={level} />
         )}
-        {thread && runId && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-pressed={following}
-            title={t(following ? "Pause following" : "Follow latest")}
-            onClick={() =>
-              setSearch(
-                (params) => {
-                  if (following) params.delete("follow");
-                  else params.set("follow", "latest");
-                  return params;
-                },
-                { replace: true },
-              )
-            }
-          >
-            {t(following ? "Following latest" : "Follow latest")}
-          </Button>
-        )}
-        {thread && can("read") && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setTools(true)}
-          >
-            <TerminalIcon size={14} aria-hidden="true" />
-            {t("Tool executions")}
-          </Button>
-        )}
         <SegmentedControl
           className={styles.levelSwitch}
           label={t("Disclosure level")}
@@ -271,14 +234,6 @@ export function SessionHeader({
           </MenuItem>
         </MenuPopup>
       </Menu>
-      {thread && (
-        <ThreadToolExecutionsDialog
-          key={thread.id}
-          threadId={thread.id}
-          open={tools}
-          onOpenChange={setTools}
-        />
-      )}
       {thread && (
         <ThreadMountsDialog
           thread={thread}

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createClient, type Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
-import { ToolExecutions, ThreadToolExecutionsDialog } from "./tool-executions";
+import { ToolExecutions } from "./tool-executions";
 
 let client: Client;
 let cache: QueryClient;
@@ -131,24 +131,9 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   <QueryClientProvider client={cache}>{children}</QueryClientProvider>
 );
 
-it("loads only an open inspector, reads bounded versioned fragments on demand, and clears them on close", async () => {
+it("reads bounded versioned fragments on demand and clears them when the inspector closes", async () => {
   const user = userEvent.setup();
-  const view = render(
-    <ThreadToolExecutionsDialog
-      threadId="thr_1"
-      open={false}
-      onOpenChange={() => {}}
-    />,
-    { wrapper },
-  );
-  expect(calls).toHaveLength(0);
-  view.rerender(
-    <ThreadToolExecutionsDialog
-      threadId="thr_1"
-      open
-      onOpenChange={() => {}}
-    />,
-  );
+  render(<ToolExecutions threadId="thr_1" />, { wrapper });
   await user.click(
     await screen.findByRole("button", { name: "Inspect shell_exec" }),
   );

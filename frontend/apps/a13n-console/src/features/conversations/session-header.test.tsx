@@ -168,22 +168,17 @@ afterEach(() => {
   client.close();
 });
 
-it("opens retained tools for the exact current Thread without a Run filter", async () => {
-  const user = userEvent.setup();
+it("keeps follow and tool execution controls out of the session header", async () => {
   show(
     [fixtureThread(), child],
-    "/sessions/ses_1/threads/thr_child/runs/run_2",
+    "/sessions/ses_1/threads/thr_child/runs/run_2?follow=latest",
   );
+  await screen.findByRole("button", { name: "Session actions" });
+  expect(screen.queryByRole("button", { name: "Tool executions" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: /Follow latest|Following latest/ }),
+  ).toBeNull();
   expect(toolRequests).toHaveLength(0);
-  await user.click(
-    await screen.findByRole("button", { name: "Tool executions" }),
-  );
-  expect(await screen.findByText("No retained tool executions.")).toBeTruthy();
-  expect(toolRequests).toHaveLength(1);
-  expect(toolRequests[0].pathname).toBe(
-    "/api/v1/threads/thr_child/tool-executions",
-  );
-  expect(toolRequests[0].searchParams.has("run_id")).toBe(false);
 });
 
 function Location() {
