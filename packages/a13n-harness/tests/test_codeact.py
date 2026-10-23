@@ -867,6 +867,118 @@ async def test_codeact_failure_metadata_tracks_started_calls_without_replay(star
     assert calls == ([7] if start_tool else [])
 
 
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+@pytest.mark.parametrize(
+    ("failure_phase", "catch_error"),
+    [("arguments", False), ("body", False), ("hook", False), ("body", True)],
+)
+@pytest.mark.parametrize("prior_success", [False, True])
+async def test_codeact_validation_failure_settles_started_calls(
+    tmp_path: Path, runner: str, failure_phase: str, catch_error: bool, prior_success: bool
+) -> None:
+    from pydantic import TypeAdapter
+
+    effects: list[str] = []
+    requests = 0
+
+    def record() -> None:
+        effects.append("record")
+
+    def target(value: int) -> int:
+        effects.append("target")
+        if failure_phase == "body":
+            TypeAdapter(int).validate_python("private-validation-value")
+        return value
+
+    class ValidateResult(AbstractCapability):
+        async def after_tool_execute(self, ctx, *, call, tool_def, args, result):
+            if call.tool_name == "target" and failure_phase == "hook":
+                TypeAdapter(int).validate_python("private-validation-value")
+            return result
+
+    code = "await record()\n" if prior_success else ""
+    code += "await target(value='invalid')" if failure_phase == "arguments" else "await target(value=7)"
+    if catch_error:
+        code = (
+            "try:\n"
+            + "\n".join("    " + line for line in code.splitlines())
+            + "\nexcept RuntimeError as exc:\n    error = str(exc)\nerror"
+        )
+    if runner == "run_code":
+        arguments = {"code": code}
+    else:
+        lines = code.splitlines()
+        if catch_error:
+            lines[-1] = "return " + lines[-1]
+        (tmp_path / "job.codeact.py").write_text(
+            "async def main(inputs):\n" + "\n".join("    " + line for line in lines) + "\n",
+            encoding="utf-8",
+        )
+        arguments = {"path": "/workspace/job.codeact.py"}
+    started_count = int(prior_success) + int(failure_phase != "arguments")
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests == 1:
+            yield {0: DeltaToolCall(name=runner, json_args=json.dumps(arguments), tool_call_id="validation-failure")}
+        else:
+            returned = _tool_returns(messages, runner)[-1]
+            if catch_error:
+                assert returned.outcome == "success"
+                assert returned.content == "Nested tool 'target' failed with ValidationError"
+            else:
+                assert returned.outcome == "failed"
+                payload = json.loads(str(returned.content))
+                assert payload["codeact"]["tool_call_count"] == started_count
+                assert payload["codeact"]["side_effect_uncertain"] is (started_count > 0)
+            assert "private-validation-value" not in str(returned.content)
+            yield "handled"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 0}),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            CodeActCapability(),
+            _codeact_tools(record, target, allowed=("record", "target")),
+            ValidateResult(),
+        ),
+    )
+    payloads: list[dict[str, Any]] = []
+    async with executable.stream(
+        "handle validation failure", bindings=RunBindings.embedded(environment=_local_environment(tmp_path))
+    ) as stream:
+        async for item in stream:
+            if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
+                if item.event.kind == "diagnostic":
+                    payloads.append(item.event.payload)
+
+    assert stream.result is not None
+    assert stream.result.output_or_raise() == "handled"
+    assert requests == 2
+    assert effects == (["record"] if prior_success else []) + ([] if failure_phase == "arguments" else ["target"])
+    started = [payload for payload in payloads if payload["type"] == "codeact_tool_call_started"]
+    completed = [payload for payload in payloads if payload["type"] == "codeact_tool_call_completed"]
+    assert len(started) == len(completed) == started_count
+    assert [payload["nested_tool_call_id"] for payload in completed] == [
+        payload["nested_tool_call_id"] for payload in started
+    ]
+    assert [payload["outcome"] for payload in completed] == (["completed"] if prior_success else []) + (
+        [] if failure_phase == "arguments" else ["failed"]
+    )
+    if failure_phase != "arguments":
+        assert completed[-1]["error_type"] == "ValidationError"
+        assert completed[-1]["side_effect_uncertain"] is True
+        assert completed[-1]["duration_ms"] >= 0
+    execution = next(payload for payload in payloads if payload["type"] == "codeact_execution_completed")
+    assert execution["status"] == ("completed" if catch_error else "failed")
+    assert execution["call_count"] == started_count
+    assert execution["side_effect_uncertain"] is (not catch_error and started_count > 0)
+    assert "private-validation-value" not in json.dumps(payloads)
+
+
 async def test_background_runner_keeps_real_nested_values_and_publishes_late_state() -> None:
     import asyncio
 

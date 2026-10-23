@@ -487,7 +487,11 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     record.outcome = "completed"
                     return result
             except ValidationError as exc:
-                raise TypeError(_format_validation_error(exc)) from None
+                if nested_started is None:
+                    raise TypeError(_format_validation_error(exc)) from None
+                record.outcome = "failed"
+                record.error_type = type(exc).__name__
+                raise RuntimeError(f"Nested tool {canonical_name!r} failed with ValidationError") from None
             except (ApprovalRequired, CallDeferred) as exc:
                 record.outcome = "deferred"
                 record.error_type = type(exc).__name__

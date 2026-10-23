@@ -224,7 +224,9 @@ Approval or external execution may succeed only when the active Pydantic capabil
 
 Source-size, syntax, entrypoint, program-loading, sandbox runtime/resource, missing-tool, and nested argument-validation failures become bounded `ToolFailed` results, including before any nested call starts. They do not consume the runner's model-retry budget or terminate the surrounding Agent loop through retry exhaustion. The model may correct the source or choose another tool in a new explicit call. Raw nested validation does not consume the target tool's model-retry counter. Native validation of the outer tool-call schema and runner-isolation violations retain their normal retry policy.
 
-After the first nested call starts, any nested validation error, target `ModelRetry`, policy/result failure, timeout, or later program failure is terminal for that runner invocation. It becomes a bounded `ToolFailed` result and must not trigger automatic whole-source replay. Transport retries wholly inside the owning real tool remain governed by that owner's idempotency contract. A new attempt requires a new explicit runner call.
+After the first nested call starts, an unhandled nested validation error, target `ModelRetry`, policy/result failure, timeout, or later program failure is terminal for that runner invocation. It becomes a bounded `ToolFailed` result and must not trigger automatic whole-source replay. Transport retries wholly inside the owning real tool remain governed by that owner's idempotency contract. A new attempt requires a new explicit runner call.
+
+Argument validation failures before dispatch do not count as started nested calls or emit nested call lifecycle events. A `ValidationError` raised by a target tool or execution hook after dispatch starts settles that nested call as `failed`, with `error_type=ValidationError` and side-effect uncertainty. Restricted code receives a value-free execution error rather than an invalid-arguments diagnostic.
 
 A completed earlier callback is never rolled back. Failure and timeout metadata therefore preserve a side-effect-uncertain flag once any nested call has started.
 
