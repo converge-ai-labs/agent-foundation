@@ -3,7 +3,7 @@
 from typing import Any
 
 import pytest
-from a13n_harness import RunBindings
+from a13n_harness import DeferredToolResume, RunBindings
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.agents import definition
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
@@ -179,8 +179,28 @@ async def test_proxy_discovery_restores_history_and_keeps_connection_permissions
     phase = "invoke"
     calls = 0
     result = await executable.run("call", previous_state=state, bindings=bindings)
+    if permission == "ask":
+        assert result.status == "suspended"
+        assert effects == []
+        pending = result.deferred
+        assert pending is not None and not pending.calls
+        [request] = pending.approvals
+        assert request.model_call.tool_name == "call_tool"
+        assert request.model_call.tool_call_id == "invoke"
+        assert request.target_call.tool_name == "knowledge__lookup"
+        assert request.target_call.args_as_dict() == {"value": 4}
+        state = type(result.state).model_validate_json(result.state.model_dump_json())
+        result = await executable.run(
+            previous_state=state,
+            bindings=bindings,
+            deferred_resume=DeferredToolResume(
+                pending,
+                pending.build_results(approvals={request.target_call.tool_call_id: True}),
+            ),
+        )
     assert result.status == "completed"
-    assert effects == ([4] if permission == "allow" else [])
+    assert result.output_or_raise() == "done"
+    assert effects == ([] if permission == "deny" else [4])
 
 
 async def test_revision_and_host_proxy_mcp_keep_dispatch_and_live_connection_checks(service) -> None:
