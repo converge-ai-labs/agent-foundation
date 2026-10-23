@@ -341,6 +341,45 @@ async def test_default_skills_capability_scans_only_workspace_agents_skills(tmp_
     assert "Must not be scanned." not in instructions
 
 
+@pytest.mark.parametrize("with_valid_sibling", [False, True])
+async def test_default_skills_capability_skips_invalid_entries_and_completes_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, with_valid_sibling: bool
+) -> None:
+    root = tmp_path / ".agents" / "skills"
+    bad = root / "bad"
+    bad.mkdir(parents=True)
+    (bad / "SKILL.md").write_text("---\nname: bad\ndescription: [private-value]\n---\n")
+    if with_valid_sibling:
+        good = root / "good"
+        good.mkdir()
+        (good / "SKILL.md").write_text("---\nname: good\ndescription: Valid sibling.\n---\n")
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(),),
+    )
+    result = await executable.run("Continue", bindings=RunBindings.embedded(environment=_binding(tmp_path)))
+
+    assert result.output_or_raise() == "done"
+    instructions = str(captured[0].instructions)
+    assert ("Valid sibling." in instructions) is with_valid_sibling
+    assert "private-value" not in instructions
+    records = [record for record in caplog.records if record.msg == "skill_catalog_entry_skipped"]
+    assert len(records) == 1
+    assert records[0].levelname == "WARNING"
+    assert records[0].__dict__["path"] == "/workspace/.agents/skills/bad"
+    assert records[0].__dict__["code"] == "skill_catalog_invalid"
+    assert "private-value" not in caplog.text
+
+
 async def test_host_can_scan_skills_through_entered_environment_file_operator(tmp_path: Path) -> None:
     skill = tmp_path / ".agents" / "skills" / "managed"
     skill.mkdir(parents=True)
@@ -1496,6 +1535,7 @@ async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path,
             FileSkillSource(
                 "workspace",
                 ("/skills",),
+                skip_invalid=False,
                 max_line_length=16,
             ),
         )
@@ -1567,7 +1607,7 @@ async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_
     assert [entry.name for entry in entries] == ["good"]
     assert "skill_catalog_entry_skipped" in caplog.text
     with pytest.raises(DefinitionError):
-        await FileSkillSource("strict", ("/skills",)).catalog(files=files)
+        await FileSkillSource("strict", ("/skills",), skip_invalid=False).catalog(files=files)
 
 
 # Each case once exceeded its view profile's page budget; ordinary files at 2000 never did.

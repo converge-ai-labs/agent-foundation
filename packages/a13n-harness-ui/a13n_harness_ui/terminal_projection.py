@@ -14,6 +14,7 @@ import yaml
 from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities import AskUserQuestionRequest
 from a13n_harness.tools.client import client_tool_name
+from a13n_logging import get_logger
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
@@ -65,6 +66,7 @@ from a13n_harness_ui.surfaces import (
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 
+_LOGGER = get_logger(__name__)
 _MAX_PATH_SCAN = 10_000
 _MAX_SKILLS = 512
 _MAX_SKILL_ENTRIES_PER_ROOT = 256
@@ -1018,7 +1020,14 @@ def _scan_skill_catalog(
         )
         for directory in candidates:
             document = directory / "SKILL.md"
-            name, description = _read_skill_frontmatter(document)
+            try:
+                name, description = _read_skill_frontmatter(document)
+            except ThreadError as exc:
+                _LOGGER.warning(
+                    "skill_catalog_entry_skipped",
+                    extra={"source_id": source_id, "path": os.fspath(document), "code": exc.code},
+                )
+                continue
             stat = document.stat()
             identity = _digest(source_id, os.fspath(directory), name, str(stat.st_mtime_ns), str(stat.st_size))
             fingerprints.append(identity)

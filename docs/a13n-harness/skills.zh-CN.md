@@ -89,7 +89,7 @@ manager = SkillManager.default(
 
 在 Agent 的 capabilities 中传入 `SkillsCapability(manager)` 即可使用这些来源。直接构建 `SkillManager(...)` 会替换默认来源。设置 `SkillsPolicy(conflict="error")` 可拒绝重复名称，而非按来源优先级选择。
 
-`required=False` 会分别跳过每个缺失、无法路由或不支持的根目录。权限拒绝、路径或 frontmatter 格式错误、provider 失败和目录溢出，仍然报错。
+`required=False` 会分别跳过每个缺失、无法路由或不支持的根目录。默认的 `skip_invalid=True` 会跳过有界目录读取或 frontmatter 验证失败的单个条目，并记录警告。其他有效条目仍然可用；即使所有条目都被跳过，Run 也能继续。设置 `skip_invalid=False` 可启用严格验证。根目录访问失败、路径格式错误、目录溢出和挂载实例检查失败仍然报错。
 
 ## 设计
 
