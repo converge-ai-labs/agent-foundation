@@ -100,7 +100,11 @@ it.each([
   [12345, "12.3K"],
   [1000000, "1.0M"],
   [1250000, "1.3M"],
-])("formats %i total tokens like the CLI as %s", (total, text) => {
+  [999_000_000, "999.0M"],
+  [1_000_000_000, "1.0B"],
+  [1_017_100_000, "1.0B"],
+  [1_250_000_000, "1.3B"],
+])("formats %i total tokens as %s", (total, text) => {
   const summary = usageSummary({
     ...usage,
     combined: { ...totals, tokens: [["input_tokens", total]] },
