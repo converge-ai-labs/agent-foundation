@@ -280,7 +280,7 @@ def test_environment_precedence_patch_and_legacy_serialization():
 
 async def test_environment_freezes_at_acceptance_and_thread_map_replacement(service, scripted_model, runs_kit):
     agent = await runs_kit.create_agent(
-        service, scripted_model, execution={"environment": {"MODE": "agent", "BASE": "base"}}
+        service, scripted_model, execution={"environment": {"MODE": "agent", "BASE": "base"}}, **runs_kit.LOOKUP
     )
     started = await runs_kit.start_thread(
         service,
@@ -314,6 +314,8 @@ async def test_environment_freezes_at_acceptance_and_thread_map_replacement(serv
     assert queued.status_code == 201, queued.text
     # A queued entry has not resolved its inherited choices yet.
     await _patch(service, runs_kit, thread_id, {"execution": {"environment": {"LATE": "late"}}})
+    # A tool boundary consumes the steer before the final answer; otherwise it can become the next Run.
+    runs_kit.lookup(scripted_model, call_id="call_environment_boundary")
     scripted_model.say("done")
     await (await runs_kit.attempt(service))
     current = await runs_kit.get_thread(service, thread_id)
@@ -324,5 +326,8 @@ async def test_environment_freezes_at_acceptance_and_thread_map_replacement(serv
         "LATE": "late",
         "NEW": "queued",
     }
+    entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
+    assert entries[same.json()["entry"]["id"]]["assigned_run_id"] == started["run"]["id"]
+    assert entries[queued.json()["entry"]["id"]]["assigned_run_id"] == later["id"]
     reset = await _patch(service, runs_kit, thread_id, {"execution": {"environment": None}})
     assert not (reset["execution"] or {}).get("environment")
