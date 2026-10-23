@@ -8,10 +8,11 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Self
+from typing import Any
 
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
+from anyio import CancelScope
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse
@@ -82,7 +83,8 @@ async def choose_account(
 ) -> SubscriptionAccount:
     attempted = attempted or set()
     candidates: list[tuple[int, SubscriptionAccount]] = []
-    for account_id in order:
+    # Inspect the sticky candidate first; a tier-zero account cannot be outranked.
+    for account_id in sorted(order, key=lambda account_id: account_id != active_id):
         if account_id in attempted:
             continue
         try:
@@ -93,6 +95,8 @@ async def choose_account(
             if projection.availability != Availability.AVAILABLE:
                 continue
             tier = await usage.tier(account, model_name, allow_credits=group.allow_credits)
+            if tier == 0:
+                return account
             if tier is not None:
                 candidates.append((tier, account))
         except AccountStoreError:
@@ -105,6 +109,15 @@ async def choose_account(
         )
     candidates.sort(key=lambda item: (item[0], 0 if item[1].id == active_id else 1))
     return candidates[0][1]
+
+
+class _RequestScope(AsyncExitStack):
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> bool | None:
+        # Provider exit acquires async locks and closes sockets even when the caller is cancelled.
+        with CancelScope(shield=True):
+            return await super().__aexit__(exc_type, exc_val, exc_tb)
 
 
 class SubscriptionGroupModel(WrapperModel):
@@ -131,68 +144,42 @@ class SubscriptionGroupModel(WrapperModel):
         # A real provider model supplies profile/settings before the first request.
         template = SubscriptionAccount(id=self._order[0], provider=group.provider, name="Subscription account")
         super().__init__(factory(template))
-        self._stack = AsyncExitStack()
-        self._active: SubscriptionAccount | None = None
-        self._digest: str | None = None
-        self._reason = "initial_selection"
+        self._models: dict[str, tuple[int, str | None, Model]] = {}
+        self._active_id: str | None = None
         self._reported: str | None = None
-        self._entered = False
 
-    async def __aenter__(self) -> Self:
-        await self._stack.enter_async_context(self.wrapped)
-        self._entered = True
-        return self
-
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
-    ) -> bool | None:
-        self._entered = False
-        return await self._stack.__aexit__(exc_type, exc_val, exc_tb)
-
-    async def _choose(self, attempted: set[str]) -> SubscriptionAccount:
-        return await choose_account(
-            self.group,
-            self.accounts,
-            self.usage,
-            self.model_name,
-            self._order,
-            attempted=attempted,
-            active_id=self._active.id if self._active else None,
-        )
-
-    async def _activate(self, account: SubscriptionAccount) -> None:
+    async def _model(self, account: SubscriptionAccount) -> Model:
         store = self.accounts.store(account)
         assert store.policy.path is not None
         snapshot = await read_json_snapshot(store.policy.path, provider=Provider(account.provider))
-        changed = self._active is None or self._active.id != account.id
-        if (
-            self._active is None
-            or changed
-            or self._digest != snapshot.digest
-            or self._active.login_revision != account.login_revision
-        ):
-            if not self._entered:
-                await self.__aenter__()
-            await self._stack.aclose()
-            self.wrapped = self._factory(account)
-            await self._stack.enter_async_context(self.wrapped)
-            self._active = account
-            self._digest = snapshot.digest
+        cached = self._models.get(account.id)
+        if cached is None or cached[:2] != (account.login_revision, snapshot.digest):
+            # Keep only the latest generation. In-flight requests retain their own reference
+            # and provider entry; replacing the cache never closes another request's client.
+            cached = (account.login_revision, snapshot.digest, self._factory(account))
+            self._models[account.id] = cached
+        return cached[2]
 
-    async def _failed(self, account: SubscriptionAccount, error: Exception) -> bool:
-        reason = account_failure(error)
-        if reason is None:
-            return False
-        self._reason = reason
-        await self.usage.reject(account, self.model_name)
-        return True
+    async def _choose(self, attempted: set[str], last_error: Exception | None) -> SubscriptionAccount:
+        try:
+            return await choose_account(
+                self.group,
+                self.accounts,
+                self.usage,
+                self.model_name,
+                self._order,
+                attempted=attempted,
+                active_id=self._active_id,
+            )
+        except ModelResolutionError as error:
+            raise error from last_error
 
-    async def _report(self, account: SubscriptionAccount) -> None:
-        reason = self._reason
+    async def _report(self, account: SubscriptionAccount, reason: str) -> None:
         if self._reported is not None and self._reported != account.id and reason == "initial_selection":
             reason = "account_unavailable_or_allowance_preferred"
         if self._reported != account.id and self._selected is not None:
             self._selected(AccountSelectionEvent(self.group.id, account.id, reason))
+        self._reported = account.id
         binding = main_request.get()
         if binding is not None:
             model_id, selected = binding
@@ -205,24 +192,30 @@ class SubscriptionGroupModel(WrapperModel):
                     reason=reason,
                 )
             )
-        self._reported = account.id
-        self._reason = "initial_selection"
 
-    async def _request[T](self, operation: Callable[[], Awaitable[T]], *, report: bool) -> T:
+    async def _request[T](self, operation: Callable[[Model], Awaitable[T]], *, report: bool) -> T:
         attempted: set[str] = set()
+        last_error: Exception | None = None
+        reason = "initial_selection"
         while True:
-            account = await self._choose(attempted)
+            account = await self._choose(attempted, last_error)
             attempted.add(account.id)
-            try:
-                await self._activate(account)
-                response = await operation()
-            except Exception as error:
-                if not await self._failed(account, error):
-                    raise
-                continue
-            if report:
-                await self._report(account)
-            return response
+            async with _RequestScope() as request_scope:
+                try:
+                    model = await self._model(account)
+                    await request_scope.enter_async_context(model)
+                    response = await operation(model)
+                except Exception as error:
+                    failure = account_failure(error)
+                    if failure is None:
+                        raise
+                    reason, last_error = failure, error
+                    await self.usage.reject(account, self.model_name)
+                    continue
+                self._active_id = account.id
+                if report:
+                    await self._report(account, reason)
+                return response
 
     async def request(
         self,
@@ -231,14 +224,14 @@ class SubscriptionGroupModel(WrapperModel):
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
         return await self._request(
-            lambda: self.wrapped.request(messages, model_settings, model_request_parameters), report=True
+            lambda model: model.request(messages, model_settings, model_request_parameters), report=True
         )
 
     async def compact_messages(
         self, request_context: ModelRequestContext, *, instructions: str | None = None
     ) -> ModelResponse:
         return await self._request(
-            lambda: self.wrapped.compact_messages(request_context, instructions=instructions), report=False
+            lambda model: model.compact_messages(request_context, instructions=instructions), report=False
         )
 
     async def count_tokens(
@@ -248,7 +241,7 @@ class SubscriptionGroupModel(WrapperModel):
         model_request_parameters: ModelRequestParameters,
     ) -> RequestUsage:
         return await self._request(
-            lambda: self.wrapped.count_tokens(messages, model_settings, model_request_parameters), report=False
+            lambda model: model.count_tokens(messages, model_settings, model_request_parameters), report=False
         )
 
     @asynccontextmanager
@@ -260,20 +253,28 @@ class SubscriptionGroupModel(WrapperModel):
         run_context: RunContext[Any] | None = None,
     ) -> AsyncGenerator[StreamedResponse]:
         attempted: set[str] = set()
+        last_error: Exception | None = None
+        reason = "initial_selection"
         while True:
-            account = await self._choose(attempted)
+            account = await self._choose(attempted, last_error)
             attempted.add(account.id)
-            async with AsyncExitStack() as response_scope:
+            # Each request owns its client through stream exit, including cancellation.
+            async with _RequestScope() as response_scope:
                 try:
-                    await self._activate(account)
+                    model = await self._model(account)
+                    await response_scope.enter_async_context(model)
                     response = await response_scope.enter_async_context(
-                        self.wrapped.request_stream(messages, model_settings, model_request_parameters, run_context)
+                        model.request_stream(messages, model_settings, model_request_parameters, run_context)
                     )
                 except Exception as error:
-                    if not await self._failed(account, error):
+                    failure = account_failure(error)
+                    if failure is None:
                         raise
+                    reason, last_error = failure, error
+                    await self.usage.reject(account, self.model_name)
                     continue
-                # Stream iteration and caller exceptions must never enter the retry loop.
-                await self._report(account)
+                # Stream iteration, cleanup and caller exceptions must never enter the retry loop.
+                self._active_id = account.id
+                await self._report(account, reason)
                 yield response
                 return

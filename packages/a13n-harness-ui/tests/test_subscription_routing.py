@@ -126,6 +126,245 @@ async def test_stream_failover_stops_at_delivery_boundary(tmp_path, after_delive
             assert calls == [account.id for account in accounts]
 
 
+@pytest.mark.parametrize("change", ["account", "credentials"])
+@pytest.mark.parametrize("operation", ["request", "stream", "count_tokens", "compact_messages"])
+async def test_overlapping_operations_keep_stream_client_open(tmp_path, operation, change):
+    from pydantic_ai.usage import RequestUsage
+
+    catalog, accounts, group = await _accounts(tmp_path)
+    instances = []
+
+    class OwnedModel(FunctionModel):
+        def __init__(self, account):
+            self.account_id = account.id
+            self.open = False
+            self.exits = 0
+
+            async def request(messages, info):
+                assert self.open
+                return ModelResponse(parts=[TextPart(account.id)])
+
+            async def stream(messages, info):
+                assert self.open
+                yield "first"
+                assert self.open
+                yield "last"
+
+            super().__init__(request, stream_function=stream, model_name="test-model")
+
+        async def __aenter__(self):
+            assert not self.open
+            self.open = True
+            return self
+
+        async def __aexit__(self, *args):
+            assert self.open
+            self.open = False
+            self.exits += 1
+
+        async def count_tokens(self, *args):
+            assert self.open
+            return RequestUsage(input_tokens=1)
+
+        async def compact_messages(self, *args, **kwargs):
+            assert self.open
+            return ModelResponse(parts=[TextPart("compact")])
+
+    def factory(account):
+        instance = OwnedModel(account)
+        instances.append(instance)
+        return instance
+
+    async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
+        async with model.request_stream([], None, PARAMETERS) as response:
+            first = instances[-1]
+            if change == "account":
+                await catalog.update(accounts[0].id, enabled=False)
+            else:
+                path = catalog.store(accounts[0]).policy.path
+                value = json.loads(path.read_text())
+                value["tokens"]["refresh_token"] = "rotated-by-other-tui"
+                path.write_text(json.dumps(value))
+            if operation == "stream":
+                async with model.request_stream([], None, PARAMETERS) as other:
+                    async for _ in other:
+                        assert first.open
+            elif operation == "compact_messages":
+                await model.compact_messages(None)
+            else:
+                await getattr(model, operation)([], None, PARAMETERS)
+            assert instances[-1] is not first
+            assert instances[-1].account_id == accounts[1 if change == "account" else 0].id
+            assert not instances[-1].open
+            assert first.open
+            async for _ in response:
+                assert first.open
+        assert not first.open
+    assert all(instance.exits == 1 for instance in instances)
+
+
+async def test_cancelled_stream_closes_only_its_request_model(tmp_path):
+    from anyio import CancelScope, Event, create_task_group, sleep_forever
+
+    catalog, accounts, group = await _accounts(tmp_path)
+    entered, finished = Event(), Event()
+    scopes = []
+    instances = []
+
+    class OwnedModel(FunctionModel):
+        def __init__(self):
+            self.open = False
+            self.exits = 0
+
+            async def stream(messages, info):
+                yield "first"
+                assert self.open
+                yield "last"
+
+            super().__init__(stream_function=stream, model_name="test-model")
+
+        async def __aenter__(self):
+            self.open = True
+            return self
+
+        async def __aexit__(self, *args):
+            from anyio import sleep
+
+            await sleep(0)  # Real provider cleanup awaits locks and socket closure.
+            self.open = False
+            self.exits += 1
+
+    def factory(account):
+        instance = OwnedModel()
+        instances.append(instance)
+        return instance
+
+    async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
+
+        async def cancelled_request():
+            with CancelScope() as scope:
+                scopes.append(scope)
+                async with model.request_stream([], None, PARAMETERS):
+                    entered.set()
+                    await sleep_forever()
+            finished.set()
+
+        async with create_task_group() as tasks:
+            tasks.start_soon(cancelled_request)
+            await entered.wait()
+            cancelled = instances[-1]
+            await catalog.update(accounts[0].id, enabled=False)
+            async with model.request_stream([], None, PARAMETERS) as response:
+                surviving = instances[-1]
+                scopes[0].cancel()
+                await finished.wait()
+                assert not cancelled.open
+                assert surviving.open
+                async for _ in response:
+                    pass
+        assert not surviving.open
+    assert len(instances) == 3  # Template plus two requests; cancellation never retries.
+    assert all(instance.exits == 1 for instance in instances)
+
+
+async def test_codex_turn_state_survives_request_scopes_and_nested_router_entries(tmp_path):
+    import httpx2
+    from a13n_harness.models.codex import CodexRequestModel
+    from pydantic_ai import RunContext
+    from pydantic_ai.usage import RunUsage
+
+    catalog, _, group = await _accounts(tmp_path)
+    headers = []
+    clients = []
+
+    async def respond(request):
+        headers.append(request.headers.get("x-codex-turn-state"))
+        events = [
+            {
+                "type": f"response.{event}",
+                "sequence_number": index,
+                "response": {
+                    "id": "resp-test",
+                    "created_at": 1,
+                    "model": "gpt-5",
+                    "object": "response",
+                    "output": [],
+                    "parallel_tool_calls": True,
+                    "tool_choice": "auto",
+                    "tools": [],
+                    "status": status,
+                },
+            }
+            for index, (event, status) in enumerate((("created", "in_progress"), ("completed", "completed")))
+        ]
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream", "x-codex-turn-state": "turn-one"},
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in events).encode(),
+        )
+
+    def factory(account):
+        client = httpx2.AsyncClient(transport=httpx2.MockTransport(respond))
+        clients.append(client)
+        return CodexRequestModel("gpt-5", credential_source=catalog.store(account), http_client=client)
+
+    try:
+        async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
+            context = RunContext(deps=None, model=model, usage=RunUsage(), run_id="run-test")
+            async with model.request_stream([], None, PARAMETERS, context) as first:
+                async with model:
+                    async with model.request_stream([], None, PARAMETERS, context) as second:
+                        async for _ in second:
+                            pass
+                async for _ in first:
+                    pass
+            async with model.request_stream([], None, PARAMETERS, context) as third:
+                async for _ in third:
+                    pass
+        assert headers == [None, "turn-one", "turn-one"]
+        assert len(clients) == 2  # Template plus the account model reused across all requests.
+    finally:
+        for client in clients:
+            await client.aclose()
+
+
+async def test_exhausted_accounts_preserve_last_provider_error(tmp_path):
+    catalog, accounts, group = await _accounts(tmp_path)
+    errors = []
+
+    def factory(account):
+        async def request(messages, info):
+            error = _quota()
+            errors.append(error)
+            raise error
+
+        return FunctionModel(request, model_name="test-model")
+
+    async with SubscriptionGroupModel(group, catalog, SubscriptionUsage(catalog), factory) as model:
+        with pytest.raises(ModelResolutionError) as raised:
+            await model.request([], None, PARAMETERS)
+    assert len(errors) == len(accounts)
+    assert raised.value.__cause__ is errors[-1]
+
+
+async def test_selection_only_refreshes_best_eligible_candidate(tmp_path):
+    catalog, accounts, group = await _accounts(tmp_path)
+    reads = []
+
+    async def reader(account):
+        reads.append(account.id)
+        return CodexUsage(account_id=account.id, plan_type="plus")
+
+    async def request(messages, info):
+        return ModelResponse(parts=[TextPart("ok")])
+
+    usage = SubscriptionUsage(catalog, reader=reader)
+    async with SubscriptionGroupModel(group, catalog, usage, lambda account: FunctionModel(request)) as model:
+        await model.request([], None, PARAMETERS)
+        await model.request([], None, PARAMETERS)
+    assert reads == [accounts[0].id]
+
+
 async def test_usage_manual_refresh_and_cross_instance_convergence(tmp_path):
     catalog, accounts, _ = await _accounts(tmp_path)
     now = [1000.0]
@@ -219,6 +458,7 @@ async def test_weighted_order_is_sampled_once_and_credentials_reread(tmp_path):
         await model.request([], None, PARAMETERS)
         await model.request([], None, PARAMETERS)
         count = len(built)
+        assert count == 2  # Stable template plus one reused account model.
         path = catalog.store(accounts[1]).policy.path
         value = json.loads(path.read_text())
         value["tokens"]["refresh_token"] = "rotated-by-other-tui"

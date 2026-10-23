@@ -7,10 +7,8 @@ from typing import Literal
 
 import httpx2
 from a13n_harness.providers.model.oauth.copilot import CopilotCredentials, refresh_copilot_credentials
-from a13n_harness.providers.model.oauth.copilot_runtime import _CopilotAuthentication
 from a13n_harness.providers.model.oauth.grok import refresh_grok_credentials
 from a13n_harness.providers.model.oauth.models import GrokCredentials, ModelAuthenticationError
-from a13n_harness.providers.model.oauth.runtime import _GrokAuthentication, _OAuthAuth
 from pydantic import BaseModel, ConfigDict, Field
 
 from .copilot import CopilotAccountStore
@@ -76,27 +74,6 @@ class CopilotUsage(_View):
     quota_snapshots: dict[str, CopilotQuota] | None = None
 
 
-class _GrokBillingAuth(_OAuthAuth[GrokCredentials]):
-    expected_account_id: str | None = None
-
-    def _apply(self, request: httpx2.Request, credentials: GrokCredentials) -> None:
-        if self.expected_account_id is not None and credentials.account_id != self.expected_account_id:
-            raise ValueError("The Grok account changed. Refresh the account before reading usage.")
-        super()._apply(request, credentials)
-        request.headers["x-userid"] = credentials.account_id
-        request.headers["X-XAI-Token-Auth"] = "xai-grok-cli"
-
-    def _strip_protected_headers(self, request: httpx2.Request) -> None:
-        super()._strip_protected_headers(request)
-        request.headers.pop("x-userid", None)
-        request.headers.pop("X-XAI-Token-Auth", None)
-
-
-class _CopilotQuotaAuth(_OAuthAuth[CopilotCredentials]):
-    def _apply(self, request: httpx2.Request, credentials: CopilotCredentials) -> None:
-        request.headers["Authorization"] = f"token {credentials.access_token}"
-
-
 async def _read_json(client: httpx2.AsyncClient, url: str, provider: str) -> bytes:
     try:
         async with client.stream("GET", url, timeout=15) as response:
@@ -116,12 +93,26 @@ async def _read_json(client: httpx2.AsyncClient, url: str, provider: str) -> byt
 async def read_grok_usage(
     source: GrokAccountStore, client: httpx2.AsyncClient, *, expected_account_id: str | None = None
 ) -> GrokUsage:
+    from a13n_harness.providers.model.oauth.runtime import _GrokAuthentication, _OAuthAuth
+
+    class GrokBillingAuth(_OAuthAuth[GrokCredentials]):
+        def _apply(self, request: httpx2.Request, credentials: GrokCredentials) -> None:
+            if expected_account_id is not None and credentials.account_id != expected_account_id:
+                raise ValueError("The Grok account changed. Refresh the account before reading usage.")
+            super()._apply(request, credentials)
+            request.headers["x-userid"] = credentials.account_id
+            request.headers["X-XAI-Token-Auth"] = "xai-grok-cli"
+
+        def _strip_protected_headers(self, request: httpx2.Request) -> None:
+            super()._strip_protected_headers(request)
+            request.headers.pop("x-userid", None)
+            request.headers.pop("X-XAI-Token-Auth", None)
+
     async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         return await refresh_grok_credentials(credentials, http_client=client)
 
     manager = _GrokAuthentication(source, refresh, timedelta(minutes=5))
-    auth = _GrokBillingAuth(manager, base_url=_GROK_URL, client=client)
-    auth.expected_account_id = expected_account_id
+    auth = GrokBillingAuth(manager, base_url=_GROK_URL, client=client)
     client.auth = auth
     client.follow_redirects = False
     client.headers["User-Agent"] = "a13n-harness-ui"
@@ -131,11 +122,18 @@ async def read_grok_usage(
 
 
 async def read_copilot_usage(source: CopilotAccountStore, client: httpx2.AsyncClient) -> CopilotUsage:
+    from a13n_harness.providers.model.oauth.copilot_runtime import _CopilotAuthentication
+    from a13n_harness.providers.model.oauth.runtime import _OAuthAuth
+
+    class CopilotQuotaAuth(_OAuthAuth[CopilotCredentials]):
+        def _apply(self, request: httpx2.Request, credentials: CopilotCredentials) -> None:
+            request.headers["Authorization"] = f"token {credentials.access_token}"
+
     async def refresh(credentials: CopilotCredentials) -> CopilotCredentials:
         return await refresh_copilot_credentials(credentials, http_client=client)
 
     manager = _CopilotAuthentication(source, refresh, timedelta(minutes=5))
-    auth = _CopilotQuotaAuth(manager, base_url=_COPILOT_URL, client=client)
+    auth = CopilotQuotaAuth(manager, base_url=_COPILOT_URL, client=client)
     client.auth = auth
     client.follow_redirects = False
     client.headers.update({"User-Agent": "a13n-harness-ui", "X-GitHub-Api-Version": "2025-04-01"})

@@ -430,7 +430,7 @@ model_characteristics:
 
 Codex 和 Grok 凭据由 `<data-root>/oauth/accounts/<account-id>.json` 纳管。非敏感目录位于 `oauth/accounts.json`，用量快照位于 `oauth/state/`。这些文件以私有权限保存明文凭据，请保护 Host 和备份。
 
-升级后首次启动 App 时，Harness UI 一次性导入受支持的已有 Codex/Grok 登录。Codex 发现遵循 `CODEX_HOME` 和文件存储策略；Grok 依次检查 `GROK_AUTH_PATH`、`GROK_HOME`。不支持或无效的来源显示在 **Migration from existing CLI logins** 中，可通过原生登录恢复。原 CLI 文件保持不变。之后的刷新、登录、退出和删除只操作原生文件，不再导入外部登录。复制的刷新凭据可能随后与原 CLI 分化；失效时请重新原生登录。
+升级后首次启动 App 时，Harness UI 一次性导入受支持的已有 Codex/Grok 登录。Codex 发现遵循 `CODEX_HOME` 和文件存储策略；Grok 依次检查 `GROK_AUTH_PATH`、`GROK_HOME`。不支持或无效的来源显示在 **Migration from existing CLI logins** 中，可通过原生登录恢复。原 CLI 文件保持不变。之后的刷新、登录、退出和删除只操作原生文件，不再导入外部登录。导入的副本与原 CLI 共享同一刷新授权：Harness UI 或原 CLI 任一方轮换凭据，都可能使另一方的登录失效，即使另一方的文件没有变化。请在受影响的客户端中分别重新登录。
 
 已有 `codex_subscription` 或 `grok_subscription` Model 无需修改 YAML：省略 `group` 时选择 `codex-default` 或 `grok-default`，默认组初始包含迁移账户。删除默认组会被尊重；请恢复该组或显式选择其他组。
 

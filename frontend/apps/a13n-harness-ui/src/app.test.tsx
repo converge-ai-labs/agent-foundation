@@ -797,7 +797,10 @@ it("restores the native account login across navigation and respects completed c
   render(<BrowserApp />);
   await screen.findByRole("heading", { name: "Accounts & API keys" });
   fireEvent.click(
-    await screen.findByRole("button", { name: "Sign-in & logout" }),
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Sign-in & logout" }),
   );
   fireEvent.click(
     await screen.findByRole("button", { name: "Connect account" }),
@@ -808,7 +811,10 @@ it("restores the native account login across navigation and respects completed c
   await screen.findByRole("heading", { name: "Models" });
   fireEvent.click(screen.getByRole("link", { name: "Accounts & API keys" }));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Sign-in & logout" }),
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Sign-in & logout" }),
   );
   fireEvent.click(await screen.findByRole("button", { name: "Cancel login" }));
   await screen.findByText("Login: succeeded");
