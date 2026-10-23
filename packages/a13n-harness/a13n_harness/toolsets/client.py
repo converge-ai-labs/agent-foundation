@@ -44,6 +44,8 @@ class ClientToolsToolset:
                         name=tool.name,
                         description=tool.description,
                         parameters_json_schema=deepcopy(tool.parameters_json_schema),
+                        # External schemas need not satisfy provider strict-mode constraints.
+                        strict=False,
                         metadata=metadata,
                     )
                 )

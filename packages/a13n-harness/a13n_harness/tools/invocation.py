@@ -24,6 +24,7 @@ from pydantic_ai.capabilities import (
     WrapToolExecuteHandler,
 )
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
+from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import DeferredToolResultsEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
@@ -362,6 +363,12 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
         for name, tool in tools.items():
             tool = identify_tool(tool)
+            source = tool.toolset
+            while isinstance(source, WrapperToolset):
+                source = source.wrapped
+            if isinstance(source, MCPToolset):
+                # Preserve server schemas without inferring provider strict-mode support.
+                tool = replace(tool, tool_def=replace(tool.tool_def, strict=False))
             tool_def = tool.tool_def
             metadata_values = tool_def.metadata or {}
             reserved_present = HARNESS_TOOL_METADATA_KEY in metadata_values

@@ -27,6 +27,12 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 | Client-side execution, authorization, and result production        | External executor or Service client                              |
 | Durable client-call waiting, delivery, and feedback correlation    | Host                                                             |
 
+## External Tool Schema Compatibility
+
+Client Tools and locally executed MCP tools are exposed to the model with `ToolDefinition.strict=False`. Their externally supplied JSON Schemas remain intact at the Harness adaptation boundary; provider schema adaptation remains owned by Pydantic AI. This avoids inferring strict-mode compatibility for schemas that use arbitrary JSON values or other constructs outside a provider's strict subset. Model-generated arguments remain subject to the existing execution-side validation, permissions, and approval rules.
+
+Built-in and other native function tools retain their declared strictness. Structured final output and provider-native MCP retain their separate upstream paths. This policy has no configuration switch or request-error retry fallback.
+
 ## Host-held Tool Executions
 
 A retained resource can expose `ToolExecutionResource.call` through `ToolExecutionRuntime.call_resource`. Lookup is restricted to the exact Thread and a live resource in its owning runtime; persisted results never reconstruct native handles. An absent surface returns `None`. The caller owns authorization, while the resource validates dispatch and synchronizes it with teardown. Dispatch retains the original invocation context without sharing its artifact collector with the control call.
