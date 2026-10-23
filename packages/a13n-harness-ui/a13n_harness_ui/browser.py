@@ -662,6 +662,12 @@ class HostBrowsers:
         if runtime:
             try:
                 if process is not None and process.returncode is None:
+                    # Settle page-owned native UI before shutting down the process.
+                    # Chromium can otherwise crash after password autofill and
+                    # lose profile writes that have not reached disk yet.
+                    for target in tuple(self.owners):
+                        if page := runtime.pages.get(target):
+                            await runtime.close_page(page)
                     await runtime.close_browser()
             except BrowserError:
                 pass

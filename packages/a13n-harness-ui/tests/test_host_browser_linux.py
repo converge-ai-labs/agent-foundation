@@ -432,5 +432,18 @@ async def test_saved_password_autofill_after_restart_without_model_secret_values
                         break
                     await asyncio.sleep(0.05)
             assert "fictional-password" not in await call("browser_observe")
+        await host.runtime.evaluate(active, "document.cookie='login=retained;max-age=3600;path=/'")
+        process = host.process
+        await host.close()
+        # Exit immediately after autofill, with no navigation to dismiss native
+        # password UI. A successful Browser.close response alone does not prove
+        # that Chromium exited normally or persisted the profile.
+        assert process and process.returncode == 0
+        current = await host.enable("after-autofill-restart")
+        await host.backend("after-autofill-restart", current.session_id).act("navigate", value=site)
+        assert (
+            await host.runtime.evaluate(host.bindings["after-autofill-restart"].page, "document.cookie")
+            == "login=retained"
+        )
     finally:
         await host.close()

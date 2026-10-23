@@ -185,6 +185,7 @@ async def test_shutdown_waits_for_profile_flush_before_disconnecting_and_stoppin
         events.append(name)
 
     runtime = browsers.runtime
+    runtime.close_page.side_effect = lambda page: event("page-close:" + page.target)
     runtime.close_browser.side_effect = lambda: event("browser-close")
     runtime.close.side_effect = lambda: event("disconnect")
     process = Mock(returncode=None)
@@ -192,7 +193,14 @@ async def test_shutdown_waits_for_profile_flush_before_disconnecting_and_stoppin
     browsers.process = process
     browsers.desktop.close.side_effect = lambda: event("display-close")
     await browsers.close_runtime()
-    assert events == ["browser-close", "process-exit", "disconnect", "display-close"]
+    assert events == [
+        "page-close:thread-a",
+        "page-close:thread-b",
+        "browser-close",
+        "process-exit",
+        "disconnect",
+        "display-close",
+    ]
     process.terminate.assert_not_called()
 
 
