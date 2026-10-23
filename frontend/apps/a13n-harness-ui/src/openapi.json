@@ -1654,6 +1654,34 @@
         }
       }
     },
+    "/api/browser/check": {
+      "post": {
+        "summary": "Check Browser Configuration",
+        "operationId": "check_browser_configuration_api_browser_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserConfiguration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserSetup"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/browser": {
       "get": {
         "summary": "Browser State",
@@ -8896,8 +8924,7 @@
             "type": "string",
             "enum": [
               "system",
-              "custom",
-              "playwright"
+              "custom"
             ],
             "title": "Source"
           }
@@ -8969,6 +8996,16 @@
             "type": "boolean",
             "title": "Required",
             "default": true
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "default": ""
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -9180,7 +9217,7 @@
           "resize_available": {
             "type": "boolean",
             "title": "Resize Available",
-            "default": false
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -22763,6 +22800,42 @@
         ],
         "title": "AppDecision",
         "type": "object"
+      },
+      "BrowserConfiguration": {
+        "properties": {
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
+          },
+          "vnc_executable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vnc Executable"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "BrowserConfiguration",
+        "description": "Host executable bindings captured at App startup; never install dependencies."
       },
       "BrowserCommand": {
         "additionalProperties": false,

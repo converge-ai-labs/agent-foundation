@@ -130,3 +130,36 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+.requirementKind {
+  margin-inline-start: 8px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.requirements li[data-missing="true"] > svg,
+.requirements li[data-missing="true"] .state {
+  color: var(--a13n-danger);
+}
+
+.configuration {
+  padding-block: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.requirementControl {
+  margin-top: 8px;
+}
+.configuration .requirements li {
+  align-items: flex-start;
+  padding-block: 12px;
+}
+.configuration .requirements li > svg {
+  margin-top: 1px;
+}
+.configuration .requirements .state {
+  padding-top: 2px;
+  text-align: end;
+}

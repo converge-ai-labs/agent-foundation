@@ -116,7 +116,7 @@ async def test_missing_components_only_produce_manual_guidance(host, monkeypatch
     setup = await module.inspect_browser()
     assert setup.supported and not setup.ready
     assert not any(requirement.installed for requirement in setup.requirements)
-    assert any("a13n-harness-ui[browser]" in step.command for step in setup.steps)
+    assert any("a13n-harness-ui" in step.command for step in setup.steps)
     module.probe.assert_not_awaited()
 
 
@@ -183,7 +183,6 @@ async def test_scan_lists_supported_candidates_once_without_launching_or_install
         "Xvnc": "/opt/Xvnc",
     }
     monkeypatch.setattr(module.shutil, "which", paths.get)
-    monkeypatch.setattr(module, "playwright_browser", AsyncMock(return_value=None))
     monkeypatch.setattr(
         module,
         "probe",
@@ -199,25 +198,10 @@ async def test_scan_lists_supported_candidates_once_without_launching_or_install
     assert module.probe.await_count == 4
 
 
-async def test_scan_includes_cached_playwright_browser_and_filters_incompatible_vnc(host, monkeypatch):
-    monkeypatch.setattr(module, "system_browsers", lambda platform: [])
-    monkeypatch.setattr(
-        module,
-        "playwright_browser",
-        AsyncMock(return_value=BrowserExecutable(name="Chromium", path="/cached/chrome", source="playwright")),
-    )
-    monkeypatch.setattr(module, "probe", AsyncMock(return_value="Chromium 156"))
-    scan = await module.scan_browsers()
-    assert [item.path for item in scan.browsers] == ["/cached/chrome"]
-    assert not scan.vncs
-
-
 @pytest.mark.parametrize("missing", ["executable", "vnc_executable", "both"])
 async def test_missing_binding_never_selects_an_installed_candidate(host, monkeypatch, missing):
     system = Mock(side_effect=AssertionError("Readiness must not choose a browser"))
-    bundled = AsyncMock(side_effect=AssertionError("Readiness must not choose bundled Chromium"))
     monkeypatch.setattr(module, "system_browsers", system)
-    monkeypatch.setattr(module, "playwright_browser", bundled)
     configuration = host.model_copy(
         update={field: None for field in ("executable", "vnc_executable") if field == missing or missing == "both"}
     )
@@ -228,7 +212,6 @@ async def test_missing_binding_never_selects_an_installed_candidate(host, monkey
     if missing in {"vnc_executable", "both"}:
         assert setup.vnc is None and "Select a VNC" in setup.requirements[1].detail
     system.assert_not_called()
-    bundled.assert_not_awaited()
 
 
 @pytest.mark.parametrize("manager", ["openbox", "fluxbox", "icewm", "twm", None])
@@ -297,3 +280,67 @@ async def test_wayvnc_cannot_enable_uncontrolled_client_resizing(monkeypatch, ve
     assert (detected is not None) == accepted
     if detected:
         assert detected.disable_resizing == resize_flag
+
+
+@pytest.mark.parametrize("kind", ["tigervnc", "x11vnc", "wayvnc"])
+async def test_requirement_purposes_and_optional_components_follow_selected_adapter(host, monkeypatch, kind):
+    monkeypatch.setattr(
+        module, "inspect_vnc", AsyncMock(return_value=module.VncExecutable(kind=kind, path="/server", source="custom"))
+    )
+    setup = await module.inspect_browser(host)
+    checks = {item.name: item for item in setup.requirements}
+    assert all(item.purpose for item in setup.requirements)
+    assert checks["VNC authentication"].managed and checks["VNC transport"].managed
+    display = checks["Display server"]
+    assert display.installed and display.required
+    if kind == "tigervnc":
+        assert "no separate Xvfb" in display.purpose
+        assert not checks["Desktop resizing"].required
+    else:
+        assert "Desktop resizing" not in checks
+        assert ("Xvfb" if kind == "x11vnc" else "Sway") in display.purpose
+    if kind == "wayvnc":
+        assert "Window management" not in checks and checks["Host account"].required
+    else:
+        assert not checks["Window management"].required
+
+
+async def test_wayvnc_reports_root_account_as_missing_requirement(host, monkeypatch):
+    monkeypatch.setattr(module.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        module,
+        "inspect_vnc",
+        AsyncMock(return_value=module.VncExecutable(kind="wayvnc", path="/server", source="custom")),
+    )
+    setup = await module.inspect_browser(host)
+    account = next(item for item in setup.requirements if item.name == "Host account")
+    assert not setup.ready and not account.installed and account.required
+
+
+async def test_settings_check_uses_draft_paths_without_publishing_or_launching(tmp_path, monkeypatch):
+    from a13n_harness_ui import app as app_module
+
+    from .test_sharing_webui import shared_server
+
+    checked = AsyncMock(return_value=module.BrowserSetup(platform="linux", supported=True, ready=False))
+    monkeypatch.setattr(app_module, "inspect_browser", checked)
+    async with shared_server(tmp_path) as (_, _, client):
+        configuration = tmp_path / "a13n-harness-ui.yaml"
+        saved = configuration.read_text()
+        body = {"executable": "/draft/chrome", "vnc_executable": "/draft/x11vnc"}
+        denied = await client.post("/api/browser/check", json=body)
+        assert denied.status_code == 401
+        checked.assert_not_awaited()
+        # The check passes a detached candidate to discovery and never publishes it.
+        response = await client.post(
+            "/api/browser/check", json=body, headers={"Authorization": "Bearer owner-test-key"}
+        )
+        assert response.status_code == 200 and response.json()["ready"] is False
+        checked.assert_awaited_once_with(BrowserConfiguration(**body))
+        assert configuration.read_text() == saved
+        checked.reset_mock()
+        invalid = await client.post(
+            "/api/browser/check", json={"executable": "relative"}, headers={"Authorization": "Bearer owner-test-key"}
+        )
+        assert invalid.status_code == 400
+        checked.assert_not_awaited()

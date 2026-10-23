@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import secrets
 from functools import cache
 from importlib.resources import files
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from playwright.async_api import ElementHandle, Page
+from a13n_harness.capabilities.browser.cdp import Chromium, Page
 
 
 @cache
@@ -111,29 +110,44 @@ class Cursor:
     def __init__(self) -> None:
         self.id = "a13n-agent-cursor-" + secrets.token_hex(8)
         self.page: Page | None = None
+        self.runtime: Chromium | None = None
 
-    async def show(self, page: Page, target: ElementHandle | None = None) -> None:
-        if self.page is not page:
-            await self.hide()
-        self.page = page
+    async def show(self, runtime: Chromium, page: Page, target: int | None = None) -> None:
+        self.page, self.runtime = page, runtime
+        identity = None
         try:
             async with asyncio.timeout(1):
                 options = {"id": self.id, "logo": _logo()}
                 if target is not None:
-                    await target.scroll_into_view_if_needed(timeout=750)
-                    await target.evaluate(_SHOW, options)
+                    node = await runtime.send("DOM.resolveNode", {"backendNodeId": target}, page)
+                    identity = node["object"]["objectId"]
+                    await runtime.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": target}, page)
+                    await runtime.send(
+                        "Runtime.callFunctionOn",
+                        {
+                            "objectId": identity,
+                            "functionDeclaration": f"function(options){{({_SHOW})(this,options)}}",
+                            "arguments": [{"value": options}],
+                        },
+                        page,
+                    )
                 else:
-                    await page.evaluate(f"options => ({_SHOW})(document.activeElement, options)", options)
+                    await runtime.evaluate(page, f"({_SHOW})(document.activeElement, {json.dumps(options)})")
         except Exception:
-            # Cosmetic feedback must not turn a successful browser operation into a failure.
+            # Cosmetic feedback must not fail the browser operation.
             pass
+        finally:
+            if identity is not None:
+                try:
+                    await runtime.send("Runtime.releaseObject", {"objectId": identity}, page)
+                except Exception:
+                    pass
 
     async def hide(self) -> None:
         page, self.page = self.page, None
-        if page is not None:
+        if page is not None and self.runtime is not None:
             try:
                 async with asyncio.timeout(1):
-                    await page.evaluate(_HIDE, self.id)
+                    await self.runtime.evaluate(page, f"({_HIDE})({json.dumps(self.id)})")
             except Exception:
-                # Navigation or renderer termination may already have removed the pointer.
                 pass

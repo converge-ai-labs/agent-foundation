@@ -1,11 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
-import { ArrowClockwise, Hand, LockSimple, Stop } from "@phosphor-icons/react";
+import {
+  Button,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuSub,
+  MenuSubTrigger,
+  MenuSubPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+} from "a13n-ui";
+import {
+  ArrowClockwise,
+  Stop,
+  Devices,
+  DotsThree,
+  HandArrowDown,
+  HandArrowUp,
+  LockSimple,
+  MagnifyingGlassPlus,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { bindClipboard } from "./clipboard";
-import { bindKeyboard } from "./keyboard";
+import { Desktop, type BrowserScale } from "./desktop";
 import { BrowserSetup } from "./setup";
 import styles from "./panel.module.css";
 
@@ -19,6 +37,7 @@ export function BrowserPanel({
   const { client } = useTransport();
   const queries = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const [scale, setScale] = useState<BrowserScale>("fit");
   const [error, setError] = useState("");
   const [authority, setAuthority] = useState<{
     threadId: string;
@@ -83,15 +102,17 @@ export function BrowserPanel({
           client.POST("/api/threads/{thread_id}/browser/start", path),
         );
       if (kind === "reset") {
-        await result(
+        const value = await result(
           client.POST("/api/threads/{thread_id}/browser/reset", path),
         );
+        queries.setQueryData(["browser", threadId], value);
         setAuthority(null);
       }
       if (kind === "stop") {
-        await result(
+        const value = await result(
           client.POST("/api/threads/{thread_id}/browser/stop", path),
         );
+        queries.setQueryData(["browser", threadId], value);
         setAuthority(null);
       }
       if (kind === "take-control") {
@@ -163,86 +184,135 @@ export function BrowserPanel({
   const ready = session?.status === "ready";
   const stopped = session?.status === "stopped" || session?.status === "failed";
   const human = session?.control === "human";
+  const canResize = !busy && !!controlToken && !!session?.resize_available;
+  const viewport = session?.viewports?.find(
+    (item) => item.preset === session.viewport,
+  );
+  const actions = ready ? (
+    <>
+      <Button
+        size="sm"
+        aria-label={human ? "Hand back to Agent" : "Take control"}
+        variant={human ? "default" : "outline"}
+        title={
+          human
+            ? "Hand back to Agent · Resume browser tools in all conversations"
+            : "Take control · Pause browser tools in all conversations"
+        }
+        disabled={busy}
+        onClick={() => void command(human ? "handback" : "take-control")}
+      >
+        {human ? <HandArrowUp /> : <HandArrowDown />}
+        {human ? "Hand back" : "Take control"}
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Reset browser"
+        title="Reset this conversation’s browser window"
+        disabled={busy}
+        onClick={() => void command("reset")}
+      >
+        <ArrowClockwise />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Stop browser"
+        title="Stop this conversation’s browser window"
+        disabled={busy}
+        onClick={() => void command("stop")}
+      >
+        <Stop />
+      </Button>
+      <Menu>
+        <MenuTrigger
+          render={<Button size="icon-sm" variant="ghost" />}
+          aria-label="Browser options"
+          title="Browser options"
+        >
+          <DotsThree />
+        </MenuTrigger>
+        <MenuPopup align="end" className={styles.optionsMenu}>
+          <MenuSub>
+            <MenuSubTrigger>
+              <MagnifyingGlassPlus />
+              Zoom
+              <span className={styles.menuValue}>
+                {scale === "fit" ? "Fit" : `${scale}%`}
+              </span>
+            </MenuSubTrigger>
+            <MenuSubPopup>
+              <MenuRadioGroup
+                value={scale}
+                onValueChange={(value) => setScale(value as BrowserScale)}
+              >
+                <MenuRadioItem value="fit">Fit to panel</MenuRadioItem>
+                {(["50", "75", "100", "125", "150", "200"] as const).map(
+                  (value) => (
+                    <MenuRadioItem key={value} value={value}>
+                      {value}%
+                    </MenuRadioItem>
+                  ),
+                )}
+              </MenuRadioGroup>
+            </MenuSubPopup>
+          </MenuSub>
+          <MenuSub>
+            <MenuSubTrigger
+              disabled={!canResize}
+              title={
+                canResize
+                  ? "Resize the page"
+                  : !session.resize_available
+                    ? "Viewport resizing is unavailable on this Host"
+                    : "Take control to resize the page"
+              }
+            >
+              <Devices />
+              Viewport
+              <span className={styles.menuValue}>{viewport?.label}</span>
+            </MenuSubTrigger>
+            <MenuSubPopup>
+              <MenuRadioGroup
+                value={session.viewport}
+                onValueChange={(value) =>
+                  void changeViewport(
+                    value as Schema<"BrowserViewportRequest">["preset"],
+                  )
+                }
+              >
+                {(session.viewports ?? []).map((item) => (
+                  <MenuRadioItem key={item.preset} value={item.preset}>
+                    {item.label} · {item.width} × {item.height}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuSubPopup>
+          </MenuSub>
+        </MenuPopup>
+      </Menu>
+    </>
+  ) : null;
   return (
     <section className={styles.panel} aria-label="Host browser">
-      {ready && (
-        <div className={styles.toolbar}>
-          <select
-            className={styles.viewport}
-            aria-label="Browser viewport size"
-            title={
-              !session.resize_available
-                ? "Desktop resizing is unavailable on this Host"
-                : controlToken
-                  ? "Resize the page viewport"
-                  : "Take control to change the viewport size"
-            }
-            disabled={
-              busy || !human || !controlToken || !session.resize_available
-            }
-            value={session.viewport}
-            onChange={(event) =>
-              void changeViewport(
-                event.target
-                  .value as Schema<"BrowserViewportRequest">["preset"],
-              )
-            }
-          >
-            {(session.viewports ?? []).map((viewport) => (
-              <option key={viewport.preset} value={viewport.preset}>
-                {viewport.label} · {viewport.width} × {viewport.height}
-              </option>
-            ))}
-          </select>
-          <Button
-            size="sm"
-            variant={human ? "default" : "outline"}
-            title={
-              human
-                ? "Resume browser tools in all conversations"
-                : "Pause browser tools in all conversations and take control"
-            }
-            disabled={busy}
-            onClick={() => void command(human ? "handback" : "take-control")}
-          >
-            <Hand />
-            {human ? "Hand back to Agent" : "Take control"}
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Reset browser"
-            title="Reopen this conversation’s browser window and restore its position"
-            disabled={busy}
-            onClick={() => void command("reset")}
-          >
-            <ArrowClockwise />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Stop browser"
-            title="Close this conversation’s browser window"
-            disabled={busy}
-            onClick={() => void command("stop")}
-          >
-            <Stop />
-          </Button>
-        </div>
-      )}
       {(error || state.error || session?.error) && (
         <p className={styles.notice} role="alert">
           {error || state.error?.message || session?.error}
         </p>
       )}
       {ready ? (
-        <Desktop
-          key={session.session_id}
-          threadId={threadId}
-          session={session}
-          controlToken={human ? controlToken : ""}
-          busy={busy}
-        />
+        <>
+          <div className={styles.toolbar}>{actions}</div>
+          <Desktop
+            key={session.session_id}
+            threadId={threadId}
+            session={session}
+            controlToken={human ? controlToken : ""}
+            busy={busy}
+            scale={scale}
+          />
+        </>
       ) : !preparation.data?.ready ? (
         <BrowserSetup
           setup={preparation.data}
@@ -260,7 +330,7 @@ export function BrowserPanel({
           <p>
             {stopped
               ? "Reopen this conversation’s window with your shared browser profile."
-              : "One shared browser profile for all conversations and projects. Each conversation uses its own browser window. Taking control pauses browser tools in every conversation."}
+              : "One shared browser profile for all conversations and projects. Each conversation uses its own window. Taking control pauses browser tools in every conversation."}
           </p>
           <Button
             disabled={busy || state.isLoading || preparation.isFetching}
@@ -274,272 +344,8 @@ export function BrowserPanel({
                 ? "Start browser"
                 : "Enable browser"}
           </Button>
-          {session?.status === "enabled" && (
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void command("stop")}
-            >
-              Stop browser
-            </Button>
-          )}
-          <p className={styles.footnote}>
-            Browser support is installed on this Host.
-          </p>
         </div>
       )}
     </section>
-  );
-}
-
-function Desktop({
-  threadId,
-  session,
-  controlToken,
-  busy,
-}: {
-  threadId: string;
-  session: Schema<"BrowserState">;
-  controlToken: string;
-  busy: boolean;
-}) {
-  const { client } = useTransport();
-  const host = useRef<HTMLDivElement>(null);
-  const snapshot = useRef<HTMLCanvasElement>(null);
-  const rfb = useRef<import("@novnc/novnc").default | null>(null);
-  const [status, setStatus] = useState("Connecting…");
-  const [clipboardError, setClipboardError] = useState("");
-  const clipboard = useRef<ReturnType<typeof bindClipboard> | null>(null);
-  const inputAllowed = useRef(false);
-  const [reconnect, setReconnect] = useState(0);
-  const [canReconnect, setCanReconnect] = useState(false);
-  const [canControl, setCanControl] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [showControlHint, setShowControlHint] = useState(false);
-  const interactive = canControl && !busy;
-  inputAllowed.current = interactive && !!controlToken;
-  useEffect(() => {
-    if (interactive) {
-      rfb.current?.focus();
-      clipboard.current?.sync();
-    }
-  }, [interactive]);
-  useEffect(() => {
-    let disposed = false;
-    let bridge: ReturnType<typeof bindClipboard> | undefined;
-    let keyboard: ReturnType<typeof bindKeyboard> | undefined;
-    let frame = 0;
-    const retain = () => {
-      const saved = snapshot.current;
-      if (!saved) return;
-      try {
-        const pixels = rfb.current?.getImageData?.();
-        if (!pixels?.width || !pixels.height || pixels.data[3] !== 255) return;
-        saved.width = pixels.width;
-        saved.height = pixels.height;
-        saved.getContext("2d")?.putImageData(pixels, 0, 0);
-        saved.hidden = false;
-      } catch {
-        // A connection that never rendered has no frame to retain.
-      }
-    };
-    setStatus(snapshot.current?.hidden === false ? "" : "Connecting…");
-    setConnected(false);
-    setCanReconnect(false);
-    setCanControl(false);
-    setShowControlHint(false);
-    setClipboardError("");
-    void (async () => {
-      try {
-        const { default: RFB } = await import("@novnc/novnc");
-        if (disposed) return;
-        const access = await result(
-          client.POST("/api/threads/{thread_id}/browser/access", {
-            params: { path: { thread_id: threadId } },
-            body: {
-              session_id: session.session_id!,
-              control_token: controlToken,
-            },
-          }),
-        );
-        if (disposed) return;
-        const url = new URL(
-          `/api/threads/${encodeURIComponent(threadId)}/browser/connect`,
-          window.location.origin,
-        );
-        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-        url.searchParams.set("ticket", access.ticket);
-        const connection = new RFB(host.current!, url.toString(), {
-          credentials: { password: access.password },
-        });
-        rfb.current = connection;
-        connection.viewOnly = !access.control;
-        connection.scaleViewport = true;
-        connection.addEventListener("connect", () => {
-          if (!disposed) {
-            setShowControlHint(false);
-            setStatus("");
-            const reveal = () => {
-              if (disposed) return;
-              const saved = snapshot.current;
-              const canvas = host.current?.querySelector("canvas");
-              // Keep the last frame until noVNC paints the replacement connection.
-              if (
-                saved &&
-                !saved.hidden &&
-                canvas &&
-                canvas.getContext("2d")?.getImageData(0, 0, 1, 1).data[3] !==
-                  255
-              ) {
-                frame = requestAnimationFrame(reveal);
-                return;
-              }
-              if (saved) {
-                saved.hidden = true;
-                saved.width = saved.height = 0;
-              }
-              setConnected(true);
-              setCanControl(access.control);
-            };
-            reveal();
-            if (access.control) {
-              const active = () =>
-                inputAllowed.current && rfb.current === connection;
-              keyboard = bindKeyboard({
-                root: host.current!,
-                active,
-                connection,
-              });
-              bridge = bindClipboard({
-                root: host.current!,
-                active,
-                connection,
-                shortcut: keyboard.shortcut,
-                notice: setClipboardError,
-              });
-              clipboard.current = bridge;
-            }
-          }
-        });
-        connection.addEventListener("disconnect", () => {
-          if (!disposed) {
-            retain();
-            cancelAnimationFrame(frame);
-            setStatus("Disconnected · Reconnect to view the current desktop");
-            bridge?.stop();
-            keyboard?.stop();
-            inputAllowed.current = false;
-            setCanReconnect(true);
-            setConnected(false);
-            setCanControl(false);
-          }
-        });
-        connection.addEventListener("securityfailure", () => {
-          if (!disposed) {
-            retain();
-            cancelAnimationFrame(frame);
-            setStatus("Connection rejected · Reconnect to request new access");
-            bridge?.stop();
-            keyboard?.stop();
-            inputAllowed.current = false;
-            setCanReconnect(true);
-            setConnected(false);
-            setCanControl(false);
-          }
-        });
-      } catch (cause) {
-        if (!disposed) {
-          setStatus(cause instanceof Error ? cause.message : String(cause));
-          setCanReconnect(true);
-        }
-      }
-    })();
-    return () => {
-      retain();
-      disposed = true;
-      cancelAnimationFrame(frame);
-      inputAllowed.current = false;
-      bridge?.stop();
-      keyboard?.stop();
-      if (clipboard.current === bridge) clipboard.current = null;
-      rfb.current?.disconnect();
-      rfb.current = null;
-    };
-  }, [
-    client,
-    threadId,
-    session.session_id,
-    session.control,
-    controlToken,
-    reconnect,
-  ]);
-  return (
-    <>
-      {!!status && (
-        <div className={styles.connection}>
-          <span role="status">{status}</span>
-          {canReconnect && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setReconnect((v) => v + 1)}
-            >
-              Reconnect viewer
-            </Button>
-          )}
-        </div>
-      )}
-      {!!clipboardError && (
-        <p className={styles.notice} role="status">
-          {clipboardError}
-        </p>
-      )}
-      <div
-        className={styles.desktop}
-        aria-label="Remote browser desktop"
-        aria-busy={!connected || busy}
-      >
-        <div
-          ref={host}
-          data-browser-screen
-          className={styles.screen}
-          inert={!interactive}
-        />
-        <canvas
-          ref={snapshot}
-          className={styles.snapshot}
-          data-browser-frame="retained"
-          aria-hidden="true"
-          hidden
-        />
-        {!interactive && (
-          <button
-            type="button"
-            className={styles.readOnlyGuard}
-            aria-label="Read-only browser"
-            onPointerDown={() => setShowControlHint(true)}
-            onClick={() => setShowControlHint(true)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setShowControlHint(true);
-            }}
-          />
-        )}
-        {showControlHint && !interactive && (
-          <div className={styles.controlHint} role="status">
-            <LockSimple size={18} aria-hidden="true" />
-            <span>
-              {busy
-                ? "Updating the browser. Please wait."
-                : controlToken
-                  ? "Input is unavailable. Wait for the connection or reconnect the viewer."
-                  : session.control === "human"
-                    ? "Read only. Hand back to Agent, then select Take control to interact here."
-                    : "Read only. Select Take control to interact with this browser."}
-            </span>
-          </div>
-        )}
-      </div>
-    </>
   );
 }

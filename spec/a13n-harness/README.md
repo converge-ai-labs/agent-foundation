@@ -38,7 +38,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [21-file-memory.md](21-file-memory.md)                                                   | File memory store contract, file format, mounts, tools, context cursors, and the local directory store                           |
 | [21a-record-memory.md](21a-record-memory.md)                                             | Record memory store contract, Memory Providers and mem0 over REST, mounts, tools, and recall                                     |
 | [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all five domains, credential declaration, catalogs, and the installed Environment manifest           |
-| [23-browser-use.md](23-browser-use.md)                                                   | Native browser tools, Run-local element references and the embedding Host browser boundary                                       |
+| [23-browser-use.md](23-browser-use.md)                                                   | Native browser tools, CDP URL adapter, Run-local references and the embedding Host browser boundary                              |
 
 [Codex Live Transport](16c-codex-live.md) owns subscription WebRTC bootstrap, sideband lifetime, typed client delegation, and the media/Host boundary.
 

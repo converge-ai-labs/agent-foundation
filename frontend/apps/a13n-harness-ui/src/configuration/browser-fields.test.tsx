@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -26,8 +27,80 @@ const discovered = {
     { name: "Chrome", path: "/opt/chrome", source: "system" },
     { name: "Chromium", path: "/opt/chromium", source: "system" },
   ],
-  vncs: [{ path: "/opt/Xvnc", source: "system" }],
+  vncs: [
+    { kind: "tigervnc", path: "/opt/Xvnc", source: "system" },
+    { kind: "x11vnc", path: "/opt/x11vnc", source: "system" },
+    { kind: "wayvnc", path: "/opt/wayvnc", source: "system" },
+  ],
 };
+beforeEach(() => {
+  post.mockImplementation(
+    async (url: string, options?: { body: { vnc_executable: string } }) => {
+      if (url === "/api/browser/scan") return { data: discovered };
+      const kind =
+        options?.body.vnc_executable === "/opt/x11vnc"
+          ? "x11vnc"
+          : options?.body.vnc_executable === "/opt/wayvnc"
+            ? "wayvnc"
+            : "tigervnc";
+      return {
+        data: {
+          platform: "linux",
+          supported: true,
+          ready: kind === "tigervnc",
+          vnc: { kind },
+          requirements: [
+            {
+              name: "Browser automation",
+              required: true,
+              installed: true,
+              managed: true,
+              detail: "cdp-use is included",
+            },
+            {
+              name: "Browser",
+              required: true,
+              installed: true,
+              detail: "/opt/chrome",
+            },
+            {
+              name: "VNC server",
+              required: true,
+              installed: true,
+              detail: "/opt/Xvnc",
+            },
+            ...(kind === "tigervnc"
+              ? [
+                  {
+                    name: "Desktop resizing",
+                    required: false,
+                    installed: true,
+                    purpose: "xrandr enables Viewport size switching.",
+                    detail: "/usr/bin/xrandr",
+                  },
+                ]
+              : [
+                  {
+                    name: "Display server",
+                    required: true,
+                    installed: false,
+                    purpose:
+                      kind === "x11vnc"
+                        ? "Xvfb provides a private display."
+                        : "Sway provides a private desktop.",
+                    detail:
+                      kind === "x11vnc"
+                        ? "Install Xvfb on PATH."
+                        : "Install Sway on PATH.",
+                  },
+                ]),
+          ],
+          steps: [],
+        },
+      };
+    },
+  );
+});
 function show(
   initial = 'schema_version: "1"\nprocess: {log_level: DEBUG}\n',
   client = new QueryClient(),
@@ -80,8 +153,13 @@ it("scans on opening, selects discovered executables and exposes Other paths", a
     screen.getByRole("button", { name: "Scanning…" }).hasAttribute("disabled"),
   ).toBe(true);
   complete({ data: discovered });
-  await screen.findByText("Browsers: 2 · VNC servers: 1");
+  await screen.findByRole("button", { name: "Scan" });
   expect(post).toHaveBeenCalledWith("/api/browser/scan");
+  expect(
+    within(
+      screen.getByRole("list", { name: "Browser requirements" }),
+    ).getByRole("combobox", { name: "Browser executable" }),
+  ).toBeTruthy();
   expect(screen.getByTestId("source").textContent).toBe(initial);
   await user.click(
     screen.getByRole("combobox", { name: "Browser executable" }),
@@ -134,7 +212,7 @@ it("preserves saved custom paths, retries failed scans and rescans on settings v
   ).toBe(true);
   post.mockResolvedValueOnce({ data: { browsers: [], vncs: [] } });
   await user.click(screen.getByRole("button", { name: "Scan" }));
-  await screen.findByText("Browsers: 0 · VNC servers: 0");
+  await screen.findByRole("button", { name: "Scan" });
   expect(
     screen
       .getByRole("combobox", { name: "Browser executable" })
@@ -144,7 +222,7 @@ it("preserves saved custom paths, retries failed scans and rescans on settings v
   view.unmount();
   post.mockResolvedValueOnce({ data: discovered });
   show(initial, client);
-  await screen.findByText("Browsers: 2 · VNC servers: 1");
+  await screen.findByRole("button", { name: "Scan" });
   await waitFor(() =>
     expect(
       screen
@@ -152,5 +230,57 @@ it("preserves saved custom paths, retries failed scans and rescans on settings v
         .hasAttribute("disabled"),
     ).toBe(false),
   );
-  expect(post).toHaveBeenCalledTimes(3);
+  expect(
+    post.mock.calls.filter(([url]) => url === "/api/browser/scan"),
+  ).toHaveLength(3);
+});
+
+it("checks unsaved VNC selections, switches requirements and preserves optional labels", async () => {
+  show(
+    'schema_version: "1"\nbrowser: {executable: /opt/chrome, vnc_executable: /opt/Xvnc}\n',
+  );
+  const user = userEvent.setup();
+  await screen.findByText("/usr/bin/xrandr");
+  expect(
+    within(screen.getByText("Desktop resizing").closest("li")!).getByText(
+      "Optional",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText("Desktop viewer")).toBeNull();
+  expect(screen.queryByText("Browser automation")).toBeNull();
+  expect(screen.queryByText(/Browsers: /)).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "VNC executable" }));
+  await user.click(
+    await screen.findByRole("option", { name: "x11vnc — /opt/x11vnc" }),
+  );
+  await screen.findByText("Install Xvfb on PATH.");
+  expect(screen.queryByText("/usr/bin/xrandr")).toBeNull();
+  expect(screen.getByText("Missing")).toBeTruthy();
+  expect(post).toHaveBeenCalledWith(
+    "/api/browser/check",
+    expect.objectContaining({
+      body: { executable: "/opt/chrome", vnc_executable: "/opt/x11vnc" },
+    }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "VNC executable" }));
+  await user.click(
+    await screen.findByRole("option", { name: "WayVNC — /opt/wayvnc" }),
+  );
+  await screen.findByText("Install Sway on PATH.");
+  expect(screen.queryByText("Install Xvfb on PATH.")).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "VNC executable" }));
+  await user.click(await screen.findByRole("option", { name: "Other" }));
+  post.mockImplementation(async (url) => {
+    if (url === "/api/browser/check") throw new Error("Invalid browser path");
+    return { data: discovered };
+  });
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "VNC executable path" }),
+    { target: { value: "/custom/invalid" } },
+  );
+  await screen.findByText("Invalid browser path");
+  expect(screen.queryByText("Install Sway on PATH.")).toBeNull();
+  expect(
+    parse(screen.getByTestId("source").textContent!).browser.vnc_executable,
+  ).toBe("/custom/invalid");
 });

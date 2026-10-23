@@ -96,20 +96,22 @@ Thread 链接直接打开对应的 Thread 页面，Project 链接增加简洁的
 
 展开 **Settings → General → Host browser** 时会自动扫描已安装的程序，扫描成功后即可从浏览器和 VNC 下拉框选择检测到的程序。最后一项 **Other** 会显示绝对路径输入框，用于指定 Chromium 浏览器或兼容的 TigerVNC `Xvnc`、x11vnc 或 WayVNC 服务。启用浏览器前必须选择并保存这两个可执行文件的路径。启动时不会自动选择程序；路径未配置或失效时会阻止启动。重新展开此设置区域会刷新扫描结果，也可以点击 **Scan** 手动刷新或重试。扫描不会修改已保存的配置。检测 `Xtigervnc`、`Xvnc`、`x11vnc` 和 `wayvnc` 程序名；自定义路径无效时明确报错，不会回退到其他程序。旁栏显示解析后的实际路径。Harness 负责启动和清理自己的浏览器及显示进程，不连接已有 VNC 桌面。
 
-同一全局设置中的 **Shared profile directory** 默认是 `<data_root>/browsers/profile`，默认数据目录下即 `~/.a13n-harness-ui/data/browsers/profile`。所有对话和 Project 共用这个 profile 和一个浏览器实例，Agent 使用各自的标签页。保存后重启 Harness UI 生效。旧的按对话保存的目录不会删除或自动合并；如需复用其中一个，先停止原浏览器，再将该目录直接设为共享 profile。
+**Browser components** 面板统一展示程序选择和依赖检测。浏览器及 VNC 的路径直接在对应组件行配置；检测使用当前尚未保存的选择，包括自定义路径。每一项都显示用途、检测结果和 **Required**（必需）或 **Optional**（可选）标记。TigerVNC 自带显示服务，可选的 xrandr 用于切换 Viewport，X11 窗口管理器提供窗口控制。选择 x11vnc 时检测必需的 Xvfb；选择 WayVNC 时检测必需的 Sway 和非 root Host 账户。这两个适配器使用固定尺寸桌面，安装 xrandr 也不会启用 Viewport 切换。面板只展示用户需要在 Host 上准备的组件，内置程序库和 TigerVNC 自带的显示服务不单独列出。**Scan** 会重新扫描程序并刷新依赖检测，不会保存设置或启动浏览器。
 
-在运行 Harness UI 的 Python 环境中安装可选依赖 `a13n-harness-ui[browser]`，按照供应商或发行版说明安装 Chrome、Chromium 或 Edge。Debian/Ubuntu 上可通过以下命令安装受管理的 VNC 服务：
+共享浏览器 Profile 保存在 `<data_root>/browsers/profile`，默认数据目录下即 `~/.a13n-harness-ui/data/browsers/profile`，不提供单独修改其位置的配置。所有对话和 Project 共用这个 Profile 和一个浏览器实例，并拥有各自的窗口及 Agent 标签页。现有 Profile 目录不会被移动或合并。
+
+Harness 已自带 cdp-use 自动化依赖，按照供应商或发行版说明安装 Chrome、Chromium 或 Edge。Debian/Ubuntu 上可通过以下命令安装受管理的 VNC 服务：
 
 ```bash
 sudo apt-get update
 sudo apt-get install --no-install-recommends tigervnc-standalone-server
 ```
 
-其他发行版请使用自己的包管理器安装兼容的 VNC 服务。Harness UI 自行生成密码和 X11 认证文件，无需单独安装 `vncpasswd` 或 `xauth`。窗口管理器是可选项，可复用 Openbox、Fluxbox、IceWM 或 twm，不强制要求 Openbox。Debian/Ubuntu 可选装 `x11-xserver-utils` 以支持桌面尺寸调整；缺少可用的 RandR 工具时仍可正常进行基础浏览，桌面尺寸固定，尺寸选择器会禁用并说明原因。优先使用已有系统浏览器，也可复用已经下载的 Playwright Chromium。使用 Docker 时，请在容器或镜像内安装依赖。检测通过不保证一定能启动：共享库缺失或显示访问权限等问题仍可能产生明确的启动错误。
+其他发行版请使用自己的包管理器安装兼容的 VNC 服务。Harness UI 自行生成密码和 X11 认证文件，无需单独安装 `vncpasswd` 或 `xauth`。建议安装 X11 窗口管理器以支持窗口拖动和原生关闭按钮，可复用 Openbox、Fluxbox、IceWM 或 twm，不强制要求 Openbox。缺少窗口管理器时，基础浏览和面板中的 Stop/Reset 仍可使用，但可能没有原生窗口控件。Debian/Ubuntu 可选装 `x11-xserver-utils` 以支持桌面尺寸调整；缺少可用的 RandR 工具时仍可正常进行基础浏览，桌面尺寸固定，尺寸选择器会禁用并说明原因。通过可执行文件路径选择已安装的 Chromium 系浏览器；cdp-use 不会下载浏览器。使用 Docker 时，请在容器或镜像内安装依赖。检测通过不保证一定能启动：共享库缺失或显示访问权限等问题仍可能产生明确的启动错误。
 
 检测通过后，依次选择 **Enable browser → Start browser**。启用后 Agent 也可通过导航启动浏览器。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
 
-Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选地复用已有窗口管理器。Playwright 提供浏览器自动化；TigerVNC 的 `Xtigervnc` 或 `Xvnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb 或 websockify 服务。也可选择 x11vnc 配合 Xvfb，或 WayVNC 配合无头 Sway。后两者目前使用固定尺寸桌面；WayVNC 要求兼容的私有 socket 和只读输入选项，旧版本可能不满足，且 Harness UI 需要以非 root 用户运行。Sway 使用专用运行目录和软件渲染，不连接用户现有桌面。不同 VNC 服务的 Unicode 剪贴板支持可能不同。可选窗口管理器管理浏览器窗口，Harness UI 负责显示认证；可用的 RandR 支持负责调整显示尺寸。界面包含完整的标签页、地址栏、菜单和设置。
+Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选地复用已有窗口管理器。cdp-use 提供浏览器自动化；TigerVNC 的 `Xtigervnc` 或 `Xvnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb 或 websockify 服务。也可选择 x11vnc 配合 Xvfb，或 WayVNC 配合无头 Sway。后两者目前使用固定尺寸桌面；WayVNC 要求兼容的私有 socket 和只读输入选项，旧版本可能不满足，且 Harness UI 需要以非 root 用户运行。Sway 使用专用运行目录和软件渲染，不连接用户现有桌面。不同 VNC 服务的 Unicode 剪贴板支持可能不同。可选窗口管理器管理浏览器窗口，Harness UI 负责显示认证；可用的 RandR 支持负责调整显示尺寸。界面包含完整的标签页、地址栏、菜单和设置。
 
 Host 支持桌面尺寸调整时，接管后可通过浏览器工具栏中的尺寸选择器 切换桌面、笔记本、高清桌面、平板和手机尺寸，平板和手机均提供横竖屏预设。标注的是网页 CSS 视口尺寸，不包括浏览器外框。切换会触发响应式排版，不刷新页面，也不丢失登录状态；其他查看者会看到同样的尺寸。Stop/Start 和 Reset 保留当前选择，WebUI 服务器重启后恢复默认桌面尺寸。这些预设用于响应式布局，不模拟手机操作系统、User-Agent 或触摸硬件。
 

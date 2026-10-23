@@ -44,7 +44,7 @@ from a13n_harness_ui.browser import (
     BrowserViewportRequest,
     HostBrowsers,
 )
-from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, scan_browsers
+from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, inspect_browser, scan_browsers
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
     AgentReconstructor,
@@ -68,7 +68,7 @@ from a13n_harness_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
-from a13n_harness_ui.configuration.models import DeviceResource, PairedDeviceAuthentication
+from a13n_harness_ui.configuration.models import BrowserConfiguration, DeviceResource, PairedDeviceAuthentication
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
     SetupPreview,
@@ -1763,6 +1763,10 @@ class HarnessUiApp:
     async def scan_browser_executables(self) -> BrowserScan:
         async with self._operation():
             return await scan_browsers()
+
+    async def check_browser_configuration(self, configuration: BrowserConfiguration) -> BrowserSetup:
+        async with self._operation():
+            return await inspect_browser(configuration)
 
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():

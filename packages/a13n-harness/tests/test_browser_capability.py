@@ -108,3 +108,24 @@ async def test_human_control_waits_without_polling_or_replaying_the_pending_acti
     assert "fresh browser_observe" in await pending
     backend.act.assert_awaited_once()  # No silent replay of the pre-takeover action.
     assert "Signed in" in await tools["browser_observe"].function_schema.call({}, None)
+
+
+async def test_tab_references_are_run_local_and_switching_clears_element_references():
+    from a13n_harness.capabilities.browser import BrowserTab
+
+    backend = AsyncMock()
+    backend.observe.return_value = BrowserObservation("Page", "revision", (BrowserElement("element", "Continue"),))
+    backend.tabs.return_value = (BrowserTab("target-a", "A", "https://example.com", True),)
+    tools = BrowserUseCapability(backend).get_toolset().tools
+
+    async def call(name, **kwargs):
+        return await tools[name].function_schema.call(kwargs, None)
+
+    await call("browser_observe")
+    assert "[t1] selected" in await call("browser_tabs")
+    await call("browser_tabs", action="select", tab="t1")
+    backend.tabs.assert_awaited_with("select", target="target-a", url="")
+    with pytest.raises(ModelRetry):
+        await call("browser_click", ref="e1")
+    with pytest.raises(ModelRetry):
+        await call("browser_tabs", action="close", tab="t2")

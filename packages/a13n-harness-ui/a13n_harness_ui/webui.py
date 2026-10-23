@@ -49,6 +49,7 @@ from a13n_harness_ui.browser import (
 )
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
+from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
     AgentToolSearchView,
@@ -1113,6 +1114,10 @@ def create_webui(
     async def scan_browser_executables() -> BrowserScan:
         return await app().scan_browser_executables()
 
+    @server.post("/api/browser/check", response_model=BrowserSetup, openapi_extra=_body(BrowserConfiguration))
+    async def check_browser_configuration(request: Request) -> BrowserSetup:
+        return await app().check_browser_configuration(await _document(request, BrowserConfiguration))
+
     @server.get("/api/threads/{thread_id}/browser", response_model=BrowserState)
     async def browser_state(thread_id: str) -> BrowserState:
         return await app().browser_state(thread_id)
@@ -1180,7 +1185,7 @@ def create_webui(
         # HTTP authentication issues a short-lived single-use ticket. The API key never enters the URL.
         try:
             browsers = app().browsers()
-            session, reader, writer = await browsers.connect(thread_id, ticket)
+            reader, writer = await browsers.connect(thread_id, ticket)
         except (HarnessUiError, OSError):
             await socket.close(code=4403)
             return
@@ -1191,7 +1196,8 @@ def create_webui(
                 async def output() -> None:
                     try:
                         while data := await reader.read(64 * 1024):
-                            await socket.send_bytes(data)
+                            async with asyncio.timeout(10):
+                                await socket.send_bytes(data)
                     finally:
                         group.cancel_scope.cancel()
 
@@ -1212,7 +1218,7 @@ def create_webui(
                         while True:
                             await asyncio.sleep(1)
                             await browsers.authorize(thread_id)
-                            if session.retired or writer.is_closing():
+                            if writer.is_closing():
                                 return
                     finally:
                         group.cancel_scope.cancel()
@@ -1220,10 +1226,10 @@ def create_webui(
                 group.start_soon(output)
                 group.start_soon(input_)
                 group.start_soon(authority)
-        except* (WebSocketDisconnect, OSError, HarnessUiError):
+        except* (WebSocketDisconnect, OSError, HarnessUiError, TimeoutError):
             pass
         finally:
-            await browsers.disconnect(session, writer)
+            await browsers.disconnect(writer)
             try:
                 await writer.wait_closed()
             except OSError:

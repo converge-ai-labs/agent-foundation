@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import stat
+import tempfile
 from contextlib import AsyncExitStack
 from pathlib import Path
 
-from a13n_harness_ui.browser_auth import write_private
+from a13n_harness_ui.browser_auth import vnc_passwords, write_private, xauthority
 from a13n_harness_ui.browser_setup import VncExecutable
 
 
@@ -187,3 +189,201 @@ async def sway_command(env: dict[str, str], identity: int, command: str) -> None
         or any(not isinstance(item, dict) or item.get("success") is not True for item in response)
     ):
         raise RuntimeError("The compositor could not select the browser window")
+
+
+FIXED_DESKTOP = (1366, 1024)
+
+
+class VncDesktop:
+    """One private graphical session; browser processes and access belong to the Host."""
+
+    def __init__(self, desktop: VncExecutable) -> None:
+        self.desktop = desktop
+        self.resources = AsyncExitStack()
+        self.env: dict[str, str] = {}
+        self.display = ""
+        self.control_socket = ""
+        self.readonly_socket = ""
+        self.password_file: Path | None = None
+        self.password = self.readonly_password = ""
+        self.display_output = ""
+        self.display_modes: set[str] = set()
+        self.processes: list[tuple[asyncio.subprocess.Process, str]] = []
+
+    async def rotate_passwords(self) -> None:
+        if self.password_file is None:
+            return
+        password, readonly = secrets.token_urlsafe(6), secrets.token_urlsafe(6)
+        content = (
+            f"{password}\n{readonly}\n".encode("ascii")
+            if self.desktop.kind == "x11vnc"
+            else vnc_passwords(password, readonly)
+        )
+        await asyncio.to_thread(write_private, self.password_file, content, advance_mtime=self.desktop.kind == "x11vnc")
+        self.password, self.readonly_password = password, readonly
+
+    async def start(self) -> None:
+        processes: list[tuple[asyncio.subprocess.Process, str]] = []
+        temporary = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="a13n-browser-"))
+
+        self.control_socket = str(Path(temporary) / "desktop.sock")
+        if self.desktop.kind == "wayvnc":
+            self.env, processes = await wayland(self.desktop, Path(temporary), self.resources, FIXED_DESKTOP)
+            self.readonly_socket = str(Path(temporary) / "readonly.sock")
+        else:
+            authority = Path(temporary) / "Xauthority"
+            cookie = secrets.token_bytes(16)
+            await asyncio.to_thread(write_private, authority, xauthority("", cookie))
+            self.control_socket = str(Path(temporary) / "desktop.sock")
+            self.password_file = Path(temporary) / "passwd"
+            await self.rotate_passwords()
+            arguments = [
+                self.desktop.path,
+                "-displayfd",
+                "1",
+                "-s",
+                "0",
+                "-geometry",
+                f"{FIXED_DESKTOP[0]}x{FIXED_DESKTOP[1]}",
+                "-depth",
+                "24",
+                "-rfbport",
+                "-1",
+                "-rfbunixpath",
+                self.control_socket,
+                "-rfbunixmode",
+                "0600",
+                "-SecurityTypes",
+                "VncAuth",
+                "-PasswordFile",
+                str(self.password_file),
+                "-AlwaysShared",
+                "-AcceptSetDesktopSize=0",
+                "-SendPrimary=0",
+                "-SetPrimary=0",
+                "-MaxCutText",
+                "262144",
+                "-localhost=1",
+                "-nolisten",
+                "tcp",
+                "-auth",
+                str(authority),
+            ]
+            if self.desktop.kind == "x11vnc":
+                assert self.desktop.display_server is not None
+                arguments = [
+                    self.desktop.display_server,
+                    "-displayfd",
+                    "1",
+                    "-screen",
+                    "0",
+                    f"{FIXED_DESKTOP[0]}x{FIXED_DESKTOP[1]}x24",
+                    "-nolisten",
+                    "tcp",
+                    "-auth",
+                    str(authority),
+                ]
+            display = await asyncio.create_subprocess_exec(
+                *arguments, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+            )
+            self.resources.push_async_callback(terminate, display)
+            assert display.stdout is not None
+            number = (await asyncio.wait_for(display.stdout.readline(), 10)).strip().decode()
+            if not number.isdecimal():
+                raise RuntimeError("The virtual display did not provide a display number.")
+            self.display = ":" + number
+            await asyncio.to_thread(write_private, authority, xauthority(number, cookie))
+            self.env = {**os.environ, "DISPLAY": self.display, "XAUTHORITY": str(authority)}
+            processes.append((display, "The virtual display"))
+            if self.desktop.kind == "x11vnc":
+                vnc = await spawn(
+                    self.desktop.path,
+                    "-norc",
+                    "-display",
+                    self.display,
+                    "-auth",
+                    str(authority),
+                    "-unixsock",
+                    self.control_socket,
+                    "-rfbport",
+                    "0",
+                    "-passwdfile",
+                    "read:" + str(self.password_file),
+                    "-forever",
+                    "-shared",
+                    "-noprimary",
+                    "-nosetprimary",
+                    env=self.env,
+                )
+                self.resources.push_async_callback(terminate, vnc)
+                await wait_socket(Path(self.control_socket), vnc)
+                processes.append((vnc, "The x11vnc server"))
+        if self.desktop.xrandr:
+            try:
+                outputs = (await self.randr("--query")).splitlines()
+                self.display_output = next((line.split()[0] for line in outputs if " connected" in line), "")
+            except (RuntimeError, OSError, TimeoutError):
+                self.display_output = ""
+            if not self.display_output:
+                self.desktop = self.desktop.model_copy(update={"xrandr": None})
+        manager = None
+        if self.desktop.window_manager:
+            manager = await spawn(self.desktop.window_manager, env=self.env)
+            self.resources.push_async_callback(terminate, manager)
+        if manager is not None:
+            processes.append((manager, "The window manager"))
+        self.processes = processes
+
+    async def randr(self, *args: str) -> str:
+        if self.desktop.xrandr is None:
+            raise RuntimeError("Desktop resizing is unavailable on this Host.")
+        process = await asyncio.create_subprocess_exec(
+            self.desktop.xrandr, *args, env=self.env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        )
+        try:
+            output, _ = await asyncio.wait_for(process.communicate(), 5)
+        except BaseException:
+            await terminate(process)
+            raise
+        if process.returncode:
+            raise RuntimeError("The virtual desktop could not resize.")
+        return output.decode(errors="replace")
+
+    async def resize(self, width: int, height: int) -> None:
+        if self.desktop.xrandr is None:
+            if width > FIXED_DESKTOP[0] or height > FIXED_DESKTOP[1]:
+                raise RuntimeError("The browser window exceeds the fixed desktop size.")
+            return
+        if not 32 <= width <= 4096 or not 32 <= height <= 4096:
+            raise RuntimeError("Unsupported desktop size.")
+        mode = f"a13n-{width}x{height}"
+        if mode not in self.display_modes:
+            clock = (width + 24) * (height + 3) * 60 / 1_000_000
+            await self.randr(
+                "--newmode",
+                mode,
+                f"{clock:.6f}",
+                *(
+                    str(n)
+                    for n in (width, width + 8, width + 16, width + 24, height, height + 1, height + 2, height + 3)
+                ),
+            )
+            await self.randr("--addmode", self.display_output, mode)
+            self.display_modes.add(mode)
+        await self.randr("--output", self.display_output, "--mode", mode)
+
+    async def settle_input(self) -> None:
+        await self.rotate_passwords()
+        if self.readonly_socket:
+            await settle_wayvnc(Path(self.control_socket).with_suffix(".ctl"))
+        elif self.desktop.kind == "x11vnc":
+            reset = await spawn(self.desktop.path, "-norc", "-sync", "-R", "clear_all", env=self.env)
+            try:
+                await asyncio.wait_for(reset.wait(), 5)
+                if reset.returncode:
+                    raise RuntimeError("x11vnc could not release held keys")
+            finally:
+                await terminate(reset)
+
+    async def close(self) -> None:
+        await self.resources.aclose()

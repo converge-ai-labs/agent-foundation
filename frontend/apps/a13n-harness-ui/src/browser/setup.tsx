@@ -1,13 +1,9 @@
-import { useState } from "react";
 import { Button } from "a13n-ui";
+import { ArrowClockwise, Monitor } from "@phosphor-icons/react";
 import {
-  ArrowClockwise,
-  Check,
-  CheckCircle,
-  CircleDashed,
-  Copy,
-  Monitor,
-} from "@phosphor-icons/react";
+  BrowserRequirements,
+  BrowserInstallInstructions,
+} from "./requirements";
 import type { Schema } from "../transport/client";
 import styles from "./setup.module.css";
 
@@ -24,19 +20,6 @@ export function BrowserSetup({
   check: () => void;
   busy: boolean;
 }) {
-  const [copied, setCopied] = useState("");
-  const [copyError, setCopyError] = useState("");
-  const copy = async (title: string, command: string) => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(title);
-      setCopyError("");
-    } catch {
-      setCopyError(
-        "Clipboard access is unavailable. Select and copy the command below.",
-      );
-    }
-  };
   const platform =
     setup &&
     {
@@ -71,65 +54,10 @@ export function BrowserSetup({
             {error.message}
           </p>
         )}
-        {!!setup?.requirements?.length && (
-          <ul className={styles.requirements} aria-label="Browser requirements">
-            {setup.requirements?.map((requirement) => (
-              <li key={requirement.name}>
-                {requirement.installed ? (
-                  <CheckCircle size={19} />
-                ) : (
-                  <CircleDashed size={19} />
-                )}
-                <div>
-                  <strong>{requirement.name}</strong>
-                  <span>{requirement.detail}</span>
-                </div>
-                <span className={styles.state}>
-                  {requirement.installed
-                    ? "Installed"
-                    : requirement.required === false
-                      ? "Optional"
-                      : "Missing"}
-                </span>
-              </li>
-            ))}
-          </ul>
+        {setup && (
+          <BrowserRequirements requirements={setup.requirements ?? []} />
         )}
-        {!!setup?.steps?.length && (
-          <details className={styles.instructions} open>
-            <summary>Manual installation commands</summary>
-            <p>
-              Run these commands in the Harness UI environment. For Docker,
-              installation applies to this container; add the components to your
-              image to keep them when the container is replaced. System packages
-              may require administrator access.
-            </p>
-            {setup.steps?.map((step) => (
-              <section key={step.title} className={styles.step}>
-                <div>
-                  <strong>{step.title}</strong>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Copy ${step.title} command`}
-                    onClick={() => void copy(step.title, step.command)}
-                  >
-                    {copied === step.title ? <Check /> : <Copy />}
-                    {copied === step.title ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-                <pre>
-                  <code>{step.command}</code>
-                </pre>
-              </section>
-            ))}
-            {copyError && (
-              <p role="alert" className={styles.error}>
-                {copyError}
-              </p>
-            )}
-          </details>
-        )}
+        <BrowserInstallInstructions steps={setup?.steps ?? []} />
       </div>
       <div className={styles.actions}>
         <div className={styles.buttons}>

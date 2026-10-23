@@ -648,6 +648,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browser/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Browser Configuration */
+        post: operations["check_browser_configuration_api_browser_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/browser": {
         parameters: {
             query?: never;
@@ -2979,7 +2996,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "system" | "custom" | "playwright";
+            source: "system" | "custom";
         };
         /** BrowserInstallStep */
         BrowserInstallStep: {
@@ -3005,6 +3022,16 @@ export interface components {
              * @default true
              */
             required?: boolean;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose?: string;
+            /**
+             * Managed
+             * @default false
+             */
+            managed?: boolean;
         };
         /** BrowserScan */
         BrowserScan: {
@@ -3124,7 +3151,7 @@ export interface components {
             viewports?: components["schemas"]["BrowserViewport"][];
             /**
              * Resize Available
-             * @default false
+             * @default true
              */
             resize_available?: boolean;
         };
@@ -8099,6 +8126,18 @@ export interface components {
             /** Approve */
             approve: boolean;
         };
+        /**
+         * BrowserConfiguration
+         * @description Host executable bindings captured at App startup; never install dependencies.
+         */
+        BrowserConfiguration: {
+            /** Executable */
+            executable?: string | null;
+            /** Vnc Executable */
+            vnc_executable?: string | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
         /** BrowserCommand */
         BrowserCommand: {
             /** Session Id */
@@ -9811,6 +9850,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserScan"];
+                };
+            };
+        };
+    };
+    check_browser_configuration_api_browser_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserConfiguration"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSetup"];
                 };
             };
         };

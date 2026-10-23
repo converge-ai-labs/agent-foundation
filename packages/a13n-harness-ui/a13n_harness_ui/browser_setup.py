@@ -23,7 +23,7 @@ type BrowserPlatform = Literal["linux", "macos", "windows", "other"]
 class BrowserExecutable(SurfaceModel):
     name: str
     path: str
-    source: Literal["system", "custom", "playwright"]
+    source: Literal["system", "custom"]
 
 
 type VncKind = Literal["tigervnc", "x11vnc", "wayvnc"]
@@ -44,6 +44,8 @@ class BrowserRequirement(SurfaceModel):
     installed: bool
     detail: str
     required: bool = True
+    purpose: str = ""
+    managed: bool = False
 
 
 class BrowserInstallStep(SurfaceModel):
@@ -125,21 +127,6 @@ def system_browsers(platform: BrowserPlatform) -> list[BrowserExecutable]:
     return list(found.values())
 
 
-async def playwright_browser() -> BrowserExecutable | None:
-    if importlib.util.find_spec("playwright") is None:
-        return None
-    try:
-        from playwright.async_api import async_playwright
-
-        async with asyncio.timeout(10), async_playwright() as driver:
-            path = await asyncio.to_thread(executable_path, driver.chromium.executable_path)
-            if path:
-                return BrowserExecutable(name="Chromium", path=path, source="playwright")
-    except Exception:
-        pass
-    return None
-
-
 def supported_browser(version: str) -> bool:
     return any(name in version.lower() for name in ("chromium", "chrome", "edge", "brave", "vivaldi"))
 
@@ -180,9 +167,6 @@ async def scan_browsers() -> BrowserScan:
     importlib.invalidate_caches()
     platform = host_platform()
     candidates = await asyncio.to_thread(system_browsers, platform)
-    if bundled := await playwright_browser():
-        if all(candidate.path != bundled.path for candidate in candidates):
-            candidates.append(bundled)
     browsers = []
     for candidate in candidates:
         if supported_browser(await probe(candidate.path, "--version")):
@@ -237,7 +221,7 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
         if path:
             browser = BrowserExecutable(name="Configured browser", path=path, source="custom")
         browser_detail = "Configured browser executable is missing or not executable"
-    automation = importlib.util.find_spec("playwright") is not None
+    automation = importlib.util.find_spec("cdp_use") is not None
     if browser:
         version = await probe(browser.path, "--version")
         if not supported_browser(version):
@@ -273,24 +257,54 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
         else:
             vnc_detail = "VNC executable is not a compatible TigerVNC Xvnc, x11vnc or WayVNC server"
     requirements = [
-        BrowserRequirement(name="Browser", installed=browser is not None, detail=browser_detail),
-        BrowserRequirement(name="VNC server", installed=vnc is not None, detail=vnc_detail),
         BrowserRequirement(
-            name="Browser automation",
-            installed=automation,
-            detail="Playwright is installed" if automation else "Install the optional browser Python dependencies",
+            name="Browser",
+            installed=browser is not None,
+            detail=browser_detail,
+            purpose="Chrome, Chromium or Edge renders websites and stores the shared profile.",
+        ),
+        BrowserRequirement(
+            name="VNC server",
+            installed=vnc is not None,
+            detail=vnc_detail,
+            purpose="Streams the private browser desktop and accepts human keyboard and pointer input.",
         ),
     ]
-    if vnc and vnc.kind != "tigervnc":
+    for name, module, purpose in (
+        ("Browser automation", "cdp_use", "cdp-use lets the Agent inspect and operate Chromium through CDP."),
+        ("VNC transport", "websockets", "websockets carries desktop traffic between Harness UI and the viewer."),
+        ("VNC authentication", "cryptography", "cryptography generates native VNC authentication credentials."),
+    ):
+        installed = automation if module == "cdp_use" else importlib.util.find_spec(module) is not None
+        requirements.append(
+            BrowserRequirement(
+                name=name,
+                installed=installed,
+                purpose=purpose,
+                managed=True,
+                detail="Included with Harness and Harness UI; no executable path is needed."
+                if installed
+                else "Reinstall Harness UI to restore its Python dependencies.",
+            )
+        )
+    if vnc:
         requirements.append(
             BrowserRequirement(
                 name="Display server",
-                installed=vnc.display_server is not None,
-                detail=vnc.display_server
+                managed=vnc.kind == "tigervnc",
+                installed=vnc.kind == "tigervnc" or vnc.display_server is not None,
+                purpose={
+                    "tigervnc": "TigerVNC includes the virtual X display; no separate Xvfb is needed.",
+                    "x11vnc": "Xvfb provides the private virtual X display captured by x11vnc.",
+                    "wayvnc": "Sway provides the private headless Wayland desktop captured by WayVNC and manages its windows.",
+                }[vnc.kind],
+                detail="Built into the selected TigerVNC executable."
+                if vnc.kind == "tigervnc"
+                else vnc.display_server
                 or (
-                    "Install Xvfb for a private x11vnc display"
+                    "Install Xvfb and make it available on PATH."
                     if vnc.kind == "x11vnc"
-                    else "Install Sway for a private headless WayVNC compositor; run Harness UI as a non-root user"
+                    else "Install Sway and make it available on PATH."
                 ),
             )
         )
@@ -299,39 +313,37 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
             BrowserRequirement(
                 name="Host account",
                 installed=os.geteuid() != 0,
-                detail="Headless Sway requires Harness UI to run as a non-root user",
+                purpose="Headless Sway requires Harness UI to run as a non-root user.",
+                detail="Running as a non-root user." if os.geteuid() != 0 else "Restart Harness UI as a non-root user.",
             )
         )
-    if supported:
+    if supported and (not vnc or vnc.kind == "tigervnc"):
         requirements.append(
             BrowserRequirement(
                 name="Desktop resizing",
                 installed=resizing is not None,
                 required=False,
-                detail=resizing
-                or (
-                    "The selected VNC adapter currently uses a fixed-size desktop"
-                    if vnc and vnc.kind != "tigervnc"
-                    else "Fixed-size desktop is available; install a RandR utility to enable viewport size switching"
-                ),
+                purpose="xrandr enables Viewport size switching. Without it, browsing and local Zoom still work.",
+                detail=resizing or "Install xrandr and make it available on PATH to enable resizing.",
             )
         )
+    if supported and (not vnc or vnc.kind != "wayvnc"):
         requirements.append(
             BrowserRequirement(
                 name="Window management",
-                installed=manager is not None or bool(vnc and vnc.kind == "wayvnc" and vnc.display_server),
+                installed=manager is not None,
                 required=False,
-                detail=(vnc.display_server if vnc and vnc.kind == "wayvnc" else manager)
-                or "No supported window manager found; browser windows run without a desktop window manager",
+                purpose="Openbox, Fluxbox, IceWM or twm adds window borders, moving and window controls.",
+                detail=manager or "No supported window manager found on PATH; basic browsing remains available.",
             )
         )
     ready = supported and all(requirement.installed for requirement in requirements if requirement.required)
     steps = []
-    if supported and not automation:
+    if supported and any(item.managed and not item.installed for item in requirements):
         steps.append(
             BrowserInstallStep(
-                title="Install browser automation",
-                command=f"uv pip install --python {shlex.quote(sys.executable)} 'a13n-harness-ui[browser]'",
+                title="Restore bundled Python dependencies",
+                command=f"uv pip install --python {shlex.quote(sys.executable)} 'a13n-harness-ui'",
             )
         )
     if supported and vnc is None and shutil.which("apt-get"):
@@ -349,6 +361,21 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
                 command=f"sudo apt-get install --no-install-recommends {package}",
             )
         )
+    if supported and vnc and shutil.which("apt-get"):
+        if vnc.kind == "tigervnc" and not resizing:
+            steps.append(
+                BrowserInstallStep(
+                    title="Optional: enable viewport resizing",
+                    command="sudo apt-get install --no-install-recommends x11-xserver-utils",
+                )
+            )
+        if vnc.kind != "wayvnc" and not manager:
+            steps.append(
+                BrowserInstallStep(
+                    title="Optional: add window management",
+                    command="sudo apt-get install --no-install-recommends openbox",
+                )
+            )
     if not supported:
         message = "The remote desktop currently requires a Linux Host. Browser detection is available on this platform."
     elif ready:
