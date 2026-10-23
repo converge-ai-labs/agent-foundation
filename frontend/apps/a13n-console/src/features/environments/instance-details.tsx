@@ -29,6 +29,7 @@ import { CopyableId, ProviderIcon } from "../../shared/identity";
 import { Panel } from "../../shared/page";
 import { environmentQuery } from "./api";
 import styles from "./environments.module.css";
+import { CreationProgress, DesktopPreview } from "./creation-progress";
 import { Fact } from "./fact";
 import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
@@ -243,6 +244,22 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
+              {["e2b", "modal"].includes(provider.data?.type ?? "") &&
+                template.data?.config.recipe?.desktop === true && (
+                  <>
+                    {(template.data.config.recipe?.template === "auto" ||
+                      template.data.config.recipe?.image === "auto") && (
+                      <CreationProgress
+                        environment={value}
+                        providerType={provider.data?.type}
+                        etag={detail.data?.etag}
+                      />
+                    )}
+                    {value.status === "ready" &&
+                      !value.failure?.permanent &&
+                      can("run") && <DesktopPreview environment={value} />}
+                  </>
+                )}
               {value.failure?.code === "environment_lost" && (
                 <section className={styles.factGroup} role="status">
                   <h3>{t("Environment lost")}</h3>

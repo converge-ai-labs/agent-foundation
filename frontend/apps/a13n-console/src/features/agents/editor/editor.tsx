@@ -1,7 +1,8 @@
-import { Badge } from "a13n-ui";
+import { Badge, DisclosureSection } from "a13n-ui";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
+import { ExecutionFields } from "../../../shared/forms";
 import { ErrorToast } from "../../../shared/feedback";
 import { DetailLayout, SaveBar } from "../../../shared/page";
 import { ModelIcon, providerBrand } from "../../models/model-icon";
@@ -246,6 +247,18 @@ export function AgentEditor({
             disabled={pending}
             readOnly={readonly}
           />
+          <DisclosureSection title={t("Execution policy")}>
+            <p className="mb-4 text-sm text-muted-foreground">
+              {t(
+                "Defaults for new runs. Each field can be overridden by a thread or a single run.",
+              )}
+            </p>
+            <ExecutionFields
+              value={draft.execution}
+              onChange={draft.setExecution}
+              readOnly={readonly}
+            />
+          </DisclosureSection>
           <AdvancedSection
             draft={draft}
             readOnly={readonly}

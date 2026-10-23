@@ -7,7 +7,7 @@ search. Fetch and download need no provider: they use the host HTTP transport, w
 checks every address a host resolves to when it connects.
 """
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from urllib.parse import urljoin
@@ -107,7 +107,7 @@ async def _provider(
 @asynccontextmanager
 async def open_web(
     web: ResolvedWeb, check: CallCheck, *, runtime: Runtime, configuration: RunConfiguration
-) -> AsyncIterator[WebBinding]:
+) -> AsyncGenerator[WebBinding]:
     """The run's `RunBindings.web`; provider handles stay open until the context exits."""
     policy = runtime.endpoint_policy.for_run(configuration)
     async with AsyncExitStack() as stack:

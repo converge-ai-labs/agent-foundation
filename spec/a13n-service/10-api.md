@@ -304,6 +304,15 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Sessions, threads and runs
 
+Retained-execution list, detail and bounded-result queries are admitted to MCP under execution/read. Cancellation remains an HTTP command outside MCP.
+
+| Path                                                   | Methods | Owner                                     |
+| ------------------------------------------------------ | ------- | ----------------------------------------- |
+| `/threads/{thread}/tool-executions`                    | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}`        | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}/result` | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}/cancel` | POST    | [05](05-runs.md#retained-tool-executions) |
+
 | Path                                  | Methods            | Owner                                             |
 | ------------------------------------- | ------------------ | ------------------------------------------------- |
 | `/sessions`                           | GET, POST          | [05](05-runs.md#reads)                            |

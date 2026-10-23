@@ -14,7 +14,7 @@ beginning any operation ends renewal.
 
 import hmac
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Literal
 
@@ -54,7 +54,7 @@ from a13n_service.runs.environments.monitoring import launch
 from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import RunRow, ToolExecutionRow
 from a13n_service.settings import PUBLISH_SECONDS
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
@@ -116,6 +116,12 @@ def in_use(environment_id: SQLColumnExpression[str] | str) -> ColumnElement[bool
         exists().where(
             text("runs.status IN ('accepted', 'running')"),
             RunRow.environment_mounts.contains(
+                func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
+            ),
+        )
+        | exists().where(
+            ToolExecutionRow.completed_at.is_(None),
+            ToolExecutionRow.environment_mounts.contains(
                 func.jsonb_build_array(func.jsonb_build_object("environment_id", environment_id))
             ),
         )
@@ -241,12 +247,15 @@ class Operation:
     credential_version: str | None
     credential_changed: bool
     metrics: MetricsLaunch | None = field(default=None, repr=False)
+    e2b_desktop_template: str | None = None
+    modal_desktop_image: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
     state: EnvironmentState | None
     fault: Fault | None = None
+    pending: bool = False
 
 
 # The provider no longer has the instance: nothing can bring it back, and it is never silently recreated.
@@ -320,7 +329,27 @@ async def _refusal(
                 )
         except (EnvironmentProviderError, ServiceError) as error:
             return fault_of(error, dispatched=False)
-        environment.handle = Handle(recipe=recipe.model_dump(mode="json")).model_dump(mode="json")
+        preparation = None
+        if provider.type == "e2b" and getattr(recipe, "template", None) == "auto":
+            from a13n_service.runs.environments.e2b_templates import bind
+
+            try:
+                preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        modal_preparation = None
+        if provider.type == "modal" and getattr(recipe, "image", None) == "auto":
+            from a13n_service.runs.environments.modal_images import bind
+
+            try:
+                modal_preparation = await bind(runtime, session, environment, provider)
+            except (EnvironmentProviderError, ServiceError) as error:
+                return fault_of(error, dispatched=False)
+        environment.handle = Handle(
+            recipe=recipe.model_dump(mode="json"),
+            e2b_desktop_template=preparation,
+            modal_desktop_image=modal_preparation,
+        ).model_dump(mode="json")
         environment.provider_identity = identity
     elif environment.provider_identity != identity:
         message = "The provider now points at another account or endpoint; restore it or delete this environment"
@@ -354,6 +383,21 @@ async def claim_locked(
     assert environment.provider_id is not None, "only managed instances have operations"
     failure = environment.failure or {}
     unresolved = environment.lease_owner is not None or failure.get("certainty") == "unknown"
+    if phase == "creating" and failure.get("permanent") and settled(environment) and environment.handle:
+        handle = Handle.model_validate(environment.handle)
+        if handle.recipe.get("template") == "auto" and handle.e2b_desktop_template:
+            from a13n_service.runs.environments.e2b_templates import E2BDesktopTemplateRow
+
+            build = await session.get(E2BDesktopTemplateRow, handle.e2b_desktop_template)
+            if build is not None and build.phase == "failed":
+                # Preserve the original actionable failure until explicit retry. Cleanup still advances.
+                return None
+        if handle.recipe.get("image") == "auto" and handle.modal_desktop_image:
+            from a13n_service.runs.environments.modal_images import ModalDesktopImageRow
+
+            build = await session.get(ModalDesktopImageRow, handle.modal_desktop_image)
+            if build is not None and build.phase == "failed":
+                return None
     # Maintenance acts for no principal and must still stop and destroy instances of a disabled provider.
     if provider is None:
         provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
@@ -380,6 +424,8 @@ async def claim_locked(
         credential_version=version,
         credential_changed=changed,
         metrics=launch.restore(runtime.keys, environment) if phase == "creating" else None,
+        e2b_desktop_template=handle.e2b_desktop_template,
+        modal_desktop_image=handle.modal_desktop_image,
     )
 
 
@@ -448,6 +494,31 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
     dispatched = False
     try:
         with anyio.fail_after(operation.seconds):
+            if operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto":
+                if operation.phase == "deleting":
+                    # Preparation never allocated a sandbox. Its private base remains a reusable account asset.
+                    return Outcome(None)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.e2b_templates import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    template = await prepare(runtime, operation.e2b_desktop_template, operation.target.account)
+                    if template is None:
+                        return Outcome(None, pending=True)
+                    operation = await _pin_e2b_template(runtime, operation, template)
+            if operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto":
+                if operation.phase == "deleting":
+                    return Outcome(None)
+                if operation.phase == "creating":
+                    from a13n_service.runs.environments.modal_images import prepare
+
+                    assert isinstance(operation.target.account, ResolvedProvider)
+                    image = await prepare(runtime, operation.modal_desktop_image, operation.target.account)
+                    if image is None:
+                        return Outcome(None, pending=True)
+                    await _pin_modal_image(runtime, operation, image)
+                    # Persist first; the next claim gets a full operation deadline for sandbox startup.
+                    return Outcome(None, pending=True)
             if operation.metrics is not None:
                 endpoint = operation.metrics.environment.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
                 if endpoint is not None:
@@ -473,6 +544,11 @@ async def perform(runtime: Runtime, operation: Operation) -> Outcome:
             and error.category == EnvironmentProviderErrorCategory.MISSING
             else fault_of(error, dispatched=dispatched)
         )
+        if (operation.e2b_desktop_template is not None and operation.target.recipe.get("template") == "auto") or (
+            operation.modal_desktop_image is not None and operation.target.recipe.get("image") == "auto"
+        ):
+            # Build uncertainty is retained by its own ledger; no sandbox allocation was dispatched yet.
+            fault = replace(fault, certainty="not_dispatched")
         return Outcome(observed_environment_state(error, operation.target.state), fault)
     finally:
         if provider is not None:
@@ -495,9 +571,16 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
         environment.operation_deadline = None
         handle = Handle.model_validate(environment.handle)
+        if outcome.pending:
+            environment.failure = None
+            return
         if outcome.fault is not None:
             environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
-            record_failure(environment, outcome.fault, current, unresolved=operation.unresolved)
+            preparing = (handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto") or (
+                handle.modal_desktop_image is not None and handle.recipe.get("image") == "auto"
+            )
+            fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
+            record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
             return
         reached = _REACHES[operation.phase]
         environment.status = reached
@@ -527,6 +610,46 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             target_id=environment.id,
             details={"operation_id": operation.operation_id},
         )
+
+
+async def _pin_e2b_template(runtime: Runtime, operation: Operation, template: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("template") not in {"auto", template}:
+            raise conflict("environment", row.id, "desktop_template_changed")
+        recipe = {**handle.recipe, "template": template}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
+
+
+async def _pin_modal_image(runtime: Runtime, operation: Operation, image: str) -> Operation:
+    """Resolve the frozen preparation before allocation; later retries use this same native identity."""
+    async with transaction(runtime.storage) as session:
+        row = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            row is None
+            or row.generation != operation.generation
+            or row.operation_id != operation.operation_id
+            or row.lease_token_hash != secret_hash(operation.token)
+            or row.status != "creating"
+        ):
+            raise conflict("environment", operation.environment_id, "operation_superseded")
+        handle = Handle.model_validate(row.handle)
+        if handle.state is not None or handle.recipe.get("image") not in {"auto", image}:
+            raise conflict("environment", row.id, "desktop_image_changed")
+        recipe = {**handle.recipe, "image": image}
+        row.handle = handle.model_copy(update={"recipe": recipe}).model_dump(mode="json")
+    return replace(operation, target=replace(operation.target, recipe=recipe))
 
 
 async def advance(runtime: Runtime, environment_id: str, *, owner: str) -> None:

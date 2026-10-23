@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import ClassVar, Literal, Protocol
+from typing import TYPE_CHECKING, ClassVar, Literal, Protocol
 
 import anyio
 import httpx2
@@ -20,6 +20,9 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbound import open_http
+
+if TYPE_CHECKING:
+    from a13n_service.providers.traces.search import SearchQuery, TraceSearchPage
 
 logger = get_logger(__name__)
 
@@ -114,6 +117,8 @@ class SpanQuery:
     span_id: str | None = None
     # Overview reads still need full correlation attributes for independent tenancy checks.
     include_content: bool = True
+    # Request a smaller projection where supported; callers must still strip payloads from summaries.
+    metrics_only: bool = False
 
 
 class TraceProvider(Protocol):
@@ -127,7 +132,12 @@ class TraceProvider(Protocol):
     @property
     def otlp_headers(self) -> dict[str, str]: ...
 
+    @property
+    def query_identity(self) -> str: ...
+
     async def query(self, query: SpanQuery) -> SpanPage: ...
+
+    async def search_traces(self, query: "SearchQuery", owner: str) -> "TraceSearchPage": ...
 
 
 def unavailable(provider: str) -> ServiceError:

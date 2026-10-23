@@ -211,6 +211,8 @@ else: raise RuntimeError('a13n-envd did not become ready')
             raise
 
     async def create(self) -> None:
+        if self.config.image == "auto":
+            raise failure(self.provider_key, "desktop_image_not_prepared", Category.INVALID)
         async with asyncio.timeout(self.config.request_timeout_seconds):
             await self.invalidate_cached_transport()
             sandbox = await self.lookup()

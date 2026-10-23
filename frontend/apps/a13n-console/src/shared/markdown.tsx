@@ -32,9 +32,11 @@ const components: Components = {
 export const MarkdownContent = memo(function MarkdownContent({
   text,
   literalHtml = false,
+  highlight = true,
 }: {
   text: string;
   literalHtml?: boolean;
+  highlight?: boolean;
 }) {
   return (
     <div className={styles.markdown}>
@@ -42,7 +44,9 @@ export const MarkdownContent = memo(function MarkdownContent({
         skipHtml={!literalHtml}
         remarkPlugins={[remarkGfm]}
         rehypePlugins={
-          text.length <= 100_000 ? [[rehypeHighlight, { detect: false }]] : []
+          highlight && text.length <= 100_000
+            ? [[rehypeHighlight, { detect: false }]]
+            : []
         }
         components={components}
       >

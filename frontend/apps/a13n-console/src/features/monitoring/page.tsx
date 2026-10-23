@@ -307,7 +307,7 @@ function DashboardWorkspace() {
     ],
   );
   return (
-    <Page title={t("Metrics dashboards")} className={styles.dashboardPage}>
+    <Page title={t("Metrics")} className={styles.dashboardPage}>
       <PageActions secondary>
         {can("write") && !draft && (
           <Button

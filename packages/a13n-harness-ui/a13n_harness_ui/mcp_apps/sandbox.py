@@ -6,7 +6,7 @@ import asyncio
 import ipaddress
 import json
 import socket
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
@@ -94,7 +94,7 @@ class _SandboxServer(uvicorn.Server):
 
 
 @asynccontextmanager
-async def serve_sandbox(configuration: McpAppsSandboxConfiguration) -> AsyncIterator[str]:
+async def serve_sandbox(configuration: McpAppsSandboxConfiguration) -> AsyncGenerator[str]:
     """Own one static listener; no signals, auth middleware, or application API."""
     address = ipaddress.ip_address(configuration.bind)
     family = socket.AF_INET6 if address.version == 6 else socket.AF_INET

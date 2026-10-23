@@ -110,6 +110,8 @@ class E2BManagement(E2BReference, ManagementBackend):
             return target
 
     def validate_management(self) -> None:
+        if self._configuration.template == "auto":
+            raise provider_error("desktop_template_not_prepared", Category.INVALID)
         if self._state is not None and self._state.environment_id != self.environment_id:
             raise provider_error("provider_target_conflict", Category.CONFLICT)
 

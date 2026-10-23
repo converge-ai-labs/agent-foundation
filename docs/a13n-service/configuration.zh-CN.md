@@ -170,6 +170,10 @@ http_origins = ["http://host.docker.internal:11434"]
 
 ## 执行
 
+`tool_executions` 配置保留调用：`max_active`（每个 worker 64）、`foreground_wait_seconds`（5）、`delivered_retention_seconds`（3600）和 `max_retention_seconds`（86400）。前台等待提供 [执行策略](agents-and-runs.md#execution-policy) 的部署回退值，智能体、线程和单次运行均可覆盖。它控制交还时机，不是执行截止时间。保留期限从完成后计算；首次交付确认启动较短的重读窗口，不延长最大保留时间。
+
+worker 关闭时先等待 attempt 交接，再给保留调用 `shutdown_grace_seconds`（300）自然完成时间，随后请求取消，并留出 `finalization_seconds`（10）用于清理与发布结果。预算结束后仍持有资源的 worker 会退出，由租约协调将未完成记录标记为 lost。部署的终止宽限期应覆盖这些阶段。部署此 schema 前先排空旧 worker：旧版本无法读取新增的 `tool_result` 收件箱类型和 Run 触发类型。
+
 | 设置                                               | 作用                                                                         |
 | -------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `worker.slots`                                     | 单个 worker 进程并发执行的尝试数。                                           |

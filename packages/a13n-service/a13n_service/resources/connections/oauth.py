@@ -12,7 +12,7 @@ same issuer, whose revocation could end the new grant too.
 """
 
 import contextlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -118,7 +118,7 @@ class McpAuthentication:
 @asynccontextmanager
 async def open_mcp_client(
     connection: McpConnection, *, storage: Storage, keys: KeyRing, policy: EndpointPolicy, settings: Providers
-) -> AsyncIterator[httpx2.AsyncClient]:
+) -> AsyncGenerator[httpx2.AsyncClient]:
     """An HTTP client for the connection's server that presents its credential on every request."""
     authentication = McpAuthentication(connection, storage=storage, keys=keys, policy=policy, settings=settings)
     async with open_http(
@@ -380,7 +380,7 @@ def _client_secret(connection: McpConnection, keys: KeyRing) -> str:
 
 
 @asynccontextmanager
-async def _http(policy: EndpointPolicy, settings: Providers) -> AsyncIterator[httpx2.AsyncClient]:
+async def _http(policy: EndpointPolicy, settings: Providers) -> AsyncGenerator[httpx2.AsyncClient]:
     """The client of one OAuth operation. Waiting for a connection and each step of making one (resolving, TCP,
     TLS) take at most a fifth of the operation's bound, so a request that was never sent fails as such before the
     operation's deadline would leave its outcome unknown."""

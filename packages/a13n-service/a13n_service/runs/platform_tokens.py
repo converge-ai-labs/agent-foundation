@@ -9,6 +9,7 @@ import hmac
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 
+from a13n_harness.tool_execution import current_execution
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -20,7 +21,8 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.platform import PlatformAccess, PlatformGroup
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, authorize_execution, lock_lease
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import AttemptRow, RunRow
+from a13n_service.runs.tables import AttemptRow, RunRow, ToolExecutionRow
+from a13n_service.runs.tool_executions.authority import lock_execution
 from a13n_service.tenancy.access import (
     Authenticated,
     Authenticator,
@@ -42,6 +44,7 @@ class Claims(BaseModel):
     lease_hash: str = Field(min_length=64, max_length=64)
     groups: frozenset[PlatformGroup]
     expires_at: float
+    execution_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -89,7 +92,11 @@ def _decode(keys: KeyRing, token: str) -> Claims:
 async def issue(runtime: Runtime, lease: Lease, groups: frozenset[PlatformGroup]) -> str:
     """Called with the Host's frozen selection, never model-provided identity or scope."""
     async with transaction(runtime.storage) as session:
-        run, _, current = await lock_lease(session, lease)
+        execution = current_execution()
+        if execution is None:
+            run, _, current = await lock_lease(session, lease)
+        else:
+            run, _, current = await lock_execution(session, lease, execution.execution_id)
         if run.cancel_requested_at is not None:
             raise unauthenticated()
         await authorize_execution(session, runtime.access, run)
@@ -99,6 +106,7 @@ async def issue(runtime: Runtime, lease: Lease, groups: frozenset[PlatformGroup]
             lease_hash=secret_hash(lease.token),
             groups=groups,
             expires_at=(current + _LIFETIME).timestamp(),
+            execution_id=execution.execution_id if execution is not None else None,
         )
     envelope = runtime.keys.protect(claims.model_dump_json().encode(), _LOCATION)
     return PREFIX + base64.urlsafe_b64encode(envelope.model_dump_json().encode()).decode()
@@ -125,8 +133,23 @@ async def authenticate(runtime: Runtime, token: str) -> RunCredential:
 
 async def _live_run(session: AsyncSession, claims: Claims) -> RunRow:
     run = await session.get(RunRow, claims.run_id)
-    attempt = await session.get(AttemptRow, claims.attempt_id)
     current = await now(session)
+    if run is None or claims.expires_at <= current.timestamp() or run.cancel_requested_at is not None:
+        raise unauthenticated()
+    if claims.execution_id is not None:
+        execution = await session.get(ToolExecutionRow, claims.execution_id)
+        if (
+            execution is None
+            or execution.run_id != run.id
+            or execution.attempt_id != claims.attempt_id
+            or execution.completed_at is not None
+            or execution.cancel_requested_at is not None
+            or execution.lease_expires_at <= current
+            or not hmac.compare_digest(execution.lease_token_hash, claims.lease_hash)
+        ):
+            raise unauthenticated()
+        return run
+    attempt = await session.get(AttemptRow, claims.attempt_id)
     if (
         run is None
         or attempt is None

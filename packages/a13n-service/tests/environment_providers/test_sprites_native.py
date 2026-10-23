@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2
@@ -27,6 +28,12 @@ def test_sprites_native_roundtrip_and_reconstruction(tmp_path, monkeypatch):
 
         def http(request):
             calls.append(request.method)
+            if request.url.path.endswith("/fs/write"):
+                assert request.headers["content-type"] == "application/octet-stream"
+                Path(request.url.params["path"]).write_bytes(request.content)
+                return httpx2.Response(200, json={})
+            if request.url.path.endswith("/fs/read"):
+                return httpx2.Response(200, content=Path(request.url.params["path"]).read_bytes())
             if request.method == "POST":
                 body = json.loads(request.content)
                 targets[body["name"]] = {**body, "id": f"native-{len(calls)}", "status": "cold"}

@@ -506,7 +506,7 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     ("component", "version", "requirement"),
     [
         ("a13n-service", "0.1.0", ">=0.13.0,<0.14.0"),
-        ("a13n-harness-ui", "0.18.0", ">=0.18.0,<0.19.0"),
+        ("a13n-harness-ui", "0.19.0", ">=0.19.0,<0.20.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):

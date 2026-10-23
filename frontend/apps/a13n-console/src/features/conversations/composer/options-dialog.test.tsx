@@ -361,3 +361,55 @@ it("mounts initial memories on the new thread and changes their access before se
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });
+
+it("combines sparse execution choices with overrides without turning them into thread defaults", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => {
+    result.current.setModel("model-test");
+    result.current.setExecution({
+      tools: { mode: "inline", foreground_wait_seconds: 0 },
+      steering: "boundary",
+    });
+  });
+  expect(result.current.build()).toMatchObject({
+    options: {
+      overrides: { model: "model-test" },
+      execution: {
+        tools: { mode: "inline", foreground_wait_seconds: 0 },
+        steering: "boundary",
+      },
+    },
+  });
+  expect(result.current.build()).not.toHaveProperty("execution");
+  act(() =>
+    result.current.setExecution({
+      tools: { mode: null, foreground_wait_seconds: null },
+      steering: null,
+    }),
+  );
+  expect(result.current.build().options).toEqual({
+    overrides: { model: "model-test" },
+  });
+  act(() =>
+    result.current.setExecution({ tools: { foreground_wait_seconds: 301 } }),
+  );
+  expect(() => result.current.build()).toThrow(
+    "Foreground wait must be between 0 and 300 seconds.",
+  );
+});
+
+it("restores execution choices with the other options when edits are cancelled", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => result.current.setExecution({ steering: "boundary" }));
+  const saved = result.current.values;
+  act(() => {
+    result.current.setExecution({
+      tools: { mode: "auto", foreground_wait_seconds: 1 },
+    });
+    result.current.setModel("model-test");
+  });
+  act(() => result.current.restore(saved));
+  expect(result.current.build().options).toEqual({
+    execution: { steering: "boundary" },
+  });
+});

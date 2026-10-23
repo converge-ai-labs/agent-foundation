@@ -7,6 +7,7 @@ deadline, still renewing; unfinished attempts then rely on lease expiry.
 """
 
 import asyncio
+import os
 import socket
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ from a13n_service.infra.telemetry import Gauge
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost, renew
 from a13n_service.runs.claim import claim
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.tool_executions.authority import heartbeat
 
 logger = get_logger(__name__)
 
@@ -49,7 +51,16 @@ class Worker:
 
     async def run(self) -> None:
         with log_context(worker_id=self.id):
-            await self._run()
+            try:
+                await self._run()
+            except Exception as error:
+                # A dead worker loop cannot renew or fence its retained invocations.
+                # This also covers failures from TaskGroup children and shutdown drain.
+                logger.error(
+                    "Worker failed; forcing process exit",
+                    extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
+                )
+                os._exit(1)
 
     async def _run(self) -> None:
         settings = self.runtime.settings.worker
@@ -57,11 +68,21 @@ class Worker:
         self._report_slots()
         async with asyncio.TaskGroup() as group:
             group.create_task(self._supervise(), name="lease-supervisor")
+            group.create_task(self.runtime.executions.routing.run(self.id), name="shell-control-routing")
+            group.create_task(self.runtime.executions.output.run(), name="shell-output-cache")
             try:
                 while not self.stopping:
+                    if not self.runtime.executions.accepting:
+                        await self._drain()
+                        logger.error("Tool execution admission closed; forcing process exit after drain")
+                        os._exit(1)
                     if self.free == 0:
                         self.slot_released.clear()
-                        await self.slot_released.wait()
+                        # Recheck failed tool admission even when every attempt slot remains occupied.
+                        try:
+                            await asyncio.wait_for(self.slot_released.wait(), timeout=settings.authority_seconds)
+                        except TimeoutError:
+                            pass
                         continue
                     requested = self.free
                     sent = asyncio.get_running_loop().time()
@@ -91,11 +112,40 @@ class Worker:
 
     async def _drain(self) -> None:
         self.stopping = True
+        self.runtime.executions.stop_admission()
         for running in self.running.values():
             running.control.handoff.set()
         tasks = [running.task for running in self.running.values()]
         if tasks:
             await asyncio.wait(tasks, timeout=self.runtime.settings.worker.drain_seconds)
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        policy = self.runtime.settings.tool_executions
+        join = asyncio.create_task(self.runtime.executions.join())
+        try:
+            done, _ = await asyncio.wait({join}, timeout=policy.shutdown_grace_seconds)
+            if done:
+                join.result()
+        finally:
+            join.cancel()
+            await asyncio.gather(join, return_exceptions=True)
+        # Cancellation is local and non-blocking, even when persistence is unavailable. Give publication
+        # and attempt cleanup one shared finalization window, then let control reconcile any missing result.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + policy.finalization_seconds
+        pending_executions = await self.runtime.executions.close(
+            timeout_seconds=policy.finalization_seconds,
+            reason="Worker shutdown interrupted the tool; external effects may have completed.",
+        )
+        if tasks:
+            await asyncio.wait(tasks, timeout=max(0, deadline - loop.time()))
+        if pending_executions or any(not task.done() for task in tasks):
+            logger.error(
+                "Worker finalization exceeded shutdown deadline; forcing process exit",
+                extra={"attempts": len(self.running), "executions": len(pending_executions)},
+            )
+            os._exit(1)
 
     async def _attempt(self, lease: Lease, control: AttemptControl) -> None:
         # Every record of the attempt, the Harness's included, names its run and attempt.
@@ -136,6 +186,31 @@ class Worker:
         loop = asyncio.get_running_loop()
         while True:
             await asyncio.sleep(settings.authority_seconds)
+            sent = loop.time()
+            try:
+                async with asyncio.timeout(settings.authority_seconds):
+                    cancellations, renewed = await heartbeat(self.runtime, self.id)
+                for thread_id, execution_id in cancellations:
+                    self.runtime.executions.request_cancellation(thread_id, execution_id)
+            except Exception as error:
+                logger.warning("Tool execution heartbeat failed", extra={"error_type": type(error).__name__})
+                renewed = set()
+            for record in self.runtime.executions.active:
+                execution_id = record.execution_id
+                if execution_id in renewed:
+                    self.runtime.executions.lease_deadlines[execution_id] = sent + settings.lease_seconds
+                deadline = self.runtime.executions.lease_deadlines[execution_id]
+                if deadline - loop.time() <= settings.lease_seconds / 3:
+                    self.runtime.executions.request_cancellation(
+                        record.thread_id,
+                        execution_id,
+                        reason="Tool execution lease renewal failed; external effects may have completed.",
+                    )
+                if loop.time() >= deadline:
+                    # A successful heartbeat may still omit an expired, missing or reconciled owner.
+                    # Another execution's renewal never extends this invocation's fencing window.
+                    logger.error("Tool execution owner lease expired; forcing process exit")
+                    os._exit(1)
             attempts = list(self.running.values())
             if not attempts:
                 continue

@@ -2466,6 +2466,11 @@ export interface components {
             /** Description */
             description: string;
             /**
+             * Capabilities
+             * @default []
+             */
+            capabilities?: string[];
+            /**
              * Mcp Servers
              * @default []
              */
@@ -4954,19 +4959,6 @@ export interface components {
         };
         /** @enum {string} */
         NativeInputMediaKind: "image" | "video" | "audio";
-        /**
-         * NativeToolSearchConfig
-         * @description Provider-native discovery; omitted strategy uses the provider default.
-         */
-        NativeToolSearchConfig: {
-            /** Strategy */
-            strategy?: ("bm25" | "regex") | null;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            mode: "native";
-        };
         /** NetworkInterfaceMetrics */
         NetworkInterfaceMetrics: {
             /** Identity */
@@ -5311,42 +5303,6 @@ export interface components {
          * @enum {string}
          */
         Provider: "codex" | "grok" | "copilot" | "chatgpt";
-        /**
-         * ProxyToolSearchConfig
-         * @description Names and bounded discovery settings for one Agent's proxy surface.
-         */
-        ProxyToolSearchConfig: {
-            /**
-             * Search Name
-             * @default discover_tools
-             */
-            search_name?: string;
-            /**
-             * Call Name
-             * @default call_tool
-             */
-            call_name?: string;
-            /**
-             * Max Results
-             * @default 10
-             */
-            max_results?: number;
-            /**
-             * Max Search Bytes
-             * @default 32768
-             */
-            max_search_bytes?: number;
-            /**
-             * Describe Name
-             * @default describe_tool
-             */
-            describe_name?: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            mode: "proxy";
-        };
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -6724,7 +6680,53 @@ export interface components {
             thread_id: string;
             attachment: components["schemas"]["ThreadAttachment"];
         };
-        ToolSearchConfig: components["schemas"]["ProxyToolSearchConfig"] | components["schemas"]["NativeToolSearchConfig"];
+        /**
+         * ProxyToolSearchConfig
+         * @description Names and bounded discovery settings for one Agent's proxy surface.
+         */
+        ToolSearchConfig: {
+            /**
+             * Search Name
+             * @default discover_tools
+             */
+            search_name?: string;
+            /**
+             * Call Name
+             * @default call_tool
+             */
+            call_name?: string;
+            /**
+             * Max Results
+             * @default 10
+             */
+            max_results?: number;
+            /**
+             * Max Search Bytes
+             * @default 32768
+             */
+            max_search_bytes?: number;
+            /**
+             * Describe Name
+             * @default describe_tool
+             */
+            describe_name?: string;
+            /**
+             * List Name
+             * @default list_tools
+             */
+            list_name?: string;
+            /**
+             * Groups Name
+             * @default list_tool_groups
+             */
+            groups_name?: string;
+            /**
+             * Mode
+             * @default proxy
+             * @constant
+             */
+            mode?: "proxy";
+        };
         /** ToolSearchSourceView */
         ToolSearchSourceView: {
             /** Resource Id */
@@ -6735,7 +6737,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "mcp_server" | "harness_plugin";
+            kind: "mcp_server" | "harness_plugin" | "capability";
             /** Enabled */
             enabled: boolean;
             /** Group */

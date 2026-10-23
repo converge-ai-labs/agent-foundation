@@ -74,6 +74,7 @@ class _OutputCollector:
         self.produced = 0
         self.stored = 0
         self.preview = bytearray()
+        self._preview_bytes = b""
         self.reference: BoundOutputReference | None = None
         self.complete = False
 
@@ -139,11 +140,16 @@ class _OutputCollector:
                 available_end=len(preview),
             )
         self.preview.clear()
+        self._preview_bytes = b""
         self.writer = None
         return capture
 
     def snapshot(self) -> EnvironmentOutputCapture:
-        preview = bytes(self.preview)
+        # The preview is append-only until finish. Silent inspect/read polls reuse
+        # immutable bytes instead of copying the entire capture on every call.
+        if len(self._preview_bytes) != len(self.preview):
+            self._preview_bytes = bytes(self.preview)
+        preview = self._preview_bytes
         return EnvironmentOutputCapture(
             kind="empty" if not preview and self.complete else "inline" if self.complete else "truncated",
             producer_complete=self.complete,

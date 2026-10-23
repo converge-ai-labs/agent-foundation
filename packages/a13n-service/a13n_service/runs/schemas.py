@@ -20,6 +20,7 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
@@ -34,7 +35,7 @@ from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
-type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
+type Trigger = Literal["input", "queued", "resume", "child_result", "tool_result", "spawned"]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
@@ -144,6 +145,7 @@ class RunOptions(_Frozen):
     labels: Labels = Field(default_factory=dict)
     # Omission (or null) on a steer retains the accepted snapshot. A configuration object is explicit.
     configuration: RunConfiguration | None = None
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     max_usage: UsageLimit | None = None
     # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
     # them into the run's options with their pins resolved, validating them again in any later transaction.
@@ -151,7 +153,9 @@ class RunOptions(_Frozen):
 
     def digest(self) -> str:
         """Joining choices as submitted; Run configuration is compared separately to its accepted snapshot."""
-        return hashlib.sha256(canonical_json(self.model_dump(mode="json", exclude={"configuration"}))).hexdigest()
+        return hashlib.sha256(
+            canonical_json(self.model_dump(mode="json", exclude={"configuration", "execution"}))
+        ).hexdigest()
 
 
 def _normalize_mcp_headers(value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
@@ -206,6 +210,7 @@ class NewThread(Message):
     # Preserve the canonical digest of requests submitted before this optional field existed.
     session: SessionCreate | None = Field(default=None, exclude_if=lambda value: value is None)
     mcp_headers: McpHeaders = Field(default_factory=dict)
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     environments: InitialMounts = ()
     # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
     memories: MemoryMounts = ()
@@ -229,6 +234,7 @@ class Fork(Message):
 class ThreadUpdate(_Frozen):
     labels: Labels | None = None
     mcp_headers: McpHeaders | None = None
+    execution: ExecutionOverride | None = None
 
 
 class EntryUpdate(_Frozen):
@@ -463,6 +469,7 @@ class ThreadView(BaseModel):
     # The most recently sealed run: the history the thread's next run continues.
     last_run_id: str | None
     mcp_headers: dict[str, dict[str, str]]
+    execution: ExecutionOverride | None = None
     labels: dict[str, str]
     archived_at: datetime | None
     version: int
@@ -479,7 +486,7 @@ class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     thread_id: str
-    kind: Literal["message", "child_result"]
+    kind: Literal["message", "child_result", "tool_result"]
     delivery: Delivery
     position: int
     status: EntryStatus

@@ -360,8 +360,9 @@ async def test_retained_wait_does_not_block_input(tmp_path):
         waiting = asyncio.Event()
 
         async def wait():
-            async with resource.access(
-                environment,
+            async with environment.authorize_retained_process(
+                resource.identity,
+                backing_identity=resource.backing_identity,
                 actions=frozenset(
                     {
                         EnvironmentAction.PROCESS_WAIT,
@@ -371,22 +372,26 @@ async def test_retained_wait_does_not_block_input(tmp_path):
                 ),
                 alias=None,
                 timeout_seconds=10,
-            ) as (controller, ref, processes):
+            ):
                 waiting.set()
-                return await controller.wait(
-                    ref, stdout_offset=0, stderr_offset=0, timeout_seconds=10, processes=processes
+                return await runtime.call_resource(
+                    first.thread_id, execution_id, {"operation": "wait", "timeout_seconds": 10}
                 )
 
         waiter = asyncio.create_task(wait())
-        await waiting.wait()
         async with asyncio.timeout(2):
-            async with resource.access(
-                environment,
+            await waiting.wait()
+        async with asyncio.timeout(2):
+            async with environment.authorize_retained_process(
+                resource.identity,
+                backing_identity=resource.backing_identity,
                 actions=frozenset({EnvironmentAction.PROCESS_WRITE_STDIN, EnvironmentAction.PROCESS_INSPECT}),
                 alias=None,
                 timeout_seconds=0,
-            ) as (controller, ref, processes):
-                await controller.write_input(ref, "unblocked\n", close_stdin=False, processes=processes)
+            ):
+                await runtime.call_resource(
+                    first.thread_id, execution_id, {"operation": "input", "data": "unblocked\n"}
+                )
             observed = await waiter
         assert observed["stdout"]["text"] == "readyunblocked"
         assert (await runtime.wait(first.thread_id, execution_id)).record.status == "succeeded"
@@ -483,6 +488,35 @@ async def test_codeact_shell_calls_return_native_results_without_nested_executio
         await runtime.close()
 
 
+async def test_cancel_waits_for_default_provider_child_cleanup(tmp_path):
+    import os
+
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable(
+            [
+                ("shell_exec", {"command": "(trap '' TERM; echo $$ > ready; sleep 60) & echo $! > child.pid; wait"}),
+                ("shell_exec", {"command": "read line"}),
+            ],
+            results,
+        ).run("start children", environment=source(tmp_path), bindings=bindings(runtime))
+        async with asyncio.timeout(5):
+            while not (tmp_path / "child.pid").exists() or not (tmp_path / "ready").exists():
+                await asyncio.sleep(0.01)
+        child = int((tmp_path / "child.pid").read_text())
+        execution_id = results[0]["execution_id"]
+        await runtime.cancel(first.thread_id, execution_id)
+        settled = await runtime.wait(first.thread_id, execution_id, timeout_seconds=15)
+        assert settled.record.status == "cancelled", settled
+        assert runtime.resource(first.thread_id, execution_id) is None
+        assert (await runtime.info(first.thread_id, results[1]["execution_id"])).status == "running"
+        with pytest.raises(ProcessLookupError):
+            os.kill(child, 0)
+    finally:
+        await runtime.close()
+
+
 async def test_cancel_during_admission_starts_once_then_terminates(tmp_path, monkeypatch):
     from a13n_harness.toolsets.process_manager import _ProcessController
 
@@ -519,6 +553,58 @@ async def test_cancel_during_admission_starts_once_then_terminates(tmp_path, mon
         await runtime.close()
 
 
+@pytest.mark.parametrize("operation", ["wait", "inspect", "read_output"])
+@pytest.mark.parametrize("code", ["environment_unavailable", "environment_denied", "environment_reference_stale"])
+async def test_shell_observation_failure_does_not_kill_native_process(tmp_path, monkeypatch, operation, code):
+    import os
+
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+
+    fail = asyncio.Event()
+    original = getattr(LocalProcessManager, operation)
+    target = None
+    failures = 0
+
+    async def failed_observation(self, handle, **kwargs):
+        nonlocal target, failures
+        if target is None:
+            target = handle
+        if handle == target:
+            await fail.wait()
+            failures += 1
+            raise EnvironmentError("Observation failed", code=code)
+        return await original(self, handle, **kwargs)
+
+    monkeypatch.setattr(LocalProcessManager, operation, failed_observation)
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable(
+            [
+                ("shell_exec", {"command": "echo $$ > first.pid; read line"}),
+                ("shell_exec", {"command": "read line"}),
+            ],
+            results,
+        ).run("two shells", environment=source(tmp_path), bindings=bindings(runtime))
+        async with asyncio.timeout(5):
+            while not (tmp_path / "first.pid").exists():
+                await asyncio.sleep(0.01)
+        pid = int((tmp_path / "first.pid").read_text())
+        fail.set()
+        settled = await runtime.wait(first.thread_id, results[0]["execution_id"], timeout_seconds=5)
+        assert settled.record.status == "succeeded", settled
+        assert settled.result["ok"] is False
+        assert settled.result["error"]["code"] == code
+        assert failures == (4 if code == "environment_unavailable" else 1)
+        assert (await runtime.info(first.thread_id, results[1]["execution_id"])).status == "running"
+        # The sibling keeps the provider scope alive. Observation failure alone cannot kill its process.
+        os.kill(pid, 0)
+    finally:
+        fail.set()
+        await runtime.close()
+
+
 async def test_shell_settles_only_after_output_capture_closes(tmp_path, monkeypatch):
     from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
 
@@ -549,4 +635,152 @@ async def test_shell_settles_only_after_output_capture_closes(tmp_path, monkeypa
         assert settled.result["stderr"]["observation_closed"]
     finally:
         cleanup_release.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize("failure_at", [None, "delta", "final"])
+async def test_owned_shell_reads_deltas_but_materializes_final_result_from_origin(tmp_path, monkeypatch, failure_at):
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+    from a13n_harness.toolsets.shell_observation import ShellObservation
+
+    original = LocalProcessManager.read_output
+    offsets, observations = [], []
+    observed_tail = asyncio.Event()
+    failed = False
+
+    async def read(self, handle, **kwargs):
+        nonlocal failed
+        offset = kwargs.get("stdout_start_offset")
+        offsets.append(offset)
+        if not failed and (
+            (failure_at == "delta" and offset == 5) or (failure_at == "final" and offset == 0 and len(offsets) > 1)
+        ):
+            failed = True
+            raise EnvironmentError("Transient output failure", code="environment_unavailable")
+        return await original(self, handle, **kwargs)
+
+    def observe(value):
+        assert isinstance(value, ShellObservation)
+        observations.append(value)
+        if value.stdout.start_offset == 5:
+            observed_tail.set()
+
+    monkeypatch.setattr(LocalProcessManager, "read_output", read)
+    runtime = ToolExecutionRuntime()
+    monkeypatch.setattr(runtime, "observe_resource", observe)
+    results = []
+    try:
+        first = await executable([("shell_exec", {"command": "printf first; read line; printf last"})], results).run(
+            "capture", environment=source(tmp_path), bindings=bindings(runtime)
+        )
+        await asyncio.wait_for(observed_tail.wait(), 5)
+        assert offsets[:2] == [0, 5]
+        assert observations[1].stdout.data == b""
+        execution_id = results[0]["execution_id"]
+        from a13n_harness.toolsets.shell_control import ShellControl
+
+        await runtime.call_resource(
+            first.thread_id, execution_id, ShellControl(operation="input", data="done\n").model_dump(mode="json")
+        )
+        settled = await runtime.wait(first.thread_id, execution_id, timeout_seconds=5)
+        assert settled.record.status == "succeeded"
+        assert settled.result["stdout"]["text"] == "firstlast"
+        assert offsets[-1] == 0
+        assert failed == (failure_at is not None)
+        if failure_at == "delta":
+            assert offsets[:3] == [0, 5, 5]
+        if failure_at == "final":
+            assert offsets[-2:] == [0, 0]
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize("operation", ["wait", "inspect", "read_output"])
+@pytest.mark.parametrize("code", ["environment_unavailable", "environment_timeout"])
+async def test_shell_transient_observation_preserves_original_control(tmp_path, monkeypatch, operation, code):
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+    from a13n_harness.toolsets.shell_control import ShellControl
+
+    original = getattr(LocalProcessManager, operation)
+    failed, recovered = asyncio.Event(), asyncio.Event()
+    handles = []
+
+    async def transient(self, handle, **kwargs):
+        handles.append(handle)
+        if not failed.is_set():
+            failed.set()
+            raise EnvironmentError("Transient observation failure", code=code)
+        try:
+            result = await original(self, handle, **kwargs)
+        except EnvironmentError as exc:
+            # A live process normally times out its bounded terminal wait.
+            if operation == "wait" and exc.code == "environment_timeout":
+                recovered.set()
+            raise
+        recovered.set()
+        return result
+
+    monkeypatch.setattr(LocalProcessManager, operation, transient)
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable(
+            [("shell_exec", {"command": 'echo started >> starts; read line; printf %s "$line"'})], results
+        ).run("start", environment=source(tmp_path), bindings=bindings(runtime))
+        execution_id = results[0]["execution_id"]
+        await asyncio.wait_for(recovered.wait(), 5)
+        assert (await runtime.info(first.thread_id, execution_id)).status == "running"
+        assert runtime.resource(first.thread_id, execution_id) is not None
+        response = await runtime.call_resource(
+            first.thread_id, execution_id, ShellControl(operation="input", data="done\n").model_dump(mode="json")
+        )
+        assert response["accepted_bytes"] == 5
+        settled = await runtime.wait(first.thread_id, execution_id, timeout_seconds=5)
+        assert settled.result["ok"] and settled.result["stdout"]["text"] == "done"
+        assert len(handles) >= 2 and all(handle == handles[0] for handle in handles)
+        assert (tmp_path / "starts").read_text() == "started\n"
+    finally:
+        await runtime.close()
+
+
+async def test_shell_cancel_interrupts_observation_backoff(tmp_path, monkeypatch):
+    import os
+
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+
+    fail, failed = asyncio.Event(), asyncio.Event()
+    observations = 0
+
+    async def unavailable(self, handle, **kwargs):
+        nonlocal observations
+        await fail.wait()
+        observations += 1
+        failed.set()
+        raise EnvironmentError("Observation unavailable", code="environment_unavailable")
+
+    monkeypatch.setattr(LocalProcessManager, "read_output", unavailable)
+    runtime = ToolExecutionRuntime()
+    results = []
+    try:
+        first = await executable([("shell_exec", {"command": "echo $$ > pid; read line"})], results).run(
+            "start", environment=source(tmp_path), bindings=bindings(runtime)
+        )
+        async with asyncio.timeout(5):
+            while not (tmp_path / "pid").exists():
+                await asyncio.sleep(0.01)
+        pid = int((tmp_path / "pid").read_text())
+        fail.set()
+        await asyncio.wait_for(failed.wait(), 5)
+        execution_id = results[0]["execution_id"]
+        await runtime.cancel(first.thread_id, execution_id)
+        settled = await runtime.wait(first.thread_id, execution_id, timeout_seconds=5)
+        assert settled.record.status == "cancelled"
+        assert observations == 1
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+    finally:
+        fail.set()
         await runtime.close()

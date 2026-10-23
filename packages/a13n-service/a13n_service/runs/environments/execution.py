@@ -1,7 +1,8 @@
 """Host-owned mount sources: inert registration, first-use lifecycle and fixed-target connectors."""
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+import asyncio
+from collections.abc import AsyncGenerator, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
@@ -21,6 +22,7 @@ from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
+from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
@@ -29,7 +31,7 @@ from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.attempts import Lease, lock_lease
+from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
 from a13n_service.runs.desktop_assistance import admission as desktop_admission
 from a13n_service.runs.desktop_assistance.service import verify_continuation
 from a13n_service.runs.environments import external
@@ -41,6 +43,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.skill_cache import Cache
+from a13n_service.runs.tool_executions.authority import lock_owner
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -81,8 +84,19 @@ class Source:
     def environment_id(self) -> str:
         return self.mount.environment_id
 
-    def operation_guard(self, action: EnvironmentAction):
-        return desktop_admission.operation(self.runtime, self.lease, self.environment_id, self.state, action)
+    @asynccontextmanager
+    async def operation_guard(self, action: EnvironmentAction) -> AsyncGenerator[None]:
+        async with AsyncExitStack() as stack:
+            try:
+                await stack.enter_async_context(
+                    desktop_admission.operation(self.runtime, self.lease, self.environment_id, self.state, action)
+                )
+            except (LeaseLost, AuthorityRevoked) as exc:
+                if current_execution() is not None and not execution_cleanup_active():
+                    # Authority loss cancels owned work; provider observation errors do not.
+                    raise asyncio.CancelledError from exc
+                raise
+            yield
 
     async def ensure_ready(self) -> EnvironmentConnector:
         seconds = self.runtime.settings.environments.wait_seconds
@@ -181,7 +195,7 @@ async def _inspect(
 ) -> tuple[Target | None, Operation | None]:
     """Inspect readiness, beginning and claiming new work atomically under the lease and instance locks."""
     async with transaction(runtime.storage) as session:
-        await lock_lease(session, lease)
+        _, principal = await lock_owner(session, runtime, lease)
         environment = await lock(session, EnvironmentRow, environment_id)
         if environment is None:
             raise not_found("environment", environment_id)
@@ -223,7 +237,7 @@ async def open_mounts(
     configuration: RunConfiguration | None = None,
     skill_cache: Cache | None = None,
     envd_sessions: dict[str, EnvdSessionRecovery] | None = None,
-) -> AsyncIterator[dict[str, HarnessMount]]:
+) -> AsyncGenerator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
     async with transaction(runtime.storage) as session:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../../../layout/workspace";
 import type { Schema } from "../../../../shared/api";
@@ -28,6 +28,7 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
   const { t } = useTranslation();
   const { basePath } = useWorkspace();
   const navigate = useNavigate();
+  const [, setSearch] = useSearchParams();
   const { runs } = useThreadRuns(thread.id);
   const visible = useVisibleRun(runId);
   // Inherited history can be visible above this branch; it is not a navigation target.
@@ -49,8 +50,16 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
           }),
     open(run) {
       const loaded = runSection(run.id);
-      if (loaded) loaded.scrollIntoView({ block: "start", behavior: "smooth" });
-      else
+      if (loaded) {
+        setSearch(
+          (params) => {
+            params.delete("follow");
+            return params;
+          },
+          { replace: true },
+        );
+        loaded.scrollIntoView({ block: "start", behavior: "smooth" });
+      } else
         navigate(
           runPath(
             basePath,

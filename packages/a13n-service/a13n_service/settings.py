@@ -259,6 +259,15 @@ class Outbox(Section):
         return self
 
 
+class ToolExecutions(Section):
+    max_active: int = Field(default=64, ge=1, le=1024)
+    foreground_wait_seconds: float = Field(default=5, ge=0, le=300)
+    delivered_retention_seconds: int = Field(default=3600, ge=1, le=31536000)
+    max_retention_seconds: int = Field(default=86400, ge=1, le=31536000)
+    shutdown_grace_seconds: float = Field(default=300, ge=0, le=3600)
+    finalization_seconds: float = Field(default=10, gt=0, le=300)
+
+
 class Worker(Section):
     slots: int = Field(default=4, ge=1, le=128)
     max_attempts: int = Field(default=3, ge=1, le=20)
@@ -605,6 +614,7 @@ class Settings(Section):
     schedules: Schedules = Field(default_factory=Schedules)
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
+    tool_executions: ToolExecutions = Field(default_factory=ToolExecutions)
     run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
     provisioning: Provisioning = Field(default_factory=Provisioning)

@@ -14,6 +14,7 @@ from a13n_harness.tools.tool_search import ToolSearchConfiguration, validate_gro
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
@@ -159,6 +160,7 @@ class PluginSelection(_Frozen):
 
 class ToolSearchGroup(_Frozen):
     description: str = Field(min_length=1, max_length=512)
+    capabilities: tuple[Literal["environment", "web"], ...] = ()
     connections: tuple[ObjectId, ...] = Field(default=(), max_length=128)
     plugins: tuple[BoundedKey, ...] = Field(default=(), max_length=128)
     platform: bool = False
@@ -175,6 +177,7 @@ class ToolSearch(ToolSearchConfiguration):
         for name, group in self.groups.items():
             validate_group(name, group.description)
             sources = [
+                *(("capability", source) for source in group.capabilities),
                 *(("connection", source) for source in group.connections),
                 *(("plugin", source) for source in group.plugins),
                 *([("platform", "platform")] if group.platform else []),
@@ -191,6 +194,7 @@ class ToolSearch(ToolSearchConfiguration):
 
 
 class AgentConfig(_Frozen):
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     model: Key
     # Native settings layered over the model's own defaults.
     model_settings: ModelSettings = Field(default_factory=dict)

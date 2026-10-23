@@ -117,6 +117,8 @@ async def test_ordinary_run_reconsiders_after_source_conflict(service, scripted_
 
 
 async def test_organizer_rejects_stale_derivation_independently_of_progress(service, scripted_model, runs_kit):
+    # This test drives organization explicitly; a concurrent sweep may hold its skip-locked candidate.
+    await runs_kit.pause_sweeps(service)
     model = await runs_kit.create_model(service, scripted_model)
     space = await create_space(service, organization={"enabled": True, "model": model})
     await save(service, space)

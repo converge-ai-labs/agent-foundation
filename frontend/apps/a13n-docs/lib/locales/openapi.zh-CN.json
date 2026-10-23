@@ -1,4 +1,11 @@
 {
+  "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.": "按需覆盖：null 表示继承；Thread PATCH 区分省略字段与 null。",
+  "List Tool Executions": "列出工具执行",
+  "Get Tool Execution": "获取工具执行",
+  "Observe Tool Execution": "观测工具执行",
+  "Get Tool Execution Result": "获取工具执行结果",
+  "Cancel Tool Execution": "取消工具执行",
+  "Run identity is the Service Run; attempt and worker identify the retained owner.": "Run 标识指 Service Run；attempt 和 worker 标识保留执行的所有者。",
   "Exact timeline and cost fields; payloads are read from the individual span.": "保留时间线和费用字段的原始值；完整内容通过单个 span 读取。",
   "Get Trace Span": "获取 trace 中的单个 span",
   "One complete observation, including redacted input, output and diagnostic metadata.": "单条完整观测记录，包含经过脱敏处理的输入、输出和诊断元数据。",
@@ -81,7 +88,7 @@
   "What a child run mounts: no environment, the parent's, or a new one from `template_id`.": "子运行挂载的环境：无环境、父运行环境，或根据 `template_id` 新建的环境。",
   "Portable model guidance for one externally executed client tool.": "为一个外部执行的客户端工具提供可移植的模型指导。",
   "Why the last remote operation failed; `outcome_unknown` means it may have taken effect.": "上次远程操作失败的原因；`outcome_unknown` 表示可能已经生效。",
-  "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.": "Agent 对一个连接的使用配置：全部工具或选定子集，以及工具权限。",
+  "An agent's selected tools and permissions.": "Agent 选择的工具及其权限。",
   "What a test found for the connection version it tested.": "针对所测试连接版本得到的测试结果。",
   "One app of a connector provider and the actions it exposes; `setup` is validated by the provider type.": "Connector provider 的一个应用及其提供的操作；`setup` 按 provider 类型校验。",
   "Pending entries only; the original request digest never changes.": "仅适用于 pending 条目；原始请求摘要永不改变。",
@@ -533,5 +540,10 @@
   "Absent fields match every event; a specified identity must exist and match.": "省略字段匹配全部事件；指定的标识必须存在且匹配。",
   "Caller-supplied display context, not execution provenance or an authorization boundary.": "由调用方提供的展示信息，不代表经过验证的执行来源，也不作为授权依据。",
   "Session/thread ID, title, origin, label value or retained conversation text": "会话或线程 ID、标题、来源、标签值，或保留的对话文本",
-  "Save durable execution authority as the creator, beyond this credential or Run's lifetime.\n\nDefaults to paused. Set state=enabled only when automatic future execution is intended.": "以创建者身份保存持久执行授权，授权在本次凭证或 Run 结束后仍然有效。\n\n默认暂停。只有希望开始后续自动执行时，才设置 state=enabled。"
+  "Save durable execution authority as the creator, beyond this credential or Run's lifetime.\n\nDefaults to paused. Set state=enabled only when automatic future execution is intended.": "以创建者身份保存持久执行授权，授权在本次凭证或 Run 结束后仍然有效。\n\n默认暂停。只有希望开始后续自动执行时，才设置 state=enabled。",
+  "Get Environment Creation": "获取环境创建进度",
+  "Retry Environment Creation": "重试环境创建",
+  "Get Environment Desktop Preview": "获取环境桌面预览",
+  "Search Traces": "筛选和排序 trace",
+  "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank.": "在整个根 span 开始时间范围内筛选和排序，再分页返回。费用为各 span 上报费用之和，不代表计费金额。\n\n由各后端执行每次查询，不缓存查询结果；不同页可能反映请求之间的数据更新。Keyset 游标绑定排序、筛选条件及上一页末条的排序值和 trace/span ID。\n查询不完整时返回错误，不提供部分排名。"
 }

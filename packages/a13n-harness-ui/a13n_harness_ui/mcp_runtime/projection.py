@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any, Self
 
 from a13n_harness.context import AgentContext
@@ -47,6 +48,23 @@ class HostToolset(MCPToolset[AgentContext]):
             finally:
                 self._entries -= 1
                 self.connection.release()
+
+    async def call_app_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        authorize: Callable[[], Awaitable[None]],
+        operation: Operation | None = None,
+    ) -> dict[str, Any]:
+        async with self.connection.client.app_dispatch(authorize, operation):
+            return await self.call_tool_for_app(name, arguments)
+
+    async def read_app_resource(
+        self, uri: str, *, authorize: Callable[[], Awaitable[None]], operation: Operation | None = None
+    ) -> dict[str, Any]:
+        async with self.connection.client.app_dispatch(authorize, operation):
+            return await self.read_resource_for_app(uri)
 
     async def call_tool(
         self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]

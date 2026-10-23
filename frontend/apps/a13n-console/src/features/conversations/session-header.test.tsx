@@ -96,9 +96,11 @@ const child = fixtureThread({
 });
 
 let contextRequests: URL[];
+let toolRequests: URL[];
 
 beforeEach(() => {
   contextRequests = [];
+  toolRequests = [];
   labels = { "a13n.console": "debug" };
   cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client = createClient({
@@ -106,6 +108,10 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/tool-executions")) {
+        toolRequests.push(url);
+        return Response.json({ items: [], next_cursor: null });
+      }
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/runs"))
@@ -157,6 +163,24 @@ afterEach(() => {
   cleanup();
   cache.clear();
   client.close();
+});
+
+it("opens retained tools for the exact current Thread without a Run filter", async () => {
+  const user = userEvent.setup();
+  show(
+    [fixtureThread(), child],
+    "/sessions/ses_1/threads/thr_child/runs/run_2",
+  );
+  expect(toolRequests).toHaveLength(0);
+  await user.click(
+    await screen.findByRole("button", { name: "Tool executions" }),
+  );
+  expect(await screen.findByText("No retained tool executions.")).toBeTruthy();
+  expect(toolRequests).toHaveLength(1);
+  expect(toolRequests[0].pathname).toBe(
+    "/api/v1/threads/thr_child/tool-executions",
+  );
+  expect(toolRequests[0].searchParams.has("run_id")).toBe(false);
 });
 
 function Location() {

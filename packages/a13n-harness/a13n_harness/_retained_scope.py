@@ -5,10 +5,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
-from typing import Any
 
 
-class RetainedScope:
+class RetainedScope[T]:
     """Enter and exit in one owning task; invocation leases may outlive the caller.
 
     Closing releases the foreground interest. It waits for teardown only when no
@@ -16,18 +15,18 @@ class RetainedScope:
     so execution completion includes release of its retained resources.
     """
 
-    def __init__(self, manager: AbstractAsyncContextManager[Any]) -> None:
+    def __init__(self, manager: AbstractAsyncContextManager[T]) -> None:
         self._manager = manager
         self._leases = 0
         self._closing = False
         self._released = asyncio.Event()
-        self._ready: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._ready: asyncio.Future[T] = asyncio.get_running_loop().create_future()
         self._task = asyncio.create_task(self._own())
 
     async def _own(self) -> None:
         try:
-            async with self._manager:
-                self._ready.set_result(None)
+            async with self._manager as value:
+                self._ready.set_result(value)
                 await self._released.wait()
         except BaseException as exc:
             if not self._ready.done():
@@ -35,9 +34,9 @@ class RetainedScope:
                 return
             raise
 
-    async def ready(self) -> None:
+    async def ready(self) -> T:
         try:
-            await asyncio.shield(self._ready)
+            return await asyncio.shield(self._ready)
         except asyncio.CancelledError:
             if not self._ready.done():
                 self._ready.cancel()

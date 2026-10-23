@@ -37,6 +37,7 @@ from a13n_harness.capabilities import (
     SubagentWaitResult,
 )
 from a13n_harness.capabilities.subagents import SubagentStatus
+from a13n_harness.tool_execution import current_execution
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -46,7 +47,7 @@ from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.runs import inbox
 from a13n_service.runs.accept import Source, accept, delegation, start_run
 from a13n_service.runs.agent import ResolvedSubagent
-from a13n_service.runs.attempts import AttemptControl, Lease, lock_lease, lock_thread_lease
+from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
 from a13n_service.runs.environments.mounts import adopt_mounts
 from a13n_service.runs.memories.mounts import adopt_memory_mounts
 from a13n_service.runs.runtime import Runtime
@@ -62,6 +63,7 @@ from a13n_service.runs.schemas import (
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import new_thread
+from a13n_service.runs.tool_executions.authority import lock_owner, prove
 from a13n_service.runs.tools import tool_failures
 from a13n_service.tenancy.authorize import ExecutionAuthority
 
@@ -114,7 +116,10 @@ class ChildRuns(SubagentOperator):
         payload = _payload(plan.context.input, request.prompt)
         settings = self.runtime.settings.worker
         async with transaction(self.runtime.storage) as session:
-            thread, run, _, _ = await lock_thread_lease(session, self.lease)
+            thread = await lock(session, ThreadRow, self.lease.thread_id)
+            if thread is None or thread.archived_at is not None:
+                raise LeaseLost()
+            run, _ = await lock_owner(session, self.runtime, self.lease)
             existing = await session.scalar(
                 select(ThreadRow).where(
                     ThreadRow.origin_run_id == run.id, ThreadRow.origin_tool_call_id == tool_call.tool_call_id
@@ -280,11 +285,11 @@ class ChildRuns(SubagentOperator):
     def _leaving(self) -> bool:
         """The parent must stop, or its worker is draining: a wait returns what it has, so the attempt can end
         or yield at its next boundary instead of outwaiting the drain."""
-        return self.control.stopped.is_set() or self.control.handoff.is_set()
+        return current_execution() is None and (self.control.stopped.is_set() or self.control.handoff.is_set())
 
     async def _child(self, session: AsyncSession, run_id: str) -> tuple[ThreadRow, RunRow]:
         """Prove the parent's lease, then lock the child thread and its run; only this thread's children."""
-        parent, _, _ = await lock_lease(session, self.lease)
+        parent, _ = await lock_owner(session, self.runtime, self.lease)
         run = await session.get(RunRow, run_id)
         thread = await lock(session, ThreadRow, run.thread_id) if run is not None else None
         if run is None or thread is None or thread.origin != "child" or thread.origin_thread_id != parent.thread_id:
@@ -314,11 +319,13 @@ class ChildRuns(SubagentOperator):
             request=None,
             control=self.runtime.settings.control,
         )
+        self.runtime.mailbox.notify(session, entry)
         return entry
 
     async def _page(self, execution_id: str | None, offset: int, limit: int) -> tuple[list[_Execution], int]:
         """One page of the executions of the parent thread's children, in the order the children and their runs
         started, and how many there are: all of them, or the one named."""
+        await prove(self.runtime, self.lease)
         earlier = aliased(RunRow)
         segment = (
             select(func.count())
@@ -358,6 +365,7 @@ class ChildRuns(SubagentOperator):
         return executions, total
 
     async def _statuses(self, run_ids: Iterable[str]) -> dict[str, str]:
+        await prove(self.runtime, self.lease)
         async with short_session(self.runtime.storage) as session:
             rows = await session.execute(select(RunRow.id, RunRow.status).where(RunRow.id.in_(list(run_ids))))
             return dict(rows.tuples().all())

@@ -13,7 +13,7 @@ from a13n_service.infra.errors import invalid
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.traces import Span, SpanPage
-from a13n_service.runs import trace_reads, traces
+from a13n_service.runs import trace_reads, trace_search, traces
 from a13n_service.runs.findings import analysis
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, OriginRun, WorkspaceId
@@ -100,6 +100,28 @@ async def list_traces(
         if view == "compact" or any((status, kind, tool_name))
         else None,
     )
+
+
+@router.get(
+    "/traces/search",
+    response_model=trace_search.TraceSearchPage,
+    openapi_extra=platform_operation("execution", "read"),
+)
+async def search_traces(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    origin: OriginRun,
+    query: Annotated[trace_search.TraceSearch, Query()],
+) -> trace_search.TraceSearchPage:
+    """Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.
+
+    Providers execute each query without a result cache; pages may reflect updates between requests.
+    Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
+    Incomplete queries fail without a partial rank.
+    """
+    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
+    return await trace_search.search(runtime, actor, workspace_id, query)
 
 
 @router.get(

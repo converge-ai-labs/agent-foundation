@@ -102,6 +102,22 @@ class GuestCommands:
                 async for chunk in reader:
                     yield chunk
 
+    async def read_range(self, path: str, offset: int, length: int) -> bytes:
+        # E2B's SDK has no ranges; preserve its seek-based helper for bounded
+        # range reads rather than downloading an arbitrarily large prefix.
+        from a13n_harness.providers.environment._guest_commands import decoded_bytes
+
+        result = bytearray()
+        while len(result) < length:
+            size = min(65536, length - len(result))
+            chunk = decoded_bytes(
+                await self.files("read", {"path": path, "offset": offset + len(result), "length": size})
+            )
+            result.extend(chunk)
+            if len(chunk) < size:
+                break
+        return bytes(result)
+
     async def write_stream(self, path: str, source: BinaryIO) -> None:
         with sdk_errors(mutation=True):
             await self.sandbox.files.write(

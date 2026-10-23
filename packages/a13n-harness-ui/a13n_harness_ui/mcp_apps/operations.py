@@ -21,6 +21,7 @@ from a13n_harness_ui.configuration import canonical_digest
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
 from a13n_harness_ui.mcp_runtime.connections import Connection, Operation
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from a13n_harness_ui.surfaces import RootRunReceipt
 
 from .connections import require_classic_tool, visibility
@@ -368,16 +369,16 @@ class AppOperations:
             await self._admit(view, view.value.reference.tool_name, {}, validate_arguments=False)
 
         try:
-            result = await view.connection.client.read_app_resource(
+            result = await HostToolset(view.connection).read_app_resource(
                 request.uri, authorize=authorize, operation=Operation(view_id=view.value.view_id)
             )
         except HarnessUiError:
             raise
         except Exception as exc:
             raise HarnessUiError("The App resource could not be read.", code="mcp_app_resource_failed") from exc
-        if len(result.model_dump_json().encode()) > 8 * 1024 * 1024:
+        if len(json.dumps(result).encode()) > 8 * 1024 * 1024:
             raise HarnessUiError("The App resource exceeds the display limit.", code="mcp_app_resource_limit")
-        return result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        return result
 
     def _remember_resources(self, view: _View, result: dict[str, JsonValue]) -> None:
         for uri in sorted(result_resource_uris(result) - view.resource_uris):
@@ -460,13 +461,12 @@ class AppOperations:
                 )
 
         try:
-            result = await view.connection.client.call_app_tool(
+            payload = await HostToolset(view.connection).call_app_tool(
                 operation.name,
                 operation.arguments,
                 authorize=authorize,
                 operation=Operation(view_id=view.value.view_id),
             )
-            payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
             if len(json.dumps(payload).encode()) > 8 * 1024 * 1024:
                 self._set(
                     view,

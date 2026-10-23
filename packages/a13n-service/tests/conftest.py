@@ -9,7 +9,7 @@ import asyncio
 import base64
 import json
 import os
-from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from functools import partial
@@ -245,7 +245,7 @@ def service_app() -> Callable[..., FastAPI]:
 @asynccontextmanager
 async def _serve(
     settings: Settings, role: ProcessRole, service_app: Callable[..., FastAPI], distribution: Distribution = OSS
-) -> AsyncIterator[SimpleNamespace]:
+) -> AsyncGenerator[SimpleNamespace]:
     app = service_app(distribution, role=role, settings=settings)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
@@ -381,7 +381,7 @@ class ScriptedModel:
 
 
 @asynccontextmanager
-async def listening(app: Any) -> AsyncIterator[str]:
+async def listening(app: Any) -> AsyncGenerator[str]:
     """Serve an ASGI app on a loopback port, for clients that need a real socket (streams, provider adapters).
 
     Responses still streaming when the block exits, such as a gated model turn, are cancelled after 0.1 s.
@@ -396,7 +396,7 @@ def listen() -> Any:
 
 
 @asynccontextmanager
-async def platform_runtime(service: SimpleNamespace, runtime: Runtime | None = None) -> AsyncIterator[Runtime]:
+async def platform_runtime(service: SimpleNamespace, runtime: Runtime | None = None) -> AsyncGenerator[Runtime]:
     """`runtime`, by default the service's, whose runs reach their platform tools at the service served on loopback."""
     base = runtime or service.runtime
     async with listening(service.app) as url:
@@ -631,7 +631,7 @@ type Frame = tuple[str, str | None, Any]
 
 
 @asynccontextmanager
-async def frames(url: str, headers: dict[str, str]) -> AsyncIterator[AsyncIterator[Frame]]:
+async def frames(url: str, headers: dict[str, str]) -> AsyncGenerator[AsyncIterator[Frame]]:
     """SSE frames as (event, id, data)."""
     async with httpx2.AsyncClient(timeout=20) as client, client.stream("GET", url, headers=headers) as response:
         assert response.status_code == 200

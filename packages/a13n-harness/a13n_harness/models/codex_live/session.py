@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 import ssl
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Literal, get_args
 from urllib.parse import urlsplit
@@ -128,7 +128,7 @@ class CodexLiveModel:
         instructions: str,
         on_answer: Callable[[str], Awaitable[None]],
         initial_items: Sequence[ConversationItem] = (),
-    ) -> AsyncIterator[CodexLiveSession]:
+    ) -> AsyncGenerator[CodexLiveSession]:
         """Create one call, deliver its SDP, then attach controls.
 
         ``on_answer`` must apply the SDP to the media peer and await its connection.

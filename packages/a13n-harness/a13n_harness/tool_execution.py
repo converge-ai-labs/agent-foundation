@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import uuid4
 
 from a13n_logging import get_logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai.exceptions import ModelRetry, ToolFailed
+
+from a13n_harness._retained_scope import RetainedScope as RetainedScope
 
 _OWNED_TOOL_EXECUTION: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_owned_tool_execution", default=False)
 
@@ -53,6 +56,16 @@ class ToolExecutionRecord(BaseModel):
     def terminal(self) -> bool:
         return self.status not in {"queued", "running"}
 
+    def receipt(self) -> dict[str, str]:
+        """Close a foreground call without delivering or reissuing its owned invocation."""
+        return {
+            "type": "tool_execution_receipt",
+            "execution_id": self.execution_id,
+            "tool_name": self.tool_name,
+            "status": self.status,
+            "message": "The original invocation is owned by the runtime. Use tool_execution_result or tool_execution_wait; do not reissue it.",
+        }
+
 
 @dataclass(frozen=True)
 class ToolExecutionArtifact:
@@ -76,6 +89,13 @@ class StoredToolExecution:
     result: Any = None
     artifacts: tuple[ToolExecutionArtifact, ...] = ()
     retry_prompt: str | None = None
+
+
+class ToolExecutionAdmissionRejected(ToolFailed):
+    """The initial save was definitively rejected without creating a durable identity.
+
+    Stores must not use this for an uncertain commit or an already admitted call.
+    """
 
 
 class ToolExecutionStore(Protocol):
@@ -161,14 +181,45 @@ _CURRENT_TOOL_EXECUTION: contextvars.ContextVar[ToolExecutionRecord | None] = co
 )
 
 
+def current_execution() -> ToolExecutionRecord | None:
+    """The original invocation identity for Host authorization of retained dispatches."""
+    return _CURRENT_TOOL_EXECUTION.get()
+
+
+_EXECUTION_CLEANUP: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_execution_cleanup", default=False)
+
+
+@contextmanager
+def execution_cleanup() -> Iterator[None]:
+    """Mark original-resource teardown for Host cleanup-only fencing, never new effects."""
+    token = _EXECUTION_CLEANUP.set(True)
+    try:
+        yield
+    finally:
+        _EXECUTION_CLEANUP.reset(token)
+
+
+def execution_cleanup_active() -> bool:
+    return current_execution() is not None and _EXECUTION_CLEANUP.get()
+
+
+@runtime_checkable
+class ToolExecutionResource(Protocol):
+    """A live resource's bounded control protocol; Hosts may route JSON calls to its owner."""
+
+    async def call(self, request: dict[str, JsonValue]) -> dict[str, JsonValue]: ...
+
+
 @dataclass
 class _LiveExecution:
     record: ToolExecutionRecord
     task: asyncio.Task[None] | None = None
     started: bool = False
     cancel_requested: bool = False
+    cancel_reason: str | None = None
     releasing: bool = False
     resource: object | None = None
+    resource_context: contextvars.Context | None = None
 
 
 class ToolExecutionRuntime:
@@ -194,6 +245,7 @@ class ToolExecutionRuntime:
         self._max_active = max_active
         self._on_completed = on_completed
         self._live: dict[str, _LiveExecution] = {}
+        self._rejected = MemoryToolExecutionStore()
         self._closing = False
         self._order: dict[str, list[_ExecutionSlot]] = {}
 
@@ -297,17 +349,23 @@ class ToolExecutionRuntime:
         status: Literal["succeeded", "failed", "cancelled"] = "failed"
         error: str | None = None
         retry_prompt: str | None = None
+        rejected = False
         try:
-            await self.store.save(StoredToolExecution(live.record))
+            try:
+                await self.store.save(StoredToolExecution(live.record))
+            except ToolExecutionAdmissionRejected:
+                rejected = True
+                raise
             if live.cancel_requested:
                 raise asyncio.CancelledError
             await slot.wait()
+            await self.before_dispatch(live.record, sequential=slot.sequential)
             live.record = live.record.model_copy(update={"status": "running"})
             await self.store.save(StoredToolExecution(live.record))
             result = await operation()
             status = "succeeded"
         except asyncio.CancelledError:
-            status = "cancelled"
+            status, error = "cancelled", live.cancel_reason
         except ModelRetry as exc:
             retry_prompt = exc.message
             error = exc.message
@@ -321,7 +379,8 @@ class ToolExecutionRuntime:
             live.resource = None
             if release is not None:
                 try:
-                    await release()
+                    with execution_cleanup():
+                        await release()
                 except asyncio.CancelledError:
                     status, retry_prompt = "cancelled", None
                 except Exception:
@@ -343,11 +402,12 @@ class ToolExecutionRuntime:
                 retry_prompt=retry_prompt,
             )
             try:
-                await self.store.save(saved)
+                store = self._rejected if rejected else self.store
+                await store.save(saved)
                 # The foreground may yield while an asynchronous store publishes.
                 if live.record.foreground_released and not terminal.foreground_released:
                     terminal = terminal.model_copy(update={"foreground_released": True})
-                    await self.store.save(replace(saved, record=terminal))
+                    await store.save(replace(saved, record=terminal))
             except Exception:
                 # A broken store cannot safely admit more effects. Keep bounded
                 # terminal evidence in the existing admission slot, not stale
@@ -366,6 +426,9 @@ class ToolExecutionRuntime:
                 live.record = terminal
                 self._live.pop(live.record.execution_id, None)
 
+    async def before_dispatch(self, record: ToolExecutionRecord, *, sequential: bool) -> None:
+        """Allow the Host to wait for shared predecessors while the call remains queued."""
+
     def attach_resource(self, resource: object) -> None:
         """Attach a live control surface to the currently owned operation.
 
@@ -376,6 +439,14 @@ class ToolExecutionRuntime:
         if record is None or (live := self._live.get(record.execution_id)) is None or live.releasing:
             raise RuntimeError("No active execution owns this resource")
         live.resource = resource
+        live.resource_context = contextvars.copy_context()
+
+    def observe_resource(self, observation: object) -> None:
+        """Offer a live observation to the Host without I/O or waiting.
+
+        Hosts may coalesce these ephemeral snapshots independently of execution
+        and lease supervision. The default runtime does not retain observations.
+        """
 
     def resource(self, thread_id: str, execution_id: str) -> object | None:
         """Resolve a live resource only inside its exact owning Thread."""
@@ -383,6 +454,23 @@ class ToolExecutionRuntime:
         if live is None or live.record.thread_id != thread_id or live.releasing:
             return None
         return live.resource
+
+    async def call_resource(
+        self, thread_id: str, execution_id: str, request: dict[str, JsonValue]
+    ) -> dict[str, JsonValue] | None:
+        """Call the original live resource, never reconstructing it from stored results.
+
+        The caller owns authorization. The resource owns dispatch validation and
+        synchronization with teardown. A missing surface returns None.
+        """
+        resource = self.resource(thread_id, execution_id)
+        if not isinstance(resource, ToolExecutionResource):
+            return None
+        live = self._live[execution_id]
+        assert live.resource_context is not None
+        context = live.resource_context.copy()
+        context.run(_TOOL_EXECUTION_ARTIFACTS.set, None)
+        return await asyncio.create_task(resource.call(request), context=context)
 
     def release_foreground(self, thread_id: str, execution_id: str) -> None:
         """Mark a pending original call whose foreground now returns a receipt.
@@ -397,13 +485,13 @@ class ToolExecutionRuntime:
     async def info(self, thread_id: str, execution_id: str) -> ToolExecutionRecord | None:
         if (live := self._live.get(execution_id)) is not None:
             return live.record if live.record.thread_id == thread_id else None
-        execution = await self.store.get(thread_id, execution_id)
+        execution = await self.result(thread_id, execution_id)
         return execution.record if execution is not None else None
 
     async def result(self, thread_id: str, execution_id: str) -> StoredToolExecution | None:
         if (live := self._live.get(execution_id)) is not None:
             return StoredToolExecution(live.record) if live.record.thread_id == thread_id else None
-        return await self.store.get(thread_id, execution_id)
+        return await self._rejected.get(thread_id, execution_id) or await self.store.get(thread_id, execution_id)
 
     async def wait(
         self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None
@@ -417,18 +505,38 @@ class ToolExecutionRuntime:
             live.task.result()
         return await self.result(thread_id, execution_id)
 
-    async def cancel(self, thread_id: str, execution_id: str) -> ToolExecutionRecord | None:
+    def request_cancellation(
+        self, thread_id: str, execution_id: str, *, reason: str | None = None
+    ) -> ToolExecutionRecord | None:
+        """Cancel a locally owned invocation without storage I/O or interrupting its cleanup."""
         live = self._live.get(execution_id)
         if live is not None and live.record.thread_id == thread_id:
             if not live.cancel_requested:
                 live.cancel_requested = True
+                live.cancel_reason = reason
                 if live.started and not live.releasing and live.task is not None:
                     live.task.cancel()
             return live.record
-        return await self.info(thread_id, execution_id)
+        return None
+
+    async def cancel(self, thread_id: str, execution_id: str) -> ToolExecutionRecord | None:
+        return self.request_cancellation(thread_id, execution_id) or await self.info(thread_id, execution_id)
+
+    @property
+    def accepting(self) -> bool:
+        """Whether this runtime can admit new effects, including after publication failure."""
+        return not self._closing
+
+    @property
+    def active(self) -> tuple[ToolExecutionRecord, ...]:
+        """Process-local invocations, including resource cleanup and publication in flight."""
+        return tuple(live.record for live in self._live.values() if live.task is not None and not live.task.done())
 
     async def acknowledge_delivery(self, thread_id: str, execution_id: str) -> None:
-        await self.store.acknowledge_delivery(thread_id, execution_id)
+        if await self._rejected.get(thread_id, execution_id) is not None:
+            await self._rejected.acknowledge_delivery(thread_id, execution_id)
+        else:
+            await self.store.acknowledge_delivery(thread_id, execution_id)
 
     async def summarize(self, thread_id: str, *, offset: int = 0, limit: int = 20) -> tuple[ToolExecutionRecord, ...]:
         if offset < 0 or not 1 <= limit <= 100:
@@ -436,6 +544,12 @@ class ToolExecutionRuntime:
         records = {
             record.execution_id: record for record in await self.store.list(thread_id, offset=0, limit=offset + limit)
         }
+        records.update(
+            {
+                record.execution_id: record
+                for record in await self._rejected.list(thread_id, offset=0, limit=offset + limit)
+            }
+        )
         records.update({key: live.record for key, live in self._live.items() if live.record.thread_id == thread_id})
         return tuple(sorted(records.values(), key=_summary_order)[offset : offset + limit])
 
@@ -447,12 +561,16 @@ class ToolExecutionRuntime:
             for task in tasks:
                 task.result()
 
-    async def close(self, *, timeout_seconds: float = 5.0) -> tuple[str, ...]:
+    def stop_admission(self) -> None:
+        """Begin Host drain without cancelling already admitted work."""
+        self._closing = True
+
+    async def close(self, *, timeout_seconds: float = 5.0, reason: str | None = None) -> tuple[str, ...]:
         """Stop admission and request cancellation; report operations still draining."""
         self._closing = True
         executions = tuple(self._live.values())
         for live in executions:
-            await self.cancel(live.record.thread_id, live.record.execution_id)
+            self.request_cancellation(live.record.thread_id, live.record.execution_id, reason=reason)
         tasks = {live.task for live in executions if live.task is not None}
         if tasks:
             done, _ = await asyncio.wait(tasks, timeout=timeout_seconds)

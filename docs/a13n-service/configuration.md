@@ -170,6 +170,10 @@ Other `providers` settings bound provider work: `model_timeout` (each read of on
 
 ## Execution
 
+`tool_executions` configures retained calls: `max_active` (64 per worker), `foreground_wait_seconds` (5), `delivered_retention_seconds` (3600), and `max_retention_seconds` (86400). Foreground wait supplies the deployment fallback for the [execution policy](agents-and-runs.md#execution-policy); agent, thread and single-run choices can override it. It controls handoff, not an execution deadline. Retention starts after completion; the first delivery acknowledgement starts the shorter reread window without extending the maximum age.
+
+On worker shutdown, attempts drain first. Retained calls then receive `shutdown_grace_seconds` (300) to finish naturally, followed by cancellation and `finalization_seconds` (10) for cleanup and publication. If work still owns resources after that budget, the worker exits; lease reconciliation marks unfinished records lost. Set the deployment's termination grace to cover these phases. Drain old workers before deploying this schema: older workers cannot read the new `tool_result` inbox and run-trigger values.
+
 | Setting                                            | Effect                                                                                                                          |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `worker.slots`                                     | Attempts one worker process runs concurrently.                                                                                  |

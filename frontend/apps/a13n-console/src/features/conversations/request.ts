@@ -21,6 +21,14 @@ export type RunRequest =
   | { kind: "message"; input: unknown; text: string }
   /** `resume`: the complete answer to a waiting batch. */
   | { kind: "feedback"; input: unknown; text: string }
+  /** A system notification; the retained result remains separately readable. */
+  | {
+      kind: "tool_result";
+      executionId: string | null;
+      toolName: string | null;
+      status: string | null;
+      text: string;
+    }
   /** `child_result`: a child Run's terminal result. */
   | {
       kind: "subagent_result";
@@ -32,6 +40,19 @@ export type RunRequest =
   | { kind: "delegated_task"; text: string; parentTask: string | null };
 
 export function runRequest(run: Run, thread?: Thread | null): RunRequest {
+  if (run.trigger === "tool_result") {
+    const payload = isRecord(run.input) ? run.input : {};
+    const executionId = text(payload.execution_id);
+    const toolName = text(payload.tool_name);
+    const status = text(payload.status);
+    return {
+      kind: "tool_result",
+      executionId,
+      toolName,
+      status,
+      text: [toolName, status, executionId].filter(Boolean).join(" · "),
+    };
+  }
   if (thread?.purpose === "memory_organization")
     return {
       kind: "memory_organization",

@@ -14,7 +14,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("winner", ["user_before_dispatch", "user_during_discovery", "agent"])
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
 async def test_simultaneous_assistance_and_takeover_keep_one_resumable_wait(
     service, scripted_model, runs_kit, monkeypatch, winner, provider_key
 ):
@@ -128,7 +128,7 @@ async def open_desktop(service, run):
     return result.json()
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
 async def test_takeover_during_generation_skips_stale_tool_then_resumes(
     service, scripted_model, runs_kit, monkeypatch, provider_key
 ):
@@ -199,7 +199,7 @@ async def test_takeover_during_generation_skips_stale_tool_then_resumes(
         assert row.state == "consumed" and row.outcome == outcome
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
 async def test_unknown_tool_work_prevents_takeover(service, scripted_model, runs_kit, monkeypatch, provider_key):
     first, _ = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key)
     gate = asyncio.Event()
@@ -421,7 +421,7 @@ async def test_expired_user_control_requires_cleanup_and_explicit_resume(
     assert (await runs_kit.get_run(service, resumed.json()["id"]))["status"] == "completed"
 
 
-@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal"])
+@pytest.mark.parametrize("provider_key", ["e2b", "daytona", "modal", "vercel"])
 async def test_initial_view_discovers_once_and_does_not_pause(
     service, scripted_model, runs_kit, monkeypatch, provider_key
 ):

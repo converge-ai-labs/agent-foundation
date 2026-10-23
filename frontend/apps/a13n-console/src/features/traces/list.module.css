@@ -189,3 +189,89 @@
     transition: none;
   }
 }
+
+/* Metric filters share one compact entry; applied values live below the toolbar. */
+.metricPopup {
+  width: min(340px, calc(100vw - 24px));
+}
+.metricForm {
+  display: grid;
+  gap: 20px;
+}
+.metricTitle {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.metricSection {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+.metricLegend {
+  width: 100%;
+  margin-bottom: 10px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+.metricLegend span {
+  float: inline-end;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.metricBounds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.metricBound {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.metricActions {
+  display: flex;
+  gap: 4px;
+}
+.rangeError {
+  margin-top: 8px;
+  color: var(--destructive);
+  font-size: var(--a13n-text-xs);
+}
+.activeMetricFilters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.activeMetricFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  max-width: 100%;
+  padding: 0 2px 0 9px;
+  border-radius: var(--a13n-radius-chip);
+  background: var(--a13n-surface);
+  font-size: var(--a13n-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.activeMetricFilter button {
+  color: var(--a13n-secondary);
+}
+.metricValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clearMetricFilters {
+  height: 26px;
+  padding-inline: 6px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}

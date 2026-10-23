@@ -7,7 +7,7 @@ description: Configure workspace resources, manage one-time and recurring schedu
 
 Use the selected platform MCP tools. Read their schemas for exact parameters; JSON bodies are nested under `request_body`. Results contain `status`, `headers`, and `body`. Resource identifiers must come from these results or the explicit `service_run_id` in the automatic Service context. Use that field as `run_id` for current Run queries; never substitute `harness_run_id`. The Host supplies identity and workspace. A tool or this Skill cannot grant additional permissions.
 
-Use filtered `view=compact` reads for discovery, then select IDs, names and sections for detail. Existing queries default to `detailed` for compatibility. Compact pages default to ten records and may stop sooner to respect the response budget. Follow `next_cursor`, `next_after` or `next_before` with the same filters; an empty filtered page can still have a continuation. A preview's `truncated` and `omitted_sections` describe missing response data, not absent source data. `source_truncated` describes a limit already applied to stored content.
+Use filtered `view=compact` reads where supported for discovery, then select IDs, names and sections for detail. Existing queries default to `detailed` for compatibility. Compact pages default to ten records and may stop sooner to respect the response budget. Follow `next_cursor`, `next_after` or `next_before` with the same filters; an empty filtered page can still have a continuation. A preview's `truncated` and `omitted_sections` describe missing response data, not absent source data. `source_truncated` describes a limit already applied to stored content.
 
 Text and JSON fragments count Unicode code points. Start at `offset=0`, then send the returned `version` and `next_offset`; changed content requires restarting. `representation=fragment` is explicitly partial. Reassemble all fragments before interpreting a full JSON definition or configuration. A section or compact summary cannot replace an entire configuration.
 
@@ -30,7 +30,7 @@ Read only the references needed for the current task:
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.
 - [Environment templates](references/environment-templates.md): recipes and instance boundaries.
 - [Schedules](references/schedules.md): read before creating, changing or dispatching scheduled work; covers time preview, durable delegation, approval and trigger results.
-- [Execution and diagnostics](references/execution-and-diagnostics.md): sessions through attempts and traces.
+- [Execution and diagnostics](references/execution-and-diagnostics.md): sessions through attempts, retained tool executions and traces.
 - [Versions and conflicts](references/versions-and-conflicts.md): ETags, review and partial success.
 - [Permissions and errors](references/permissions-and-errors.md): scope and safe failures.
 

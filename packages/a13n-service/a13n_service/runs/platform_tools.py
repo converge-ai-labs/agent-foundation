@@ -1,6 +1,6 @@
 """Attempt-owned native MCP tools, with Host credentials and Harness write review."""
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from urllib.parse import urlsplit
@@ -39,7 +39,7 @@ class PlatformToolset(WrapperToolset[AgentContext]):
 @asynccontextmanager
 async def platform_capability(
     runtime: Runtime, lease: Lease, tools: Mapping[str, ToolIdentity]
-) -> AsyncIterator[MCP[AgentContext]]:
+) -> AsyncGenerator[MCP[AgentContext]]:
     """Refresh before sending, never refresh-and-replay a request whose outcome may be unknown.
 
     The credential admits the groups of the enabled tools; the agent is offered only the enabled tools.

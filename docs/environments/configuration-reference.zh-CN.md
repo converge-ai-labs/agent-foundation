@@ -292,18 +292,21 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `VercelEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值 | 约束与默认值                                           |
-| ------------------------- | ----- | ------------- | ------------------------------------------------------ |
-| `root`                    | false | string        | default="/vercel/sandbox"                              |
-| `python`                  | false | string        | default="/vercel/runtimes/python/bin/python3"          |
-| `shell`                   | false | string        | default="/bin/bash"                                    |
-| `request_timeout_seconds` | false | number        | maximum=600; exclusiveMinimum=0; default=120           |
-| `max_file_bytes`          | false | integer       | maximum=67108864; exclusiveMinimum=0; default=16777216 |
-| `max_query_entries`       | false | integer       | maximum=100000; exclusiveMinimum=0; default=10000      |
-| `max_output_bytes`        | false | integer       | maximum=16777216; exclusiveMinimum=0; default=1048576  |
-| `runtime`                 | false | string        | minLength=1; maxLength=128; default="python3.13"       |
-| `timeout_seconds`         | false | integer       | minimum=300; maximum=18000; default=3600               |
-| `vcpus`                   | false | integer       | minimum=2; maximum=8; default=2                        |
+| 字段                      | 必填  | 类型 / 可选值         | 约束与默认值                                                                |
+| ------------------------- | ----- | --------------------- | --------------------------------------------------------------------------- |
+| `root`                    | false | string                | default="/vercel/sandbox"                                                   |
+| `python`                  | false | string                | default="/vercel/runtimes/python/bin/python3"                               |
+| `shell`                   | false | string                | default="/bin/bash"                                                         |
+| `request_timeout_seconds` | false | number                | maximum=600; exclusiveMinimum=0; default=120                                |
+| `max_file_bytes`          | false | integer               | maximum=67108864; exclusiveMinimum=0; default=16777216                      |
+| `max_query_entries`       | false | integer               | maximum=100000; exclusiveMinimum=0; default=10000                           |
+| `max_output_bytes`        | false | integer               | maximum=16777216; exclusiveMinimum=0; default=1048576                       |
+| `execution`               | false | "native", "envd_http" | default="native"                                                            |
+| `snapshot`                | false | string 或 null        | minLength=1; maxLength=256; `pattern="^snap_[A-Za-z0-9_-]+$"`; default=null |
+| `desktop`                 | false | boolean               | default=false                                                               |
+| `runtime`                 | false | string                | minLength=1; maxLength=128; default="python3.13"                            |
+| `timeout_seconds`         | false | integer               | minimum=300; maximum=18000; default=3600                                    |
+| `vcpus`                   | false | integer               | minimum=2; maximum=8; default=2                                             |
 
 ## `SpritesEnvironmentConfiguration`
 
@@ -386,11 +389,11 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `ModalConnectionConfiguration`
 
-| 字段               | 必填  | 类型 / 可选值 | 约束与默认值                               |
-| ------------------ | ----- | ------------- | ------------------------------------------ |
-| `workspace`        | true  | string        | minLength=1; maxLength=128                 |
-| `app_name`         | true  | string        | minLength=1; maxLength=128                 |
-| `environment_name` | false | string        | minLength=1; maxLength=128; default="main" |
+| 字段               | 必填  | 类型 / 可选值  | 约束与默认值                                         |
+| ------------------ | ----- | -------------- | ---------------------------------------------------- |
+| `workspace`        | false | string 或 null | minLength=1; maxLength=128; default=null             |
+| `app_name`         | false | string         | minLength=1; maxLength=128; default="a13n-sandboxes" |
+| `environment_name` | false | string         | minLength=1; maxLength=128; default="main"           |
 
 ## `ModalCredential`
 

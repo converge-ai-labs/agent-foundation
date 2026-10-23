@@ -45,7 +45,7 @@ from a13n_service.infra.telemetry import meter
 
 logger = get_logger(__name__)
 
-type OutboxKind = Literal["webhook", "child_result", "email", "memory_purge", "checkpoint_cleanup"]
+type OutboxKind = Literal["webhook", "child_result", "tool_result", "email", "memory_purge", "checkpoint_cleanup"]
 type Outcome = Literal["delivered", "retry", "deferred", "dead"]
 
 
@@ -74,7 +74,8 @@ class OutboxRow(Base):
     __table_args__ = (
         UniqueConstraint("kind", "dedupe_key"),
         CheckConstraint(
-            "kind IN ('webhook', 'child_result', 'email', 'memory_purge', 'checkpoint_cleanup')", name="kind"
+            "kind IN ('webhook', 'child_result', 'tool_result', 'email', 'memory_purge', 'checkpoint_cleanup')",
+            name="kind",
         ),
         # Account mail (password reset, email change) belongs to no organization; every other delivery does.
         CheckConstraint("organization_id IS NOT NULL OR kind = 'email'", name="tenant"),

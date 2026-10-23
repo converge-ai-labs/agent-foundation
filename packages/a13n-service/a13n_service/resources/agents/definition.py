@@ -130,6 +130,7 @@ def tool_search(config: AgentConfig, sources: Mapping[str, AbstractCapability[Ag
             name: ToolSearchSelection(
                 description=group.description,
                 capabilities=tuple(sources[source] for source in group.connections)
+                + tuple(sources[source] for source in group.capabilities if source in sources)
                 + ((sources["platform"],) if group.platform else ()),
                 plugins=group.plugins,
             )

@@ -92,8 +92,8 @@ async def test_a_steer_joins_with_the_default_options_or_the_runs_own(service, s
     """Acceptance freezes a run's options with their pins resolved; a steer names them as submitted, or none."""
     agent = await runs_kit.delegating(service, scripted_model, "inline", **runs_kit.LOOKUP)
     gate = asyncio.Event()
-    runs_kit.lookup(scripted_model, call_id="call_find", gate=gate, to="Role: coordinator")
-    scripted_model.say("Done", to="Role: coordinator")
+    for _ in range(3):
+        scripted_model.say("Done", gate=gate, to="Role: coordinator")
     options = {"labels": {"team": "a"}, "overrides": {"subagents": {"helper": {"description": "Overridden helper"}}}}
     submitted = await runs_kit.start_thread(service, agent, "look around", options=options)
     thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
@@ -101,11 +101,12 @@ async def test_a_steer_joins_with_the_default_options_or_the_runs_own(service, s
     await scripted_model.request()
     # A client such as the Console steers with no options; another names the run's options as submitted.
     plain = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "also count"))
+    assert "also count" in str(runs_kit.user_texts(await scripted_model.request()))
     same = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "and list", options=options))
+    assert "and list" in str(runs_kit.user_texts(await scripted_model.request()))
     other = await runs_kit.submit(
         service, thread_id, runs_kit.message(agent, "with a label", options={**options, "labels": {"team": "b"}})
     )
-    scripted_model.say("Counted", to="Role: coordinator")
     gate.set()
     await running
 
