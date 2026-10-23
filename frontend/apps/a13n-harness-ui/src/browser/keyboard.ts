@@ -65,6 +65,7 @@ export function bindKeyboard({
   root.addEventListener("keydown", key, true);
   root.addEventListener("keyup", key, true);
   root.addEventListener("focusout", focusout);
+  root.addEventListener("compositionstart", release, true);
   window.addEventListener("blur", release);
   document.addEventListener("visibilitychange", visibility);
   return {
@@ -80,6 +81,7 @@ export function bindKeyboard({
       root.removeEventListener("keydown", key, true);
       root.removeEventListener("keyup", key, true);
       root.removeEventListener("focusout", focusout);
+      root.removeEventListener("compositionstart", release, true);
       window.removeEventListener("blur", release);
       document.removeEventListener("visibilitychange", visibility);
     },

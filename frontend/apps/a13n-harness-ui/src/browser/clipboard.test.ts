@@ -61,6 +61,24 @@ it("uses noVNC's Unicode API and clipboard events without echoing remote copies"
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(connection.clipboardPasteFrom).not.toHaveBeenCalled();
 });
+
+it("commits IME text without changing the local clipboard and restores the Host on sync", async () => {
+  bridge.sync();
+  await vi.waitFor(() =>
+    expect(connection.clipboardPasteFrom).toHaveBeenCalledWith(local),
+  );
+  bridge.pasteText("你好世界 🚀");
+  await vi.waitFor(() => expect(shortcut).toHaveBeenCalledWith("paste"));
+  expect(connection.clipboardPasteFrom).toHaveBeenLastCalledWith("你好世界 🚀");
+  receive("你好世界 🚀");
+  await Promise.resolve();
+  expect(writeText).not.toHaveBeenCalled();
+  expect(local).toBe("本地 clipboard 🙂");
+  await vi.waitFor(() => {
+    bridge.sync();
+    expect(connection.clipboardPasteFrom).toHaveBeenLastCalledWith(local);
+  });
+});
 it("never reads or writes clipboard contents without current focused input authority", async () => {
   controller = false;
   bridge.sync();

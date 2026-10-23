@@ -9,6 +9,7 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { bindClipboard } from "./clipboard";
 import { bindKeyboard } from "./keyboard";
+import { bindTextInput } from "./text-input";
 import styles from "./panel.module.css";
 
 export type BrowserScale = "fit" | "50" | "75" | "100" | "125" | "150" | "200";
@@ -33,6 +34,7 @@ export function Desktop({
   const [status, setStatus] = useState("Connecting…");
   const [clipboardError, setClipboardError] = useState("");
   const clipboard = useRef<ReturnType<typeof bindClipboard> | null>(null);
+  const textInput = useRef<ReturnType<typeof bindTextInput> | null>(null);
   const inputAllowed = useRef(false);
   const [reconnect, setReconnect] = useState(0);
   const [canReconnect, setCanReconnect] = useState(false);
@@ -57,7 +59,7 @@ export function Desktop({
   inputAllowed.current = interactive && !!controlToken;
   useEffect(() => {
     if (interactive) {
-      rfb.current?.focus();
+      textInput.current?.focus();
       clipboard.current?.sync();
     }
   }, [interactive]);
@@ -65,6 +67,7 @@ export function Desktop({
     let disposed = false;
     let bridge: ReturnType<typeof bindClipboard> | undefined;
     let keyboard: ReturnType<typeof bindKeyboard> | undefined;
+    let input: ReturnType<typeof bindTextInput> | undefined;
     let frame = 0;
     const observeSize = () => {
       const canvas = host.current?.querySelector("canvas");
@@ -159,6 +162,13 @@ export function Desktop({
             if (access.control) {
               const active = () =>
                 inputAllowed.current && rfb.current === connection;
+              input = bindTextInput({
+                root: host.current!,
+                active,
+                connection,
+                commit: (text) => bridge?.pasteText(text),
+              });
+              textInput.current = input;
               keyboard = bindKeyboard({
                 root: host.current!,
                 active,
@@ -182,6 +192,7 @@ export function Desktop({
             setStatus("Disconnected");
             bridge?.stop();
             keyboard?.stop();
+            input?.stop();
             inputAllowed.current = false;
             setCanReconnect(true);
             setConnected(false);
@@ -195,6 +206,7 @@ export function Desktop({
             setStatus("Connection rejected");
             bridge?.stop();
             keyboard?.stop();
+            input?.stop();
             inputAllowed.current = false;
             setCanReconnect(true);
             setConnected(false);
@@ -216,7 +228,9 @@ export function Desktop({
       inputAllowed.current = false;
       bridge?.stop();
       keyboard?.stop();
+      input?.stop();
       if (clipboard.current === bridge) clipboard.current = null;
+      if (textInput.current === input) textInput.current = null;
       rfb.current?.disconnect();
       rfb.current = null;
     };

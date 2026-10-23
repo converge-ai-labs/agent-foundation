@@ -153,6 +153,9 @@ export function bindClipboard({
   const interval = setInterval(sync, 500);
   return {
     sync: focus,
+    // IME commits reuse ordered clipboard transfer without writing the local
+    // clipboard. The next sync restores its contents on the Host.
+    pasteText: (text: string) => paste(Promise.resolve({ text })),
     stop: () => {
       stopped = true;
       last = undefined;

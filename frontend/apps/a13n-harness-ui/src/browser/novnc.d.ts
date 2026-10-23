@@ -8,6 +8,7 @@ declare module "@novnc/novnc" {
     viewOnly: boolean;
     scaleViewport: boolean;
     resizeSession: boolean;
+    focusOnClick: boolean;
     clipboardPasteFrom(text: string): void;
     getImageData(): ImageData;
     focus(): void;

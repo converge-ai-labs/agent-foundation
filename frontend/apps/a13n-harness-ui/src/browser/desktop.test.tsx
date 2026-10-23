@@ -16,6 +16,8 @@ const { connections } = vi.hoisted(() => ({
   connections: [] as (EventTarget & {
     viewOnly: boolean;
     disconnect: ReturnType<typeof vi.fn>;
+    sendKey: ReturnType<typeof vi.fn>;
+    clipboardPasteFrom: ReturnType<typeof vi.fn>;
     canvas: HTMLCanvasElement;
   })[],
 }));
@@ -145,4 +147,30 @@ it("requests fresh native control access on takeover and revokes the old connect
   await waitFor(() => expect(connections).toHaveLength(3));
   expect(connections[2].viewOnly).toBe(true);
   expect(connections[1].disconnect).toHaveBeenCalledOnce();
+});
+
+it("focuses the local IME input on takeover and removes it on handback", async () => {
+  const view = await show();
+  expect(
+    screen.queryByRole("textbox", { name: "Remote browser keyboard input" }),
+  ).toBeNull();
+  view.update("controller-a");
+  const input = await screen.findByRole("textbox", {
+    name: "Remote browser keyboard input",
+  });
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  fireEvent.compositionStart(input);
+  fireEvent.compositionEnd(input, { data: "你好" });
+  await waitFor(() =>
+    expect(connections[1].clipboardPasteFrom).toHaveBeenCalledWith("你好"),
+  );
+  expect(connections[1].sendKey).toHaveBeenCalledWith(118, "KeyV");
+  const count = connections[1].clipboardPasteFrom.mock.calls.length;
+  view.update();
+  await waitFor(() => expect(connections).toHaveLength(3));
+  expect(
+    screen.queryByRole("textbox", { name: "Remote browser keyboard input" }),
+  ).toBeNull();
+  fireEvent.compositionEnd(input, { data: "不要发送" });
+  expect(connections[1].clipboardPasteFrom).toHaveBeenCalledTimes(count);
 });
