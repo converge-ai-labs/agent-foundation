@@ -63,11 +63,13 @@ export function RunEntry({
   const stopped = ["failed", "cancelled"].includes(run.status);
   return (
     <StoredContents runId={runId} items={live.displayItems}>
-      <EarlierContent
-        history={live.history}
-        first={live.first}
-        preservePosition={preservePosition}
-      />
+      {level === "chat" && (
+        <EarlierContent
+          history={live.history}
+          first={live.first}
+          preservePosition={preservePosition}
+        />
+      )}
       {live.gap && (
         <p role="status" className={styles.notice}>
           {live.incomplete
@@ -88,6 +90,13 @@ export function RunEntry({
           thread={thread}
           timeline={timeline}
           index={number(run.id)}
+          earlier={
+            <EarlierContent
+              history={live.history}
+              first={live.first}
+              preservePosition={preservePosition}
+            />
+          }
           resubmit={prefill}
           jumpToDock={jumpToDock}
         />

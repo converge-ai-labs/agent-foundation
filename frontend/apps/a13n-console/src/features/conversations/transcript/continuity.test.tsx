@@ -173,6 +173,13 @@ function show(
           id: "session",
           labels: { "a13n.console": "debug" },
         });
+      if (url.pathname.endsWith("/items"))
+        return Response.json({
+          items: [],
+          total: 0,
+          complete: true,
+          next_cursor: null,
+        });
       if (url.pathname.endsWith("/lineage"))
         return Response.json({ items: [initial], next_cursor: null });
       if (url.pathname.endsWith("/runs"))

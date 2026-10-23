@@ -269,3 +269,57 @@ it("refreshes a loaded newest cursor page when another Run arrives", async () =>
   expect(requests.filter((cursor) => cursor === "newer4")).toHaveLength(2);
   expect(screen.queryByRole("button", { name: "Load newer runs" })).toBeNull();
 });
+
+it("keeps the requested selection while a retained Run is inert and lets the reader return to it", async () => {
+  let notify!: IntersectionObserverCallback;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        notify = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  try {
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={["/start"]}>
+          <div data-session-stage>
+            <div inert>
+              <section data-run="run_1" />
+            </div>
+          </div>
+          <Outline thread={fixtureThread()} runId="run_2" />
+          <Location />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const list = within(
+      await screen.findByRole("navigation", { name: "Runs" }),
+    );
+    await list.findByText("Write the marker");
+    act(() =>
+      notify(
+        [
+          {
+            target: document.querySelector('[data-run="run_1"]')!,
+            intersectionRatio: 1,
+          } as IntersectionObserverEntry,
+        ],
+        {} as IntersectionObserver,
+      ),
+    );
+    const rows = list.getAllByRole("button");
+    expect(rows[1]?.getAttribute("aria-current")).toBe("true");
+    await userEvent.setup().click(rows[0]!);
+    expect(
+      await screen.findByText(
+        "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
+      ),
+    ).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

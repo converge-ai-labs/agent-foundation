@@ -60,7 +60,7 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
           }),
     open(run) {
       const loaded = runSection(run.id);
-      if (loaded) {
+      if (loaded && !loaded.closest("[inert]")) {
         setSearch(
           (params) => {
             params.delete("follow");
@@ -87,7 +87,10 @@ export function useRunOutline(thread: Thread, runId: string): RunOutline {
 
 /** Which loaded Run section the reader is actually looking at. */
 function useVisibleRun(fallback: string) {
-  const [visible, setVisible] = useState<string | null>(null);
+  const [visible, setVisible] = useState<{
+    selection: string;
+    run: string;
+  } | null>(null);
   useEffect(() => {
     const stage = document.querySelector("[data-session-stage]");
     if (!(stage instanceof HTMLElement)) return;
@@ -101,9 +104,15 @@ function useVisibleRun(fallback: string) {
         }
         const sections = [...stage.querySelectorAll<HTMLElement>("[data-run]")];
         const top = sections.find(
-          (section) => (seen.get(section.dataset.run ?? "") ?? 0) > 0,
+          (section) =>
+            !section.closest("[inert]") &&
+            (seen.get(section.dataset.run ?? "") ?? 0) > 0,
         );
-        if (top?.dataset.run) setVisible(top.dataset.run);
+        setVisible(
+          top?.dataset.run
+            ? { selection: fallback, run: top.dataset.run }
+            : null,
+        );
       },
       { root: stage, threshold: [0, 0.01, 0.5] },
     );
@@ -118,6 +127,6 @@ function useVisibleRun(fallback: string) {
       observer.disconnect();
       mutations.disconnect();
     };
-  }, []);
-  return visible ?? fallback;
+  }, [fallback]);
+  return visible?.selection === fallback ? visible.run : fallback;
 }

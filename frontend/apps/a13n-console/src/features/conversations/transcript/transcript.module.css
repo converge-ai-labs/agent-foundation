@@ -429,3 +429,44 @@
   flex: 1;
   border-top: 1px solid var(--a13n-border);
 }
+
+/* A Thread keeps one bottom dock while Run observations are replaced. */
+.observation {
+  min-width: 0;
+}
+.opening {
+  padding: 20px 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.switchStatus {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 12px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-canvas);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.switchStatus p {
+  margin: 0;
+}
+.dockRun {
+  max-height: 45dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.dockControls {
+  display: grid;
+  gap: 8px;
+}
+.queue {
+  max-height: min(40dvh, 360px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.queue:empty {
+  display: none;
+}

@@ -23,6 +23,7 @@ interface ScrollController {
 export function useTranscriptScroll(
   content: RefObject<HTMLElement | null>,
   level?: string,
+  identity?: string,
 ) {
   const [showJump, setShowJump] = useState(false);
   const controller = useRef<ScrollController | null>(null);
@@ -189,7 +190,7 @@ export function useTranscriptScroll(
         stage.removeEventListener(event, onGestureEnd);
       controller.current = null;
     };
-  }, [content]);
+  }, [content, identity]);
   useLayoutEffect(() => controller.current?.reflow(), [level]);
   useLayoutEffect(() => controller.current?.align());
   const followLatest = useCallback(

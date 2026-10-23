@@ -13,7 +13,8 @@ import { createClient, type Client } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
 import { fixtureRun, fixtureThread } from "./fixture";
-import { RunDock } from "./run-dock";
+import type { ComponentProps } from "react";
+import { RunDock, ThreadDock } from "./run-dock";
 import { useRun } from "../queries";
 
 let client: Client;
@@ -161,7 +162,7 @@ it("replaces a racing user takeover panel with the Agent assistance card without
     const live = useRun("run");
     if (!live.data) return null;
     return (
-      <RunDock
+      <TestDock
         run={live.data}
         thread={fixtureThread({
           id: "thread",
@@ -334,7 +335,7 @@ function mount({
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
-        <RunDock run={current} thread={thread} resubmit={resubmit} />
+        <TestDock run={current} thread={thread} resubmit={resubmit} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -642,3 +643,11 @@ it("sends execution overrides once with next_run and returns the next message to
     "Inherit",
   );
 });
+
+function TestDock(props: ComponentProps<typeof RunDock>) {
+  return (
+    <ThreadDock thread={props.thread} level={props.level}>
+      <RunDock {...props} />
+    </ThreadDock>
+  );
+}
