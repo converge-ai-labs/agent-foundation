@@ -16,6 +16,7 @@ from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as 
 from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment._variables import EnvironmentVariables
 from a13n_harness.providers.environment.modal.pool import Transport, TransportKey, TransportPool
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
@@ -61,6 +62,7 @@ class ModalEnvironmentConfiguration(BaseModel):
         description="Operator-built registry image or Modal image ID (im-...) containing compatible a13n-envd and sandbox launchers. Agent operations use EIP.",
     )
     desktop: bool = Field(default=False, description="Require an observable, input-ready X11 desktop from the image.")
+    environment: EnvironmentVariables = Field(default_factory=dict)
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     timeout_seconds: int = Field(default=86400, ge=300, le=86400)
     cpu: float = Field(default=1, gt=0, le=64, allow_inf_nan=False)
@@ -68,7 +70,9 @@ class ModalEnvironmentConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        return hashlib.sha256(
+            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+        ).hexdigest()
 
 
 class SnapshotReference(BaseModel):

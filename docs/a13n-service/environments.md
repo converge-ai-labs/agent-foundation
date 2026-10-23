@@ -96,6 +96,14 @@ To give every root thread of an agent its own environment, set the agent's `defa
 
 Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
 
+### Default environment variables
+
+Every built-in provider supports `config.recipe.environment`, for example `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`. Add these in the template editor's **Environment variables** section. Commands and their normal child processes receive these defaults; explicit command values override them, and supported command unsets remove them. This does not add Agent, Thread or Run-level variable settings.
+
+Defaults freeze with the recipe when creation is first dispatched. Editing a template does not update an existing instance, including after stop/start or snapshot resume. Create a new instance to use changed defaults. Local providers also require each name in `allowed_environment_keys` (or an unrestricted null allowlist).
+
+Use portable names (`APP_MODE`, not `app-mode`) and string values; empty values are allowed. These values are readable ordinary configuration: do not put credentials here. Platform bootstrap, desktop and telemetry names (`A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY`, `XAUTHORITY`) are reserved. Provider credentials and existing secret bindings retain their separate controls.
+
 ### Docker image versions
 
 Leave `recipe.image` unset to use the Service-reviewed `ghcr.io/converge-ai-labs/a13n-sandbox` release. Sandbox versions belong to Envd, not to Service:

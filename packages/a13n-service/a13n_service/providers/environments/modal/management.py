@@ -89,6 +89,7 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 encrypted_ports=[8888, *([access.PORT] if self.recipe.desktop_assistance else [])],
                 experimental_options={"vm_runtime": True} if self.config.desktop else None,
                 env={
+                    **self.config.environment,
                     "A13N_ENVD_DEVICE_ID": self.owner,
                     "A13N_ENVD_TRANSPORT": "http",
                     "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",

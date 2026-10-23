@@ -846,6 +846,8 @@ async def local_instance(env: SimpleNamespace, tmp_path: Path) -> tuple[str, Pat
             "config": {
                 "recipe": {
                     "root": {"path": str(tmp_path)},
+                    "environment": {"APP_MODE": "original"},
+                    "allowed_environment_keys": ["APP_MODE"],
                     "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}],
                 }
             },
@@ -867,6 +869,17 @@ async def test_shared_local_mounts_route_files_and_commands_per_thread(env, loca
     from a13n_harness.environment.retention import EnvironmentOutputPolicy
 
     identity, root = local_instance
+    # A ready instance keeps the recipe frozen at creation, even for future Runs.
+    instance = await environment(env, identity)
+    template_url = f"{env.api}/environment-templates/{instance['template_id']}"
+    saved = await env.client.get(template_url)
+    configuration = saved.json()["config"]
+    configuration["recipe"]["environment"] = {"APP_MODE": "edited"}
+    updated = await env.client.patch(
+        template_url, json={"config": configuration}, headers={"if-match": saved.headers["etag"]}
+    )
+    assert updated.status_code == 200, updated.text
+
     other = await env.client.post(f"{env.api}/agents", json={"name": "Collaborator", "config": {"model": "unused"}})
     assert other.status_code == 201, other.text
     paths = ("/a", "/b", "/a", None)
@@ -901,13 +914,17 @@ async def test_shared_local_mounts_route_files_and_commands_per_thread(env, loca
                 assert (await bound.files.read_text("/workspace/shared.txt")).text == f"from {path or 'default'}"
                 result = await bound.shell.exec(
                     CommandRequest(
-                        command=ShellCommand(profile_id="sh", script="pwd; printf command > command.txt"),
+                        command=ShellCommand(
+                            profile_id="sh",
+                            script="pwd; sh -c 'printf %s \"$APP_MODE\"' > defaults.txt; printf command > command.txt",
+                        ),
                         output_policy=EnvironmentOutputPolicy(
                             max_inline_bytes=4096, max_output_bytes=4096, overflow="fail"
                         ),
                     )
                 )
                 assert result.status.exit_code == 0
+                assert (await bound.files.read_text("defaults.txt")).text == "original"
                 expected = root / path.lstrip("/") if path else root
                 assert Path(result.output.stdout.inline.decode().strip()) == expected.resolve()
                 assert (await bound.files.read_text("command.txt")).text == "command"

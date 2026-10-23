@@ -6,11 +6,13 @@ from pathlib import PurePosixPath
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from a13n_harness.environment.models import EnvironmentTargetState
+from a13n_harness.providers.environment._variables import EnvironmentVariables
 
 
 class CommandConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    environment: EnvironmentVariables = Field(default_factory=dict)
     root: str = "/"
     python: str = Field(default="python3", description="Guest Python executable name on its PATH, or absolute path.")
     shell: str = "/bin/bash"
@@ -42,7 +44,9 @@ class CommandConfiguration(BaseModel):
 
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        return hashlib.sha256(
+            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+        ).hexdigest()
 
 
 class TokenCredential(BaseModel):

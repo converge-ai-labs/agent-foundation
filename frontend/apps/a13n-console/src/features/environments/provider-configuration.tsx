@@ -8,6 +8,7 @@ import {
 import { Fragment, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./environments.module.css";
+import { EnvironmentVariables } from "./environment-variables";
 import {
   applyDockerPreset,
   dockerMode,
@@ -114,6 +115,7 @@ export function ProviderConfiguration({
   const advanced: typeof properties = [];
   for (const property of properties) {
     const key = property[0];
+    if (key === "environment") continue;
     if (
       variant === "e2b" &&
       e2bRequiresEnvd &&
@@ -271,7 +273,7 @@ export function ProviderConfiguration({
                 ? "Run commands and work with files. The standard image and execution method are configured automatically."
                 : selected === "desktop"
                   ? "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate."
-                  : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory and mounts are kept.",
+                  : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.",
             )}
           </p>
         </fieldset>
@@ -748,6 +750,22 @@ export function ProviderConfiguration({
               onChange={change}
             />
           </fieldset>
+          {properties.some(([key]) => key === "environment") && (
+            <EnvironmentVariables
+              value={
+                value.environment &&
+                typeof value.environment === "object" &&
+                !Array.isArray(value.environment) &&
+                Object.values(value.environment).every(
+                  (item) => typeof item === "string",
+                )
+                  ? (value.environment as Record<string, string>)
+                  : {}
+              }
+              readOnly={readOnly}
+              onChange={(environment) => change({ ...value, environment })}
+            />
+          )}
           {mounts.length > 0 && (
             <DisclosureSection title={t("Mounts")}>
               <fieldset disabled={readOnly}>

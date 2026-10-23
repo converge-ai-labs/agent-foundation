@@ -48,6 +48,7 @@ from a13n_harness.environment.retention import (
     materialize_capture,
 )
 from a13n_harness.providers.environment._local_retention import LocalRetentionStore, LocalRetentionWriter
+from a13n_harness.providers.environment._variables import with_defaults
 
 if TYPE_CHECKING:
     from a13n_harness.providers.environment._windows_job import WindowsJob
@@ -204,7 +205,9 @@ class LocalProcessManager:
         environment_id: str,
         execution_id: str,
         generation: str,
+        environment: dict[str, str] | None = None,
     ) -> None:
+        self._environment = dict(environment or {})
         self._files = files
         self._retention = retention
         self._policy = policy
@@ -279,6 +282,7 @@ class LocalProcessManager:
         raise EnvironmentError("Direct Local discovery is unsupported.", code="environment_unsupported")
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
+        request = with_defaults(request, self._environment, windows=os.name == "nt")
         if os.name not in {"posix", "nt"}:
             raise EnvironmentError("Direct Local processes are unavailable on this OS.", code="environment_unsupported")
         self._validate_request(request)

@@ -30,6 +30,7 @@ from a13n_harness.environment.retention import (
     OpaqueProcessHandle,
     _unwrap_opaque,
 )
+from a13n_harness.providers.environment._variables import with_defaults
 from a13n_harness.providers.environment.e2b.commands import GuestCommands
 from a13n_harness.providers.environment.e2b.errors import sdk_errors
 from a13n_harness.providers.environment.e2b.output import CommandObservation, ObservationPool
@@ -67,6 +68,7 @@ class E2BProcesses:
         return observation
 
     async def start(self, request: CommandRequest) -> ProcessStartResult:
+        request = with_defaults(request, self.commands.configuration.environment)
         config = self.commands.configuration
         command = request.command
         if not isinstance(command, ShellCommand) or command.profile_id != "default" or command.login is False:

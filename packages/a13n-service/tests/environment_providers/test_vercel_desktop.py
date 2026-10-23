@@ -97,7 +97,7 @@ def description():
 
 async def test_native_fingerprint_and_desktop_opt_in():
     config = VercelEnvironmentConfiguration()
-    old = config.model_dump_json(exclude={"execution", "snapshot", "desktop"})
+    old = config.model_dump_json(exclude={"execution", "snapshot", "desktop", "environment"})
     assert config.fingerprint == hashlib.sha256(old.encode()).hexdigest()
     assert VercelRecipe().fingerprint == config.fingerprint
     assert (

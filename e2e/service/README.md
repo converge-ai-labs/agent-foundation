@@ -29,15 +29,17 @@ make service-e2e-docker                # build the native Docker image, then run
 make service-e2e-check                          # code, fixture, configuration and selection checks without Docker
 ```
 
+The environment journey also reads recipe defaults inside Agent commands and their child processes, exercises explicit and empty command overrides without leaking them to later commands, and checks that editing a template does not change a retained instance after stop/resume. The same assertions run for every selected provider.
+
 The `docker` environment journey needs the native execution image (`make image-sandbox`, or `SANDBOX_IMAGE`) and uses the Engine the Docker CLI uses. A hosted journey needs its vendor account in the environment and creates billable sandboxes, which it deletes, after a failure too. Hosted journeys are marked `hosted` with their type and run only when asked for: with `--hosted`, a `-m` expression naming `hosted`, or a `-k` expression naming their type, such as `-k e2b`; any other selection, `-k environments` say, leaves them out.
 
 | Type      | Variables                                                                                                                                               |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `e2b`     | `E2B_API_KEY`                                                                                                                                           |
-| `daytona` | `DAYTONA_API_KEY`; `DAYTONA_ORGANIZATION_ID`, read from the key when unset                                                                              |
+| `daytona` | `DAYTONA_API_KEY`, `DAYTONA_ENVD_SNAPSHOT` (a compatible snapshot with Envd); `DAYTONA_ORGANIZATION_ID`, read from the key when unset                   |
 | `modal`   | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_ENVD_IMAGE`; optional `MODAL_WORKSPACE`. The journey deploys an empty App for its sandboxes and stops it |
 | `vercel`  | `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`                                                                                                   |
-| `sprites` | `SPRITES_TOKEN`, `SPRITES_ORGANIZATION`                                                                                                                 |
+| `sprites` | `SPRITES_TOKEN`, `SPRITES_ORGANIZATION`; the token must permit creation with ownership labels (restricted tokens reject labels)                         |
 | `runloop` | `RUNLOOP_API_KEY`; optional `RUNLOOP_ORGANIZATION`                                                                                                      |
 
 ```sh

@@ -50,6 +50,7 @@ class RunloopManagement(RunloopReference, NativeManagement[RunloopEnvironmentCon
                     "name": self.name,
                     "metadata": self.labels,
                     "blueprint_id": self.config.blueprint_id,
+                    **({"environment_variables": self.config.environment} if self.config.environment else {}),
                     "launch_parameters": {
                         "resource_size_request": self.config.resource_size,
                         "after_idle": {"idle_time_seconds": self.config.idle_timeout_seconds, "on_idle": "suspend"},
