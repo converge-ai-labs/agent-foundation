@@ -44,12 +44,12 @@ class Config(ProviderConfiguration):
 
     @model_validator(mode="after")
     def registration(self) -> Self:
-        from pydantic_ai.exceptions import UserError
-        from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
-
         if self.client_id is not None and (not self.client_id.strip() or self.client_id == "dynamic_agent_client"):
             raise ValueError("Use an issued public OAuth client ID")
         if self.redirect_uri is not None:
+            from pydantic_ai.exceptions import UserError
+            from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
+
             try:
                 OpenAIChatGPTOAuthFlow(app_name="Agent Foundation OSS", redirect_uri=self.redirect_uri)
             except UserError as error:
@@ -65,7 +65,9 @@ def _provider(
     from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTProvider
 
     client.headers.update(headers)
-    return OpenAIChatGPTProvider(credential_source=source, http_client=client)
+    provider = OpenAIChatGPTProvider(credential_source=source, http_client=client)
+    provider.client.max_retries = 0
+    return provider
 
 
 def _model(name: str, provider: Provider[Any]) -> Model[Any]:

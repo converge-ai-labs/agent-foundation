@@ -6,7 +6,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from a13n_harness.providers.model.oauth import (
     CodexLoginResult,
@@ -16,7 +16,6 @@ from a13n_harness.providers.model.oauth import (
     GrokDeviceAuthorizationFlow,
     GrokOAuthFlow,
 )
-from a13n_harness.providers.model.oauth.chatgpt import ChatGPTAuthorization
 from anyio import CancelScope, Event, create_task_group, create_tcp_listener, fail_after
 from anyio.abc import SocketAttribute, TaskGroup
 from pydantic import Field, SecretStr
@@ -27,7 +26,6 @@ from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_authoring import account_connection
 
 from .callback import receive_callback
-from .chatgpt import ChatGPTAccountStore
 from .codex import CodexAccountStore, CodexLoginRequest
 from .copilot import CopilotAccountStore, CopilotLoginRequest
 from .grok import (
@@ -38,6 +36,11 @@ from .grok import (
     GrokLoginRequest,
 )
 from .models import AccountStoreError, Provider
+
+if TYPE_CHECKING:
+    from a13n_harness.providers.model.oauth.chatgpt import ChatGPTAuthorization
+
+    from .chatgpt import ChatGPTAccountStore
 
 
 class LoginRequest(StrictModel):
@@ -242,6 +245,8 @@ class LoginSessions:
         request: LoginRequest,
         account: ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore,
     ) -> None:
+        from .chatgpt import ChatGPTAccountStore
+
         method = request.method
 
         def present(**values: object) -> None:

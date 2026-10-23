@@ -24,7 +24,6 @@ from a13n_harness.providers.model.oauth import (
 )
 from a13n_harness.providers.model.routes import build_api_key_model
 from pydantic_ai.models import Model, ModelResolutionContext
-from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
 
 from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
@@ -36,6 +35,7 @@ from a13n_harness_ui.configuration import (
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 
 if TYPE_CHECKING:
+    from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
 
     from a13n_harness_ui.composition.models import ResolvedModelRecipe
@@ -131,9 +131,9 @@ class HarnessUiModelResolver:
             from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTProvider
 
             source = self._required_subscription_source("chatgpt_subscription", ChatGPTSubscriptionSource)
-            return OpenAIResponsesModel(
-                _model_name(recipe), provider=OpenAIChatGPTProvider(credential_source=source.create_source())
-            )
+            provider = OpenAIChatGPTProvider(credential_source=source.create_source())
+            provider.client.max_retries = 0
+            return OpenAIResponsesModel(_model_name(recipe), provider=provider)
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.models.codex import CodexRequestModel
 

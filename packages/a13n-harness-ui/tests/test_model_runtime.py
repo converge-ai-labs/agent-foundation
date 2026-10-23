@@ -233,6 +233,7 @@ async def test_chatgpt_resolution_uses_native_provider_without_loading_credentia
     assert await resolver.resolve(recipe.model_id, thread_id="thread-test") is native
     build_provider.assert_called_once_with(credential_source=source)
     build_model.assert_called_once_with("gpt-test", provider=provider)
+    assert provider.client.max_retries == 0
     source.load.assert_not_called()
     # Each Model owns its load/save baseline, including within the same Run.
     other = Mock()
