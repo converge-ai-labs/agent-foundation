@@ -13,11 +13,11 @@ import type { Transport } from "../transport/client";
 import { Desktop, type BrowserScale } from "./desktop";
 
 const { connections } = vi.hoisted(() => ({
-  connections: [] as {
+  connections: [] as (EventTarget & {
     viewOnly: boolean;
     disconnect: ReturnType<typeof vi.fn>;
     canvas: HTMLCanvasElement;
-  }[],
+  })[],
 }));
 vi.mock("@novnc/novnc", () => ({
   default: class extends EventTarget {
@@ -108,6 +108,25 @@ it("resizes the local viewing surface without reconnecting or changing native in
   expect(
     document.querySelector<HTMLElement>("[data-browser-screen]")?.style.width,
   ).toBe("");
+});
+
+it.each([
+  ["disconnect", "Disconnected"],
+  ["securityfailure", "Connection rejected"],
+])("reconnects with fresh viewer access after %s", async (event, message) => {
+  const view = await show();
+  act(() => connections[0].dispatchEvent(new Event(event)));
+  expect(screen.getByRole("status").textContent).toBe(message);
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(connections).toHaveLength(2));
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  expect(view.post).toHaveBeenCalledTimes(2);
+  expect(view.post).toHaveBeenLastCalledWith(
+    expect.stringContaining("/access"),
+    expect.objectContaining({
+      body: { session_id: "binding-a", control_token: "" },
+    }),
+  );
 });
 
 it("requests fresh native control access on takeover and revokes the old connection on handback", async () => {

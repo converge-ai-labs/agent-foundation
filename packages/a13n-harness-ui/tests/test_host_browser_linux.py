@@ -143,6 +143,10 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         runtime = browsers.runtime
         page = browsers.bindings["thread-a"].page
         assert runtime and page and browsers.desktop
+        if browsers.desktop.desktop.window_manager:
+            async with asyncio.timeout(5):
+                while (await runtime.window(page))["bounds"]["windowState"] != "maximized":
+                    await asyncio.sleep(0.025)
         assert stat.S_IMODE(os.stat(browsers.desktop.control_socket).st_mode) == 0o600
         await runtime.evaluate(page, "document.querySelector('input').focus()")
         reader, readonly, dimensions = await rfb(browsers, "thread-a", state.session_id)

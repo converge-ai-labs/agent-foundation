@@ -36,8 +36,8 @@ export function BrowserSetup({
           <div>
             <h3>
               {setup && !setup.supported
-                ? "Browser support on this platform"
-                : "Set up your browser"}
+                ? "Browser unavailable"
+                : "Browser setup"}
             </h3>
             <p>
               {setup?.distribution ||
@@ -46,8 +46,7 @@ export function BrowserSetup({
           </div>
         </header>
         <p className={styles.summary}>
-          {setup?.message ||
-            "Checking the optional browser components on the Host running Harness UI…"}
+          {setup?.message || "Checking browser components…"}
         </p>
         {error && (
           <p role="alert" className={styles.error}>
@@ -66,7 +65,7 @@ export function BrowserSetup({
             {loading ? "Checking…" : "Check again"}
           </Button>
         </div>
-        <a href="/settings#browser">Configure browser and VNC</a>
+        <a href="/settings#browser">Browser settings</a>
       </div>
     </div>
   );

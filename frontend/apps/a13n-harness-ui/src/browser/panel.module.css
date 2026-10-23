@@ -137,20 +137,13 @@
   position: absolute;
   inset: 0;
   display: flex;
-  gap: 12px;
   align-items: center;
   justify-content: center;
-  color: #d8dee9;
+  padding: 20px;
   background: #171a21aa;
-  font-size: 12px;
 }
-.streamStatus button {
-  border: 1px solid #526070;
-  border-radius: 6px;
-  padding: 6px 10px;
-  background: #202632;
-  color: inherit;
-  cursor: pointer;
+.streamStatus strong {
+  overflow-wrap: anywhere;
 }
 
 .inputNotice {

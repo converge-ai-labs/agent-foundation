@@ -20,6 +20,7 @@ import {
   HandArrowUp,
   LockSimple,
   MagnifyingGlassPlus,
+  Monitor,
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -81,7 +82,7 @@ export function BrowserPanel({
   });
   const refresh = () => queries.invalidateQueries({ queryKey: ["browser"] });
   const command = async (
-    kind: "enable" | "start" | "reset" | "stop" | "take-control" | "handback",
+    kind: "start" | "reset" | "stop" | "take-control" | "handback",
   ) => {
     if (!threadId || busy) return;
     setBusy(true);
@@ -91,16 +92,21 @@ export function BrowserPanel({
         params: { path: { thread_id: threadId } },
         body: { session_id: session?.session_id ?? "" },
       };
-      if (kind === "enable")
-        await result(
-          client.POST("/api/threads/{thread_id}/browser/enable", {
-            params: path.params,
-          }),
-        );
-      if (kind === "start")
-        await result(
+      if (kind === "start") {
+        if (!path.body.session_id) {
+          const enabled = await result(
+            client.POST("/api/threads/{thread_id}/browser/enable", {
+              params: path.params,
+            }),
+          );
+          queries.setQueryData(["browser", threadId], enabled);
+          path.body.session_id = enabled.session_id!;
+        }
+        const value = await result(
           client.POST("/api/threads/{thread_id}/browser/start", path),
         );
+        queries.setQueryData(["browser", threadId], value);
+      }
       if (kind === "reset") {
         const value = await result(
           client.POST("/api/threads/{thread_id}/browser/reset", path),
@@ -135,8 +141,7 @@ export function BrowserPanel({
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-      if (kind === "enable" || kind === "start" || kind === "reset")
-        await preparation.refetch();
+      if (kind === "start" || kind === "reset") await preparation.refetch();
     } finally {
       await refresh();
       setBusy(false);
@@ -177,8 +182,8 @@ export function BrowserPanel({
     return (
       <div className={styles.empty}>
         <LockSimple size={28} />
-        <strong>Browse on the Host</strong>
-        <p>Open a Full Control conversation to use the shared Host browser.</p>
+        <strong>Browser unavailable</strong>
+        <p>Use a Full Control conversation.</p>
       </div>
     );
   const ready = session?.status === "ready";
@@ -196,8 +201,8 @@ export function BrowserPanel({
         variant={human ? "default" : "outline"}
         title={
           human
-            ? "Hand back to Agent · Resume browser tools in all conversations"
-            : "Take control · Pause browser tools in all conversations"
+            ? "Resume browser tools in all conversations"
+            : "Pause browser tools in all conversations"
         }
         disabled={busy}
         onClick={() => void command(human ? "handback" : "take-control")}
@@ -284,7 +289,7 @@ export function BrowserPanel({
               >
                 {(session.viewports ?? []).map((item) => (
                   <MenuRadioItem key={item.preset} value={item.preset}>
-                    {item.label} · {item.width} × {item.height}
+                    {item.label} ({item.width} × {item.height})
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>
@@ -323,26 +328,13 @@ export function BrowserPanel({
         />
       ) : (
         <div className={styles.empty}>
-          <LockSimple size={28} />
-          <strong>
-            {stopped ? "Browser stopped" : "Your browser on the Host"}
-          </strong>
-          <p>
-            {stopped
-              ? "Reopen this conversation’s window with your shared browser profile."
-              : "One shared browser profile for all conversations and projects. Each conversation uses its own window. Taking control pauses browser tools in every conversation."}
-          </p>
+          <Monitor size={28} />
+          <strong>{stopped ? "Browser stopped" : "Ready to browse"}</strong>
           <Button
             disabled={busy || state.isLoading || preparation.isFetching}
-            onClick={() =>
-              void command(session?.session_id ? "start" : "enable")
-            }
+            onClick={() => void command("start")}
           >
-            {busy
-              ? "Preparing…"
-              : session?.session_id
-                ? "Start browser"
-                : "Enable browser"}
+            {busy ? "Starting…" : "Start browser"}
           </Button>
         </div>
       )}

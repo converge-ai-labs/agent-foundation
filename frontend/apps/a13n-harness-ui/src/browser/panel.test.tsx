@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
@@ -27,10 +33,10 @@ vi.mock("./desktop", () => ({
   ),
 }));
 afterEach(cleanup);
-function show({ resizeAvailable = true } = {}) {
+function show({ resizeAvailable = true, status = "ready" } = {}) {
   let state = {
-    session_id: "binding-a",
-    status: "ready",
+    session_id: status === "disabled" ? "" : "binding-a",
+    status,
     control: "agent",
     url: "https://example.com",
     viewport: "desktop",
@@ -47,6 +53,8 @@ function show({ resizeAvailable = true } = {}) {
         : state,
     })),
     POST: vi.fn(async (url: string, options: { body?: { preset: string } }) => {
+      if (url.endsWith("enable"))
+        state = { ...state, status: "enabled", session_id: "binding-enabled" };
       if (url.endsWith("take-control")) {
         state = { ...state, control: "human" };
         return { data: { state, control_token: "controller-a" } };
@@ -97,6 +105,34 @@ function show({ resizeAvailable = true } = {}) {
   const result = render(view("thread-a"));
   return { client, switchThread: () => result.rerender(view("thread-b")) };
 }
+it("starts a new browser with one click and restarts without enabling again", async () => {
+  const { client } = show({ status: "disabled" });
+  fireEvent.click(await screen.findByRole("button", { name: "Start browser" }));
+  await screen.findByTestId("stream");
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/enable",
+    "/api/threads/{thread_id}/browser/start",
+  ]);
+  expect(client.POST).toHaveBeenLastCalledWith(
+    "/api/threads/{thread_id}/browser/start",
+    expect.objectContaining({ body: { session_id: "binding-enabled" } }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Stop browser" }));
+  const restart = await screen.findByRole("button", { name: "Start browser" });
+  await waitFor(() => expect(restart.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(restart);
+  await screen.findByTestId("stream");
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/enable",
+    "/api/threads/{thread_id}/browser/start",
+    "/api/threads/{thread_id}/browser/stop",
+    "/api/threads/{thread_id}/browser/start",
+  ]);
+  expect(client.POST).toHaveBeenLastCalledWith(
+    "/api/threads/{thread_id}/browser/start",
+    expect.objectContaining({ body: { session_id: "binding-stopped" } }),
+  );
+});
 it("uses one page stream for read-only and explicit control, then clears authority on handback", async () => {
   show();
   expect((await screen.findByTestId("stream")).textContent).toBe(
@@ -149,7 +185,7 @@ it("binds viewport changes to current control", async () => {
   await user.click(screen.getByRole("button", { name: "Browser options" }));
   await user.click(await screen.findByRole("menuitem", { name: /Viewport/ }));
   fireEvent.click(
-    await screen.findByRole("menuitemradio", { name: "Phone · 390 × 844" }),
+    await screen.findByRole("menuitemradio", { name: "Phone (390 × 844)" }),
   );
   expect(client.POST).toHaveBeenCalledWith(
     expect.stringContaining("/viewport"),

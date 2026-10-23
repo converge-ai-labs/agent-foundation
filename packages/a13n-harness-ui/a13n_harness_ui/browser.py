@@ -24,7 +24,7 @@ from a13n_harness.capabilities.browser.cdp import Chromium, Page
 from pydantic import Field
 
 from a13n_harness_ui.browser_cursor import Cursor
-from a13n_harness_ui.browser_display import VncDesktop, sway_command, sway_windows
+from a13n_harness_ui.browser_display import FIXED_DESKTOP, VncDesktop, sway_command, sway_windows
 from a13n_harness_ui.browser_setup import BrowserSetup, inspect_browser
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.errors import HarnessUiError
@@ -344,22 +344,27 @@ class HostBrowsers:
         else:
             identity = (await self.runtime.window(page))["windowId"]
             await self.runtime.window_bounds(identity, {"windowState": "normal"})
+            width, height = FIXED_DESKTOP
             if self.desktop.desktop.kind == "wayvnc":
                 # Wayland leaves window placement to the compositor; Chromium's
                 # CDP bounds do not move a native Wayland window.
                 await sway_command(
                     self.desktop.env,
                     await self.native_window(page),
-                    "resize set 1280 px 900 px, move position 0 px 0 px",
+                    f"resize set {width} px {height} px, move position 0 px 0 px",
                 )
             else:
-                await self.runtime.window_bounds(identity, {"left": 0, "top": 0, "width": 1280, "height": 900})
-        width = height = 32
-        for target in self.owners:
-            if candidate := self.runtime.pages.get(target):
-                bounds = (await self.runtime.window(candidate))["bounds"]
-                width, height = max(width, bounds["width"]), max(height, bounds["height"])
-        await self.desktop.resize(width, height)
+                await self.runtime.window_bounds(identity, {"left": 0, "top": 0, "width": width, "height": height})
+        if self.desktop.desktop.xrandr:
+            width = height = 32
+            for target in self.owners:
+                if candidate := self.runtime.pages.get(target):
+                    bounds = (await self.runtime.window(candidate))["bounds"]
+                    width, height = max(width, bounds["width"]), max(height, bounds["height"])
+            await self.desktop.resize(width, height)
+        if item.viewport == "desktop" and self.desktop.desktop.window_manager:
+            identity = (await self.runtime.window(page))["windowId"]
+            await self.runtime.window_bounds(identity, {"windowState": "maximized"})
 
     def opened(self, info: dict) -> None:
         if info.get("type") != "page" or self.runtime is None:

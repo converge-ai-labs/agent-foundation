@@ -109,7 +109,7 @@ sudo apt-get install --no-install-recommends tigervnc-standalone-server
 
 其他发行版请使用自己的包管理器安装兼容的 VNC 服务。Harness UI 自行生成密码和 X11 认证文件，无需单独安装 `vncpasswd` 或 `xauth`。建议安装 X11 窗口管理器以支持窗口拖动和原生关闭按钮，可复用 Openbox、Fluxbox、IceWM 或 twm，不强制要求 Openbox。缺少窗口管理器时，基础浏览和面板中的 Stop/Reset 仍可使用，但可能没有原生窗口控件。Debian/Ubuntu 可选装 `x11-xserver-utils` 以支持桌面尺寸调整；缺少可用的 RandR 工具时仍可正常进行基础浏览，桌面尺寸固定，尺寸选择器会禁用并说明原因。通过可执行文件路径选择已安装的 Chromium 系浏览器；cdp-use 不会下载浏览器。使用 Docker 时，请在容器或镜像内安装依赖。检测通过不保证一定能启动：共享库缺失或显示访问权限等问题仍可能产生明确的启动错误。
 
-检测通过后，依次选择 **Enable browser → Start browser**。启用后 Agent 也可通过导航启动浏览器。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
+检测通过后，选择 **Start browser** 即可一步启用并启动浏览器。启用后 Agent 也可通过导航启动浏览器。桌面窗口在有窗口管理器时默认最大化；固定尺寸桌面会让浏览器铺满可用区域，并保留地址栏和浏览器控件。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
 
 Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选地复用已有窗口管理器。cdp-use 提供浏览器自动化；TigerVNC 的 `Xtigervnc` 或 `Xvnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb 或 websockify 服务。也可选择 x11vnc 配合 Xvfb，或 WayVNC 配合无头 Sway。后两者目前使用固定尺寸桌面；WayVNC 要求兼容的私有 socket 和只读输入选项，旧版本可能不满足，且 Harness UI 需要以非 root 用户运行。Sway 使用专用运行目录和软件渲染，不连接用户现有桌面。不同 VNC 服务的 Unicode 剪贴板支持可能不同。可选窗口管理器管理浏览器窗口，Harness UI 负责显示认证；可用的 RandR 支持负责调整显示尺寸。界面包含完整的标签页、地址栏、菜单和设置。
 
@@ -119,7 +119,7 @@ Host 支持桌面尺寸调整时，接管后可通过浏览器工具栏中的尺
 
 接管期间，浏览器桌面获得焦点时会自动双向同步纯文本剪贴板。输入前先点击远端桌面。macOS 的 Command 会映射为 Linux Host 的 Ctrl，适用于全选、复制、粘贴和撤销等快捷键。使用平常的复制、粘贴快捷键即可，支持中文和 emoji，最多传输 65536 个字符。同步要求 HTTPS 或 localhost，并获得本机浏览器的剪贴板权限；权限被阻止时，面板会提示如何开启。交还控制权、断线或关闭查看面板后停止同步。剪贴板不传输图片或文件。文件对话框访问 Host 文件，尚不支持从客户端自动传文件。浏览器使用 Host 权限与网络，不继承 Sandbox 隔离。登录信息、浏览器保存的密码和设置通过所选数据目录的 `browsers/profile` 全局共享，不导入个人浏览器配置。每个对话拥有独立窗口及其标签页。接管会暂停所有对话的浏览器工具，并聚焦当前对话窗口。Stop 只关闭当前对话的窗口和标签页，Reset 只重建当前对话窗口并恢复其位置；其他对话的窗口及 Agent 绑定保持有效。VNC 仍显示共享桌面，人工控制者仍可看到和操作其他窗口。
 
-关闭旁栏、切换对话或结束 Run 都保留浏览器。**Stop browser** 只关闭当前对话的窗口，并显示 **Start browser**。**Reset browser**（圆形箭头）只重建当前对话窗口并恢复其位置，适合窗口被拖出视野的情况。两者都保留共享 Chromium 实例、VNC 服务和 profile。查看器断线时可以点击 **Reconnect viewer**，只重新连接画面，不重启 Chromium。服务器退出也会关闭实时进程，服务器重启后需要重新启用浏览器。内嵌远程查看器采用 [noVNC](https://github.com/novnc/noVNC)，对应版本的未修改源码链接与许可声明位于 `/assets/LICENSE.noVNC`，其他打包依赖声明位于 `/third-party-licenses.txt`。
+关闭旁栏、切换对话或结束 Run 都保留浏览器。**Stop browser** 只关闭当前对话的窗口，并显示 **Start browser**。**Reset browser**（圆形箭头）只重建当前对话窗口并恢复其位置，适合窗口被拖出视野的情况。两者都保留共享 Chromium 实例、VNC 服务和 profile。查看器断线时可以点击 **Reconnect**，只重新连接画面，不重启 Chromium。服务器退出也会关闭实时进程，服务器重启后再次选择 **Start browser**。内嵌远程查看器采用 [noVNC](https://github.com/novnc/noVNC)，对应版本的未修改源码链接与许可声明位于 `/assets/LICENSE.noVNC`，其他打包依赖声明位于 `/third-party-licenses.txt`。
 
 关闭一个标签页会保留其他标签页。关闭某个对话的最后一个窗口时，只停止该对话的浏览器绑定；内部保留一个最小化窗口，确保所有对话窗口关闭后 Chromium 仍保持运行。退出整个 Chromium 或必要的显示进程退出时，才停止共享运行时和所有对话窗口，需要时点击 **Start browser**；异常退出还会显示原因。停止后启动和 Reset 都保留原有配置，创建新的只读会话，需要时再次接管。正在等待交还的 Agent 工具会报告会话失效，不会无限暂停，也不会重放旧操作。受影响对话的上一轮 Run 无法操作替代窗口；发送新提示后，Agent 必须重新观察再操作。未保存的页面内容、崩溃前尚未写入的数据可能丢失。
 

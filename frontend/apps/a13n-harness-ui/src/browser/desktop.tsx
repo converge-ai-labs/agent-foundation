@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "a13n-ui";
-import { HandArrowDown, HandArrowUp } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  HandArrowDown,
+  HandArrowUp,
+} from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { bindClipboard } from "./clipboard";
@@ -175,7 +179,7 @@ export function Desktop({
           if (!disposed) {
             retain();
             cancelAnimationFrame(frame);
-            setStatus("Disconnected · Reconnect to view the current desktop");
+            setStatus("Disconnected");
             bridge?.stop();
             keyboard?.stop();
             inputAllowed.current = false;
@@ -188,7 +192,7 @@ export function Desktop({
           if (!disposed) {
             retain();
             cancelAnimationFrame(frame);
-            setStatus("Connection rejected · Reconnect to request new access");
+            setStatus("Connection rejected");
             bridge?.stop();
             keyboard?.stop();
             inputAllowed.current = false;
@@ -280,9 +284,9 @@ export function Desktop({
               </strong>
               <span>
                 {busy ? (
-                  "Please wait until the browser is ready."
+                  "Please wait."
                 ) : controlToken ? (
-                  "Input is unavailable. Wait for the connection or reconnect the viewer."
+                  "Wait for the connection or reconnect."
                 ) : session.control === "human" ? (
                   <>
                     Click <HandArrowUp aria-label="Hand back to Agent" /> to
@@ -291,8 +295,8 @@ export function Desktop({
                   </>
                 ) : (
                   <>
-                    Click the <HandArrowDown aria-label="Take control" /> button
-                    in the toolbar to take control.
+                    Click <HandArrowDown aria-label="Take control" /> in the
+                    toolbar.
                   </>
                 )}
               </span>
@@ -301,16 +305,19 @@ export function Desktop({
         )}
         {!!status && (
           <div className={styles.streamStatus}>
-            <span role="status">{status}</span>
-            {canReconnect && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setReconnect((value) => value + 1)}
-              >
-                Reconnect viewer
-              </Button>
-            )}
+            <div className={styles.controlHint}>
+              <strong role="status">{status}</strong>
+              {canReconnect && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setReconnect((value) => value + 1)}
+                >
+                  <ArrowClockwise />
+                  Reconnect
+                </Button>
+              )}
+            </div>
           </div>
         )}
         {!!clipboardError && (
