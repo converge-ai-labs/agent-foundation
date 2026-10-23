@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbound import open_http
-from a13n_service.runs.runtime import Runtime
+from a13n_service.resources.runtime import Runtime
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
