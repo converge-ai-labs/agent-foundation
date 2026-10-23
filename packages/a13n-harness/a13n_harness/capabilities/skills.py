@@ -1072,6 +1072,20 @@ async def _is_file(files: FileOperator, path: str) -> bool:
     return metadata.kind == "file"
 
 
+class _FrontmatterLoader(yaml.BaseLoader):
+    """Preserve scalar spellings and reject ambiguous mapping keys."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Any, Any]:
+        keys: set[str] = set()
+        for key, _ in node.value:
+            if not isinstance(key, yaml.ScalarNode) or key.value in keys:
+                raise yaml.constructor.ConstructorError(
+                    None, None, "Skill frontmatter requires unique scalar mapping keys.", key.start_mark
+                )
+            keys.add(key.value)
+        return super().construct_mapping(node, deep=deep)
+
+
 def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
     lines = content.lstrip("\ufeff").splitlines()
     if not lines or lines[0].strip() != "---":
@@ -1088,7 +1102,7 @@ def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
             details={"path": path},
         )
     try:
-        value = yaml.safe_load("\n".join(lines[1:closing]))
+        value = yaml.load("\n".join(lines[1:closing]), Loader=_FrontmatterLoader)
     except yaml.YAMLError as exc:
         raise DefinitionError(
             "A selected skill has invalid YAML frontmatter.",

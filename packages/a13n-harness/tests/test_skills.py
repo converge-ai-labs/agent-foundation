@@ -1484,6 +1484,63 @@ async def test_skill_source_cannot_escape_its_declared_roots(tmp_path: Path, sca
     assert exc_info.value.code == "skill_path_outside_source"
 
 
+@pytest.mark.parametrize(
+    ("frontmatter", "expected"),
+    [
+        ("name: on\ndescription: 2026-10-23", ("on", "2026-10-23")),
+        ("name: 123\ndescription: false", ("123", "false")),
+        ('name: "on"\ndescription: "2026-10-23"', ("on", "2026-10-23")),
+        ("name: null\ndescription: 1.5", ("null", "1.5")),
+        ("name: !!str 123\ndescription: !!int 42", ("123", "42")),
+        ("name: &label on\ndescription: *label", ("on", "on")),
+        ("name: valid\ndescription: |-\n  First line\n  Second line", ("valid", "First line\nSecond line")),
+        ("name: valid\ndescription: Text\nmetadata:\n  enabled: true\n  values: [1, on]", ("valid", "Text")),
+        ("name: explicit\ndescription: Text\n<<: {name: merged}", ("explicit", "Text")),
+    ],
+)
+async def test_skill_frontmatter_preserves_scalar_text(
+    tmp_path: Path, scan_files: LocalFileOperator, frontmatter: str, expected: tuple[str, str]
+) -> None:
+    skill = tmp_path / "skills" / "scalar"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(f"---\n{frontmatter}\n---\n", encoding="utf-8")
+    catalog = await SkillManager((FileSkillSource("test", ("/skills",)),)).scan(files=scan_files)
+    assert [(item.name, item.description) for item in catalog] == [expected]
+
+
+@pytest.mark.parametrize(
+    "frontmatter",
+    [
+        "name: first\nname: second\ndescription: private-value",
+        "name: valid\ndescription: first\ndescription: private-value",
+        "name: valid\n'name': repeated\ndescription: private-value",
+        "name: valid\ndescription: private-value\nmetadata: {key: first, key: second}",
+        "name: valid\ndescription: private-value\n? [non, scalar]\n: key",
+        "name: valid\ndescription: private-value\nmetadata: {? [non, scalar]: key}",
+        "name: [invalid]\ndescription: private-value",
+        "name: valid\ndescription: {invalid: private-value}",
+        "name: valid\ndescription:",
+        "description: private-value",
+        "<<: {name: merged}\ndescription: private-value",
+    ],
+)
+async def test_skill_frontmatter_invalid_entries_follow_scan_policy(
+    tmp_path: Path, scan_files: LocalFileOperator, frontmatter: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    for name, text in (("bad", frontmatter), ("good", "name: good\ndescription: Valid")):
+        skill = tmp_path / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"---\n{text}\n---\n", encoding="utf-8")
+    with pytest.raises(DefinitionError) as exc_info:
+        await SkillManager((FileSkillSource("strict", ("/skills",)),)).scan(files=scan_files)
+    assert exc_info.value.code == "skill_catalog_invalid"
+    assert "private-value" not in str(exc_info.value)
+    catalog = await SkillManager((FileSkillSource("tolerant", ("/skills",), skip_invalid=True),)).scan(files=scan_files)
+    assert [item.name for item in catalog] == ["good"]
+    assert "skill_catalog_entry_skipped" in caplog.text
+    assert "private-value" not in caplog.text
+
+
 async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path, scan_files: LocalFileOperator) -> None:
     skill = tmp_path / "skills" / "long"
     skill.mkdir(parents=True)
