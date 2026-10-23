@@ -3283,7 +3283,7 @@ export interface paths {
     };
     /**
      * List Thread Runs
-     * @description Newest first.
+     * @description Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.
      */
     get: operations["list_thread_runs"];
     put?: never;
@@ -9869,6 +9869,16 @@ export interface components {
       truncated?: boolean;
       value: components["schemas"]["JsonValue"];
     };
+    /** RunInputPreview */
+    RunInputPreview: {
+      /**
+       * Text
+       * @description At most 200 Unicode code points of input text, in content order.
+       */
+      text: string;
+      /** Truncated */
+      truncated: boolean;
+    };
     /**
      * RunItems
      * @description Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
@@ -9887,6 +9897,57 @@ export interface components {
       labels: {
         [key: string]: string;
       };
+    };
+    /**
+     * RunListItem
+     * @description Run discovery metadata. Full input, results and execution settings belong to the Run detail read.
+     */
+    RunListItem: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Attempts */
+      attempts: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Current Attempt Id */
+      current_attempt_id: string | null;
+      /** Id */
+      id: string;
+      input_preview: components["schemas"]["RunInputPreview"];
+      lineage: components["schemas"]["Lineage"];
+      /** Max Attempts */
+      max_attempts: number;
+      /** Parent Run Id */
+      parent_run_id: string | null;
+      /** Principal Id */
+      principal_id: string;
+      /** Sealed At */
+      sealed_at: string | null;
+      /** Session Id */
+      session_id: string;
+      /** Source Entry Id */
+      source_entry_id: string | null;
+      /** Started At */
+      started_at: string | null;
+      status: components["schemas"]["RunStatus"];
+      /** Thread Id */
+      thread_id: string;
+      trigger: components["schemas"]["Trigger"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      wait_reason: components["schemas"]["WaitReason"] | null;
+      /** Workspace Id */
+      workspace_id: string;
     };
     /** RunMetrics */
     RunMetrics: {
@@ -9926,7 +9987,7 @@ export interface components {
     /** RunPage */
     RunPage: {
       /** Items */
-      items: components["schemas"]["RunView"][];
+      items: components["schemas"]["RunListItem"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -10016,13 +10077,6 @@ export interface components {
       wait_reason: components["schemas"]["WaitReason"] | null;
       /** Workspace Id */
       workspace_id: string;
-    };
-    /** RunSummaryPage */
-    RunSummaryPage: {
-      /** Items */
-      items: components["schemas"]["RunSummary"][];
-      /** Next Cursor */
-      next_cursor: string | null;
     };
     /** RunUsage */
     RunUsage: {
@@ -11364,6 +11418,22 @@ export interface components {
       items: components["schemas"]["ThreadView"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /**
+     * ThreadRunPage
+     * @description Newest first; first_number is the first item's 1-based chronological position in the thread.
+     */
+    ThreadRunPage: {
+      /** First Number */
+      first_number: number;
+      /** Items */
+      items: components["schemas"]["RunListItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Previous Cursor */
+      previous_cursor: string | null;
+      /** Total */
+      total: number;
     };
     /** ThreadUpdate */
     ThreadUpdate: {
@@ -17428,8 +17498,7 @@ export interface operations {
           | null;
         created_after?: string | null;
         created_before?: string | null;
-        view?: "detailed" | "compact";
-        limit?: number | null;
+        limit?: number;
         cursor?: string | null;
       };
       header?: {
@@ -17447,9 +17516,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json":
-            | components["schemas"]["RunPage"]
-            | components["schemas"]["RunSummaryPage"];
+          "application/json": components["schemas"]["RunPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -18051,9 +18118,7 @@ export interface operations {
     parameters: {
       query?: {
         cursor?: string | null;
-        /** @description Use compact for discovery; detailed preserves the original response. */
-        view?: components["schemas"]["ReadView"];
-        limit?: number | null;
+        limit?: number;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -18072,9 +18137,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json":
-            | components["schemas"]["RunPage"]
-            | components["schemas"]["RunSummaryPage"];
+          "application/json": components["schemas"]["RunPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -19890,10 +19953,9 @@ export interface operations {
   list_thread_runs: {
     parameters: {
       query?: {
-        /** @description Use compact for discovery; detailed preserves the original response. */
-        view?: components["schemas"]["ReadView"];
-        limit?: number | null;
+        limit?: number;
         cursor?: string | null;
+        anchor?: string | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -19912,9 +19974,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json":
-            | components["schemas"]["RunPage"]
-            | components["schemas"]["RunSummaryPage"];
+          "application/json": components["schemas"]["ThreadRunPage"];
         };
       };
       400: components["responses"]["Error"];

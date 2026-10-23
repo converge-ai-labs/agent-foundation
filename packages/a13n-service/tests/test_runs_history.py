@@ -237,7 +237,9 @@ async def test_sessions_list_most_recently_updated_first_and_refuse_malformed_fi
         assert (response.status_code, response.json()["error"]["code"]) == (400, "invalid_argument"), malformed
 
 
-async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_run_items_page_by_ordinal_across_pages_and_the_tail(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     for number in range(16):
         runs_kit.lookup(scripted_model, call_id=f"call_{number}")
@@ -274,6 +276,11 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     while (before := windows[-1][0]) > 1:
         windows.append(await window(before=before, limit=10))
     assert [ordinal for part in reversed(windows) for ordinal in part] == list(range(1, count + 1))
+    # A wholly historical window never touches the unrelated mutable tail.
+    store = _MissingOnce(service.runtime.objects)
+    monkeypatch.setattr(service.app.state, "runtime", replace(service.runtime, objects=store))
+    assert await window(before=17, limit=16) == list(range(1, 17))
+    assert not store.missed
     assert await window(after=10, limit=20) == list(range(11, 31))
     assert await window(after=count) == []
     both = await service.client.get(f"{service.api}/runs/{run_id}/items", params={"before": 5, "after": 1})

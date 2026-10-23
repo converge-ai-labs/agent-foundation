@@ -86,7 +86,6 @@ export function DebugRunSection({
     start: started,
     child: child && {
       path: childThreadPath(basePath, child),
-      runs: child.runs.length,
     },
     answerable: isInteractive(thread) && can("run"),
     jumpToDock,
@@ -186,7 +185,8 @@ export function DebugRunSection({
               <RequestContent request={request} />
             </Clamp>
           </LogBlock>
-          {timeline.coverage !== "complete" && (
+          {(timeline.coverage === "partial" ||
+            timeline.coverage === "unavailable") && (
             <p role="status" className={styles.coverage}>
               {t(
                 timeline.coverage === "unavailable"

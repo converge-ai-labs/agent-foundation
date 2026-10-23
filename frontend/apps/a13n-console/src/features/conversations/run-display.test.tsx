@@ -208,6 +208,11 @@ function Display() {
         {stream.error instanceof Error ? stream.error.message : ""}
       </output>
       <button onClick={stream.reconnect}>Reconnect</button>
+      <button
+        onClick={() => stream.history.loadEarlier(stream.first, () => {})}
+      >
+        Load earlier content
+      </button>
     </>
   );
 }
@@ -347,7 +352,7 @@ it("reads the committed display of a Run that ended while disconnected", async (
   expect(pathRequests("/items").length).toBeGreaterThan(reads);
 });
 
-it("reads every Item before the stream's first from the Run's committed history", async () => {
+it("loads unread items only when requested, without calling them missing", async () => {
   display = {
     ...display,
     run: run(),
@@ -356,11 +361,11 @@ it("reads every Item before the stream's first from the Run's committed history"
   };
   read = async (request) => {
     const query = new URL(request.url).searchParams;
-    if (!query.has("after")) return response(request);
-    const after = Number(query.get("after"));
+    if (!query.has("before")) return response(request);
+    const after = 0;
     return Response.json({
       ...display,
-      items: Array.from({ length: Number(query.get("limit")) }, (_, index) =>
+      items: Array.from({ length: 2 }, (_, index) =>
         message(
           `Item ${after + 1 + index}`,
           `1-${after + index}`,
@@ -377,12 +382,17 @@ it("reads every Item before the stream's first from the Run's committed history"
     threadState(run()),
     items([message("Hello", "1-4", "1-5", "in_progress", 3)], { first: 3 }),
   );
+  await waitFor(() => expect(shown()).toBe("Hello"));
+  expect(flag("coverage")).toBe("window");
+  expect(flag("gap")).toBe("false");
+  expect(pathRequests("/items")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier content" }));
   await waitFor(() => expect(shown()).toBe("Item 1|Item 2|Hello"));
   expect(flag("coverage")).toBe("complete");
   expect(flag("gap")).toBe("false");
   expect(
     pathRequests("/items").map((request) => new URL(request.url).search),
-  ).toEqual(["", "?after=0&limit=2"]);
+  ).toEqual(["", "?before=3&limit=200"]);
 });
 
 it("reports content the display omitted as incomplete", async () => {

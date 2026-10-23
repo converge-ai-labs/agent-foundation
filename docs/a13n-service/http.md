@@ -102,14 +102,16 @@ Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–1
 
 ## Read summaries and selected details
 
-Use `view=compact` to find relevant runs, revisions, models, inbox entries, display items or spans. Combine the view with the operation's filters. Existing calls default to `view=detailed` and keep their original response. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
+Run lists and lineage return metadata and `input_preview: {text, truncated}`, containing at most 200 Unicode code points of input text. They do not accept `view`; read `/runs/{run_id}` for full input, output, options and other details. Thread run pages accept `anchor=<run_id>` to start at a specific Run, mutually exclusive with `cursor`, and include `total`, `first_number`, `next_cursor` toward older Runs and `previous_cursor` toward newer Runs. `first_number` is the first returned Run's chronological number, starting at one; it is not the number of loaded records.
+
+Use `view=compact` to find relevant revisions, models, inbox entries, display items or spans, and to summarize a selected Run. Combine the view with the operation's filters. These calls default to `view=detailed`. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
 
 A preview contains `text` and `truncated`. `omitted_sections` lists fields you can read separately. `source_truncated` means the stored content was already shortened; fetching more cannot recover discarded data. An omitted field or a shortened preview does not prove that the source lacks the information.
 
 For example, find failed runs and read one failure:
 
 ```http
-GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs?status=failed&limit=10
 GET /api/v1/runs/{run_id}?section=failure
 GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
 GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0

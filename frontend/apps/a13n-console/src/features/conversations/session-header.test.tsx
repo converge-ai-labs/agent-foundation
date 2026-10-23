@@ -16,6 +16,7 @@ import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
   fixtureRun,
+  fixtureRunPage,
   fixtureRunAgent,
   fixtureThread,
   fixtureTimeline,
@@ -115,10 +116,9 @@ beforeEach(() => {
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/runs"))
-        return Response.json({
-          items: [fixtureRun({ id: "run_1" }), fixtureRun()],
-          next_cursor: null,
-        });
+        return Response.json(
+          fixtureRunPage([fixtureRun(), fixtureRun({ id: "run_1" })]),
+        );
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/usage/context")) {

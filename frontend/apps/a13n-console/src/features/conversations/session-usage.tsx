@@ -127,8 +127,8 @@ function SessionUsageReport({
   });
   const numbers = new Map<string, number>();
   lists.forEach((list) =>
-    chronological(list.data ?? []).forEach((run, index) =>
-      numbers.set(run.id, index + 1),
+    list.data?.items.forEach((run, index) =>
+      numbers.set(run.id, list.data!.first_number - index),
     ),
   );
   const perModel = summary.models.length > 1;

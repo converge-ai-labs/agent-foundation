@@ -102,14 +102,16 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 ## 读取摘要和指定详情
 
-使用 `view=compact` 查找相关 run、修订、模型、收件箱记录、显示条目或 span，并结合接口支持的过滤条件。现有调用默认使用 `view=detailed`，保留原来的响应。精简列表默认每页十条；为控制响应大小，实际可能更少。即使过滤后当前页为空，也要按返回的游标或 ordinal 继续读取。
+Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，输入预览最多包含 200 个 Unicode 码点。这些接口不接受 `view`；完整输入、输出、选项等详情通过 `/runs/{run_id}` 读取。线程内的 run 分页支持 `anchor=<run_id>`，可直接从指定运行开始读取，且不能与 `cursor` 同用。响应包含 `total`、`first_number`、指向较早运行的 `next_cursor` 和指向较新运行的 `previous_cursor`。`first_number` 是首条记录的时间顺序编号，从 1 开始，不是已加载的记录数。
+
+使用 `view=compact` 查找相关修订、模型、收件箱记录、显示条目或 span，也可读取指定 Run 的摘要，并结合接口支持的过滤条件。这些调用默认使用 `view=detailed`。精简列表默认每页十条；为控制响应大小，实际可能更少。即使过滤后当前页为空，也要按返回的游标或 ordinal 继续读取。
 
 预览包含 `text` 和 `truncated`。`omitted_sections` 列出可以单独读取的字段。`source_truncated` 表示保存的内容已经被截短，继续读取也无法恢复被丢弃的数据。字段被省略或预览被截短，不代表原始数据没有相关信息。
 
 例如，查找失败的 run，再读取其中一次失败：
 
 ```http
-GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs?status=failed&limit=10
 GET /api/v1/runs/{run_id}?section=failure
 GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
 GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0

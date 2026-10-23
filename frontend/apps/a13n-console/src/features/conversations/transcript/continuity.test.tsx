@@ -18,7 +18,12 @@ import {
 } from "react-router";
 import { Suspense } from "react";
 import { createClient, type Client } from "../../../service-client";
-import { fixtureRun, fixtureThread, textInput } from "./fixture";
+import {
+  fixtureRun,
+  fixtureRunPage,
+  fixtureThread,
+  textInput,
+} from "./fixture";
 import { RunPage } from "./run";
 import { conversationKeys } from "../api";
 
@@ -48,6 +53,7 @@ vi.mock("../../agents/queries", () => ({
 vi.mock("./inbox", () => ({ ThreadInbox: () => null }));
 vi.mock("../run-display", () => ({
   useRunDisplay: () => ({
+    first: 1,
     items: [],
     earlier: { items: [], more: false, loading: false, error: null },
     attempts: [],
@@ -170,7 +176,7 @@ function show(
       if (url.pathname.endsWith("/lineage"))
         return Response.json({ items: [initial], next_cursor: null });
       if (url.pathname.endsWith("/runs"))
-        return Response.json({ items: [initial, next], next_cursor: null });
+        return Response.json(fixtureRunPage([next, initial]));
       if (url.pathname.endsWith("/threads"))
         return Response.json({ items: [thread], next_cursor: null });
       throw new Error(`Unexpected request: ${url.pathname}`);

@@ -3,8 +3,7 @@
 import re
 from collections.abc import Sequence
 
-from pydantic import JsonValue
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -15,6 +14,7 @@ from a13n_service.infra.ids import OBJECT_ID_PATTERN, new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.agents.tables import AgentRow
 from a13n_service.runs.memories.session_memory import configure
+from a13n_service.runs.previews import input_text
 from a13n_service.runs.schedules.tables import ScheduleRow
 from a13n_service.runs.schemas import (
     SessionCreate,
@@ -31,14 +31,6 @@ from a13n_service.tenancy.authorize import Principal
 
 PREVIEW_INPUT = 256
 PREVIEW_OUTPUT = 512
-
-
-def _input_text(payload: dict[str, JsonValue] | None) -> str | None:
-    content = payload.get("content") if payload is not None else None
-    if not isinstance(content, list):
-        return None
-    texts = [text for part in content if isinstance(part, dict) and isinstance(text := part.get("text"), str)]
-    return "\n".join(texts)[:PREVIEW_INPUT] if texts else None
 
 
 def new_session(
@@ -65,31 +57,37 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
         .all()
     )
     previews: dict[str, SessionPreview] = {}
-    for session_id, run, agent_name, payload in (
+    for row in (
         await session.execute(
-            select(SessionRow.id, RunRow, AgentRow.name, InboxEntryRow.payload)
+            select(
+                SessionRow.id.label("session_id"),
+                RunRow.id.label("run_id"),
+                RunRow.thread_id,
+                RunRow.agent_id,
+                AgentRow.name.label("agent_name"),
+                RunRow.status,
+                RunRow.trigger,
+                input_text(PREVIEW_INPUT).label("input_text"),
+                case(
+                    (
+                        func.jsonb_typeof(RunRow.output) == "string",
+                        func.left(RunRow.output[()].astext, PREVIEW_OUTPUT),
+                    )
+                ).label("output_text"),
+            )
             .join(RunRow, RunRow.id == SessionRow.last_run_id)
             .join(AgentRow, AgentRow.id == RunRow.agent_id)
             .outerjoin(InboxEntryRow, InboxEntryRow.id == RunRow.source_entry_id)
             .where(SessionRow.id.in_(ids))
         )
-    ).tuples():
-        previews[session_id] = SessionPreview.model_validate(
-            {
-                "run_id": run.id,
-                "thread_id": run.thread_id,
-                "agent_id": run.agent_id,
-                "agent_name": agent_name,
-                "status": run.status,
-                "trigger": run.trigger,
-                "input_text": _input_text(payload),
-                "output_text": run.output[:PREVIEW_OUTPUT] if isinstance(run.output, str) else None,
-            }
-        )
+    ).mappings():
+        previews[row["session_id"]] = SessionPreview.model_validate(row)
     counts = dict(
         (
             await session.execute(
-                select(RunRow.session_id, func.count()).where(RunRow.session_id.in_(ids)).group_by(RunRow.session_id)
+                select(RunRow.session_id, func.count())
+                .where(RunRow.workspace_id.in_({row.workspace_id for row in rows}), RunRow.session_id.in_(ids))
+                .group_by(RunRow.session_id)
             )
         )
         .tuples()

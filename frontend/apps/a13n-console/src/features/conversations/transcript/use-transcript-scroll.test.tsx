@@ -243,3 +243,23 @@ it("keeps following the latest output across a level switch", () => {
   expect(view.stage.scrollTop).toBe(1900);
   expect(view.writes.mock.calls.at(-1)?.[0].behavior).toBe("instant");
 });
+
+it("keeps a visible message in place when earlier content is inserted inside the same Run", () => {
+  const view = setup();
+  const run = view.stage.querySelector<HTMLElement>("[data-run]")!;
+  const message = document.createElement("p");
+  message.dataset.messageId = "item_300";
+  run.append(message);
+  let offset = 300;
+  message.getBoundingClientRect = () =>
+    new DOMRect(0, offset - view.stage.scrollTop, 700, 100);
+  view.readAt(300);
+  const top = message.getBoundingClientRect().top;
+  const restore = view.scroll().preservePosition();
+  offset += 700;
+  view.grow(700);
+  act(restore);
+  expect(message.getBoundingClientRect().top).toBe(top);
+  expect(view.stage.scrollTop).toBe(1000);
+  expect(screen.getByText("Jump to latest")).toBeTruthy();
+});

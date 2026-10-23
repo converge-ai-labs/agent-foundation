@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra import cursors
@@ -22,8 +23,12 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
 
-async def get_thread(session: AsyncSession, workspace_id: str, thread_id: str, *, lock: bool = False) -> ThreadRow:
+async def get_thread(
+    session: AsyncSession, workspace_id: str, thread_id: str, *, lock: bool = False, history: bool = True
+) -> ThreadRow:
     query = select(ThreadRow).where(ThreadRow.workspace_id == workspace_id, ThreadRow.id == thread_id)
+    if not history:
+        query = query.options(defer(ThreadRow.message_history, raiseload=True))
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     thread = await session.scalar(query)
@@ -103,10 +108,14 @@ async def list_threads(
     match = predicate(RunRow.search_vector, text_query)
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        query = select(ThreadRow).where(
-            ThreadRow.workspace_id == scope.workspace_id,
-            ThreadRow.purpose == "conversation",
-            label_filter(ThreadRow.labels, list(label)),
+        query = (
+            select(ThreadRow)
+            .options(defer(ThreadRow.message_history, raiseload=True))
+            .where(
+                ThreadRow.workspace_id == scope.workspace_id,
+                ThreadRow.purpose == "conversation",
+                label_filter(ThreadRow.labels, list(label)),
+            )
         )
         if session_id is not None:
             query = query.where(ThreadRow.session_id == session_id)
@@ -132,7 +141,7 @@ async def list_threads(
 async def get(storage: Storage, actor: Principal, workspace_id: str, thread_id: str) -> ThreadView:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        return ThreadView.model_validate(await get_thread(session, scope.workspace_id, thread_id))
+        return ThreadView.model_validate(await get_thread(session, scope.workspace_id, thread_id, history=False))
 
 
 async def update(
