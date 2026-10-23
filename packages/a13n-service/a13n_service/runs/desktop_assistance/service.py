@@ -1,7 +1,7 @@
 """Durable Agent-requested assistance. Provider I/O always runs outside storage scopes."""
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from functools import partial
@@ -9,7 +9,6 @@ from typing import Literal
 from urllib.parse import quote
 
 import anyio
-from a13n_harness.providers.environment.modal.diagnostics import desktop_operation
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,22 +89,17 @@ async def audit_transition(session: AsyncSession, actor: Principal, row: Desktop
 
 
 async def dispatch(runtime: Runtime, target: Target, request: wire.Request, *, operation_id: str) -> wire.Reply:
-    with (
-        desktop_operation(operation_id, request.operation)
-        if target.state is not None and target.state.provider_key == "modal"
-        else nullcontext()
-    ):
-        provider = await open_provider(runtime, target)
-        try:
-            return await provider.desktop_access(
-                dict(target.recipe),
-                environment_id=target.environment_id,
-                state=target.state,
-                operation_id=operation_id,
-                request=request,
-            )
-        finally:
-            await close(provider)
+    provider = await open_provider(runtime, target)
+    try:
+        return await provider.desktop_access(
+            dict(target.recipe),
+            environment_id=target.environment_id,
+            state=target.state,
+            operation_id=operation_id,
+            request=request,
+        )
+    finally:
+        await close(provider)
 
 
 @asynccontextmanager
@@ -122,12 +116,7 @@ async def access_dispatch(
         async with provider.desktop_session(
             dict(target.recipe), environment_id=target.environment_id, state=target.state, operation_id=operation_id
         ) as management:
-
-            async def send(request: wire.Request) -> wire.Reply:
-                with desktop_operation(operation_id, request.operation):
-                    return await management.desktop_access(request)
-
-            yield send
+            yield management.desktop_access
     finally:
         await close(provider)
 
