@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment._variables import EnvironmentVariables
 from a13n_harness.providers.environment.native.configuration import TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
@@ -43,11 +44,14 @@ class DaytonaEnvironmentConfiguration(BaseModel):
         title="Desktop environment",
         description="Enable Envd Computer use with the snapshot's shared X11 desktop. Human access is configured separately.",
     )
+    environment: EnvironmentVariables = Field(default_factory=dict)
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
 
     @property
     def fingerprint(self) -> str:
-        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()
+        return hashlib.sha256(
+            self.model_dump_json(exclude={"environment"} if not self.environment else set()).encode()
+        ).hexdigest()
 
 
 class Sandbox(BaseModel):

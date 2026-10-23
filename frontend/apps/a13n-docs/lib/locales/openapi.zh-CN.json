@@ -550,5 +550,7 @@
   "Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.": "按从新到旧排序，可从指定运行开始；游标支持向较早或较新的运行翻页。",
   "Newest first; first_number is the first item's 1-based chronological position in the thread.": "按从新到旧排序；first_number 是首条记录在线程中的时间顺序编号，从 1 开始。",
   "Run discovery metadata. Full input, results and execution settings belong to the Run detail read.": "运行检索元数据。完整输入、结果和执行设置通过运行详情读取。",
-  "One-based chronological position among all Runs in the Thread.": "在 Thread 的全部 Run 中按时间排序的位置，从 1 开始。"
+  "One-based chronological position among all Runs in the Thread.": "在 Thread 的全部 Run 中按时间排序的位置，从 1 开始。",
+  "Vercel Provider Options": "列出 Vercel 团队或项目",
+  "List accessible teams, or projects in a selected team, using an unsaved credential.": "使用尚未保存的凭据列出可访问的团队，或所选团队下的项目。"
 }

@@ -20,7 +20,7 @@ async def capture(runtime: Runtime, actor: Principal, workspace_id: str, identit
         scope = await workspace_scope(session, actor, workspace_id, "run")
         row = await _find(session, scope, identity)
         target = await provider_target(session, runtime, actor, row)
-        if not row.provider_identity or row.provider_identity.get("type") not in {"e2b", "modal", "daytona"}:
+        if not row.provider_identity or row.provider_identity.get("type") not in {"e2b", "modal", "daytona", "vercel"}:
             raise conflict("environment", identity, "desktop_preview_unsupported")
     execution = None
     try:

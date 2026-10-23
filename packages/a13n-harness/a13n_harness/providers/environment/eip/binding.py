@@ -118,6 +118,7 @@ class EIPEnvironmentSession:
         provider_key: str,
         environment_id: str,
         execution_id: str,
+        environment: dict[str, str] | None = None,
     ) -> None:
         self._session = session
         self._provider_key = provider_key
@@ -139,6 +140,7 @@ class EIPEnvironmentSession:
         )
         self._outputs = outputs
         conversions = _ProcessConversions(
+            environment=environment,
             session=session,
             files=files,
             outputs=outputs,

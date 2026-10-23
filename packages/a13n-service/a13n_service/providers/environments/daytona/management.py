@@ -74,6 +74,7 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                     "labels": self.labels,
                     "public": False,
                     "env": {
+                        **self.config.environment,
                         "A13N_ENVD_DEVICE_ID": self.owner,
                         "A13N_ENVD_TRANSPORT": "http",
                         "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",

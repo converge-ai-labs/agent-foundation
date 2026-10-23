@@ -115,6 +115,7 @@ def http_execution(
     reference.require_target()
     assert reference.state is not None
     return RemoteEnvdExecution(
+        environment=reference.config.environment,
         provider_key="modal",
         environment_id=reference.environment_id,
         state=reference.state,

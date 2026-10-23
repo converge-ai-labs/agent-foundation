@@ -49,6 +49,7 @@ import {
   FIRST_DESKTOP_NOTICE,
   MODAL_FIRST_DESKTOP_NOTICE,
   DAYTONA_FIRST_DESKTOP_NOTICE,
+  VERCEL_FIRST_DESKTOP_NOTICE,
 } from "./creation-progress";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
@@ -473,7 +474,14 @@ function EnvironmentForm({
       {kind === "managed" &&
         templates.data?.find((item) => item.id === templateId)?.config?.recipe
           ?.snapshot === "auto" && (
-          <p role="note">{t(DAYTONA_FIRST_DESKTOP_NOTICE)}</p>
+          <p role="note">
+            {t(
+              templates.data?.find((item) => item.id === templateId)?.config
+                ?.recipe?.execution === "envd_http"
+                ? VERCEL_FIRST_DESKTOP_NOTICE
+                : DAYTONA_FIRST_DESKTOP_NOTICE,
+            )}
+          </p>
         )}
       <MetricsSourcePicker
         value={metricsSource}

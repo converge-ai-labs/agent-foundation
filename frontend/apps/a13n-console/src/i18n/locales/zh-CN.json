@@ -3356,5 +3356,22 @@
   "Building desktop snapshot in Daytona": "正在 Daytona 构建桌面快照",
   "The first Daytona desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "首次创建 Daytona 桌面需要构建快照，可能需要几分钟。后续创建会复用快照。创建期间可以离开此页面。",
   "Load earlier content": "加载更早的内容",
-  "Load newer runs": "加载较新的运行"
+  "Load newer runs": "加载较新的运行",
+  "Environment variables": "环境变量",
+  "Defaults for commands and child processes. Values are stored as ordinary configuration, not secrets.": "命令及子进程的默认变量。值以普通配置保存，不用于存放密钥。",
+  "Variable name {{number}}": "变量名 {{number}}",
+  "Variable value {{number}}": "变量值 {{number}}",
+  "Remove variable {{number}}": "删除变量 {{number}}",
+  "Variable names must be unique.": "变量名不能重复。",
+  "Add variable": "添加变量",
+  "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.": "自行指定镜像和高级配置。切换为内置环境会恢复默认高级配置，保留 CPU、内存、挂载和环境变量。",
+  "Load Vercel teams": "加载 Vercel 团队",
+  "Vercel team": "Vercel 团队",
+  "Vercel project": "Vercel 项目",
+  "Load more teams": "加载更多团队",
+  "Load more projects": "加载更多项目",
+  "No projects found. Create a project in Vercel or check the token permissions, then reload teams.": "没有找到项目。请在 Vercel 创建项目或检查 Token 权限，然后重新加载团队。",
+  "Vercel snapshot": "Vercel 快照",
+  "The first Vercel desktop creation builds a snapshot and can take several minutes. Later creations reuse it. You can leave this page while creation continues.": "首次创建 Vercel 桌面需要构建快照，可能耗时数分钟，后续创建会复用。你可以离开此页面，创建会在后台继续。",
+  "Building desktop snapshot in Vercel": "正在 Vercel 构建桌面快照"
 }

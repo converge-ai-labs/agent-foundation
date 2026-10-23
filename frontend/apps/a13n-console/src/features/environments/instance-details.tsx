@@ -244,7 +244,7 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
-              {["e2b", "modal", "daytona"].includes(
+              {["e2b", "modal", "daytona", "vercel"].includes(
                 provider.data?.type ?? "",
               ) &&
                 template.data?.config.recipe?.desktop === true && (

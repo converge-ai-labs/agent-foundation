@@ -133,6 +133,7 @@ class E2BManagement(E2BReference, ManagementBackend):
         with sdk_errors(mutation=True):
             sandbox = await AsyncSandbox.create(
                 template=config.template,
+                envs=config.environment,
                 timeout=config.timeout_seconds,
                 metadata=metadata,
                 allow_internet_access=config.allow_internet_access,
@@ -188,6 +189,7 @@ class E2BManagement(E2BReference, ManagementBackend):
             timeout=0,
             request_timeout=self._configuration.request_timeout_seconds,
             envs={
+                **self._configuration.environment,
                 **(self._metrics.environment if self._metrics is not None else {}),
                 **(
                     {

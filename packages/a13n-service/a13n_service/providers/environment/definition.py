@@ -17,6 +17,7 @@ from .daytona_build import DaytonaDesktopPreparation
 from .e2b_build import E2BDesktopPreparation
 from .management import EnvironmentProvider
 from .modal_build import ModalDesktopPreparation
+from .vercel_build import VercelDesktopPreparation
 
 
 class ProviderFactory[C: BaseModel, K: BaseModel, E: BaseModel, R](Protocol):
@@ -38,6 +39,7 @@ class EnvironmentManagementDefinition[C: BaseModel, K: BaseModel, E: BaseModel, 
     e2b_desktop_preparation: E2BDesktopPreparation | None = None
     daytona_desktop_preparation: DaytonaDesktopPreparation | None = None
     modal_desktop_preparation: ModalDesktopPreparation | None = None
+    vercel_desktop_preparation: VercelDesktopPreparation | None = None
 
     def validate_domain(self) -> None:
         if not isinstance(self.execution, EnvironmentProviderDefinition):

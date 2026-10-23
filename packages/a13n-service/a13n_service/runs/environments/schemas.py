@@ -56,6 +56,7 @@ class Handle(BaseModel):
     e2b_desktop_template: str | None = None
     modal_desktop_image: str | None = None
     daytona_desktop_snapshot: str | None = None
+    vercel_desktop_snapshot: str | None = None
 
 
 class EnvironmentFailure(BaseModel):

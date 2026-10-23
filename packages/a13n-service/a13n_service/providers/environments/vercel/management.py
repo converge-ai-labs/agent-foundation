@@ -35,6 +35,8 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
         runtime: NativeRuntime | None,
         operation_id: str,
     ):
+        if configuration.snapshot == "auto":
+            raise failure("vercel", "desktop_snapshot_not_prepared", Category.INVALID)
         if runtime is None:
             raise TypeError("Vercel management requires a runtime")
         super().__init__(configuration, environment_id, state, runtime)
@@ -63,6 +65,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
                         else {"runtime": self.config.runtime}
                     ),
                     "persistent": True,
+                    **({"env": self.config.environment} if self.config.environment else {}),
                     "timeout": self.config.timeout_seconds * 1000,
                     "resources": {"vcpus": self.config.vcpus},
                     "snapshotExpiration": 0,
@@ -109,6 +112,7 @@ class VercelManagement(VercelReference, NativeManagement[VercelEnvironmentConfig
             # Only a new native session starts services. Failed/recovered creates
             # and attachment must never repair an existing desktop implicitly.
             settings = {
+                **self.config.environment,
                 "A13N_ENVD_DEVICE_ID": self.owner,
                 "A13N_ENVD_TRANSPORT": "http",
                 "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",
