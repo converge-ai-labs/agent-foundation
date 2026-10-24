@@ -10,6 +10,7 @@ from a13n_harness import (
     ModelRecoveryPolicy,
     RequestContext,
     RunBindings,
+    RunConfiguration,
 )
 from a13n_harness.context import (
     RunSkillPaths,
@@ -70,6 +71,24 @@ def test_run_bindings_metadata_detaches_nested_caller_values() -> None:
     assert bindings.metadata == {"correlation": {"labels": ["initial"]}}
     with pytest.raises(TypeError):
         bindings.metadata["other"] = "value"  # type: ignore[index]
+
+
+def test_run_bindings_preserves_positional_arguments_before_request_context() -> None:
+    instance = RunBindings.embedded().instance
+    configuration = RunConfiguration()
+
+    bindings = RunBindings(instance, configuration, None, None, False, False)
+
+    assert bindings.instance is instance
+    assert bindings.configuration is configuration
+    assert bindings.environment is None
+    assert bindings.model_resolver is None
+    assert bindings.toolset_instructions is False
+    assert bindings.deferred_tools_supported is False
+    assert bindings.request_context.headers == {}
+
+    context = RequestContext(headers={"x-trace": "private-context"})
+    assert RunBindings(instance, configuration, None, request_context=context).request_context is context
 
 
 def test_request_context_is_detached_readonly_and_not_metadata() -> None:

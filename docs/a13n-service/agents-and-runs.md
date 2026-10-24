@@ -294,7 +294,7 @@ A resume or a child result continues with the options of the run it follows. In 
 
 ## Request context headers
 
-Send business headers shared by model and MCP requests in the message body:
+Send business headers shared by model and MCP requests in the message body. Forwarding is enabled by default, so only include values intended for the configured model providers and MCP servers, including third-party endpoints:
 
 ```json
 {"options": {"context": {"headers": {"x-trace-id": "trace-123", "x-tenant-id": "acme"}}}}
@@ -304,7 +304,7 @@ This field accepts at most 32 case-insensitively unique headers, with printable 
 
 Recovery and explicit resume retain the accepted context; inline and async children inherit it. A new message or fork without context starts empty. A steer can omit context or repeat the accepted value; a different value waits for a later run. HTTP reads retain context, while MCP query results omit it before text search and fragmentation. Prompts, history and shell environments receive no automatic copy.
 
-Model request headers and per-connection `mcp_headers` override shared context names. Provider credentials, protocol headers, stored secret headers and automatic affinity remain authoritative. Automatic forwarding requires both the deployment category switch and the target's `config.forward_context_headers`. Category switches default to true. An omitted target parameter uses `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` (unset: true); explicit values win. Model Providers with the parameter omitted inherit the environment, while MCP Connection saves store the resolved value. Set `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` or `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` to disable a category. Trusted tools can still read context. Fetch, download, browser and shell operations receive no automatic forwarding.
+Model request headers and per-connection `mcp_headers` override shared context names. Provider credentials, protocol headers, stored secret headers and automatic affinity remain authoritative. Context headers that conflict with the model provider's protected names are silently skipped for that provider; the stored context remains unchanged. Automatic forwarding requires both the deployment category switch and the target's `config.forward_context_headers`. Category switches default to true. An omitted target parameter uses `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` (unset: true); explicit values win. Model Providers with the parameter omitted inherit the environment, while MCP Connection saves store the resolved value. Set `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` or `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` to disable a category. Trusted tools can still read context. Fetch, download, browser and shell operations receive no automatic forwarding.
 
 ## Caller headers
 

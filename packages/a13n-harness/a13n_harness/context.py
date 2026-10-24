@@ -163,7 +163,7 @@ class RunBindings:
 
     instance: AgentInstanceContext
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
-    request_context: RequestContext = field(default_factory=RequestContext, repr=False)
+    request_context: RequestContext = field(default_factory=RequestContext, repr=False, kw_only=True)
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None

@@ -12,6 +12,12 @@ from a13n_harness.model_affinity import SessionAffinityHeader
 
 
 class ProviderConfiguration(BaseModel):
+    """Shared provider inputs, including forwarding policy consumed by the embedding Host.
+
+    The Host applies ``forward_context_headers`` when binding a Run's request context.
+    Provider adapters do not resolve Run context or enforce this forwarding policy.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     forward_context_headers: bool = Field(
         default_factory=forward_context_headers_default,
