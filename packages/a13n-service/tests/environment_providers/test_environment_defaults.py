@@ -5,6 +5,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 
 INPUTS = {
+    "cloudflare": {},
     "local": {"root": {"path": "/tmp/managed"}, "allowed_environment_keys": ["TOOL_ENDPOINT"]},
     "docker": {},
     "e2b": {},

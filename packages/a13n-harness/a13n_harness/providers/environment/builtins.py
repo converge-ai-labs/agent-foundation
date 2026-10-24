@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 
+from a13n_harness.providers.environment.cloudflare.provider import CLOUDFLARE
 from a13n_harness.providers.environment.daytona.provider import DAYTONA
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
@@ -21,6 +22,7 @@ BUILT_IN_ENVIRONMENT_PROVIDERS: tuple[EnvironmentProviderDefinition, ...] = (
     DOCKER,
     E2B,
     DAYTONA,
+    CLOUDFLARE,
     MODAL,
     VERCEL,
     SPRITES,
