@@ -96,6 +96,42 @@ Grok 凭据存储只提供 `load()` 和 `save()` 时，用 `ProcessGrokCredentia
 
 Harness UI 提供更强的文件存储协调：协作进程共享一个锁和持久、不含秘密的 grant 指纹 sidecar。无需保存第二份 token 副本，就能保护新执行和重启。写入同一 auth 文件的其他 CLI 程序不使用该锁。Harness UI 在替换文件前检查这些程序的编辑；检测到编辑时，发布失败，不会覆盖该编辑。
 
+## 构建 Copilot Model
+
+向原生 `GitHubCopilotOAuthFlow` 提供应用的公开 OAuth client ID：展示 `start()` 返回的验证信息，再等待 `wait_for_authorization()`。Host 识别获授权的 GitHub 账号并保存完整授权。交互式 Host 流程参阅 [Copilot 登录](../a13n-harness-ui/models-and-authentication.md#github-copilot-subscription)。
+
+取得新签发的原生 `GitHubCopilotCredentials` 后，构建进程内 source 和 Model：
+
+```python
+from pydantic_ai.providers.github_copilot import GitHubCopilotCredentials
+from a13n_harness.providers.model.oauth import (
+    CopilotCredentials,
+    ProcessCopilotCredentialSource,
+    build_copilot_model,
+)
+
+
+class MemoryCredentialStore:
+    def __init__(self, credentials: CopilotCredentials):
+        self.credentials = credentials
+
+    async def load(self) -> CopilotCredentials:
+        return self.credentials
+
+    async def save(self, credentials: CopilotCredentials) -> None:
+        self.credentials = credentials
+
+
+def copilot_model(grant: GitHubCopilotCredentials, *, account_id: str, client_id: str, model_name: str):
+    credentials = CopilotCredentials.issued(grant, account_id=account_id, client_id=client_id)
+    source = ProcessCopilotCredentialSource(MemoryCredentialStore(credentials))
+    return build_copilot_model(model_name, credential_source=source), source
+```
+
+构造不执行凭据 I/O。签发时用 `issued()` 将有效期转换一次；加载时恢复已保存的绝对过期时间。进程内 source 协调单进程轮换。需要共享或可重启存储时，实现 `CopilotCredentialSource.load()` 和 `rotate()`，持久协调同一授权，并在使用前完成发布。
+
+显式调用 `await discover_copilot_models(credential_source=source)` 查询已认证目录。它返回第一页中声明支持 Chat Completions 的 ID；发现结果不代表模型使用资格。该 helper 也从同一 OAuth 模块导入。身份验证失败需要显式恢复，不会自动发起交互登录或切换账号。
+
 ## ChatGPT 登录与原生 Model
 
 使用官方集成，并由 Host 管理存储：

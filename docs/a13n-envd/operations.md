@@ -37,7 +37,7 @@ Before launching a command, the daemon reserves capacity for **both streams**. W
 
 A busy response can therefore indicate output-reservation pressure, not a CPU or network failure. A finite output cap is not a request to evict other retained records. Increase quota deliberately, release no-longer-needed observations, or reduce the configured per-stream reservation while maintaining `spool >= 2 * per_stream` and `preview <= per_stream`.
 
-Python Local Envd supplies its own preview and file-value defaults through Host launch configuration. The Docker Environment Provider does not use Envd and has its own output limits. Configure the owning [runtime fields](../environments/configuration.md) rather than treating Session selection as daemon bootstrap.
+Python Local Envd supplies its own preview and file-value defaults through Host launch configuration. Native Docker execution has its own output limits; Docker's explicitly selected Envd execution uses its daemon's configuration. Configure the owning [runtime fields](../environments/configuration.md) rather than treating Session selection as daemon bootstrap.
 
 ## Preview, retained bytes, and completion
 

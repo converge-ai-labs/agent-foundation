@@ -99,4 +99,6 @@ async with await definition.open_provider(
 
 控制面不可用不等于目标不存在。恢复连接需要显式打开新的执行对象；Harness 中使用显式挂载替换。旧执行的进程、输出和电脑操作引用不能用于新执行。
 
+Envd 可通过显式的 [Host 恢复提示](remote-envd.md#state-concurrency-and-recovery)重新附加保留会话。该提示与可移植目标状态分开，不重放操作，也不恢复旧执行引用。
+
 各云环境的停止、文件保留和到期规则见 [Provider 对比](providers.md#reconnection-and-lifecycle)。

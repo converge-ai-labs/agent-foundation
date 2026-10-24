@@ -22,7 +22,9 @@ curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 - 在 `X-CSRF-Token` 中发送登录会话的 CSRF token；登录响应返回它，已有登录会话也可通过 `GET /api/v1/auth/session` 再次获取；
 - 若发送 `Origin` 请求头，其值必须等于 `server.public_url` 的源；回环公共 URL 中，`localhost` 和 `127.0.0.1` 可以互换。
 
-账号操作（修改资料、密码、邮箱、禁用账号、列出登录会话和自己的审计记录）、`GET /api/v1/auth/session`、`POST /api/v1/auth/logout`，以及创建 API 密钥、发送或重发邀请、启动浏览器授权（OAuth 授权码或 connector 账号配置）均需要登录会话。API 密钥调用这些操作统一返回 `403 forbidden`：它不能创建寿命可超过自身的凭据，也不能向第三方发出代你完成操作的链接。没有有效凭据时返回 `401 unauthenticated`；已禁用主体的凭据视为无效。
+账号操作（修改资料、密码、邮箱、禁用账号、列出登录会话和自己的审计记录）、`GET /api/v1/auth/session`、`POST /api/v1/auth/logout`，以及创建 API 密钥、发送或重发邀请、启动个人 Connection 授权（OAuth 或 connector 账号配置）均需要登录会话。API 密钥调用这些操作返回 `403 forbidden`。工作空间 Model Provider 授权接受具有所需工作空间权限的 API 密钥。没有有效凭据时返回 `401 unauthenticated`；已禁用主体的凭据视为无效。
+
+创建 [Schedule](schedules.md) 会委托持久执行权限。原 API 密钥被撤销或过期不会停止该 Schedule；暂停或归档它才能停止后续提交。
 
 每个认证后的响应，包括路由响应和认证后发生的错误，都包含 `Cache-Control: no-store`；登录会话续期时还包含更新的 cookie。
 
@@ -92,9 +94,11 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 - `POST …/threads`（携首条消息创建线程）和 `POST …/threads/{thread_id}/inbox`（提交消息）
 - `POST …/runs/{run_id}/fork` 和 `POST …/runs/{run_id}/resume`
+- `POST …/schedules` 和 `POST …/schedules/{schedule_id}/dispatch`
+- `POST …/finding-analyses`
 - `POST …/uploads`
 
-每个逻辑请求生成唯一 key，响应丢失后重试时复用。首次提交返回 `201`；上传返回 `200`。使用相同 key 和请求重试时，返回 `200` 和同一组已创建对象的当前状态，而非首次响应的副本。相同 key 搭配不同请求体或目标返回 `409 conflict`，原因为 `idempotency_key_reused`。Key 的范围为调用者和工作空间，不会过期。
+每个逻辑请求生成唯一 key，响应丢失后重试时复用。首次提交返回 `201`；手动派发 Schedule 返回 `202`，上传返回 `200`。使用相同 key 和请求重试时，返回 `200` 和同一组已创建对象的当前状态，而非首次响应的副本。相同 key 搭配不同请求体或目标返回 `409 conflict`，原因为 `idempotency_key_reused`。Key 的范围为调用者和工作空间，不会过期。
 
 ## 分页
 

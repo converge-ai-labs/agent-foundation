@@ -45,17 +45,7 @@ a13n-service --config service.toml migrate --check  # verify the schema matches 
 
 使用专用迁移步骤时，例如 Helm chart 的迁移 Job，应在副本设置 `database.auto_migrate = false`，启动前运行 `migrate`。滚动升级期间，旧副本仍使用迁移后的 schema，因此需检查每个发布版本的 schema 修改是否兼容前一版本。
 
-从最初不分页的运行显示格式升级时，还需要转换已保存的运行对象。Schema 迁移只把 `runs.display` 改名为 `runs.tail`，没有添加消息序号，也没有压缩旧显示对象和检查点。`migrate`、`migrate --check` 和进程启动检查会拒绝这些旧指针，并提示所需的运维命令。先等待已接受和正在运行的任务结束，停止**所有** Control 和 Worker 副本，完成 schema 迁移后再转换对象：
-
-```sh
-a13n-service --config service.toml migrate-run-objects  # 检查最多 100 条运行，不写入数据
-a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
-a13n-service --config service.toml migrate --check
-```
-
-该命令会校验原始对象摘要，将两个对象及其数据库指针备份到私有本地目录，写入并读回新的压缩对象，再用一个短事务替换一条运行的两个指针。消息 ID、顺序、内容、流位置和检查点原始字节均会保留。备份包含会话数据，目录应位于源码仓库之外的持久私有存储中。命令不会删除原始对象，但后续清理可能会删除它们，因此仍须保留备份。实际转换需要数据库所有者权限，仅在持有表锁的事务内暂时关闭已结束运行的更新保护；失败回滚会恢复保护。读写对象和备份期间不会持有数据库 session。
-
-重复执行，直到报告转换数量为零；`--limit` 支持 1–1000。已转换的运行会被跳过，中断后可以继续。有未完成的检查点清理、已有显示分页、对象缺失或损坏，或旧显示已丢弃部分消息时，命令会拒绝转换，要求调查，不会猜测数据或静默截断。`migrate --check` 成功后再恢复副本，并验证历史运行、消息列表和继续对话。转换后不支持直接回退到旧的不分页读取代码；离线回退时应同时恢复备份的数据库指针和对象。
+升级旧的不分页运行数据时，还需执行[运行对象转换](#convert-legacy-run-objects)。
 
 ## 健康与就绪
 
@@ -147,3 +137,17 @@ parallel = 2
 搜索迁移新增默认空向量的 `tsvector` 列，不重写已有表，也不回填历史内容，然后并发创建 GIN 索引。新增列和更新触发器仍需要短暂的表锁，受迁移锁超时限制；索引扫描受迁移语句超时限制。索引创建失败后可以重新执行：迁移会删除无效索引，保留已完成的有效索引。
 
 先升级所有 Control 和读取端，再启用新 Worker。新 Worker 写入 checkpoint 格式 3，包含私有 Envd 会话信息及格式 2 引入的搜索保留记录，同时支持读取旧格式 1 和 2。旧 Worker 会跳过较新格式的 checkpoint，旧读取端也可能无法识别新增的 state 或 tail 字段。写入格式 3 后，应用回滚时仍需保留兼容的读取端和 Worker；删除数据库列不会转换对象内容。搜索数据属于派生数据，数据库降级会丢弃该索引。
+
+## 转换旧版运行对象
+
+从最初不分页的运行显示格式升级时，还需要转换已保存的运行对象。Schema 迁移只把 `runs.display` 改名为 `runs.tail`，没有添加消息序号，也没有压缩旧显示对象和检查点。`migrate`、`migrate --check` 和进程启动检查会拒绝这些旧指针，并提示所需的运维命令。先等待已接受和正在运行的任务结束，停止**所有** Control 和 Worker 副本，完成 schema 迁移后再转换对象：
+
+```sh
+a13n-service --config service.toml migrate-run-objects  # 检查最多 100 条运行，不写入数据
+a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
+a13n-service --config service.toml migrate --check
+```
+
+该命令在转换每条运行前，校验并备份原始对象及数据库指针。消息 ID、顺序、内容、流位置和检查点字节均保留。实际转换需要数据库所有者权限。备份应保存在源码仓库之外的持久私有存储中：它们包含会话数据，后续清理可能删除原始对象。
+
+重复执行，直到报告转换数量为零；`--limit` 支持 1–1000。已转换的运行会被跳过，中断后可以继续。有未完成的检查点清理、已有显示分页、对象缺失或损坏，或旧显示已丢弃部分消息时，命令会拒绝转换，要求调查，不会猜测数据或静默截断。`migrate --check` 成功后再恢复副本，并验证历史运行、消息列表和继续对话。转换后不支持直接回退到旧的不分页读取代码；离线回退时应同时恢复备份的数据库指针和对象。

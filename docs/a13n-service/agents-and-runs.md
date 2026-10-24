@@ -5,6 +5,8 @@ description: Configure agents, start conversations, and follow, steer, or resume
 
 An **agent** is a named resource whose configuration (a model, instructions, tools and policies) is saved as immutable, numbered **revisions**. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each an independently advancing history; messages you send go to the thread's **inbox**, and each accepted advancement of a thread is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
 
+Jump to your task: [configure an agent](#agents), [start a conversation](#start-a-conversation), [send or steer a message](#submit-a-message), [answer a wait](#waits-approvals-and-questions), [interrupt or fork](#interrupt-fork-and-archive), [inspect results](#results), or [improve an issue](#find-and-improve-execution-issues).
+
 ```mermaid
 stateDiagram-v2
     [*] --> accepted: Message or resume

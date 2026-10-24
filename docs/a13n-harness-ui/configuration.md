@@ -15,6 +15,7 @@ For worked examples, start with [common configuration recipes](configuration-rec
 | Default Agent, Environment, plugins, or MCP               | `a13n-harness-ui.yaml` → `defaults` | [Default selections](#default-resource-selections)                               |
 | Theme and output detail                                   | `a13n-harness-ui.yaml` → `display`  | [Display settings](#display-settings)                                            |
 | Questions, CodeAct, built-in children                     | Root `tools` and `subagents`        | [Built-in tools](#built-in-tools-and-subagents)                                  |
+| Subscription accounts and ordered failover groups         | `subscription_groups/*.yaml`        | [Accounts and groups](models-and-authentication.md#account-store-locations)      |
 | Provider, API key reference, endpoint, reasoning, context | `models/*.yaml`                     | [Model fields](models-and-authentication.md#model-file-reference)                |
 | Instructions, Capabilities, visible tools, children       | `agents/*.yaml`                     | [Agent fields](agents-and-subagents.md#agent-file-reference)                     |
 | Local roots and Device bindings                           | `projects/*.yaml`                   | [Project fields](environments-and-projects.md#project-file-reference)            |
@@ -38,16 +39,17 @@ The default root is `~/.a13n-harness-ui/a13n-harness-ui.yaml`. `--config PATH` s
 
 The root file's directory also contains:
 
-| Path                       | Purpose                                               | Detailed reference                                                      |
-| -------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
-| `AGENTS.md`                | Optional global contextual guidance                   | [Guidance](agents-and-subagents.md#instructions-and-guidance)           |
-| `models/*.yaml`            | Reusable Models and credential references             | [Models](models-and-authentication.md#model-file-reference)             |
-| `agents/*.yaml`            | Agent definitions and child rosters                   | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files)   |
-| `subagents/*.md`           | Your lightweight child instructions                   | [Markdown subagents](agents-and-subagents.md#write-a-markdown-subagent) |
-| `projects/*.yaml`          | Local roots, Device selections, and creation defaults | [Projects](environments-and-projects.md#project-file-reference)         |
-| `devices/*.yaml`           | Reusable Device connection and credential references  | [Devices](environments-and-projects.md#add-device-bindings)             |
-| `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                     |
-| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                           |
+| Path                         | Purpose                                                   | Detailed reference                                                          |
+| ---------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `AGENTS.md`                  | Optional global contextual guidance                       | [Guidance](agents-and-subagents.md#instructions-and-guidance)               |
+| `subscription_groups/*.yaml` | Ordered native subscription accounts and selection policy | [Accounts and groups](models-and-authentication.md#account-store-locations) |
+| `models/*.yaml`              | Reusable Models and credential references                 | [Models](models-and-authentication.md#model-file-reference)                 |
+| `agents/*.yaml`              | Agent definitions and child rosters                       | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files)       |
+| `subagents/*.md`             | Your lightweight child instructions                       | [Markdown subagents](agents-and-subagents.md#write-a-markdown-subagent)     |
+| `projects/*.yaml`            | Local roots, Device selections, and creation defaults     | [Projects](environments-and-projects.md#project-file-reference)             |
+| `devices/*.yaml`             | Reusable Device connection and credential references      | [Devices](environments-and-projects.md#add-device-bindings)                 |
+| `extensions/*.yaml`          | Harness Plugins, Environment profiles, Run Extensions     | [Extensions](extensions-and-mcp.md)                                         |
+| `mcp/*.yaml`, `mcp/*.json`   | MCP server definitions                                    | [MCP](mcp.md)                                                               |
 
 Each directory is scanned once, without recursion or ancestor merging. Extensions are case-sensitive: `subagents/` accepts `.md` except `README.md`; other directories accept `.yaml`; `mcp/` also accepts `.json`. Each file defines one resource, except MCP's multi-server `mcpServers` format. See [MCP configuration](mcp.md) for environment and header references.
 
@@ -197,7 +199,7 @@ Choose **Disabled** or set `sidekick: null` to remove the extra instructions. Sa
 
 ### Shell review shortcut
 
-`security.shell_review.enable` defaults to `false`: no automatic permission/reviewer injection. Setup normally initializes it to `true`. Disabled means the shortcut is unused, not that explicit Agent policies are removed.
+`security.shell_review.enable` defaults to `false`: no automatic permission/reviewer injection. [Setup](setup.md#advanced-setup) enables it when shell review is selected; API-key setup requires an explicit reviewer. Disabled means the shortcut is unused, not that explicit Agent policies are removed.
 
 Enabled review applies only to `environment.shell_exec` in roots and children. Explicit shortcut fields override the Agent’s shell rule; other rules remain. Omitted/null fields inherit Agent review settings, then built-in defaults. See the [shell-review recipe](configuration-recipes.md#configure-shell-review) for field values, merging and failures. Changes affect later Run captures.
 

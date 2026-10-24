@@ -15,7 +15,7 @@ Native Execution supports quick deployment and applications that need only basic
 
 Envd owns the general execution capability model, including port operations, Computer use, and Device metrics. Available capabilities follow the daemon's advertised methods and effective Host policy. OS sandbox and Egress enforce the selected [Device boundary](../a13n-envd/07-execution-isolation.md). Metrics are [Device-scoped observations](../a13n-envd/11-resource-monitoring.md) collected by the outer daemon and read through the Host's Device connection.
 
-Daytona and Modal use Envd through EIP for Agent operations. Vercel Sandbox supports an explicit Envd route alongside its existing native Files & Shell route. Sprites and Runloop expose native files and bounded foreground shell execution; their Envd integration is not implemented. This keeps general execution semantics in one daemon instead of maintaining a separate advanced execution stack for each vendor.
+Daytona and Modal use Envd through EIP for Agent operations. Vercel Sandbox and Sprites support explicit Envd routes alongside native Files & Shell. Sprites carries EIP over its private vendor TCP proxy. Runloop exposes native files and bounded foreground shell execution; its Envd integration is not implemented. This keeps general execution semantics in one daemon instead of maintaining a separate advanced execution stack for each vendor.
 
 Each managed infrastructure vendor retains its own `EnvironmentProvider` subclass for resource management: allocation, inspection, start/stop, destruction, renewal, Envd bootstrap, and connection setup. Service owns the built-in management implementations; other embedding Hosts may supply their own. Harness adapts the shared EIP operations. Bounded vendor commands remain available for bootstrap and readiness under Host authority; Agent operations follow the selected Native or Envd execution path.
 
@@ -46,7 +46,7 @@ Built-in provider types follow two operation routes. Managed targets have separa
 | Envd          | `daytona`        | Daytona sandbox                             | EIP to the sandbox daemon                       | Service or an external Host                |
 | Envd          | `modal`          | Modal sandbox                               | EIP to the sandbox daemon                       | Service or an external Host                |
 | Native / Envd | `vercel`         | Named Vercel Sandbox                        | Native Files & Shell / explicit HTTP EIP        | Service or an external Host                |
-| Native        | `sprites`        | Persistent Fly.io Sprite                    | Sprites filesystem and exec APIs                | Service or an external Host                |
+| Native / Envd | `sprites`        | Persistent Fly.io Sprite                    | Sprites filesystem/exec APIs / private TCP EIP  | Service or an external Host                |
 | Native        | `runloop`        | Runloop Devbox                              | Runloop binary file and command APIs            | Service or an external Host                |
 | Envd          | `http_envd`      | External daemon at a configured origin      | EIP over HTTP(S)                                | Connect-only                               |
 | Envd          | `websocket_envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket                     | Connect-only; Host-integrated SDK          |

@@ -17,21 +17,22 @@ description: 工作空间资源的共同规则：生命周期、修订版本、�
 
 **带修订版本的** 资源（agent 和 skill）有主记录和不可变的编号修订版本。每次配置修改新增一个修订版本；修改名称、描述或标签只改变主记录。主记录的 `default_revision_id` 决定未固定修订版本的新运行使用哪个修订版本，运行则固定使用启动时的精确修订版本。主记录通过归档停用，不直接删除。发布内容与当前默认修订版本相同时，返回该修订版本（`201`），不修改主记录，即使设置了 `make_default: false`。
 
-运行所依赖的资源不会被直接永久删除：
+带修订版本的配置和已停用资产保留供运行历史使用。其他资源有各自的移除规则：
 
-| 类型           | 停用方式                                                             |
-| -------------- | -------------------------------------------------------------------- |
-| Provider、模型 | 使用 `PATCH` 并传入 `{"enabled": false}`。                           |
-| 连接、环境模板 | 使用 `PATCH {"enabled": false}`。连接凭据通过 `POST …/revoke` 移除。 |
-| Agent、skill   | 使用 `POST …/archive`；`POST …/unarchive` 可取消归档。               |
-| 资产           | `DELETE` 停用资产；历史仍可读取内容。                                |
-| 订阅、环境     | `DELETE`。                                                           |
+| 类型           | 停用方式                                                                   |
+| -------------- | -------------------------------------------------------------------------- |
+| Provider、模型 | 使用 `PATCH` 并传入 `{"enabled": false}`。                                 |
+| 连接、环境模板 | 使用 `PATCH {"enabled": false}`。连接凭据通过 `POST …/revoke` 移除。       |
+| Agent、skill   | 使用 `POST …/archive`；`POST …/unarchive` 可取消归档。                     |
+| 资产           | `DELETE` 停用资产；历史仍可读取内容。                                      |
+| 订阅、环境     | `DELETE`。                                                                 |
+| 独立记忆       | `DELETE` 移除挂载、文件和历史，或清空记录命名空间。参阅[记忆](memory.md)。 |
 
 ## 通用约定
 
 - **Key 与 ID。** 只有模型使用 `key` 标识：长度 1–128，由小写字母、数字、`-` 和 `.` 组成，并以字母或数字开头（`^[a-z0-9][a-z0-9.-]{0,127}$`）。Key 在工作空间中唯一且永不改变；路径、agent 配置和 ETag（`"{key}:{version}"`）都用它引用模型，模型视图没有 `id`。其他资源，包括 agent、skill、记忆、环境模板和修订版本，都使用带类型前缀的 ID，例如 agent 的 `ap_…` 和 skill 的 `sk_…`。
 - **并发控制。** 读取返回 `ETag`；修改需通过 `If-Match` 提供它。参阅 [HTTP 约定](http.md#concurrency-control)。
-- **标签。** Agent、skill 和环境模板最多包含 32 个 `labels`。列表支持 `?label=key:value`（最多八个选择器，必须全部匹配）、`q`（名称或描述中不区分大小写的子串）和 `archived=true|false`。
+- **标签。** Agent、skill 和环境模板最多包含 32 个 `labels`。使用 `?label=key:value` 筛选（最多八个选择器，必须全部匹配）。Agent 和 skill 列表还支持 `q`（名称或描述中不区分大小写的子串）和 `archived=true|false`。
 - **作者。** 视图包含 `created_by_id`、`updated_by_id`、`created_at` 和 `updated_at`。
 - **审计。** 资源修改会写入[审计记录](identity.md#audit)。没有实际变化的更新不增加版本，也不记录事件。
 
@@ -39,13 +40,13 @@ description: 工作空间资源的共同规则：生命周期、修订版本、�
 
 Provider 是外部服务的一个已配置账号，分为五类：
 
-| 类别          | 类型                                                                                                                                                                                                                                                                                | 用途                                            |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `model`       | `openai`, `openai_chatgpt`, `anthropic`, `google_gemini`, `google_vertex`, `azure_openai`, `aws_bedrock`, `openrouter`, `fireworks`, `together`, `cerebras`, `sambanova`, `vercel`, `xai`, `ollama`, `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu`, `typesafe` | [模型](models.md)                               |
-| `web`         | `duckduckgo`, `brave`, `deepseek`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `perplexity`, `serpapi`, `tinyfish`                                                                                                                                                            | [Web 工具集](tools.md#web-search-and-scrape)    |
-| `environment` | `docker`, `e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`（部署启用开发模式时还包括 `local`）                                                                                                                                                                             | [环境](environments.md)                         |
-| `connector`   | `composio`                                                                                                                                                                                                                                                                          | [Connector 连接](tools.md#composio-connections) |
-| `memory`      | `mem0_platform`, `mem0_oss`                                                                                                                                                                                                                                                         | [记录型记忆](memory.md#record-memories)         |
+| 类别          | 指南                                            |
+| ------------- | ----------------------------------------------- |
+| `model`       | [模型](models.md)                               |
+| `web`         | [Web 工具集](tools.md#web-search-and-scrape)    |
+| `environment` | [环境](environments.md)                         |
+| `connector`   | [Connector 连接](tools.md#composio-connections) |
+| `memory`      | [记录型记忆](memory.md#record-memories)         |
 
 `GET /api/v1/provider-types/{kind}` 描述各已安装类型：`configuration_schema` 和 `credential_schema`（JSON Schema）、是否需要凭据，以及获取凭据的 `setup_url`。模型类型还提供模型 API 和各 API 的设置 schema；web 类型列出支持的操作；环境类型描述环境 schema，以及是否支持托管实例、停止和销毁。Console 使用该端点构建 provider 表单。
 
@@ -63,4 +64,4 @@ curl -X POST "$A13N_URL/api/v1/model-providers" \
 - **禁用：** 使用 `PATCH {"enabled": false}`。已禁用的 provider 以 `disabled` 拒绝新使用；环境 provider 被禁用后，其已有环境仍会得到维护。
 - **测试：** 使用 `POST …/{provider_id}/test`（需要 `run` 权限）。它使用保存的配置发送一次低成本探测，返回 `succeeded`、`failed`（附带消息）或 `unsupported`。Web provider、`openai_chatgpt`、`google_vertex`、`aws_bedrock`、`vercel` 和 `typesafe` 模型类型，以及除 `docker` 外的所有环境类型都没有测试，返回 `unsupported`。`docker` 测试只 ping Docker Engine，不创建资源。记忆 provider 的测试列出一个未被任何记忆使用的命名空间中的一页数据。
 
-Provider 没有删除操作；请将其禁用。
+未使用的[环境连接](environments.md#providers)可在检查引用后删除。删除只移除已保存的账号，不删除其原生资源。其他类别的 provider 通过禁用来停止新的使用。

@@ -15,6 +15,7 @@ Model 资源定义提供方连接、请求设置和工作上下文预算。将�
 | 查阅所有 Model 字段           | [Model 文件参考](#model-file-reference)                                           |
 | 修改请求参数                  | [原生请求设置](#native-request-settings-and-connection-wiring)                    |
 | 调整上下文或开启图像输入      | [上下文与模态策略](#context-and-modality-policy)                                  |
+| 管理账户、额度和故障切换组    | [账户与分组](#account-store-locations)                                            |
 | 使用订阅账户                  | [登录](#subscription-login-and-api-keys)、[Codex 示例](#codex-model-example)      |
 | 为当前 Project 切换 TUI Model | [TUI 选择](#change-the-agent-or-model-in-the-tui)                                 |
 
@@ -465,10 +466,10 @@ Codex 响应会立即更新其报告的用量窗口。请求前，若账户距�
 
 账户卡片按提供方显示对应额度：
 
-- \*\*Codex：\*\*按实际时长显示 **5h**、**Weekly** 等窗口，每个窗口都有重置日期、本地时间和时区。模型专项额度与月度 credit 限制分开显示。无需打开 **Manage** 即可查看可用重置券数量和最早已知到期时间；充值 credits 是独立余额。兑换券详情查询失败时，仍保留用量接口返回的数量。
-- \*\*Grok：\*\*显示当前周度或月度计费额度及下次重置时间，另列美元计价的已购 credits，以及提供方报告的旧版按量付费信息。查询使用 Grok Build 计费接口，不套用 Codex 窗口。缺少计费配置表示不可用，不是零；使用相同的账户刷新控件。
-- \*\*GitHub Copilot：\*\*显示当前所选账户返回的额度类别，包括无限额度、剩余百分比或数量、额外用量权限和重置日期。进入页面时查询，之后每十分钟刷新，也可点击 **Refresh allowance**。查询使用官方客户端采用的内部接口；提供方拒绝查询时显示不可用。
-- \*\*ChatGPT：\*\*直接链接到官方用量设置。此独立连接暂不提供数值额度，不会借用 Codex 的额度。
+- **Codex：** 按实际时长显示 **5h**、**Weekly** 等窗口，每个窗口都有重置日期、本地时间和时区。模型专项额度与月度 credit 限制分开显示。无需打开 **Manage** 即可查看可用重置券数量和最早已知到期时间；充值 credits 是独立余额。兑换券详情查询失败时，仍保留用量接口返回的数量。
+- **Grok：** 显示当前周度或月度计费额度及下次重置时间，另列美元计价的已购 credits，以及提供方报告的旧版按量付费信息。查询使用 Grok Build 计费接口，不套用 Codex 窗口。缺少计费配置表示不可用，不是零；使用相同的账户刷新控件。
+- **GitHub Copilot：** 显示当前所选账户返回的额度类别，包括无限额度、剩余百分比或数量、额外用量权限和重置日期。进入页面时查询，之后每十分钟刷新，也可点击 **Refresh allowance**。查询使用官方客户端采用的内部接口；提供方拒绝查询时显示不可用。
+- **ChatGPT：** 直接链接到官方用量设置。此独立连接暂不提供数值额度，不会借用 Codex 的额度。
 
 ```console
 a13n-harness-ui auth status codex --format json
@@ -526,7 +527,7 @@ DeepSeek Reasoner/V4 Pro、GLM 4.7/5.3 和 Kimi K2.5/K2 Thinking 的流解析、
 
 发行版建议在 2026 年 9 月 10 日依据提供方参考检查：[OpenAI 模型限制](https://developers.openai.com/api/docs/models/gpt-5.6-sol)、[Claude 模型限制](https://platform.claude.com/docs/en/models/sonnet-4-6/overview)、[Gemini 输出限制](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro)、[DeepSeek 模型详情](https://api-docs.deepseek.com/quick_start/pricing)、[GLM 模型详情](https://docs.z.ai/guides/llm/glm-5.3)、[Moonshot 模型卡](https://huggingface.co/moonshotai/Kimi-K2.5)和 [OpenRouter 模型元数据](https://openrouter.ai/api/v1/models)。来源描述模型能力和示例，不保证自定义端点或账户接受每项设置。原生 SDK 请求序列化用模拟 HTTP 测试，不是真实提供方测试。特别是已安装原生 DeepSeek 适配器发送 `max_completion_tokens`，而 DeepSeek API 参考记录 `max_tokens`；该别名的接受和执行尚未在真实服务验证。Harness UI 不覆盖适配器字段映射。
 
-首次设置后，`add model` 只保存可复用 Model，再提供独立 Add Agent 流程。`add agent` 先让你选择已有 Model 或创建新 Model，再保存新 Agent。复用直接引用 Model，不复制或修改设置。两命令为重复名称分配独立身份，不修改现有 Agent、Model、默认值或对话。首次设置同时创建初始 Model 和 Agent，不询问已有 Model。设置和 Add Agent 初始化缺失的根 `security.shell_review`，保留现有根选择。Codex 和 Grok 订阅设置会创建独立的 shell 审查 Model；ChatGPT、GitHub Copilot 和 API 密钥设置复用所连接的 Model。快捷配置对各 Agent 使用 `risk_threshold: extra_high`，标记 shell 调用需审批，非超时审查失败默认不额外限制。审查超时始终拒绝。Add Model 绝不修改此根策略。现有 Agent 文件不迁移。见 [shell 审查配置](configuration-recipes.md#configure-shell-review)；风险阈值与模型推理强度独立。
+添加连接或 Agent 请按[设置流程](setup.md#add-another-connection-or-agent)操作。API 密钥设置只有在选定审查模型后才启用 shell 审查，审查器保存为使用同一连接的独立 Model。现有根审查策略保持不变。风险阈值和故障处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)；审查超时始终拒绝执行。
 
 ## 原生请求设置与连接设置
 

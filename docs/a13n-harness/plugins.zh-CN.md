@@ -70,8 +70,6 @@ class AuditPlugin(AbstractHarnessPlugin):
 
 中间件执行期间，Run 通过有界通道投递扩展事件。调用 continuation 之前、之后以及短路执行期间都可以发出事件。消费者较慢时会施加背压；中间件不拥有或迭代事件流。
 
-**破坏性变更迁移：** 将 `PluginRunResponse` 和异步事件生成器改为 `async def wrap_run(...)`、`await call_next(...)` 及返回结果。通过 `context.events.emit()` 发出扩展观察事件。原生事件和 Run 生命周期事件仍由 Harness 管理。需要调整展示时，在 Host 共用的实时与持久化 fold 之前配置 Stream Protocol `DisplayFold` processor，恢复 fold 时使用相同的 processor。不要在中间件中改写原生事件。
-
 ### 直接组合
 
 嵌入式应用最简单的方式是直接传入对象：
@@ -439,8 +437,9 @@ from a13n_harness.environment import EnvironmentRunExtensionContext
 
 
 class WorkspaceMarkerExtension:
-    def __init__(self, extension_id: str) -> None:
+    def __init__(self, extension_id: str, path: str = "/workspace/.active-run") -> None:
         self._extension_id = extension_id
+        self._path = path
 
     @property
     def extension_id(self) -> str:
@@ -448,7 +447,7 @@ class WorkspaceMarkerExtension:
 
     @asynccontextmanager
     async def bind(self, *, context: EnvironmentRunExtensionContext):
-        path = "/workspace/.active-run"
+        path = self._path
         await context.environment.files.write_text(
             path,
             f"{context.run_id}\n",
@@ -490,12 +489,12 @@ environment_runtime = create_environment_runtime(
     default_mount="workspace",
     extensions=(
         active_run_callbacks,
-        WorkspaceMarkerExtension("custom-marker"),
+        WorkspaceMarkerExtension("custom-marker", "/workspace/.custom-run"),
     ),
 )
 ```
 
-Host 在构造 adapter 时提供当前 Provider 状态。扩展在 adapter 进入后进入，在 adapter 关闭前按逆序退出。
+每个扩展需要独立的资源路径和 ID。Host 在构造 source 时提供当前 Provider 状态。扩展在静态挂载发布后进入，在已打开的 execution 关闭前按逆序退出。
 
 ### 显式扩展工厂
 
@@ -540,3 +539,7 @@ result = await executable.run("Use the prepared workspace", bindings=bindings)
 ## 可运行示例
 
 [集成包示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)演示安装式与直接组合，并提供离线测试。
+
+## 迁移中间件
+
+**破坏性变更迁移：** 将 `PluginRunResponse` 和异步事件生成器改为 `async def wrap_run(...)`、`await call_next(...)` 及返回结果。通过 `context.events.emit()` 发出扩展观察事件。原生事件和 Run 生命周期事件仍由 Harness 管理。需要调整展示时，在 Host 共用的实时与持久化 fold 之前配置 Stream Protocol `DisplayFold` processor，恢复 fold 时使用相同的 processor。不要在中间件中改写原生事件。

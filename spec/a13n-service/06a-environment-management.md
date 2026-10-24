@@ -276,4 +276,4 @@ Console explains the per-new-Sprite installation delay before creation, displays
 4. Only management dispatches explicit target allocation, start, stop, destruction, or renewal; declared native automatic sleep/wake remains a backend behavior.
 5. Connector construction is inert; execution cleanup cannot retire a target.
 6. Unknown dispatch retains operation identity and observed state for reconciliation.
-7. Every infrastructure vendor retains an Environment Provider subclass for its resource management. Native Agent execution is limited to Local/Docker/E2B Files & Shell; general execution and advanced operations use Envd/EIP without native fallback.
+7. Every infrastructure vendor retains an Environment Provider subclass for its resource management. Native Agent execution is limited to Local, Docker, E2B, Vercel Sandbox, Sprites, and Runloop Files & Shell; general execution and advanced operations use Envd/EIP without native fallback.

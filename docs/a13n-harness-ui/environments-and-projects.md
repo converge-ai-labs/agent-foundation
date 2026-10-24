@@ -80,7 +80,7 @@ The panel starts with the last 15 minutes and refreshes every 60 seconds. Choose
 
 Remote Devices use their existing authenticated connections. Enable `monitoring` in the Envd startup configuration to collect samples; static system information remains available when sampling is disabled. Built-in local Sandbox, Envd and Desktop enable sampling when their daemon starts. Set **Settings → Environments → Local runtime → Metrics collection** to 10, 30 or 60 seconds (default 60), then restart the App. The root YAML field `envd.monitoring_interval_seconds` accepts any integer from 10 through 60 and controls App collection plus built-in local sampling. Custom launch recipes and external daemons retain their own sampling settings; browser refresh stays at one minute. Opening the monitor does not download or start Envd. Direct and other non-Envd providers do not supply these metrics. Local runtime acquisition uses the exact installed `a13n-envd-client` release; this expanded overview requires EIP 0.3, planned for Envd/client 0.5.0. Upgrade remote daemons and clients together.
 
-The panel distinguishes waiting, disabled, stale and offline observations. Missing values display as **—**, and missing minutes remain gaps. Latest observation details include pressure and cumulative counters in their native units. History lives only in App memory and clears on restart. Collection is limited to 64 Devices, four concurrent requests, and 60 minute slots per history. Each Device retains rate histories for at most 64 interfaces and 64 disks, plus system and socket histories; excess Devices and rate sources are reported rather than growing the buffer. Numeric history storage for 64 Devices stays below 42 MiB. Latest observations are bounded separately. Changing or revoking a Device clears its history. Slow monitoring requests use a separate bounded client lane; they cannot fill Session-open admission. Contended daemon resource locks produce unavailable metrics rather than delaying execution. A stalled native sample leaves the previous sample visible with increasing age.
+The panel distinguishes waiting, disabled, stale and offline observations. Missing values display as **—**, and missing minutes remain gaps. Latest observation details include pressure and cumulative counters in their native units. History lives only in App memory and clears on restart. Changing or revoking a Device also clears its history. Collection limits are reported in the panel. Unavailable or stalled samples leave gaps or show the previous sample with its age; they do not become zero usage.
 
 ## Project file reference
 
@@ -126,7 +126,7 @@ Place this `defaults` mapping alongside `roots` in the Project file, and replace
 
 New conversations resolve explicit selections first, then Project defaults, then the selected Agent's Plugin/MCP defaults, then root YAML defaults. An omitted Environment ultimately selects `environment-native`. An explicit projectless conversation skips Project defaults. Creation previews and the TUI's pre-conversation Skill catalog use these same choices.
 
-Changing these defaults does not update existing conversations. Use the [HTTP configuration workflow](http-api.md#configure-projects-and-threads) to preview and explicitly apply only the Project's configured axes to a saved Thread. Other Thread choices remain unchanged; stale previews fail instead of silently applying changed defaults. In WebUI, edit these values under **Settings → Projects**. A conversation's **Conversation details → Configuration** separates its captured Run configuration from editable next-Run selections.
+Changing these defaults does not update existing conversations. Use the [HTTP configuration workflow](http-api.md#configure-projects-and-threads) to preview and explicitly apply only the Project's configured axes to a saved Thread. Other Thread choices remain unchanged; stale previews fail instead of silently applying changed defaults. In WebUI, edit these values under **Project menu → Project settings**. A conversation's **Conversation details → Configuration** separates its captured Run configuration from editable next-Run selections.
 
 ### Thread Environments and composer overrides
 
@@ -200,7 +200,7 @@ authentication:
 
 ### Choose working directories
 
-Under **Settings → Projects → Environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
+Under **Project menu → Project settings → Environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
 
 1. Select an existing Device or connect a new one inline. Choose the allowed actions for this environment.
 2. Enter a known absolute directory, choose **Use Device default**, or browse and explicitly select a directory. Use **Add another directory** for additional paths on the same environment.

@@ -27,14 +27,15 @@ Both observer classes accept `processor=None` and `retain_events=True`. They exp
 
 Import display types from `a13n_stream_protocol.display`, not the package root:
 
-| API                                                                | Purpose                                                                      |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `DisplayFold(run_id, *, attempt=0, full_content=False)`            | Convert native observations and normalize raw events into display items      |
-| `fold.events(source)`                                              | Convert one native source item with the fold's non-retaining stream observer |
-| `fold.fold(events, source=None)`                                   | Accumulate events and return sequence/item references                        |
-| `fold.export()` / `DisplayFold.restore(snapshot)`                  | Detach and restore a `DisplaySnapshot` containing items and continuation     |
-| `fold.export_continuation()`                                       | Detach parser state separately from display items                            |
-| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition` | Validate and serialize checkpoint content and continuation                   |
+| API                                                                     | Purpose                                                                         |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | Convert native observations and normalize raw events into display items         |
+| `fold.events(source)`                                                   | Convert one native source item with the fold's non-retaining stream observer    |
+| `fold.fold(events, source=None)`                                        | Accumulate events and return sequence/item references                           |
+| `fold.export()` / `DisplayFold.restore(snapshot, processor=None)`       | Detach and restore a `DisplaySnapshot` containing items and continuation        |
+| `fold.capture_delta()`                                                  | Detach items changed since the previous capture, with the matching continuation |
+| `fold.export_continuation()`                                            | Detach parser state separately from display items                               |
+| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition`      | Validate and serialize checkpoint content and continuation                      |
 
 The default display preview limits each text, argument, or result field to 262,144 characters and marks truncation. Large observation payloads keep their name rather than an unbounded payload copy. `full_content=True` retains full display content. Neither mode is constant-memory: retained items still grow with the conversation.
 

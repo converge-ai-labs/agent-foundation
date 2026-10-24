@@ -138,6 +138,23 @@ Detach retains the worker and policy during the Session's disconnect grace perio
 
 Each controlled Session reserves its configured Session budgets against Device totals at creation. This conservative allocation can admit fewer idle Sessions than `max_sessions`; increase the corresponding Device totals when needed. Capacity is released after confirmed worker death. If staged files cannot be proven cleaned, their reservation remains charged until daemon teardown; repeated failed cleanup cannot bypass Device accounting.
 
+## Verify a sandbox image
+
+1. Install the prerequisites above.
+2. Provision the execution account.
+3. Run the public EIP integration test with the root launcher used for deployment:
+
+```bash
+python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd
+
+# Additional native sudo, package, identity, file and cleanup checks.
+# Requires a disposable Debian/Ubuntu sandbox, sudo, ACL tools and UID/GID 1000
+# with a test-only NOPASSWD sudoers rule. This test changes the sandbox system.
+python3 crates/a13n-envd/tests/execution_linux.py /path/to/a13n-envd --controlled
+```
+
+The test uses generated dummy credentials against `httpbin.org`. `--http-host httpbingo.org` selects an alternative compatible endpoint. On images that only permit essential development services, `--http-host api.github.com` verifies header substitution through GitHub media-type validation and response-header redaction instead of Basic authentication and body echo. It checks real HTTPS authentication, response redaction, policy updates, replay, filesystem access, native Unix sockets, capacity reuse, and broker-death cleanup. `--local-network-fixture` also creates a temporary public-address alias in the outer test namespace for TCP/UDP echo checks; use it only in a disposable privileged Linux sandbox.
+
 ## Cloud platform validation record
 
 The following results were recorded by **2026-09-22**. All five cloud platforms used the same Linux x86_64 binary and generated dummy credentials. Provider credentials stayed outside the Session. These are Envd runtime probes on disposable sandboxes, not validation of a Provider/Service egress integration or every vendor image.
@@ -186,20 +203,3 @@ This SDK setting selects the outer runtime; it is not an Envd configuration fiel
 Test images were prepared with missing networking tools and CA certificates. Temporary launch probes used a Vercel timeout accepted by the account and omitted Daytona resource overrides incompatible with its default snapshot. Modal's local SDK client needed proxy-support dependencies and an explicit CA bundle path for the host Python installation; these were client connection settings, not payload proxy configuration. None of these probe adjustments changed production Provider code.
 
 All temporary cloud sandboxes were terminated; native Provider instances were reconciled absent and all five Modal instances, including connection-diagnostic attempts, were confirmed stopped. For a new validation run, record the validation date, image, runtime, kernel, launch identity and fixture coverage together, including any behavior changes that have not been retested. A pass on one image or a previous Envd binary is not a platform-wide support guarantee.
-
-## Verify a sandbox image
-
-1. Install the prerequisites above.
-2. Provision the execution account.
-3. Run the public EIP integration test with the root launcher used for deployment:
-
-```bash
-python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd
-
-# Additional native sudo, package, identity, file and cleanup checks.
-# Requires a disposable Debian/Ubuntu sandbox, sudo, ACL tools and UID/GID 1000
-# with a test-only NOPASSWD sudoers rule. This test changes the sandbox system.
-python3 crates/a13n-envd/tests/execution_linux.py /path/to/a13n-envd --controlled
-```
-
-The test uses generated dummy credentials against `httpbin.org`. `--http-host httpbingo.org` selects an alternative compatible endpoint. On images that only permit essential development services, `--http-host api.github.com` verifies header substitution through GitHub media-type validation and response-header redaction instead of Basic authentication and body echo. It checks real HTTPS authentication, response redaction, policy updates, replay, filesystem access, native Unix sockets, capacity reuse, and broker-death cleanup. `--local-network-fixture` also creates a temporary public-address alias in the outer test namespace for TCP/UDP echo checks; use it only in a disposable privileged Linux sandbox.

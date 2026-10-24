@@ -119,7 +119,7 @@ executable = HarnessBuilder(
 | `WebCapability`                | 搜索、获取和抓取 Toolset                                             | 具有当前客户端和策略的 `WebBinding`                  |
 | `HandoffCapability`            | 显式 `summarize` 工具和续接提醒                                      | 否                                                   |
 | `CompactionCapability`         | provider 用量触发的同 Agent 纯文本压缩，重放保留用户输入             | 否                                                   |
-| `SubagentCapability`           | 明确声明的子 Agent 的内联或异步执行                                  | 定义选择的 `SubagentOperator`                        |
+| `SubagentCapability`           | 明确声明的子 Agent 的内联或异步执行                                  | 异步：定义选择的 `SubagentOperator`；内联：无需      |
 | `CodeActCapability`            | 受限 Python runner 和显式键到 JSON 存储值                            | 明确选定的适用工具，以及用于程序的环境文件           |
 | `ContextualMCP`                | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次                        | Harness 提供的当前 `AgentContext`                    |
 
@@ -217,13 +217,20 @@ Harness 默认在 `extra_high` 风险时触发 `deny`；配置 `on_flagged: appr
 
 ## 结构化用户交互
 
-当前 `RunBindings.deferred_tools_supported` 启用时，`UserInteractionCapability` 为根和子 Agent 提供 `ask_user_question`。等待用户时，调用不会让 Harness 执行一直打开。它返回 `status="suspended"`，携带原生请求和可移植状态。Host 随后提供新绑定、之前状态和关联的 `DeferredToolResume`。[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)显式禁用延后工具；Host 管理的子 Agent 使用原生恢复边界。不支持的执行既不提供工具，也不提供其指导。
+当前 `RunBindings.deferred_tools_supported` 启用时，`UserInteractionCapability` 为根和子 Agent 提供 `ask_user_question`。等待用户时，调用不会让 Harness 执行一直打开。它返回 `status="suspended"`，携带 Harness 延后请求和可移植状态。Host 随后提供新绑定、之前状态和关联的 `DeferredToolResume`。[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)显式禁用延后工具；Host 管理的子 Agent 使用原生恢复边界。不支持的执行既不提供工具，也不提供其指导。
 
 请求与答案载荷、应用自定义类型和关联恢复示例见[人机协作工具](human-in-the-loop.md)。[状态与恢复](state-and-resume.md)介绍通用的继续执行生命周期。
 
 ## 媒体、文档与 Web
 
-这些功能将稳定模型工具 schema 与当前 provider 实现分离：
+这些功能将稳定模型工具 schema 与当前 provider 实现分离。启用文档转换：
+
+1. 在应用中选择 PDF/Office 转换器；Harness 没有默认转换器。
+2. 实现异步方法 `DocumentConverter.convert(request)`。从 `a13n_harness.toolsets.documents` 导入该协议、`DocumentConversionRequest` 和 `DocumentConversionResult`。
+3. 转换请求中的独立 `source_bytes`，遵守页范围、截止时间和输出限制。返回 Markdown，以及可选的 `DocumentAsset` 相对路径和字节；临时文件与转换器依赖由适配器管理。
+4. 按下例将适配器绑定为 `document_converter`。Harness 读取获授权的源文件，并通过 Environment 验证和发布返回文件。
+
+外围应用提供 `agent_spec`、`model` 和转换器实例：
 
 ```python
 from a13n_harness import RunBindings

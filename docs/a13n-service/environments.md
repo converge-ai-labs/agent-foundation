@@ -8,7 +8,7 @@ An environment is the computer an agent works on: its files and terminal tools a
 - **Managed environments**, which the Service creates, starts, stops and deletes from a **template**, such as a Docker container per thread.
 - **External targets**, computers you run yourself with the `a13n-envd` daemon, which the Service only connects to.
 
-Each managed vendor retains a resource management provider for creation, inspection, start/stop, destruction, renewal, and connection preparation. Execution follows the [shared model](../environments/index.md#choose-a-backend): Native Local/Docker/E2B provide Files & Shell for quick setup; Envd provides general execution with OS sandbox, Egress, Computer use, and Device metrics.
+Each managed vendor retains a resource management provider for creation, inspection, start/stop, destruction, renewal, and connection preparation. Execution follows the [shared model](../environments/index.md#choose-a-backend): Native Local/Docker/E2B/Vercel/Sprites/Runloop provide Files & Shell for quick setup; Envd provides general execution with OS sandbox, Egress, Computer use, and Device metrics.
 
 Threads **mount** environments. Each run freezes the thread's mounts when it is accepted and uses them until it ends. Without a mounted environment, an agent has no file or terminal tools.
 
@@ -28,7 +28,7 @@ Local and Docker provisioning default off; enable them in [Service settings](con
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
-In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Changing configuration requires replacing or removing any saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
+In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Configuration changes keep an omitted credential. Replace it by providing a new value, or remove it with `null`; the new authentication mode must permit the saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
 
 ![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.webp)
 
@@ -86,15 +86,6 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
 To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
-
-### Automatic Vercel desktops
-
-1. Add a Vercel environment connection, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
-2. Create a Vercel environment template, choose that connection and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
-3. Create an instance from the template. The first creation builds a desktop snapshot and can take several minutes. Console shows its current phase and elapsed time. You can leave the page and return to **Environment instances** while creation continues.
-4. When ready, open the desktop preview. Runs using this environment can use Computer operations and Console human control. If creation fails, correct the reported configuration or permissions and use **Retry creation** when available.
-
-Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
 
 ### Default environment variables
 
@@ -231,6 +222,15 @@ Give an agent a graphical desktop to inspect screens, click controls and type. S
 
 Use loopback or an explicitly trusted private link for the plain-HTTP operation channel, with the deployment's outbound policy configured accordingly. Workers need access to the host address and Docker-assigned port. For a custom image, select **Custom image** and provide an image compatible with Envd HTTP and a graphical session; set `execution: "envd_http"` and `desktop: true`.
 
+### Automatic Vercel desktops
+
+1. Add a Vercel environment connection, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
+2. Create a Vercel environment template, choose that connection and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
+3. Create an instance from the template. The first creation builds a desktop snapshot and can take several minutes. Console shows its current phase and elapsed time. You can leave the page and return to **Environment instances** while creation continues.
+4. When ready, open the desktop preview. Runs using this environment can use Computer operations and Console human control. If creation fails, correct the reported configuration or permissions and use **Retry creation** when available.
+
+Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
+
 ### Enable observation and interaction
 
 For an existing Envd-backed desktop with compatible Computer methods, start here. Computer permissions default off and are independent of desktop readiness.
@@ -247,6 +247,16 @@ Computer permissions default off. They do not constrain terminal commands or oth
 When upgrading to this capability, upgrade Service control and worker roles together before accepting new Runs. Older workers cannot consume the new mount snapshots and screenshot dependency metadata. Existing mounts and old Run snapshots retain their original file/execution permissions with Computer operations disabled.
 
 Open **Environments and memory** from the session actions menu to configure Computer permissions for each mount. Run Details shows the permissions captured for that Run. The mount list separates **Computer permissions** from **Desktop status**. Status starts as **Not checked**; **Check desktop** probes a running environment without taking a screenshot or sending input. Unsupported environments explicitly explain that granting permissions does not add desktop support. Results describe the last check, not continuous monitoring. The result distinguishes absent desktop support, an unready desktop and supported operations; it does not grant Agent permissions or start stopped environments.
+
+### Computer coordinate mode
+
+For a model that returns relative desktop positions, set the agent configuration to:
+
+```json
+{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
+```
+
+The tools convert relative coordinates from 0 to 1000 on each axis into the observed screenshot's pixels. Ask the model to pass relative positions directly, without multiplying by screen dimensions. Omit this setting or select `pixels` for models that already return pixel positions. The choice applies to pointer positions, including both drag endpoints, but not scroll distances or keyboard input. It works with Envd-backed desktop environments that advertise the requested Computer methods. Always verify the resulting application state; a successful click does not prove that a form was submitted.
 
 ### Agent-requested desktop assistance
 

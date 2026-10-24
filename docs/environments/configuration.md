@@ -3,7 +3,7 @@ title: Configure Providers
 description: Configure a Provider's target, backend connection, and credentials separately.
 ---
 
-Configure the target, backend connection, and credentials separately. Keep runtime clients in memory and save `EnvironmentState` to reconnect later.
+Configure the target, backend connection, and credentials separately. Keep runtime clients in memory and save `EnvironmentState` to reconnect later. For live Session continuity, use a separate Host-owned [Session recovery hint](remote-envd.md#state-concurrency-and-recovery).
 
 | Value                                         | Owns                                            | Example                                                  |
 | --------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
@@ -17,9 +17,7 @@ Configure the target, backend connection, and credentials separately. Keep runti
 
 A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 
-The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts, and shell profiles.
-
-The [execution model](index.md#choose-a-backend) defines Native Files & Shell and general Envd execution. The [configuration reference](configuration-reference.md) is generated from current models and still includes pre-migration fields. Choose capabilities by execution path and migrate existing configuration explicitly.
+The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts and shell profiles. Available operations follow the selected [execution path](index.md#choose-a-backend) and its advertised descriptor.
 
 ## Host outbound connections
 

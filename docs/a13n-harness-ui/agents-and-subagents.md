@@ -334,6 +334,7 @@ Every Agent YAML uses `schema_version: "1"`, `kind: agent`, a unique `agent-` ID
 | `harness_plugins` | `null`  | Inherit root defaults; `[]` selects none; a list selects exact IDs                                        |
 | `mcp_servers`     | `null`  | Inherit root defaults; `[]` selects none; a list selects exact IDs                                        |
 | `tools`           | `null`  | No additional visibility filter; `[]` exposes no optional contributed tools; a list is an exact allowlist |
+| `tool_search`     | `null`  | Optional [tool search groups](#tool-search-groups) and search configuration                               |
 | `subagents`       | `[]`    | Ordered `agent` or `markdown` references                                                                  |
 
 Plugin/MCP defaults initialize a new Thread's exact selections. Later global defaults do not rewrite those sticky selections. Referenced resources and included children are resolved again for later Runs, while captured executions remain immutable.

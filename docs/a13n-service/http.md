@@ -22,7 +22,9 @@ Browsers use the login session cookie set by `POST /api/v1/auth/login`. For cook
 - send the login session's CSRF token in `X-CSRF-Token`; login returns it, and `GET /api/v1/auth/session` returns it again for an existing login session;
 - an `Origin` header, if sent, must equal the origin of `server.public_url`; for a loopback public URL, `localhost` and `127.0.0.1` are interchangeable.
 
-Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting a browser authorization (an OAuth authorization code or a connector account setup). An API key gets `403 forbidden` from all of them, one status everywhere: it never mints something that can outlive it, and never hands a third party a link to complete on your behalf. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
+Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting personal Connection authorization (OAuth or connector account setup). API keys receive `403 forbidden` for these operations. Workspace Model Provider authorization accepts API keys with the required workspace permissions. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
+
+Creating a [Schedule](schedules.md) delegates durable execution authority. Revoking or expiring the original API key does not stop that Schedule; pause or archive it to stop future submissions.
 
 Every authenticated response, including the route's own answer and any error after authentication, carries `Cache-Control: no-store` and, when the login session was renewed, its refreshed cookie.
 
@@ -92,9 +94,11 @@ These operations require an `Idempotency-Key` header of 1–512 visible ASCII ch
 
 - `POST …/threads` (start a thread with its first message) and `POST …/threads/{thread_id}/inbox` (submit a message)
 - `POST …/runs/{run_id}/fork` and `POST …/runs/{run_id}/resume`
+- `POST …/schedules` and `POST …/schedules/{schedule_id}/dispatch`
+- `POST …/finding-analyses`
 - `POST …/uploads`
 
-Generate a unique key per logical request and reuse it when retrying after a lost response. A first submission returns `201`; uploads return `200`. A retry with the same key and request returns `200` with the same created objects in their current state, not a copy of the first response. Reusing the key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.
+Generate a unique key per logical request and reuse it when retrying after a lost response. A first submission returns `201`; manual Schedule dispatch returns `202`, and uploads return `200`. A retry with the same key and request returns `200` with the same created objects in their current state, not a copy of the first response. Reusing the key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.
 
 ## Paging
 

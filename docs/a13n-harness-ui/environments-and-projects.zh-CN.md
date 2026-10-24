@@ -80,7 +80,7 @@ a13n-harness-ui --environment-profile environment-team
 
 远程 Device 复用已有的认证连接。在 Envd 启动配置中启用 `monitoring` 后开始采样；禁用采样时仍可查看静态系统信息。内置本地 Sandbox、Envd 和 Desktop 在 daemon 启动时启用采样。在 **Settings → Environments → Local runtime → Metrics collection** 中选择 10、30 或 60 秒（默认 60 秒），重启 App 后生效。根 YAML 字段 `envd.monitoring_interval_seconds` 支持 10 至 60 的整数，控制 App 采集和内置本地采样；自定义启动配置和外部 daemon 保留各自的采样设置，浏览器仍每分钟刷新。打开监控不会下载或启动 Envd。Direct 和其他非 Envd Provider 不提供这些指标。本地运行时获取与已安装 `a13n-envd-client` 完全相同的版本；此扩展概览需要 EIP 0.3，计划随 Envd/client 0.5.0 发布。远程 daemon 和客户端应一起升级。
 
-面板区分等待采样、禁用、样本过期和离线。缺失值显示为 **—**，缺失分钟保留为空白。最新观测详情包含原始单位的压力值和累积计数。历史仅保存在 App 内存中，重启即清空。采集最多覆盖 64 个 Device、同时发起四个请求，每条历史保留 60 个分钟槽。每个 Device 除系统和套接字历史外，最多保留64 个接口及 64 个磁盘的速率历史；超出 Device 或速率源数量会明确提示，不继续扩大 buffer。64 个 Device 的数值历史存储低于 42 MiB，最新观测有独立容量限制。修改或撤销 Device 会清空其历史。监控请求使用独立的有界客户端通道，超时不会占满 Session 创建容量。daemon 资源锁忙时相应指标暂缺，不等待锁而拖住执行；原生采样卡住时仍显示上次样本及持续增长的样本年龄。
+面板区分等待采样、禁用、样本过期和离线。缺失值显示为 **—**，缺失分钟保留为空白。最新观测详情包含原始单位的压力值和累积计数。历史仅保存在 App 内存中，重启即清空。修改或撤销 Device 也会清空其历史。达到采集限制时，面板会提示。不可用或停滞的样本保留为空白，或显示上次样本及其年龄，不会记为零用量。
 
 ## Project 文件参考
 
@@ -126,7 +126,7 @@ defaults:
 
 新对话先解析显式选择，再使用 Project 默认值、所选 Agent 的 Plugin/MCP 默认值、根 YAML 默认值。Environment 省略时最终选择 `environment-native`。显式无 Project 对话跳过 Project 默认值。创建预览和 TUI 对话前 Skill 目录使用同样选择。
 
-改变默认值不更新已有对话。通过 [HTTP 配置工作流](http-api.md#configure-projects-and-threads)预览，并显式将仅由 Project 配置的维度应用到已保存 Thread。其他选择不变；过时预览会失败，不静默应用新默认值。在 WebUI 的 **Settings → Projects** 中编辑。**Conversation details → Configuration** 将已捕获 Run 配置与可编辑的下一 Run 选择分开显示。
+改变默认值不更新已有对话。通过 [HTTP 配置工作流](http-api.md#configure-projects-and-threads)预览，并显式将仅由 Project 配置的维度应用到已保存 Thread。其他选择不变；过时预览会失败，不静默应用新默认值。在 WebUI 的 **Project 菜单 → Project settings** 中编辑。**Conversation details → Configuration** 将已捕获 Run 配置与可编辑的下一 Run 选择分开显示。
 
 ### Thread Environment 与输入框覆盖
 
@@ -200,7 +200,7 @@ authentication:
 
 ### 选择工作目录
 
-在 **Settings → Projects → Environments** 或 **Conversation details → Configuration → Change next Run selections** 中选择 **Add environment** ：
+在 **Project 菜单 → Project settings → Environments** 或 **Conversation details → Configuration → Change next Run selections** 中选择 **Add environment** ：
 
 1. 选择已有 Device 或直接连接新 Device。选择这个环境允许的操作。
 2. 输入已知绝对目录，选择 **Use Device default**，或浏览并显式选择目录。使用 **Add another directory** 添加同一环境中的其他路径。

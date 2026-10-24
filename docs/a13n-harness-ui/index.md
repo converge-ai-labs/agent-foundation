@@ -16,7 +16,7 @@ cd your-repository
 a13n-harness-ui
 ```
 
-Setup connects a Model using a supported subscription or API key and lets you choose execution permissions. Full Control uses your Host account; Sandbox uses supported Linux/macOS isolation. Windows built-in execution supports Full Control. See [Setup](setup.md) for the steps and [Installation](installation.md) for upgrades.
+Setup connects a Model using a supported subscription or API key and lets you choose execution permissions. Full Control uses your Host account; Sandbox checks the [local isolation requirements](environments-and-projects.md#execution-permissions) before use. See [Setup](setup.md) for the steps and [Installation](installation.md) for upgrades.
 
 Try a first prompt:
 

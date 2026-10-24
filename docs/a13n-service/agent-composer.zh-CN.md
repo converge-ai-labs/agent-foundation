@@ -99,16 +99,10 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
 
 平台组和 skill 默认都不选择。每个工具有自己的 `permission`；`inherit` 时读取直接执行，写入先请求批准。选择工具提供操作能力，选择 skill 提供说明。修改配置后，正在执行的运行保留接收时的授权和工具范围。
 
-`platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。它与用户 Skill 共用 Harness Skills 目录和读取机制。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`；`/platform-instance` 中的部署目录在进程启动时生成一次，供各次 attempt 共用。
+`platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`，部署目录位于 `/platform-instance`。
 
 启用 `view`、`ls`、`glob` 和 `grep` 来读取 skill。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
 
 ### Computer 坐标模式
 
-如果模型输出相对桌面坐标，可在 agent 配置中设置：
-
-```json
-{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
-```
-
-工具会将每个轴上 0 到 1000 的相对坐标转换为观察截图的像素坐标。让模型直接传入相对坐标，不要自行乘以屏幕尺寸。对于已经输出像素坐标的模型，省略此设置或选择 `pixels`。该设置适用于鼠标位置，包括拖拽的两个端点，不改变滚动距离或键盘输入。声明所需 Computer 方法的 Envd 桌面环境可使用此设置。始终检查应用的实际状态；点击成功不代表表单已提交。
+请在[环境的 Computer 配置](environments.md#computer-coordinate-mode)中选择像素或相对坐标模式。

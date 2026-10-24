@@ -6,7 +6,7 @@ Use this package when implementing an Environment Provider or a trusted EIP inte
 
 ## Public surface
 
-- Generated EIP 0.2 models, codecs, method metadata, and typed `EIPClient` operations for every protocol method in `a13n_envd_client.eip.v1`.
+- Generated EIP 0.3 models, codecs, method metadata, and typed `EIPClient` operations for every protocol method in `a13n_envd_client.eip.v1`.
 - `EIPDeviceConnection`: Device initialization, descriptor and directory discovery, independent Session acquisition, and physical transport ownership.
 - `EIPSession`: fixed-cwd execution scope, readiness, keepalive, monotonic descriptor refresh, clean close, abort, and transfer helpers.
 - `StdioTransport`, `HttpTransport`, and `AcceptedWebSocketTransport` over trusted Host-provided pipes, an authenticated HTTP(S) endpoint, or an already-authenticated reverse-WebSocket connection.

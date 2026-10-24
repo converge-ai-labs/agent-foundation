@@ -241,7 +241,7 @@ WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** �
 
 在 **Settings → Environments** 中，使用标识、HTTP endpoint 或反向 WebSocket 传输，以及凭据引用添加 Device 连接。**Check connection** 读取实时 Device 描述；保存连接不要求 Device 在线。同一资源可复用于不同工作目录和别名。
 
-在 **Projects** 或 **Configuration → Change next Run selections** 中，使用 **Add environment** ，选定 Device，再输入已知绝对工作目录，或浏览在线 Device。**Use this directory** 只修改草稿。使用 **Add directory** 在已有环境内添加路径。通过 **Default working directory** 从选中的环境里选择默认工作目录；移除该目录时，必须先选择替代目录再保存。Project 可以组合本地文件夹和远程 Environment，也可以只使用远程 Environment，但必须保留至少一个工作目录。Device 目录浏览不依赖原生计算机共享。
+在 **Project settings → Environments** 或 **Conversation details → Configuration → Change next Run selections** 中，使用 **Add environment** ，选定 Device，再输入已知绝对工作目录，或浏览在线 Device。**Use this directory** 只修改草稿。使用 **Add directory** 在已有环境内添加路径。通过 **Default working directory** 从选中的环境里选择默认工作目录；移除该目录时，必须先选择替代目录再保存。Project 可以组合本地文件夹和远程 Environment，也可以只使用远程 Environment，但必须保留至少一个工作目录。Device 目录浏览不依赖原生计算机共享。
 
 对未被使用的 Device 或自定义 profile 使用 **Forget**，即可删除本地配置，即使 Device 离线或 provider 已卸载也可以。对话框会列出当前配置引用，并链接到对应编辑器。先修复这些默认值，再回来移除资源。这不会删除远程数据、卸载 provider 或删除对话历史。内置 Environment 不能移除。
 
@@ -290,7 +290,7 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 每个打开的页面还会显示应用内通知，包括正在查看的对话。这些通知不受六小时或访问历史限制。系统推送和应用内通知可能同时出现。**Web Push 是唯一的系统通知路径**：如果不支持或无法连接 provider，就只剩应用内通知，没有本地系统通知后备机制。
 
-升级后，请重新加载此前打开的 WebUI 页面。现有订阅和签名密钥保留，但旧 Thread 关注列表移除。更新后的可见页面首次报告活动时，设备才恢复接收资格；仅同步注册不算活动。
+升级后，重新加载 WebUI 并保持更新后的页面可见，以续期此设备的交付窗口。现有订阅和签名密钥保留。
 
 如果启用时报告 **Browser push registration failed**，表示浏览器在将订阅保存到 Harness UI 之前就未能取得订阅。错误保留浏览器原始详情，并将此阶段与服务器交付区分。Android Chrome 的推送服务错误，应检查 Google Play 服务和设备到推送服务的连通性，包括 VPN 或防火墙限制。能打开 WebUI 不代表推送可达。比较 Wi-Fi 与移动数据，再明确重试注册。不要一开始就清空浏览器存储，因为这也会删除私人草稿和偏好。
 
@@ -298,7 +298,7 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 关闭 **Enable browser notifications** 会移除此浏览器订阅并停止权限提醒，不影响应用内通知或其他设备。退出登录也会尝试清理。如果浏览器和服务器两端清理都失败，可以在浏览器站点通知权限中阻止交付。清除浏览器存储不等于服务器取消订阅；可行时应先关闭通知。
 
-推送采用尽力交付，不是持久通知收件箱。服务器使用有界内存队列和有限重试，关闭或 provider 故障可能丢失提醒。重新打开 WebUI 不会重放旧的完成事件。推送不改变已保存历史、浏览器本地新结果圆点，或 Agent 工作的生命周期。请安全备份服务器数据根目录，以保留签名身份和订阅。
+推送采用尽力交付：关闭服务器或 provider 故障可能丢失提醒，重新打开 WebUI 不会重放。请打开对话查看结果。安全备份服务器数据根目录，以保留签名身份和订阅。
 
 ## Agent 协作与 Sidekick
 

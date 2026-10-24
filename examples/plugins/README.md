@@ -415,7 +415,7 @@ Code mode reports `selection mode: code` and `plugin id: recorder-code`.
 - Keep the Agent-bound plugin reentrant.
 - Return an exact-type run-isolated instance from `for_run()` when run state is mutable.
 - Express ordering through `PluginOrdering`.
-- Call `call_next(exchange)` at most once and put cleanup in the returned async iterator.
+- Await `call_next(exchange)` at most once and put cleanup in `try/finally` around that await.
 - Do not retain credentials, raw prompts, model output, or unbounded event payloads.
 - Use a production-owned async sink when observations leave the process.
 

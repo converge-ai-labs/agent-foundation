@@ -5,6 +5,12 @@ description: Add model providers and models, configure media understanding, and 
 
 An agent calls a **model**: an upstream model of a **model provider** account, with the model API to call it through, its model input capabilities and optional pricing. Providers and models belong to one [workspace](resources.md#workspaces), and agents select a model by its key.
 
+To use your first model:
+
+1. Open **Models → Add model → Connect a new provider** and enter the provider's account details.
+2. [Add a model](#add-a-model), choose the API your endpoint supports, and save it.
+3. Select that model on an agent and send one message. A successful response verifies inference access; catalog visibility alone does not.
+
 ## Model providers
 
 In Console, open **Models → Add model → Connect a new provider**, or manage providers under **Workspace settings → Providers**. Through the API, create a provider in `/api/v1/model-providers` as described in [Providers](resources.md#providers).

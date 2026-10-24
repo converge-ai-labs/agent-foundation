@@ -3,7 +3,7 @@ title: 配置 provider
 description: 分别配置 provider 的目标、后端连接和凭据。
 ---
 
-分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。
+分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。活跃会话的连续性使用单独的 Host 自有[会话恢复提示](remote-envd.md#state-concurrency-and-recovery)。
 
 | 值                                | 职责                               | 示例                                 |
 | --------------------------------- | ---------------------------------- | ------------------------------------ |
@@ -17,9 +17,7 @@ description: 分别配置 provider 的目标、后端连接和凭据。
 
 每个定义对每种类别只管理一个模型。没有配置 schema 版本：改变输入含义就改变了 provider 类型。
 
-[生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。
-
-[执行模型](index.md#choose-a-backend)定义 Native Files & Shell 与 Envd 通用执行的能力边界。[配置参考](configuration-reference.md)从当前模型生成，仍包含迁移前的字段；选择路径时以执行模型为准，迁移已有配置需显式进行。
+[生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。可用操作由选定的[执行路径](index.md#choose-a-backend)及其声明的描述符决定。
 
 ## Host 出站连接
 

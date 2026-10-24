@@ -112,7 +112,7 @@ active_key_id = "primary"  # the key itself comes from A13N_ENCRYPTION__KEYS
 
 ## 出站请求
 
-Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点的每次请求都遵循同一端点策略：
+Service 自有 HTTP 客户端对 provider、远程 MCP、OAuth 和 webhook 请求应用同一端点策略：
 
 - URL 使用 `http` 或 `https`，不包含用户信息、片段或类似凭据的查询参数。
 - `providers.require_https = true`（默认值）时，拒绝明文 HTTP，除非源与 `providers.http_origins` 中的条目完全一致。

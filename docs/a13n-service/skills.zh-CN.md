@@ -28,7 +28,11 @@ description: Write release notes from merged pull requests.
 
 ## 添加 skill
 
-在 Console 中打开 **技能 → 导入技能**，选择 ZIP 文件或 GitHub 仓库。通过 API 使用时，skill 来源可以是上传文件或公开 GitHub 目录：
+1. 在 Console 中打开 **技能 → 导入技能**，选择 ZIP 文件或 GitHub 仓库。
+2. 打开 agent，选择导入的 skill 并保存修订版本。保存时会固定所选 skill 修订版本。
+3. 使用[主环境](environments.md)开始对话，要求 agent 使用该 skill。检查它是否先读取 `SKILL.md` 再执行其中的步骤。
+
+通过 API 使用时，skill 来源可以是上传文件或公开 GitHub 目录：
 
 ```sh
 # Stage the archive (see Uploads), then create the skill from it
@@ -91,9 +95,9 @@ Agent 修订版本在 `skills` 中使用 `{"skill_id": "sk_…", "revision_id": 
 {"skill_sync": {"mode": "isolated", "cache_count": 128}}
 ```
 
-目录中的路径为 `/workspace/.agents/skill-cache/<package-digest>/<name>`。不同包并存，归档字节相同的包复用目录，无需再次下载。`cache_count` 是该 Environment 的非负包数量软预算；`0` 禁用清理。每个 Agent 在物化时应用自身的预算。使用中的包受到 pin 保护，执行结束时释放；清理按最近使用时间淘汰空闲包，单次工作量有界，因此缓存可能暂时超出预算。共享模式的 cleanup 不会触碰这个缓存。
+目录路径为 `/workspace/.agents/skill-cache/<package-digest>/<name>`，不同版本可并存，相同包复用同一目录。`cache_count` 是包数量软预算；`0` 禁用清理。每个 agent 应用自己的预算，删除空闲包并保留使用中的包。缓存可以暂时超出预算。共享模式的 cleanup 不会触碰它。
 
-隔离模式共享不可变的包内容，不为每个 agent 分配物理副本。不可变性是 Service 的发布保证；已授权的文件和 shell 操作仍可修改这些文件。缓存发布失败不会改变已有包。取消或结果不确定的修改会保留防止淘汰的保护状态，也可能留下暂存目录或 pin，供运维人员后续清理。
+Service 以不可变方式发布包；已授权的文件和 shell 操作仍可修改它们。发布失败会保留已有包。取消或结果不确定时留下的状态，按[发布与清理](#publication-and-cleanup)处理。
 
 ### 覆盖单次运行
 

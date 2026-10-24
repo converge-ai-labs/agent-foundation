@@ -40,7 +40,7 @@ provider close preserved remote daemon and workspace
 
 ## 连接已有 HTTP 守护进程
 
-运维人员通过受保护渠道提供 HTTP(S) origin、配置的 `A13N_ENVD_DEVICE_ID` 和凭据。origin 不含 `/eip/control` 后缀：客户端自行构造 EIP 资源路径。
+运维人员通过受保护渠道提供 HTTP(S) origin、配置的 `A13N_ENVD_DEVICE_ID` 和凭据。origin 不含 `/eip/control` 后缀：客户端自行构造 EIP 资源路径。使用 Host 自有的 [`PreparedSource` 辅助类](../a13n-harness/environments.md#supply-a-source)将连接配置传给 Harness：
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
@@ -52,7 +52,7 @@ state = EnvironmentState(
     state_version="1",
     state={"device_id": "env-remote-machine"},
 )
-environment = http_envd.execution_connector(
+connector = http_envd.execution_connector(
     {"working_directory": "/work/project"},
     configuration={"endpoint": "https://envd.example.com"},
     credential={"token": token_from_your_secret_store},
@@ -60,13 +60,14 @@ environment = http_envd.execution_connector(
     state=state,
 )
 
-# Harness binds, uses and closes this fresh adapter for the Run.
-result = await executable.run("Inspect the workspace", environment=environment)
+# PreparedSource comes from the Host integration above.
+# Harness opens and closes a fresh execution for this Run.
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
 HTTP 和 WebSocket Envd 只提供固定设备的连接配置；其定义不包含管理工厂或生命周期方法。
 
-不用 Harness 时，按 `remote.py` 进入适配器、确保就绪、使用操作接口，再在 `finally` 关闭适配器。共享 `HttpEnvdProviderRuntime` 保持打开，直到 Host 关闭。
+不用 Harness 时，使用 `async with await connector.open() as execution`，再调用该 execution 的操作接口。共享 `HttpEnvdProviderRuntime` 保持打开，直到 Host 关闭。
 
 示例 CLI 也能连接已有守护进程：
 
@@ -182,12 +183,19 @@ uv run environment-provider-example websocket_envd \
 ## 状态、并发与恢复
 
 - Host 逻辑环境 ID 可以不同于 Envd 设备 ID。初始化验证设备 ID；操作引用属于逻辑环境和当前代次。
-- 只持久保存 provider 状态封装。它不含凭据、端点、连接、会话或守护进程代次。
-- 一个设备接纳多个独立会话。每个新适配器以已记录 cwd 打开自己的会话并管理资源。会话不是租户隔离边界。
+- 保存可移植的 provider 状态封装以便重新进入目标。它不含凭据、端点、连接、会话或守护进程代次。可选的会话恢复提示应按下文单独保存。
+- 一个设备接纳多个独立会话。默认情况下，每个新 execution 以已记录 cwd 打开自己的会话并管理资源。会话不是租户隔离边界。
 - 关闭适配器只关闭自身会话，不关闭远程基础设施或借用连接。HTTP 和 WebSocket 设备连接都由 Host 管理。文件连续性保留；重启守护进程会使原生句柄失效。
 - 设备信息和有界目录列表不需要适配器或会话。在不可变执行接纳前，从设备信息解析省略的 cwd。
-- 消息帧传输通道丢失后，会话分离并进入断线宽限期。已有所有者可显式附加到同一代次的精确同一会话；不重放操作或传输。新适配器始终打开新会话。
+- 消息帧传输通道丢失后，会话分离并进入断线宽限期。已有所有者可显式附加到同一代次的精确同一会话；不重放操作或传输。新连接配置也可通过兼容的 Host 自有恢复提示重新附加。
 - 绝不能仅因连接断开就重放可能已分派的命令或修改。准备失败后，下一次尝试需要新适配器。
+
+要在 Host 执行中断后保留活跃会话：
+
+1. 从 `a13n_harness.environment.session_recovery` 创建 `EnvdSessionRecovery` 协作对象。仅在原逻辑执行范围内恢复其可选的 `EnvdSessionState`。
+2. 将 `session_recovery=recovery` 传给 `execution_connector(...)`。执行活跃时，将观察到的 `recovery.state` 保存到 Host 检查点，与 `EnvironmentState` 和 Harness 状态分开。
+3. 使用当前凭据和策略重新连接。附加前会校验目标、Device 身份与代次、cwd 和必需方法。提示不可用或不兼容时打开新会话；执行边界改变时拒绝附加。认证、传输和兼容性失败直接返回。受控出站会话重新解析当前策略并打开新会话。
+4. 正常关闭执行会关闭会话并清除内存提示；Host 应将变化同步到持久存储。恢复不会还原进程引用或重放修改，也不会排斥其他已认证客户端或延长会话有效期。
 
 WebSocket SDK 只在当前进程内工作。监听器和执行 worker 位于不同进程时，Host 必须将执行路由到连接所有者，或提供显式集成。不存在默认的自动中继、分布式注册表或全局连接池。
 

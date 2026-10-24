@@ -88,6 +88,8 @@ Agent 可以在同一次运行中继续：调用 `memory_file_view`，在下一�
 
 线程按名称**挂载** 记忆。每次运行接收时固定线程记忆挂载，启动时读取各记忆的上下文或召回记录，并通过 `memory_file_*` 和 `memory_record_*` 工具修改。
 
+使用独立文件型记忆时，先[创建](#create-a-file-memory)并[挂载到线程](#mount-a-memory-on-a-thread)，再让 agent 保存并读回一条简短事实。在[文件与历史](#files-and-history)中检查文件及作者，需要时恢复修订版本。删除记忆也会删除历史，因此删除前应另行备份。
+
 ## 创建文件型记忆
 
 创建和修改记忆需要 `write`：

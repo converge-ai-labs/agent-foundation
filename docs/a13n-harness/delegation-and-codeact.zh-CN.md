@@ -82,19 +82,11 @@ capability = SubagentCapability(
 
 operator 实现完整的 `delegate`、`info`、`wait`、`steer`、`cancel` 和 `resume`。受理前，Harness 解析确切子级、派生身份、应用上下文、用量限制交集和独立的父级关联。可用时还分别提供原工具调用 ID 和组装名称。operator 可据此派生自己的幂等身份和重放范围；Harness 不生成这些值。之后 operator 负责子 Thread 创建、新 `RunBindings`、Environment 关联和重新进入、递归 Harness 调用、存储、检查点、观测、唤醒、取消、恢复、丢失、清理和保留。
 
-Harness 不提供默认异步管理器、执行存储、后台任务注册表、父状态执行镜像或关闭方法。父 Run 或 Environment 关闭不取消已受理子任务，也不关闭 operator。`subagent_info` 和 `wait_subagent` 每次直接查询 Host。
+父 Run 或 Environment 关闭不取消已受理子任务，也不关闭 operator。`subagent_info` 和 `wait_subagent` 每次直接查询 Host。
 
 ### 明确的职责边界
 
-内联执行是唯一内置子执行器。异步支持不提供：
-
-- 进程本地调度器或默认存储；
-- 必需的数据库或检查点协议；
-- 完成回调或唤醒账本；
-- 跨进程取消路由；
-- 父 `HarnessState` 中的 Host 子级状态副本。
-
-根据所属 Host，在 `SubagentOperator` 后实现这些语义。受理后不要保留活动父 `AgentContext` 或已进入 Environment，也不要将父状态变成第二份子级存储。
+内联执行是唯一内置子执行器。异步执行由 Host 在 `SubagentOperator` 后实现调度、存储/检查点、完成交付、取消路由和关闭。子级状态保留在该 Host 存储中。受理后保留独立的关联信息和新绑定，而不是活动父 `AgentContext` 或已进入的 Environment。
 
 ### 子 Run 的延迟工具
 

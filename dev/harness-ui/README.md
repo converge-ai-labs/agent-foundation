@@ -1,6 +1,6 @@
 # Harness UI development tracing
 
-This directory owns the development environment for `HarnessUiApp`, shared by the CLI, WebUI and embedding API. It reuses the local Langfuse backend owned by `make langfuse-up`; it creates no duplicate infrastructure stack.
+Use this development profile to run the CLI, WebUI, or embedded `HarnessUiApp` with checkout-local configuration and traces in Langfuse.
 
 From the repository root:
 
@@ -9,20 +9,20 @@ make langfuse-up
 make cli
 ```
 
-`make cli`, `make webui`, and `make harness-ui-smoke` create `dev/harness-ui/.env` from its sibling `.env.example` when missing. Existing private files are never overwritten, including when the template changes. `make env-init` prepares both Harness development profiles without starting an application or infrastructure.
+`make cli`, `make webui`, and `make harness-ui-smoke` copy `dev/harness-ui/.env.example` to `.env` when missing and preserve existing files. `make env-init` prepares both Harness development profiles without starting them.
 
 `make cli` and `make webui` run the workspace version with startup update detection disabled and explicit workspace-local paths:
 
 - Configuration: `var/harness-ui/a13n-harness-ui.yaml`, with sibling Agent/Model and other resource directories.
 - Runtime data: `var/harness-ui/data/`, including the database, immutable objects and Threads.
 
-The entire `var/` directory is Git-ignored. On the first launch, if the development root YAML is missing, the launcher copies `~/.a13n-harness-ui/a13n-harness-ui.yaml`, its immediate Model/Agent/extension/MCP/Project/subagent resource files, and optional `AGENTS.md`. Existing destination files are never overwritten. Subsequent launches reuse the development copy without synchronizing changes from the original. If the user root YAML is also missing, the launcher creates a minimal root and the normal interactive launch enters setup. New users of the installed CLI do not need this bootstrap: a missing default configuration already enters setup directly.
+`var/` is Git-ignored. When the development root YAML is missing, the launcher copies the user's root YAML, immediate Model/Agent/Device/extension/MCP/Project/subagent resource files, and optional `AGENTS.md` from `~/.a13n-harness-ui/`. Existing destination files stay unchanged. Later launches reuse this copy without synchronizing it. If the user root YAML is also missing, the launcher creates a minimal root and enters normal setup.
 
-API-key Models with `credential_ref` also need the Host-local key store. The first copy includes only `auth.json` from the user's data root (`A13N_HARNESS_UI_DATA_ROOT` when set, otherwise `~/.a13n-harness-ui/data/`) into the development data root, with private file permissions. It never overwrites an existing key store or prints key values. Environment-variable references remain unchanged: supply their values in the shell or development `.env`. The first App bootstrap imports supported external Codex/Grok logins once into the development data root. Original CLI files remain unchanged; later native login, logout, and refresh affect only that development instance. A fresh development data root performs its own adoption. Native account IDs referenced by copied custom groups require matching accounts in that data root.
+API-key Models with `credential_ref` also need the Host-local key store. The first copy includes only `auth.json` from the user's data root (`A13N_HARNESS_UI_DATA_ROOT` when set, otherwise `~/.a13n-harness-ui/data/`) into the development data root, with private file permissions. It never overwrites an existing key store or prints key values. Environment-variable references remain unchanged: supply their values in the shell or development `.env`. The first App bootstrap imports supported external Codex/Grok logins once into the development data root. Original CLI files remain unchanged; later native login, logout, and refresh affect only that development instance. A fresh development data root performs its own adoption. Subscription groups are not copied. Recreate custom groups using accounts in the development data root before using Models that reference them.
 
-Databases, conversation history, immutable objects, logs, and installed Content Plugins are not copied. Install any required Content Plugins separately in the development data root; Python extension packages must be available in the workspace environment. Configuration bytes and external paths are preserved, not rewritten or migrated by the launcher. Invalid imported configuration remains visible for repair in the development copy instead of silently falling back to setup.
+The development instance starts with its own database, history, objects, logs, and Content Plugins. Install required Content Plugins there and Python extensions in the workspace environment. Copied configuration retains its bytes and external paths; repair invalid configuration in the development copy.
 
-Both destination paths are passed explicitly, so `A13N_HARNESS_UI_DATA_ROOT` from the shell or `.env` cannot redirect the default development runtime. The original configuration and application history are not modified. This exercises configuration compatibility and lets the retained development database follow later schema upgrades; it does **not** replay a migration from the daily-use database on every launch. Repeated migration tests require a separate disposable database snapshot, not this configuration-only bootstrap.
+Explicit destination paths keep the default runtime checkout-local even when `A13N_HARNESS_UI_DATA_ROOT` is set. The original configuration and history stay unchanged. The retained development database follows schema upgrades; use a separate disposable database snapshot to test a migration repeatedly.
 
 Forward normal options or select another environment file:
 
@@ -39,7 +39,7 @@ For an intentional path override, pass `--config` and `--data-root` in `CLI_ARGS
 
 An alternate environment file is used unchanged. If it does not exist, the launcher copies `<path>.example`; if neither exists, it stops with a setup hint. `make a13n-harness-ui` remains a separate launcher without the development `.env` or workspace-local path defaults; it uses the CLI's normal configuration/data selection and accepts `CLI_ARGS`.
 
-Unlike the SDK development launcher, this command needs no `opentelemetry-instrument` wrapper. `open_harness_ui_app()` initializes an App-owned OTLP/HTTP tracing provider when tracing is enabled and no global Host provider exists. It passes that same provider to root and child Harness builds and drains it after App tasks finish. Explicitly supplied or preconfigured Host providers remain externally owned.
+`open_harness_ui_app()` initializes an App-owned OTLP/HTTP tracing provider when tracing is enabled and no Host provider exists. Root and child Harness builds share it; the App drains it after its tasks finish. Supplied or preconfigured Host providers remain externally owned. No `opentelemetry-instrument` wrapper is needed.
 
 ## Disposable MCP Apps demo
 
@@ -53,11 +53,11 @@ make webui-landing
 make webui-landing WEBUI_ARGS='--port 9000 --no-share-computer'
 ```
 
-These interactive manual-test targets start from scratch on every invocation. They do not seed from the regular development configuration, load the development `.env`, or require Langfuse. The launcher creates a temporary HOME, workspace, and data root; the default root YAML is deliberately absent so the ordinary first-run path decides what to show. User guidance, skills, history, API-key files, and Codex/Grok account files are not copied. Shell-provided provider keys, WebUI authentication settings, and proxy settings remain available; this is disposable application state, not a sandbox or a fully empty environment.
+These targets create a fresh temporary HOME, workspace, and data root for the ordinary first-run flow. They omit existing configuration, guidance, Skills, history, credentials, and the development `.env`; Langfuse is optional. Shell-provided provider keys, WebUI authentication, and proxy settings remain available. The temporary state does not sandbox execution.
 
 `cli-landing` launches the normal CLI, including setup and the subsequent chat. `webui-landing` builds browser assets and starts the normal authenticated server; open its printed login link (or use your supplied key). It accepts `WEBUI_ARGS`, but neither target accepts `CLI_ARGS` or configuration/data path overrides. The temporary path is printed before startup.
 
-Exit the CLI or press Ctrl+C in the WebUI server terminal to delete all temporary state, including credentials and configuration saved during setup. Completing setup does not immediately delete live application files, so you can continue testing a first conversation. Closing a browser tab does not stop the server or trigger cleanup. Normal exits, Python errors, and Ctrl+C unwind the temporary-directory scope; a forced kill or machine crash can leave the printed directory behind. Any real provider requests or account authorizations still have their usual external effects.
+After setup, test a first conversation. Exit the CLI or press Ctrl+C in the WebUI server terminal to delete the temporary state, including saved credentials; closing a browser tab leaves the server running. Normal exits and Python errors also clean up. A forced kill or machine crash can leave the printed directory behind. Real provider requests and account authorizations keep their external effects.
 
 ## Deterministic App smoke test
 

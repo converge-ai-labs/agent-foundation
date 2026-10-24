@@ -119,7 +119,7 @@ Video input support is built in, not an optional definition Capability. The mode
 | `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebBinding` with current client and policy                    |
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
 | `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
-| `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Definition-selected `SubagentOperator`                         |
+| `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Async: definition-selected `SubagentOperator`; inline: none    |
 | `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical Run                       | Current `AgentContext` supplied by the Harness                 |
 
@@ -217,13 +217,20 @@ See [Context and working state](context.md#working-state) for configuration, exa
 
 ## Structured User Interaction
 
-`UserInteractionCapability` exposes `ask_user_question` when current `RunBindings.deferred_tools_supported` is enabled, for both roots and children. The call does not hold an open Harness Run while waiting for a person. It produces `status="suspended"` with native requests and portable state. A Host later supplies fresh bindings, previous state, and a correlated `DeferredToolResume`. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) explicitly disable deferred tools; Host-managed children use the native resume boundary. Unsupported Runs receive neither the tool nor its guidance.
+`UserInteractionCapability` exposes `ask_user_question` when current `RunBindings.deferred_tools_supported` is enabled, for both roots and children. The call does not hold an open Harness Run while waiting for a person. It produces `status="suspended"` with Harness deferred requests and portable state. A Host later supplies fresh bindings, previous state, and a correlated `DeferredToolResume`. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) explicitly disable deferred tools; Host-managed children use the native resume boundary. Unsupported Runs receive neither the tool nor its guidance.
 
 See [Human-in-the-loop tools](human-in-the-loop.md) for request and answer payloads, application-owned types, and correlated resume examples. [State and Resume](state-and-resume.md) covers the general continuation lifecycle.
 
 ## Media, Documents, and Web
 
-These features separate stable model-facing schemas from fresh provider implementations:
+These features separate stable model-facing schemas from fresh provider implementations. To enable document conversion:
+
+1. Choose a PDF/Office converter in your application; Harness supplies no default converter.
+2. Implement `DocumentConverter.convert(request)` as an async method. Import the protocol, `DocumentConversionRequest`, and `DocumentConversionResult` from `a13n_harness.toolsets.documents`.
+3. Convert the request's detached `source_bytes`, honoring its page range, deadline and output limits. Return Markdown and optional `DocumentAsset` values with relative paths and bytes; keep temporary files and converter dependencies inside your adapter.
+4. Bind that adapter as `document_converter` below. Harness reads the authorized source and validates and publishes the returned files through the Environment.
+
+The surrounding application supplies `agent_spec`, `model`, and its converter instance:
 
 ```python
 from a13n_harness import RunBindings

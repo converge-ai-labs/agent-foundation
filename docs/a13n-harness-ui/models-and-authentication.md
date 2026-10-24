@@ -7,16 +7,17 @@ A Model chooses a provider connection, request settings, and working context bud
 
 ## Choose your task
 
-| Task                                         | Start here                                                                                    |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Create a Model interactively                 | `a13n-harness-ui add model`                                                                   |
-| Write a complete API-key Model               | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
-| Point to a compatible endpoint               | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
-| Find every Model field                       | [Model file reference](#model-file-reference)                                                 |
-| Change request parameters                    | [Native request settings](#native-request-settings-and-connection-wiring)                     |
-| Tune context or enable image input           | [Context and modality policy](#context-and-modality-policy)                                   |
-| Use a subscription account                   | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
-| Change the TUI Model for the current Project | [TUI selection](#change-the-agent-or-model-in-the-tui)                                        |
+| Task                                            | Start here                                                                                    |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Create a Model interactively                    | `a13n-harness-ui add model`                                                                   |
+| Write a complete API-key Model                  | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
+| Point to a compatible endpoint                  | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
+| Find every Model field                          | [Model file reference](#model-file-reference)                                                 |
+| Change request parameters                       | [Native request settings](#native-request-settings-and-connection-wiring)                     |
+| Tune context or enable image input              | [Context and modality policy](#context-and-modality-policy)                                   |
+| Manage accounts, allowance, and failover groups | [Accounts and groups](#account-store-locations)                                               |
+| Use a subscription account                      | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
+| Change the TUI Model for the current Project    | [TUI selection](#change-the-agent-or-model-in-the-tui)                                        |
 
 `settings` controls model requests. `model_configuration` controls connection wiring such as `base_url`. `model_characteristics` controls local context/input policy. These mappings are not interchangeable, and none belongs at the root of `a13n-harness-ui.yaml`.
 
@@ -526,7 +527,7 @@ Review the saved value for your endpoint, context size, reasoning needs, latency
 
 The release-owned recommendations were checked against provider references on September 10, 2026: [OpenAI model limits](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Claude model limits](https://platform.claude.com/docs/en/models/sonnet-4-6/overview), [Gemini output limits](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro), [DeepSeek model details](https://api-docs.deepseek.com/quick_start/pricing), [GLM model details](https://docs.z.ai/guides/llm/glm-5.3), [Moonshot's model card](https://huggingface.co/moonshotai/Kimi-K2.5), and [OpenRouter's model metadata](https://openrouter.ai/api/v1/models). These sources describe model capabilities and examples, not a promise that a custom endpoint or account will accept every setting. Native SDK request serialization is tested with mock HTTP; it is not a live provider test. In particular, the installed native DeepSeek adapter emits `max_completion_tokens`, whereas DeepSeek's API reference documents `max_tokens`; acceptance and enforcement of that alias have not been verified against the live service. Harness UI does not override the adapter's field mapping.
 
-After initial setup, `add model` saves only a reusable Model, then offers a separate Add Agent flow for that Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. Initial setup creates the initial Model and Agent together without an existing-Model question. Setup and Add Agent initialize an absent root `security.shell_review` shortcut, preserving existing root selections. Codex and Grok subscription setup creates a separate shell review Model; ChatGPT, GitHub Copilot, and API-key setup reuse the connected Model. The shortcut applies across Agents with `risk_threshold: extra_high`, approval on flagged shell calls, and no added restriction on non-timeout review failure by default. Review timeout always denies execution. Add Model never modifies this root policy. Existing Agent files are not migrated. See [shell review configuration](configuration-recipes.md#configure-shell-review); the risk threshold is independent of the Model's thinking effort.
+To add a connection or Agent, follow [the setup workflow](setup.md#add-another-connection-or-agent). API-key setup enables shell review only when you select a reviewer, saved as a separate Model on the same connection. Existing root review policy is preserved. The [shell-review recipe](configuration-recipes.md#configure-shell-review) owns risk thresholds and failure handling; review timeout always denies execution.
 
 ## Native request settings and connection wiring
 
