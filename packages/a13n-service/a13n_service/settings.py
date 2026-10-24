@@ -425,6 +425,9 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
+    forward_model_context_headers: bool = True
+    forward_mcp_context_headers: bool = True
+
     http_origins: tuple[str, ...] = ()
     require_https: bool = True
     # Exact URLs a browser authorization may return to after the connection callback, besides any page on the

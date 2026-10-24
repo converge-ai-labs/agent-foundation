@@ -77,13 +77,21 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
     lookup = {"name": "lookup", "description": "Look a value up", "parameters_json_schema": {"type": "object"}}
     agent = await runs_kit.create_agent(executing, scripted_model, instructions="Role: default", client_tools=[lookup])
     scripted_model.call("lookup", {}, call_id="call_lookup")
-    overridden = runs_kit.message(agent, "look", options={"overrides": {"instructions": "Role: stand-in"}})
+    overridden = runs_kit.message(
+        agent,
+        "look",
+        options={
+            "overrides": {"instructions": "Role: stand-in"},
+            "context": {"headers": {"x-trace": "resume-context"}},
+        },
+    )
     response = await executing.client.post(f"{executing.api}/threads", json=overridden, headers=runs_kit.fresh_key())
     assert response.status_code == 201, response.text
     waiting = await runs_kit.sealed(executing, response.json()["run"]["id"])
     assert waiting["status"] == "waiting"
     # The run shows the options it froze, never the caller headers frozen with them.
     assert waiting["options"]["overrides"]["instructions"] == "Role: stand-in"
+    assert waiting["options"]["context"] == {"headers": {"x-trace": "resume-context"}}
     assert "mcp_headers" not in waiting["options"]
     # The run's agent is its revision's configuration with the override applied.
     executed = await executing.client.get(f"{executing.api}/runs/{waiting['id']}/agent")
@@ -103,6 +111,7 @@ async def test_a_run_override_is_frozen_and_carried_by_its_resume(executing, scr
     assert (await runs_kit.sealed(executing, resumed.json()["id"]))["status"] == "completed"
     for request in (await scripted_model.request(), await scripted_model.request()):
         assert "Role: stand-in" in json.dumps(request) and "Role: default" not in json.dumps(request)
+        assert "resume-context" not in json.dumps(request)
 
 
 @pytest.mark.parametrize("result", [{"response": "blue please"}, {"answers": {"Which color?": "blue"}}])
@@ -161,7 +170,16 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
 
 async def test_a_crashed_attempt_recovers_from_its_checkpoint(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
-    submitted = await runs_kit.start_thread(service, agent, "survive a crash")
+    wires = []
+
+    @scripted_model.app.middleware("http")
+    async def capture_context(request, call_next):
+        wires.append(request.headers.get("x-trace"))
+        return await call_next(request)
+
+    submitted = await runs_kit.start_thread(
+        service, agent, "survive a crash", options={"context": {"headers": {"x-trace": "recovery-context"}}}
+    )
     run_id = submitted["run"]["id"]
     # The lost call never answers, so its orphaned request cannot take the recovery's turn.
     scripted_model.say("lost", gate=asyncio.Event())
@@ -184,6 +202,7 @@ async def test_a_crashed_attempt_recovers_from_its_checkpoint(service, scripted_
     await (await runs_kit.attempt(service))
     run = await runs_kit.get_run(service, run_id)
     assert run["status"] == "completed" and run["output"] == "Recovered" and run["attempts"] == 2
+    assert wires == ["recovery-context", "recovery-context"]
     matched = await service.client.get(f"{service.api}/runs", params={"text_query": "survive Recovered"})
     assert [item["id"] for item in matched.json()["items"]] == [run_id]
 

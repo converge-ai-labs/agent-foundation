@@ -11,7 +11,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
-from a13n_harness import AgentContext
+from a13n_harness import AgentContext, RequestContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -91,6 +91,7 @@ async def open_connections(
     registry: Registry,
     policy: EndpointPolicy,
     settings: Providers,
+    request_context: RequestContext | None = None,
 ) -> AsyncGenerator[tuple[AbstractCapability[AgentContext], ...]]:
     """One worker attempt owns lazily entered clients; native Runs borrow fresh projections."""
     async with AsyncExitStack() as stack:
@@ -108,6 +109,18 @@ async def open_connections(
                         http = await stack.enter_async_context(
                             open_mcp_client(connection, storage=storage, keys=keys, policy=policy, settings=settings)
                         )
+                        if (
+                            request_context is not None
+                            and settings.forward_mcp_context_headers
+                            and connection.config.forward_context_headers
+                        ):
+                            http.headers.update(
+                                {
+                                    name: value
+                                    for name, value in request_context.headers.items()
+                                    if name not in connection.config.headers
+                                }
+                            )
                         http.headers.update(headers)
                         client = mcp_client(
                             connection.config.url, connection.id, http, timeout=settings.tool_call_seconds

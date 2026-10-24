@@ -98,6 +98,7 @@ class OAuthSettings(BaseModel):
 
 class McpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    forward_context_headers: bool = True
 
     url: str = Field(min_length=1, max_length=2048)
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
