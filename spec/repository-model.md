@@ -27,7 +27,7 @@ This document defines the normative content and workflow boundaries of the Agent
 
 There is no repository-local `issues/` directory. "Issues" means the repository's GitHub Issues.
 
-Workspace membership does not by itself select a release group. The Harness release group contains `packages/a13n-harness` and `packages/a13n-stream-protocol`; one `release/a13n-harness-v<version>` tag assigns the same version to both Python distributions and publishes them through one workflow. The published Stream Protocol artifact requires the exact Harness version. `packages/a13n-harness-ui` releases independently through `release/a13n-harness-ui-v<version>` and its published artifacts consume a bounded compatible Harness release line. Source manifests keep workspace dependencies unversioned and project versions at `0.0.0` so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). a13n Service releases exclude these packages and select their own compatible published Harness release.
+Workspace membership does not by itself select a release group. The Harness release group contains `packages/a13n-harness` and `packages/a13n-stream-protocol`; one `release/a13n-harness-v<version>` tag assigns the same version to both Python distributions and publishes them through one workflow. The published Stream Protocol artifact requires the exact Harness version. `packages/a13n-harness-ui` releases independently through `release/a13n-harness-ui-v<version>` and its published artifacts pin Harness and Stream Protocol to one exact reviewed release. Source manifests keep workspace dependencies unversioned and project versions at `0.0.0` so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). a13n Service releases exclude these packages and select their own compatible published Harness release.
 
 `packages/a13n-logging` is a shared library with an independent `release/a13n-logging-v<version>` release channel. Its workflow versions and publishes only the `a13n-logging` Python distribution through the existing `foundation-pypi` environment. a13n Service releases neither version nor republish logging. Consumers retain unversioned source workspace dependencies and consume published logging independently of their own release versions.
 
@@ -115,19 +115,21 @@ The development guide does not establish product semantics or subsystem ownershi
 
 ### Dependency Compatibility Lines
 
-Each consuming package owns its cross-release-group Python requirements in its `pyproject.toml` under `[tool.a13n.release-dependencies]`: a mapping from distribution names to bounded Python specifiers of the form `>=MIN,<MAX`. Release preparation injects these requirements into publishable manifests without changing unversioned source workspace dependencies or committing release versions. Dependencies within a release group remain pinned to the exact shared release version.
+Each consuming package owns its cross-release-group Python requirements in its `pyproject.toml` under `[tool.a13n.release-dependencies]`: a mapping from distribution names to Python specifiers. Harness UI pins Harness and Stream Protocol with identical `==VERSION` requirements; other cross-group dependencies use bounded `>=MIN,<MAX` requirements. Release preparation injects these requirements into publishable manifests without changing unversioned source workspace dependencies or committing release versions. Dependencies within a release group remain pinned to the exact shared release version.
 
 The current cross-group requirements are:
 
 | Consumer                     | Dependency               | Published requirement                  |
 | ---------------------------- | ------------------------ | -------------------------------------- |
-| Harness UI                   | Harness, Stream Protocol | `>=0.19.0,<0.20.0`, identical for both |
+| Harness UI                   | Harness, Stream Protocol | `==0.19.1`, identical for both         |
 | Service                      | Harness, Stream Protocol | `>=0.13.0,<0.14.0`, identical for both |
 | Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                       |
 | Harness                      | `a13n-envd-client`       | `>=0.5.0,<0.6.0`                       |
 | Harness UI                   | `a13n-envd-client`       | `>=0.5.1,<0.6.0`                       |
 
-Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
+Harness constrains Pydantic AI to one reviewed minor line, currently `==2.60.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
+
+Harness UI dependency updates explicitly select an exact Harness-group release and validate it before publication. Other independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 
 ### Release Identity
 

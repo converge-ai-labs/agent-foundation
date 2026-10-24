@@ -21,7 +21,7 @@ from pathlib import Path, PurePosixPath
 from typing import ClassVar
 from urllib.parse import unquote, urlsplit
 
-from release_version import ReleaseVersionError, validate_dependency_range
+from release_version import ReleaseVersionError, validate_dependency_pin, validate_dependency_range
 
 DISTRIBUTION_STEM = "a13n_harness_ui"
 MANIFEST_NAME = "asset-manifest.json"
@@ -236,14 +236,16 @@ def _validate_internal_requirements(requirements: list[str]) -> dict[str, str]:
         if len(matches) != 1:
             raise DistributionError(f"Expected one {package_name} requirement in Harness UI metadata, found {matches}")
         try:
-            ranges[package_name] = validate_dependency_range(matches[0][len(package_name) :].strip())
+            validate = validate_dependency_pin if package_name in INTERNAL_PACKAGES else validate_dependency_range
+            constraint = re.sub(r"^\[[^\]]+\]", "", matches[0][len(package_name) :]).strip()
+            ranges[package_name] = validate(constraint)
         except ReleaseVersionError as error:
             raise DistributionError(
-                f"Harness UI metadata must use a compatible dependency range for {package_name}, found {matches[0]}: {error}"
+                f"Harness UI metadata must use the required dependency policy for {package_name}, found {matches[0]}: {error}"
             ) from error
     group_ranges = {ranges[package_name] for package_name in INTERNAL_PACKAGES}
     if len(group_ranges) != 1:
-        raise DistributionError(f"Harness UI internal dependency ranges do not match: {sorted(group_ranges)}")
+        raise DistributionError(f"Harness UI internal dependency pins do not match: {sorted(group_ranges)}")
     return ranges
 
 

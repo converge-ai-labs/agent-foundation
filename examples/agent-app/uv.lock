@@ -31,7 +31,7 @@ requires-dist = [
     { name = "a13n-harness", editable = "../../packages/a13n-harness" },
     { name = "fastmcp-slim", extras = ["client"], specifier = ">=4.0,<5" },
     { name = "mcp", specifier = ">=2.2,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.60.0,<3" },
+    { name = "pydantic-ai-slim", specifier = "==2.60.*" },
 ]
 
 [package.metadata.requires-dev]
@@ -117,7 +117,7 @@ requires-dist = [
     { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pillow", specifier = ">=11,<13" },
     { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"], specifier = ">=2.60.0,<3" },
+    { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "typesafe", "xai", "xai-realtime"], specifier = "==2.60.*" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
     { name = "pydantic-monty", specifier = ">=1.1.0,<2" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },

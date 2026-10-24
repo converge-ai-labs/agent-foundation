@@ -26,6 +26,26 @@ RELEASE_FILES = (
 )
 
 
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        "packages/a13n-harness/pyproject.toml",
+        "packages/a13n-stream-protocol/pyproject.toml",
+        "packages/a13n-harness-ui/pyproject.toml",
+        "packages/a13n-service/pyproject.toml",
+        "examples/agent-app/pyproject.toml",
+        "examples/plugins/pyproject.toml",
+    ],
+)
+def test_pydantic_ai_dependencies_pin_the_reviewed_minor_line(manifest: str) -> None:
+    import tomllib
+
+    project = tomllib.loads((REPOSITORY_ROOT / manifest).read_text())["project"]
+    requirements = [requirement for requirement in project["dependencies"] if requirement.startswith("pydantic-ai")]
+    assert len(requirements) == 1
+    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.60\.\*", requirements[0])
+
+
 def copy_release_files(destination: Path) -> None:
     for relative_path in RELEASE_FILES:
         target = destination / relative_path
@@ -33,7 +53,7 @@ def copy_release_files(destination: Path) -> None:
         shutil.copy2(REPOSITORY_ROOT / relative_path, target)
 
 
-def select_harness_ui_range(root: Path, constraint: str = ">=3.2.1,<4.0.0") -> None:
+def select_harness_ui_pin(root: Path, constraint: str = "==3.2.1") -> None:
     path = root / "packages/a13n-harness-ui/pyproject.toml"
     content = path.read_text(encoding="utf-8")
     content, replacements = re.subn(
@@ -116,7 +136,7 @@ def test_prepares_only_component_files_and_is_idempotent(
 ) -> None:
     copy_release_files(tmp_path)
     if component == "a13n-harness-ui":
-        select_harness_ui_range(tmp_path)
+        select_harness_ui_pin(tmp_path)
     before = snapshot(tmp_path)
 
     result = run_script(PREPARER, tmp_path, component, "9.8.7")
@@ -136,7 +156,7 @@ def test_prepares_only_component_files_and_is_idempotent(
 
 def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
-    select_harness_ui_range(tmp_path, ">=3.2.1rc4,<4.0.0")
+    select_harness_ui_pin(tmp_path, "==3.2.1rc4")
 
     for component in (
         "a13n-harness",
@@ -156,8 +176,8 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert 'version = "9.8.7rc2"' in harness_manifest
     assert '"a13n-harness==9.8.7rc2"' in protocol_manifest
     assert 'version = "9.8.7rc2"' in ui_manifest
-    assert '"a13n-harness[docker,e2b,modal]>=3.2.1rc4,<4.0.0"' in ui_manifest
-    assert '"a13n-stream-protocol>=3.2.1rc4,<4.0.0"' in ui_manifest
+    assert '"a13n-harness[docker,e2b,modal]==3.2.1rc4"' in ui_manifest
+    assert '"a13n-stream-protocol==3.2.1rc4"' in ui_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-logging/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
     assert 'version = "9.8.7-rc.2"' in (tmp_path / "Cargo.toml").read_text()
@@ -192,8 +212,8 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.5.1"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.18.0"),
-        ("a13n-harness-ui", "0.18.1"),
+        ("a13n-harness", "0.19.1"),
+        ("a13n-harness-ui", "0.19.1"),
     )
     for component, version in releases:
         prepared = run_script(PREPARER, tmp_path, component, version)
@@ -228,7 +248,7 @@ def test_harness_release_does_not_version_harness_ui_or_service(tmp_path: Path) 
 
 def test_harness_ui_release_does_not_version_harness_or_service(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
-    select_harness_ui_range(tmp_path)
+    select_harness_ui_pin(tmp_path)
 
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
 
@@ -294,11 +314,22 @@ def test_a13n_envd_release_does_not_version_harness_or_harness_ui(tmp_path: Path
 
 
 @pytest.mark.parametrize(
-    "constraint", ["0.0.0", ">=0.0.0,<0.1.0", ">=0.0.5", "<0.1.0", "==0.0.5", ">=0.1.0,<0.1.0", ">=0.1.0rc1,<0.1.0"]
+    "constraint",
+    [
+        "0.0.0",
+        ">=0.0.0,<0.1.0",
+        ">=0.0.5",
+        "<0.1.0",
+        "==0.0.0",
+        "==0.19.*",
+        "==0.19.1-rc.1",
+        "==0.19.1.dev1",
+        ">=0.1.0,<0.2.0",
+    ],
 )
-def test_harness_ui_release_requires_valid_range_without_writing(tmp_path: Path, constraint: str) -> None:
+def test_harness_ui_release_requires_exact_pin_without_writing(tmp_path: Path, constraint: str) -> None:
     copy_release_files(tmp_path)
-    select_harness_ui_range(tmp_path, constraint)
+    select_harness_ui_pin(tmp_path, constraint)
     before = snapshot(tmp_path)
 
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
@@ -330,15 +361,15 @@ def test_checker_rejects_harness_dependency_drift(tmp_path: Path) -> None:
 
 def test_checker_rejects_harness_ui_dependency_drift(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
-    select_harness_ui_range(tmp_path)
+    select_harness_ui_pin(tmp_path)
     prepare_result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
     assert prepare_result.returncode == 0, prepare_result.stderr
 
     manifest = tmp_path / "packages/a13n-harness-ui/pyproject.toml"
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            '"a13n-stream-protocol>=3.2.1,<4.0.0"',
-            '"a13n-stream-protocol>=3.2.2,<4.0.0"',
+            '"a13n-stream-protocol==3.2.1"',
+            '"a13n-stream-protocol==3.2.2"',
         ),
         encoding="utf-8",
     )
@@ -346,7 +377,7 @@ def test_checker_rejects_harness_ui_dependency_drift(tmp_path: Path) -> None:
     result = run_script(CHECKER, tmp_path, "a13n-harness-ui", "9.8.7")
 
     assert result.returncode != 0
-    assert "dependency a13n-stream-protocol>=3.2.1,<4.0.0" in result.stderr
+    assert "dependency a13n-stream-protocol==3.2.1" in result.stderr
 
 
 def test_rejects_invalid_version_without_writing(tmp_path: Path) -> None:
@@ -395,14 +426,14 @@ def test_requires_a13n_envd_workspace_version_inheritance(tmp_path: Path) -> Non
     assert snapshot(tmp_path) == before
 
 
-def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None:
+def test_mismatched_ui_pins_are_blocked_without_writes(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
     manifest = tmp_path / "packages/a13n-harness-ui/pyproject.toml"
-    manifest.write_text(re.sub(r'a13n-harness = "[^"]+"', 'a13n-harness = ">=9.0.0,<10.0.0"', manifest.read_text()))
+    manifest.write_text(re.sub(r'a13n-harness = "[^"]+"', 'a13n-harness = "==9.0.0"', manifest.read_text()))
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
     assert result.returncode != 0
-    assert "same compatible range" in result.stderr
+    assert "same requirement" in result.stderr
     assert snapshot(tmp_path) == before
 
 
@@ -447,11 +478,11 @@ def test_invalid_independent_dependency_policy_is_atomic(tmp_path: Path, constra
 
 def test_range_order_is_normalized_without_changing_policy(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
-    select_harness_ui_range(tmp_path, "<4.0.0,>=3.2.1")
-    result = run_script(PREPARER, tmp_path, "a13n-harness-ui", "9.8.7")
+    path = tmp_path / "packages/a13n-harness/pyproject.toml"
+    path.write_text(path.read_text().replace(">=0.5.0,<0.6.0", "<0.6.0,>=0.5.0"))
+    result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
     assert result.returncode == 0, result.stderr
-    content = (tmp_path / "packages/a13n-harness-ui/pyproject.toml").read_text()
-    assert '"a13n-harness[docker,e2b,modal]>=3.2.1,<4.0.0"' in content
+    assert '"a13n-envd-client>=0.5.0,<0.6.0"' in path.read_text()
 
 
 @pytest.mark.parametrize("version", ["9.8.7", "9.8.7-rc.2"])
@@ -506,7 +537,7 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     ("component", "version", "requirement"),
     [
         ("a13n-service", "0.1.0", ">=0.13.0,<0.14.0"),
-        ("a13n-harness-ui", "0.19.0", ">=0.19.0,<0.20.0"),
+        ("a13n-harness-ui", "0.19.1", "==0.19.1"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
@@ -521,6 +552,7 @@ def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp
         item for item in source["project"]["dependencies"] if item.split("[")[0] == "a13n-harness"
     )
     assert ">=" not in source_requirement
+    assert "==" not in source_requirement
     result = run_script(PREPARER, tmp_path, component, version)
     assert result.returncode == 0, result.stderr
     prepared = tomllib.loads(source_path.read_text())
