@@ -7,6 +7,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from a13n_harness.providers.environment.cloudflare.shared import (
+    CloudflareConnectionConfiguration,
+    CloudflareEnvironmentConfiguration,
+)
 from a13n_harness.providers.environment.configuration import HostLocalProviderConfiguration
 from a13n_harness.providers.environment.daytona.provider import (
     DaytonaConnectionConfiguration,
@@ -152,6 +156,8 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
     DockerRecipe,
+    CloudflareEnvironmentConfiguration,
+    CloudflareConnectionConfiguration,
     E2BRecipe,
     DaytonaEnvironmentConfiguration,
     ModalEnvironmentConfiguration,
@@ -191,10 +197,11 @@ Required means no default. Fields backed by a factory have a model-computed defa
 
 ## Cloud Providers
 
-All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
+All cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
 
 | Provider | Recipe | Backend | Credential |
 | --- | --- | --- | --- |
+| Cloudflare Containers | [CloudflareEnvironmentConfiguration](#cloudflareenvironmentconfiguration) | [CloudflareConnectionConfiguration](#cloudflareconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | E2B | [E2BRecipe](#e2brecipe) | [E2BConnectionConfiguration](#e2bconnectionconfiguration) | [E2BCredential](#e2bcredential) |
 | Daytona | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
 | Modal | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration) | [ModalConnectionConfiguration](#modalconnectionconfiguration) | [ModalCredential](#modalcredential) |

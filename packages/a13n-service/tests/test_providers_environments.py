@@ -12,6 +12,7 @@ pytestmark = pytest.mark.anyio
 SECRET = "hosted-secret-value"
 # Each hosted type's account as it is created, and the recipe fields one invalid recipe breaks.
 ACCOUNTS: dict[str, tuple[dict, dict, dict]] = {
+    "cloudflare": ({"account_id": "a" * 32}, {"api_key": SECRET}, {"instance": "huge"}),
     "e2b": ({}, {"api_key": SECRET}, {"timeout_seconds": 10}),
     "daytona": ({"organization_id": "org-1"}, {"api_key": SECRET}, {"snapshot": "s" * 300}),
     "modal": (
@@ -30,6 +31,7 @@ async def test_hosted_accounts_restrict_their_endpoints(service) -> None:  # typ
     types = (await service.client.get("/api/v1/provider-types/environment")).json()["items"]
     fields = {item["type"]: set(item["configuration_schema"].get("properties", {})) for item in types}
     assert {name: fields[name] for name in ACCOUNTS} == {
+        "cloudflare": {"account_id"},
         "e2b": {"domain"},
         "daytona": {"organization_id", "target"},
         "modal": {"workspace", "app_name", "environment_name"},

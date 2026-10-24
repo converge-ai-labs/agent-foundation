@@ -12,16 +12,17 @@ Required means no default. Fields backed by a factory have a model-computed defa
 
 ## Cloud Providers
 
-All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
+All cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
 
-| Provider       | Recipe                                                              | Backend                                                           | Credential                          |
-| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
-| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Provider              | Recipe                                                                    | Backend                                                                 | Credential                          |
+| --------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------- |
+| Cloudflare Containers | [CloudflareEnvironmentConfiguration](#cloudflareenvironmentconfiguration) | [CloudflareConnectionConfiguration](#cloudflareconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| E2B                   | [E2BRecipe](#e2brecipe)                                                   | [E2BConnectionConfiguration](#e2bconnectionconfiguration)               | [E2BCredential](#e2bcredential)     |
+| Daytona               | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration)       | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration)       | [TokenCredential](#tokencredential) |
+| Modal                 | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)           | [ModalConnectionConfiguration](#modalconnectionconfiguration)           | [ModalCredential](#modalcredential) |
+| Vercel Sandbox        | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)         | [VercelConnectionConfiguration](#vercelconnectionconfiguration)         | [TokenCredential](#tokencredential) |
+| Fly.io Sprites        | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration)       | [SpritesConnectionConfiguration](#spritesconnectionconfiguration)       | [TokenCredential](#tokencredential) |
+| Runloop               | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration)       | [RunloopConnectionConfiguration](#runloopconnectionconfiguration)       | [TokenCredential](#tokencredential) |
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -257,6 +258,20 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `source`    | true     | string         | —                       |
 | `target`    | true     | string         | format="path"           |
 | `read_only` | false    | boolean        | default=true            |
+
+## `CloudflareEnvironmentConfiguration`
+
+| Field                     | Required | Type / choices                                                 | Constraints and default                      |
+| ------------------------- | -------- | -------------------------------------------------------------- | -------------------------------------------- |
+| `instance`                | false    | "lite", "standard-1", "standard-2", "standard-3", "standard-4" | default="standard-1"                         |
+| `environment`             | false    | EnvironmentVariables                                           | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                                                         | maximum=600; exclusiveMinimum=0; default=120 |
+
+## `CloudflareConnectionConfiguration`
+
+| Field        | Required | Type / choices | Constraints and default    |
+| ------------ | -------- | -------------- | -------------------------- |
+| `account_id` | true     | string         | `pattern="^[0-9a-f]{32}$"` |
 
 ## `E2BRecipe`
 

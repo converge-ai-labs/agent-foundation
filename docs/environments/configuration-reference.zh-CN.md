@@ -12,16 +12,17 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## 云 provider
 
-六个云 provider 使用相同的目标配置、后端和私有凭据边界。下方平行列出各自 schema；能力差异见[云 provider 指南](providers.md#cloud-providers)。
+所有云 provider 使用相同的目标配置、后端和私有凭据边界。下方平行列出各自 schema；能力差异见[云 provider 指南](providers.md#cloud-providers)。
 
-| Provider       | 目标配置                                                            | 后端                                                              | 凭据                                |
-| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BRecipe](#e2brecipe)                                             | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
-| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Provider              | 目标配置                                                                  | 后端                                                                    | 凭据                                |
+| --------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ----------------------------------- |
+| Cloudflare Containers | [CloudflareEnvironmentConfiguration](#cloudflareenvironmentconfiguration) | [CloudflareConnectionConfiguration](#cloudflareconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| E2B                   | [E2BRecipe](#e2brecipe)                                                   | [E2BConnectionConfiguration](#e2bconnectionconfiguration)               | [E2BCredential](#e2bcredential)     |
+| Daytona               | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration)       | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration)       | [TokenCredential](#tokencredential) |
+| Modal                 | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)           | [ModalConnectionConfiguration](#modalconnectionconfiguration)           | [ModalCredential](#modalcredential) |
+| Vercel Sandbox        | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)         | [VercelConnectionConfiguration](#vercelconnectionconfiguration)         | [TokenCredential](#tokencredential) |
+| Fly.io Sprites        | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration)       | [SpritesConnectionConfiguration](#spritesconnectionconfiguration)       | [TokenCredential](#tokencredential) |
+| Runloop               | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration)       | [RunloopConnectionConfiguration](#runloopconnectionconfiguration)       | [TokenCredential](#tokencredential) |
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -257,6 +258,20 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `source`    | true  | string        | —             |
 | `target`    | true  | string        | format="path" |
 | `read_only` | false | boolean       | default=true  |
+
+## `CloudflareEnvironmentConfiguration`
+
+| 字段                      | 必填  | 类型 / 选项                                                    | 约束和默认值                                 |
+| ------------------------- | ----- | -------------------------------------------------------------- | -------------------------------------------- |
+| `instance`                | false | "lite", "standard-1", "standard-2", "standard-3", "standard-4" | default="standard-1"                         |
+| `environment`             | false | EnvironmentVariables                                           | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number                                                         | maximum=600; exclusiveMinimum=0; default=120 |
+
+## `CloudflareConnectionConfiguration`
+
+| 字段         | 必填 | 类型 / 选项 | 约束和默认值               |
+| ------------ | ---- | ----------- | -------------------------- |
+| `account_id` | true | string      | `pattern="^[0-9a-f]{32}$"` |
 
 ## `E2BRecipe`
 

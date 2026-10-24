@@ -34,16 +34,21 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 *图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*
 
-| 类型      | 环境                              | 账号                                                                                                                                 | 停止行为                   |
-| --------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
-| `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
-| `e2b`     | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
-| `daytona` | Daytona 沙箱                      | 可选 `organization_id` 约束和 `target` 区域；凭据为 `{"api_key": ...}`                                                               | 停止，保留文件             |
-| `modal`   | Modal 沙箱                        | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`）；凭据为 `{"token_id", "token_secret"}`      | 保存文件快照后终止         |
-| `vercel`  | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
-| `sprites` | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
-| `runloop` | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
-| `local`   | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                         | 无需停止                   |
+| 类型         | 环境                              | 账号                                                                                                                                 | 停止行为                   |
+| ------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| `cloudflare` | Cloudflare Containers             | `account_id`；凭据 `{"api_key": ...}`，在该账号拥有 Workers Scripts Edit 与 Workers Containers Write 权限。                          | 保存根文件系统快照后停机   |
+| `docker`     | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。                              | 停止容器                   |
+| `e2b`        | E2B 沙箱                          | `domain` 选择 E2B 云（默认 `e2b.dev`）或其他兼容 E2B 协议的服务；凭据为 `{"api_key": ...}`。Recipe 的 `timeout_seconds` 至少为 300。 | 暂停，保留内存和文件       |
+| `daytona`    | Daytona 沙箱                      | 可选 `organization_id` 约束和 `target` 区域；凭据为 `{"api_key": ...}`                                                               | 停止，保留文件             |
+| `modal`      | Modal 沙箱                        | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`）；凭据为 `{"token_id", "token_secret"}`      | 保存文件快照后终止         |
+| `vercel`     | 持久化 Vercel 沙箱                | `team_id`、`project_id`；凭据为 `{"api_key": ...}`（Vercel access token）                                                            | 停止，保留文件             |
+| `sprites`    | Fly.io Sprites                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 不支持；Sprites 空闲时休眠 |
+| `runloop`    | Runloop devbox                    | `organization`；凭据为 `{"api_key": ...}`                                                                                            | 挂起，保留文件             |
+| `local`      | Worker 宿主机上的目录，供开发使用 | 仅在 `provisioning.local.enabled` 启用时提供。命令直接在 worker 宿主机执行，不构成隔离边界。                                         | 无需停止                   |
+
+Cloudflare Containers 在首次创建时自动配置专属 Worker、SQLite Durable Object 命名空间、Containers 应用和 workers.dev 路由，无需手工部署 Worker 或填写桥接 URL。账号需启用 Containers，token 需允许读取和修改该账号的 Worker 脚本、子域、Durable Object 命名空间及 Containers 应用。初始托管镜像无需 zone、DNS 或 registry 权限。Recipe 可设置 `instance`（默认 `standard-1`）、环境变量及请求超时。托管 Debian 镜像在首次启动时安装校验固定摘要的 Envd 与无桌面命令工具，需要访问 Debian 和 GitHub。初次安装可能超过单次请求超时；应重试同一生命周期操作。当前不支持自定义镜像、Computer 和预览 URL。
+
+Cloudflare 停止操作先排空已接收的传输，停止 Envd 和执行用户的进程，保存根文件系统快照及其句柄，最后销毁运行中的容器。恢复时从快照启动新进程。快照仍为 public beta，不包含挂载卷和内存，限制为 20 GB，自创建或最近一次恢复后 30 天到期。异常终止可能丢失最近快照之后的修改；快照缺失或过期时不会静默创建空工作空间。快照失败时保留容器以便重试，期间可能持续计费。每个环境有独立的 Durable Object、容器和 guest 凭据；共享 API token 的账号连接共享部署管理权限。现有环境依赖原 token 和部署版本，更换凭据不会迁移环境，需另行规划迁移。删除环境会保留共享部署，也不承诺立即擦除快照。真实 Cloudflare 部署、隔离及恢复仍需集成验证。
 
 Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
 

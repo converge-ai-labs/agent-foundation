@@ -15,6 +15,7 @@ def test_all_native_definitions_have_typed_schemas():
         "docker",
         "e2b",
         "daytona",
+        "cloudflare",
         "modal",
         "vercel",
         "sprites",
