@@ -39,7 +39,7 @@ def _model(name: str = "execute", arguments: dict | None = None) -> FunctionMode
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info
         if any(
-            isinstance(part, ToolReturnPart)
+            isinstance(part, ToolReturnPart) and part.outcome != "retried"
             for message in messages
             if isinstance(message, ModelRequest)
             for part in message.parts
