@@ -16,6 +16,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import ModelRetry, ModelSettings, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import (
     BaseToolReturnPart,
     CapabilityEvent,
@@ -29,6 +30,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from pydantic_ai.usage import UsageLimits
 
@@ -703,9 +705,37 @@ class HandoffCapability(AbstractModelContextCapability):
         )
         if handoff and len(calls) != 1:
             raise ModelRetry("Handoff must be the only executable tool call in a model response.")
-        if handoff and ctx.deps._tool_executions.history_calls:
-            raise ModelRetry("Wait for retained CodeAct executions and inspect their results before summarizing.")
         return response
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        metadata = tool_def.metadata or {}
+        if metadata.get(HANDOFF_TOOL_METADATA_KEY) is True and ctx.deps._tool_executions.history_calls:
+            # Reject before the runtime's sequential barrier, without spending retries.
+            raise ToolFailed("Wait for retained CodeAct executions and inspect their results before summarizing.")
+        if metadata.get("a13n.codeact.runner") is True:
+            # Even a runner that finishes in the foreground supersedes a postponed summary.
+            await self._invalidate_pending_summary(ctx)
+        return args
+
+    async def _invalidate_pending_summary(self, ctx: RunContext[AgentContext]) -> None:
+        if self._toolset is None or self._toolset.state.summary is None:
+            return
+        state = self._toolset.state
+        await self._toolset.replace_state(_HandoffState())
+        await _emit_context_failure(
+            ctx,
+            state,
+            phase="history_replacement",
+            exc=DefinitionError("CodeAct work superseded the pending summary.", code="handoff_summary_stale"),
+            retryable=True,
+        )
 
     async def _restore_history(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -716,18 +746,7 @@ class HandoffCapability(AbstractModelContextCapability):
         if state.summary is None:
             return request_context
         if ctx.deps._tool_executions.history_calls:
-            # An exact continuation may have postponed this summary while new work started.
-            # Keep live history and require a fresh summary after that work settles.
-            await self._toolset.replace_state(_HandoffState())
-            await _emit_context_failure(
-                ctx,
-                state,
-                phase="history_replacement",
-                exc=DefinitionError(
-                    "Retained CodeAct work superseded the pending summary.", code="handoff_summary_stale"
-                ),
-                retryable=True,
-            )
+            await self._invalidate_pending_summary(ctx)
             return request_context
         if _requires_exact_boundary(ctx, request_context.messages):
             return request_context

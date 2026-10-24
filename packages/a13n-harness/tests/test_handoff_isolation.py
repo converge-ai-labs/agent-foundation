@@ -208,7 +208,7 @@ async def test_unrelated_summarize_name_remains_codeact_eligible():
     assert result.output_or_raise() == "done"
 
 
-@pytest.mark.parametrize("replacement", ["compact", "summarize", "pending"])
+@pytest.mark.parametrize("replacement", ["compact", "summarize", "pending", "pending_fast"])
 @pytest.mark.parametrize("runner", ["run_code", "run_program"])
 async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, replacement, runner):
     import asyncio
@@ -226,6 +226,8 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
 
     from .test_codeact import _local_environment
 
+    pending = replacement in {"pending", "pending_fast"}
+    fast = replacement == "pending_fast"
     started, release = asyncio.Event(), asyncio.Event()
     runtime = ToolExecutionRuntime()
     original = None
@@ -242,7 +244,8 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
         original = ctx
         assert ctx.is_tool_available("tool_b")
         started.set()
-        await release.wait()
+        if not fast:
+            await release.wait()
         return 41
 
     async def tool_b() -> int:
@@ -268,7 +271,7 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
             yield "Completed computation: 42."
             return
         steps += 1
-        if replacement == "pending" and steps == 2:
+        if pending and steps == 2:
             yield {0: NativeToolCallPart("web_search", {}, tool_call_id="native")}
             yield {
                 1: DeltaToolCall(
@@ -276,11 +279,20 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
                 )
             }
             return
-        stage = steps - int(replacement == "pending" and steps > 2)
+        stage = steps - int(pending and steps > 2)
+        # Repeated busy feedback must not exhaust the model/tool retry budget.
+        if replacement == "summarize" and stage >= 4:
+            assert "Wait for retained CodeAct" in ModelMessagesTypeAdapter.dump_json(messages).decode()
+            stage = 3 if stage <= 6 else stage - 3
+        if fast and stage == 4:
+            assert restored == ["summarize"]
+            assert "stale summary" not in ModelMessagesTypeAdapter.dump_json(messages).decode()
+            yield "done"
+            return
         if stage == 1:
             name, args = "search_tools", {"queries": ["tool_a", "tool_b"]}
         elif stage == 2:
-            if replacement == "pending":
+            if pending:
                 yield {1: NativeToolReturnPart("web_search", "result", tool_call_id="native")}
             name = runner
             args = (
@@ -291,8 +303,8 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
         elif stage == 3:
             await started.wait()
             assert not restored
-            assert original.deps._tool_executions.history_calls
-            if replacement == "pending":
+            assert bool(original.deps._tool_executions.history_calls) is not fast
+            if pending:
                 owner = original.capabilities[HANDOFF_CAPABILITY_ID]
                 assert owner._toolset.state.summary is None
                 assert any(
@@ -300,11 +312,16 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
                     for message in messages
                     for part in message.parts
                 )
-            name, args = (
-                ("summarize", {"content": "stale summary"})
-                if replacement == "summarize"
-                else ("tool_execution_info", {})
-            )
+            if fast:
+                assert completed == ["b"]
+                assert "42" in ModelMessagesTypeAdapter.dump_json(messages).decode()
+                name, args = "summarize", {"content": "Completed computation: 42."}
+            else:
+                name, args = (
+                    ("summarize", {"content": "stale summary"})
+                    if replacement == "summarize"
+                    else ("tool_execution_info", {})
+                )
         elif stage == 4:
             assert not restored
             assert original.is_tool_available("tool_b")
@@ -346,7 +363,7 @@ async def test_retained_runner_keeps_discovery_until_safe_replacement(tmp_path, 
             CodeActCapability(),
             context_capability,
             Observe(),
-            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=30 if fast else 0)),
         ),
     )
     try:

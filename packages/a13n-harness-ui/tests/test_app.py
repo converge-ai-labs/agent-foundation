@@ -368,7 +368,8 @@ async def test_invalid_first_candidate_starts_with_diagnostics_and_observer_acce
         with fail_after(3):
             while True:
                 status = await app.status()
-                if status.accepted_generation_digest is not None:
+                # Acceptance publishes the generation before post-accept work clears diagnostics.
+                if status.accepted_generation_digest is not None and status.candidate_error_code is None:
                     break
                 await sleep(0.05)
         assert status.candidate_error_code is None
