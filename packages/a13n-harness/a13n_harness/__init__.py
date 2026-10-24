@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from a13n_harness.codeact.state import CodeActStateOwner
     from a13n_harness.configuration import RunConfiguration
     from a13n_harness.content import ContentItem, ContentMetadata
-    from a13n_harness.context import AgentContext, RunBindings
+    from a13n_harness.context import AgentContext, RequestContext, RunBindings
     from a13n_harness.environment import (
         EnvironmentConnector,
         EnvironmentEntry,
@@ -106,6 +106,7 @@ _EXPORTS = {
     "a13n_harness.configuration": ("RunConfiguration",),
     "a13n_harness.context": (
         "AgentContext",
+        "RequestContext",
         "RunBindings",
     ),
     "a13n_harness.content": ("ContentItem", "ContentMetadata"),

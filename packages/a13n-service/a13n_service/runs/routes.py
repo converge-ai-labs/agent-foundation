@@ -59,6 +59,7 @@ from a13n_service.runs.schemas import (
     ThreadRunPage,
     ThreadUpdate,
     ThreadView,
+    context_response,
 )
 from a13n_service.tenancy.requests import Actor, Credential, WorkspaceId
 
@@ -308,7 +309,7 @@ async def list_inbox(
     cursor: str | None = None,
 ) -> EntryPage | read_views.EntrySummaryPage:
     """In inbox order."""
-    return await entries.list_entries(
+    result = await entries.list_entries(
         runtime.storage,
         actor,
         workspace_id,
@@ -319,6 +320,7 @@ async def list_inbox(
         view=view,
         kind=kind,
     )
+    return context_response(result)
 
 
 @router.post(
@@ -362,7 +364,7 @@ async def get_inbox_entry(
     query: reads.Search = None,
 ) -> EntryView | read_views.EntrySummary | reads.TextRead:
     """One entry and its disposition; edits name the thread's ETag."""
-    value = await entries.get_entry(runtime.storage, actor, workspace_id, thread_id, entry_id)
+    value = context_response(await entries.get_entry(runtime.storage, actor, workspace_id, thread_id, entry_id))
     if section is not None:
         return reads.read_value(
             getattr(value, section),
@@ -463,7 +465,7 @@ async def get_run(
     version: reads.Version = None,
     query: reads.Search = None,
 ) -> RunView | read_views.RunSummary | reads.TextRead:
-    value = tagged(response, await runs.get(runtime.storage, actor, workspace_id, run_id))
+    value = context_response(tagged(response, await runs.get(runtime.storage, actor, workspace_id, run_id)))
     if section is not None:
         return reads.read_value(
             getattr(value, section),

@@ -68,6 +68,16 @@ At each eligible input or tool-result boundary, the Service adds a `service-cont
 
 Root agents and inline subagents receive the containing Service Run ID; their Harness execution IDs remain distinct. Recovery and handoff retain the Service Run ID, while a successor or separately scheduled child Run receives its own ID. Fresh context uses current execution bindings, leaving historical context unchanged under the [Harness projection contract](../a13n-harness/09-context-and-memory.md#eligible-requests-and-placement).
 
+## Request context
+
+Message `options.context.headers` carries explicit business request headers independently of model settings. Service reads only this body field, never copies inbound HTTP headers. Names are lower-case and unique ignoring case. The map accepts at most 32 headers, each value at most 4096 printable ASCII characters, and at most 8192 bytes overall. Authentication and transport/protocol names are reserved; provider-specific protected names are excluded when forwarding to that target.
+
+Submission persists the normalized context in the existing inbox options before worker execution. Acceptance freezes it in `Run.options`; every attempt reconstructs a read-only Harness `RequestContext`. Recovery, handoff, explicit resume and child/tool-result continuations retain it. Inline and asynchronous children inherit the parent Run's snapshot. Ordinary new messages and forks use their submitted options; omission means empty context, independent of prior checkpoints. No additional table, column or Harness checkpoint field stores these headers.
+
+A steer with omitted context retains the accepted value. An equal explicit context can join; a different context remains queued for a later Run. Canonical request idempotency includes explicit normalized context, while omission preserves the pre-context request digest. Steering compares context separately from its other-options digest.
+
+Authorized ordinary HTTP reads retain context. MCP responses omit it from typed Run, inbox, Schedule and occurrence options before pagination, text fragmentation or search. Projection does not alter persisted data or unrelated business JSON fields named `context`. Context is not automatically included in prompts, logs, history, shell environments or tool results. [Outbound forwarding](04-resources.md#request-context-forwarding) is controlled separately from tool access through `ctx.deps.request_context.headers`.
+
 ## Run configuration
 
 Message `options.configuration` accepts the shared [Harness Run configuration](../a13n-harness/06-execution-context-and-lifecycle.md#run-configuration), independently of Agent revision overrides. Omission or null selects the default for a new Run and retains the snapshot when steering. An explicit object selects its entire value; `{allowed_hosts: null}` explicitly clears a hostname restriction for a new Run, while `{allowed_hosts: []}` denies every destination.

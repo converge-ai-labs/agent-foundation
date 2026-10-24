@@ -13,7 +13,12 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
-from a13n_harness.http import OUTBOUND_TLS_VERIFY_ENV, outbound_tls_verify
+from a13n_harness.http import (
+    FORWARD_CONTEXT_HEADERS_ENV,
+    OUTBOUND_TLS_VERIFY_ENV,
+    forward_context_headers_default,
+    outbound_tls_verify,
+)
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -425,6 +430,9 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
+    forward_model_context_headers: bool = True
+    forward_mcp_context_headers: bool = True
+
     http_origins: tuple[str, ...] = ()
     require_https: bool = True
     # Exact URLs a browser authorization may return to after the connection callback, besides any page on the
@@ -693,13 +701,18 @@ class Settings(Section):
 
 def load_settings(path: Path | None = None, *, extensions: Mapping[str, type[Section]] = {}) -> Settings:
     outbound_tls_verify()
+    forward_context_headers_default()
     selected = path or (Path(os.environ["A13N_SETTINGS_FILE"]) if "A13N_SETTINGS_FILE" in os.environ else None)
     values: dict[str, Any] = tomllib.loads(selected.read_text()) if selected else {}
     known = set(Settings.model_fields) - {"extensions"}
     if shadowed := known & set(extensions):
         raise ValueError(f"Distribution settings sections shadow core sections: {sorted(shadowed)}")
     for name, value in os.environ.items():
-        if not name.startswith("A13N_") or name in {"A13N_SETTINGS_FILE", OUTBOUND_TLS_VERIFY_ENV}:
+        if not name.startswith("A13N_") or name in {
+            "A13N_SETTINGS_FILE",
+            OUTBOUND_TLS_VERIFY_ENV,
+            FORWARD_CONTEXT_HEADERS_ENV,
+        }:
             continue
         parts = name.removeprefix("A13N_").lower().split("__")
         if len(parts) != 2 or parts[0] not in known | set(extensions):

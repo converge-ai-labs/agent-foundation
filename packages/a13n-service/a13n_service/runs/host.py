@@ -12,7 +12,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 
-from a13n_harness import AgentContext, EnvironmentMount, RunBindings, RunConfiguration
+from a13n_harness import AgentContext, EnvironmentMount, RequestContext, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
@@ -183,6 +183,7 @@ async def open_host(
     configuration: RunConfiguration,
     skill_cache: Cache,
     environments: Mapping[str, EnvironmentMount],
+    request_context: RequestContext | None = None,
 ) -> AsyncGenerator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
@@ -201,6 +202,7 @@ async def open_host(
                     registry=runtime.registry,
                     policy=runtime.endpoint_policy.for_run(configuration),
                     settings=runtime.settings.providers,
+                    request_context=request_context,
                 )
             )
             tools[revision_id] = dict(zip((item.connection.id for item in parts.connections), connections, strict=True))

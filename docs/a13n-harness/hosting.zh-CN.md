@@ -85,6 +85,10 @@ Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_w
 
 每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建当前 Environment 来源。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。
 
+从 `a13n_harness` 导入 `RequestContext`，通过 `RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "trace-123"}))` 传入业务请求头。可信工具通过 `ctx.deps.request_context.headers` 读取独立复制的只读映射，名称统一为小写。内联子 Agent 继承该值。Host 负责保存上下文，并在恢复执行或创建独立子 Agent 时重新传入；`HarnessState` 不保存它，新 bindings 默认为空。请求头不会自动进入提示词、工具结果或 shell 环境。模型和 MCP 传输的转发由 Host 显式接入。
+
+设置 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS=false` 可改变模型 Provider 未显式传入 `forward_context_headers` 时的默认值。显式的 `true` 或 `false` 优先于环境变量；未设置环境变量时保持内置默认值 `true`。环境变量接受大小写不敏感的 `true` 和 `false`，忽略首尾空白，其他值会报错。默认值在构造配置时解析。Host 可调用 `a13n_harness.http.forward_context_headers_default()`，为自己的 MCP 集成使用同样的默认值。
+
 ### 发起模型调用前检查
 
 Host 可以通过 `RunBindings.model_call_check` 提供实现了 `ModelCallCheck.check(ModelCall)` 的对象。Harness 会在公开模型调用发出前执行检查：正常返回表示允许调用，抛出异常表示拒绝。这只是单次调用的准入检查，不能据此认定 HTTP 请求已经发出或产生了计费用量。检查对象属于当前 Run 的权限配置，绝不会序列化到 `HarnessState` 中。参阅[用量关联](usage-and-limits.md#usage)。

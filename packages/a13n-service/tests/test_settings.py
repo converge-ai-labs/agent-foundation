@@ -202,3 +202,21 @@ def test_chatgpt_loopback_callback_environment_override(tmp_path, monkeypatch, c
 def test_invalid_chatgpt_callback_configuration_fails_at_startup(providers):
     with pytest.raises(ValueError, match="chatgpt"):
         Settings.model_validate({"server": {"public_url": "https://service.test"}, "providers": providers})
+
+
+@pytest.mark.parametrize("value", ["true", "false", " FALSE "])
+def test_harness_forwarding_default_does_not_change_service_category_switches(monkeypatch, clean_environment, value):
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", value)
+    settings = load_settings()
+    assert settings.providers.forward_model_context_headers is True
+    assert settings.providers.forward_mcp_context_headers is True
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADER", "false")
+    with pytest.raises(ValueError, match="Unknown Service setting"):
+        load_settings()
+
+
+@pytest.mark.parametrize("value", ["", "0", "off", "invalid"])
+def test_invalid_harness_forwarding_default_is_rejected_at_startup(monkeypatch, clean_environment, value):
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", value)
+    with pytest.raises(ValueError, match="A13N_HARNESS_FORWARD_CONTEXT_HEADERS must be true or false"):
+        load_settings()

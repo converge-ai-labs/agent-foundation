@@ -9426,6 +9426,10 @@
       "McpConfig": {
         "additionalProperties": false,
         "properties": {
+          "forward_context_headers": {
+            "title": "Forward Context Headers",
+            "type": "boolean"
+          },
           "headers": {
             "default": [],
             "items": {
@@ -15962,6 +15966,21 @@
         "title": "Request",
         "type": "object"
       },
+      "RequestContext": {
+        "additionalProperties": false,
+        "description": "Explicit business headers, frozen in accepted Run options and kept out of model projections.",
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          }
+        },
+        "title": "RequestContext",
+        "type": "object"
+      },
       "Resume": {
         "additionalProperties": false,
         "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
@@ -16756,6 +16775,16 @@
               }
             ]
           },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "execution": {
             "anyOf": [
               {
@@ -16811,6 +16840,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RunConfiguration-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestContext"
               },
               {
                 "type": "null"

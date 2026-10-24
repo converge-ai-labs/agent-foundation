@@ -164,6 +164,7 @@ class ChildRuns(SubagentOperator):
                 options=RunOptions(
                     max_usage=UsageLimit(requests=limit) if limit is not None else None,
                     configuration=RunOptions.model_validate(run.options).configuration,
+                    context=RunOptions.model_validate(run.options).context,
                 ),
             )
             entry = await inbox.append_message(

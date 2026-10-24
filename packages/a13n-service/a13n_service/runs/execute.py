@@ -30,6 +30,7 @@ from a13n_harness import (
     HarnessRunStream,
     HarnessState,
     HarnessStreamEvent,
+    RequestContext,
     RunBindings,
     RunConfiguration,
     RunError,
@@ -116,6 +117,7 @@ class _Plan:
     session_id: str
     retain_tools: bool
     configuration: RunConfiguration
+    request_context: RequestContext
     source_entry_id: str | None
     mounts: tuple[EnvironmentMount, ...]
     memory_cursors: dict[str, str | None]
@@ -316,6 +318,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         session_id=session_id,
         retain_tools=retain_tools,
         configuration=options.configuration or RunConfiguration(),
+        request_context=RequestContext(options.context.headers if options.context else {}),
         source_entry_id=source_entry_id,
         mounts=mounts,
         memory_cursors=memory_cursors,
@@ -478,7 +481,9 @@ class _Attempt:
                     envd_sessions=self.envd_sessions,
                 )
             )
-            models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
+            models = await agent.open_models(
+                stack, runtime, root, configuration=self.plan.configuration, request_context=self.plan.request_context
+            )
             host = await stack.enter_async_context(
                 open_host(
                     runtime,
@@ -489,6 +494,7 @@ class _Attempt:
                     principal=self.plan.principal,
                     authority=self.plan.authority,
                     cursors=self.cursors,
+                    request_context=self.plan.request_context,
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
                     environments=environments,
@@ -996,6 +1002,7 @@ class _Attempt:
             tool_execution=self.runtime.executions if self.plan.retain_tools else None,
             codeact_state=SharedCodeActState(self.runtime.storage, lease.thread_id),
             configuration=self.plan.configuration,
+            request_context=self.plan.request_context,
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-service", subject=self.plan.principal.id),
                 agent_instance_id=lease.run_id,

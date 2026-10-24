@@ -292,6 +292,20 @@ def history_json(messages: list[ModelMessage]) -> list[dict]:
 
 恢复或子结果沿用前一运行的选项。在 Console 中，**运行选项** 为下次运行设置模型、指令覆盖、媒体理解、固定修订版本及其他配置。
 
+## 请求上下文头
+
+在消息正文中传入模型与 MCP 请求共用的业务请求头。默认开启转发，因此只应包含允许发送到已配置模型 provider 和 MCP 服务器（包括第三方端点）的值：
+
+```json
+{"options": {"context": {"headers": {"x-trace-id": "trace-123", "x-tenant-id": "acme"}}}}
+```
+
+最多支持 32 个不区分大小写且名称唯一的请求头，值为最多 4096 字符的可打印 ASCII，名称和值合计不超过 8 KiB。认证和传输请求头属于保留字段。值以普通运行选项保存，敏感信息应放在 provider 或连接凭据中。入站 HTTP 请求头不会自动复制。
+
+故障恢复和显式 resume 保留已接收的上下文；内联和异步子 agent 继承它。新消息或分叉未指定上下文时使用空值。steer 可以省略上下文或重复已有值；不同的值等待后续运行。HTTP 读取保留上下文，MCP 查询结果在文本搜索和分片前移除它。提示词、历史和 shell 环境不会自动获得副本。
+
+模型请求头和每个连接的 `mcp_headers` 优先于共享上下文中的同名字段。provider 凭据、协议头、保存的敏感请求头和自动亲和性头始终优先。与模型 provider 受保护字段同名的上下文头会在该 provider 的请求中静默跳过，保存的上下文保持不变。自动转发需要同时开启部署类别开关和目标的 `config.forward_context_headers`。类别开关默认开启。未传入目标参数时使用 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS`（环境变量未设置时为 true），显式值优先。模型 Provider 省略该参数时继承环境变量，MCP Connection 则在保存配置时写入解析后的值。设置 `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` 或 `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` 可关闭相应类别。可信工具仍可读取上下文。fetch、download、浏览器和 shell 操作不会自动转发。
+
 ## 调用方请求头
 
 线程可通过 HTTP 请求头向 MCP 连接传递非凭据上下文，例如租户或对话 ID。创建线程时设置 `mcp_headers`，或使用 `PATCH …/threads/{thread_id}` 和线程的 `If-Match` 修改：

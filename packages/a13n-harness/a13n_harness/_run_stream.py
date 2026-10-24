@@ -609,6 +609,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             _storage=storage,
             _state_extensions=dict(self._previous_state.model_extra or {}),
             metadata=bindings.metadata,
+            request_context=bindings.request_context,
             _steering=SteeringBridge(
                 context_state,
                 run_id=self.run_id,
