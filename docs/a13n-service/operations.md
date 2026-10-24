@@ -45,17 +45,7 @@ With `database.auto_migrate = true` (the default), `all` and `control` processes
 
 For a dedicated migration step, such as the Helm chart's migration Job, set `database.auto_migrate = false` on replicas and run `migrate` before starting them. During rolling upgrades, older replicas keep serving against the migrated schema, so review each release's schema changes for compatibility with the previous one.
 
-Upgrades from the original, unpaged run display also require converting stored run objects. The schema migration renamed `runs.display` to `runs.tail`; it did not add item ordinals or compress old display and checkpoint objects. `migrate`, `migrate --check` and process startup refuse these legacy pointers and name the required operator command. Drain accepted and running work, stop **all** Control and Worker replicas, and complete the schema migration before applying the object conversion:
-
-```sh
-a13n-service --config service.toml migrate-run-objects  # inspect up to 100 runs; no writes
-a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
-a13n-service --config service.toml migrate --check
-```
-
-The command verifies the original object digests, saves private local backups of both objects and their database pointers, writes and reads back new compressed objects, and replaces both pointers in one short transaction per run. It preserves item IDs, order, content, stream coverage and checkpoint bytes. Backups contain conversation data; keep the directory on durable private storage outside the source repository. It never deletes original objects, but later cleanup may remove them, so retain the backups. Apply requires the database owner to suspend the sealed-run update guard only inside the locked transaction; rollback restores the guard on failure. No database session is held during object or backup I/O.
-
-Repeat the command until it reports zero converted runs; `--limit` accepts 1–1000. Already-converted runs are skipped, so an interrupted batch can resume. A run with unfinished checkpoint cleanup, existing display pages, missing or damaged objects, or a display that already discarded items is refused for investigation rather than guessed or silently truncated. Resume replicas only after `migrate --check` succeeds, then verify a historical run, its items and continuation. This conversion does not support rollback to the old unpaged reader; restore the backed-up database pointers and objects together during an offline rollback.
+Upgrading legacy unpaged run data also requires [run-object conversion](#convert-legacy-run-objects).
 
 ## Health and readiness
 
@@ -147,3 +137,17 @@ Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking th
 The search migration adds an empty-default `tsvector` column without a table rewrite or history backfill, then builds its GIN index concurrently. Brief column/trigger DDL still needs the configured migration lock; the concurrent scan uses the bounded migration statement timeout. A failed index build is safe to rerun: the migration removes an invalid index and preserves a valid completed one.
 
 Upgrade all Control/readers before enabling new Workers. New Workers write checkpoint format 3 with private Envd Session hints and the search-retention metadata introduced in format 2; they can read existing formats 1 and 2. Old Workers skip newer checkpoints, and older readers may not understand new state or tail fields. After format-3 writes, retain compatible readers and Workers during application rollback; removing the database column does not convert object content. Search data is derived and schema downgrade discards it.
+
+## Convert legacy run objects
+
+Upgrades from the original, unpaged run display also require converting stored run objects. The schema migration renamed `runs.display` to `runs.tail`; it did not add item ordinals or compress old display and checkpoint objects. `migrate`, `migrate --check` and process startup refuse these legacy pointers and name the required operator command. Drain accepted and running work, stop **all** Control and Worker replicas, and complete the schema migration before applying the object conversion:
+
+```sh
+a13n-service --config service.toml migrate-run-objects  # inspect up to 100 runs; no writes
+a13n-service --config service.toml migrate-run-objects --apply --backup-dir /private/backups/a13n-run-objects
+a13n-service --config service.toml migrate --check
+```
+
+The command verifies and backs up the original objects and database pointers before converting each run. It preserves item IDs, order, content, stream coverage and checkpoint bytes. Apply requires database-owner privileges. Keep the backups on durable private storage outside the source repository: they contain conversation data, and later cleanup may remove the original objects.
+
+Repeat the command until it reports zero converted runs; `--limit` accepts 1–1000. Already-converted runs are skipped, so an interrupted batch can resume. A run with unfinished checkpoint cleanup, existing display pages, missing or damaged objects, or a display that already discarded items is refused for investigation rather than guessed or silently truncated. Resume replicas only after `migrate --check` succeeds, then verify a historical run, its items and continuation. This conversion does not support rollback to the old unpaged reader; restore the backed-up database pointers and objects together during an offline rollback.

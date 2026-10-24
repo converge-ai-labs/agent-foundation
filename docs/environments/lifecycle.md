@@ -99,4 +99,6 @@ Management and Provider boundaries use `EnvironmentProviderError`; operations us
 
 An unavailable control plane does not mean an absent target. Reconnection requires an explicit new execution, or explicit mount replacement in Harness. Process, output, and computer references from an old execution cannot be used in the new one.
 
+Envd can reattach a retained Session through an explicit [Host recovery hint](remote-envd.md#state-concurrency-and-recovery). This is separate from portable target state and does not replay operations or restore old execution references.
+
 See the [Provider comparison](providers.md#reconnection-and-lifecycle) for cloud-specific stop, filesystem, and expiry rules.

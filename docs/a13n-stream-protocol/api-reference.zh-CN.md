@@ -27,14 +27,15 @@ Stream Protocol 将 Harness 输出转成 AG-UI 1.0 事件，再合并为展示�
 
 从 `a13n_stream_protocol.display` 导入展示类型，而不是从包根导入：
 
-| API                                                                | 用途                                                        |
-| ------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `DisplayFold(run_id, *, attempt=0, full_content=False)`            | 转换原生观测，将事件合并为展示条目                          |
-| `fold.events(source)`                                              | 使用 fold 内不保留日志的 stream observer 转换一个原生源条目 |
-| `fold.fold(events, source=None)`                                   | 累积事件，返回序号和条目引用                                |
-| `fold.export()` / `DisplayFold.restore(snapshot)`                  | 导出独立的 `DisplaySnapshot` 并恢复，包含条目和续接状态     |
-| `fold.export_continuation()`                                       | 单独导出解析状态，不复制展示条目                            |
-| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition` | 验证并序列化检查点内容和续接状态                            |
+| API                                                                     | 用途                                                        |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | 转换原生观测，将事件合并为展示条目                          |
+| `fold.events(source)`                                                   | 使用 fold 内不保留日志的 stream observer 转换一个原生源条目 |
+| `fold.fold(events, source=None)`                                        | 累积事件，返回序号和条目引用                                |
+| `fold.export()` / `DisplayFold.restore(snapshot, processor=None)`       | 导出独立的 `DisplaySnapshot` 并恢复，包含条目和续接状态     |
+| `fold.capture_delta()`                                                  | 导出自上次捕获以来变更的条目及其匹配的续接状态              |
+| `fold.export_continuation()`                                            | 单独导出解析状态，不复制展示条目                            |
+| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition`      | 验证并序列化检查点内容和续接状态                            |
 
 默认展示预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断。大型观测载荷只保留名称，不无限复制载荷。`full_content=True` 保留完整展示内容。两种模式都不是恒定内存：保留的条目仍随对话增长。
 

@@ -18,8 +18,8 @@ TUI 中没有 `/setup` 命令。显式运行设置会在保存后返回 shell；
 | 连接方式            | 你需要提供的内容                | 凭据存储位置                                                 |
 | ------------------- | ------------------------------- | ------------------------------------------------------------ |
 | ChatGPT 订阅        | 登录并提供完整回调 URL          | Harness UI 数据根（`auth.json`）                             |
-| Codex 订阅          | 可复用的登录状态                | 共享 Codex 账户存储                                          |
-| Grok 订阅           | 可复用的登录状态                | 共享 Grok 账户存储                                           |
+| Codex 订阅          | 可复用的登录状态                | Host 自有账户存储；一次性导入已有登录                        |
+| Grok 订阅           | 可复用的登录状态                | Host 自有账户存储；一次性导入已有登录                        |
 | GitHub Copilot 订阅 | 设备登录或已有 Copilot CLI 登录 | Harness UI 数据根（`oauth/copilot.json`）或 Copilot CLI 存储 |
 | API 密钥            | 提供方/协议、模型 ID 和密钥引用 | 环境变量或 Harness UI 本地密钥存储                           |
 
@@ -44,7 +44,7 @@ API 密钥设置多一个可跳过的 **Shell review model** 步骤。选择推�
 ## 3. 选择执行权限
 
 - **Full Control：** 命令使用宿主机账户的文件系统和网络权限运行，不需要 Envd 运行时。
-- **Sandbox：** 保存前，向导会检查本地隔离的前置条件。失败不会降级到 Full Control。Windows 内置执行仅支持 Full Control。
+- **Sandbox：** 保存前，向导会检查本地隔离的前置条件。失败不会降级到 Full Control。Windows Sandbox 使用实验性的原生 MXC 隔离；见[平台要求](environments-and-projects.md#execution-permissions)。
 
 TUI 中选择后即保存配置，不会额外确认。WebUI 的 Workspace 步骤会自动校验当前选择。选择 Sandbox 后，会按需下载 envd、校验可执行文件并检查隔离能力；执行选项旁和页脚都会显示进度与失败状态。可以取消准备或重试失败的检查。Full Control 使用 Direct 时不需要下载。就绪后点击 **Save and start chatting**；查看生成文件是可选操作。保存只会打开空会话，不会发送模型请求。
 

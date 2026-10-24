@@ -14,7 +14,7 @@ From the repository root:
 make dev
 ```
 
-This prepares dependencies and runs Service and Console together. Ctrl+C stops both application processes.
+This prepares dependencies and starts the scripted model, Service, and Console in the background. Use `make dev-status` for this checkout's URLs and `make dev-stop` to stop its applications. To stay attached to the terminal and stop with Ctrl+C, use `make dev-foreground`.
 
 For individual frontend checks and development servers:
 

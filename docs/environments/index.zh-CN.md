@@ -24,7 +24,7 @@ description: 独立的环境管理、连接和执行接口，支持本地、容�
 
 ## 选择后端
 
-**Native Execution** 面向快速部署和只需要基础能力的应用，提供 **Files & Shell**。它有三种方式：**Local 本地直连**、**Docker 本地容器化**和 **E2B 远程沙箱**。Shell 包括命令执行、进程控制、标准输入和输出处理。
+**Native Execution** 面向快速部署和只需要基础能力的应用，提供 **Files & Shell**。本地直连使用 **Local**，本地容器使用 **Docker**，厂商托管目标可使用 **E2B**、**Vercel**、**Sprites** 或 **Runloop**。Shell 包括命令执行、进程控制、标准输入和输出处理。
 
 **Envd Execution** 是通用执行路径，提供 Files & Shell、通过 **OS sandbox** 和 **Egress** 实施的执行策略控制，以及 **Computer use**、**metrics 采集**等进阶能力。Host 选择策略，Envd 在目标可用的操作系统边界内实施策略。设备指标通过 Host 的 Device 连接读取，而不是 agent 工具。
 
@@ -34,17 +34,17 @@ description: 独立的环境管理、连接和执行接口，支持本地、容�
 | ------------- | ---------------- | ---------------------------------------------------- | --------------------- |
 | Native        | `direct_local`   | 本地 Host 上的 Files & Shell                         | Host 管理的已有目录   |
 | Native / Envd | `docker`         | Native Files & Shell；显式选择 HTTP EIP 使用通用执行 | Docker provider       |
-| Native        | `e2b`            | 远程沙箱中的 Files & Shell                           | E2B provider          |
+| Native / Envd | `e2b`            | Native Files & Shell；显式选择 HTTP EIP              | E2B provider          |
 | Envd          | `local_envd`     | 通过 stdio 连接本地守护进程                          | Host 管理的守护进程   |
 | Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
 | Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
 | Native / Envd | `vercel`         | Native Files & Shell；显式选择 HTTP EIP              | Vercel provider       |
-| Native        | `sprites`        | 厂商命令接口提供 Files & Shell；尚未接入 EIP         | Sprites provider      |
-| Native        | `runloop`        | 厂商命令接口提供 Files & Shell；尚未接入 EIP         | Runloop provider      |
+| Native / Envd | `sprites`        | Native Files & Shell；私有隧道 EIP                   | Sprites provider      |
+| Native        | `runloop`        | 厂商 Files & Shell；尚未接入 EIP                     | Runloop provider      |
 | Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
 | Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
-> 实现状态：Docker、E2B、Daytona、Modal 和 Vercel 已支持兼容运行环境下的 Envd/EIP 与桌面访问。Service 可自动准备 E2B 桌面模板、Modal 桌面镜像，以及 Daytona 和 Vercel 桌面快照。Docker 仍按文档配置镜像和宿主机。Sprites 和 Runloop 当前提供原生 Files & Shell。已有字段详见[配置参考](configuration-reference.md)。
+> Docker、E2B、Daytona、Modal、Vercel 和 Sprites 支持兼容运行环境下的 Envd/EIP 与桌面访问。Service 可准备 E2B 模板、Modal 镜像、Daytona 和 Vercel 快照，并在每个新 Sprite 内安装桌面。Docker 按文档配置镜像和宿主机。Runloop 仅提供 Native Files & Shell。参阅[桌面设置](../a13n-service/environments.md#computer-use)和[配置参考](configuration-reference.md)。
 
 [在本地试用远程示例](remote-envd.md)，无需模型、Docker 或云账号。
 

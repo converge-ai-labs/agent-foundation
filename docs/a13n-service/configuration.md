@@ -112,7 +112,7 @@ Supply `smtp_username` and `smtp_password` together. As an environment variable,
 
 ## Outbound requests
 
-Every request the Service makes to a provider, a remote MCP server, an OAuth server or a webhook endpoint passes one endpoint policy:
+Service-owned HTTP clients apply one endpoint policy to provider, remote MCP, OAuth and webhook requests:
 
 - URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.

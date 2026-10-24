@@ -67,7 +67,7 @@ thread_values = CodeActStateOwner()
 bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
 ```
 
-Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Whole CodeAct runners can detach; their nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
+Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Detachment requires a tool with retained execution ownership and a retainable resource scope, such as supported Environment Shell calls and whole CodeAct runners. An ordinary `async def` custom tool remains inline; adding the runtime alone does not make it detachable. CodeAct's nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
 
 Bind the Harness runtime through `RunBindings.tool_execution` to enable automatic background execution and immediate steering. The runtime owns active calls; its store retains records and results. Runs without this binding use blocking generic tools, queued steering, and the Environment's native shell process controls. Enabling `auto` requires the binding at Run preparation; requesting immediate steering requires it before input acceptance.
 

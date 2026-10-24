@@ -20,7 +20,7 @@ Upgrade a uv-tool installation with `a13n-harness-ui update` or `uv tool upgrade
 
 First launch guides you through a Model connection, model selection, and execution permissions. Setup saves editable files and opens chat; no model call occurs until you send a prompt. To rerun setup later, use `a13n-harness-ui setup` (outside chat). Run `a13n-harness-ui setup --advanced` for optional context, reasoning, shell-review, subagent, and instruction choices. To add another resource, use `a13n-harness-ui add model` or `a13n-harness-ui add agent`.
 
-Full Control runs commands as your host account. Sandbox requires supported local isolation and never silently falls back; built-in Windows execution is Full Control only. Start with a read-only prompt if you are exploring a repository:
+Full Control runs commands as your host account. Sandbox requires supported local isolation and never silently falls back. Start with a read-only prompt if you are exploring a repository:
 
 ```text
 Explain the entry point and the relevant tests. Do not change files.
@@ -90,7 +90,7 @@ The wheel and sdist include the CLI, App, WebUI server, compiled WebUI assets, c
 
 ## Versioning
 
-The release tag is `release/a13n-harness-ui-v<version>`. Harness UI and its container image share the application version; the frontend has no separate release. See the [release policy](../../spec/repository-model.md) and [installation/upgrade guide](../../docs/a13n-harness-ui/installation.md). The [Harness UI specification](../../spec/a13n-harness-ui/README.md) owns the architecture.
+The release tag is `release/a13n-harness-ui-v<version>`. The bundled frontend shares the application version and has no separate release. See the [release policy](../../spec/repository-model.md) and [installation/upgrade guide](../../docs/a13n-harness-ui/installation.md). The [Harness UI specification](../../spec/a13n-harness-ui/README.md) owns the architecture.
 
 ## Browser UI
 
@@ -110,7 +110,7 @@ Harness UI ships as a Python wheel and sdist with the bundled WebUI, not an offi
 
 ## Windows Local Execution
 
-Built-in Windows execution supports Full Control, not Sandbox. Explicit Sandbox selection fails rather than running with host authority; custom and remote Providers have their own requirements. See [execution permissions](../../docs/a13n-harness-ui/environments-and-projects.md#execution-permissions).
+Windows offers Full Control and experimental native MXC Sandbox with PowerShell. Sandbox requires successful isolation and connectivity probes, allows broad disk reads, and restricts writes to granted roots. Failed readiness blocks Sandbox without falling back to Host authority; custom and remote Providers have their own requirements. See [execution permissions](../../docs/a13n-harness-ui/environments-and-projects.md#execution-permissions).
 
 ## Source Environment Troubleshooting
 

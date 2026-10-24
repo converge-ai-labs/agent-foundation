@@ -8,56 +8,6 @@ The recipe describes the target; the runtime holds its clients and credentials.
 
 [Choose a backend](index.md#choose-a-backend) for the short comparison. This page covers catalogs, extension registration, and built-in runtime requirements.
 
-## Provider catalog and plugins
-
-`ProviderCatalog` is an immutable explicit allowlist, shared by all five Provider domains: Model, Web, Connector, Memory, and Environment. Built-in Environment definitions are selected by exact type, and installed plugins contribute their own definitions:
-
-```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.plugins import load_provider_plugins
-
-plugins = load_provider_plugins(("acme",))
-catalog = ProviderCatalog(
-    (
-        *select_builtin_environment_providers(("direct_local", "docker")),
-        *(item for plugin in plugins for item in plugin.manifest.environment),
-    )
-)
-definition = catalog.require("acme_sandbox")
-```
-
-`load_provider_plugins()` imports only the entry-point names you list; an empty selection scans no installed metadata. It rejects a duplicate, malformed, missing, or ambiguous name, and reports the distribution name, version, and import target of each loaded plugin as provenance. The catalog then rejects a duplicate Provider type, so a plugin cannot shadow a built-in.
-
-Select plugins explicitly and restart the Host after changing their code.
-
-An installed distribution publishes one manifest under the shared entry-point group:
-
-```toml
-[project.entry-points."a13n_harness.providers.plugins"]
-acme = "acme_agent_environment:manifest"
-```
-
-```python
-from a13n_harness.providers.plugins import ProviderManifest
-
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
-```
-
-An `EnvironmentProviderDefinition` should:
-
-1. declare a stable `type`, display name, and optional HTTPS setup link;
-2. declare separate models for account configuration, credentials, and target recipes;
-3. expose execution metadata only; Service composes a separate `EnvironmentManagementDefinition` for management;
-4. return a fixed-target `EnvironmentConnector` from the pure `connector_factory`;
-5. return a fresh ready `EnvironmentExecution` from every `open()`, with its own `execution_id` and operations;
-6. validate fixed target references without changing authoritative state;
-7. leave target management to Service or the embedding Host. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
-
-The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
-
-For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).
-
 ## Built-in Providers
 
 Execution uses a Native basic path or the general Envd path; resource management retains a separate implementation for each vendor. See the [execution model](index.md#choose-a-backend).
@@ -66,12 +16,12 @@ Execution uses a Native basic path or the general Envd path; resource management
 | -------------- | ---------------- | ------------------------------------------------------------- | ------------------------------- |
 | Native         | `direct_local`   | Files & Shell on the local Host                               | Host-owned directory            |
 | Native / Envd  | `docker`         | Native Files & Shell; explicit HTTP EIP for general execution | Docker provider                 |
-| Native         | `e2b`            | Files & Shell in a remote sandbox                             | E2B provider                    |
+| Native / Envd  | `e2b`            | Native Files & Shell / explicit HTTP EIP                      | E2B provider                    |
 | Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
 | Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
 | Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
 | Native / Envd  | `vercel`         | Native Files & Shell / explicit HTTP EIP                      | Vercel provider                 |
-| Native or EIP  | `sprites`        | Native Files & Shell or private-tunnel EIP                    | Sprites provider                |
+| Native / Envd  | `sprites`        | Native Files & Shell / private-tunnel EIP                     | Sprites provider                |
 | Native         | `runloop`        | Vendor Files & Shell; EIP not integrated                      | Runloop provider                |
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
@@ -372,3 +322,53 @@ Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON`
 Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), and [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html).
 
 Docker templates can select `execution: envd_http` and require a desktop with `desktop: true`. Docker lifecycle still uses `docker_host`; HTTP EIP requires a separately configured reachable host and port-publication policy. See [the desktop setup](../a13n-envd/sandbox.md#managed-docker-desktop-in-service) for startup, permissions and restart behavior.
+
+## Provider catalog and plugins
+
+`ProviderCatalog` is an immutable explicit allowlist, shared by all five Provider domains: Model, Web, Connector, Memory, and Environment. Built-in Environment definitions are selected by exact type, and installed plugins contribute their own definitions:
+
+```python
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.plugins import load_provider_plugins
+
+plugins = load_provider_plugins(("acme",))
+catalog = ProviderCatalog(
+    (
+        *select_builtin_environment_providers(("direct_local", "docker")),
+        *(item for plugin in plugins for item in plugin.manifest.environment),
+    )
+)
+definition = catalog.require("acme_sandbox")
+```
+
+`load_provider_plugins()` imports only the entry-point names you list; an empty selection scans no installed metadata. It rejects a duplicate, malformed, missing, or ambiguous name, and reports the distribution name, version, and import target of each loaded plugin as provenance. The catalog then rejects a duplicate Provider type, so a plugin cannot shadow a built-in.
+
+Select plugins explicitly and restart the Host after changing their code.
+
+An installed distribution publishes one manifest under the shared entry-point group:
+
+```toml
+[project.entry-points."a13n_harness.providers.plugins"]
+acme = "acme_agent_environment:manifest"
+```
+
+```python
+from a13n_harness.providers.plugins import ProviderManifest
+
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+```
+
+An `EnvironmentProviderDefinition` should:
+
+1. declare a stable `type`, display name, and optional HTTPS setup link;
+2. declare separate models for account configuration, credentials, and target recipes;
+3. expose execution metadata only; Service composes a separate `EnvironmentManagementDefinition` for management;
+4. return a fixed-target `EnvironmentConnector` from the pure `connector_factory`, accepting the always-supplied `session_recovery` keyword (including `None`); Native accepts it without producing Session hints;
+5. return a fresh ready `EnvironmentExecution` from every `open()`, with its own `execution_id` and operations;
+6. validate fixed target references without changing authoritative state;
+7. leave target management to Service or the embedding Host. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
+
+The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
+
+For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).

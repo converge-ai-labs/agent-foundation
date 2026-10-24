@@ -4,7 +4,7 @@ Service is Agent Foundation's managed-agent runtime, built on [Harness](../a13n-
 
 Use [Harness UI](../a13n-harness-ui/README.md) for an interactive playground and trusted small-team collaboration. Choose Service when applications or users need managed access and durable execution.
 
-Start with the [deployment quickstart](../../docs/a13n-service/get-started.md) or [SDKs and CLI](../../docs/a13n-service/sdks.md). For operator commands:
+Start with the Docker [deployment quickstart](../../docs/a13n-service/get-started.md), which includes PostgreSQL, Redis and object storage, or [SDKs and CLI](../../docs/a13n-service/sdks.md) to connect an application. The following operator commands run inside the Service container or a Python environment with `a13n-service` installed and [required infrastructure](../../docs/a13n-service/configuration.md#required-infrastructure) configured:
 
 ```sh
 a13n-service --config service.toml migrate

@@ -233,7 +233,7 @@ Open an **Agent** to configure its instructions, Model, Capabilities, and subage
 
 Use **Configuration files** to create, inspect, save, or delete configuration. Forms and YAML share one draft; **Save changes** also validates. Unsaved edits survive navigation in the tab, not reload. Saves replace the whole file, with the last write winning; detected external changes leave your dirty draft intact. Active Runs retain their captured configuration. MCP source text is hidden, so replacing an MCP file also replaces unseen fields and all resources in that file.
 
-In **Projects**, edit server directories and creation defaults. **Browse → Use this directory** updates the draft; save to apply it. With `--no-share-computer`, enter paths manually. New conversations use saved defaults; existing ones retain their roots unless explicitly changed. Default, None and Custom remain distinct. The preview shows saved values and their sources, not unsaved edits or a model test.
+Open **Project settings** from the sidebar Project menu to edit server directories and creation defaults. **Browse → Use this directory** updates the draft; save to apply it. With `--no-share-computer`, enter paths manually. New conversations use saved defaults; existing ones retain their roots unless explicitly changed. Default, None and Custom remain distinct. The preview shows saved values and their sources, not unsaved edits or a model test.
 
 The top-right header automatically shows a generated collaboration name on first entry. Click it to change the name; **Save name** remembers it in this browser and updates live presence and composer labels. The online indicator opens the per-tab participant directory. This display name is not a provider login or an authenticated identity.
 
@@ -241,7 +241,7 @@ The top-right header automatically shows a generated collaboration name on first
 
 In **Settings → Environments**, add a Device connection with its identity, HTTP endpoint or reverse WebSocket transport, and credential reference. **Check connection** reads the live Device descriptor; saving a connection does not require the Device to be online. This resource can be reused with different working directories and aliases.
 
-In **Projects** or **Configuration → Change next Run selections**, use **Add environment**, select the Device, and enter a known absolute working directory or browse the online Device. **Use this directory** updates only the draft. Use **Add directory** to add paths within an existing environment. Choose **Default working directory** across the selected environments; removing its directory requires a replacement before saving. A Project can combine local folders and remote Environments, or use only remote Environments; it must retain at least one working directory. Device directory browsing remains available independently of native computer sharing.
+In **Project settings → Environments** or **Conversation details → Configuration → Change next Run selections**, use **Add environment**, select the Device, and enter a known absolute working directory or browse the online Device. **Use this directory** updates only the draft. Use **Add directory** to add paths within an existing environment. Choose **Default working directory** across the selected environments; removing its directory requires a replacement before saving. A Project can combine local folders and remote Environments, or use only remote Environments; it must retain at least one working directory. Device directory browsing remains available independently of native computer sharing.
 
 Use **Forget** on an unused Device or custom profile to remove its local configuration, including when the Device is offline or the provider is no longer installed. The dialog lists current configuration references and links to their editors. Repair those defaults first, then return and forget the resource. This does not delete remote data, uninstall a provider, or remove conversation history. Built-in Environments cannot be forgotten.
 
@@ -290,7 +290,7 @@ Notices cover completion, failure, and requests for input across **all root conv
 
 Every open page also shows in-app notices, including for the conversation you are viewing. These have no six-hour or visit-history restriction. System push and in-app notices may appear together. **Web Push is the only system-notification path:** if it is unsupported or its provider cannot be reached, only in-app notices remain. There is no local system-notification fallback.
 
-After upgrading, reload any previously open WebUI pages. Existing subscriptions and signing keys are retained, but old Thread interest lists are removed. Devices become eligible when a visible updated page first reports activity; registration synchronization alone does not count as activity.
+After upgrading, reload WebUI and keep the updated page visible to renew this device's delivery window. Existing subscriptions and signing keys are retained.
 
 If enabling notifications reports **Browser push registration failed**, the browser failed to obtain a subscription before it could be saved to Harness UI. The error keeps the original browser detail and distinguishes this stage from server delivery. For Android Chrome push-service errors, check Google Play services and the device's push-service connectivity, including VPN or firewall restrictions; opening the WebUI successfully is not a push connectivity test. Compare Wi-Fi and mobile data, then explicitly retry registration. Avoid clearing browser storage as a first step because it also removes private drafts and preferences.
 
@@ -298,7 +298,7 @@ The test reports whether the push service accepted the message, **not whether yo
 
 Turn off **Enable browser notifications** to remove this browser's subscription and stop permission reminders without disabling in-app notices or affecting other devices. Logging out also attempts cleanup. If both browser and server cleanup fail, use the site's browser notification permissions to block delivery. Clearing browser storage is not a server-side unsubscribe; turn notifications off first when possible.
 
-Push is best effort, not a durable notification inbox. The server uses a bounded memory queue and limited retries; shutdown or provider failure can lose reminders. Reopening WebUI does not replay old completions. Push does not alter saved history, browser-local new-result dots, or the lifetime of the Agent's work. Back up the server data root securely to retain its signing identity and subscriptions.
+Push is best effort: shutdown or provider failure can lose reminders, and reopening WebUI does not replay them. Check the conversation for results. Back up the server data root securely to retain its signing identity and subscriptions.
 
 ## Agent collaboration and Sidekick
 

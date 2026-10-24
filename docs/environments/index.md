@@ -24,7 +24,7 @@ description: Independent target management and portable execution across local, 
 
 ## Choose a backend
 
-**Native Execution** is the lightweight path for quick deployment and applications that need only **Files & Shell**. It has three forms: **Local** for direct local access, **Docker** for local containerization, and **E2B** for a remote sandbox. Shell includes command execution, process control, stdin, and output handling.
+**Native Execution** is the lightweight path for quick deployment and applications that need only **Files & Shell**. Use **Local** for direct local access, **Docker** for local containers, or **E2B**, **Vercel**, **Sprites** and **Runloop** for vendor-hosted targets. Shell includes command execution, process control, stdin, and output handling.
 
 **Envd Execution** is the general execution path. It provides Files & Shell, execution policy enforcement through **OS sandbox** and **Egress**, and advanced capabilities such as **Computer use** and **metrics collection**. The Host selects policy; Envd enforces it within the target's available OS boundary. Device metrics use the Host's Device connection rather than Agent tools.
 
@@ -34,17 +34,17 @@ description: Independent target management and portable execution across local, 
 | -------------- | ---------------- | ------------------------------------------------------------- | ------------------------------- |
 | Native         | `direct_local`   | Files & Shell on the local Host                               | Host-owned directory            |
 | Native / Envd  | `docker`         | Native Files & Shell; explicit HTTP EIP for general execution | Docker provider                 |
-| Native         | `e2b`            | Files & Shell in a remote sandbox                             | E2B provider                    |
+| Native / Envd  | `e2b`            | Native Files & Shell / explicit HTTP EIP                      | E2B provider                    |
 | Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
 | Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
 | Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
 | Native / Envd  | `vercel`         | Native Files & Shell / explicit HTTP EIP                      | Vercel provider                 |
-| Native         | `sprites`        | Vendor Files & Shell; EIP not integrated                      | Sprites provider                |
+| Native / Envd  | `sprites`        | Native Files & Shell / private-tunnel EIP                     | Sprites provider                |
 | Native         | `runloop`        | Vendor Files & Shell; EIP not integrated                      | Runloop provider                |
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-> Implementation status: Docker, E2B, Daytona, Modal and Vercel support Envd/EIP and desktop access with compatible runtimes. Service can automatically prepare E2B desktop templates, Modal desktop images, and Daytona and Vercel desktop snapshots. Docker retains its documented image and host setup. Sprites and Runloop currently provide native Files & Shell. See the [configuration reference](configuration-reference.md) for existing fields.
+> Docker, E2B, Daytona, Modal, Vercel and Sprites support Envd/EIP and desktop access with compatible runtimes. Service can prepare E2B templates, Modal images, Daytona and Vercel snapshots, and install a desktop in each new Sprite. Docker uses its documented image and host setup. Runloop provides Native Files & Shell only. See [desktop setup](../a13n-service/environments.md#computer-use) and the [configuration reference](configuration-reference.md).
 
 [Try the remote examples locally](remote-envd.md) without a model, Docker or cloud account.
 

@@ -5,6 +5,12 @@ description: 添加模型 provider 和模型，配置媒体理解，并跟踪用
 
 Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游模型，配置调用所用的模型 API、模型输入能力和可选价格。Provider 和模型属于同一[工作空间](resources.md#workspaces)，agent 通过 key 选择模型。
 
+首次使用模型时：
+
+1. 打开 **Models → Add model → Connect a new provider**，填写 provider 账号信息。
+2. [添加模型](#add-a-model)，选择端点支持的 API 并保存。
+3. 在 agent 上选择该模型并发送一条消息。成功回复才能验证推理权限；目录可见不代表可以调用。
+
 ## 模型 provider
 
 在 Console 中打开 **Models → Add model → Connect a new provider**，或在 **Workspace settings → Providers** 管理 provider。通过 API 使用时，按 [Provider](resources.md#providers)中的说明在 `/api/v1/model-providers` 创建。

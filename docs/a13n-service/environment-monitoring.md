@@ -5,6 +5,8 @@ description: Select collection and history backends for environment and Device m
 
 Environment monitoring shows the resources used by an Envd target independently of agent runs. Select a workspace metrics data source on each environment. An unselected environment has no Service background collection or automatic exporter setup. [Service monitoring](monitoring.md) covers the health of Service itself.
 
+For a first dashboard, select **Local Cache** as the environment's metrics data source, generate activity on the target, then open **Observe → Metrics** and select it. Existing targets need a running Envd sampler; [bind and verify the environment](#bind-and-verify-an-environment) if no samples appear. Local Cache keeps temporary history in Redis and needs no external metrics database.
+
 ## Use dashboards in Console
 
 Open **Observe → Metrics** in your workspace. Select an environment or Device to view its configured metrics. The built-in **Environment overview** is editable, just like a custom dashboard.

@@ -67,7 +67,7 @@ thread_values = CodeActStateOwner()
 bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
 ```
 
-将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。CodeAct runner 可整体转到后台，嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
+将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。转到后台要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用和完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行；仅添加 runtime 不会使它支持后台执行。CodeAct 的嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
 
 通过 `RunBindings.tool_execution` 绑定 Harness runtime，即可启用自动后台执行和即时 steering。runtime 管理活动调用，store 保留记录和结果。未绑定时，Run 使用阻塞式通用工具、排队 steering，以及 Environment 的原生 shell 进程控制。启用 `auto` 时在 Run 准备阶段检查绑定；请求即时 steering 时在接收输入前检查绑定。
 

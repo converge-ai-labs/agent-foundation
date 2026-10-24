@@ -15,6 +15,7 @@ description: 根配置文件、加载优先级，以及修改何时生效。
 | 默认 Agent、Environment、插件或 MCP              | `a13n-harness-ui.yaml` → `defaults` | [默认选择](#default-resource-selections)                                 |
 | 主题和输出详细程度                               | `a13n-harness-ui.yaml` → `display`  | [显示设置](#display-settings)                                            |
 | 提问、CodeAct、内置子级                          | 根 `tools` 和 `subagents`           | [内置工具](#built-in-tools-and-subagents)                                |
+| 订阅账户和有序故障切换组                         | `subscription_groups/*.yaml`        | [账户与分组](models-and-authentication.md#account-store-locations)       |
 | 提供方、API 密钥引用、端点、推理、上下文         | `models/*.yaml`                     | [Model 字段](models-and-authentication.md#model-file-reference)          |
 | 指令、Capability、可见工具、子级                 | `agents/*.yaml`                     | [Agent 字段](agents-and-subagents.md#agent-file-reference)               |
 | 本地根目录和 Device 绑定                         | `projects/*.yaml`                   | [Project 字段](environments-and-projects.md#project-file-reference)      |
@@ -38,16 +39,17 @@ a13n-harness-ui config subagents --format json
 
 根文件所在目录还包含：
 
-| 路径                       | 用途                                            | 详细参考                                                               |
-| -------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------- |
-| `AGENTS.md`                | 可选的全局上下文指引                            | [指引](agents-and-subagents.md#instructions-and-guidance)              |
-| `models/*.yaml`            | 可复用 Model 和凭据引用                         | [Model](models-and-authentication.md#model-file-reference)             |
-| `agents/*.yaml`            | Agent 定义和子级清单                            | [创建 Agent](agents-and-subagents.md#create-an-agent-from-files)       |
-| `subagents/*.md`           | 轻量子级指令                                    | [Markdown subagent](agents-and-subagents.md#write-a-markdown-subagent) |
-| `projects/*.yaml`          | 本地根目录、Device 选择和创建默认值             | [Project](environments-and-projects.md#project-file-reference)         |
-| `devices/*.yaml`           | 可复用 Device 连接和凭据引用                    | [Device](environments-and-projects.md#add-device-bindings)             |
-| `extensions/*.yaml`        | Harness Plugin、Environment 配置、Run Extension | [扩展](extensions-and-mcp.md)                                          |
-| `mcp/*.yaml`、`mcp/*.json` | MCP 服务器定义                                  | [MCP](mcp.md)                                                          |
+| 路径                         | 用途                                            | 详细参考                                                               |
+| ---------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------- |
+| `AGENTS.md`                  | 可选的全局上下文指引                            | [指引](agents-and-subagents.md#instructions-and-guidance)              |
+| `subscription_groups/*.yaml` | 有序原生订阅账户和选择策略                      | [账户与分组](models-and-authentication.md#account-store-locations)     |
+| `models/*.yaml`              | 可复用 Model 和凭据引用                         | [Model](models-and-authentication.md#model-file-reference)             |
+| `agents/*.yaml`              | Agent 定义和子级清单                            | [创建 Agent](agents-and-subagents.md#create-an-agent-from-files)       |
+| `subagents/*.md`             | 轻量子级指令                                    | [Markdown subagent](agents-and-subagents.md#write-a-markdown-subagent) |
+| `projects/*.yaml`            | 本地根目录、Device 选择和创建默认值             | [Project](environments-and-projects.md#project-file-reference)         |
+| `devices/*.yaml`             | 可复用 Device 连接和凭据引用                    | [Device](environments-and-projects.md#add-device-bindings)             |
+| `extensions/*.yaml`          | Harness Plugin、Environment 配置、Run Extension | [扩展](extensions-and-mcp.md)                                          |
+| `mcp/*.yaml`、`mcp/*.json`   | MCP 服务器定义                                  | [MCP](mcp.md)                                                          |
 
 各目录只扫描一层，不递归或合并祖先目录。扩展名区分大小写：`subagents/` 接受 `.md`，但排除 `README.md`；其他目录接受 `.yaml`；`mcp/` 还接受 `.json`。每个文件定义一个资源，MCP 多服务器 `mcpServers` 格式除外。环境和 header 引用见 [MCP 配置](mcp.md)。
 
@@ -197,7 +199,7 @@ webui:
 
 ### Shell 审查快捷配置
 
-`security.shell_review.enable` 默认 `false`，不自动注入权限/审查器。设置向导通常初始化为 `true`。关闭表示不使用快捷配置，不表示移除显式 Agent 策略。
+`security.shell_review.enable` 默认 `false`，不自动注入权限/审查器。[设置向导](setup.md#advanced-setup)在选择 shell 审查后启用它；API 密钥设置需要显式选择审查模型。关闭表示不使用快捷配置，不表示移除显式 Agent 策略。
 
 开启后仅审查根及子级的 `environment.shell_exec`。显式快捷字段覆盖 Agent 的 shell 规则，其他规则保留。省略/null 字段先继承 Agent 审查设置，再用内置默认值。字段值、合并和故障处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。修改影响后续 Run 捕获。
 

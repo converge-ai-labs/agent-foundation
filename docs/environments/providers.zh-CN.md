@@ -8,56 +8,6 @@ description: 注册 provider 插件，并配置每个内置 provider 的运行�
 
 简要比较见[选择后端](index.md#choose-a-backend)。本页介绍目录、扩展注册和内置运行时要求。
 
-## Provider 目录与插件
-
-`ProviderCatalog` 是不可变的显式允许列表，由全部五个 provider 领域共用：Model、Web、Connector、Memory 和 Environment。内置环境定义按精确类型选择，已安装插件提供自己的定义：
-
-```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.plugins import load_provider_plugins
-
-plugins = load_provider_plugins(("acme",))
-catalog = ProviderCatalog(
-    (
-        *select_builtin_environment_providers(("direct_local", "docker")),
-        *(item for plugin in plugins for item in plugin.manifest.environment),
-    )
-)
-definition = catalog.require("acme_sandbox")
-```
-
-`load_provider_plugins()` 只导入明确列出的入口名称；选择为空时不扫描已安装元数据。它拒绝重复、格式错误、缺失或含糊的名称，并报告每个已加载插件的分发包名称、版本和导入目标作为来源信息。目录随后拒绝重复 provider 类型，因此插件不能覆盖内置定义。
-
-显式选择插件，修改插件代码后重启 Host。
-
-已安装分发包在共享入口组中发布一个 manifest：
-
-```toml
-[project.entry-points."a13n_harness.providers.plugins"]
-acme = "acme_agent_environment:manifest"
-```
-
-```python
-from a13n_harness.providers.plugins import ProviderManifest
-
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
-```
-
-`EnvironmentProviderDefinition` 应当：
-
-1. 声明稳定的 `type`、显示名称和可选 HTTPS 设置链接；
-2. 分别声明账号配置、凭据和目标配置模型；
-3. 只声明执行元数据；Service 组合独立的 `EnvironmentManagementDefinition` 提供管理；
-4. 通过纯 `connector_factory` 返回固定目标的 `EnvironmentConnector`；
-5. 每次 `open()` 返回新的已就绪 `EnvironmentExecution`，包含独立的 `execution_id` 和操作对象；
-6. 验证固定目标引用，不修改权威状态；
-7. 由 Service 或嵌入方 Host 管理目标。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
-
-可运行的 [provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)展示单个已安装 manifest 使用相同的目录、验证、构建和 Harness 路径。共享编写契约见[插件与扩展](../a13n-harness/plugins.md#provider-plugins)。
-
-完整 Host 侧内置生命周期，包括 Docker 状态重新进入和显式销毁，见[内置 provider 示例](examples.md)。
-
 ## 内置 provider
 
 执行能力分为 Native 基础路径和 Envd 通用路径，资源管理按供应商保留独立实现。完整模型见[选择后端](index.md#choose-a-backend)。
@@ -66,13 +16,13 @@ manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 | ------------- | ---------------- | ---------------------------------------------------- | --------------------- |
 | Native        | `direct_local`   | 本地 Host 上的 Files & Shell                         | Host 管理的已有目录   |
 | Native / Envd | `docker`         | Native Files & Shell；显式选择 HTTP EIP 使用通用执行 | Docker provider       |
-| Native        | `e2b`            | 远程沙箱中的 Files & Shell                           | E2B provider          |
+| Native / Envd | `e2b`            | Native Files & Shell；显式选择 HTTP EIP              | E2B provider          |
 | Envd          | `local_envd`     | 通过 stdio 连接本地守护进程                          | Host 管理的守护进程   |
 | Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
 | Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
 | Native / Envd | `vercel`         | Native Files & Shell；显式选择 HTTP EIP              | Vercel provider       |
-| Native 或 EIP | `sprites`        | 原生 Files & Shell 或私有隧道 EIP                    | Sprites provider      |
-| Native        | `runloop`        | 原生 Files & Shell 或私有隧道 EIP                    | Runloop provider      |
+| Native / Envd | `sprites`        | Native Files & Shell；私有隧道 EIP                   | Sprites provider      |
+| Native        | `runloop`        | 厂商 Files & Shell；尚未接入 EIP                     | Runloop provider      |
 | Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
 | Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
@@ -372,3 +322,53 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
 原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/) 和 [Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html)。
 
 Docker 模板可选择 `execution: envd_http`，并用 `desktop: true` 要求桌面就绪。容器生命周期仍使用 `docker_host`，HTTP EIP 则需单独配置可达主机和端口发布策略。启动、权限和重启行为见[桌面配置说明](../a13n-envd/sandbox.md)。
+
+## Provider 目录与插件
+
+`ProviderCatalog` 是不可变的显式允许列表，由全部五个 provider 领域共用：Model、Web、Connector、Memory 和 Environment。内置环境定义按精确类型选择，已安装插件提供自己的定义：
+
+```python
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.plugins import load_provider_plugins
+
+plugins = load_provider_plugins(("acme",))
+catalog = ProviderCatalog(
+    (
+        *select_builtin_environment_providers(("direct_local", "docker")),
+        *(item for plugin in plugins for item in plugin.manifest.environment),
+    )
+)
+definition = catalog.require("acme_sandbox")
+```
+
+`load_provider_plugins()` 只导入明确列出的入口名称；选择为空时不扫描已安装元数据。它拒绝重复、格式错误、缺失或含糊的名称，并报告每个已加载插件的分发包名称、版本和导入目标作为来源信息。目录随后拒绝重复 provider 类型，因此插件不能覆盖内置定义。
+
+显式选择插件，修改插件代码后重启 Host。
+
+已安装分发包在共享入口组中发布一个 manifest：
+
+```toml
+[project.entry-points."a13n_harness.providers.plugins"]
+acme = "acme_agent_environment:manifest"
+```
+
+```python
+from a13n_harness.providers.plugins import ProviderManifest
+
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+```
+
+`EnvironmentProviderDefinition` 应当：
+
+1. 声明稳定的 `type`、显示名称和可选 HTTPS 设置链接；
+2. 分别声明账号配置、凭据和目标配置模型；
+3. 只声明执行元数据；Service 组合独立的 `EnvironmentManagementDefinition` 提供管理；
+4. 通过纯 `connector_factory` 返回固定目标的 `EnvironmentConnector`，接受每次都会传入的 `session_recovery` 关键字（包括 `None`）；Native 接受它但不生成会话提示；
+5. 每次 `open()` 返回新的已就绪 `EnvironmentExecution`，包含独立的 `execution_id` 和操作对象；
+6. 验证固定目标引用，不修改权威状态；
+7. 由 Service 或嵌入方 Host 管理目标。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
+
+可运行的 [provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)展示单个已安装 manifest 使用相同的目录、验证、构建和 Harness 路径。共享编写契约见[插件与扩展](../a13n-harness/plugins.md#provider-plugins)。
+
+完整 Host 侧内置生命周期，包括 Docker 状态重新进入和显式销毁，见[内置 provider 示例](examples.md)。

@@ -32,11 +32,11 @@ make image-check-sandbox-desktop
 
 发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 Envd 发布标签。三个变体包含相同版本的守护进程。
 
-| 通道        | 标准版            | Slim                 |
-| ----------- | ----------------- | -------------------- |
-| 稳定版      | `X.Y.Z`、`latest` | `X.Y.Z-slim`、`slim` |
-| 候选版      | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    |
-| Main 开发版 | `dev`             | `dev-slim`           |
+| 通道        | 标准版            | Slim                 | Desktop                    |
+| ----------- | ----------------- | -------------------- | -------------------------- |
+| 稳定版      | `X.Y.Z`、`latest` | `X.Y.Z-slim`、`slim` | `X.Y.Z-desktop`、`desktop` |
+| 候选版      | `X.Y.Z-rc.N`      | `X.Y.Z-rc.N-slim`    | `X.Y.Z-rc.N-desktop`       |
+| Main 开发版 | `dev`             | `dev-slim`           | `dev-desktop`              |
 
 RC 和开发版发布都不会推进 `latest`、`slim` 或 `desktop`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
 

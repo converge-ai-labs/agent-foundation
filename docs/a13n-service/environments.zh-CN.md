@@ -8,7 +8,7 @@ description: 让 agent 在托管沙箱或你自己的机器上工作。
 - **托管环境：** Service 根据**模板** 创建、启动、停止和删除，例如为每个线程创建一个 Docker 容器。
 - **外部目标：** 由你自行运行 `a13n-envd` 守护进程的计算机，Service 只负责连接。
 
-每个托管供应商保留资源管理 provider，负责创建、检查、启停、销毁、续期和连接准备。执行遵循[共享模型](../environments/index.md#choose-a-backend)：Native Local/Docker/E2B 提供适合快速搭建的 Files & Shell；Envd 提供通用执行及 OS sandbox、Egress、Computer use 和设备指标。
+每个托管供应商保留资源管理 provider，负责创建、检查、启停、销毁、续期和连接准备。执行遵循[共享模型](../environments/index.md#choose-a-backend)：Native Local/Docker/E2B/Vercel/Sprites/Runloop 提供适合快速搭建的 Files & Shell；Envd 提供通用执行及 OS sandbox、Egress、Computer use 和设备指标。
 
 线程**挂载** 环境。每次运行在被接收时固定线程挂载，并一直使用到结束。没有挂载环境时，agent 没有文件或终端工具。
 
@@ -28,7 +28,7 @@ Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuratio
 
 环境 provider 是运行环境所用的账号。像其他 [provider](resources.md#providers) 一样，在 `/api/v1/environment-providers` 中创建。`GET /api/v1/provider-types/environment` 返回各类型的配置、凭据和 recipe schema。
 
-在 Console 中，模板的**连接**选择框旁提供**管理连接**，打开连接列表后不会丢失当前模板草稿。也可从 **Workspace settings → Providers → Environment** 进入同一列表。打开连接可查看配置；拥有工作空间写权限的用户可修改名称、启用状态、配置和凭据，或选择**删除连接**。修改配置时，已有凭据必须重新填写或移除。删除前会列出引用它的模板和环境实例；已停用模板、保留的历史实例也会阻止删除。只有没有引用的连接才能永久删除，删除范围仅为已保存的连接配置和凭据，不会删除 Docker 引擎或原生资源。
+在 Console 中，模板的**连接**选择框旁提供**管理连接**，打开连接列表后不会丢失当前模板草稿。也可从 **Workspace settings → Providers → Environment** 进入同一列表。打开连接可查看配置；拥有工作空间写权限的用户可修改名称、启用状态、配置和凭据，或选择**删除连接**。修改配置时，未提交的凭据保留原值；提供新值会替换，提供 `null` 会移除。新的认证模式必须允许保留的凭据。删除前会列出引用它的模板和环境实例；已停用模板、保留的历史实例也会阻止删除。只有没有引用的连接才能永久删除，删除范围仅为已保存的连接配置和凭据，不会删除 Docker 引擎或原生资源。
 
 ![Console 中的 Sandbox 与环境 provider 目录](../../.github/assets/console-sandbox-providers.webp)
 
@@ -86,15 +86,6 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。
 
 要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
-
-### 自动创建 Vercel 桌面
-
-1. 添加 Vercel 环境连接，填写 Vercel access token，点击“加载 Vercel 团队”，选择该 Token 可访问的团队和项目。Token 需要沙箱和快照的创建、读取、删除权限。如果项目列表为空，请先在 Vercel 创建项目。
-2. 创建 Vercel 环境模板，选择该连接，勾选“桌面环境”，保留“自动桌面”。无需下载本地二进制、运行构建脚本或手填快照 ID。
-3. 从模板创建实例。首次创建会构建桌面快照，可能需要数分钟。Console 展示当前阶段和已等待时间；离开页面后仍会在后台继续，稍后可回到“环境实例”查看。
-4. 就绪后可以查看桌面预览。使用该环境的运行支持 Computer 操作和 Console 人工接管。如果创建失败，修正提示的配置或权限问题，待“重试创建”可用后重试。
-
-同一工作区、Provider、凭据版本、团队、项目和构建版本下，后续创建会复用经过校验的快照。上述输入变化会单独准备快照。临时构建沙箱会被清理，成功快照保留在 Vercel 项目中供后续复用。请使用有效期合适的 Vercel access token；短期 CLI 登录 Token 不适合无人值守的长期 Provider 连接。管理员仍可选择自定义快照，无桌面的原生环境保持原有行为。
 
 ### 默认环境变量
 
@@ -231,6 +222,15 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 明文 HTTP 操作通道使用回环地址或显式信任的私有链路，并配置相应的部署出站策略。Worker 需要访问主机地址和 Docker 分配的端口。使用自定义镜像时，选择**自定义镜像**，提供兼容 Envd HTTP 且包含图形会话的镜像，并设置 `execution: "envd_http"` 和 `desktop: true`。
 
+### 自动创建 Vercel 桌面
+
+1. 添加 Vercel 环境连接，填写 Vercel access token，点击“加载 Vercel 团队”，选择该 Token 可访问的团队和项目。Token 需要沙箱和快照的创建、读取、删除权限。如果项目列表为空，请先在 Vercel 创建项目。
+2. 创建 Vercel 环境模板，选择该连接，勾选“桌面环境”，保留“自动桌面”。无需下载本地二进制、运行构建脚本或手填快照 ID。
+3. 从模板创建实例。首次创建会构建桌面快照，可能需要数分钟。Console 展示当前阶段和已等待时间；离开页面后仍会在后台继续，稍后可回到“环境实例”查看。
+4. 就绪后可以查看桌面预览。使用该环境的运行支持 Computer 操作和 Console 人工接管。如果创建失败，修正提示的配置或权限问题，待“重试创建”可用后重试。
+
+同一工作区、Provider、凭据版本、团队、项目和构建版本下，后续创建会复用经过校验的快照。上述输入变化会单独准备快照。临时构建沙箱会被清理，成功快照保留在 Vercel 项目中供后续复用。请使用有效期合适的 Vercel access token；短期 CLI 登录 Token 不适合无人值守的长期 Provider 连接。管理员仍可选择自定义快照，无桌面的原生环境保持原有行为。
+
 ### 启用观察和操作
 
 已有兼容桌面时，从这里开始。电脑权限默认关闭，与桌面就绪状态独立。
@@ -247,6 +247,16 @@ API 在初始挂载及新增挂载时接受精确的 `permission_ceiling.operati
 升级到此功能时，请在接收新 Run 前统一升级 Service 的 control 和 worker。旧 worker 无法读取新的挂载快照及截图依赖格式。已有挂载及历史 Run 快照保留原有文件和执行权限，电脑操作仍默认关闭。
 
 从会话操作菜单打开 **环境与记忆**，即可配置各个挂载的电脑权限。运行详情展示接收该次运行时确定的权限。挂载列表分开展示 **电脑权限** 和 **桌面状态**。桌面状态初始为 **未检查**；点击 **检查桌面** 后，会明确区分不支持桌面、未就绪和已就绪。不支持桌面的环境会提示：允许电脑操作不会让环境自动具备桌面能力。检查不会截图、发送输入或启动已停止的环境，也不会授予 Agent 权限；结果仅反映上次检查时的状态。
+
+### Computer 坐标模式
+
+如果模型输出相对桌面坐标，可在 agent 配置中设置：
+
+```json
+{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
+```
+
+工具会将每个轴上 0 到 1000 的相对坐标转换为观察截图的像素坐标。让模型直接传入相对坐标，不要自行乘以屏幕尺寸。对于已经输出像素坐标的模型，省略此设置或选择 `pixels`。该设置适用于鼠标位置，包括拖拽的两个端点，不改变滚动距离或键盘输入。声明所需 Computer 方法的 Envd 桌面环境可使用此设置。始终检查应用的实际状态；点击成功不代表表单已提交。
 
 ### Agent 请求桌面协助
 

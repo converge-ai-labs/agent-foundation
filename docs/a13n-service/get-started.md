@@ -70,6 +70,8 @@ docker compose -f a13n-service.yaml up -d --wait
 
 Keep the same Compose project and volumes to preserve your data. To refresh the images, add `--pull always` to the startup command; see the [Compose upgrade guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades) before upgrading an existing deployment.
 
+Before resetting, [delete any managed environments](environments.md#stop-rename-and-delete) you created. They live outside the Compose stack; removing the volumes first loses Service's records for cleaning them up.
+
 To **permanently delete all stack data**, run `docker compose -f a13n-service.yaml down --volumes`. On the next start, open Console and register a new administrator account.
 
 ## Troubleshooting

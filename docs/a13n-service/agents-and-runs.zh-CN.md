@@ -5,6 +5,8 @@ description: 配置 agent，开始对话，并跟踪、引导或恢复运行。
 
 **Agent** 是有名称的资源，其配置（模型、指令、工具和策略）保存为不可变、带编号的**修订版本** 。用户和应用在**会话**中与 agent 对话。会话包含一个或多个 **线程** ，每个线程是一段独立推进的历史；发送的消息进入线程**收件箱** ，线程每一次被接收的推进都是一次**运行** 。运行在 worker 上通过一次或多次**执行尝试** 完成，最终状态为 `completed`、`waiting`、`failed` 或 `cancelled`。
 
+按任务阅读：[配置 agent](#agents)、[开始对话](#start-a-conversation)、[提交或引导消息](#submit-a-message)、[回应等待项](#waits-approvals-and-questions)、[中断或分叉](#interrupt-fork-and-archive)、[查看结果](#results)和[改进问题](#find-and-improve-execution-issues)。
+
 ```mermaid
 stateDiagram-v2
     [*] --> accepted: 消息或恢复

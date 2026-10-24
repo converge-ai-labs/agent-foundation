@@ -70,8 +70,6 @@ class AuditPlugin(AbstractHarnessPlugin):
 
 The Run delivers extension events through a bounded channel while middleware executes. Emission works before the continuation, after it, and during short-circuit execution. A slow consumer applies backpressure; middleware does not own or iterate the event stream.
 
-**Breaking migration:** replace `PluginRunResponse` and async event generators with `async def wrap_run(...)`, `await call_next(...)`, and a returned result. Emit extension observations through `context.events.emit()`. Native events and Run lifecycle events remain Harness-owned. For presentation changes, configure the Host's Stream Protocol `DisplayFold` processor before its shared live-and-persisted fold; use the same processor when restoring the fold. Do not rewrite native events in middleware.
-
 ### Direct Composition
 
 Direct objects are the simplest choice for an embedded application:
@@ -439,8 +437,9 @@ from a13n_harness.environment import EnvironmentRunExtensionContext
 
 
 class WorkspaceMarkerExtension:
-    def __init__(self, extension_id: str) -> None:
+    def __init__(self, extension_id: str, path: str = "/workspace/.active-run") -> None:
         self._extension_id = extension_id
+        self._path = path
 
     @property
     def extension_id(self) -> str:
@@ -448,7 +447,7 @@ class WorkspaceMarkerExtension:
 
     @asynccontextmanager
     async def bind(self, *, context: EnvironmentRunExtensionContext):
-        path = "/workspace/.active-run"
+        path = self._path
         await context.environment.files.write_text(
             path,
             f"{context.run_id}\n",
@@ -490,12 +489,12 @@ environment_runtime = create_environment_runtime(
     default_mount="workspace",
     extensions=(
         active_run_callbacks,
-        WorkspaceMarkerExtension("custom-marker"),
+        WorkspaceMarkerExtension("custom-marker", "/workspace/.custom-run"),
     ),
 )
 ```
 
-The Host supplies current Provider state when constructing adapters. Extensions enter after the adapters and exit in reverse order before those adapters close.
+Give each extension its own resource path as well as its own ID. The Host supplies current Provider state when constructing sources. Extensions enter after static mounts are published and exit in reverse order before opened executions close.
 
 ### Explicit Extension Factories
 
@@ -540,3 +539,7 @@ result = await executable.run("Use the prepared workspace", bindings=bindings)
 ## Runnable Example
 
 Run the [integration package example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) for installed and direct composition with offline tests.
+
+## Migrate middleware
+
+**Breaking migration:** replace `PluginRunResponse` and async event generators with `async def wrap_run(...)`, `await call_next(...)`, and a returned result. Emit extension observations through `context.events.emit()`. Native events and Run lifecycle events remain Harness-owned. For presentation changes, configure the Host's Stream Protocol `DisplayFold` processor before its shared live-and-persisted fold; use the same processor when restoring the fold. Do not rewrite native events in middleware.

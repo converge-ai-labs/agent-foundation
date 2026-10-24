@@ -96,6 +96,42 @@ For a Grok credential store that exposes only `load()` and `save()`, wrap it onc
 
 Harness UI supplies stronger file-store coordination: cooperating processes share one lock and a durable non-secret grant-fingerprint sidecar. This protects fresh Runs and restarts without storing a second token copy. Other CLI programs that write the same auth file do not take that lock. Harness UI checks for their edits just before it replaces the file, and fails publication instead of overwriting a detected edit.
 
+## Build a Copilot Model
+
+Use the native `GitHubCopilotOAuthFlow` with your public OAuth client ID: present the challenge from `start()`, then await `wait_for_authorization()`. The Host identifies the authorized GitHub account and stores the complete grant. For an interactive Host workflow, see [Copilot login](../a13n-harness-ui/models-and-authentication.md#github-copilot-subscription).
+
+Given the newly issued native `GitHubCopilotCredentials`, construct a process-local source and Model:
+
+```python
+from pydantic_ai.providers.github_copilot import GitHubCopilotCredentials
+from a13n_harness.providers.model.oauth import (
+    CopilotCredentials,
+    ProcessCopilotCredentialSource,
+    build_copilot_model,
+)
+
+
+class MemoryCredentialStore:
+    def __init__(self, credentials: CopilotCredentials):
+        self.credentials = credentials
+
+    async def load(self) -> CopilotCredentials:
+        return self.credentials
+
+    async def save(self, credentials: CopilotCredentials) -> None:
+        self.credentials = credentials
+
+
+def copilot_model(grant: GitHubCopilotCredentials, *, account_id: str, client_id: str, model_name: str):
+    credentials = CopilotCredentials.issued(grant, account_id=account_id, client_id=client_id)
+    source = ProcessCopilotCredentialSource(MemoryCredentialStore(credentials))
+    return build_copilot_model(model_name, credential_source=source), source
+```
+
+Construction performs no credential I/O. Normalize issuance durations once with `issued()`; restore saved absolute expiry values when loading credentials. The process source coordinates rotation in one process. For shared or restart-safe storage, implement `CopilotCredentialSource.load()` and `rotate()` with durable same-grant coordination and publication before use.
+
+Call `await discover_copilot_models(credential_source=source)` explicitly to query the authenticated catalog. It returns first-page IDs that advertise Chat Completions; discovery does not establish model entitlement. Import this helper from the same OAuth module. Authentication failures require explicit recovery, never an automatic interactive login or account switch.
+
 ## ChatGPT sign-in and native Model
 
 Use the official integration with Host-owned storage:

@@ -3,7 +3,7 @@ title: 观测
 description: 按需启用执行、模型与工具的 OpenTelemetry 追踪和指标，支持 Logfire 和 Langfuse 配置。
 ---
 
-Harness 提供可选的 OpenTelemetry 观测层。Host 负责 SDK 配置、资源、采样、处理器、导出器、上下文传播、刷新和关闭。Harness 绝不创建导出器或 collector 客户端。
+启用 OpenTelemetry 可检查 Run、模型和工具。在 Host 中配置 provider 和导出，再将 provider 传给 Harness。
 
 `HarnessBuilder()` 在构建时直接从 `os.environ` 读取限定的 `A13N_HARNESS_*` 策略变量，绝不打开 `.env` 或其他配置文件。Host 进程、启动器、容器运行时或开发命令可以在 Harness 启动前加载文件并导出变量。默认不启用观测。传入 `instrumentation=None` 可显式禁用，不受环境变量影响；传入 `HarnessInstrumentation` 则以明确指定的 provider 覆盖环境配置。
 
@@ -194,7 +194,7 @@ with host_tracer.start_as_current_span("host.work"):
 
 Logfire 仍需调用一次 `logfire.configure()`；环境变量配置该调用，不替代调用。`LOGFIRE_SERVICE_NAME` 提供 OpenTelemetry `service.name`，无需在 Python 中写死；`OTEL_SERVICE_NAME` 是标准回退别名。`LOGFIRE_TOKEN` 选择项目，`LOGFIRE_SEND_TO_LOGFIRE=if-token-present` 使同一初始化代码在无 token 进程中仍安全可用。
 
-`logfire.configure()` 创建全局 OpenTelemetry provider 并配置 Logfire exporter。这是由 Logfire SDK 管理的 OpenTelemetry 导出，不是另行配置的通用 OTLP 端点。默认 `HarnessBuilder()` 随后从全局 OpenTelemetry 注册表选择这些具体 provider。自动厂商初始化属于可执行 Host 边界；Harness 只自动选择环境策略和已配置的全局 OTel provider。不要调用 `logfire.instrument_pydantic_ai()`；Harness 已负责唯一的 Pydantic AI `Instrumentation` Capability。
+`logfire.configure()` 创建全局 OpenTelemetry provider 和 Logfire exporter。默认 `HarnessBuilder()` 选择这些 provider。在可执行 Host 中调用初始化，并将 Pydantic AI 埋点交给 Harness；参阅[埋点职责](#instrumentation-ownership)。
 
 使用其他 OTLP 后端而非 Logfire Cloud 时，配置 Logfire `send_to_logfire=False`，并使用标准 `OTEL_EXPORTER_OTLP_*` 变量。参见 [Logfire 替代后端指南](https://pydantic.dev/docs/logfire/guides/alternative-backends/)和 [Logfire 配置参考](https://pydantic.dev/docs/logfire/manage/configuration/)。
 
