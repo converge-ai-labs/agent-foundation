@@ -1,4 +1,5 @@
 import { useLocation } from "react-router";
+import { useState } from "react";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
 import {
@@ -21,6 +22,7 @@ import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
+import { BrowserFields } from "./browser-fields";
 import { type EnvironmentBinding } from "./environment-bindings";
 
 export function ResourceFields({
@@ -33,6 +35,7 @@ export function ResourceFields({
   onChange: (value: string) => void;
 }) {
   const location = useLocation();
+  const [browserOpen, setBrowserOpen] = useState(location.hash === "#browser");
   const selectors = useSelectors();
   const sources = useSources();
   const { client } = useTransport();
@@ -342,6 +345,21 @@ export function ResourceFields({
             >
               {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             </SettingsSection>
+            <details
+              id="browser"
+              onToggle={(event) => setBrowserOpen(event.currentTarget.open)}
+              className={layout.disclosure}
+              open={location.hash === "#browser" || undefined}
+            >
+              <summary>
+                Host browser<small>Browser and VNC</small>
+              </summary>
+              <BrowserFields
+                source={source}
+                onChange={onChange}
+                active={browserOpen}
+              />
+            </details>
             <details
               id="live"
               className={layout.disclosure}

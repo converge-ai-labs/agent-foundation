@@ -69,6 +69,8 @@ Record memory APIs are imported from `a13n_harness.capabilities`: `RecordMemoryC
 
 Tool permission APIs are imported from `a13n_harness.tools`: `ToolIdentity`, `ToolIdentityToolset`, `source_tool_id`, `ToolPermissions`, `ToolPermissionsCapability`, and `ToolApprovalContext`. Generic review APIs are imported from `a13n_harness.capabilities`: `ToolRiskLevel`, `ToolReviewPolicy`, `ToolReviewRule`, `ToolReviewConfig`, `ToolReviewer`, `AgentToolReviewer`, `ToolReviewRequest`, `ToolReviewAssessment`, `ToolReviewResult`, and `ToolReviewError`. `ToolPermissionsCapability` is the sole permission/review Capability; review values and implementations are collaborators, not separately registered Capabilities. `WebDomainPolicy` is public from `a13n_harness.capabilities.web` for Host transports that enforce domain checks at each redirect. Behavior belongs to [Tool Execution](07-tool-execution.md#tool-permissions-and-review) and [Web Resources](09-context-and-memory.md#media-documents-and-web-resources), not the package root.
 
+`BrowserUseCapability`, `BrowserTab` and the `BrowserBackend` contract belong to `a13n_harness.capabilities.browser`. The `a13n_harness.capabilities.browser.cdp` module exports `CdpBrowserBackend` for URL-based standalone connection and `Chromium` and `Page` for Host-owned shared connections. The adapter does not depend on Harness UI. [Browser Use](23-browser-use.md) owns connection, page, authority and cleanup semantics.
+
 ## Build API
 
 ```python

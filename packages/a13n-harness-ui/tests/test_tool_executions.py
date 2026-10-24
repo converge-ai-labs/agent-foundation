@@ -327,10 +327,10 @@ async def test_app_detached_codeact_completion_resumes_once_and_keeps_late_state
         first = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
         with fail_after(10):
             await waiting.wait()
+            await entered.wait()
             if not complete_while_active:
                 outcome = await app.wait_root_operation(first.receipt_id)
                 assert outcome.status is RootOperationStatus.completed, outcome
-        assert entered.is_set(), await app._tool_executions.runtime.result(thread.thread_id, execution_id)
         assert execution_id is not None
         record = await app._tool_executions.runtime.info(thread.thread_id, execution_id)
         assert record.status == "running" and record.foreground_released

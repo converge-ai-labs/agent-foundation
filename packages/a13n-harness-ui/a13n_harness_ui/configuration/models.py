@@ -346,12 +346,29 @@ class EnvdConfiguration(StrictModel):
         return value
 
 
+class BrowserConfiguration(ConfigurationModel):
+    """Host executable bindings captured at App startup; never install dependencies."""
+
+    executable: str | None = Field(default=None, min_length=1, max_length=4096)
+    vnc_executable: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @field_validator("executable", "vnc_executable")
+    @classmethod
+    def _host_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            if "\x00" in value or not Path(value).expanduser().is_absolute():
+                raise ValueError("browser paths must be absolute Host paths")
+            return str(Path(value).expanduser().resolve(strict=False))
+        return None
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
     schema_version: Literal["1"] = "1"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
     envd: EnvdConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
+    browser: BrowserConfiguration = Field(default_factory=BrowserConfiguration)
     input: InputConfiguration = Field(default_factory=InputConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)

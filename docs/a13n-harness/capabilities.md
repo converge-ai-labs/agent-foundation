@@ -129,6 +129,36 @@ Each feature has one public Capability. Its internal run-bound instance stays pr
 
 For inline children, `SubagentDefinition.run_bindings_factory` receives the child's baseline `RunBindings` and returns a replacement with that child's collaborators. It must preserve the child instance, borrowed Environment, and inherited invocation policy. Parent feature bindings are not inherited automatically; an explicit shared task-state policy supplies the borrowed cell and rejects a conflicting factory binding.
 
+## Browser Use over CDP
+
+Give an Agent navigation, observation, click, text input and screenshot tools for an existing Chromium browser. Pass the browser's trusted CDP URL. The URL can be an HTTP(S) base address such as `http://127.0.0.1:9222` or a WS(S) browser debugger URL.
+
+```python
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import BrowserUseCapability
+from a13n_harness.capabilities.browser.cdp import CdpBrowserBackend
+
+
+async def browse(cdp_url: str, model):
+    async with CdpBrowserBackend.connect(cdp_url) as backend:
+        agent = HarnessBuilder().build(
+            AgentSpec(),
+            model=model,
+            output_type=str,
+            capabilities=(BrowserUseCapability(backend),),
+        )
+        result = await agent.run("Open https://example.com and read its heading.")
+        return result.output_or_raise()
+```
+
+Keep the connection context open until every Run using the backend has finished. The context opens a dedicated page and closes that page and its explicitly created tabs on exit. The existing browser process and other pages remain open. Harness does not install or start the browser. Browser traffic uses the Host's network; a restrictive `allowed_hosts` Run policy is rejected.
+
+Applications that manage multiple pages can use `Chromium.connect(cdp_url)` from the same module. Harness UI uses this shared adapter for Agent automation; native VNC/noVNC carries human viewing and input. Harness UI retains browser/profile startup, Thread and popup ownership, viewer authentication and human takeover. The standalone backend operates its explicit tab scope and does not add those UI lifecycle features.
+
+The tools include `browser_tabs` (list/new/select/close), `browser_scroll`, iframe-aware observations and references, `browser_wait` (text or an element condition), and `browser_dialog` (inspect/accept/dismiss JavaScript dialogs). Tab references are local to the Run and cannot address another Thread. Tab management can continue without observing between tab changes; obtain fresh element references before interacting with page content. Navigation also supports browser-internal pages such as `chrome://settings` and Host-local `file:` documents, subject to Chromium's own navigation rules.
+
+Use `browser_upload` directly on a file-input reference with absolute paths on the browser Host. It does not transfer client or sandbox files. `browser_downloads` lists observed downloads and completed Host paths when the process owner configures tracking; Harness UI stores them under `<data_root>/browsers/downloads`. Native OS dialogs and extension management use human takeover. Password fields support text fill; supplied text becomes a normal tool argument. Saved-password autofill can be triggered through ordinary clicks and keys, or users can enter credentials through takeover; saved password values are not returned in observations.
+
 ## Native Image Generation with Saving
 
 `NativeImageGenerationCapability` combines the provider-native `ImageGenerationTool` with a required async saver. Unlike selecting the raw upstream tool, a completed generation produces a saved reference rather than leaving the image only inside the model response. There is no separate output-replacement Capability, image API client, or fallback Model.

@@ -32,6 +32,8 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 
 [MCP Apps Host](09-mcp-apps.md) owns opt-in retained tool-result Apps, connection and View lifetimes, same-server interaction authority, explicit model context/messages, and browser isolation.
 
+[Host Browser](11-browser.md) owns the optional Linux headed browser, persistent profile, VNC viewer and Agent/human handoff.
+
 [Live Mode](10-live-mode.md) owns root Live configuration, the built-in projectless executor, persistent voice transcript, browser media ownership, and online-only Thread reporting.
 
 The [WebUI catalog](webui/README.md) indexes the browser workbench, page presence and collaborative conversations, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; transient draft storage remains owned by `03`.
