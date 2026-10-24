@@ -7,7 +7,7 @@ from secrets import token_urlsafe
 from typing import Annotated
 
 from pydantic import Field
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, Tool
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import FunctionToolset
@@ -15,6 +15,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from a13n_harness._handoff import (
     _HANDOFF_STATE_VERSION,
     HANDOFF_CAPABILITY_ID,
+    HANDOFF_TOOL_METADATA_KEY,
     _HandoffState,
     _render_summary,
     _safe_context_error_code,
@@ -28,6 +29,7 @@ from a13n_harness.events import (
     emit_harness_event,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
+from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from .events import HandoffSummaryEvent
@@ -56,7 +58,7 @@ class HandoffToolset:
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         return InstructionFunctionToolset(
-            tools=[self.summarize],
+            tools=[Tool(self.summarize, metadata={HANDOFF_TOOL_METADATA_KEY: True})],
             id="a13n-handoff-tools",
             instructions=_HANDOFF_INSTRUCTION,
         )
@@ -92,6 +94,10 @@ class HandoffToolset:
         ] = None,
     ) -> str:
         self._require_context(ctx)
+        if _NESTED_TOOL_EXECUTION.get():
+            raise ToolFailed("Handoff must be called directly, outside CodeAct.")
+        if ctx.deps._tool_executions.history_calls:
+            raise ToolFailed("Wait for retained CodeAct executions and inspect their results before summarizing.")
         async with self._state_lock:
             if self._state.summary is not None:
                 raise ToolFailed("A context summary is already prepared for the next model boundary.")
