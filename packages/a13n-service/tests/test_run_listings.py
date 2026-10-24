@@ -1,19 +1,22 @@
 """Bounded discovery, deep-link pagination and constant-query ancestry under real PostgreSQL."""
 
+import asyncio
 from contextlib import contextmanager
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, text
 
 pytestmark = pytest.mark.anyio
 
 
 @contextmanager
 def statements(service):
-    captured = []
+    """Capture this task's SQL without counting the control role's background sweeps."""
+    captured, owner = [], asyncio.current_task()
 
     def record(connection, cursor, statement, parameters, context, executemany):
-        captured.append(statement)
+        if asyncio.current_task() is owner:
+            captured.append(statement)
 
     engine = service.runtime.storage.engine.sync_engine
     event.listen(engine, "before_cursor_execute", record)
@@ -21,6 +24,19 @@ def statements(service):
         yield captured
     finally:
         event.remove(engine, "before_cursor_execute", record)
+
+
+async def test_statements_excludes_other_tasks(service):
+    async def query(statement):
+        async with service.runtime.storage.engine.connect() as connection:
+            await connection.execute(text(statement))
+
+    foreground = "SELECT id FROM runs LIMIT 1"
+    background = "SELECT status FROM runs LIMIT 1"
+    with statements(service) as sql:
+        await asyncio.create_task(query(background))
+        await query(foreground)
+    assert sql == [foreground]
 
 
 async def test_input_previews_are_unicode_bounded_pg_projections(service, scripted_model, runs_kit, monkeypatch):

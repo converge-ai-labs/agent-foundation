@@ -66,7 +66,7 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         self._state = _DiscoveryState()
         self._saved = self._state.model_dump_json()
         self._lock = asyncio.Lock()
-        self._retained: list[_CalledTool] | None = None
+        self._evicted: tuple[_CalledTool, ...] = ()
         self._unprepared_completions: list[_CalledTool] = []
 
     def get_ordering(self) -> CapabilityOrdering:
@@ -161,7 +161,9 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         selected: list[_CalledTool] = []
         native: set[str] = set()
         proxy: list[dict[str, Any]] = []
-        for item in reversed(self._state.called):
+        async with self._lock:
+            snapshot = tuple(self._state.called)
+        for item in reversed(snapshot):
             tool = tools.get(item.name)
             if (
                 tool is None
@@ -183,7 +185,8 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
             selected.append(item)
             native, proxy = proposed_native, proposed_proxy
         # Commit eviction only after the owning context capability installs history.
-        self._retained = list(reversed(selected))
+        selected_ids = {id(item) for item in selected}
+        self._evicted = tuple(item for item in snapshot if id(item) not in selected_ids)
         return _discovery_messages(native, proxy, proxy_search, call_id), native
 
 
@@ -328,7 +331,9 @@ async def retain_discovery(
 
 async def finish_discovery_replacement(ctx: RunContext[AgentContext]) -> None:
     owner = ctx.capabilities.get(_DISCOVERY_ID)
-    if isinstance(owner, ToolDiscoveryCapability) and owner._retained is not None:
-        owner._state.called = owner._retained
-        owner._retained = None
-        await owner._save(ctx)
+    if isinstance(owner, ToolDiscoveryCapability):
+        async with owner._lock:
+            evicted_ids = {id(item) for item in owner._evicted}
+            owner._state.called = [item for item in owner._state.called if id(item) not in evicted_ids]
+            owner._evicted = ()
+            await owner._save(ctx)

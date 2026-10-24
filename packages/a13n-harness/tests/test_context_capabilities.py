@@ -1871,7 +1871,7 @@ def _user_text(messages: list[ModelMessage]) -> str:
     return "\n".join(text)
 
 
-async def test_concurrent_handoff_summaries_accept_one_state_transition() -> None:
+async def test_concurrent_handoff_summaries_are_rejected_before_state_transition() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1913,8 +1913,7 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         for event in events
         if isinstance(event.event, FunctionToolResultEvent) and event.event.part.tool_name == "summarize"
     ]
-    assert len(tool_results) == 2
-    assert sum(part.outcome == "failed" for part in tool_results) == 1
+    assert tool_results == []
     context_payloads = [
         event.event.payload
         for event in events
@@ -1922,21 +1921,12 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         and event.event.kind == "context"
         and str(event.event.payload.get("type", "")).startswith("handoff_")
     ]
-    assert [payload["type"] for payload in context_payloads] == [
-        "handoff_started",
-        "handoff_prepared",
-        "handoff_completed",
-    ]
-    assert len({payload["operation_id"] for payload in context_payloads}) == 1
+    assert context_payloads == []
     from a13n_harness.toolsets.events import HandoffSummaryEvent
 
-    summaries = [item.event for item in events if isinstance(item.event, HandoffSummaryEvent)]
-    assert len(summaries) == 1
-    assert summaries[0].operation_id == context_payloads[1]["operation_id"]
-    assert summaries[0].tool_call_id in {"summary-concurrent-1", "summary-concurrent-2"}
-    restored_text = str(calls[1])
-    assert summaries[0].summary in _user_text(calls[1])
-    assert ("first-summary-only" in restored_text) != ("second-summary-only" in restored_text)
+    assert not any(isinstance(item.event, HandoffSummaryEvent) for item in events)
+    assert "Handoff must be the only executable tool call in a model response." in str(calls[1])
+    assert "start" in _user_text(calls[1])
 
 
 async def test_compaction_preserves_the_effective_request_model() -> None:
