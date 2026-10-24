@@ -997,7 +997,7 @@ class StreamRenderer:
             fields = part if isinstance(part, dict) else {}
             native_state = "returned"
             native_content = fields.get("content")
-            if fields.get("part_kind") == "retry-prompt":
+            if fields.get("part_kind") == "retry-prompt" or fields.get("outcome") == "retried":
                 native_state = "retry"
             elif fields.get("outcome") in ("failed", "denied"):
                 native_state = str(fields["outcome"])

@@ -50,6 +50,21 @@ HISTORY_INPUT = [
 ]
 
 
+def test_imported_retry_keeps_native_outcome_without_application_metadata():
+    data = deepcopy(HISTORY_INPUT)
+    part = data[2]["parts"][0]
+    part.update(
+        outcome="retried", content="Correct the arguments", retry={"cause": "model_retry"}, metadata={"foreign": True}
+    )
+    history = initial(HISTORY.validate_python(data))
+    result = history[2].parts[0]
+    assert isinstance(result, ToolReturnPart)
+    assert result.outcome == "retried"
+    assert result.retry is not None and result.retry.cause == "model_retry"
+    assert result.content == "Correct the arguments"
+    assert result.metadata is None
+
+
 def test_history_uses_native_messages_without_execution_state():
     history = initial(HISTORY.validate_python(HISTORY_INPUT))
     assert isinstance(history[0], ModelRequest)

@@ -21258,7 +21258,8 @@
                   "success",
                   "failed",
                   "denied",
-                  "interrupted"
+                  "interrupted",
+                  "retried"
                 ]
               },
               {

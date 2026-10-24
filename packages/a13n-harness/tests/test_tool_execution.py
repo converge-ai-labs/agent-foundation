@@ -452,7 +452,6 @@ def tool_agent(operation, *, config, owned=True):
 @pytest.mark.parametrize("exhaust_retries", [False, True])
 async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaust_retries):
     from pydantic_ai import ModelRetry
-    from pydantic_ai.messages import RetryPromptPart
 
     calls = 0
     prompts = []
@@ -465,8 +464,18 @@ async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaus
         return "sunny"
 
     async def model(messages, info):
-        retries = [part for message in messages for part in message.parts if isinstance(part, RetryPromptPart)]
-        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        retries = [
+            part
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.outcome == "retried"
+        ]
+        returns = [
+            part
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.outcome == "success"
+        ]
         if returns:
             assert returns[-1].content == "sunny"
             yield "done"
@@ -506,7 +515,6 @@ async def test_detached_retry_returns_original_correction_without_retrying_retri
     import json
 
     from pydantic_ai import ModelRetry
-    from pydantic_ai.messages import RetryPromptPart
 
     finish = asyncio.Event()
     calls = 0
@@ -528,7 +536,11 @@ async def test_detached_retry_returns_original_correction_without_retrying_retri
         assert stored.record.status == "failed"
 
         async def model(messages, info):
-            assert not any(isinstance(part, RetryPromptPart) for message in messages for part in message.parts)
+            assert not any(
+                isinstance(part, ToolReturnPart) and part.outcome == "retried"
+                for message in messages
+                for part in message.parts
+            )
             returns = [
                 part
                 for message in messages

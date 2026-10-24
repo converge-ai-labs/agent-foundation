@@ -287,43 +287,49 @@ it("does not parse a JSON fragment suffix after losing its prefix", () => {
   expect(normalizer.incomplete).toBe(true);
 });
 
-it("retains Host-selected grouping and native failure diagnostics with raw events", () => {
-  const normalizer = new DisplayNormalizer();
-  const items = new Map<string, DisplayItem>();
-  normalizer.apply(items, {
-    ...delta(1),
-    event: {
-      type: "CUSTOM",
-      name: "a13n.pydantic_ai.function_tool_result",
-      value: {
-        event: {
-          part: {
-            part_kind: "retry-prompt",
-            tool_call_id: "t",
-            content: "denied",
+it.each([
+  { part_kind: "retry-prompt" },
+  { part_kind: "tool-return", outcome: "retried" },
+])(
+  "retains Host-selected grouping and native failure diagnostics with raw events: %j",
+  (retry) => {
+    const normalizer = new DisplayNormalizer();
+    const items = new Map<string, DisplayItem>();
+    normalizer.apply(items, {
+      ...delta(1),
+      event: {
+        type: "CUSTOM",
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              ...retry,
+              tool_call_id: "t",
+              content: "denied",
+            },
           },
         },
       },
-    },
-    item: {
-      id: "tool",
-      kind: "tool_call",
-      state: "failed",
+      item: {
+        id: "tool",
+        kind: "tool_call",
+        state: "failed",
+        ordinal: 8,
+        response_group: "saved-answer",
+        failure: { code: "tool_failed", message: "denied" },
+      },
+    });
+    expect(items.get("tool")).toMatchObject({
       ordinal: 8,
-      response_group: "saved-answer",
-      failure: { code: "tool_failed", message: "denied" },
-    },
-  });
-  expect(items.get("tool")).toMatchObject({
-    ordinal: 8,
-    state: "failed",
-    content: {
-      responseGroup: "saved-answer",
-      failure: { code: "tool_failed", message: "denied" },
-      retry: true,
-    },
-  });
-});
+      state: "failed",
+      content: {
+        responseGroup: "saved-answer",
+        failure: { code: "tool_failed", message: "denied" },
+        retry: true,
+      },
+    });
+  },
+);
 
 it("keeps orphan tool arguments incomplete after END even if the suffix is valid JSON", async () => {
   const { presentItem, parseItemValue } = await import("./projection");

@@ -306,7 +306,7 @@ async def test_describe_control_name_validation(names):
 
 
 async def test_nonempty_punctuation_query_is_not_browsing_and_describe_checks_availability():
-    from pydantic_ai.messages import RetryPromptPart
+    from pydantic_ai.messages import ToolReturnPart
 
     result, _ = await _run(
         (_group(_operation),),
@@ -315,7 +315,12 @@ async def test_nonempty_punctuation_query_is_not_browsing_and_describe_checks_av
             ("describe_tool", {"group": "crm", "tool": "missing"}),
         ],
     )
-    retries = [p.content for m in result.all_messages() for p in m.parts if isinstance(p, RetryPromptPart)]
+    retries = [
+        p.content
+        for m in result.all_messages()
+        for p in m.parts
+        if isinstance(p, ToolReturnPart) and p.outcome == "retried"
+    ]
     assert len(retries) == 2
     assert "operation keywords" in retries[0]
     assert "unavailable" in retries[1]

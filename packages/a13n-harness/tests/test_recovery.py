@@ -1109,7 +1109,7 @@ async def test_default_tool_retry_budget_allows_correction_and_preserves_tool_ov
         return "corrected"
 
     async def stream(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-        if any(isinstance(part, ToolReturnPart) for part in messages[-1].parts):
+        if any(isinstance(part, ToolReturnPart) and part.outcome == "success" for part in messages[-1].parts):
             yield "done"
         else:
             yield {0: DeltaToolCall(name="correcting_tool", json_args="{}", tool_call_id=f"tool-{len(attempts)}")}

@@ -55,7 +55,6 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
-    RetryPromptPart,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -631,10 +630,11 @@ def test_non_success_and_retry_tool_results_use_custom_fallback() -> None:
         _event(
             1,
             FunctionToolResultEvent(
-                RetryPromptPart(
+                ToolReturnPart(
                     content="try again",
                     tool_name="search",
                     tool_call_id="call-retry",
+                    outcome="retried",
                 )
             ),
         )
@@ -644,7 +644,8 @@ def test_non_success_and_retry_tool_results_use_custom_fallback() -> None:
     assert failed.name == "a13n.pydantic_ai.function_tool_result"
     assert failed.value["event"]["part"]["outcome"] == "failed"
     assert isinstance(retry, CustomEvent)
-    assert retry.value["event"]["part"]["part_kind"] == "retry-prompt"
+    assert retry.value["event"]["part"]["part_kind"] == "tool-return"
+    assert retry.value["event"]["part"]["outcome"] == "retried"
 
 
 def test_unmapped_public_events_fall_back_to_namespaced_custom_events() -> None:

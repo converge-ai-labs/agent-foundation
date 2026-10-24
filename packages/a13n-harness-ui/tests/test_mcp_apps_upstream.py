@@ -183,8 +183,6 @@ async def test_resource_wire_payload_retains_host_validation(variant, monkeypatc
 
 
 async def test_agent_error_does_not_publish_a_successful_app():
-    from pydantic_ai.messages import RetryPromptPart
-
     server = FastMCP("Failing App")
     calls = 0
 
@@ -195,7 +193,7 @@ async def test_agent_error_does_not_publish_a_successful_app():
         raise ValueError("business rejected")
 
     async def model(messages, info):
-        failures = [p for m in messages for p in m.parts if isinstance(p, RetryPromptPart)]
+        failures = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart) and p.outcome == "retried"]
         if failures:
             assert "business rejected" in str(failures[-1].content)
             yield "reported failure"

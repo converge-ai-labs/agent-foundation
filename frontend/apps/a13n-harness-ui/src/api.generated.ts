@@ -7338,7 +7338,7 @@ export interface components {
             /** Tool Call Id */
             tool_call_id?: string | null;
             /** Outcome */
-            outcome?: ("success" | "failed" | "denied" | "interrupted") | null;
+            outcome?: ("success" | "failed" | "denied" | "interrupted" | "retried") | null;
             /** Provider */
             provider?: string | null;
             applied_edit?: components["schemas"]["AppliedEditView"] | null;

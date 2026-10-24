@@ -40,6 +40,8 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
     TextContent,
     TextPart,
@@ -385,7 +387,7 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
     assert calls == ["host:before", "host:after"]
 
 
-@pytest.mark.parametrize("placement", ["after", "between", "retry", "rendered_native"])
+@pytest.mark.parametrize("placement", ["after", "between", "retry", "feedback", "retried", "rendered_native"])
 async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement):
     from unittest.mock import AsyncMock
 
@@ -398,6 +400,10 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
     parts = (results[0], notice, results[1]) if placement == "between" else (*results, notice)
     if placement == "retry":
         parts = (*parts, RetryPromptPart("retry"))
+    elif placement == "feedback":
+        parts = (*parts, RetryFeedbackPart("retry", retry=RetryInfo(cause="model_retry")))
+    elif placement == "retried":
+        parts = (ToolReturnPart("first", "retry", "call-1", outcome="retried"), results[1], notice)
     original = ModelRequest(parts=parts)
     projection = ModelContextProjection(
         blocks=(

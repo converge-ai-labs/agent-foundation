@@ -36,6 +36,40 @@ def test_environment_states_reject_non_finite_json(value: float) -> None:
         )
 
 
+def test_native_retry_and_run_instruction_parts_survive_state_roundtrip() -> None:
+    from pydantic_ai.messages import (
+        InstructionDeltaPart,
+        InstructionId,
+        RetryFeedbackPart,
+        RetryInfo,
+        RunInstructionSource,
+        ToolReturnPart,
+    )
+
+    parts = [
+        InstructionDeltaPart(id=InstructionId(RunInstructionSource(), name="policy"), content="Run-scoped instruction"),
+        ToolReturnPart(
+            "lookup",
+            "Correct the arguments",
+            tool_call_id="call-retry",
+            outcome="retried",
+            retry=RetryInfo("validation_error", attempt=1, max_retries=3),
+        ),
+        RetryFeedbackPart("Correct the response", retry=RetryInfo("model_retry", attempt=2, max_retries=3)),
+    ]
+    state = HarnessState.new(message_history=(ModelRequest(parts=parts),))
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+    assert restored.message_history == state.message_history
+    request = restored.message_history[0]
+    assert isinstance(request, ModelRequest)
+    instruction, tool, feedback = request.parts
+    assert isinstance(instruction, InstructionDeltaPart) and instruction.id == InstructionId(
+        RunInstructionSource(), name="policy"
+    )
+    assert isinstance(tool, ToolReturnPart) and tool.outcome == "retried" and tool.retry == parts[1].retry
+    assert isinstance(feedback, RetryFeedbackPart) and feedback.retry == parts[2].retry
+
+
 class CounterState(BaseModel):
     value: int
 

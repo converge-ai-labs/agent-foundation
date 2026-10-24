@@ -551,7 +551,8 @@ async def test_whole_codeact_continues_nested_dispatch_after_origin_seals(
 
 
 @pytest.mark.parametrize("status", ["queued", "running", "succeeded", "lost", "expired"])
-async def test_recovery_preserves_admission_and_other_pending_calls(service, scripted_model, runs_kit, status):
+@pytest.mark.parametrize("outcome", ["success", "retried"])
+async def test_recovery_preserves_admission_and_other_pending_calls(service, scripted_model, runs_kit, status, outcome):
     from a13n_harness import HarnessState
     from a13n_harness.recovery import prepare_tool_recovery
     from a13n_service.runs.tool_executions.recovery import restore
@@ -589,7 +590,7 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
                     ToolCallPart("answered", {}, "call-done"),
                 ]
             ),
-            ModelRequest(parts=[ToolReturnPart("answered", "already delivered", "call-done")]),
+            ModelRequest(parts=[ToolReturnPart("answered", "already delivered", "call-done", outcome=outcome)]),
         ],
     )
     claims = []
@@ -612,6 +613,7 @@ async def test_recovery_preserves_admission_and_other_pending_calls(service, scr
         part for message in restored.message_history for part in message.parts if isinstance(part, ToolReturnPart)
     ]
     assert len(returns) == 2
+    assert returns[0].outcome == outcome
     assert returns[-1].content["execution_id"] == record.execution_id
     assert (
         "expired" in returns[-1].content["message"]

@@ -269,7 +269,7 @@ class TranscriptPart(SurfaceModel):
     text: str | None = None
     tool_name: str | None = None
     tool_call_id: str | None = Field(default=None, max_length=256)
-    outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
+    outcome: Literal["success", "failed", "denied", "interrupted", "retried"] | None = None
     provider: str | None = None
     applied_edit: AppliedEditView | None = None
     tool_images: tuple[ToolImageView, ...] = ()

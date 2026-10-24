@@ -769,7 +769,7 @@ def test_proxy_configuration_errors_explain_how_to_fix_the_source() -> None:
 
 
 async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_executing() -> None:
-    from pydantic_ai.messages import RetryPromptPart
+    from pydantic_ai.messages import ToolReturnPart
 
     def value() -> int:
         pytest.fail("An unavailable name must never fall back to another tool")
@@ -784,7 +784,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
         for message in result.all_messages()
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     )
     assert "crm/missing" in retry.content
     assert "Rediscover available tools" in retry.content

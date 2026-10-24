@@ -24,6 +24,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    RetryFeedbackPart,
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
@@ -1034,9 +1035,16 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
         content = tool_result_content(execution_value)
         parts = [item.model_dump(mode="json", by_alias=True) for item in content] if isinstance(content, list) else []
         value, omitted = _bounded_json(parts if isinstance(content, list) else execution_value)
+        retry_text = (
+            (part.content if isinstance(part.content, str) else "Tool input validation failed.")
+            if part.outcome == "retried"
+            else None
+        )
         return (
             TranscriptPart(
-                kind="tool_result",
+                kind="retry" if retry_text is not None else "tool_result",
+                text=_bounded_text(retry_text) if retry_text is not None else None,
+                text_truncated=retry_text is not None and len(retry_text) > _MAX_TEXT,
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
@@ -1049,6 +1057,9 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
                 value_omitted=omitted,
             ),
         )
+    if isinstance(part, RetryFeedbackPart):
+        text = part.content if isinstance(part.content, str) else "Model output validation failed."
+        return (TranscriptPart(kind="retry", text=_bounded_text(text), text_truncated=len(text) > _MAX_TEXT),)
     if isinstance(part, RetryPromptPart):
         text = part.content if isinstance(part.content, str) else "Tool input validation failed."
         return (

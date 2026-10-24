@@ -12,6 +12,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelRequestPart,
     ModelResponse,
+    RetryFeedbackPart,
     RetryPromptPart,
     ToolCallPart,
     ToolReturnPart,
@@ -81,7 +82,10 @@ def _filter_tool_result_pairs(messages: list[ModelMessage]) -> tuple[list[ModelM
             filtered.append(message)
             continue
 
-        if any(isinstance(part, RetryPromptPart) and part.tool_name is None for part in message.parts):
+        if any(
+            isinstance(part, RetryFeedbackPart) or (isinstance(part, RetryPromptPart) and part.tool_name is None)
+            for part in message.parts
+        ):
             current_call_ids.clear()
             consumed_call_ids.clear()
 

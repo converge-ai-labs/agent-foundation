@@ -269,7 +269,8 @@ def test_read_deduplication_uses_full_not_truncated_path(renderer):
     assert render(renderer).count("Read ") == 2
 
 
-def test_context_validation_failure_without_lifecycle_remains_visible(renderer):
+@pytest.mark.parametrize("native_retry", [False, True])
+def test_context_validation_failure_without_lifecycle_remains_visible(renderer, native_retry):
     call(renderer, "summarize", {"content": ""})
     custom(
         renderer,
@@ -278,7 +279,8 @@ def test_context_validation_failure_without_lifecycle_remains_visible(renderer):
             "part": {
                 "tool_name": "summarize",
                 "tool_call_id": "call-1",
-                "part_kind": "retry-prompt",
+                "part_kind": "tool-return" if native_retry else "retry-prompt",
+                **({"outcome": "retried"} if native_retry else {}),
                 "content": "content must not be empty",
             }
         },

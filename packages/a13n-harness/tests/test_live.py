@@ -539,7 +539,7 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
     async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
         consume = asyncio.create_task(_collect(live))
         result = await _call(model, "lookup")
-        assert result.output == "Try a different query\n\nFix the errors and try again."
+        assert result.output == '{"error":"Try a different query"}'
         assert not result.content
         assert len(projection.requests) == 1
         await live.close()
@@ -552,7 +552,9 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
         for part in message.parts
         if isinstance(part, (RetryPromptPart, ToolReturnPart))
     ]
-    assert len(returns) == 1 and isinstance(returns[0], RetryPromptPart)
+    assert len(returns) == 1 and isinstance(returns[0], ToolReturnPart)
+    assert returns[0].outcome == "retried"
+    assert returns[0].retry is not None and returns[0].retry.cause == "model_retry"
     assert returns[0].tool_name == "lookup" and returns[0].tool_call_id == "call-1"
 
 

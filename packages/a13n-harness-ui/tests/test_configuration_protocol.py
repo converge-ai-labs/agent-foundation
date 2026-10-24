@@ -167,6 +167,80 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert restored["capture_source"] == "selected_continuation" and restored["receipt_id"] is None
 
 
+@pytest.mark.parametrize("legacy_retry_flag", [False, True])
+async def test_saved_retried_tool_keeps_inspection_routes_available_after_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy_retry_flag: bool
+) -> None:
+    from a13n_harness_ui.display_history import DisplayHistory
+    from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
+    from a13n_harness_ui.storage.display import DisplayArchive
+    from a13n_harness_ui.storage.read_models import project_continuation
+    from a13n_stream_protocol.display import DisplayFold
+
+    root = _write_configuration(tmp_path)
+
+    async def model(messages, info):
+        yield "seed"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, app):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
+            prefix = f"/api/threads/{thread_id}"
+            receipt = (await api.post(prefix + "/submit", json={"parts": ["seed"]})).json()["receipt_id"]
+            assert (await settled(api, receipt))["status"] == "completed"
+        thread = await app._store.threads.get(thread_id)
+        assert thread is not None and thread.continuation is not None
+        saved = await read_continuation(app._store.objects, thread.continuation, include_display=True)
+        fold = DisplayFold("run-synthetic", full_content=True)
+        fold.fold(
+            [
+                {
+                    "type": "CUSTOM",
+                    "name": "a13n.pydantic_ai.function_tool_result",
+                    "value": {
+                        "event": {
+                            "part": {
+                                "part_kind": "tool-return",
+                                "tool_call_id": "call-synthetic",
+                                "tool_name": "lookup",
+                                "outcome": "retried",
+                                "content": "Invalid synthetic input",
+                            }
+                        }
+                    },
+                }
+            ]
+        )
+        (item,) = fold.items.values()
+        if legacy_retry_flag:
+            # Records written before this fix have the native outcome but no retry classification.
+            item = item.model_copy(update={"state": "completed", "content": {**item.content, "retry": False}})
+        value = saved.model_copy(update={"display": DisplayArchive(tail=DisplayHistory(items=(item,)))})
+        replacement = await publish_continuation(app._store.objects, value)
+        await app._store.threads.select_continuation(
+            thread_id=thread_id,
+            expected=thread.continuation,
+            replacement=replacement,
+            read_model=project_continuation(value),
+        )
+        assert await app._store.publish_work(thread_id, replacement, value.harness_state)
+
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            for route in ("configuration", "context-usage", "transcript"):
+                response = await api.get(prefix + "/" + route)
+                assert response.status_code == 200, response.text
+                if route == "transcript":
+                    parts = [part for entry in response.json()["entries"] for part in entry["parts"]]
+                    retry = next(part for part in parts if part["kind"] == "retry")
+                    assert retry["outcome"] == "retried"
+                    assert retry["text"] == "Invalid synthetic input"
+
+
 async def test_inspection_accounts_and_notes_use_existing_owners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

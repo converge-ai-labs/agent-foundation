@@ -77,6 +77,8 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
     TextContent,
     TextPart,
@@ -730,9 +732,7 @@ async def test_compaction_resumes_after_codeact_rejects_a_streamed_tool_batch() 
             compactions += 1
             assert executed == []
             assert any(
-                isinstance(part, RetryPromptPart)
-                and part.tool_name is None
-                and "only executable tool call" in str(part.content)
+                isinstance(part, UserPromptPart) and "only executable tool call" in str(part.content)
                 for message in messages
                 for part in message.parts
             )
@@ -833,7 +833,8 @@ async def test_compaction_after_restore_uses_native_repair_of_older_function_cal
 
 @pytest.mark.parametrize("older_pending", [False, True])
 @pytest.mark.parametrize("tool_retry", [False, True])
-def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, tool_retry: bool) -> None:
+@pytest.mark.parametrize("native", [False, True])
+def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, tool_retry: bool, native: bool) -> None:
     history: list[ModelMessage] = []
     if older_pending:
         history.append(ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="older-pending")]))
@@ -849,7 +850,13 @@ def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, t
             rejected,
             ModelRequest(
                 parts=[
-                    RetryPromptPart(
+                    (
+                        ToolReturnPart("lookup", "Retry the response", "rejected-lookup", outcome="retried")
+                        if tool_retry
+                        else RetryFeedbackPart("Retry the response", retry=RetryInfo(cause="model_retry"))
+                    )
+                    if native
+                    else RetryPromptPart(
                         "Retry the response",
                         tool_name="lookup" if tool_retry else None,
                         tool_call_id="rejected-lookup" if tool_retry else "model-retry",

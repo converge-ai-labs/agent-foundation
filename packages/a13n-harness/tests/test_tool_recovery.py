@@ -84,16 +84,17 @@ async def test_partial_recovery_preserves_results_and_retries_only_selected_call
     assert result.output_or_raise() == "done"
     assert sorted(executed) == ([] if mode == "never" else ["pending", "write"] if mode == "always" else ["pending"])
     returns = [p for m in histories[0] for p in m.parts if isinstance(p, ToolReturnPart)]
-    assert len(returns) == 5
+    assert len(returns) == 6
     by_id = {p.tool_call_id: p.content for p in returns}
     assert by_id == {
         "done": "saved",
         "closed": INTERRUPTED_TOOL_RESULT,
+        "retry": "invalid",
         "pending": INTERRUPTED_TOOL_RESULT if mode == "never" else "pending",
         "write": "written" if mode == "always" else INTERRUPTED_TOOL_RESULT,
         "removed": INTERRUPTED_TOOL_RESULT,
     }
-    assert [p.tool_call_id for m in histories[0] for p in m.parts if isinstance(p, RetryPromptPart)] == ["retry"]
+    assert [p.tool_call_id for p in returns if p.outcome == "retried"] == ["retry"]
     assert next(m for m in histories[0] if isinstance(m, ModelResponse)).parts == response.parts
     assert saved.model_dump_json() == payload
     before = list(executed)
@@ -380,7 +381,11 @@ async def test_retryable_call_still_runs_native_argument_validation() -> None:
         pytest.fail("Invalid arguments must not execute")
 
     async def model(messages, info) -> AsyncIterator[str]:
-        assert any(isinstance(p, RetryPromptPart) and p.tool_call_id == "old" for m in messages for p in m.parts)
+        assert any(
+            isinstance(p, ToolReturnPart) and p.outcome == "retried" and p.tool_call_id == "old"
+            for m in messages
+            for p in m.parts
+        )
         yield "done"
 
     executable = HarnessBuilder(instrumentation=None).build(

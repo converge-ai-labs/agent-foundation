@@ -16,10 +16,12 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryFeedbackPart,
     RetryPromptPart,
     TextContent,
     ToolAvailabilityDeltaPart,
     ToolCallPart,
+    ToolReturnPart,
     UserContent,
     UserPromptPart,
 )
@@ -206,7 +208,11 @@ def _classify_request(
     if not messages or not isinstance(messages[-1], ModelRequest):
         return None
     final = messages[-1]
-    if any(isinstance(part, RetryPromptPart) for part in final.parts):
+    if any(
+        isinstance(part, RetryFeedbackPart | RetryPromptPart)
+        or (isinstance(part, ToolReturnPart) and part.outcome == "retried")
+        for part in final.parts
+    ):
         return None
 
     tool_results = tuple(part for part in final.parts if isinstance(part, BaseToolReturnPart))
@@ -377,7 +383,10 @@ def _requires_exact_history(messages: list[ModelMessage]) -> bool:
             pending.update(part.tool_call_id for part in message.parts if isinstance(part, BaseToolCallPart))
             previous_response_calls = {part.tool_call_id for part in message.parts if isinstance(part, ToolCallPart)}
         else:
-            if any(isinstance(part, RetryPromptPart) and part.tool_name is None for part in message.parts):
+            if any(
+                isinstance(part, RetryFeedbackPart) or (isinstance(part, RetryPromptPart) and part.tool_name is None)
+                for part in message.parts
+            ):
                 # A model-level retry rejects the preceding response before function-tool dispatch.
                 # Its generated ID does not match those calls. Older and provider-native calls
                 # still need their own results; a retry before a response retires no calls.
