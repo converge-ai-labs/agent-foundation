@@ -192,6 +192,7 @@ test("expired snapshot refuses restore", async () => {
   await create(f);
   await f.controller.fetch(request("stop", "stop", 1));
   f.controller.state.snapshotExpires = "2000-01-01T00:00:00Z";
+  await f.controller.save();
   assert.equal(
     (await f.controller.fetch(request("start", "start", 2))).status,
     409,
@@ -496,4 +497,101 @@ test("canceling an in-flight transfer releases admission exactly once", async ()
   await reader.cancel();
   await pending;
   assert.equal(f.controller.active, 0);
+});
+
+test("failed snapshot persistence cannot authorize destroy on a same-actor retry", async () => {
+  const f = fixture();
+  await create(f);
+  const put = f.ctx.storage.put.bind(f.ctx.storage);
+  let fail = true;
+  f.ctx.storage.put = async (key, value) => {
+    if (key === "state" && value.savedForStop && fail)
+      throw new Error("write failed");
+    return put(key, value);
+  };
+  assert.equal(
+    (await f.controller.fetch(request("stop", "stop", 1))).status,
+    503,
+  );
+  assert.equal(f.container.destroys, 0);
+  assert.equal(f.records.get("state").snapshot, undefined);
+  assert.equal(
+    (await f.controller.fetch(request("stop", "stop", 1))).status,
+    503,
+  );
+  assert.equal(f.container.destroys, 0);
+  fail = false;
+  assert.equal(
+    (await f.controller.fetch(request("stop", "stop", 1))).status,
+    200,
+  );
+  assert.equal(f.container.snapshots, 3);
+  assert.equal(f.records.get("state").status, "stopped");
+});
+
+test("failed final transaction retains the persisted version for a retry", async () => {
+  const f = fixture();
+  await create(f);
+  const transaction = f.ctx.storage.transaction.bind(f.ctx.storage);
+  f.ctx.storage.transaction = async () => {
+    throw new Error("transaction unavailable");
+  };
+  assert.equal(
+    (await f.controller.fetch(request("stop", "stop", 1))).status,
+    503,
+  );
+  assert.equal(f.controller.state.version, 1);
+  assert.equal(f.controller.state.pending, "stop");
+  f.ctx.storage.transaction = transaction;
+  assert.equal(
+    (await f.controller.fetch(request("stop", "stop", 1))).status,
+    200,
+  );
+  assert.equal(f.container.destroys, 1);
+  assert.equal(f.controller.state.version, 2);
+});
+
+test("read-only reconciliation does not interrupt EIP admission", async () => {
+  const f = fixture();
+  await create(f);
+  const token = f.controller.state.token;
+  const get = f.ctx.storage.get.bind(f.ctx.storage);
+  let release, entered;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const waiting = new Promise((resolve) => {
+    entered = resolve;
+  });
+  f.ctx.storage.get = async (key) => {
+    if (key === "state") {
+      entered();
+      await gate;
+    }
+    return get(key);
+  };
+  const inspect = f.controller.fetch(
+    new Request("https://example/control/inspect", {
+      headers: {
+        "X-A13N-Environment": owner,
+        "X-A13N-Fingerprint": fingerprint,
+      },
+    }),
+  );
+  await waiting;
+  const response = await f.controller.fetch(
+    new Request("https://example/eip/transfer", {
+      method: "POST",
+      headers: {
+        "X-A13N-Environment": owner,
+        "X-A13N-Fingerprint": fingerprint,
+        Authorization: "Bearer " + token,
+      },
+      body: "bytes",
+    }),
+  );
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "bytes");
+  release();
+  assert.equal((await inspect).status, 200);
 });

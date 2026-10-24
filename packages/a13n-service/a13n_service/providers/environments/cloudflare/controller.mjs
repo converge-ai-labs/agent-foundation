@@ -41,9 +41,21 @@ export class Controller {
     }
   }
   exclusive(fn) {
-    const result = this.tail.then(fn);
+    const result = this.tail.then(async () => {
+      // In-memory writes are not evidence that a failed storage operation committed.
+      await this.reload();
+      return fn();
+    });
     this.tail = result.catch(() => {});
     return result;
+  }
+  async reload() {
+    try {
+      this.state = await this.ctx.storage.get("state");
+    } catch (error) {
+      this.state = undefined;
+      throw error;
+    }
   }
   async save() {
     await this.ctx.storage.put("state", this.state);
@@ -76,16 +88,24 @@ export class Controller {
     )
       return json({ error: "identity_conflict" }, 409);
     if (path === "/control/inspect" && request.method === "GET")
-      return json(
-        this.state
-          ? this.view()
-          : {
-              environment_id: owner,
-              fingerprint,
-              status: "absent",
-              version: 0,
-            },
-      );
+      return this.exclusive(async () => {
+        if (
+          this.state &&
+          (this.state.environment_id !== owner ||
+            this.state.fingerprint !== fingerprint)
+        )
+          return json({ error: "identity_conflict" }, 409);
+        return json(
+          this.state
+            ? this.view()
+            : {
+                environment_id: owner,
+                fingerprint,
+                status: "absent",
+                version: 0,
+              },
+        );
+      });
     if (path === "/control/credential" && request.method === "GET") {
       if (!this.state || this.view().status !== "running")
         return json({ error: "not_running" }, 409);
@@ -121,6 +141,8 @@ export class Controller {
           body,
         );
       } catch {
+        this.state = undefined;
+        await this.reload();
         return json({ error: "operation_unconfirmed" }, 503);
       }
     });
@@ -303,7 +325,7 @@ export class Controller {
         try {
           await this.stop();
         } catch {
-          /* No unsafe destructive fallback. */
+          await this.reload(); // No unsafe destructive fallback or uncommitted checkpoint.
         }
       }
     });
