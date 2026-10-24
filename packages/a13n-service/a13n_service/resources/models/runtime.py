@@ -37,7 +37,7 @@ async def open_model(
     if (
         request_context is not None
         and settings.forward_model_context_headers
-        and model.provider.config.get("forward_context_headers", True)
+        and definition.configuration_model.model_validate(model.provider.config).forward_context_headers
     ):
         for name, value in request_context.headers.items():
             try:

@@ -64,10 +64,18 @@ def test_steer_retains_or_matches_context(headers: dict | None, joins: bool) -> 
     assert steers_into(entry, run, None) is joins
 
 
-@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False)])
+@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False), (True, None)])
+@pytest.mark.parametrize("default", [False, True])
 async def test_model_forwarding_priority_flags_and_fresh_runs(
-    service: Any, scripted_model: Any, runs_kit: Any, category: bool, target: bool
+    service: Any,
+    scripted_model: Any,
+    runs_kit: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    category: bool,
+    target: bool | None,
+    default: bool,
 ) -> None:
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", str(default).lower())
     captured: list[dict] = []
 
     @scripted_model.app.middleware("http")
@@ -78,10 +86,13 @@ async def test_model_forwarding_priority_flags_and_fresh_runs(
     provider, _, agent = await resources(service, scripted_model, runs_kit)
     updated = await service.client.patch(
         f"{service.api}/model-providers/{provider['id']}",
-        json={"config": {**provider["config"], "forward_context_headers": target}},
+        json={"config": {**provider["config"], **({"forward_context_headers": target} if target is not None else {})}},
         headers=runs_kit.if_match(provider),
     )
     assert updated.status_code == 200, updated.text
+    if target is not None:
+        assert updated.json()["config"]["forward_context_headers"] is target
+        monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", str(not default).lower())
     settings = service.runtime.settings
     service.runtime = replace(
         service.runtime,
@@ -104,7 +115,7 @@ async def test_model_forwarding_priority_flags_and_fresh_runs(
     run = await runs_kit.get_run(service, started["run"]["id"])
     assert run["status"] == "completed", run
     wire = captured[-1]
-    assert wire.get("x-trace") == ("business-value" if category and target else None)
+    assert wire.get("x-trace") == ("business-value" if category and (default if target is None else target) else None)
     assert wire["x-model"] == "default" and wire["x-gateway-key"] == "private"
     assert wire["authorization"] == "Bearer test-key" and wire["x-thread"] != "cannot-replace"
     assert "business-value" not in json.dumps(await scripted_model.request())

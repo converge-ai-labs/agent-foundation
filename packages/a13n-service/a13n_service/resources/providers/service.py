@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, replace
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
+from a13n_harness.providers.model.types import ProviderConfiguration
 from a13n_harness.providers.web.definition import WebProviderDefinition
 from pydantic import JsonValue, ValidationError
 from sqlalchemy import select
@@ -295,6 +296,8 @@ def _validated_config(
     except ValueError as error:
         raise invalid("credential", rejection_reason(error)) from None
     normalized = parsed.model_dump(mode="json", by_alias=True, exclude_defaults=True)
+    if isinstance(parsed, ProviderConfiguration) and "forward_context_headers" in parsed.model_fields_set:
+        normalized["forward_context_headers"] = parsed.forward_context_headers
     if header_names:
         credential_configured = stored_credential or credential is not None
         _check_header_names(definition, normalized, header_names, credential_configured=credential_configured)

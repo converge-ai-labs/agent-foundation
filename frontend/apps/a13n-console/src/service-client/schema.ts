@@ -7603,10 +7603,7 @@ export interface components {
     McpAuth: "none" | "bearer" | "headers" | "oauth";
     /** McpConfig */
     McpConfig: {
-      /**
-       * Forward Context Headers
-       * @default true
-       */
+      /** Forward Context Headers */
       forward_context_headers?: boolean;
       /**
        * Headers

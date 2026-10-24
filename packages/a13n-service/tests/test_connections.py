@@ -551,12 +551,16 @@ async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_he
         assert "disabled" in seen["results"][0]
 
 
-@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False)])
-async def test_request_context_forwarding_respects_mcp_policy_and_header_priority(service, category, target) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False), (True, None)])
+@pytest.mark.parametrize("default", [False, True])
+async def test_request_context_forwarding_respects_mcp_policy_and_header_priority(
+    service, monkeypatch, category, target, default
+) -> None:  # type: ignore[no-untyped-def]
     from dataclasses import replace
 
     from a13n_harness import RequestContext
 
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", str(default).lower())
     settings = service.runtime.settings
     service.runtime = replace(
         service.runtime,
@@ -572,7 +576,7 @@ async def test_request_context_forwarding_respects_mcp_policy_and_header_priorit
                     "url": f"{server.url}/mcp",
                     "headers": ["x-custom-key"],
                     "tools": ["echo"],
-                    "forward_context_headers": target,
+                    **({"forward_context_headers": target} if target is not None else {}),
                 },
                 "auth": "headers",
                 "credential": {"headers": {"x-custom-key": SECRET}},
@@ -586,7 +590,8 @@ async def test_request_context_forwarding_respects_mcp_policy_and_header_priorit
             await run_tool(capabilities, "echo", {"text": "hello"})
         assert server.requests
         assert all(
-            request.get("x-business") == ("shared" if category and target else None) for request in server.requests
+            request.get("x-business") == ("shared" if category and (default if target is None else target) else None)
+            for request in server.requests
         )
         assert all(request["x-trace"] == "caller" and request["x-custom-key"] == SECRET for request in server.requests)
         async with opened(service, [selection], {}, []) as capabilities:

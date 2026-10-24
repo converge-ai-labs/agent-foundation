@@ -7,13 +7,15 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from a13n_harness.http import forward_context_headers_default
 from a13n_harness.model_affinity import SessionAffinityHeader
 
 
 class ProviderConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     forward_context_headers: bool = Field(
-        default=True, description="Allow the Host to forward Run request context headers to this Provider."
+        default_factory=forward_context_headers_default,
+        description="Allow the Host to forward Run request context headers to this Provider.",
     )
     base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)] | None = Field(
         default=None, title="Base URL", description="Leave empty to use the Provider's default endpoint."

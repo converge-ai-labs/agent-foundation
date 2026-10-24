@@ -9427,7 +9427,6 @@
         "additionalProperties": false,
         "properties": {
           "forward_context_headers": {
-            "default": true,
             "title": "Forward Context Headers",
             "type": "boolean"
           },
