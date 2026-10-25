@@ -18,7 +18,7 @@ from a13n_harness_ui.model_thinking import apply_thinking, describe_thinking, su
         ("anthropic:claude-sonnet-4-6", [None, False, "low", "medium", "high"]),
         ("anthropic:claude-opus-4-6", [None, False, "low", "medium", "high", "max"]),
         ("anthropic:claude-haiku-5-5", [None, False, "low", "medium", "high", "xhigh"]),
-        ("anthropic:claude-sonnet-5-5", [None, "low", "medium", "high", "xhigh"]),
+        ("anthropic:claude-sonnet-5-5", [None, False, "low", "medium", "high", "xhigh"]),
         ("anthropic:claude-opus-5-5", [None, "low", "medium", "high", "xhigh", "max"]),
         ("anthropic:claude-fable-5-1", [None, "low", "medium", "high", "xhigh"]),
         ("google:gemini-3-pro-preview", [None, "low", "high"]),
@@ -111,7 +111,6 @@ def test_budget_option_is_disabled_and_rejected_without_changing_output_cap():
         ("google:gemini-3.1-pro-preview", False),
         ("anthropic:custom", "low"),
         ("anthropic:claude-opus-5-5", False),
-        ("anthropic:claude-sonnet-5-5", False),
         ("anthropic:claude-fable-5-1", False),
     ],
 )
@@ -119,6 +118,48 @@ def test_invalid_selections_never_fall_back(route, selection):
     with pytest.raises(CompositionError) as error:
         apply_thinking(route, {}, selection)
     assert error.value.code == "thinking_selection_invalid"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "name, expected_type",
+    [("claude-sonnet-4-6", "disabled"), ("claude-sonnet-5-5", "between_tools")],
+)
+async def test_anthropic_off_uses_model_specific_native_request(name, expected_type, monkeypatch):
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.anthropic import AnthropicModel
+    from pydantic_ai.providers.anthropic import AnthropicProvider
+
+    route = f"anthropic:{name}"
+    settings = {
+        "thinking": "high",
+        "anthropic_thinking": {"type": "enabled", "budget_tokens": 8192, "display": "summarized"},
+        "anthropic_effort": "xhigh",
+        "max_tokens": 16384,
+    }
+    original = deepcopy(settings)
+    effective = apply_thinking(route, settings, False)
+    assert effective == {
+        "thinking": False,
+        "anthropic_thinking": {"type": expected_type},
+        "max_tokens": 16384,
+    }
+    control = describe_thinking(route, effective)
+    assert control.default_summary == "Off"
+    assert control.default_value is False
+    assert settings == original
+    assert apply_thinking(route, settings, None) == original
+
+    model = AnthropicModel(name, provider=AnthropicProvider(api_key="test-not-a-secret"))
+    send = AsyncMock(side_effect=RuntimeError("captured native request"))
+    monkeypatch.setattr(model.client.beta.messages, "create", send)
+    async with model:
+        with pytest.raises(RuntimeError, match="captured native request"):
+            await model.request([ModelRequest(parts=[UserPromptPart("Hello")])], effective, ModelRequestParameters())
+    send.assert_awaited_once()
+    assert send.call_args.kwargs["thinking"] == {"type": expected_type}
+    assert send.call_args.kwargs["max_tokens"] == 16384
 
 
 def test_extra_body_conflicts_are_visible_and_do_not_rewrite_authored_settings():

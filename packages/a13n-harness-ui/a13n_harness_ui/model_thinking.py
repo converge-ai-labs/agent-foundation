@@ -124,10 +124,19 @@ def _choices(route: str) -> tuple[_Choice, ...]:
         ):
             return ()
         profile = anthropic_model_profile(name) or {}
+        off_type = "between_tools" if profile.get("anthropic_disables_thinking_with_between_tools") else "disabled"
         off = (
             ()
             if profile.get("thinking_always_enabled")
-            else (_Choice(False, "Disable thinking", {"anthropic_thinking": {"type": "disabled"}}),)
+            else (
+                _Choice(
+                    False,
+                    "No thinking before responding; tool updates may still appear"
+                    if off_type == "between_tools"
+                    else "Disable thinking",
+                    {"anthropic_thinking": {"type": off_type}},
+                ),
+            )
         )
         if profile.get("anthropic_supports_adaptive_thinking"):
             efforts: tuple[ThinkingSelection, ...] = ("low", "medium", "high")
@@ -294,8 +303,8 @@ def apply_thinking(
         if key in _CONTROL_KEYS and isinstance(value, dict):
             old = settings.get(key)
             siblings = {k: v for k, v in old.items() if k not in _CONTROL_KEYS[key]} if isinstance(old, dict) else {}
-            # Disabled Anthropic thinking has no display/budget fields.
-            result[key] = value if value.get("type") == "disabled" else {**siblings, **value}
+            # Both Anthropic off modes accept only the type field.
+            result[key] = value if value.get("type") in ("disabled", "between_tools") else {**siblings, **value}
         else:
             result[key] = value
     return result
@@ -312,7 +321,7 @@ def summarize_thinking(route: str, settings: Mapping[str, JsonValue]) -> str:
         native = settings.get("anthropic_thinking")
         effort = settings.get("anthropic_effort")
         if isinstance(native, dict):
-            if native.get("type") == "disabled":
+            if native.get("type") in ("disabled", "between_tools"):
                 return "Off"
             if native.get("type") == "enabled":
                 return _budget_summary(native.get("budget_tokens"))
