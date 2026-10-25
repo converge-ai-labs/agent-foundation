@@ -31,6 +31,33 @@ def admit(runtime, operation, **kwargs):
     )
 
 
+async def test_reconciliation_skips_history_without_pending_deliveries(monkeypatch):
+    from a13n_harness._tool_execution import RunToolExecutions
+    from pydantic_ai.messages import ModelRequest
+
+    executions = RunToolExecutions()
+    runtime = ToolExecutionRuntime()
+    acknowledged = []
+
+    async def acknowledge(thread_id, execution_id):
+        acknowledged.append((thread_id, execution_id))
+
+    monkeypatch.setattr(runtime, "acknowledge_delivery", acknowledge)
+
+    class UnreadHistory(tuple):
+        def __iter__(self):
+            pytest.fail("Empty delivery reconciliation must not traverse history")
+
+    await executions.reconcile(runtime, "thread-a", UnreadHistory())
+    executions.deliveries.update({"call-a": "exec-a", "call-b": "exec-b"})
+    history = (ModelRequest(parts=[ToolReturnPart("lookup", {"answer": 42}, tool_call_id="call-a")]),)
+    await executions.reconcile(runtime, "thread-a", history)
+    await executions.reconcile(runtime, "thread-a", history)
+    assert acknowledged == [("thread-a", "exec-a")]
+    assert executions.deliveries == {"call-b": "exec-b"}
+    await runtime.close()
+
+
 async def test_admission_precedes_effect_and_fast_result_keeps_native_value():
     store = MemoryToolExecutionStore()
     completed = []

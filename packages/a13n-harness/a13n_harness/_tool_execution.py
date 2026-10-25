@@ -193,7 +193,7 @@ class RunToolExecutions:
     async def reconcile(
         self, runtime: ToolExecutionRuntime | None, thread_id: str, messages: Sequence[ModelMessage]
     ) -> None:
-        if runtime is None:
+        if runtime is None or not self.deliveries:
             return
         for message in messages:
             if not isinstance(message, ModelRequest):

@@ -380,8 +380,10 @@ class RootRunExecutor:
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
                 nonlocal thread, run_checkpoint, checkpoint_error
                 assert stream is not None
-                frozen = display.capture(state.message_history)
-                excerpt = await to_thread.run_sync(lambda: checkpoint_excerpt(thread.excerpt, state.message_history))
+                history = state.message_history
+                frozen = display.capture(history)
+                excerpt = await to_thread.run_sync(checkpoint_excerpt, thread.excerpt, history)
+                del history
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
                 selected = await self._select_state(

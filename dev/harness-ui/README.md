@@ -181,4 +181,15 @@ Separate traced runs started after App/reference initialization:
 
 The lock's cancelled 30-second acquisition timer captured native Run context and could temporarily retain completed streams and histories. The existing nonblocking lock poll now checks a monotonic deadline without creating that long-lived timer. Object publication drops completed encoding buffers before staged/published verification, encodes the validated payload without another container-tree dump, and retains only the native object reference while publishing display. Both payload codecs keep their exact canonical bytes and integrity checks.
 
+A final follow-up removes one redundant full-history decode per UI request-boundary checkpoint: display capture and excerpt derivation read the same detached tuple, released before object publication. Harness also skips delivery reconciliation when no tool returns await acknowledgement, avoiding a no-op history traversal. A 20,000-message microbenchmark (five batches of 100 calls) measured that empty reconciliation at a median 0.976 ms before and below 0.001 ms after; this is an isolated scan saving, not a whole-export speedup.
+
+Repeating the sequential workload in three fresh untraced processes per case after these small CPU changes gave the following results:
+
+| Workload          | Median idle RSS | Median final RSS | Median RSS growth |   Final RSS range | Median RSS high-water |
+| ----------------- | --------------: | ---------------: | ----------------: | ----------------: | --------------------: |
+| UI, no watches    |      264.21 MiB |       343.26 MiB |         78.94 MiB | 311.72–398.89 MiB |            443.98 MiB |
+| UI, eight watches |      264.30 MiB |       340.32 MiB |         76.01 MiB | 316.73–350.11 MiB |            433.20 MiB |
+
+This rerun reproduces the working-set reduction and remains close to the Harness reference's growth. The run-to-run RSS spread is too broad to attribute additional memory savings to the small CPU changes. A separate traced rerun measured 16.79 MiB live and 132.85 MiB peak heap. Retained tool artifacts, explicit CodeAct values, configuration/pricing caches, and loaded modules retain their existing lifetimes; no retention caps or lazy-import framework were added.
+
 The ContextVar/weak-reference regression fails against the old lock and passes against the fix. Focused tests cover contention deadlines, cancellation, selected-reader exclusion, terminal checkpoint selection, and both codecs' byte identity and mapping order. Diagnostic probes remain outside product code. These synthetic runs measure short-term working-set amplification; an earlier 35-second idle control also released the old timer-held histories. They do not establish the cause of a separate production process's multi-GiB footprint.
