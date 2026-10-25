@@ -318,8 +318,7 @@ class ImmutableObjectStore:
                 },
             )
         compressed = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(uncompressed)
-        # Verification allocates its own decoded payload and canonical bytes.
-        # Do not overlap those with the completed encoding buffers.
+        # Release encoding buffers before verification allocates its own copies.
         del uncompressed
         stage = self._layout.staging / f"{uuid4().hex}.json.zst.tmp"
         try:
@@ -466,8 +465,7 @@ def _encoded_fields(envelope: ObjectEnvelope) -> dict[str, bytes]:
     fields = {
         key: _canonical_json(value) for key, value in envelope.model_dump(mode="json", exclude={"payload"}).items()
     }
-    # JsonValue is already validated; dumping it through the envelope would
-    # duplicate the entire container tree before encoding the same payload.
+    # Encode the validated JsonValue directly to avoid another container-tree copy.
     fields["payload"] = _canonical_json(envelope.payload, sort_keys=envelope.payload_codec_version == "1")
     return fields
 

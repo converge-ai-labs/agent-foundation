@@ -1,8 +1,4 @@
-"""Measure live fan-out retention and latency without a model or user state.
-
-Run in a fresh process for each revision. Tracing measures retained Python heap;
-run without --trace for latency/RSS (allocator high-water is not live heap).
-"""
+"""Measure live fan-out in a fresh Linux process; use --trace for Python heap."""
 
 from __future__ import annotations
 

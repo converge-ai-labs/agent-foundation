@@ -554,7 +554,7 @@ class HarnessUiLiveHub:
                 LiveCursor(epoch=self._epoch, sequence=start_sequence),
                 root_stream.capture() if root_stream is not None and after is None else None,
             )
-            # Do not pin an obsolete Run after the subscriber follows a new one.
+            # The subscription owns the current Run state.
             del root_stream
         try:
             yield subscription

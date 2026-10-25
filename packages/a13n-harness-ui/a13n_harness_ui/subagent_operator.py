@@ -287,10 +287,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
             tool_executions.settled = self._release_completion_continuation
 
     def _release_completion_continuation(self, thread_id: str) -> None:
-        """Drop admission authority only after its last possible automatic wake.
+        """Release authority once the segment and automatic wakes settle.
 
-        This check has no suspension point: a new segment installs its continuation
-        together with its active entry, and in-flight deliveries remain scheduled.
+        This synchronous check shares the active/scheduled lifecycle with admission.
         """
         retained = self._completion_continuations.get(thread_id)
         if retained is None or retained.execution_id in self._active:
