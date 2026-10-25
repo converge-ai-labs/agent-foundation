@@ -39,6 +39,8 @@ class RunToolExecutions:
         self.unsupported_calls: set[str] = set()
         self.handoff_ready = asyncio.Event()
         self.handoff_ready.set()
+        # Retained runners still dispatch against their original step's native discovery evidence.
+        self.history_calls: set[str] = set()
         self.calls: dict[str, ToolExecutionRecord] = {}
         self.returns: dict[str, Any] = {}
         self.observed_returns: set[str] = set()

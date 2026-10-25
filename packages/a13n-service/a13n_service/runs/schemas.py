@@ -25,6 +25,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.infra.reads import tool_response
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
@@ -139,10 +140,25 @@ class UsageLimit(_Frozen):
     requests: int = Field(ge=1, le=10000)
 
 
+class RequestContext(_Frozen):
+    """Explicit business headers, frozen in accepted Run options and kept out of model projections."""
+
+    headers: dict[str, str] = Field(default_factory=dict, repr=False)
+
+    @field_validator("headers")
+    @classmethod
+    def normalized_headers(cls, value: dict[str, str]) -> dict[str, str]:
+        headers = normalize_headers(value)
+        if headers.keys() & {"api-key", "x-api-key", "x-goog-api-key", "user-agent"}:
+            raise ValueError("Reserved authentication or transport header")
+        return headers
+
+
 class RunOptions(_Frozen):
     """What a message may choose for the run it starts. A steer joins a run with the defaults or equal options."""
 
     labels: Labels = Field(default_factory=dict)
+    context: RequestContext | None = Field(default=None, exclude_if=lambda value: value is None, repr=False)
     # Omission (or null) on a steer retains the accepted snapshot. A configuration object is explicit.
     configuration: RunConfiguration | None = None
     execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -154,8 +170,27 @@ class RunOptions(_Frozen):
     def digest(self) -> str:
         """Joining choices as submitted; Run configuration is compared separately to its accepted snapshot."""
         return hashlib.sha256(
-            canonical_json(self.model_dump(mode="json", exclude={"configuration", "execution"}))
+            canonical_json(self.model_dump(mode="json", exclude={"configuration", "execution", "context"}))
         ).hexdigest()
+
+
+def context_response[T: BaseModel](value: T) -> T:
+    """Project typed Run options at HTTP response boundaries before fragmenting MCP reads.
+
+    Input and storage serialization stay unchanged. Business JSON keys named context are not touched.
+    """
+    if not tool_response.get():
+        return value
+    if isinstance(value, RunOptions):
+        return value.model_copy(update={"context": None})
+    updates: dict[str, object] = {}
+    for name in type(value).model_fields:
+        item = getattr(value, name)
+        if isinstance(item, BaseModel):
+            updates[name] = context_response(item)
+        elif isinstance(item, list):
+            updates[name] = [context_response(child) if isinstance(child, BaseModel) else child for child in item]
+    return value.model_copy(update=updates)
 
 
 def _normalize_mcp_headers(value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:

@@ -7603,6 +7603,8 @@ export interface components {
     McpAuth: "none" | "bearer" | "headers" | "oauth";
     /** McpConfig */
     McpConfig: {
+      /** Forward Context Headers */
+      forward_context_headers?: boolean;
       /**
        * Headers
        * @default []
@@ -9663,6 +9665,16 @@ export interface components {
       reason: string;
     };
     /**
+     * RequestContext
+     * @description Explicit business headers, frozen in accepted Run options and kept out of model projections.
+     */
+    RequestContext: {
+      /** Headers */
+      headers?: {
+        [key: string]: string;
+      };
+    };
+    /**
      * Resume
      * @description The complete result batch, submitted and stored on the successor without omission defaults.
      */
@@ -9987,6 +9999,7 @@ export interface components {
      */
     "RunOptions-Input": {
       configuration?: components["schemas"]["RunConfiguration-Input"] | null;
+      context?: components["schemas"]["RequestContext"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
@@ -10001,6 +10014,7 @@ export interface components {
      */
     "RunOptions-Output": {
       configuration?: components["schemas"]["RunConfiguration-Output"] | null;
+      context?: components["schemas"]["RequestContext"] | null;
       execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {

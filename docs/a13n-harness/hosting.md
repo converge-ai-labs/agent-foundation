@@ -85,6 +85,10 @@ Use the runtime's `on_completed` callback to schedule Host delivery without bloc
 
 On every Run, select the current user/policy, model credentials, Provider state, and current Environment sources. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
 
+Pass business request headers through `RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "trace-123"}))`, importing `RequestContext` from `a13n_harness`. Trusted tools read the detached, read-only map at `ctx.deps.request_context.headers`. Names normalize to lower case. Inline children inherit it. Hosts retain and reconstruct context for recovery or independent children; `HarnessState` does not store it, and new bindings default to empty. Headers are not automatically exposed in prompts, tool results or shell environments. The Host explicitly wires forwarding to model and MCP transports.
+
+Set `A13N_HARNESS_FORWARD_CONTEXT_HEADERS=false` to change the default for an omitted model Provider `forward_context_headers` parameter. Explicit `true` or `false` wins over the environment; unset keeps the built-in default `true`. The environment accepts `true` and `false` case-insensitively with surrounding whitespace ignored, and rejects other values. Resolution happens when the configuration is constructed. Hosts can use `a13n_harness.http.forward_context_headers_default()` for the same default in their MCP integration.
+
 ### Check Model Calls Before Dispatch
 
 A Host may supply `RunBindings.model_call_check` implementing `ModelCallCheck.check(ModelCall)`. Harness invokes it before a public model call; return to permit the call or raise to refuse it. This is a per-call admission check, not a record that an HTTP request or billable usage occurred. The check is fresh Run authority and is never serialized into `HarnessState`. See [usage correlation](usage-and-limits.md#usage).

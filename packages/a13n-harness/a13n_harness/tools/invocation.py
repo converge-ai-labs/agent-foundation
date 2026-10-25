@@ -677,6 +677,9 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             await resources.aclose()
             raise
 
+        if (tool.tool_def.metadata or {}).get("a13n.codeact.runner") is True:
+            state.history_calls.add(ctx.tool_call_id)
+            resources.callback(state.history_calls.discard, ctx.tool_call_id)
         release = resources.aclose
 
         try:

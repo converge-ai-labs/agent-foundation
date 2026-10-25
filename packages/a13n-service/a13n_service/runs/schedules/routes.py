@@ -22,6 +22,7 @@ from a13n_service.runs.schedules.schemas import (
     ScheduleStatus,
     ScheduleUpdate,
 )
+from a13n_service.runs.schemas import context_response
 from a13n_service.tenancy.requests import Actor, WorkspaceId
 
 router = APIRouter(prefix="/api/v1/schedules", tags=["schedules"])
@@ -42,14 +43,14 @@ async def create_schedule(
     """
     result, created = await service.create(runtime, actor, workspace_id, body, request_key=key)
     response.status_code = 201 if created else 200
-    return tagged(response, result)
+    return context_response(tagged(response, result))
 
 
 @router.get("", response_model=SchedulePage, openapi_extra=platform_operation("schedules", "read"))
 async def list_schedules(
     workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime, filters: Annotated[ScheduleQuery, Query()]
 ) -> SchedulePage:
-    return await queries.list_schedules(runtime.storage, actor, workspace_id, filters)
+    return context_response(await queries.list_schedules(runtime.storage, actor, workspace_id, filters))
 
 
 @router.post("/preview", response_model=SchedulePreview, openapi_extra=platform_operation("schedules", "read"))
@@ -63,7 +64,7 @@ async def preview_schedule(
 async def get_schedule(
     response: Response, workspace_id: WorkspaceId, schedule_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Schedule:
-    return tagged(response, await queries.get(runtime.storage, actor, workspace_id, schedule_id))
+    return context_response(tagged(response, await queries.get(runtime.storage, actor, workspace_id, schedule_id)))
 
 
 @router.patch("/{schedule_id}", response_model=Schedule, openapi_extra=platform_operation("schedules", "write"))
@@ -76,7 +77,9 @@ async def update_schedule(
     body: ScheduleUpdate,
     if_match: IfMatch = None,
 ) -> Schedule:
-    return tagged(response, await service.update(runtime, actor, workspace_id, schedule_id, body, if_match=if_match))
+    return context_response(
+        tagged(response, await service.update(runtime, actor, workspace_id, schedule_id, body, if_match=if_match))
+    )
 
 
 @router.post("/{schedule_id}/enable", response_model=Schedule, openapi_extra=platform_operation("schedules", "write"))
@@ -89,8 +92,10 @@ async def enable_schedule(
     body: ScheduleCommand,
     if_match: IfMatch = None,
 ) -> Schedule:
-    return tagged(
-        response, await service.transition(runtime, actor, workspace_id, schedule_id, "enable", if_match=if_match)
+    return context_response(
+        tagged(
+            response, await service.transition(runtime, actor, workspace_id, schedule_id, "enable", if_match=if_match)
+        )
     )
 
 
@@ -104,8 +109,10 @@ async def pause_schedule(
     body: ScheduleCommand,
     if_match: IfMatch = None,
 ) -> Schedule:
-    return tagged(
-        response, await service.transition(runtime, actor, workspace_id, schedule_id, "pause", if_match=if_match)
+    return context_response(
+        tagged(
+            response, await service.transition(runtime, actor, workspace_id, schedule_id, "pause", if_match=if_match)
+        )
     )
 
 
@@ -152,8 +159,10 @@ async def get_schedule_occurrence(
     runtime: CurrentRuntime,
     include: Literal["execution"] | None = None,
 ) -> Occurrence:
-    return await queries.get_occurrence(
-        runtime.storage, actor, workspace_id, schedule_id, occurrence_id, execution=include == "execution"
+    return context_response(
+        await queries.get_occurrence(
+            runtime.storage, actor, workspace_id, schedule_id, occurrence_id, execution=include == "execution"
+        )
     )
 
 
@@ -177,4 +186,4 @@ async def dispatch_schedule(
         runtime, actor, workspace_id, schedule_id, request_key=key, if_match=if_match
     )
     response.status_code = 202 if created else 200
-    return result
+    return context_response(result)

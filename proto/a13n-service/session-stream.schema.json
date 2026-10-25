@@ -2573,6 +2573,21 @@
       "title": "RecordSource",
       "type": "object"
     },
+    "RequestContext": {
+      "additionalProperties": false,
+      "description": "Explicit business headers, frozen in accepted Run options and kept out of model projections.",
+      "properties": {
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        }
+      },
+      "title": "RequestContext",
+      "type": "object"
+    },
     "Resume": {
       "additionalProperties": false,
       "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
@@ -2709,6 +2724,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/RunConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestContext"
             },
             {
               "type": "null"

@@ -31,6 +31,7 @@ from pydantic_monty import (
     MontyTypingError,
 )
 
+from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness._review_context import record_approval_denials
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import is_sandbox_panic
@@ -661,6 +662,7 @@ def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool
         and definition.tool_kind is None
         and not definition.unless_native
         and (definition.metadata or {}).get("a13n.codeact.runner") is not True
+        and (definition.metadata or {}).get(HANDOFF_TOOL_METADATA_KEY) is not True
     )
 
 

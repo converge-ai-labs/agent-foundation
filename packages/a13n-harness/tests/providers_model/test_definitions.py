@@ -252,3 +252,42 @@ async def test_hosted_open_models_preserve_native_profiles_and_request_wiring(
         assert response.parts[0].content == "Hello"
         assert not client.is_closed
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("value,expected", [(None, True), ("true", True), ("false", False), (" FALSE ", False)])
+def test_context_forwarding_default_is_resolved_at_configuration_time(monkeypatch, value, expected):
+    from a13n_harness.http import FORWARD_CONTEXT_HEADERS_ENV
+    from a13n_harness.providers.model.types import ProviderConfiguration
+
+    monkeypatch.delenv(FORWARD_CONTEXT_HEADERS_ENV, raising=False)
+    original = ProviderConfiguration()
+    if value is not None:
+        monkeypatch.setenv(FORWARD_CONTEXT_HEADERS_ENV, value)
+    assert ProviderConfiguration().forward_context_headers is expected
+    assert original.forward_context_headers is True
+    assert ProviderConfiguration(forward_context_headers=not expected).forward_context_headers is not expected
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_explicit_forwarding_survives_normalization_and_environment_changes(monkeypatch, enabled):
+    from a13n_harness.http import FORWARD_CONTEXT_HEADERS_ENV
+
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == "openai")
+    monkeypatch.setenv(FORWARD_CONTEXT_HEADERS_ENV, str(enabled).lower())
+    validated = definition.validate_configuration({"forward_context_headers": enabled}, credential_configured=True)
+    assert validated.configuration["forward_context_headers"] is enabled
+    monkeypatch.setenv(FORWARD_CONTEXT_HEADERS_ENV, str(not enabled).lower())
+    assert (
+        definition.bind(validated.configuration, {"api_key": "test"}).configuration.forward_context_headers is enabled
+    )
+
+
+@pytest.mark.parametrize("value", ["", "0", "off", "invalid"])
+def test_invalid_context_forwarding_default_is_rejected(monkeypatch, value):
+    from a13n_harness.http import FORWARD_CONTEXT_HEADERS_ENV
+    from a13n_harness.providers.model.types import ProviderConfiguration
+
+    monkeypatch.setenv(FORWARD_CONTEXT_HEADERS_ENV, value)
+    with pytest.raises(ValueError, match="A13N_HARNESS_FORWARD_CONTEXT_HEADERS must be true or false"):
+        ProviderConfiguration()
+    assert ProviderConfiguration(forward_context_headers=True).forward_context_headers is True

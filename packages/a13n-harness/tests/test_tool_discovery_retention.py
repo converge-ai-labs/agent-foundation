@@ -846,3 +846,41 @@ async def test_describe_without_execution_retains_nothing(nested):
     )
     assert not any(isinstance(p, ToolReturnPart) for msg in snapshots[-1][0] for p in msg.parts)
     assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None
+
+
+@pytest.mark.parametrize("change", ["new", "refresh", "evict"])
+async def test_replacement_commits_only_unchanged_snapshot_evictions(monkeypatch, change):
+    from a13n_harness.capabilities.context import ContextRestoredEvent
+
+    # Force omission at selection, then complete a call during the awaited restored event.
+    monkeypatch.setattr(discovery, "_MAX_CONTEXT_BYTES", 1)
+    if change == "evict":
+        monkeypatch.setattr(discovery, "_MAX_TOOLS", 1)
+    seen = []
+
+    class CompleteDuringRestore(AbstractCapability):
+        async def on_event(self, ctx, *, event):
+            if not isinstance(event, ContextRestoredEvent):
+                return
+            owner = ctx.capabilities.get(discovery._DISCOVERY_ID)
+            before = tuple(owner._state.called)
+            name = "double" if change == "refresh" else "triple"
+            await owner._record_call(ctx, ctx.tools[name])
+            if change == "refresh":
+                assert before[-1] == owner._state.called[-1]
+                assert before[-1] is not owner._state.called[-1]
+            seen.append(name)
+
+    calls = [("search_tools", {"queries": ["double triple"]})]
+    if change != "new":
+        calls.append(("double", {"value": 1}))
+    calls.append(("summarize", {"content": "Continue"}))
+    result, snapshots = await _run_calls(
+        (_source([]), ToolSearch(strategy="keywords"), HandoffCapability(), CompleteDuringRestore()),
+        calls,
+    )
+    assert seen == ["double" if change == "refresh" else "triple"]
+    state = result.state.agent_context_state.get(discovery._DISCOVERY_ID).data
+    assert [item["name"] for item in state["called"]] == seen
+    # Late completion is retained for a future selection, not inserted into the already-built request.
+    assert snapshots[-1][1].model_request_parameters.revealed_tool_names == set()

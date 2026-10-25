@@ -12,6 +12,7 @@ from pydantic_ai import ModelRetry, RunContext, ToolDefinition
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.toolsets import ToolsetTool
 
+from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness.context import AgentContext
 
 PROXY_MEMBERSHIP_KEY = "a13n.tool_search.member"
@@ -124,6 +125,7 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
         or definition.tool_kind is not None
         or proxy_control(definition) is not None
         or (definition.metadata or {}).get("a13n.codeact.runner") is True
+        or (definition.metadata or {}).get(HANDOFF_TOOL_METADATA_KEY) is True
     ):
         raise UserError(
             f"Tool {definition.name!r} is not a function or external tool supported by ToolSearch. Leave control, output, and provider-native tools directly exposed."

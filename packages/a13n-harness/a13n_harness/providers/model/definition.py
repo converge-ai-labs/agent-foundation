@@ -131,6 +131,8 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
             reserved = (*reserved, affinity_header)
         validate_header_names(header_names, reserved=reserved)
         normalized = parsed.model_dump(mode="json", by_alias=True, exclude_none=False, exclude_defaults=True)
+        if "forward_context_headers" in parsed.model_fields_set:
+            normalized["forward_context_headers"] = parsed.forward_context_headers
         endpoint = parsed.base_url or (self.endpoint(normalized) if callable(self.endpoint) else self.endpoint)
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 

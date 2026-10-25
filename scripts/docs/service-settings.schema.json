@@ -1216,6 +1216,16 @@
       "additionalProperties": false,
       "description": "Outbound network policy, call bounds and browser authorization flows for every provider and connection.",
       "properties": {
+        "forward_model_context_headers": {
+          "default": true,
+          "title": "Forward Model Context Headers",
+          "type": "boolean"
+        },
+        "forward_mcp_context_headers": {
+          "default": true,
+          "title": "Forward Mcp Context Headers",
+          "type": "boolean"
+        },
         "http_origins": {
           "default": [],
           "items": {

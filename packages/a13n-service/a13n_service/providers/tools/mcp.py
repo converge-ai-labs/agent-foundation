@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal, Self, Unpack
 
 import httpx2
 from a13n_harness import AgentContext
+from a13n_harness.http import forward_context_headers_default
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -98,6 +99,7 @@ class OAuthSettings(BaseModel):
 
 class McpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    forward_context_headers: bool = Field(default_factory=forward_context_headers_default)
 
     url: str = Field(min_length=1, max_length=2048)
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.

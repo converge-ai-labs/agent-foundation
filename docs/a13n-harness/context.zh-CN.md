@@ -122,6 +122,8 @@ flowchart TD
 
 显式交接使用 `summarize`，自动压缩根据用量触发。阈值见[压缩较长的 Thread](#compact-a-long-thread)。
 
+直接调用 `summarize`，并确保它是该次模型响应中唯一的工具调用；不能通过 CodeAct 或 ToolSearch 代理组调用。保留的 CodeAct runner 仍在执行时，自动压缩会等待，Handoff 会拒绝调用。先等待 runner 结束并检查结果，再编写新的总结。其他保留的函数工具不会阻止上下文替换。
+
 按 Host 的接受策略保存返回的 `HarnessState`；总结不会保存应用存储。
 
 ### 保留已调用的工具

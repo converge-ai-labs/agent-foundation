@@ -25,6 +25,7 @@ from starlette.types import ASGIApp, Scope
 
 from a13n_service.infra.http import ErrorEnvelope
 from a13n_service.infra.platform import PLATFORM_METADATA, PlatformOperation
+from a13n_service.infra.reads import tool_response
 
 CONTEXT_HEADERS = frozenset({"authorization", "cookie", "x-workspace-id"})
 RESULT_HEADERS = ("etag", "x-request-id", "retry-after")
@@ -195,7 +196,11 @@ class ApiTool(Tool):
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=self._app, raise_app_exceptions=False)
         ) as client:
-            response = await client.send(request)
+            token = tool_response.set(True)
+            try:
+                response = await client.send(request)
+            finally:
+                tool_response.reset(token)
         return ToolResult(
             structured_content={
                 "status": response.status_code,

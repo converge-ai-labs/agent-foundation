@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from a13n_harness.errors import HarnessError
 
 HANDOFF_CAPABILITY_ID = "a13n.handoff"
+HANDOFF_TOOL_METADATA_KEY = "a13n.handoff.tool"
 _HANDOFF_STATE_VERSION = "1"
 
 

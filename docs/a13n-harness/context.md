@@ -122,6 +122,8 @@ A continuation summary carries the paths and roles of Skills still needed. Rerea
 
 Use `summarize` for an explicit handoff or let compaction react to usage. See [Compact a long Thread](#compact-a-long-thread) for thresholds.
 
+Call `summarize` directly as the only tool call in its model response, outside CodeAct and ToolSearch proxy groups. While a retained CodeAct runner is active, automatic compaction waits and Handoff rejects the call. Wait for the runner to finish, inspect its result, then write a fresh summary. Other retained function tools do not block context replacement.
+
 Persist the returned `HarnessState` under your Host's acceptance policy; a summary does not save application storage.
 
 ### Retain called tools

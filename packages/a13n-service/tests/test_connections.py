@@ -317,7 +317,14 @@ async def run_tool(capabilities: Sequence[AbstractCapability], tool: str, argume
 
 
 @asynccontextmanager
-async def opened(service, selections: list[ConnectionSelection], mcp_headers: dict, dispatches: list[ToolDispatch]):  # type: ignore[no-untyped-def]
+async def opened(
+    service,
+    selections: list[ConnectionSelection],
+    mcp_headers: dict,
+    dispatches: list[ToolDispatch],
+    *,
+    request_context=None,
+):  # type: ignore[no-untyped-def]
     runtime = service.runtime
 
     async def check(dispatch: ToolDispatch) -> None:
@@ -342,6 +349,7 @@ async def opened(service, selections: list[ConnectionSelection], mcp_headers: di
         registry=runtime.registry,
         policy=runtime.endpoint_policy,
         settings=runtime.settings.providers,
+        request_context=request_context,
     ) as capabilities:
         yield capabilities
 
@@ -541,6 +549,54 @@ async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_he
             seen = await run_tool(capabilities, "echo", {"text": "again"})
         assert server.echoed == ["hello"] and len(dispatches) == 1
         assert "disabled" in seen["results"][0]
+
+
+@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False), (True, None)])
+@pytest.mark.parametrize("default", [False, True])
+async def test_request_context_forwarding_respects_mcp_policy_and_header_priority(
+    service, monkeypatch, category, target, default
+) -> None:  # type: ignore[no-untyped-def]
+    from dataclasses import replace
+
+    from a13n_harness import RequestContext
+
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", str(default).lower())
+    settings = service.runtime.settings
+    service.runtime = replace(
+        service.runtime,
+        settings=settings.model_copy(
+            update={"providers": settings.providers.model_copy(update={"forward_mcp_context_headers": category})}
+        ),
+    )
+    async with remote() as server:
+        created = await create(
+            service,
+            {
+                "config": {
+                    "url": f"{server.url}/mcp",
+                    "headers": ["x-custom-key"],
+                    "tools": ["echo"],
+                    **({"forward_context_headers": target} if target is not None else {}),
+                },
+                "auth": "headers",
+                "credential": {"headers": {"x-custom-key": SECRET}},
+            },
+        )
+        selection = ConnectionSelection(connection_id=created["id"])
+        context = RequestContext(headers={"x-business": "shared", "x-trace": "lower", "x-custom-key": "cannot-replace"})
+        async with opened(
+            service, [selection], {created["id"]: {"x-trace": "caller"}}, [], request_context=context
+        ) as capabilities:
+            await run_tool(capabilities, "echo", {"text": "hello"})
+        assert server.requests
+        assert all(
+            request.get("x-business") == ("shared" if category and (default if target is None else target) else None)
+            for request in server.requests
+        )
+        assert all(request["x-trace"] == "caller" and request["x-custom-key"] == SECRET for request in server.requests)
+        async with opened(service, [selection], {}, []) as capabilities:
+            await run_tool(capabilities, "echo", {"text": "fresh"})
+        assert "x-business" not in server.requests[-1] and "x-trace" not in server.requests[-1]
 
 
 async def test_oauth_authorization_code_flow_with_pkce_refresh_and_revocation(service) -> None:  # type: ignore[no-untyped-def]
