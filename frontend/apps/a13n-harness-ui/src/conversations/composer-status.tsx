@@ -1,4 +1,5 @@
 import { reasoningModeLabel } from "./reasoning-mode-picker";
+import { speedLabel } from "./speed-label";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
@@ -70,17 +71,6 @@ export function ComposerStatus({
       captured.receipt_id !== operation?.receipt.receipt_id)
       ? undefined
       : captured?.captured?.agent;
-  const fast = capturedAgent?.fast;
-  const fastLabel =
-    fast === "on"
-      ? "On"
-      : fast === "off"
-        ? "Off"
-        : fast === "ultrafast"
-          ? "Ultrafast"
-          : fast === "default"
-            ? "Default"
-            : "—";
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
@@ -191,9 +181,9 @@ export function ComposerStatus({
         </span>
         <span
           className={styles.metric}
-          title="Captured Run request setting, not guaranteed provider speed. Changing the toggle only affects the next run."
+          title="Requested speed for this run. Speed changes apply to the next run; actual speed depends on the provider."
         >
-          Fast <strong>{fastLabel}</strong>
+          Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
         </span>
         {capturedAgent?.reasoning_mode &&
           capturedAgent.reasoning_mode !== "default" && (

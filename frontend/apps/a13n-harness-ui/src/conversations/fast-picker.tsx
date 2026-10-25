@@ -2,6 +2,7 @@ import { useId } from "react";
 import { Lightning } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
+import { speedLabel } from "./speed-label";
 import styles from "./composer-settings.module.css";
 
 export function FastPicker({
@@ -27,13 +28,7 @@ export function FastPicker({
           : "off";
   const active = selected === "on";
   const ultraActive = selected === "ultrafast";
-  const state = ultraActive
-    ? "Ultrafast"
-    : active
-      ? "On"
-      : selected === "off"
-        ? "Off"
-        : "Provider default";
+  const state = speedLabel(selected);
   const unavailable =
     value === "ultrafast" ? !control?.ultrafast_supported : !control?.supported;
   const showUltrafast =
@@ -41,18 +36,18 @@ export function FastPicker({
     model?.route.startsWith("openai-codex:") ||
     ultraActive;
   return (
-    <section aria-label="Fast mode" className={styles.speedControl}>
+    <section aria-label="Speed" className={styles.speedControl}>
       <div className={styles.controlHeading}>
         <span>Speed</span>
         <Button
           variant="ghost"
           size="sm"
-          aria-label="Use default Fast mode"
+          aria-label="Use model speed"
           aria-pressed={value == null}
           disabled={disabled}
           onClick={() => onChange(null)}
         >
-          {value == null ? "Using default" : "Use default"}
+          {value == null ? "Using model setting" : "Use model setting"}
         </Button>
       </div>
       <div className={styles.speedToggles}>
@@ -92,7 +87,7 @@ export function FastPicker({
       <p id={descriptionId} className={styles.hint}>
         {control?.reason ??
           (!control?.supported
-            ? "Fast controls are unavailable."
+            ? "Speed controls are unavailable."
             : "May increase cost or credit usage. Requested setting, not guaranteed speed.")}
       </p>
       {showUltrafast && (
@@ -102,7 +97,9 @@ export function FastPicker({
         </p>
       )}
       {value != null && unavailable && (
-        <p className={styles.hint}>Unavailable selection — use default.</p>
+        <p className={styles.hint}>
+          Unavailable selection — use the model setting.
+        </p>
       )}
     </section>
   );
