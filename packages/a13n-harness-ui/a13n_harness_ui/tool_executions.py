@@ -35,7 +35,20 @@ class ToolExecutions:
         self._group: TaskGroup | None = None
         self.deliver: Callable[[str, str], Awaitable[bool]] | None = None
         self.changed: Callable[[str], Awaitable[None]] | None = None
+        self.settled: Callable[[str], None] | None = None
         self._accepting = True
+
+    def has_pending_work(self, thread_id: str) -> bool:
+        """Include hints in flight, whose IDs have already left the pending queue."""
+        return (
+            thread_id in self._pending
+            or thread_id in self._scheduled
+            or any(record.thread_id == thread_id for record in self.runtime.active)
+        )
+
+    def _notify_settled(self, thread_id: str) -> None:
+        if self.settled is not None:
+            self.settled(thread_id)
 
     def state(self, thread_id: str) -> CodeActStateOwner:
         return self._states.setdefault(thread_id, CodeActStateOwner())
@@ -54,6 +67,7 @@ class ToolExecutions:
         self._pending.pop(thread_id, None)
         if (scope := self._deliveries.get(thread_id)) is not None:
             scope.cancel()
+        self._notify_settled(thread_id)
 
     def user_input(self, thread_id: str) -> None:
         self._suppressed.discard(thread_id)
@@ -67,6 +81,7 @@ class ToolExecutions:
 
     def _completed(self, record: ToolExecutionRecord) -> None:
         if not self._accepting or not record.foreground_released:
+            self._notify_settled(record.thread_id)
             return
         thread_id = record.thread_id
         if thread_id not in self._suppressed:
@@ -75,8 +90,10 @@ class ToolExecutions:
                 pending.add(record.execution_id)
             # Hints are best effort; the runtime summary remains authoritative.
             while len(self._pending) > 256:
-                self._pending.popitem(last=False)
+                evicted, _ = self._pending.popitem(last=False)
+                self._notify_settled(evicted)
         self.retry(thread_id, refresh=True)
+        self._notify_settled(thread_id)
 
     def retry(self, thread_id: str, *, refresh: bool = False) -> None:
         if not self._accepting or self._group is None or (thread_id not in self._pending and not refresh):
@@ -118,6 +135,7 @@ class ToolExecutions:
             if thread_id in self._retry:
                 self._retry.discard(thread_id)
                 self.retry(thread_id)
+            self._notify_settled(thread_id)
 
     async def close(self, *, timeout_seconds: float) -> None:
         self.stop()

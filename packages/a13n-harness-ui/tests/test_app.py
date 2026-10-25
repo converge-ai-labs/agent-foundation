@@ -3126,3 +3126,37 @@ async def test_reopen_recovers_accepted_external_fact_without_replaying_approval
     assert len(external) == 1 and external[0].content == {"fact": "accepted once"}
     local = [part for part in observed if part.tool_call_id == "call_local"]
     assert len(local) == 1 and local[0].outcome == "failed"
+
+
+async def test_focused_watch_does_not_pin_consumed_bootstrap(tmp_path: Path) -> None:
+    import gc
+    import weakref
+
+    from a13n_harness_ui.display_history import DisplayPublication
+    from a13n_stream_protocol.display import DisplayFold
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        fold = DisplayFold("run", full_content=True)
+        observations = fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "m", "delta": "x" * 100_000}])
+        await app._live_hub.publish(
+            run_kind="root",
+            root_thread_id=thread.thread_id,
+            parent_thread_id=None,
+            thread_id=thread.thread_id,
+            run_id="run",
+            events=(),
+            display=DisplayPublication(tuple(observations), tuple(fold.items.values()), fold.export_continuation()),
+        )
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            snapshot = weakref.ref(watch.snapshot)
+            replay_event = weakref.ref(watch.root_stream.events[0])
+            events = watch.events
+            assert events.root_stream is None
+            del watch
+            gc.collect()
+            assert snapshot() is None
+            assert replay_event() is None
+            # TUI overflow recovery still captures the shared current cut.
+            assert events.capture_root_stream("run").summary.run_id == "run"

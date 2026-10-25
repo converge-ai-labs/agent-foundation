@@ -283,6 +283,21 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
         self._accepting = False
+        if tool_executions is not None:
+            tool_executions.settled = self._release_completion_continuation
+
+    def _release_completion_continuation(self, thread_id: str) -> None:
+        """Drop admission authority only after its last possible automatic wake.
+
+        This check has no suspension point: a new segment installs its continuation
+        together with its active entry, and in-flight deliveries remain scheduled.
+        """
+        retained = self._completion_continuations.get(thread_id)
+        if retained is None or retained.execution_id in self._active:
+            return
+        if self._tool_executions is not None and self._tool_executions.has_pending_work(thread_id):
+            return
+        del self._completion_continuations[thread_id]
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
         """Use newly discovered stores for future child reconstructions."""
@@ -353,6 +368,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     self._task_group = None
                     self._parents.clear()
                     self._active.clear()
+                    self._completion_continuations.clear()
                     self._signal_change_locked()
 
     @asynccontextmanager
@@ -1107,13 +1123,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
 
     async def _start_segment(self, prepared: _PreparedSegment) -> None:
-        self._completion_continuations[prepared.state.thread_id] = _CompletionContinuation(
-            execution_id=prepared.head.execution_id,
-            scope=prepared.scope,
-            identity=prepared.identity,
-            usage_limits=prepared.usage_limits,
-            configuration_version=prepared.composition.thread_configuration_version,
-        )
         done = Event()
         active = _ActiveSegment(
             execution_id=prepared.head.execution_id,
@@ -1126,6 +1135,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
             self._require_started_locked()
             task_group = self._task_group
             assert task_group is not None
+            previous = self._completion_continuations.get(prepared.state.thread_id)
+            self._completion_continuations[prepared.state.thread_id] = _CompletionContinuation(
+                execution_id=prepared.head.execution_id,
+                scope=prepared.scope,
+                identity=prepared.identity,
+                usage_limits=prepared.usage_limits,
+                configuration_version=prepared.composition.thread_configuration_version,
+            )
             self._active[prepared.head.execution_id] = active
             if self._restart is not None:
                 self._restart.register(prepared.state.thread_id, prepared.head.execution_id)
@@ -1133,6 +1150,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 task_group.start_soon(self._run_segment, prepared, active)
             except BaseException:
                 self._active.pop(prepared.head.execution_id, None)
+                if previous is None:
+                    self._completion_continuations.pop(prepared.state.thread_id, None)
+                else:
+                    self._completion_continuations[prepared.state.thread_id] = previous
                 done.set()
                 raise
 
@@ -1279,6 +1300,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     self._active.pop(current.head.execution_id, None)
                     if self._tool_executions is not None:
                         self._tool_executions.retry(current.state.thread_id)
+                    self._release_completion_continuation(current.state.thread_id)
                     if self._restart is not None:
                         self._restart.finished(current.state.thread_id)
                     active.done.set()

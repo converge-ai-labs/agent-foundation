@@ -353,6 +353,9 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
                     )
                 }
             elif calls == 3:
+                # A finished child with no tools must not retain the parent
+                # composition; explicit resume resolves from the active parent.
+                assert not app._subagent_operator._completion_continuations
                 returned = next(
                     part
                     for message in messages
@@ -394,6 +397,7 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
         page = await app.query_child_executions(parent_thread_id=thread.thread_id)
         assert len(page.executions) == 2
+        assert not app._subagent_operator._completion_continuations
         assert {item.persisted_status for item in page.executions} == {"succeeded"}
         for execution in page.executions:
             child = await app.get_thread(execution.child_thread_id)

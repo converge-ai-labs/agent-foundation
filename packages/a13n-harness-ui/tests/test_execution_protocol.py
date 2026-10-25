@@ -389,3 +389,78 @@ async def test_realtime_observes_all_active_roots_with_bounded_idle_capacity(
                 release.set()
             for receipt in receipts:
                 assert (await settled(api, receipt))["status"] == "completed"
+
+
+async def test_focus_socket_releases_bootstrap_while_remaining_subscribed(tmp_path, monkeypatch):
+    import gc
+    import weakref
+
+    from a13n_harness_ui.app import HarnessUiApp
+    from a13n_harness_ui.display_history import DisplayPublication
+    from a13n_stream_protocol.display import DisplayFold
+    from ag_ui.core import CustomEvent
+    from anyio import sleep
+
+    captured = []
+    original = HarnessUiApp._capture_thread_watch
+
+    async def capture(self, *args):
+        watch = await original(self, *args)
+        captured.extend([weakref.ref(watch.snapshot), weakref.ref(watch.root_stream.events[-1])])
+        return watch
+
+    monkeypatch.setattr(HarnessUiApp, "_capture_thread_watch", capture)
+    root = _write_configuration(tmp_path)
+    async with listener_with_app(tmp_path, configuration_path=root) as (http, ws, app):
+        thread = await app.create_thread()
+        fold = DisplayFold("run-memory", full_content=True)
+        observations = fold.fold(
+            [{"type": "TEXT_MESSAGE_CONTENT", "messageId": f"m-{index}", "delta": "x" * 8192} for index in range(32)]
+        )
+        await app._live_hub.publish(
+            run_kind="root",
+            root_thread_id=thread.thread_id,
+            parent_thread_id=None,
+            thread_id=thread.thread_id,
+            run_id="run-memory",
+            events=(),
+            display=DisplayPublication(tuple(observations), tuple(fold.items.values()), fold.export_continuation()),
+        )
+        async with connect(ws + "/api/realtime/connect", proxy=None, origin=http) as client:
+            await client.send('{"api_key":"test-only-key"}')
+            await client.send(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "kind": "subscribe",
+                        "channel": "focus",
+                        "stream": "focus",
+                        "root_thread_id": thread.thread_id,
+                    }
+                )
+            )
+            replayed = []
+            with fail_after(5):
+                while True:
+                    envelope = json.loads(await client.recv())
+                    frame = envelope.get("frame", {})
+                    if frame.get("kind") == "root_stream":
+                        replayed.extend(frame["events"])
+                    if frame.get("kind") == "ready":
+                        break
+            assert replayed and len(captured) == 2
+            with fail_after(5):
+                while any(reference() is not None for reference in captured):
+                    gc.collect()
+                    await sleep(0.01)
+            assert app._live_hub._subscribers
+            await app._live_hub.publish(
+                run_kind="child",
+                root_thread_id=thread.thread_id,
+                parent_thread_id=thread.thread_id,
+                thread_id="child",
+                run_id="child-run",
+                events=(CustomEvent(name="still-live", value=42),),
+            )
+            received = await frame_until(client, lambda value: value.get("frame", {}).get("kind") == "event")
+            assert received["frame"]["event"]["payload"]["name"] == "still-live"

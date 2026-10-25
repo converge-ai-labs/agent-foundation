@@ -898,7 +898,7 @@ class SessionBackend:
                 replay = (
                     subscription.capture_root_stream(observed_run_id)
                     if refresh and observed_run_id is not None
-                    else subscription.root_stream
+                    else subscription.take_root_stream()
                 )
                 if replay is None or replay.summary.run_id != observed_run_id:
                     return False

@@ -123,3 +123,32 @@ Two private, read-only copied checkpoints were also replayed offline into dispos
 The referenced totals include every hot object. Sample A consists of a 5,337-byte manifest, 2,089,861-byte native state, and 5,331,276-byte display archive; sample B consists of 2,230 + 1,363,913 + 973,949 bytes. Full native state remains a snapshot rather than a message delta.
 
 WebUI regression tests check that 100 typing-and-acknowledgement cycles cause no history-subscriber renders, while local-input and submission transitions still render. Input navigation requests one page until Load more is activated. Complete turn caches survive checkpoint changes only when the server's full-entry content revision is identical; changed revisions are fetched again.
+
+## Live subscription memory benchmark
+
+Run the synthetic fan-out benchmark in fresh Linux processes with the checkout's locked environment:
+
+```bash
+for watchers in 0 1 8; do
+  uv run --locked python dev/harness-ui/benchmark_live_memory.py --watchers "$watchers" --events 128 --trace
+  for repeat in 1 2 3; do
+    uv run --locked python dev/harness-ui/benchmark_live_memory.py --watchers "$watchers" --events 128
+  done
+done
+```
+
+Each run publishes 128 child events containing 128 nested rows apiece, then drains every subscriber and verifies event order. The ring and subscriber buffers hold the complete workload. `queued_heap_bytes` measures the traced Python heap after publication and garbage collection, before draining. Use the separate untraced runs for latency; `max_rss_kib` is Linux process RSS high-water, including imports and allocator retention.
+
+Representative Linux/Python 3.13.7 measurements against baseline `4f0bdae9c`, using the same script and locked dependencies. Heap figures are one traced run; timing figures are medians of three fresh untraced runs:
+
+| Watchers | Queued heap, before → after | Publish, before → after | Drain, before → after |
+| -------- | --------------------------- | ----------------------- | --------------------- |
+| 0        | 7.73 → 7.66 MiB             | 30.50 → 31.56 ms        | 0.00 → 0.00 ms        |
+| 1        | 10.87 → 7.67 MiB            | 65.37 → 31.63 ms        | 31.29 → 32.50 ms      |
+| 8        | 33.35 → 7.70 MiB            | 303.40 → 33.51 ms       | 266.84 → 276.63 ms    |
+
+Queues now share the hub's private detached event; each consumer still receives an independent copy. This removes the per-subscriber queued copy and its publication cost while preserving mutation isolation. Drain time remains comparable; the zero-watcher difference is within the observed run-to-run spread.
+
+Focused App subscriptions also transfer their one-time replay to the consumer, and WebSocket/TUI consumers release it after bootstrap. A separate isolated App probe seeded 512 text rows of about 8 KiB, opened eight watches, discarded their bootstrap values, and kept their subscriptions open. With tracing started after seeding, additional retained heap fell from 11.39 MiB to 0.09 MiB; every watch received the same 513 replay events. Regression tests in `test_app.py`, `test_live.py`, and `test_execution_protocol.py` verify collection with weak references, preserved compact replay refresh, and continued delivery over a real loopback WebSocket.
+
+These measurements isolate live fan-out and bootstrap retention. Whole-process long-running memory additionally includes native history, retained tool results, imports, and allocator high-water; the benchmark does not estimate their production footprint.

@@ -1977,12 +1977,16 @@ def create_webui(
                     if watch.root_stream is not None:
                         for batch in watch.root_stream.batches():
                             yield FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch)
+                        # Even the final batch can contain a large snapshot row.
+                        batch = ()
                         yield FocusReadyFrame(
                             resume_cursor=_cursor(
                                 "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
                             )
                         )
-                    async for event in watch.events:
+                    events = watch.events
+                    del watch
+                    async for event in events:
                         yield FocusEventFrame(
                             event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
                         )
@@ -2055,7 +2059,9 @@ def create_webui(
                                             )
                                         }
                                     )
+                                    del thread, operation
                                 await send(RealtimeFrame(channel=command.channel, frame=frame))
+                                del frame
                         except HarnessUiError:
                             await close(code=4401, reason="Sharing access changed")
                             group.cancel_scope.cancel()
