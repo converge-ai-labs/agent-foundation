@@ -5,6 +5,9 @@ import base64
 import hashlib
 import json
 import sys
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx2
 import pytest
@@ -160,6 +163,27 @@ async def test_pending_installation_retains_identity_and_never_allocates(monkeyp
         assert error.value.code == "sprites_desktop_pending"
         assert manage.target.desktop_phase == "installing"
         assert calls == ["GET"]
+    finally:
+        await manage.close()
+
+
+async def test_desktop_readiness_uses_bound_session(monkeypatch):
+    manage = manager()
+    manage.recipe = manage.recipe.model_copy(update={"desktop_assistance": False})
+    describe = AsyncMock(return_value=SimpleNamespace(observe_ready=True, input_ready=True, targets=["desktop"]))
+
+    @asynccontextmanager
+    async def session(reference):
+        assert reference.environment_id == manage.environment_id
+        yield SimpleNamespace(session=SimpleNamespace(client=SimpleNamespace(computer_describe=describe)))
+
+    install_transport(monkeypatch, lambda request: httpx2.Response(404))
+    monkeypatch.setattr(management, "command", AsyncMock())
+    monkeypatch.setattr(management, "http_session", session)
+    try:
+        await manage._ready()
+        describe.assert_awaited_once()
+        assert describe.call_args.args[0].context.operation_id == "op-desktop-readiness"
     finally:
         await manage.close()
 

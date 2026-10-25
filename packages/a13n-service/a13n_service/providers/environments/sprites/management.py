@@ -183,8 +183,8 @@ else: raise RuntimeError('Desktop readiness timed out')
             self.state,
             NativeRuntime(self.backend, TokenCredential(api_key=self.token)),
         )
-        async with http_session(reference) as session:
-            description = await session.client.computer_describe(
+        async with http_session(reference) as binding:
+            description = await binding.session.client.computer_describe(
                 ComputerDescribeParams(context=EIPCallContext(operation_id="op-desktop-readiness"))
             )
             if not description.observe_ready or not description.input_ready or not description.targets:
