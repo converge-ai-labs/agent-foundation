@@ -38,7 +38,7 @@ dependencies = [
     "packaging>=24,<27",
     "prometheus-client>=0.21,<1",
     "pydantic[email]>=2.12,<3",
-    "pydantic-ai-slim==2.60.*",
+    "pydantic-ai-slim==2.61.*",
     "pydantic-core>=2.41,<3",
     "psycopg[binary]>=3.2,<4",
     "python-multipart>=0.0.32,<1",

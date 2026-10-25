@@ -1725,6 +1725,47 @@ async def test_stopped_mixed_stream_exports_partial_text(native_tool: bool, stop
     assert tail.parts == [TextPart(content="Already inspected. Next step pending.")]
 
 
+def test_interrupted_response_keeps_citations_received_after_part_end() -> None:
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, PartDeltaEvent, TextPartDelta, WebCitationSource
+
+    part = TextPart("Supported answer")
+    tracker = InterruptedResponseTracker()
+    tracker.observe(PartStartEvent(index=0, part=part), response_history_count=0)
+    tracker.observe(PartEndEvent(index=0, part=part), response_history_count=0)
+    citation = Citation(
+        [WebCitationSource("https://example.com/source", title="Source")],
+        anchor=ContentCitationAnchor(start=0, end=len(part.content)),
+    )
+    tracker.observe(
+        PartDeltaEvent(
+            index=0,
+            delta=TextPartDelta(
+                content_delta="",
+                provider_name="google",
+                provider_details={"citations": [{"confidence": 0.9}]},
+                citations_delta=[citation],
+            ),
+        ),
+        response_history_count=0,
+    )
+
+    normalized, closed = normalize_interrupted_history(
+        (ModelResponse(parts=[part], state="interrupted"),), response_tracker=tracker
+    )
+
+    assert closed == 0
+    assert len(normalized) == 1
+    assert normalized[0].parts == [
+        TextPart(
+            part.content,
+            provider_name="google",
+            provider_details={"citations": [{"confidence": 0.9}]},
+            citations=[citation],
+        )
+    ]
+    assert part.citations is None
+
+
 @pytest.mark.parametrize("observed", [False, True])
 @pytest.mark.parametrize("close_tool_calls", [False, True])
 def test_native_filter_preserves_finalized_parts_and_closes_only_complete_ordinary_calls(

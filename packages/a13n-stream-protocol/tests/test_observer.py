@@ -263,6 +263,58 @@ def test_thinking_metadata_delta_uses_native_json_serializer(callback: bool) -> 
     assert following[0].delta == " more"
 
 
+@pytest.mark.parametrize("ended", [False, True])
+@pytest.mark.parametrize("restore", [False, True])
+def test_citation_only_delta_preserves_payload_without_opening_text(ended: bool, restore: bool) -> None:
+    from a13n_stream_protocol.display import DisplayFold
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, WebCitationSource
+
+    observer = HarnessAguiObserver()
+    fold = DisplayFold("run-1")
+    part = TextPart("Supported answer", id="provider-text-id")
+    sources = [PartStartEvent(index=0, part=part)]
+    if ended:
+        sources.append(PartEndEvent(index=0, part=part))
+    for sequence, source in enumerate(sources):
+        fold.fold(
+            [event.model_dump(mode="json", by_alias=True) for event in observer.observe(_event(sequence, source))]
+        )
+    if restore:
+        observer = HarnessAguiObserver.restore(observer.export())
+        fold = DisplayFold.restore(fold.export())
+    before = dict(fold.items)
+    delta = TextPartDelta(
+        "",
+        provider_name="google",
+        provider_details={"citations": [{"confidence": 0.9}]},
+        citations_delta=[
+            Citation(
+                [WebCitationSource("https://example.com/source", title="Source")],
+                anchor=ContentCitationAnchor(start=0, end=len(part.content)),
+            )
+        ],
+    )
+    source = PartDeltaEvent(index=0, delta=delta)
+
+    (event,) = observer.observe(_event(2, source))
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == "a13n.pydantic_ai.part_delta"
+    assert event.value["event"] == TypeAdapter(PartDeltaEvent).dump_python(source, mode="json")
+    assert event.value["event"]["delta"]["citations_delta"][0]["sources"][0]["url"] == "https://example.com/source"
+    fold.fold([event.model_dump(mode="json", by_alias=True)])
+    assert {key: item for key, item in fold.items.items() if item.kind == "text_message"} == before
+    (observation,) = [item for item in fold.items.values() if item.kind == "observation"]
+    assert observation.state == "completed"
+    assert observation.content == {"name": event.name, "value": event.value}
+    assert len(fold.items) == 2
+    if not ended:
+        (following,) = observer.observe(_event(3, PartDeltaEvent(index=0, delta=TextPartDelta(" more"))))
+        assert isinstance(following, TextMessageContentEvent)
+        assert following.message_id == part.id
+        assert following.delta == " more"
+
+
 def test_capability_event_uses_nested_field_serializer() -> None:
     def merge_details(existing: dict[str, Any] | None) -> dict[str, Any]:
         pytest.fail("Observation must not execute the provider details callback")

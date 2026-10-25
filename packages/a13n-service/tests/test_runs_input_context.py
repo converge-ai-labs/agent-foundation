@@ -65,6 +65,24 @@ def test_imported_retry_keeps_native_outcome_without_application_metadata():
     assert result.metadata is None
 
 
+def test_imported_text_keeps_native_citations():
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, TextPart, WebCitationSource
+
+    citation = Citation(
+        [WebCitationSource("https://example.com/source", title="Source")],
+        anchor=ContentCitationAnchor(start=0, end=8),
+    )
+    exported = ModelMessagesTypeAdapter.dump_json([ModelResponse(parts=[TextPart("An answer", citations=[citation])])])
+    accepted = HISTORY.validate_json(exported)
+
+    seeded = initial(accepted)
+
+    part = seeded[0].parts[0]
+    assert isinstance(part, TextPart)
+    assert part.citations == [citation]
+    assert accepted[0]["parts"][0]["citations"][0]["sources"][0]["url"] == "https://example.com/source"
+
+
 def test_history_uses_native_messages_without_execution_state():
     history = initial(HISTORY.validate_python(HISTORY_INPUT))
     assert isinstance(history[0], ModelRequest)

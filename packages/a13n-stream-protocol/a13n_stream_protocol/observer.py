@@ -591,6 +591,8 @@ def _convert_part_delta(item: HarnessEvent, event: PartDeltaEvent, state: _Obser
     timestamp = _timestamp_ms(item)
     delta = event.delta
     if isinstance(delta, TextPartDelta):
+        if not delta.content_delta:
+            return []
         cursor, opened = _ensure_part_cursor(item, state, event.index, "text")
         events: list[Event] = []
         if opened:

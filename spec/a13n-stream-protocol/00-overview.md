@@ -174,7 +174,7 @@ Tool names and mapping-valued argument deltas can be incomplete during Pydantic 
 
 Provider-executed `NativeToolCallPart` starts establish tool-call identity for their shared `ToolCallPartDelta` observations, replacing any prior part at that index just like an ordinary tool-call start. Their start, delta, end, and native return observations remain `CUSTOM`; they do not manufacture a standard function-tool lifecycle. Their end releases the tracked part, and observer continuation preserves the identity of an in-progress native call.
 
-A text or reasoning part delta or end without a preceding start is normalized into a valid standard lifecycle by emitting the missing start from the information present in that same public event. A conflicting part kind or identity is a conversion error rather than a reason to rewrite prior events.
+A text or reasoning part delta or end with standard presentation content but no preceding start is normalized into a valid standard lifecycle by emitting the missing start from the information present in that same public event. Text deltas containing only metadata, including citations arriving after a part ends, retain their complete native payload through `CUSTOM` without opening or reopening a text lifecycle. A conflicting part kind or identity is a conversion error rather than a reason to rewrite prior events.
 
 ## Complete Custom Fallback
 

@@ -9,7 +9,7 @@ dependencies = [
     "a13n-harness",
     "fastmcp-slim[client]>=4.0,<5",
     "mcp>=2.2,<3",
-    "pydantic-ai-slim==2.60.*",
+    "pydantic-ai-slim==2.61.*",
 ]
 
 [project.scripts]

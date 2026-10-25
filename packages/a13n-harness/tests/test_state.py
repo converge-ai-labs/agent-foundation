@@ -70,6 +70,46 @@ def test_native_retry_and_run_instruction_parts_survive_state_roundtrip() -> Non
     assert isinstance(feedback, RetryFeedbackPart) and feedback.retry == parts[2].retry
 
 
+def test_text_citations_survive_state_roundtrip() -> None:
+    from pydantic_ai.messages import (
+        Citation,
+        ContentCitationAnchor,
+        DocumentCitationSource,
+        MarkerCitationAnchor,
+        ModelResponse,
+        TextPart,
+        WebCitationSource,
+    )
+
+    part = TextPart(
+        "Evidence [1]",
+        provider_name="anthropic",
+        provider_details={"citations": [{"document_index": 0, "start_page_number": 1}]},
+        citations=[
+            Citation(
+                [DocumentCitationSource(document_id="doc-1", title="Report", excerpts=["Evidence"])],
+                anchor=ContentCitationAnchor(start=0, end=8),
+            ),
+            Citation(
+                [WebCitationSource("https://example.com/report", title="Report")],
+                anchor=MarkerCitationAnchor(start=9, end=12),
+            ),
+            Citation([WebCitationSource("https://example.com/background")]),
+        ],
+    )
+    state = HarnessState.new(message_history=(ModelResponse(parts=[part]),))
+
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+
+    assert restored.message_history == state.message_history
+    response = restored.message_history[0]
+    assert isinstance(response, ModelResponse)
+    restored_part = response.parts[0]
+    assert isinstance(restored_part, TextPart)
+    assert restored_part.citations == part.citations
+    assert restored_part.provider_details == part.provider_details
+
+
 class CounterState(BaseModel):
     value: int
 
