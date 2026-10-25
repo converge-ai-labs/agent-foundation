@@ -135,6 +135,7 @@ class LocalEnvdExecution(ExecutionBackend):
                 session_source=DeviceEIPSessionSource(device, session_recovery=self._session_recovery),
                 execution_id=execution_id,
                 device_id=device.descriptor.device_id,
+                path_style=device.descriptor.path_style,
                 working_directory=self._configuration.working_directory,
                 required_methods=frozenset(self._configuration.required_methods),
                 egress=await resolve_egress(self._configuration.egress, self._runtime.credential_resolver),

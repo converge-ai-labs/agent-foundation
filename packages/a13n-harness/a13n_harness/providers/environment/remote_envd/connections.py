@@ -8,11 +8,11 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection, EIPSession
+from a13n_envd_client import AcceptedWebSocketTransport, EIPDeviceConnection
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 
-from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.attachments import DeviceEIPSessionSource, EIPSessionBinding
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
@@ -178,7 +178,7 @@ class WebSocketEnvdConnections:
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
         session_recovery: EnvdSessionRecovery | None = None,
-    ) -> AsyncGenerator[EIPSession]:
+    ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id, timeout=timeout)
         async with DeviceEIPSessionSource(device, session_recovery=session_recovery).open_session(
             expected_device_id=expected_device_id,
@@ -187,7 +187,7 @@ class WebSocketEnvdConnections:
             egress=await resolve_egress(egress, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
-            yield session
+            yield EIPSessionBinding(session, device.descriptor)
 
     async def close(self) -> None:
         """Fence admission and release all SDK-owned attachment tasks and sessions."""

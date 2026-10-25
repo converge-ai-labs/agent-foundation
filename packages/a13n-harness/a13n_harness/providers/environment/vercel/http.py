@@ -3,9 +3,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.native.configuration import NamedTargetState
@@ -32,7 +32,7 @@ class HttpReference(VercelReference):
 @asynccontextmanager
 async def http_session(
     reference: VercelReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncIterator[EIPSessionBinding]:
     try:
         session_id = await reference.running_session()
         connection = HttpEnvdConnectionConfiguration(

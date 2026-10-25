@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 from a13n_envd_client import EIPSessionStateError
+from a13n_envd_client.eip import v1 as eip
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
@@ -36,7 +38,7 @@ def adapter(request, tmp_path):
 
     @asynccontextmanager
     async def session():
-        yield SimpleNamespace()
+        yield EIPSessionBinding(SimpleNamespace(), SimpleNamespace(path_style=eip.PathStyle.POSIX))
 
     return RemoteEnvdExecution(
         provider_key="http_envd",
@@ -114,7 +116,6 @@ async def test_prepare_failure_stays_primary_when_cleanup_also_fails(adapter, mo
 async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure):
     from unittest.mock import AsyncMock
 
-    from a13n_envd_client.eip import v1 as eip
     from a13n_harness import RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
 
@@ -149,7 +150,6 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
         )
     )
     session = SimpleNamespace(
-        device_descriptor=SimpleNamespace(path_style=eip.PathStyle.POSIX),
         descriptor=SimpleNamespace(
             device_id="device",
             session_id="session",
@@ -173,7 +173,7 @@ async def test_eip_readiness_recovers_through_real_adapter_and_aggregate(failure
     @asynccontextmanager
     async def scope():
         try:
-            yield session
+            yield EIPSessionBinding(session, SimpleNamespace(path_style=eip.PathStyle.POSIX))
         finally:
             closed.append(True)
 

@@ -588,7 +588,8 @@ def test_eip_zoom_advertisement_requires_exact_method_and_reader_cleanup(methods
     )
     assert _convert_descriptor(descriptor).permissions.operations == expected
     adapter = EIPEnvironmentSession(
-        session=SimpleNamespace(descriptor=descriptor, device_descriptor=SimpleNamespace(path_style=path_style)),
+        session=SimpleNamespace(descriptor=descriptor),
+        path_style=eip.PathStyle(path_style),
         provider_key="http_envd",
         environment_id="env-test",
         execution_id="exec-test",

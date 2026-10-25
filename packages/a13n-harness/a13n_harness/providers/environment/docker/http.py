@@ -6,9 +6,9 @@ import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.errors import provider_error
 from a13n_harness.environment.models import EnvironmentError
@@ -82,7 +82,7 @@ async def http_runtime(
 @asynccontextmanager
 async def http_session(
     reference: DockerReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncGenerator[EIPSession]:
+) -> AsyncGenerator[EIPSessionBinding]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference.allocation_id,

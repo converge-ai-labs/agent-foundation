@@ -3,9 +3,9 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
@@ -71,7 +71,7 @@ async def http_runtime(
 @asynccontextmanager
 async def http_session(
     reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncGenerator[EIPSession]:
+) -> AsyncGenerator[EIPSessionBinding]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference._native_id,

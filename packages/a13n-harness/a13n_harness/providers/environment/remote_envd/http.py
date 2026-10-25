@@ -8,12 +8,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
-from a13n_envd_client import EIPDeviceConnection, EIPSession, HttpTransport
+from a13n_envd_client import EIPDeviceConnection, HttpTransport
 from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, DirectoryListResult, ErrorType
 from a13n_envd_client.errors import EIPMethodError
 from pydantic import BaseModel
 
-from a13n_harness.environment.attachments import DeviceEIPSessionSource
+from a13n_harness.environment.attachments import DeviceEIPSessionSource, EIPSessionBinding
 from a13n_harness.environment.envd_policy import (
     EnvdBoundaryRequirement,
     EnvdCredentialResolver,
@@ -123,7 +123,7 @@ class HttpEnvdProviderRuntime:
         egress: EnvdEgressConfiguration | None = None,
         expected_boundary: EnvdBoundaryRequirement | None = None,
         session_recovery: EnvdSessionRecovery | None = None,
-    ) -> AsyncGenerator[EIPSession]:
+    ) -> AsyncGenerator[EIPSessionBinding]:
         device = await self.acquire_device(expected_device_id=expected_device_id)
         async with DeviceEIPSessionSource(
             device, target=self.configuration.endpoint, session_recovery=session_recovery
@@ -134,7 +134,7 @@ class HttpEnvdProviderRuntime:
             egress=await resolve_egress(egress, self.credential_resolver),
             expected_boundary=expected_boundary,
         ) as session:
-            yield session
+            yield EIPSessionBinding(session, device.descriptor)
 
     async def close(self) -> None:
         if self._close_task is None:

@@ -5,11 +5,11 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
-from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.native.errors import failure
@@ -102,7 +102,7 @@ async def private_tunnel(reference: SpritesReference) -> AsyncIterator[str]:
 @asynccontextmanager
 async def http_session(
     reference: SpritesReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncIterator[EIPSessionBinding]:
     try:
         reference.require_target()
         await reference.backend._endpoint_policy.validate("https://api.sprites.dev")

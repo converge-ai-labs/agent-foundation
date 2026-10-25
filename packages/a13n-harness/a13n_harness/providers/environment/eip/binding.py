@@ -77,6 +77,7 @@ async def open_eip_environment(
     session_source: EIPSessionSource,
     execution_id: str,
     device_id: str,
+    path_style: eip.PathStyle,
     working_directory: str | None = None,
     required_methods: frozenset[str] = frozenset(),
     egress: eip.EgressPolicy | None = None,
@@ -98,6 +99,7 @@ async def open_eip_environment(
             )
         environment = EIPEnvironmentSession(
             session=session,
+            path_style=path_style,
             provider_key=provider_key,
             environment_id=environment_id,
             execution_id=execution_id,
@@ -115,6 +117,7 @@ class EIPEnvironmentSession:
         self,
         *,
         session: EIPSession,
+        path_style: eip.PathStyle,
         provider_key: str,
         environment_id: str,
         execution_id: str,
@@ -124,7 +127,7 @@ class EIPEnvironmentSession:
         self._provider_key = provider_key
         self._environment_id = environment_id
         self._descriptor = _convert_descriptor(session.descriptor).model_copy(
-            update={"environment_case_sensitive": session.device_descriptor.path_style != eip.PathStyle.WINDOWS}
+            update={"environment_case_sensitive": path_style != eip.PathStyle.WINDOWS}
         )
         self._generation = self._descriptor.generation
         methods = set(session.descriptor.available_methods)

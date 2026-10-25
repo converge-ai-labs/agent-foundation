@@ -243,7 +243,8 @@ async def test_http_runtime_replaces_stale_connection_on_next_explicit_use(
             assert replacement is not first
             with pytest.raises(EIPClientError):
                 await old_session.readiness()
-            async with runtime.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+            async with runtime.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as binding:
+                session = binding.session
                 # A missing directory is a binding failure, not a lost Device.
                 with pytest.raises(EIPClientError):
                     async with runtime.open_session(
@@ -451,7 +452,8 @@ async def test_websocket_concurrent_scopes_keep_one_carrier_and_independent_proc
                     await processes.release(started.process.handle)
                     await second.close()
                     assert hub._attachments[NATIVE_ID] is attachment
-                    async with hub.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+                    async with hub.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as binding:
+                        session = binding.session
                         assert (await session.readiness()).ready
                 finally:
                     await asyncio.gather(*(environment.close() for environment in environments))
@@ -527,7 +529,8 @@ async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary
         restored = http_runtime(endpoint)
         async with restored.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-        ) as session:
+        ) as binding:
+            session = binding.session
             assert (session.session_id == original.session_id) is not closed
             assert (await session.readiness()).ready
             assert recovery.state is not None and recovery.state.descriptor == session.descriptor
@@ -552,7 +555,8 @@ async def test_http_recovery_late_close_fails_without_reopening_or_replaying(bin
         with pytest.raises(EIPClientError):
             async with restored.open_session(
                 expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-            ) as session:
+            ) as binding:
+                session = binding.session
                 assert session.session_id == original.session_id
                 await original.close()
                 async with session.open_writer(
@@ -580,7 +584,8 @@ async def test_http_recovery_after_daemon_restart_opens_new_generation(binary, t
         restored = http_runtime(endpoint)
         async with restored.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-        ) as session:
+        ) as binding:
+            session = binding.session
             assert session.descriptor.generation != saved.descriptor.generation
             assert session.session_id != saved.descriptor.session_id
             assert (await session.readiness()).ready
@@ -728,7 +733,8 @@ async def test_session_recovery_checks_current_binding_before_attach(
                     pytest.fail("Changed boundary must fail")
             opened.assert_not_awaited()
         else:
-            async with scope as session:
+            async with scope as binding:
+                session = binding.session
                 assert session.session_id != original.session_id
             opened.assert_awaited_once()
         attach.assert_not_awaited()
@@ -765,7 +771,7 @@ async def test_session_recovery_unavailable_carrier_leaves_old_session_alone(
         async with runtime.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
         ) as fresh:
-            assert fresh.session_id != original.session_id
+            assert fresh.session.session_id != original.session_id
         assert (await original.readiness()).ready
         assert recovery.state is None
 
