@@ -43,7 +43,7 @@ def test_pydantic_ai_dependencies_pin_the_reviewed_minor_line(manifest: str) -> 
     project = tomllib.loads((REPOSITORY_ROOT / manifest).read_text())["project"]
     requirements = [requirement for requirement in project["dependencies"] if requirement.startswith("pydantic-ai")]
     assert len(requirements) == 1
-    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.60\.\*", requirements[0])
+    assert re.fullmatch(r"pydantic-ai(?:-slim)?(?:\[[^\]]+\])?==2\.61\.\*", requirements[0])
 
 
 def copy_release_files(destination: Path) -> None:
