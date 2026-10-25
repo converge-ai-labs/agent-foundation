@@ -45,10 +45,11 @@ it("counts only redeemable vouchers and finds the earliest known future expiry",
   };
   const now = Date.parse("2030-01-01T00:00:00Z");
   expect(availableVouchers(credits, now).map((item) => item.id)).toEqual([
-    "later",
     "first",
+    "later",
     "undated",
   ]);
+  expect(credits.credits[0].id).toBe("later");
   expect(
     voucherSummary(
       { account_id: "a", plan_type: "plus", reset_credits: credits },

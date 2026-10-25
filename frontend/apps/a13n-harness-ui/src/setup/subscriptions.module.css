@@ -29,7 +29,7 @@
 }
 .accountCard {
   min-width: 0;
-  padding: 16px 20px;
+  padding: 20px 24px;
   background: var(--a13n-surface);
   border-radius: 10px;
 }
@@ -86,12 +86,31 @@
 .status[data-connected="true"]::before {
   background: var(--a13n-success);
 }
-.balanceSummary,
+.balanceSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.balanceCell,
 .voucherSummary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 16px;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  min-width: 0;
+  gap: 6px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.balanceCell > button {
+  margin-left: -8px;
+}
+.balanceValue {
+  color: var(--a13n-text);
+  font-size: 15px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .summaryItem {
   gap: 6px;
@@ -137,8 +156,8 @@
 }
 .usage {
   display: grid;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 16px;
+  margin-top: 16px;
   font-variant-numeric: tabular-nums;
 }
 .quotaGroup {
@@ -213,6 +232,45 @@
   padding: 3px 7px;
   border-radius: 6px;
 }
+.voucherList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.voucherRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  background: var(--a13n-surface);
+  border-radius: 8px;
+}
+.voucherRow > button {
+  flex-shrink: 0;
+}
+.voucherDetails {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.voucherDetails strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.voucherDetails p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.voucherDetails > span {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
 .form {
   display: grid;
   gap: 16px;
@@ -223,12 +281,100 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-.member > span {
+.member > span:not(.memberNumber) {
   flex: 1;
   min-width: 100px;
 }
 .member input {
   width: 72px;
+}
+.providerSection {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.providerSection + .providerSection {
+  margin-top: 20px;
+}
+.providerHeading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.providerHeading h3,
+.groupFields h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.providerHeading > span {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.groupDetail {
+  display: grid;
+  gap: 24px;
+}
+.back {
+  justify-self: start;
+  margin-left: -12px;
+}
+.groupFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: start;
+  gap: 32px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+}
+.groupFields > div {
+  min-width: 0;
+}
+.member {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.memberNumber {
+  width: 24px;
+  color: var(--a13n-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.editorFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px 0;
+}
+.help {
+  margin: 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+}
+.modelLinks {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.modelLinks a {
+  color: var(--a13n-text);
+  overflow-wrap: anywhere;
+}
+.modelLinks a:hover {
+  text-decoration: underline;
+}
+.empty {
+  background: var(--a13n-surface);
+  padding: 24px;
+  border-radius: 12px;
+  color: var(--a13n-secondary);
 }
 @media (max-width: 700px) {
   .accountCard {
@@ -237,8 +383,31 @@
   .accountIdentity {
     gap: 8px;
   }
-  .quotaWindows {
-    column-gap: 16px;
+  .quotaWindows,
+  .balanceSummary {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .groupFields {
+    grid-template-columns: 1fr;
+  }
+  .member {
+    display: grid;
+    grid-template-columns: 24px repeat(3, minmax(0, 1fr));
+  }
+  .member > span:not(.memberNumber) {
+    grid-column: 2 / -1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .member input {
+    grid-column: 2 / -1;
+  }
+  .member > button:first-of-type {
+    grid-column: 2;
+  }
+  .heading {
+    flex-wrap: wrap;
   }
   .row {
     align-items: flex-start;
@@ -250,4 +419,12 @@
   .heading {
     align-items: flex-start;
   }
+}
+
+.memberField {
+  width: 100%;
+  min-width: 0;
+}
+.memberField > div {
+  width: 100%;
 }

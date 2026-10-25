@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
@@ -7,7 +8,8 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
 import accountStyles from "./accounts.module.css";
-import { SubscriptionAccounts } from "./subscriptions";
+import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
+import { CredentialKeys } from "./credential-keys";
 import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
@@ -585,114 +587,9 @@ export function ProviderAccount({
   );
 }
 
-export function CredentialKeys() {
-  const { client } = useTransport();
-  const queries = useQueryClient();
-  const [reference, setReference] = useState("key-primary");
-  const [secret, setSecret] = useState("");
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [saved, setSaved] = useState("");
-  const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
-  });
-  const save = useMutation({
-    mutationFn: (body: Schema<"ApiKeyInput">) =>
-      result(client.PUT("/api/auth/keys", { body })),
-    onSuccess: (_, body) => {
-      setSecret("");
-      setSaved(`Saved ${body.credential_ref}.`);
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-  });
-  const remove = useMutation({
-    mutationFn: (reference: string) =>
-      result(
-        client.DELETE("/api/auth/keys/{reference}", {
-          params: { path: { reference } },
-        }),
-      ),
-    onSuccess: () => {
-      setDeleting(null);
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-  });
-  return (
-    <Panel title="Model API keys">
-      <p>
-        Keys are stored on the server. Model resources use a credential
-        reference; these keys are separate from your browser's instance access
-        key.
-      </p>
-      <ErrorNotice error={keys.error || save.error || remove.error} />
-      <form
-        className={styles.stack}
-        onSubmit={(event) => {
-          event.preventDefault();
-          setSaved("");
-          save.mutate({ credential_ref: reference, key: secret });
-        }}
-      >
-        <div className={styles.formGrid}>
-          <TextField
-            label="Saved key name"
-            value={reference}
-            onChange={setReference}
-          />
-          <TextField
-            label="Provider API key"
-            type="password"
-            value={secret}
-            onChange={setSecret}
-          />
-        </div>
-        <Button
-          type="submit"
-          loading={save.isPending}
-          disabled={!secret || !reference}
-        >
-          Save key
-        </Button>
-      </form>
-      {saved && <p role="status">{saved}</p>}
-      <div className={styles.resourceList}>
-        {keys.data?.map((key) => (
-          <div className={styles.resourceRow} key={key.credential_ref}>
-            <strong>{key.credential_ref}</strong>
-            <Button
-              variant="ghost"
-              onClick={() => setDeleting(key.credential_ref)}
-            >
-              Remove
-            </Button>
-          </div>
-        ))}
-      </div>
-      <ModalFrame
-        open={!!deleting}
-        onOpenChange={(open) => {
-          if (!open) setDeleting(null);
-        }}
-        title="Remove saved key?"
-        description="Models referencing this credential will need a replacement key before their next run."
-        closeLabel="Cancel"
-        footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => remove.mutate(deleting!)}
-          >
-            Remove key
-          </Button>
-        }
-      >
-        <p>{deleting}</p>
-        <ErrorNotice error={remove.error} />
-      </ModalFrame>
-    </Panel>
-  );
-}
 export function AccountsPage() {
+  const [params] = useSearchParams();
+  const tab = params.get("tab") ?? "accounts";
   const { client } = useTransport();
   const choices = useQuery({
     queryKey: ["model-choices"],
@@ -700,37 +597,60 @@ export function AccountsPage() {
       result(client.GET("/api/models/choices", { signal })),
   });
   return (
-    <>
-      <PageHeader title="Accounts & API keys" />
+    <div className={accountStyles.page}>
+      <PageHeader
+        title="Accounts & API keys"
+        description="Manage subscription access, account routing, and saved model credentials."
+      />
+      <nav className={accountStyles.tabs} aria-label="Account settings">
+        {[
+          ["accounts", "Subscription accounts"],
+          ["groups", "Account groups"],
+          ["keys", "API keys"],
+        ].map(([value, label]) => (
+          <Link
+            key={value}
+            to={`?tab=${value}`}
+            aria-current={tab === value ? "page" : undefined}
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
       <ErrorNotice error={choices.error} />
-      <SubscriptionAccounts
-        connections={
-          choices.data?.connections?.flatMap((item) =>
-            item.account ? [item.account] : [],
-          ) ?? []
-        }
-        renderConnection={(connection) => (
-          <ProviderAccount
-            key={connection.provider}
-            connection={connection}
-            inline
-          />
-        )}
-        renderLogin={(account) => {
-          const connection = choices.data?.connections?.find(
-            (item) => item.account?.provider === account.provider,
-          )?.account;
-          return connection ? (
+      {tab !== "groups" && tab !== "keys" && (
+        <SubscriptionAccounts
+          connections={
+            choices.data?.connections?.flatMap((item) =>
+              item.account ? [item.account] : [],
+            ) ?? []
+          }
+          renderConnection={(connection) => (
             <ProviderAccount
-              key={account.id}
+              key={connection.provider}
               connection={connection}
-              accountId={account.id}
               inline
             />
-          ) : null;
-        }}
-      />
-      <CredentialKeys />
-    </>
+          )}
+          renderLogin={(account) => {
+            const connection = choices.data?.connections?.find(
+              (item) => item.account?.provider === account.provider,
+            )?.account;
+            return connection ? (
+              <ProviderAccount
+                key={account.id}
+                connection={connection}
+                accountId={account.id}
+                inline
+              />
+            ) : null;
+          }}
+        />
+      )}
+      {tab === "groups" && <AccountGroups />}
+      {tab === "keys" && (
+        <CredentialKeys connections={choices.data?.connections ?? []} />
+      )}
+    </div>
   );
 }

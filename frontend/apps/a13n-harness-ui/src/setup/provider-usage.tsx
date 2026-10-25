@@ -59,23 +59,34 @@ export function GrokAllowance({
       </div>
       <div className={styles.balanceSummary}>
         {billing?.is_unified_billing_user === true && (
-          <span>Shared usage pool</span>
+          <div className={styles.balanceCell}>
+            <span>Billing</span>
+            <strong className={styles.balanceValue}>Shared usage pool</strong>
+          </div>
         )}
         {billing?.prepaid_balance && (
-          <span className={styles.summaryItem}>
-            <WalletIcon size={15} aria-hidden />
-            Purchased credits ·{" "}
-            {dollars(Math.abs(billing.prepaid_balance.val ?? 0))}
-          </span>
+          <div className={styles.balanceCell}>
+            <span className={styles.summaryItem}>
+              <WalletIcon size={15} aria-hidden />
+              Purchased credits
+            </span>
+            <strong className={styles.balanceValue}>
+              {billing.prepaid_balance.val == null
+                ? "Unavailable"
+                : dollars(Math.abs(billing.prepaid_balance.val))}
+            </strong>
+          </div>
         )}
         {billing?.is_unified_billing_user === false &&
           billing.on_demand_cap && (
-            <span>
-              Pay as you go ·{" "}
-              {billing.on_demand_cap.val
-                ? `${billing.on_demand_used ? dollars(billing.on_demand_used.val ?? 0) : "Usage unknown"} / ${dollars(billing.on_demand_cap.val)} cap`
-                : "Disabled"}
-            </span>
+            <div className={styles.balanceCell}>
+              <span>Pay as you go</span>
+              <strong className={styles.balanceValue}>
+                {billing.on_demand_cap.val
+                  ? `${billing.on_demand_used ? dollars(billing.on_demand_used.val ?? 0) : "Usage unknown"} / ${dollars(billing.on_demand_cap.val)} cap`
+                  : "Disabled"}
+              </strong>
+            </div>
           )}
       </div>
     </>

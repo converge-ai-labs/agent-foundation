@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import userEvent from "@testing-library/user-event";
 import { AccountsPage } from "./accounts";
 import { createTransport } from "../transport/client";
@@ -102,7 +103,9 @@ function mount(
   render(
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("", () => {})}>
-        <AccountsPage />
+        <MemoryRouter>
+          <AccountsPage />
+        </MemoryRouter>
       </TransportContext>
     </QueryClientProvider>,
   );

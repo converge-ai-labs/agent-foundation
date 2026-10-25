@@ -6,10 +6,12 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SubscriptionAccounts } from "./subscriptions";
-import { createTransport } from "../transport/client";
+import { MemoryRouter } from "react-router";
+import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
+import { createTransport, type Schema } from "../transport/client";
 import { TransportContext } from "../transport/context";
 
 const account = {
@@ -32,7 +34,30 @@ const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
     headers: { "Content-Type": "application/json" },
   });
-function mount() {
+const voucherCredits: Schema<"ResetCredit">[] = [
+  { id: "undated", status: "available", reset_type: "codex_rate_limits" },
+  {
+    id: "later",
+    status: "available",
+    reset_type: "codex_rate_limits",
+    title: "Later reset",
+    expires_at: "2099-02-02T00:00:00Z",
+  },
+  {
+    id: "voucher-one",
+    status: "available",
+    reset_type: "codex_rate_limits",
+    title: "Weekly reset",
+    description:
+      "Thanks for using Codex! You've been granted one free rate limit reset.",
+    expires_at: "2099-02-01T00:00:00Z",
+  },
+];
+function mount({
+  credits = voucherCredits,
+  failResetOnce = false,
+  groups = false,
+} = {}) {
   const writes: { path: string; method: string; body: any }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -45,6 +70,13 @@ function mount() {
           method: request.method,
           body: body ? JSON.parse(body) : null,
         });
+        if (path.endsWith("/reset") && failResetOnce) {
+          failResetOnce = false;
+          return new Response(JSON.stringify({ detail: "Outcome unknown" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         return json(
           path.endsWith("/reset")
             ? { code: "reset", windows_reset: 1 }
@@ -80,15 +112,8 @@ function mount() {
         return json({
           account_id: "upstream-work",
           reset_credits: {
-            available_count: 1,
-            credits: [
-              {
-                id: "voucher-one",
-                status: "available",
-                reset_type: "codex_rate_limits",
-                title: "Weekly reset",
-              },
-            ],
+            available_count: credits.length,
+            credits,
           },
         });
       throw new Error(`Unexpected request: ${request.method} ${path}`);
@@ -101,15 +126,21 @@ function mount() {
       }
     >
       <TransportContext value={createTransport("", () => {})}>
-        <SubscriptionAccounts
-          connections={[
-            { provider: "codex", label: "Codex", login_methods: ["device"] },
-          ]}
-          renderConnection={(connection) => (
-            <p>Connect: {connection.provider}</p>
-          )}
-          renderLogin={(item) => <p>Login target: {item.id}</p>}
-        />
+        {groups ? (
+          <MemoryRouter initialEntries={["/?tab=groups"]}>
+            <AccountGroups />
+          </MemoryRouter>
+        ) : (
+          <SubscriptionAccounts
+            connections={[
+              { provider: "codex", label: "Codex", login_methods: ["device"] },
+            ]}
+            renderConnection={(connection) => (
+              <p>Connect: {connection.provider}</p>
+            )}
+            renderLogin={(item) => <p>Login target: {item.id}</p>}
+          />
+        )}
       </TransportContext>
     </QueryClientProvider>,
   );
@@ -138,8 +169,9 @@ it("refreshes the selected account and opens login for the newly created native 
 });
 
 it("saves a group to its owning source path with credits still opt-in", async () => {
-  const writes = mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Edit group" }));
+  const writes = mount({ groups: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Manage group" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
   fireEvent.change(screen.getByLabelText("Group name"), {
     target: { value: "Team" },
   });
@@ -161,7 +193,7 @@ it("saves a group to its owning source path with credits still opt-in", async ()
   });
 });
 
-it("requires voucher selection and a separate confirmation before redemption", async () => {
+it("lists vouchers by expiry and requires confirmation after choosing Use", async () => {
   const writes = mount();
   fireEvent.click(
     await screen.findByRole("button", { name: "Manage account" }),
@@ -169,13 +201,25 @@ it("requires voucher selection and a separate confirmation before redemption", a
   fireEvent.click(
     await screen.findByRole("menuitem", { name: "Reset voucher…" }),
   );
-  fireEvent.click(await screen.findByRole("combobox", { name: "Voucher" }));
-  fireEvent.click(await screen.findByRole("option", { name: /Weekly reset/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Review redemption" }));
+  const list = await screen.findByRole("list", {
+    name: "Available reset vouchers",
+  });
+  const rows = within(list).getAllByRole("listitem");
+  expect(rows.map((row) => row.querySelector("strong")?.textContent)).toEqual([
+    "Weekly reset",
+    "Later reset",
+    "Reset voucher",
+  ]);
+  expect(
+    within(rows[0]).getByText(voucherCredits[2].description!),
+  ).toBeTruthy();
+  fireEvent.click(within(rows[0]).getByRole("button", { name: "Use" }));
+  expect(screen.getByText(/Account: Work · upstream-work/)).toBeTruthy();
   expect(writes).toHaveLength(0);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Confirm redeem voucher" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(writes).toHaveLength(0);
+  fireEvent.click(screen.getAllByRole("button", { name: "Use" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm use voucher" }));
   await screen.findByText(/1 windows reset/);
   expect(writes).toHaveLength(1);
   expect(writes[0]).toMatchObject({
@@ -183,4 +227,44 @@ it("requires voucher selection and a separate confirmation before redemption", a
     body: { account_id: "upstream-work", credit_id: "voucher-one" },
   });
   expect(writes[0].body.redeem_request_id).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Use" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Confirm use voucher" }),
+  ).toBeNull();
+});
+
+it("retries an uncertain redemption with the same account, voucher, and request ID", async () => {
+  const writes = mount({ failResetOnce: true });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Reset voucher…" }),
+  );
+  fireEvent.click((await screen.findAllByRole("button", { name: "Use" }))[0]);
+  fireEvent.click(screen.getByRole("button", { name: "Confirm use voucher" }));
+  const retry = await screen.findByRole("button", {
+    name: "Retry use voucher",
+  });
+  expect(
+    (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.click(retry);
+  await screen.findByText(/1 windows reset/);
+  expect(writes).toHaveLength(2);
+  expect(writes[1]).toEqual(writes[0]);
+});
+
+it("shows an empty state without a redemption action when no vouchers are available", async () => {
+  const writes = mount({ credits: [] });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Manage account" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "Reset voucher…" }),
+  );
+  await screen.findByText("No available reset vouchers.");
+  expect(screen.queryByRole("button", { name: "Use" })).toBeNull();
+  expect(writes).toHaveLength(0);
 });

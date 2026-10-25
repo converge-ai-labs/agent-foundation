@@ -86,7 +86,9 @@ it("renders Grok allowance and purchased dollars without Codex windows or vouche
   expect(
     screen.getByRole("meter", { name: "Weekly used" }).getAttribute("value"),
   ).toBe("99.994");
-  expect(screen.getByText(/Purchased credits.*15.00/)).toBeTruthy();
+  expect(
+    screen.getByText("Purchased credits").parentElement?.textContent,
+  ).toMatch(/15.00/);
   expect(screen.queryByText(/voucher/i)).toBeNull();
 });
 

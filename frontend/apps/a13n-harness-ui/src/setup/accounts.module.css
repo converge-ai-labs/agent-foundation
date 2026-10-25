@@ -127,3 +127,36 @@
     font-size: 20px;
   }
 }
+
+.page {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.tabs {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 0;
+  overflow-x: auto;
+}
+.tabs a {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  padding: 8px 0 12px;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.tabs a[aria-current="page"] {
+  color: var(--a13n-text);
+  font-weight: 500;
+  border-bottom-color: var(--a13n-text);
+}
+.tabs a:hover {
+  color: var(--a13n-text);
+}
+@media (max-width: 600px) {
+  .tabs {
+    gap: 16px;
+  }
+}

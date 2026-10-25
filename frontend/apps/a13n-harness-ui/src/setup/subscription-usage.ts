@@ -14,12 +14,18 @@ export function availableVouchers(
   credits: Schema<"ResetCredits"> | null | undefined,
   now = Date.now(),
 ) {
-  return (credits?.credits ?? []).filter(
-    (item) =>
-      item.status === "available" &&
-      item.reset_type === "codex_rate_limits" &&
-      (!item.expires_at || Date.parse(item.expires_at) > now),
-  );
+  return (credits?.credits ?? [])
+    .filter(
+      (item) =>
+        item.status === "available" &&
+        item.reset_type === "codex_rate_limits" &&
+        (!item.expires_at || Date.parse(item.expires_at) > now),
+    )
+    .sort(
+      (a, b) =>
+        (a.expires_at ? Date.parse(a.expires_at) : Infinity) -
+        (b.expires_at ? Date.parse(b.expires_at) : Infinity),
+    );
 }
 
 export function voucherSummary(

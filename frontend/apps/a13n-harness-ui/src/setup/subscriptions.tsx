@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router";
 import {
   useMutation,
   useQueries,
@@ -19,7 +20,9 @@ import {
   ModalFrame,
 } from "a13n-ui";
 import {
+  ArrowLeftIcon,
   ArrowsClockwiseIcon,
+  CaretRightIcon,
   DotsThreeIcon,
   KeyIcon,
   PauseIcon,
@@ -158,7 +161,13 @@ function VoucherSummary({
   );
 }
 
-export function AccountUsage({ view }: { view: AccountView }) {
+export function AccountUsage({
+  view,
+  onVouchers,
+}: {
+  view: AccountView;
+  onVouchers?: () => void;
+}) {
   const observed = view.usage.usage;
   const usage = observed && "account_id" in observed ? observed : null;
   if (view.account.provider === "grok" || observed?.provider === "grok") {
@@ -199,16 +208,34 @@ export function AccountUsage({ view }: { view: AccountView }) {
         <span>Workspace spending limit reached</span>
       )}
       <div className={styles.balanceSummary}>
-        <VoucherSummary usage={usage} />
+        <div className={styles.balanceCell}>
+          <VoucherSummary usage={usage} />
+          {onVouchers && (
+            <Button variant="ghost" size="sm" onClick={onVouchers}>
+              View vouchers <CaretRightIcon />
+            </Button>
+          )}
+        </div>
         {usage?.credits && (
-          <span className={styles.summaryItem}>
-            <WalletIcon size={15} aria-hidden />
-            Credits ·{" "}
-            {usage.credits.unlimited
-              ? "Unlimited"
-              : (usage.credits.balance ??
-                (usage.credits.has_credits ? "Available" : "None"))}
-          </span>
+          <div className={styles.balanceCell}>
+            <span className={styles.summaryItem}>
+              <WalletIcon size={15} aria-hidden /> Rechargeable credits
+            </span>
+            <strong
+              className={styles.balanceValue}
+              title={usage.credits.balance ?? undefined}
+            >
+              {usage.credits.unlimited
+                ? "Unlimited"
+                : usage.credits.balance != null
+                  ? Number(usage.credits.balance).toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })
+                  : usage.credits.has_credits
+                    ? "Available"
+                    : "None"}
+            </strong>
+          </div>
         )}
       </div>
       <UsageFreshness snapshot={view.usage} />
@@ -292,7 +319,6 @@ export function SubscriptionAccounts({
   const [login, setLogin] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
   const [reset, setReset] = useState<Account | null>(null);
-  const [group, setGroup] = useState<Group | "new" | null>(null);
   const [filter, setFilter] = useState("");
   const invalidate = () =>
     queries.invalidateQueries({ queryKey: ["subscriptions"] });
@@ -414,123 +440,158 @@ export function SubscriptionAccounts({
       />
       {catalog.isPending && <p role="status">Loading accounts…</p>}
       <div className={styles.rows}>
-        {accounts
-          .filter(({ account }) =>
-            `${account.name} ${account.provider}`
-              .toLowerCase()
-              .includes(filter.toLowerCase()),
-          )
-          .map((view) => {
-            const { account, authentication } = view;
-            return (
-              <article key={account.id} className={styles.accountCard}>
-                <header className={styles.accountHeader}>
-                  <div className={styles.accountIdentity}>
-                    <BrandIcon
-                      identity={account.provider === "codex" ? "openai" : "xai"}
-                      size={24}
-                    />
-                    <div className={styles.identity}>
-                      <div className={styles.accountName}>
-                        <strong>{account.name}</strong>
-                        {view.usage.usage &&
-                          "plan_type" in view.usage.usage &&
-                          view.usage.usage.plan_type !== "unknown" && (
-                            <span className={styles.plan}>
-                              {view.usage.usage.plan_type}
+        {(["codex", "grok"] as const).map((provider) => {
+          const providerAccounts = accounts.filter(
+            ({ account }) =>
+              account.provider === provider &&
+              `${account.name} ${account.provider}`
+                .toLowerCase()
+                .includes(filter.toLowerCase()),
+          );
+          if (!providerAccounts.length) return null;
+          return (
+            <section
+              key={provider}
+              className={styles.providerSection}
+              aria-label={`${provider === "codex" ? "Codex" : "Grok"} accounts`}
+            >
+              <header className={styles.providerHeading}>
+                <BrandIcon
+                  identity={provider === "codex" ? "openai" : "xai"}
+                  size={20}
+                />
+                <h3>{provider === "codex" ? "Codex" : "Grok"}</h3>
+                <span>
+                  {providerAccounts.length}{" "}
+                  {providerAccounts.length === 1 ? "account" : "accounts"}
+                </span>
+              </header>
+              <div className={styles.rows}>
+                {providerAccounts.map((view) => {
+                  const { account, authentication } = view;
+                  return (
+                    <article key={account.id} className={styles.accountCard}>
+                      <header className={styles.accountHeader}>
+                        <div className={styles.accountIdentity}>
+                          <BrandIcon
+                            identity={
+                              account.provider === "codex" ? "openai" : "xai"
+                            }
+                            size={24}
+                          />
+                          <div className={styles.identity}>
+                            <div className={styles.accountName}>
+                              <strong>{account.name}</strong>
+                              {view.usage.usage &&
+                                "plan_type" in view.usage.usage &&
+                                view.usage.usage.plan_type !== "unknown" && (
+                                  <span className={styles.plan}>
+                                    {view.usage.usage.plan_type}
+                                  </span>
+                                )}
+                            </div>
+                            <span className={styles.accountMeta}>
+                              {account.provider === "codex" ? "Codex" : "Grok"}
+                              <span
+                                className={styles.status}
+                                data-connected={
+                                  account.enabled &&
+                                  authentication.availability === "available"
+                                }
+                              >
+                                {account.enabled
+                                  ? authentication.availability === "available"
+                                    ? "Connected"
+                                    : "Sign-in required"
+                                  : "Paused"}
+                              </span>
                             </span>
-                          )}
-                      </div>
-                      <span className={styles.accountMeta}>
-                        {account.provider === "codex" ? "Codex" : "Grok"}
-                        <span
-                          className={styles.status}
-                          data-connected={
-                            account.enabled &&
-                            authentication.availability === "available"
-                          }
-                        >
-                          {account.enabled
-                            ? authentication.availability === "available"
-                              ? "Connected"
-                              : "Sign-in required"
-                            : "Paused"}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                  <div className={styles.cardActions}>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Refresh"
-                      loading={
-                        refresh.isPending && refresh.variables === account.id
-                      }
-                      onClick={() => refresh.mutate(account.id)}
-                    >
-                      <ArrowsClockwiseIcon />
-                    </Button>
-                    <Menu>
-                      <MenuTrigger
-                        render={
+                          </div>
+                        </div>
+                        <div className={styles.cardActions}>
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="Manage account"
-                          />
+                            aria-label="Refresh"
+                            loading={
+                              refresh.isPending &&
+                              refresh.variables === account.id
+                            }
+                            onClick={() => refresh.mutate(account.id)}
+                          >
+                            <ArrowsClockwiseIcon />
+                          </Button>
+                          <Menu>
+                            <MenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label="Manage account"
+                                />
+                              }
+                            >
+                              <DotsThreeIcon />
+                            </MenuTrigger>
+                            <MenuPopup align="end">
+                              <MenuItem onClick={() => setLogin(account)}>
+                                <KeyIcon />
+                                Sign-in & logout
+                              </MenuItem>
+                              <MenuItem
+                                onClick={() => {
+                                  setName(account.name);
+                                  setEditing(account);
+                                }}
+                              >
+                                <PencilSimpleIcon />
+                                Rename
+                              </MenuItem>
+                              <MenuItem
+                                disabled={update.isPending}
+                                onClick={() =>
+                                  update.mutate({
+                                    id: account.id,
+                                    enabled: !account.enabled,
+                                  })
+                                }
+                              >
+                                {account.enabled ? <PauseIcon /> : <PlayIcon />}
+                                {account.enabled ? "Pause" : "Enable"}
+                              </MenuItem>
+                              {account.provider === "codex" && (
+                                <MenuItem onClick={() => setReset(account)}>
+                                  <TicketIcon />
+                                  Reset voucher…
+                                </MenuItem>
+                              )}
+                              <MenuSeparator />
+                              <MenuItem
+                                variant="destructive"
+                                onClick={() => setDeleting(account)}
+                              >
+                                <TrashIcon />
+                                Delete…
+                              </MenuItem>
+                            </MenuPopup>
+                          </Menu>
+                        </div>
+                      </header>
+                      <AccountUsage
+                        view={view}
+                        onVouchers={
+                          account.provider === "codex"
+                            ? () => setReset(account)
+                            : undefined
                         }
-                      >
-                        <DotsThreeIcon />
-                      </MenuTrigger>
-                      <MenuPopup align="end">
-                        <MenuItem onClick={() => setLogin(account)}>
-                          <KeyIcon />
-                          Sign-in & logout
-                        </MenuItem>
-                        <MenuItem
-                          onClick={() => {
-                            setName(account.name);
-                            setEditing(account);
-                          }}
-                        >
-                          <PencilSimpleIcon />
-                          Rename
-                        </MenuItem>
-                        <MenuItem
-                          disabled={update.isPending}
-                          onClick={() =>
-                            update.mutate({
-                              id: account.id,
-                              enabled: !account.enabled,
-                            })
-                          }
-                        >
-                          {account.enabled ? <PauseIcon /> : <PlayIcon />}
-                          {account.enabled ? "Pause" : "Enable"}
-                        </MenuItem>
-                        {account.provider === "codex" && (
-                          <MenuItem onClick={() => setReset(account)}>
-                            <TicketIcon />
-                            Reset voucher…
-                          </MenuItem>
-                        )}
-                        <MenuSeparator />
-                        <MenuItem
-                          variant="destructive"
-                          onClick={() => setDeleting(account)}
-                        >
-                          <TrashIcon />
-                          Delete…
-                        </MenuItem>
-                      </MenuPopup>
-                    </Menu>
-                  </div>
-                </header>
-                <AccountUsage view={view} />
-              </article>
-            );
-          })}
+                      />
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
         {connected
           .filter(({ connection, status }) =>
             `${connection.label} ${status.account_id ?? ""}`
@@ -538,48 +599,60 @@ export function SubscriptionAccounts({
               .includes(filter.toLowerCase()),
           )
           .map(({ connection, status }) => (
-            <article key={connection.provider} className={styles.accountCard}>
-              <header className={styles.accountHeader}>
-                <div className={styles.accountIdentity}>
-                  <BrandIcon
-                    identity={
-                      connection.provider === "copilot" ? "github" : "openai"
-                    }
-                    size={24}
-                  />
-                  <div className={styles.identity}>
-                    <strong>{connection.label}</strong>
-                    <span className={styles.accountMeta}>
-                      {status.account_id ?? "Server account"}
-                      <span
-                        className={styles.status}
-                        data-connected={status.usable}
-                      >
-                        {status.usable
-                          ? "Connected"
-                          : status.required_action === "refresh"
-                            ? "Refreshes on first use"
-                            : "Sign-in required"}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={() => setConnectionLogin(connection)}
-                >
-                  Manage account
-                </Button>
+            <section
+              key={connection.provider}
+              className={styles.providerSection}
+              aria-label={`${connection.label} accounts`}
+            >
+              <header className={styles.providerHeading}>
+                <h3>{connection.label}</h3>
+                <span>1 account</span>
               </header>
-              {connection.provider === "copilot" ? (
-                <CopilotAllowance
-                  identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
-                  ready={status.usable || status.required_action === "refresh"}
-                />
-              ) : (
-                <ChatGPTAllowance />
-              )}
-            </article>
+              <article className={styles.accountCard}>
+                <header className={styles.accountHeader}>
+                  <div className={styles.accountIdentity}>
+                    <BrandIcon
+                      identity={
+                        connection.provider === "copilot" ? "github" : "openai"
+                      }
+                      size={24}
+                    />
+                    <div className={styles.identity}>
+                      <strong>{connection.label}</strong>
+                      <span className={styles.accountMeta}>
+                        {status.account_id ?? "Server account"}
+                        <span
+                          className={styles.status}
+                          data-connected={status.usable}
+                        >
+                          {status.usable
+                            ? "Connected"
+                            : status.required_action === "refresh"
+                              ? "Refreshes on first use"
+                              : "Sign-in required"}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setConnectionLogin(connection)}
+                  >
+                    Manage account
+                  </Button>
+                </header>
+                {connection.provider === "copilot" ? (
+                  <CopilotAllowance
+                    identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
+                    ready={
+                      status.usable || status.required_action === "refresh"
+                    }
+                  />
+                ) : (
+                  <ChatGPTAllowance />
+                )}
+              </article>
+            </section>
           ))}
         {!catalog.isPending &&
           !accounts.length &&
@@ -603,59 +676,6 @@ export function SubscriptionAccounts({
           ))}
         </details>
       )}
-      <header className={styles.heading}>
-        <div>
-          <h2>Account groups</h2>
-          <p>
-            Models select a same-provider group. Changes apply to the next Run.
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => setGroup("new")}>
-          Add group
-        </Button>
-      </header>
-      <div className={styles.rows}>
-        {catalog.data?.groups.map((item) => (
-          <article key={item.id} className={styles.row}>
-            <div className={styles.identity}>
-              <strong>{item.name}</strong>
-              <span>
-                {item.provider} ·{" "}
-                {item.strategy === "weighted"
-                  ? "Weighted balance"
-                  : "Ordered consumption"}{" "}
-                · {item.accounts?.length ?? 0} accounts
-                {item.allow_credits
-                  ? " · Credits allowed"
-                  : " · Included allowance only"}
-              </span>
-              <div className={styles.members}>
-                {item.accounts?.map((member) => {
-                  const view = accounts.find(
-                    (entry) => entry.account.id === member.account,
-                  );
-                  return (
-                    <span key={member.account}>
-                      {view?.account.name ?? "Deleted account"}
-                      {compactAllowance(view?.usage.usage) &&
-                        ` · ${compactAllowance(view?.usage.usage)}`}
-                      {item.strategy === "weighted"
-                        ? ` ×${member.weight ?? 1}`
-                        : ""}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-            <Button variant="ghost" onClick={() => setGroup(item)}>
-              Edit group
-            </Button>
-          </article>
-        ))}
-        {!catalog.isPending && !catalog.data?.groups.length && (
-          <p>No groups yet. Create one to combine accounts.</p>
-        )}
-      </div>
       <ModalFrame
         open={creating || !!editing}
         onOpenChange={(open) => {
@@ -760,13 +780,102 @@ export function SubscriptionAccounts({
         <ErrorNotice error={remove.error} />
       </ModalFrame>
       {reset && <ResetVoucher account={reset} close={() => setReset(null)} />}
-      {group && (
-        <GroupEditor
-          initial={group === "new" ? undefined : group}
-          accounts={accounts}
-          close={() => setGroup(null)}
-        />
+    </section>
+  );
+}
+
+export function AccountGroups() {
+  const catalog = useSubscriptions();
+  const [params, setParams] = useSearchParams();
+  const [filter, setFilter] = useState("");
+  const id = params.get("group");
+  const accounts = catalog.data?.accounts ?? [];
+  const group = catalog.data?.groups.find((item) => item.id === id);
+  if (id && (group || id === "new"))
+    return (
+      <GroupEditor
+        key={id}
+        initial={group}
+        accounts={accounts}
+        close={() => setParams({ tab: "groups" })}
+      />
+    );
+  return (
+    <section className={styles.section} aria-label="Account groups">
+      <ErrorNotice error={catalog.error} />
+      {catalog.isPending && <p role="status">Loading groups…</p>}
+      {id && !catalog.isPending && !group && (
+        <p role="status">Group not found.</p>
       )}
+      <header className={styles.heading}>
+        <div>
+          <h2>Account groups</h2>
+          <p>
+            Models select a same-provider group. Changes apply to the next Run.
+          </p>
+        </div>
+        <Button onClick={() => setParams({ tab: "groups", group: "new" })}>
+          Add group
+        </Button>
+      </header>
+      <Input
+        aria-label="Filter account groups"
+        placeholder="Find a group…"
+        value={filter}
+        onChange={(event) => setFilter(event.target.value)}
+        className={styles.search}
+      />
+      <div className={styles.rows}>
+        {catalog.data?.groups
+          .filter((item) =>
+            `${item.name} ${item.provider}`
+              .toLowerCase()
+              .includes(filter.toLowerCase()),
+          )
+          .map((item) => (
+            <article key={item.id} className={styles.row}>
+              <div className={styles.identity}>
+                <strong>{item.name}</strong>
+                <span>
+                  {item.provider} ·{" "}
+                  {item.strategy === "weighted"
+                    ? "Weighted balance"
+                    : "Ordered consumption"}{" "}
+                  · {item.accounts?.length ?? 0} accounts
+                  {item.allow_credits
+                    ? " · Credits allowed"
+                    : " · Included allowance only"}
+                </span>
+                <div className={styles.members}>
+                  {item.accounts?.map((member) => {
+                    const view = accounts.find(
+                      (entry) => entry.account.id === member.account,
+                    );
+                    return (
+                      <span key={member.account}>
+                        {view?.account.name ?? "Deleted account"}
+                        {compactAllowance(view?.usage.usage) &&
+                          ` · ${compactAllowance(view?.usage.usage)}`}
+                        {item.strategy === "weighted"
+                          ? ` ×${member.weight ?? 1}`
+                          : ""}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                onClick={() => setParams({ tab: "groups", group: item.id })}
+              >
+                Manage group
+              </Button>
+            </article>
+          ))}
+        {!catalog.isPending && !catalog.data?.groups.length && (
+          <p>No groups yet. Create one to combine accounts.</p>
+        )}
+      </div>
     </section>
   );
 }
@@ -780,9 +889,11 @@ function ResetVoucher({
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
-  const [credit, setCredit] = useState("");
-  const [confirming, setConfirming] = useState(false);
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [selection, setSelection] = useState<{
+    voucher: Schema<"ResetCredit">;
+    accountId: string;
+    requestId: string;
+  } | null>(null);
   const vouchers = useQuery({
     queryKey: ["reset-vouchers", account.id],
     queryFn: () =>
@@ -799,9 +910,9 @@ function ResetVoucher({
         client.POST("/api/subscriptions/accounts/{account_id}/reset", {
           params: { path: { account_id: account.id } },
           body: {
-            account_id: vouchers.data!.account_id,
-            credit_id: credit,
-            redeem_request_id: requestId,
+            account_id: selection!.accountId,
+            credit_id: selection!.voucher.id,
+            redeem_request_id: selection!.requestId,
           },
         }),
       ),
@@ -811,24 +922,51 @@ function ResetVoucher({
     },
   });
   const available = availableVouchers(vouchers.data?.reset_credits);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (selection) cancelRef.current?.focus();
+  }, [selection]);
   return (
     <ModalFrame
       open
       onOpenChange={(open) => {
         if (!open) close();
       }}
-      title={`Reset voucher · ${account.name}`}
-      description="Vouchers reset included allowance. They are separate from rechargeable credits and are never used automatically."
+      title={
+        redeem.isSuccess
+          ? `Voucher result · ${account.name}`
+          : selection
+            ? `Use voucher · ${account.name}?`
+            : `Reset vouchers · ${account.name}`
+      }
+      description={
+        redeem.isSuccess
+          ? undefined
+          : selection
+            ? "This consumes one voucher to reset this account’s included allowance."
+            : "Use a voucher to reset your included allowance. Earliest expiry first."
+      }
       closeLabel="Close"
       footer={
+        selection &&
         !redeem.isSuccess && (
-          <Button
-            disabled={!credit || !vouchers.data || redeem.isPending}
-            loading={redeem.isPending}
-            onClick={() => (confirming ? redeem.mutate() : setConfirming(true))}
-          >
-            {confirming ? "Confirm redeem voucher" : "Review redemption"}
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              ref={cancelRef}
+              disabled={!redeem.isIdle}
+              onClick={() => setSelection(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={redeem.isPending}
+              loading={redeem.isPending}
+              onClick={() => redeem.mutate()}
+            >
+              {redeem.isError ? "Retry use voucher" : "Confirm use voucher"}
+            </Button>
+          </>
         )
       }
     >
@@ -840,35 +978,46 @@ function ResetVoucher({
         {vouchers.data?.reset_unavailable && (
           <p>{vouchers.data.reset_unavailable}</p>
         )}
-        {vouchers.data && <VoucherSummary usage={vouchers.data} />}
-        {vouchers.data?.reset_credits && !available.length && (
-          <p>No available reset vouchers.</p>
+        {!selection && !redeem.isSuccess && (
+          <>
+            {vouchers.data?.reset_credits && !available.length && (
+              <p>No available reset vouchers.</p>
+            )}
+            {!!available.length && (
+              <ul
+                className={styles.voucherList}
+                aria-label="Available reset vouchers"
+              >
+                {available.map((item) => (
+                  <li key={item.id} className={styles.voucherRow}>
+                    <VoucherDetails voucher={item} />
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setSelection({
+                          voucher: item,
+                          accountId: vouchers.data!.account_id,
+                          requestId: crypto.randomUUID(),
+                        })
+                      }
+                    >
+                      Use
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
-        {!!available.length && (
-          <ChoiceField
-            label="Voucher"
-            value={credit}
-            disabled={confirming || redeem.isSuccess}
-            onValueChange={setCredit}
-            options={available.map((item) => ({
-              value: item.id,
-              label: item.title ?? item.reset_type,
-              hint: [
-                item.description,
-                item.expires_at
-                  ? `Expires ${quotaTime(Date.parse(item.expires_at))}`
-                  : "Expiry not provided",
-              ]
-                .filter(Boolean)
-                .join(" · "),
-            }))}
-          />
-        )}
-        {confirming && !redeem.isSuccess && (
-          <p>
-            Redeem the selected voucher for <strong>{account.name}</strong> (
-            {vouchers.data?.account_id}) now? This consumes the voucher.
-          </p>
+        {selection && !redeem.isSuccess && (
+          <>
+            <div className={styles.voucherRow}>
+              <VoucherDetails voucher={selection.voucher} />
+            </div>
+            <p className={styles.quotaDetail}>
+              Account: {account.name} · {selection.accountId}
+            </p>
+          </>
         )}
         {redeem.isSuccess && (
           <p role="status">
@@ -878,6 +1027,20 @@ function ResetVoucher({
         )}
       </div>
     </ModalFrame>
+  );
+}
+
+function VoucherDetails({ voucher }: { voucher: Schema<"ResetCredit"> }) {
+  return (
+    <div className={styles.voucherDetails}>
+      <strong>{voucher.title || "Reset voucher"}</strong>
+      {voucher.description && <p>{voucher.description}</p>}
+      <span>
+        {voucher.expires_at
+          ? `Expires ${quotaTime(Date.parse(voucher.expires_at))}`
+          : "Expiry not provided"}
+      </span>
+    </div>
   );
 }
 
@@ -950,21 +1113,211 @@ function GroupEditor({
     [next[index], next[other]] = [next[other], next[index]];
     setMembers(next);
   }
+  const busy = save.isPending || remove.isPending;
   return (
-    <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open) close();
-      }}
-      title={initial ? `Edit ${initial.name}` : "New account group"}
-      description="Members and policy are captured for each Run. Pausing, logout, deletion, and refreshed usage take effect at the next request."
-      closeLabel="Cancel"
-      footer={
+    <section className={styles.groupDetail} aria-label="Group details">
+      <Button
+        variant="ghost"
+        className={styles.back}
+        onClick={close}
+        disabled={busy}
+      >
+        <ArrowLeftIcon /> Account groups
+      </Button>
+      <header className={styles.heading}>
+        <div>
+          <h2>{initial ? initial.name : "New account group"}</h2>
+          <p>
+            Choose accounts and how Runs use them. Changes apply to the next
+            Run.
+          </p>
+        </div>
+      </header>
+      <ErrorNotice error={sources.error || save.error || remove.error} />
+      <fieldset className={styles.groupFields} disabled={!writable || busy}>
+        <div className={styles.form}>
+          <TextField
+            label="Group name"
+            value={draft.name}
+            onChange={(name) => setDraft({ ...draft, name })}
+          />
+          <ChoiceField
+            label="Provider"
+            value={draft.provider}
+            disabled={!!initial}
+            onValueChange={(provider) =>
+              setDraft({
+                ...draft,
+                provider: provider as "codex" | "grok",
+                accounts: [],
+                allow_credits: false,
+              })
+            }
+            options={[
+              { value: "codex", label: "Codex" },
+              { value: "grok", label: "Grok" },
+            ]}
+          />
+          <ChoiceField
+            label="Scheduling"
+            value={draft.strategy ?? "ordered"}
+            onValueChange={(strategy) =>
+              setDraft({
+                ...draft,
+                strategy: strategy as "ordered" | "weighted",
+              })
+            }
+            options={[
+              {
+                value: "ordered",
+                label: "Ordered consumption",
+              },
+              {
+                value: "weighted",
+                label: "Weighted balance",
+              },
+            ]}
+          />
+          {draft.provider === "codex" && (
+            <ChoiceField
+              label="Rechargeable credits"
+              value={draft.allow_credits ? "allow" : "deny"}
+              onValueChange={(value) =>
+                setDraft({ ...draft, allow_credits: value === "allow" })
+              }
+              options={[
+                { value: "deny", label: "Included allowance only" },
+                {
+                  value: "allow",
+                  label: "Allow rechargeable credits",
+                },
+              ]}
+            />
+          )}
+          {draft.provider === "codex" && draft.allow_credits && (
+            <p className={styles.help}>
+              Credits may be used after included allowance. Best-effort
+              scheduling; small overshoot is possible.
+            </p>
+          )}
+        </div>
+        <div className={styles.form}>
+          <h3>Accounts</h3>
+          <p className={styles.help}>
+            {draft.strategy === "weighted"
+              ? "Higher weights receive more Runs. The selected account stays in use while eligible."
+              : "Accounts are tried from top to bottom. Move your preferred account first."}
+          </p>
+          <FormField
+            className={styles.memberField}
+            label={
+              draft.strategy === "weighted"
+                ? "Members and weights"
+                : "Members in selection order"
+            }
+          >
+            <div className={styles.form}>
+              {members.map((member, index) => (
+                <div className={styles.member} key={member.account}>
+                  <span className={styles.memberNumber}>{index + 1}</span>
+                  <span>
+                    {accounts.find((item) => item.account.id === member.account)
+                      ?.account.name ?? "Deleted account"}
+                  </span>
+                  {draft.strategy === "weighted" && (
+                    <Input
+                      aria-label={`Weight for member ${index + 1}`}
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={member.weight ?? 1}
+                      onChange={(event) =>
+                        setMembers(
+                          members.map((item, i) =>
+                            i === index
+                              ? { ...item, weight: Number(event.target.value) }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={index === 0}
+                    onClick={() => move(index, -1)}
+                  >
+                    Up
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={index === members.length - 1}
+                    onClick={() => move(index, 1)}
+                  >
+                    Down
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setMembers(members.filter((_, i) => i !== index))
+                    }
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              {!members.length && (
+                <p>
+                  No members. This group cannot run until you add an account.
+                </p>
+              )}
+              <ChoiceField
+                label="Add member"
+                placeholder="Choose an account"
+                value=""
+                onValueChange={(account) => {
+                  if (account) setMembers([...members, { account, weight: 1 }]);
+                }}
+                options={accounts
+                  .filter(
+                    ({ account }) =>
+                      account.provider === draft.provider &&
+                      !members.some((item) => item.account === account.id),
+                  )
+                  .map(({ account }) => ({
+                    value: account.id,
+                    label: account.name,
+                  }))}
+              />
+            </div>
+          </FormField>
+          {!writable && (
+            <p>
+              This group is read-only. Edit its owning configuration source.
+            </p>
+          )}
+          {deleteConfirm && (
+            <p>
+              Delete this group? Models explicitly referencing it must be
+              updated first.
+            </p>
+          )}
+        </div>
+      </fieldset>
+      <div className={styles.editorFooter}>
+        <p className={styles.help}>
+          {JSON.stringify(draft) !== JSON.stringify(initial)
+            ? "Unsaved changes"
+            : "Saved configuration"}
+        </p>
         <div className={styles.actions}>
           {initial && (
             <Button
               variant="ghost"
-              disabled={!writable}
+              disabled={!writable || save.isPending}
               loading={remove.isPending}
               onClick={() =>
                 deleteConfirm ? remove.mutate() : setDeleteConfirm(true)
@@ -975,159 +1328,18 @@ function GroupEditor({
           )}
           <Button
             loading={save.isPending}
-            disabled={!draft.name.trim() || !writable || sources.isPending}
+            disabled={
+              !draft.name.trim() ||
+              !writable ||
+              sources.isPending ||
+              remove.isPending
+            }
             onClick={() => save.mutate()}
           >
             Save group
           </Button>
         </div>
-      }
-    >
-      <div className={styles.form}>
-        <ErrorNotice error={sources.error || save.error || remove.error} />
-        <TextField
-          label="Group name"
-          value={draft.name}
-          onChange={(name) => setDraft({ ...draft, name })}
-        />
-        <ChoiceField
-          label="Provider"
-          value={draft.provider}
-          disabled={!!initial}
-          onValueChange={(provider) =>
-            setDraft({
-              ...draft,
-              provider: provider as "codex" | "grok",
-              accounts: [],
-              allow_credits: false,
-            })
-          }
-          options={[
-            { value: "codex", label: "Codex" },
-            { value: "grok", label: "Grok" },
-          ]}
-        />
-        <ChoiceField
-          label="Scheduling"
-          value={draft.strategy ?? "ordered"}
-          onValueChange={(strategy) =>
-            setDraft({ ...draft, strategy: strategy as "ordered" | "weighted" })
-          }
-          options={[
-            {
-              value: "ordered",
-              label: "Ordered consumption",
-              hint: "Use accounts in order, moving on when unavailable or exhausted.",
-            },
-            {
-              value: "weighted",
-              label: "Weighted balance",
-              hint: "Spread Runs by weight; keep the selected account while eligible.",
-            },
-          ]}
-        />
-        {draft.provider === "codex" && (
-          <ChoiceField
-            label="Rechargeable credits"
-            value={draft.allow_credits ? "allow" : "deny"}
-            onValueChange={(value) =>
-              setDraft({ ...draft, allow_credits: value === "allow" })
-            }
-            options={[
-              { value: "deny", label: "Included allowance only" },
-              {
-                value: "allow",
-                label: "Allow credits after included allowance",
-                hint: "Best-effort client scheduling; small overshoot is possible.",
-              },
-            ]}
-          />
-        )}
-        <FormField label="Members in selection order">
-          <div className={styles.form}>
-            {members.map((member, index) => (
-              <div className={styles.member} key={member.account}>
-                <span>
-                  {accounts.find((item) => item.account.id === member.account)
-                    ?.account.name ?? "Deleted account"}
-                </span>
-                {draft.strategy === "weighted" && (
-                  <Input
-                    aria-label={`Weight for member ${index + 1}`}
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={member.weight ?? 1}
-                    onChange={(event) =>
-                      setMembers(
-                        members.map((item, i) =>
-                          i === index
-                            ? { ...item, weight: Number(event.target.value) }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={index === 0}
-                  onClick={() => move(index, -1)}
-                >
-                  Up
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={index === members.length - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  Down
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setMembers(members.filter((_, i) => i !== index))
-                  }
-                >
-                  Remove
-                </Button>
-              </div>
-            ))}
-            {!members.length && (
-              <p>No members. This group cannot run until you add an account.</p>
-            )}
-            <ChoiceField
-              label="Add member"
-              value=""
-              onValueChange={(account) => {
-                if (account) setMembers([...members, { account, weight: 1 }]);
-              }}
-              options={accounts
-                .filter(
-                  ({ account }) =>
-                    account.provider === draft.provider &&
-                    !members.some((item) => item.account === account.id),
-                )
-                .map(({ account }) => ({
-                  value: account.id,
-                  label: account.name,
-                }))}
-            />
-          </div>
-        </FormField>
-        {!writable && (
-          <p>This group is read-only. Edit its owning configuration source.</p>
-        )}
-        {deleteConfirm && (
-          <p>
-            Delete this group? Models explicitly referencing it must be updated
-            first.
-          </p>
-        )}
       </div>
-    </ModalFrame>
+    </section>
   );
 }
