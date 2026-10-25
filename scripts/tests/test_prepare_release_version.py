@@ -212,8 +212,8 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.5.1"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.19.1"),
-        ("a13n-harness-ui", "0.19.1"),
+        ("a13n-harness", "0.20.0"),
+        ("a13n-harness-ui", "0.20.0"),
     )
     for component, version in releases:
         prepared = run_script(PREPARER, tmp_path, component, version)
@@ -537,7 +537,7 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     ("component", "version", "requirement"),
     [
         ("a13n-service", "0.1.0", ">=0.13.0,<0.14.0"),
-        ("a13n-harness-ui", "0.19.1", "==0.19.1"),
+        ("a13n-harness-ui", "0.20.0", "==0.20.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
