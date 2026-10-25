@@ -14,7 +14,13 @@ from typing import Literal
 import httpx2
 from pydantic_ai.exceptions import (
     ModelAPIError,
+    ModelConnectionError,
+    ModelContextWindowExceededError,
     ModelHTTPError,
+    ModelQuotaExceededError,
+    ModelRateLimitError,
+    ModelServerError,
+    ModelUnavailableError,
     RunCancelled,
     ToolFailed,
     UnexpectedModelBehavior,
@@ -372,23 +378,33 @@ def is_recoverable_model_failure(error: BaseException) -> bool:
     cause: BaseException | None = error
     while cause is not None and id(cause) not in seen:
         seen.add(id(cause))
-        if isinstance(cause, ssl.SSLCertVerificationError):
+        if isinstance(cause, ssl.SSLCertVerificationError | ModelQuotaExceededError | ModelContextWindowExceededError):
             return False
         if isinstance(cause, httpx2.HTTPStatusError):
             try:
                 body = cause.response.json()
             except (ValueError, httpx2.ResponseNotRead):
                 body = None
-            return cause.response.status_code in {408, 429, 500, 502, 503, 504, 529} and not _has_permanent_error_code(
-                body
-            )
+            if cause.response.status_code not in {408, 429, 500, 502, 503, 504, 529} or _has_permanent_error_code(body):
+                return False
+            transient = True
         if isinstance(cause, ModelHTTPError):
-            return cause.status_code in {408, 429, 500, 502, 503, 504, 529} and not _has_permanent_error_code(
-                cause.body
-            )
+            # Native HTTP errors also inherit a semantic category. Keep the
+            # Harness status allowlist even for categories such as server errors.
+            if cause.status_code not in {408, 429, 500, 502, 503, 504, 529} or _has_permanent_error_code(cause.body):
+                return False
+            transient = True
         if isinstance(
             cause,
-            httpx2.TimeoutException | httpx2.NetworkError | httpx2.RemoteProtocolError | ConnectionError | TimeoutError,
+            ModelConnectionError
+            | ModelRateLimitError
+            | ModelUnavailableError
+            | ModelServerError
+            | httpx2.TimeoutException
+            | httpx2.NetworkError
+            | httpx2.RemoteProtocolError
+            | ConnectionError
+            | TimeoutError,
         ):
             transient = True
         cause = cause.__cause__

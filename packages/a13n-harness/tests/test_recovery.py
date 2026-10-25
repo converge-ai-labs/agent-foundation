@@ -27,7 +27,7 @@ from a13n_harness.tools import RECOVERY_RETRY_SAFE_METADATA_KEY
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability, SetToolMetadata
-from pydantic_ai.exceptions import CallDeferred, ModelRetry, UnexpectedModelBehavior
+from pydantic_ai.exceptions import CallDeferred, ModelConnectionError, ModelRetry, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -89,7 +89,14 @@ async def test_recovery_prompt_factory_receives_detached_messages() -> None:
     assert prompt.content == "original"
 
 
-async def test_stream_failure_resumes_with_partial_history_and_shared_usage() -> None:
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx2.RemoteProtocolError("stream disconnected"),
+        ModelConnectionError("test", "opaque provider failure", phase="read", in_stream=True),
+    ],
+)
+async def test_stream_failure_resumes_with_partial_history_and_shared_usage(error: Exception) -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -97,7 +104,7 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
         calls.append(deepcopy(messages))
         if len(calls) == 1:
             yield "partial answer"
-            raise httpx2.RemoteProtocolError("stream disconnected")
+            raise error
         yield "resumed answer"
 
     executable = HarnessBuilder().build(

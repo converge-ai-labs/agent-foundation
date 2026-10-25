@@ -16,18 +16,29 @@ from a13n_harness import (
 from a13n_harness.capabilities.lifecycle import LifecycleEventCapability
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.recovery import is_recoverable_model_failure
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.exceptions import (
     ContentFilterError,
     ModelAPIError,
+    ModelConnectionError,
+    ModelContextWindowExceededError,
     ModelHTTPError,
+    ModelOverloadedError,
+    ModelQuotaExceededError,
+    ModelRateLimitError,
+    ModelServerError,
+    ModelTimeoutError,
+    ModelUnavailableError,
     UnexpectedModelBehavior,
 )
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ExternalToolset
 
@@ -154,6 +165,80 @@ def test_transient_http_status_is_recoverable(status: int) -> None:
 def test_other_http_status_is_terminal(status: int) -> None:
     assert not is_recoverable_model_failure(ModelHTTPError(status, "test"))
     assert not is_recoverable_model_failure(_raw_http_error(status))
+    assert not is_recoverable_model_failure(
+        ModelHTTPError.for_category(ModelServerError, status_code=status, model_name="test")
+    )
+
+
+@pytest.mark.parametrize(
+    "category",
+    [
+        ModelRateLimitError,
+        ModelUnavailableError,
+        ModelOverloadedError,
+        ModelServerError,
+        ModelConnectionError,
+        ModelTimeoutError,
+    ],
+)
+def test_native_transient_category_without_transport_cause_is_recoverable(category: type[ModelAPIError]) -> None:
+    error = category("test", "opaque provider failure")
+    assert is_recoverable_model_failure(error)
+    wrapper = ModelAPIError("test", "provider wrapper")
+    wrapper.__cause__ = error
+    assert is_recoverable_model_failure(wrapper)
+
+
+@pytest.mark.parametrize("category", [ModelQuotaExceededError, ModelContextWindowExceededError])
+@pytest.mark.parametrize("status", [None, 429, 503])
+def test_native_terminal_category_overrides_transient_wrapper(
+    category: type[ModelQuotaExceededError] | type[ModelContextWindowExceededError], status: int | None
+) -> None:
+    error = (
+        category("test", "opaque provider failure")
+        if status is None
+        else ModelHTTPError.for_category(category, status_code=status, model_name="test")
+    )
+    assert not is_recoverable_model_failure(error)
+    wrapper = ModelConnectionError("test", "provider wrapper")
+    wrapper.__cause__ = error
+    assert not is_recoverable_model_failure(wrapper)
+    http_wrapper = ModelHTTPError(503, "test")
+    http_wrapper.__cause__ = wrapper
+    assert not is_recoverable_model_failure(http_wrapper)
+
+
+@pytest.mark.parametrize(
+    ("code", "attempts", "failure_code"),
+    [
+        ("credit_balance_exhausted", 1, "agent_run_failed"),
+        ("organization_spend_limit_exceeded", 1, "agent_run_failed"),
+        ("rate_limit_exceeded", 2, "model_recovery_exhausted"),
+    ],
+)
+async def test_openai_native_quota_and_rate_limit_recovery(code: str, attempts: int, failure_code: str) -> None:
+    calls = 0
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal calls
+        calls += 1
+        return httpx2.Response(429, json={"error": {"code": code, "message": "opaque provider failure"}})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as http_client:
+        async with AsyncOpenAI(
+            api_key="test", base_url="https://example.test/v1", http_client=http_client, max_retries=0
+        ) as client:
+            executable = HarnessBuilder().build(
+                AgentSpec(),
+                output_type=str,
+                model=OpenAIChatModel("test", provider=OpenAIProvider(openai_client=client)),
+                model_recovery=ModelRecoveryPolicy(enabled=True, max_attempts=2, backoff_initial_seconds=0),
+            )
+            result = await executable.run("start", bindings=RunBindings.embedded())
+
+    assert result.failure is not None
+    assert result.failure.code == failure_code
+    assert calls == attempts
 
 
 # Every recognized code once, and every placement of the code field at least once.
@@ -192,8 +277,11 @@ def test_network_error_remains_recoverable_through_provider_cause(error: Excepti
     assert is_recoverable_model_failure(wrapper)
 
 
-def test_certificate_verification_error_is_not_retried() -> None:
-    error = httpx2.ConnectError("TLS failed")
+@pytest.mark.parametrize(
+    "error",
+    [httpx2.ConnectError("TLS failed"), ModelConnectionError("test", "TLS failed"), ModelHTTPError(503, "test")],
+)
+def test_certificate_verification_error_is_not_retried(error: Exception) -> None:
     error.__cause__ = ssl.SSLCertVerificationError("invalid certificate")
     assert not is_recoverable_model_failure(error)
 
@@ -225,6 +313,9 @@ def test_unknown_cyclic_provider_cause_is_terminal() -> None:
     "error",
     [
         ModelHTTPError(401, "test"),
+        ModelQuotaExceededError("test", "quota exhausted"),
+        ModelContextWindowExceededError("test", "context exhausted"),
+        ModelHTTPError.for_category(ModelQuotaExceededError, status_code=429, model_name="test"),
         _raw_http_error(429, {"error": {"code": "insufficient_quota"}}),
         ContentFilterError("filtered"),
         RuntimeError("programming error"),
@@ -261,7 +352,13 @@ async def test_permanent_and_unknown_model_failures_stop_without_retry(error: Ex
 
 
 @pytest.mark.parametrize(
-    "error", [httpx2.ReadError("tool network failure"), ModelHTTPError(503, "tool"), _raw_http_error(429)]
+    "error",
+    [
+        httpx2.ReadError("tool network failure"),
+        ModelHTTPError(503, "tool"),
+        _raw_http_error(429),
+        ModelConnectionError("tool", "opaque failure"),
+    ],
 )
 async def test_transient_errors_from_tools_do_not_restart_model_execution(error: Exception) -> None:
     calls = 0
@@ -281,7 +378,7 @@ async def test_transient_errors_from_tools_do_not_restart_model_execution(error:
         capabilities=(Capability(tools=[fail], id="fail"),),
         model_recovery=ModelRecoveryPolicy(enabled=True, backoff_initial_seconds=0),
     )
-    if isinstance(error, ModelHTTPError):
+    if isinstance(error, ModelAPIError):
         result = await executable.run("start")
         assert result.failure is not None
         assert result.failure.code == "agent_run_failed"
