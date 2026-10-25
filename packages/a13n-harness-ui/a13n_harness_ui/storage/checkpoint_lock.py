@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from hashlib import sha256
 from pathlib import Path
 
-from anyio import CancelScope, fail_after, sleep, to_thread
+from anyio import CancelScope, current_time, sleep, to_thread
 from filelock import FileLock, Timeout
 
 
@@ -18,13 +18,18 @@ async def checkpoint_lock(root: Path, thread_id: str) -> AsyncGenerator[None]:
     lock = FileLock(directory / f"{identity}.lock", timeout=0, thread_local=False, mode=0o600)
     acquired = False
     try:
-        with fail_after(30):
-            while not acquired:
-                try:
-                    await to_thread.run_sync(lock.acquire)
-                    acquired = True
-                except Timeout:
-                    await sleep(0.05)
+        # Polling already provides cancellation checkpoints. A long-lived timeout
+        # timer would capture the caller's RunContext even after being cancelled.
+        deadline = current_time() + 30
+        while not acquired:
+            remaining = deadline - current_time()
+            if remaining <= 0:
+                raise TimeoutError
+            try:
+                await to_thread.run_sync(lock.acquire)
+                acquired = True
+            except Timeout:
+                await sleep(min(0.05, remaining))
         yield
     finally:
         if acquired:

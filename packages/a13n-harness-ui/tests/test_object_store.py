@@ -65,7 +65,8 @@ async def test_object_round_trip_is_canonical_and_reuses_exact_content(tmp_path:
         assert paths[0].stat().st_mode & 0o777 == 0o600
 
 
-async def test_object_verification_encodes_payload_once_and_preserves_canonical_identity(tmp_path, monkeypatch):
+@pytest.mark.parametrize("codec", ["1", "2"])
+async def test_object_verification_encodes_payload_once_and_preserves_canonical_identity(tmp_path, monkeypatch, codec):
     import hashlib
 
     from a13n_harness_ui.storage import objects
@@ -88,18 +89,24 @@ async def test_object_verification_encodes_payload_once_and_preserves_canonical_
 
     monkeypatch.setattr(objects, "_canonical_json", counted_encode)
     envelope = await store.publish(
-        object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload, payload_codec_version="1"
+        object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload, payload_codec_version=codec
     )
     assert payload_encodes == 3  # Source, verified staging file, verified published file.
     path = next(layout.objects.rglob("*.json.zst"))
     raw = zstandard.ZstdDecompressor().decompress(path.read_bytes())
-    fields = envelope.model_dump(mode="json")
+    dumped = envelope.model_dump(mode="json")
+    fields = {key: dumped[key] for key in sorted(dumped)}
     assert (
-        raw == json.dumps(fields, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+        raw
+        == json.dumps(
+            fields, ensure_ascii=False, allow_nan=False, sort_keys=codec == "1", separators=(",", ":")
+        ).encode()
     )
     identity = {key: value for key, value in fields.items() if key not in {"logical_digest", "created_at"}}
     expected = hashlib.sha256(
-        json.dumps(identity, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(
+            identity, ensure_ascii=False, allow_nan=False, sort_keys=codec == "1", separators=(",", ":")
+        ).encode()
     ).hexdigest()
     assert envelope.logical_digest == expected
     payload_encodes = 0
@@ -110,6 +117,37 @@ async def test_object_verification_encodes_payload_once_and_preserves_canonical_
     with pytest.raises(ObjectIntegrityError) as error:
         await store.read(envelope.ref)
     assert error.value.code == "object_not_canonical"
+
+
+@pytest.mark.parametrize("codec", ["1", "2"])
+async def test_object_encoding_uses_validated_payload_without_copying_its_container_tree(monkeypatch, codec):
+    from a13n_harness_ui.storage import objects
+
+    envelope = objects.ObjectEnvelope(
+        object_kind=ObjectKind.continuation,
+        object_schema_version="1",
+        logical_digest="0" * 64,
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        producer_release="test-release",
+        payload_codec_version=codec,
+        payload={"z": [{"nested": [None, True, 1, -0.0, "中文"]}], "a": {}},
+    )
+    canonical_json = objects._canonical_json
+    original = envelope.model_dump(mode="json")
+    seen = []
+
+    def encode(value, *, sort_keys=True):
+        if isinstance(value, dict):
+            seen.append(value)
+        return canonical_json(value, sort_keys=sort_keys)
+
+    monkeypatch.setattr(objects, "_canonical_json", encode)
+    encoded = objects._encoded_fields(envelope)
+    assert len(seen) == 1
+    assert seen[0] is envelope.payload
+    assert encoded == {
+        key: canonical_json(value, sort_keys=key != "payload" or codec == "1") for key, value in original.items()
+    }
 
 
 async def test_object_publish_uses_level_one_and_reuses_existing_level_three_frames(tmp_path: Path) -> None:

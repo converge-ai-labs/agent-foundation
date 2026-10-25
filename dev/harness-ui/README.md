@@ -152,3 +152,33 @@ Queues now share the hub's private detached event; each consumer still receives 
 Focused App subscriptions also transfer their one-time replay to the consumer, and WebSocket/TUI consumers release it after bootstrap. A separate isolated App probe seeded 512 text rows of about 8 KiB, opened eight watches, discarded their bootstrap values, and kept their subscriptions open. With tracing started after seeding, additional retained heap fell from 11.39 MiB to 0.09 MiB; every watch received the same 513 replay events. Regression tests in `test_app.py`, `test_live.py`, and `test_execution_protocol.py` verify collection with weak references, preserved compact replay refresh, and continued delivery over a real loopback WebSocket.
 
 These measurements isolate live fan-out and bootstrap retention. Whole-process long-running memory additionally includes native history, retained tool results, imports, and allocator high-water; the benchmark does not estimate their production footprint.
+
+## Sequential-turn memory comparison
+
+A disposable real-App probe compared the subscription-only revision `9f65d8630` with the checkpoint lifetime fixes. On Linux/Python 3.13.7 with the same locked dependencies, it submitted 20 sequential `FunctionModel` turns, each producing 256 KiB in 8 KiB chunks (5 MiB total). It used fresh HOME/configuration/data roots, disabled tracing exporters and pricing updates, and kept the App open. Zero or eight watches joined halfway through the first response, consumed bootstrap, and continued receiving events. Each sample followed operation settlement, a 20 ms event-loop yield, and garbage collection. RSS came from `/proc/self/smaps_rollup`; process high-water came from `getrusage`.
+
+Three fresh untraced processes per case gave these medians. Growth is calculated against each process's own idle sample before taking the median:
+
+| Workload                 |   Idle RSS | RSS after turn 20 | RSS growth | Process RSS high-water |
+| ------------------------ | ---------: | ----------------: | ---------: | ---------------------: |
+| UI before, no watches    | 264.29 MiB |        571.96 MiB | 307.67 MiB |             596.75 MiB |
+| UI after, no watches     | 264.20 MiB |        358.62 MiB |  94.35 MiB |             441.16 MiB |
+| UI before, eight watches | 264.21 MiB |        577.95 MiB | 313.70 MiB |             602.77 MiB |
+| UI after, eight watches  | 264.21 MiB |        374.59 MiB | 110.38 MiB |             442.86 MiB |
+
+Every watch received 913 events in every repetition. Final RSS ranges were 519.95–592.84 MiB before and 347.62–358.65 MiB after without watches, and 569.76–582.30 MiB before and 370.05–376.61 MiB after with eight watches.
+
+A Harness-only reference used the same prompts, output chunks, and sample boundaries through `HarnessBuilder` with embedded bindings, carrying only the current `HarnessState` between turns. Across three fresh untraced processes its median idle/final RSS was 167.69/256.46 MiB, with 88.77 MiB growth. UI growth without watches is now close to that reference; its roughly 96 MiB higher idle baseline and checkpoint peaks remain distinct costs. The UI also owns configuration, pricing, compact display, and durable checkpoints, whereas the Harness reference retains its current approximately 5 MiB state in memory.
+
+Separate traced runs started after App/reference initialization:
+
+| Workload                                  | Live Python heap after turn 20 | Peak Python heap |
+| ----------------------------------------- | -----------------------------: | ---------------: |
+| UI before, no watches                     |                     176.40 MiB |       298.04 MiB |
+| UI with checkpoint-lock fix only          |                      16.79 MiB |       161.89 MiB |
+| UI with lock and buffer-lifetime fixes    |                      15.90 MiB |       131.96 MiB |
+| Harness reference, current state retained |                       6.16 MiB |        81.19 MiB |
+
+The lock's cancelled 30-second acquisition timer captured native Run context and could temporarily retain completed streams and histories. The existing nonblocking lock poll now checks a monotonic deadline without creating that long-lived timer. Object publication drops completed encoding buffers before staged/published verification, encodes the validated payload without another container-tree dump, and retains only the native object reference while publishing display. Both payload codecs keep their exact canonical bytes and integrity checks.
+
+The ContextVar/weak-reference regression fails against the old lock and passes against the fix. Focused tests cover contention deadlines, cancellation, selected-reader exclusion, terminal checkpoint selection, and both codecs' byte identity and mapping order. Diagnostic probes remain outside product code. These synthetic runs measure short-term working-set amplification; an earlier 35-second idle control also released the old timer-held histories. They do not establish the cause of a separate production process's multi-GiB footprint.
