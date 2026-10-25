@@ -12,12 +12,14 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { parse } from "yaml";
+import { MemoryRouter } from "react-router";
 import { ModelFields } from "./model-editor";
 import { AddModelButton } from "./models";
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   accountReady: false,
+  groups: [] as { id: string; name: string; provider: string; accounts: [] }[],
   accountIdentity: "first-source",
   identityChanged: undefined as undefined | ((identity: string) => void),
   discover: vi.fn(async () => ({
@@ -82,7 +84,7 @@ const mocks = vi.hoisted(() => ({
             ],
           }
         : path === "/api/subscriptions"
-          ? { accounts: [], groups: [], adoption: {} }
+          ? { accounts: [], groups: mocks.groups, adoption: {} }
           : path === "/api/auth/keys"
             ? [{ credential_ref: "key-saved" }]
             : { items: [], status: "unavailable" },
@@ -146,6 +148,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mocks.accountReady = false;
+  mocks.groups = [];
 });
 const original = `# Model comment
 schema_version: '1'
@@ -179,18 +182,20 @@ function mount(initial = original) {
     );
   }
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({
-          defaultOptions: {
-            queries: { retry: false },
-            mutations: { retry: false },
-          },
-        })
-      }
-    >
-      <Editor />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: {
+              queries: { retry: false },
+              mutations: { retry: false },
+            },
+          })
+        }
+      >
+        <Editor />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 function source() {
@@ -324,18 +329,20 @@ it("edits the permanent reasoning mode without clobbering effort, and removes on
 function mountAddModel() {
   const onSaved = vi.fn();
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({
-          defaultOptions: {
-            queries: { retry: false },
-            mutations: { retry: false },
-          },
-        })
-      }
-    >
-      <AddModelButton onSaved={onSaved} />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: {
+              queries: { retry: false },
+              mutations: { retry: false },
+            },
+          })
+        }
+      >
+        <AddModelButton onSaved={onSaved} />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
   return onSaved;
 }
@@ -512,3 +519,38 @@ it("removes a completed account catalog immediately after an identity-only chang
     expect(screen.queryByRole("option", { name: /Account chat/ })).toBeNull(),
   );
 });
+
+it.each([
+  [undefined, undefined, "/settings/accounts?tab=groups"],
+  [
+    undefined,
+    "codex-default",
+    "/settings/accounts?tab=groups&group=codex-default",
+  ],
+  [
+    "codex-work",
+    "codex-work",
+    "/settings/accounts?tab=groups&group=codex-work",
+  ],
+])(
+  "links group management to the resolved group (%s, %s)",
+  async (selected, existing, expected) => {
+    mocks.groups = existing
+      ? [{ id: existing, name: "Work group", provider: "codex", accounts: [] }]
+      : [];
+    mount(`schema_version: '1'
+kind: model
+id: model-subscription
+name: Subscription
+route: openai-codex:reviewed
+authentication: {kind: codex_subscription${selected ? `, group: ${selected}` : ""}}
+`);
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("link", { name: "Manage accounts and groups" })
+          .getAttribute("href"),
+      ).toBe(expected),
+    );
+  },
+);

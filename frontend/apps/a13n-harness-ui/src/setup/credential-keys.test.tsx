@@ -20,9 +20,9 @@ afterEach(() => {
   clients.forEach((client) => client.clear());
   vi.unstubAllGlobals();
 });
-function mount({ failSources = false } = {}) {
+function mount({ failSources = false, unavailableDevice = false } = {}) {
   const writes: { method: string; path: string; body: unknown }[] = [];
-  const keys = ["key-work", "key-shared", "key-spare"];
+  const keys = ["key-work", "key-shared", "key-spare", "key-device"];
   const models = [
     {
       name: "Work Claude",
@@ -38,6 +38,16 @@ function mount({ failSources = false } = {}) {
       name: "Shared GPT",
       route: "openai-responses:gpt",
       authentication: { kind: "api_key", credential_ref: "key-shared" },
+    },
+  ];
+  const devices = [
+    {
+      name: "Office Device",
+      authentication: { kind: "api_key", credential_ref: "key-device" },
+    },
+    {
+      name: "Shared Device",
+      authentication: { kind: "api_key", credential_ref: "key-work" },
     },
   ];
   const json = (value: unknown) =>
@@ -63,13 +73,26 @@ function mount({ failSources = false } = {}) {
       if (path === "/api/configuration/sources") {
         if (failSources) return new Response("Unavailable", { status: 503 });
         return json({
-          sources: models.map((_, index) => ({
-            relative_path: `models/${index}.yaml`,
-            resource_kind: "model",
-            content_available: true,
-          })),
+          sources: [
+            ...models.map((_, index) => ({
+              relative_path: `models/${index}.yaml`,
+              resource_kind: "model",
+              content_available: true,
+            })),
+            ...devices.map((_, index) => ({
+              relative_path: `devices/${index}.yaml`,
+              resource_kind: "device",
+              content_available: !unavailableDevice,
+            })),
+          ],
         });
       }
+      const deviceIndex = path.match(/devices\/(\d+)/)?.[1];
+      if (deviceIndex !== undefined)
+        return json({
+          relative_path: `devices/${deviceIndex}.yaml`,
+          content: JSON.stringify(devices[Number(deviceIndex)]),
+        });
       const index = Number(path.match(/models\/(\d+)/)?.[1]);
       return json({
         relative_path: `models/${index}.yaml`,
@@ -100,7 +123,7 @@ it("groups keys by linked model providers, distinguishes shared and unlinked key
   expect(within(provider).getByText("key-work")).toBeTruthy();
   expect(
     within(provider)
-      .getByRole("link", { name: "Work Claude" })
+      .getByRole("link", { name: "Model: Work Claude" })
       .getAttribute("href"),
   ).toContain("models%2F0.yaml");
   expect(
@@ -110,7 +133,9 @@ it("groups keys by linked model providers, distinguishes shared and unlinked key
   ).toBeTruthy();
   expect(
     within(
-      screen.getByRole("region", { name: "Not linked to a model keys" }),
+      screen.getByRole("region", {
+        name: "Not linked to a Model or Device keys",
+      }),
     ).getByText("key-spare"),
   ).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Filter API keys"), {
@@ -125,7 +150,7 @@ it("adds, explicitly replaces, and confirms removal without displaying saved sec
   fireEvent.change(screen.getByLabelText("Saved key name"), {
     target: { value: "key-work" },
   });
-  fireEvent.change(screen.getByLabelText("Provider API key"), {
+  fireEvent.change(screen.getByLabelText("API key"), {
     target: { value: "fictional-secret" },
   });
   expect(
@@ -145,10 +170,8 @@ it("adds, explicitly replaces, and confirms removal without displaying saved sec
   const row = screen.getByText("key-work").closest("article")!;
   fireEvent.click(within(row).getByRole("button", { name: "Replace key" }));
   expect(screen.queryByLabelText("Saved key name")).toBeNull();
-  expect(
-    (screen.getByLabelText("Provider API key") as HTMLInputElement).value,
-  ).toBe("");
-  fireEvent.change(screen.getByLabelText("Provider API key"), {
+  expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe("");
+  fireEvent.change(screen.getByLabelText("API key"), {
     target: { value: "fictional-replacement" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save key" }));
@@ -169,8 +192,47 @@ it("adds, explicitly replaces, and confirms removal without displaying saved sec
 it("keeps keys manageable when provider metadata cannot be read", async () => {
   mount({ failSources: true });
   const unknown = await screen.findByRole("region", {
-    name: "Provider not resolved keys",
+    name: "Usage not resolved keys",
   });
   expect(within(unknown).getByText("key-work")).toBeTruthy();
-  expect(screen.queryByText("Not linked to a model")).toBeNull();
+  expect(screen.queryByText("Not linked to a Model or Device")).toBeNull();
+});
+
+it("shows Device-only and shared consumers before confirming deletion", async () => {
+  const writes = mount();
+  const devices = await screen.findByRole("region", { name: "Devices keys" });
+  expect(within(devices).getByText("key-device")).toBeTruthy();
+  expect(
+    within(devices)
+      .getByRole("link", { name: "Device: Office Device" })
+      .getAttribute("href"),
+  ).toContain("devices%2F0.yaml");
+  const row = screen.getByText("key-work").closest("article")!;
+  expect(
+    within(row).getByRole("link", { name: "Device: Shared Device" }),
+  ).toBeTruthy();
+  fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Model: Work Claude")).toBeTruthy();
+  expect(within(dialog).getByText("Device: Shared Device")).toBeTruthy();
+  expect(
+    within(dialog).getByText(/Models and Devices referencing/),
+  ).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(writes).toHaveLength(0);
+  fireEvent.change(screen.getByLabelText("Filter API keys"), {
+    target: { value: "Office Device" },
+  });
+  expect(screen.getByText("key-device")).toBeTruthy();
+  expect(screen.queryByText("key-work")).toBeNull();
+});
+
+it("does not call a key unlinked when Device sources cannot be read", async () => {
+  mount({ unavailableDevice: true });
+  await screen.findByRole("link", { name: "Model: Work Claude" });
+  const unknown = screen.getByRole("region", {
+    name: "Usage not resolved keys",
+  });
+  expect(within(unknown).getByText("key-device")).toBeTruthy();
+  expect(screen.queryByText("Not linked to a Model or Device")).toBeNull();
 });

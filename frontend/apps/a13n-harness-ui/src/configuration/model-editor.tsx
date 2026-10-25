@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
 import { useTransport } from "../transport/context";
@@ -530,7 +531,11 @@ function LoadedModelEditor({
                   : "This group needs a connected member account."}
               </p>
             )}
-            <a href="/settings/accounts">Manage accounts and groups</a>
+            <Link
+              to={`/settings/accounts?tab=groups${nativeGroup ? `&group=${encodeURIComponent(nativeGroup.id)}` : ""}`}
+            >
+              Manage accounts and groups
+            </Link>
           </>
         ) : selected.account ? (
           <ProviderAccount
