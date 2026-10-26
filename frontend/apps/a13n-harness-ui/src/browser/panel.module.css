@@ -1,0 +1,181 @@
+.panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--a13n-text);
+}
+.optionsMenu {
+  width: 240px;
+}
+.menuValue {
+  margin-inline-start: auto;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.controlOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 32%);
+  pointer-events: none;
+}
+.controlHint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 300px;
+  padding: 20px 24px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 12px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+  box-shadow: var(--a13n-shadow);
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.controlHint strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.controlHint > span {
+  color: var(--a13n-secondary);
+}
+.controlHint span svg {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  vertical-align: -4px;
+  color: var(--a13n-text);
+}
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+}
+.empty strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.empty p {
+  max-width: 310px;
+  margin: 0;
+  color: var(--a13n-secondary);
+  line-height: 1.6;
+}
+.notice {
+  margin: 4px 12px;
+  font-size: 12px;
+  color: var(--a13n-text);
+}
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.desktop {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+  background: #171a21;
+}
+.desktopFit {
+  overflow: hidden;
+}
+.desktopSurface {
+  width: 100%;
+  height: 100%;
+  min-width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  flex-shrink: 0;
+}
+.textInput {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 15em;
+  max-width: 100%;
+  height: 2em;
+  padding: 2px 6px;
+  resize: none;
+  font-size: 16px;
+  opacity: 0;
+  pointer-events: none;
+}
+.textInput[data-composing] {
+  opacity: 1;
+  color: var(--foreground);
+  background: var(--background);
+}
+.snapshot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #171a21;
+  pointer-events: none;
+}
+.readOnlyGuard {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.readOnlyGuard:focus-visible {
+  outline: 2px solid var(--a13n-secondary);
+  outline-offset: -2px;
+}
+.streamStatus {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #171a21aa;
+}
+.streamStatus strong {
+  overflow-wrap: anywhere;
+}
+
+.inputNotice {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+  box-shadow: var(--a13n-shadow);
+  font-size: 12px;
+  pointer-events: none;
+}

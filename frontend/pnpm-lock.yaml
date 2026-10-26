@@ -265,6 +265,9 @@ importers:
       '@modelcontextprotocol/ext-apps':
         specifier: 2.0.3
         version: 2.0.3(@modelcontextprotocol/client@2.2.0)(@modelcontextprotocol/core@2.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.5)
+      '@novnc/novnc':
+        specifier: ^1.7.0
+        version: 1.7.0
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1238,6 +1241,9 @@ packages:
 
   '@novnc/novnc@1.5.0':
     resolution: {integrity: sha512-4yGHOtUCnEJUCsgEt/L78eeJu00kthurLBWXFiaXfonNx0pzbs6R/3gJb1byZe6iAE8V9MF0syQb0xIL8MSOtQ==}
+
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
   '@oxc-project/types@0.148.0':
     resolution: {integrity: sha512-Nm4s/jB+4FpFsPhWGEC4h7rzksesmtnMXomo6rCMcg/b8zLQuOziRgkCS1fxDCXOlJB/6Q8oABOZ/OP6RIPj9A==}
@@ -4407,6 +4413,8 @@ snapshots:
     optional: true
 
   '@novnc/novnc@1.5.0': {}
+
+  '@novnc/novnc@1.7.0': {}
 
   '@oxc-project/types@0.148.0': {}
 

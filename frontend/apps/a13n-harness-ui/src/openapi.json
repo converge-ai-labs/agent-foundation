@@ -1636,6 +1636,512 @@
         }
       }
     },
+    "/api/browser/scan": {
+      "post": {
+        "summary": "Scan Browser Executables",
+        "operationId": "scan_browser_executables_api_browser_scan_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserScan"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/check": {
+      "post": {
+        "summary": "Check Browser Configuration",
+        "operationId": "check_browser_configuration_api_browser_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserConfiguration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserSetup"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser": {
+      "get": {
+        "summary": "Browser State",
+        "operationId": "browser_state_api_threads__thread_id__browser_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/setup": {
+      "get": {
+        "summary": "Browser Setup",
+        "operationId": "browser_setup_api_threads__thread_id__browser_setup_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserSetup"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/enable": {
+      "post": {
+        "summary": "Enable Browser",
+        "operationId": "enable_browser_api_threads__thread_id__browser_enable_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/start": {
+      "post": {
+        "summary": "Start Browser",
+        "operationId": "start_browser_api_threads__thread_id__browser_start_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/reset": {
+      "post": {
+        "summary": "Reset Browser",
+        "operationId": "reset_browser_api_threads__thread_id__browser_reset_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/viewport": {
+      "post": {
+        "summary": "Resize Browser",
+        "operationId": "resize_browser_api_threads__thread_id__browser_viewport_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserViewportRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/stop": {
+      "post": {
+        "summary": "Stop Browser",
+        "operationId": "stop_browser_api_threads__thread_id__browser_stop_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/take-control": {
+      "post": {
+        "summary": "Take Browser Control",
+        "operationId": "take_browser_control_api_threads__thread_id__browser_take_control_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserControl"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/handback": {
+      "post": {
+        "summary": "Handback Browser",
+        "operationId": "handback_browser_api_threads__thread_id__browser_handback_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserControl"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommand"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/browser/access": {
+      "post": {
+        "summary": "Browser Access",
+        "operationId": "browser_access_api_threads__thread_id__browser_access_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserAccess"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserAccessRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/terminals": {
       "get": {
         "summary": "Terminals",
@@ -9076,6 +9582,390 @@
         ],
         "title": "Availability"
       },
+      "BrowserAccess": {
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "title": "Ticket"
+          },
+          "control": {
+            "type": "boolean",
+            "title": "Control"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ticket",
+          "control",
+          "password"
+        ],
+        "title": "BrowserAccess"
+      },
+      "BrowserControl": {
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/BrowserState"
+          },
+          "control_token": {
+            "type": "string",
+            "title": "Control Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "control_token"
+        ],
+        "title": "BrowserControl"
+      },
+      "BrowserExecutable": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "system",
+              "custom"
+            ],
+            "title": "Source"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "source"
+        ],
+        "title": "BrowserExecutable"
+      },
+      "BrowserInstallStep": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "command": {
+            "type": "string",
+            "title": "Command"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "title",
+          "command"
+        ],
+        "title": "BrowserInstallStep"
+      },
+      "BrowserPlatform": {
+        "type": "string",
+        "enum": [
+          "linux",
+          "macos",
+          "windows",
+          "other"
+        ]
+      },
+      "BrowserPreset": {
+        "enum": [
+          "desktop",
+          "laptop",
+          "wide",
+          "tablet",
+          "tablet-landscape",
+          "phone",
+          "phone-landscape"
+        ],
+        "type": "string"
+      },
+      "BrowserRequirement": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "installed": {
+            "type": "boolean",
+            "title": "Installed"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
+          },
+          "purpose": {
+            "type": "string",
+            "title": "Purpose",
+            "default": ""
+          },
+          "managed": {
+            "type": "boolean",
+            "title": "Managed",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "installed",
+          "detail"
+        ],
+        "title": "BrowserRequirement"
+      },
+      "BrowserScan": {
+        "properties": {
+          "browsers": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserExecutable"
+            },
+            "type": "array",
+            "title": "Browsers",
+            "default": []
+          },
+          "vncs": {
+            "items": {
+              "$ref": "#/components/schemas/VncExecutable"
+            },
+            "type": "array",
+            "title": "Vncs",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BrowserScan"
+      },
+      "BrowserSetup": {
+        "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/BrowserPlatform"
+          },
+          "distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "browser": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BrowserExecutable"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vnc": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VncExecutable"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserRequirement"
+            },
+            "type": "array",
+            "title": "Requirements",
+            "default": []
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserInstallStep"
+            },
+            "type": "array",
+            "title": "Steps",
+            "default": []
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "platform",
+          "supported",
+          "ready"
+        ],
+        "title": "BrowserSetup"
+      },
+      "BrowserState": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "enabled",
+              "ready",
+              "stopped",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "disabled"
+          },
+          "control": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "human"
+            ],
+            "title": "Control",
+            "default": "agent"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "default": ""
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "viewport": {
+            "$ref": "#/components/schemas/BrowserPreset",
+            "default": "desktop"
+          },
+          "viewports": {
+            "items": {
+              "$ref": "#/components/schemas/BrowserViewport"
+            },
+            "type": "array",
+            "title": "Viewports",
+            "default": [
+              {
+                "preset": "desktop",
+                "label": "Desktop",
+                "width": 1280,
+                "height": 800
+              },
+              {
+                "preset": "laptop",
+                "label": "Laptop",
+                "width": 1366,
+                "height": 768
+              },
+              {
+                "preset": "wide",
+                "label": "Desktop HD",
+                "width": 1920,
+                "height": 1080
+              },
+              {
+                "preset": "tablet",
+                "label": "Tablet",
+                "width": 768,
+                "height": 1024
+              },
+              {
+                "preset": "tablet-landscape",
+                "label": "Tablet landscape",
+                "width": 1024,
+                "height": 768
+              },
+              {
+                "preset": "phone",
+                "label": "Phone",
+                "width": 390,
+                "height": 844
+              },
+              {
+                "preset": "phone-landscape",
+                "label": "Phone landscape",
+                "width": 844,
+                "height": 390
+              }
+            ]
+          },
+          "resize_available": {
+            "type": "boolean",
+            "title": "Resize Available",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "BrowserState"
+      },
+      "BrowserViewport": {
+        "properties": {
+          "preset": {
+            "$ref": "#/components/schemas/BrowserPreset"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "preset",
+          "label",
+          "width",
+          "height"
+        ],
+        "title": "BrowserViewport"
+      },
       "CapabilitySelection": {
         "properties": {
           "capability": {
@@ -14182,6 +15072,11 @@
           "host_terminal": {
             "type": "boolean",
             "title": "Host Terminal",
+            "default": false
+          },
+          "browser": {
+            "type": "boolean",
+            "title": "Browser",
             "default": false
           }
         },
@@ -21972,6 +22867,79 @@
         "title": "VideoInputPolicy",
         "description": "Base64-after byte budget for both one video and all inline videos in a request."
       },
+      "VncExecutable": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/VncKind",
+            "default": "tigervnc"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "system",
+              "custom"
+            ],
+            "title": "Source"
+          },
+          "window_manager": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Manager"
+          },
+          "xrandr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xrandr"
+          },
+          "display_server": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Server"
+          },
+          "disable_resizing": {
+            "type": "boolean",
+            "title": "Disable Resizing",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "source"
+        ],
+        "title": "VncExecutable"
+      },
+      "VncKind": {
+        "type": "string",
+        "enum": [
+          "tigervnc",
+          "x11vnc",
+          "wayvnc"
+        ]
+      },
       "VoiceSnapshot": {
         "properties": {
           "status": {
@@ -23915,6 +24883,106 @@
           "approve"
         ],
         "title": "AppDecision",
+        "type": "object"
+      },
+      "BrowserConfiguration": {
+        "properties": {
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
+          },
+          "vnc_executable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vnc Executable"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "BrowserConfiguration",
+        "description": "Host executable bindings captured at App startup; never install dependencies."
+      },
+      "BrowserCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "BrowserCommand",
+        "type": "object"
+      },
+      "BrowserViewportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "control_token": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Control Token",
+            "type": "string"
+          },
+          "preset": {
+            "$ref": "#/components/schemas/BrowserPreset"
+          }
+        },
+        "required": [
+          "session_id",
+          "preset"
+        ],
+        "title": "BrowserViewportRequest",
+        "type": "object"
+      },
+      "BrowserAccessRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "control_token": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Control Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "BrowserAccessRequest",
         "type": "object"
       },
       "TerminalCreate": {

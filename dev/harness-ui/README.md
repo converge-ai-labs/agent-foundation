@@ -69,6 +69,20 @@ This runs the real App, native OpenAI-compatible HTTP model path, an async Markd
 
 Each invocation retains its own configuration and data under `var/harness-ui-smoke/<id>/`. The smoke process uses an isolated home so it does not load the developer's global instructions, skills or subscription accounts. It prints Thread/Run IDs for finding the observations in Langfuse. Expect two root traces and a separately linked child trace, not one lifetime-long Thread trace. The local `.env` enables standard content capture of these fictional inputs.
 
+## Native browser integration
+
+Ordinary tests do not launch a browser. To opt in, supply an installed Chromium executable explicitly:
+
+```bash
+uv run --locked pytest \
+  packages/a13n-harness/tests/test_browser_cdp_native.py \
+  packages/a13n-harness/tests/test_browser_workflows_native.py \
+  packages/a13n-harness-ui/tests/test_host_browser_linux.py \
+  --browser-executable=/absolute/path/to/chromium
+```
+
+The executable argument also enables the native tests; no browser test environment variables are needed. Tests create disposable profiles and do not download browsers. The Harness CDP scenarios run headless; the Harness UI scenarios require Linux and prepared VNC/display components from the [Host browser guide](../../docs/a13n-harness-ui/webui.md). Missing VNC adapters skip their own scenarios, and WayVNC requires a non-root account with a usable Chromium sandbox. An explicitly supplied invalid browser path fails rather than selecting another browser. The sandbox remains enabled by default; pass `--browser-no-sandbox` only when the test environment explicitly requires it. This test option is independent of the WebUI startup environment variable.
+
 ## Deployment environment
 
 The committed template sets `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=local`. This labels new root and child traces as `local`; it is independent of execution Environment profiles, providers, and mount names. For an existing private `.env`, merge this attribute without replacing credentials or other resource attributes, then restart the CLI/App. Exported shell values take precedence. An embedding Host must set the resource on its own provider. Existing traces are not relabeled.

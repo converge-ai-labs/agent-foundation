@@ -55,6 +55,7 @@ async def _run(request: CliRequest) -> int:
             configuration_error=source.candidate_error,
             host_mode="webui" if request.command == "webui" else "local",
             share_computer=request.command == "webui" and request.share_computer,
+            browser_no_sandbox=request.browser_no_sandbox,
             codex_login=(
                 None
                 if request.command == "webui"

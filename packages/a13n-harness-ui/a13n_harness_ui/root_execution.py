@@ -24,6 +24,7 @@ from a13n_harness import (
 )
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
+from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
@@ -38,6 +39,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
     AgentReconstructor,
@@ -59,6 +61,7 @@ from a13n_harness_ui.display_history import (
     with_display_history,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
@@ -135,6 +138,7 @@ class RootRunAdmission:
     organization: MemoryOrganizationRun | None = None
     resume_usage: bool = False
     display: DisplayArchive | None = None
+    browser_binding: str | None = None
 
 
 class RootRunExecutor:
@@ -158,8 +162,10 @@ class RootRunExecutor:
         work: ThreadWorkService | None = None,
         restart_coordinator: GracefulRestart | None = None,
         mcp_apps: AppSnapshots | None = None,
+        browsers: HostBrowsers | None = None,
         tool_executions: ToolExecutions | None = None,
     ) -> None:
+        self._browsers = browsers
         self._tool_executions = tool_executions
         self._store = store
         self._mcp_apps = mcp_apps
@@ -328,6 +334,12 @@ class RootRunExecutor:
             positions,
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
             display=archive,
+            browser_binding=(
+                self._browsers.binding(thread_id)
+                if self._browsers is not None
+                and published.value.environment_profile.profile_id == FULL_CONTROL_PROFILE_ID
+                else None
+            ),
         )
 
     async def execute(
@@ -442,6 +454,11 @@ class RootRunExecutor:
                     goal_capability,
                     RootCheckpointCapability(save_checkpoint),
                     _ToolPresentationCapability(retain_tool_presentation),
+                    *(
+                        (BrowserUseCapability(self._browsers.backend(thread_id, admission.browser_binding)),)
+                        if self._browsers is not None and admission.browser_binding is not None
+                        else ()
+                    ),
                     *(
                         (RestartPauseCapability(self._restart, thread_id),)
                         if self._restart is not None and admission.organization is None

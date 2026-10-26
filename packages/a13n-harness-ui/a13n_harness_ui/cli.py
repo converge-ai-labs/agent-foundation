@@ -60,6 +60,7 @@ class CliRequest:
     web_api_key: str | None = field(default=None, repr=False)
     dangerously_bypass_permission: bool = False
     share_computer: bool = True
+    browser_no_sandbox: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,6 +188,12 @@ def cli(
         "independent of Agent permissions."
     ),
 )
+@click.option(
+    "--browser-no-sandbox/--browser-sandbox",
+    default=False,
+    envvar="A13N_HARNESS_UI_BROWSER_NO_SANDBOX",
+    help="Disable Chromium's sandbox explicitly; only for a separately isolated browser Host.",
+)
 @click.pass_context
 def webui_command(
     ctx: click.Context,
@@ -195,6 +202,7 @@ def webui_command(
     api_keys: tuple[str, ...],
     dangerously_bypass_permission: bool,
     share_computer: bool,
+    browser_no_sandbox: bool,
 ) -> None:
     """Run one foreground WebUI server with bundled browser assets."""
     if len(set(api_keys)) > 1:
@@ -209,6 +217,7 @@ def webui_command(
             web_api_key=api_key,
             dangerously_bypass_permission=dangerously_bypass_permission,
             share_computer=share_computer,
+            browser_no_sandbox=browser_no_sandbox,
         )
     )
 
