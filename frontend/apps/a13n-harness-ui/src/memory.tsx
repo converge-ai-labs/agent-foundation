@@ -25,7 +25,7 @@ export function MemoryNavigation({ projectId }: { projectId?: string | null }) {
       </div>
       <Link className={!selected ? styles.selected : styles.scope} to="/memory">
         <Globe size={18} />
-        Global
+        <span>Global</span>
       </Link>
       <h2>Projects</h2>
       <ErrorNotice
@@ -44,7 +44,9 @@ export function MemoryNavigation({ projectId }: { projectId?: string | null }) {
           <span>{project.name}</span>
         </Link>
       ))}
-      {projects.data?.length === 0 && <p>No configured projects.</p>}
+      {projects.data?.length === 0 && (
+        <p className={styles.hint}>No configured projects.</p>
+      )}
       <p className={styles.hint}>
         Each scope keeps its own automatic organization history.
       </p>
@@ -194,7 +196,9 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
         </label>
       )}
       {file.isFetching && !file.data && path && (
-        <p role="status">Loading file…</p>
+        <p role="status" className={styles.loading}>
+          Loading file…
+        </p>
       )}
       {file.data && (
         <div className={`${styles.file} a13n-scrollbar`}>

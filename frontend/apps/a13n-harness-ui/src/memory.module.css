@@ -1,37 +1,54 @@
+/* The memory scope list shares the sidebar row geometry: 32px rows,
+   18px icons on the 18px column and labels on the 44px column. */
 .navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px 4px;
 }
 .heading {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
-  margin-bottom: 16px;
+  min-height: 32px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--a13n-text);
+}
+.heading > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.heading strong {
+  font-weight: inherit;
 }
 .heading span {
   margin-left: auto;
-  font-size: 11px;
-  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--a13n-secondary);
 }
 .navigation h2 {
-  margin: 24px 10px 8px;
+  margin: 14px 0 2px;
+  padding: 0 8px;
   font-size: 12px;
-  color: var(--a13n-text-supporting);
+  line-height: 20px;
   font-weight: 500;
+  color: var(--a13n-secondary);
 }
-.scope,
+.scope {
+  composes: row from "./shell/navigation-row.module.css";
+}
 .selected {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 8px;
+  composes: row from "./shell/navigation-row.module.css";
+  background: var(--a13n-selected);
   color: var(--a13n-text);
-  text-decoration: none;
-  font-size: 13px;
+  font-weight: 500;
 }
 .scope span,
 .selected span {
@@ -39,21 +56,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.scope svg,
-.selected svg {
-  flex-shrink: 0;
-}
-.scope:hover {
-  background: var(--a13n-hover);
-}
-.selected {
-  background: var(--a13n-elevated);
-}
 .hint {
-  margin: 24px 10px;
+  margin: 14px 0 0;
+  padding: 0 8px;
   font-size: 12px;
-  line-height: 1.6;
-  color: var(--a13n-text-supporting);
+  line-height: 18px;
+  color: var(--a13n-secondary);
 }
 .workspace {
   display: flex;
@@ -74,24 +82,27 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 20px 24px;
+  min-height: 72px;
+  /* 20px matches the top bar inset so titles share one left edge. */
+  padding: 14px 20px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--a13n-border);
 }
 .header h2 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
 }
 .header p {
-  margin: 5px 0 0;
-  color: var(--a13n-text-supporting);
+  margin: 2px 0 0;
+  color: var(--a13n-secondary);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 18px;
 }
 .files {
   width: 34%;
-  min-width: 260px;
+  min-width: 280px;
   max-width: 520px;
   display: flex;
   flex-direction: column;
@@ -103,44 +114,62 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 16px 20px 12px;
   font-size: 12px;
-  padding: 16px 24px;
-  color: var(--a13n-text-supporting);
+  color: var(--a13n-secondary);
 }
 .picker select {
   min-width: 0;
   flex: 1;
-  padding: 8px;
+  height: 32px;
+  padding: 0 8px;
   background: var(--a13n-canvas);
   color: var(--a13n-text);
   border: 1px solid var(--a13n-border);
-  border-radius: 6px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
 }
 .file {
   overflow: auto;
   min-height: 0;
-  padding: 4px 24px 24px;
+  padding: 4px 20px 24px;
   overflow-wrap: anywhere;
+}
+.loading {
+  margin: 0;
+  padding: 4px 20px;
+  font-size: 13px;
+  color: var(--a13n-secondary);
 }
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   flex: 1;
+  margin: 0;
   padding: 32px;
   text-align: center;
-  color: var(--a13n-text-supporting);
+  font-size: 13px;
+  color: var(--a13n-secondary);
+}
+.empty > svg {
+  margin-bottom: 4px;
 }
 .empty h2 {
-  font-size: 16px;
-  font-weight: 500;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
   color: var(--a13n-text);
 }
 .empty p {
+  margin: 0;
   max-width: 380px;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 20px;
 }
 @media (max-width: 900px) {
   .workspace {
@@ -161,6 +190,6 @@
     flex-shrink: 0;
   }
   .header {
-    padding: 16px;
+    padding-inline: 16px;
   }
 }

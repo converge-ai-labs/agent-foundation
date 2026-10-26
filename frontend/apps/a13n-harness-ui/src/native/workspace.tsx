@@ -611,7 +611,7 @@ export function NativeWorkspace({
               tabIndex={-1}
               onFocusCapture={() => setFocusedArea("page")}
               onPointerDown={() => setFocusedArea("page")}
-              className={`${styles.page} a13n-scrollbar ${!threadId && !memoryMode ? styles.documentPage : ""}`}
+              className={`${styles.page} a13n-scrollbar ${location.pathname === "/memory" ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
             >
               <OpenHostFile
                 value={

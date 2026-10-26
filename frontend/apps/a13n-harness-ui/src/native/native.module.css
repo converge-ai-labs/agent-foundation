@@ -88,6 +88,12 @@
 .page[hidden] {
   display: none;
 }
+/* Full-bleed workspaces (Memory) own their panes, edges and scrolling. */
+.center > .page.flushPage {
+  padding: 0;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
 .documentPage {
   display: flex;
   flex-direction: column;
