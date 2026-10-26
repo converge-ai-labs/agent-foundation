@@ -13,8 +13,11 @@ from a13n_harness.compaction import (
     CompactionOperation,
     CompactionOperator,
     CompactionResult,
+    _CompactionState,
+    _prefix_digest,
+    _prepare_compaction,
     apply_compaction,
-    apply_compaction_to_state,
+    compaction_disposition,
     generate_compaction,
 )
 from a13n_harness.errors import DefinitionError
@@ -37,6 +40,24 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.anyio
+
+
+async def _pending_checkpoint(state, *, result, state_store=None):
+    """Construct the checkpoint saved after replacement but before runtime restoration."""
+    from a13n_harness.state import AgentContextState
+    from a13n_harness.storage import RunStorage
+
+    namespaces = AgentContextState(await RunStorage(state_store).resolve_context(state.agent_context_state))
+    previous = await namespaces.read("a13n.compaction", _CompactionState, version="1")
+    messages = await RunStorage(state_store).resolve_messages(state.message_history)
+    messages, marker = _prepare_compaction(result, thread_id=state.thread_id, messages=messages, previous=previous)
+    if marker is None:
+        return state
+    await namespaces.write("a13n.compaction", marker, version="1")
+    return state.model_copy(
+        deep=True,
+        update={"message_history_json": encode_messages(messages), "agent_context_state": await namespaces.snapshot()},
+    )
 
 
 def _previous():
@@ -267,7 +288,7 @@ async def test_background_survives_parent_close_and_applies_once_on_next_run():
     assert _user_values(second.state.message_history).count("first input") == 1
     assert _user_values(second.state.message_history).count("next input") == 1
     marker = second.state.agent_context_state.get("a13n.compaction")
-    assert marker is not None and marker.data["applied_operation_id"] == operator.operation.input.basis.operation_id
+    assert marker is not None and marker.data["operation_id"] == operator.operation.input.basis.operation_id
     third = await executable.run(
         "third input", previous_state=HarnessState.model_validate_json(second.state.model_dump_json())
     )
@@ -319,7 +340,7 @@ async def test_ready_result_applies_between_tool_rounds_and_keeps_delta():
 
 
 @pytest.mark.parametrize("status", ["running", "ready"])
-async def test_active_boundary_rejects_stale_operation_without_resubmission(status):
+async def test_active_boundary_skips_stale_operation_without_resubmission(status):
     previous = _previous()
     input = _input(previous)
     operator = _Operator()
@@ -345,10 +366,10 @@ async def test_active_boundary_rejects_stale_operation_without_resubmission(stat
 
     executable = _build(operator, stream)
     for _ in range(2):
-        with pytest.raises(DefinitionError) as error:
-            await executable.run("continue", previous_state=changed)
-        assert error.value.code == "compaction_prefix_mismatch"
-    assert not requests
+        resumed = await executable.run("continue", previous_state=changed)
+        assert resumed.output_or_raise() == "done"
+        assert await compaction_disposition(resumed.state, basis=input.basis) == "skipped"
+    assert len(requests) == 2
     assert operator.operation is operation
     assert operator.submissions == 0
     assert changed.model_dump_json() == saved
@@ -417,10 +438,8 @@ async def test_compacted_state_next_run_needs_no_capability_operator_or_summary_
         model=FunctionModel(stream_function=stream),
         output_type=str,
     )
-    compacted = await apply_compaction_to_state(previous, result=result)
-    compacted = HarnessState.model_validate_json(compacted.model_dump_json())
-    assert compacted.agent_context_state.get("a13n.compaction").data["restoration_pending"] is True
-    first = await executable.run("continue", previous_state=compacted)
+    first = await executable.run("continue", previous_state=previous, compaction_result=result)
+    assert await compaction_disposition(first.state, basis=result.basis) == "applied"
     assert first.output_or_raise() == "done"
     assert first.state is not None
     assert first.state.agent_context_state.get("a13n.compaction").data["restoration_pending"] is False
@@ -611,7 +630,7 @@ async def test_state_transform_preserves_envelope_namespaces_refs_and_complete_d
     )
     original = previous.model_dump_json()
     result = CompactionResult.from_summary(input.basis, "summary")
-    compacted = await apply_compaction_to_state(previous, result=result)
+    compacted = await _pending_checkpoint(previous, result=result)
     assert previous.model_dump_json() == original
     assert encode_messages(compacted.message_history[-2:]) == encode_messages(delta)
     assert compacted.environment_states == previous.environment_states
@@ -621,14 +640,14 @@ async def test_state_transform_preserves_envelope_namespaces_refs_and_complete_d
     compacted.model_extra["future"]["nested"].append(3)
     assert previous.model_dump_json() == original
     compacted = HarnessState.model_validate_json(compacted.model_dump_json())
-    assert await apply_compaction_to_state(compacted, result=result) is compacted
+    assert await _pending_checkpoint(compacted, result=result) is compacted
     changed = input.basis.model_copy(update={"prefix_digest": "different"})
     with pytest.raises(DefinitionError, match="identity was reused"):
-        await apply_compaction_to_state(compacted, result=CompactionResult.from_summary(changed, "other"))
+        await _pending_checkpoint(compacted, result=CompactionResult.from_summary(changed, "other"))
 
 
 @pytest.mark.parametrize("mismatch", ["thread", "digest", "prefix", "pending"])
-async def test_state_transform_rejects_stale_or_incomplete_work(mismatch):
+async def test_preparation_distinguishes_stale_incomplete_and_wrong_thread(mismatch):
     previous = _previous()
     input = _input(previous)
     result = CompactionResult.from_summary(input.basis, "summary")
@@ -647,12 +666,18 @@ async def test_state_transform_rejects_stale_or_incomplete_work(mismatch):
             }
         )
     original = previous.model_dump_json()
-    with pytest.raises(DefinitionError):
-        await apply_compaction_to_state(previous, result=result)
+    if mismatch == "thread":
+        with pytest.raises(DefinitionError):
+            await _pending_checkpoint(previous, result=result)
+    else:
+        prepared = await _pending_checkpoint(previous, result=result)
+        assert await compaction_disposition(prepared, basis=result.basis) == (
+            None if mismatch == "pending" else "skipped"
+        )
     assert previous.model_dump_json() == original
 
 
-async def test_state_transform_hydrates_prefix_but_preserves_stored_suffix():
+async def test_joint_resume_hydrates_stored_history_and_preserves_unrelated_namespaces():
     from a13n_harness.errors import StateError
     from a13n_harness.storage import RunStorage
 
@@ -666,16 +691,55 @@ async def test_state_transform_hydrates_prefix_but_preserves_stored_suffix():
     result = CompactionResult.from_summary(input.basis, "summary")
     delta = [ModelRequest(parts=[UserPromptPart([image])]), ModelResponse(parts=[TextPart("again")])]
     previous = previous.model_copy(update={"message_history_json": encode_messages([*prefix, *delta])})
+    import json
+
+    from a13n_harness import RunBindings
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+
+    opaque = CapabilityState(version="future", data={"retained": json.loads(encode_messages(prefix))})
+    previous = previous.model_copy(
+        update={
+            "agent_context_state": AgentContextStateSnapshot(entries={"unknown.owner": opaque}),
+        }
+    )
     previous = await RunStorage(store).export(previous)
     saved = previous.model_dump_json()
+    requests = []
+
+    async def stream(messages, _info):
+        requests.append(deepcopy(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
     with pytest.raises(StateError, match="no state store"):
-        await apply_compaction_to_state(previous, result=result)
-    compacted = await apply_compaction_to_state(previous, result=result, state_store=store)
+        await executable.run("next", previous_state=previous, compaction_result=result)
+    assert not requests
+    with pytest.raises(StateError, match="no state store"):
+        await compaction_disposition(previous, basis=result.basis)
+
+    completed = await executable.run(
+        "next",
+        previous_state=previous,
+        compaction_result=result,
+        bindings=RunBindings.embedded(state_store=store),
+    )
+    assert completed.output_or_raise() == "done"
+    assert completed.state is not None
     assert previous.model_dump_json() == saved
-    assert compacted.refs == previous.refs
-    assert encode_messages(compacted.message_history[-2:]) == encode_messages(previous.message_history[-2:])
-    restored = await RunStorage(store).resolve_messages(compacted.message_history)
-    assert encode_messages(restored[-2:]) == encode_messages(delta)
+    restored = await RunStorage(store).resolve_messages(completed.state.message_history)
+    retained_media = [
+        item
+        for content in _user_values(restored)
+        if isinstance(content, list)
+        for item in content
+        if isinstance(item, BinaryContent)
+    ]
+    assert len(retained_media) == 1
+    assert retained_media[0].data == image.data
+    assert any(encode_messages([message]) == encode_messages([delta[1]]) for message in restored)
+    namespaces = await RunStorage(store).resolve_context(completed.state.agent_context_state)
+    assert namespaces.get("unknown.owner") == opaque
+    assert await compaction_disposition(completed.state, basis=result.basis, state_store=store) == "applied"
 
 
 @pytest.mark.parametrize("cancel", [False, True])
@@ -685,7 +749,7 @@ async def test_failed_restoration_keeps_pending_provenance_for_retry(cancel):
 
     previous = _previous()
     input = _input(previous)
-    compacted = await apply_compaction_to_state(previous, result=CompactionResult.from_summary(input.basis, "summary"))
+    result = CompactionResult.from_summary(input.basis, "summary")
     contexts = []
     requests = []
 
@@ -705,16 +769,18 @@ async def test_failed_restoration_keeps_pending_provenance_for_retry(cancel):
     )
     if cancel:
         with pytest.raises(asyncio.CancelledError):
-            await executable.run("continue", previous_state=compacted)
+            await executable.run("continue", previous_state=previous, compaction_result=result)
     else:
-        failed = await executable.run("continue", previous_state=compacted)
+        failed = await executable.run("continue", previous_state=previous, compaction_result=result)
         assert failed.state.agent_context_state.get("a13n.compaction").data["restoration_pending"] is True
     assert not requests
     from a13n_harness.compaction import _CompactionState
 
     marker = await contexts[0].deps.state.read("a13n.compaction", _CompactionState, version="1")
     assert marker.restoration_pending
-    second = await executable.run("continue", previous_state=compacted)
+    compacted = await contexts[0].deps.export_state(contexts[0].messages)
+    assert await compaction_disposition(compacted, basis=result.basis) == "applied"
+    second = await executable.run("continue", previous_state=compacted, compaction_result=result)
     assert second.output_or_raise() == "done"
     assert len(contexts) == 2
     assert second.state.agent_context_state.get("a13n.compaction").data["restoration_pending"] is False
@@ -745,10 +811,9 @@ async def test_state_restoration_resets_memory_before_first_projection():
     first = await executable.run("hello")
     assert cursors.snapshot()
     input = _input(first.state)
-    compacted = await apply_compaction_to_state(
-        first.state, result=CompactionResult.from_summary(input.basis, "summary")
+    second = await executable.run(
+        "continue", previous_state=first.state, compaction_result=CompactionResult.from_summary(input.basis, "summary")
     )
-    second = await executable.run("continue", previous_state=compacted)
     assert second.output_or_raise() == "done"
     blocks = _blocks(requests[-1])
     assert len(blocks) == 1
@@ -766,9 +831,7 @@ async def test_state_restoration_uses_current_discovery_and_codeact_tools():
     capabilities = (_source(effects), ToolSearch(strategy="keywords"), CodeActCapability())
     first, _ = await _run_calls(capabilities, [("search_tools", {"queries": ["double"]}), ("double", {"value": 20})])
     input = _input(first.state)
-    compacted = await apply_compaction_to_state(
-        first.state, result=CompactionResult.from_summary(input.basis, "summary")
-    )
+    compacted = await _pending_checkpoint(first.state, result=CompactionResult.from_summary(input.basis, "summary"))
     second, snapshots = await _run_calls(
         capabilities, [("run_code", {"code": "await double(value=21)"})], previous_state=compacted
     )
@@ -800,7 +863,7 @@ async def test_state_restoration_checks_capacity_after_current_projection_and_me
     previous = previous.model_copy(
         update={"message_history_json": encode_messages([*previous.message_history, *delta])}
     )
-    compacted = await apply_compaction_to_state(previous, result=CompactionResult.from_summary(input.basis, "summary"))
+    compacted = await _pending_checkpoint(previous, result=CompactionResult.from_summary(input.basis, "summary"))
     counted = []
     requests = []
 
@@ -903,7 +966,7 @@ async def test_serialized_result_applies_without_generation_input_and_uses_canon
     assert result.model_dump_json() == serialized
     delta = [ModelRequest(parts=[UserPromptPart("use the last answer")])]
     latest = state.model_copy(update={"message_history_json": encode_messages([*prefix, *delta])})
-    compacted = await apply_compaction_to_state(latest, result=result)
+    compacted = await _pending_checkpoint(latest, result=result)
     active = apply_compaction(result, thread_id=state.thread_id, messages=latest.message_history)
     for messages in (active, compacted.message_history):
         assert messages[0].parts[0] == prefix[0].parts[0]
@@ -916,19 +979,17 @@ async def test_serialized_result_applies_without_generation_input_and_uses_canon
         assert isinstance(retained[1], BinaryContent)
         assert retained[1].data == original.data and retained[1].media_type == original.media_type
         assert encode_messages(messages[-1:]) == encode_messages(delta)
-    assert await apply_compaction_to_state(compacted, result=result) is compacted
+    assert await _pending_checkpoint(compacted, result=result) is compacted
 
 
 async def test_result_application_rejects_a_cutoff_inside_a_complete_tool_pair():
-    from hashlib import sha256
-
     state = _previous()
     prefix = [*state.message_history, ModelResponse(parts=[ToolCallPart("read", {}, "call")])]
     messages = [*prefix, ModelRequest(parts=[ToolReturnPart("read", "value", "call")])]
     basis = _input(state).basis.model_copy(
         update={
             "prefix_length": len(prefix),
-            "prefix_digest": sha256(encode_messages(prefix)).hexdigest(),
+            "prefix_digest": _prefix_digest(prefix),
         }
     )
     result = CompactionResult.from_summary(basis, "summary")
@@ -937,3 +998,239 @@ async def test_result_application_rejects_a_cutoff_inside_a_complete_tool_pair()
         apply_compaction(result, thread_id=state.thread_id, messages=messages)
     assert error.value.code == "compaction_boundary_pending"
     assert encode_messages(messages) == before
+
+
+@pytest.mark.parametrize("middle_prompt", [None, ("second", "first", "added")])
+@pytest.mark.parametrize("current_prompt", [None, ("current", "authority")])
+async def test_joint_resume_applies_across_intervening_system_prompt_changes(middle_prompt, current_prompt):
+    from a13n_harness.content import ContentItem, ContentMetadata, request_input_content
+    from a13n_harness.events import HarnessRunResultEvent
+    from pydantic_ai.messages import SystemPromptPart
+
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "1. First point\n2. Second point"
+
+    def build(prompt):
+        return HarnessBuilder().build(
+            AgentSpec(system_prompt=prompt), model=FunctionModel(stream_function=stream), output_type=str
+        )
+
+    image = BinaryContent(b"original", media_type="image/png")
+    first = await build(("first", "second")).run(
+        [
+            ContentItem(image, ContentMetadata(source_id="attachment", display=False, attachment_id="asset")),
+            "user text mentioning system prompts is real history",
+        ]
+    )
+    generation = _input(first.state)
+    frozen_request = generation.request_json
+    result = CompactionResult.from_summary(generation.basis, "prior history summary")
+    middle = await build(middle_prompt).run("intervening input", previous_state=first.state)
+    assert (
+        _prefix_digest(middle.state.message_history[: generation.basis.prefix_length]) == generation.basis.prefix_digest
+    )
+    original = middle.state.model_dump_json()
+    async with build(current_prompt).stream(
+        "explain the second point", previous_state=middle.state, compaction_result=result
+    ) as run:
+        events = [event async for event in run]
+    final = next(event.result for event in events if isinstance(event, HarnessRunResultEvent))
+    assert final.output_or_raise()
+    assert await compaction_disposition(final.state, basis=result.basis) == "applied"
+    assert middle.state.model_dump_json() == original
+    assert generation.request_json == frozen_request
+    assert _user_values(requests[-1]).count("intervening input") == 1
+    assert _user_values(requests[-1]).count("explain the second point") == 1
+    assert "prior history summary" in str(requests[-1])
+    systems = [
+        part.content
+        for message in final.state.message_history
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, SystemPromptPart)
+    ]
+    assert systems == list(current_prompt or ())
+    retained = [
+        item
+        for message in middle.state.message_history
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if isinstance(item.value, BinaryContent)
+    ]
+    assert retained[0].metadata.source_id == "attachment"
+    assert retained[0].metadata.display is False
+    assert retained[0].metadata.model_extra == {"attachment_id": "asset"}
+
+
+async def test_joint_resume_empty_suffix_uses_latest_assistant_for_new_input_and_does_not_replay_it():
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "done"
+
+    previous = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("old question")]),
+            ModelResponse(parts=[TextPart("wrong earlier answer")]),
+            ModelRequest(parts=[UserPromptPart("give numbered points")]),
+            ModelResponse(parts=[TextPart("1. latest first\n2. latest second")]),
+        ]
+    )
+    result = CompactionResult.from_summary(_input(previous).basis, "summary")
+    executable = HarnessBuilder().build(AgentSpec(), model=FunctionModel(stream_function=stream), output_type=str)
+    for _ in range(2):  # Lost checkpoint commit: retry against the original checkpoint.
+        resumed = await executable.run("explain the second point", previous_state=previous, compaction_result=result)
+        assert resumed.output_or_raise() == "done"
+        assert "latest second" in str(requests[-1])
+        assert "wrong earlier answer" not in str(requests[-1])
+        assert _user_values(requests[-1]).count("explain the second point") == 1
+        assert await compaction_disposition(resumed.state, basis=result.basis) == "applied"
+    # Commit succeeded but acknowledgement was lost: duplicate before prefix validation.
+    saved = HarnessState.model_validate_json(resumed.state.model_dump_json())
+    repeated = await executable.run("continue", previous_state=saved, compaction_result=result)
+    assert repeated.output_or_raise() == "done"
+    assert (
+        sum(
+            isinstance(part, TextPart) and part.content == "summary"
+            for msg in repeated.state.message_history
+            for part in msg.parts
+        )
+        == 1
+    )
+    conflict = result.model_copy(update={"basis": result.basis.model_copy(update={"prefix_digest": "conflict"})})
+    with pytest.raises(DefinitionError, match="identity was reused"):
+        await executable.run("continue", previous_state=saved, compaction_result=conflict)
+
+
+@pytest.mark.parametrize("mutation", ["user", "assistant", "short"])
+async def test_joint_resume_skips_changed_history_and_persists_duplicate_disposition(mutation):
+    previous = _previous()
+    result = CompactionResult.from_summary(_input(previous).basis, "stale summary")
+    messages = list(previous.message_history)
+    if mutation == "user":
+        messages[0].parts = [UserPromptPart("changed system prompt mentioned by user")]
+    elif mutation == "assistant":
+        messages[1].parts = [TextPart("edited assistant response")]
+    else:
+        messages = []
+    previous = previous.model_copy(update={"message_history_json": encode_messages(messages)})
+
+    async def stream(messages, info):
+        assert "stale summary" not in str(messages)
+        yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), model=FunctionModel(stream_function=stream), output_type=str)
+    for _ in range(2):
+        resumed = await executable.run("continue", previous_state=previous, compaction_result=result)
+        assert resumed.output_or_raise() == "done"
+        assert await compaction_disposition(resumed.state, basis=result.basis) == "skipped"
+        previous = HarnessState.model_validate_json(resumed.state.model_dump_json())
+
+
+async def test_prefix_normalization_preserves_empty_slots_annotations_and_non_system_fields():
+    from a13n_harness.content import ContentItem, ContentMetadata, annotate_prompt, replace_request_parts, request_parts
+    from pydantic_ai.messages import SystemPromptPart
+
+    request = annotate_prompt(
+        ModelRequest(parts=[SystemPromptPart("old"), UserPromptPart("input")]),
+        1,
+        [ContentItem("input", ContentMetadata(source_id="user", attachment_id="asset"))],
+    )
+    messages = [
+        ModelRequest(parts=[SystemPromptPart("system only")]),
+        request,
+        ModelResponse(parts=[TextPart("answer")]),
+    ]
+    digest = _prefix_digest(messages)
+    changed = [
+        replace_request_parts(
+            msg, [(part, items) for part, items in request_parts(msg) if not isinstance(part, SystemPromptPart)]
+        )
+        if isinstance(msg, ModelRequest)
+        else msg
+        for msg in messages
+    ]
+    assert _prefix_digest(changed) == digest
+    assert len(changed) == 3 and len(changed[0].parts) == 0
+    assert _prefix_digest(changed[1:]) != digest
+    annotated = annotate_prompt(changed[1], 0, [ContentItem("input", ContentMetadata(source_id="different"))])
+    assert _prefix_digest([changed[0], annotated, changed[2]]) != digest
+    changed[2] = ModelResponse(parts=[TextPart("answer")], model_name="different")
+    assert _prefix_digest(changed) != digest
+
+
+async def test_joint_resume_defers_unclosed_tools_then_applies_after_normal_recovery():
+    previous = _previous()
+    result = CompactionResult.from_summary(_input(previous).basis, "summary")
+    pending = previous.model_copy(
+        update={
+            "message_history_json": encode_messages(
+                [
+                    *previous.message_history,
+                    ModelRequest(parts=[UserPromptPart("recover the work")]),
+                    ModelResponse(parts=[ToolCallPart("recover", {}, "pending")]),
+                ]
+            )
+        }
+    )
+    calls = []
+
+    def recover():
+        calls.append("executed")
+        return "recovered result"
+
+    async def stream(messages, info):
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=stream),
+        output_type=str,
+        capabilities=(Capability(tools=[recover]),),
+    )
+    recovered = await executable.run(previous_state=pending, compaction_result=result, tool_recovery="always")
+    assert recovered.output_or_raise() == "done"
+    assert calls == ["executed"]
+    assert await compaction_disposition(recovered.state, basis=result.basis) is None
+    resumed = await executable.run("continue", previous_state=recovered.state, compaction_result=result)
+    assert resumed.output_or_raise() == "done"
+    assert await compaction_disposition(resumed.state, basis=result.basis) == "applied"
+    assert calls == ["executed"]
+    assert "recovered result" in str(resumed.state.message_history)
+
+
+async def test_joint_resume_defers_exact_approval_then_applies_on_later_run():
+    from a13n_harness import DeferredToolResume
+
+    from .test_deferred_resume import _build
+
+    previous = _previous()
+    result = CompactionResult.from_summary(_input(previous).basis, "old summary")
+    executed = []
+    executable = _build(executed)
+    suspended = await executable.run("go", previous_state=previous)
+    assert suspended.status == "suspended"
+    assert suspended.state is not None and suspended.deferred is not None
+    resumed = await executable.run(
+        previous_state=suspended.state,
+        compaction_result=result,
+        deferred_resume=DeferredToolResume(
+            suspended.deferred,
+            suspended.deferred.build_results(approve_all=True),
+        ),
+    )
+    assert resumed.status == "completed"
+    assert resumed.state is not None
+    assert executed == [1]
+    assert await compaction_disposition(resumed.state, basis=result.basis) is None
+    assert "old history" in _user_values(resumed.state.message_history)
+
+    later = await executable.run("continue", previous_state=resumed.state, compaction_result=result)
+    assert later.status == "completed"
+    assert later.state is not None
+    assert await compaction_disposition(later.state, basis=result.basis) == "applied"
+    assert executed == [1]

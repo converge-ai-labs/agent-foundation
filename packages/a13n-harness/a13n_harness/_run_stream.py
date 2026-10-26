@@ -28,6 +28,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     SystemPromptPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
@@ -41,7 +42,7 @@ from a13n_harness.capabilities.steering import (
     SteeringBridge,
     steering_input_ids,
 )
-from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID, CompactionResult, _CompactionState, _prepare_compaction
 from a13n_harness.content import (
     content_items,
     merge_request_history,
@@ -104,6 +105,7 @@ from a13n_harness.plugins import (
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ToolRecoveryMode,
+    ToolRecoveryPlan,
     is_recoverable_model_failure,
     normalize_interrupted_history,
     prepare_tool_recovery,
@@ -296,6 +298,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -334,15 +337,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise StateError("Accounting resume requires usage state.", code="usage_state_missing")
         self.run_id = f"run-{uuid4().hex}"
         self._initial_history = self._previous_state.message_history
-        self._tool_recovery = (
-            prepare_tool_recovery(
-                self._initial_history,
-                tool_recovery,
-                deferred_resume,
-            )
-            if deferred_resume is None or deferred_resume.recovery
-            else None
-        )
+        self._compaction_result = compaction_result
+        self._tool_recovery_mode: ToolRecoveryMode = tool_recovery
+        self._accepted_deferred_resume = deferred_resume
         self._deferred_input = DeferredInputState(deferred_resume)
         self._deferred_resume = (
             deferred_resume if deferred_resume is not None and not deferred_resume.recovery else None
@@ -603,7 +600,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             deferred_resume=self._deferred_resume,
             _deferred_input=self._deferred_input,
             deferred_tools_supported=bindings.deferred_tools_supported,
-            _tool_recovery=self._tool_recovery,
+            _tool_recovery=(ToolRecoveryPlan(self._tool_recovery_mode, ()) if self._deferred_resume is None else None),
             _storage=storage,
             _state_extensions=dict(self._previous_state.model_extra or {}),
             metadata=bindings.metadata,
@@ -1214,6 +1211,52 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             close_tool_calls=remaining is None,
         )
 
+    async def _prepare_history(self, current_input: SemanticRunInput) -> None:
+        """Jointly restore canonical history and ready work before recovery can rewrite it."""
+        context = self.context
+        history = await context._storage.resolve_messages(self._initial_history)
+        marker = None
+        if self._compaction_result is not None:
+            previous = await context.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+            messages, marker = _prepare_compaction(
+                self._compaction_result,
+                thread_id=self.thread_id,
+                messages=history,
+                previous=previous,
+                exact=self._accepted_deferred_resume is not None,
+                next_request=(
+                    ModelRequest(parts=[UserPromptPart(native_content(current_input.value))])
+                    if current_input.value is not None
+                    else None
+                ),
+            )
+            history = tuple(messages)
+        accepted = self._accepted_deferred_resume
+        recovery = (
+            prepare_tool_recovery(history, self._tool_recovery_mode, accepted)
+            if accepted is None or accepted.recovery
+            else None
+        )
+        history = _reconcile_system_prompt(
+            recovery.messages if recovery is not None else history, self._executable._system_prompt
+        )
+        if recovery is not None:
+            recovery.messages = history
+        # State.write suspends only before mutation. Publish history and recovery
+        # without another await so cancellation cannot checkpoint mismatched provenance.
+        if marker is not None:
+            await context.state.write(COMPACTION_CAPABILITY_ID, marker, version="1")
+        self._initial_history = history
+        self._latest_messages = history
+        self._new_message_index = len(history)
+        if recovery is not None:
+            target = context._tool_recovery
+            assert target is not None
+            target.messages = recovery.messages
+            target.pending = recovery.pending
+            target.results = recovery.results
+            target.retained_requests = recovery.retained_requests
+
     async def _run_attempts(
         self,
         exchange: PluginRunExchange,
@@ -1231,6 +1274,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         except HarnessError as exc:
             raise PluginError("Plugin middleware supplied an invalid input.", code="plugin_input_invalid") from exc
 
+        await self._prepare_history(current_input)
         restored_inputs = await exchange.context._steering.prepare(
             restore_retained=self._deferred_resume is not None,
         )
@@ -1239,14 +1283,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
         recovery = exchange.context._model_recovery
-        current_history = await exchange.context._storage.resolve_messages(
-            self._tool_recovery.messages if self._tool_recovery is not None else self._initial_history
-        )
+        tool_recovery = exchange.context._tool_recovery
+        current_history = tool_recovery.messages if tool_recovery is not None else self._initial_history
         deferred_results = (
             self._deferred_resume.model_results()
             if self._deferred_resume is not None
-            else self._tool_recovery.results
-            if self._tool_recovery is not None
+            else tool_recovery.results
+            if tool_recovery is not None
             else None
         )
         if deferred_results is None and restored_inputs:

@@ -132,23 +132,28 @@ def background_compaction(operator: CompactionOperator) -> CompactionCapability:
 
 Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。容量未知或不足时，Harness 等待同一个操作。若合并后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
 
-结果在两个 Run 之间就绪时，在 Host 的 Thread 写入隔离保护下转换最新检查点：
+结果在两个 Run 之间就绪时，将其与最新选定的检查点一起传给普通 Run：
 
 ```python
-from a13n_harness.compaction import apply_compaction_to_state
+from a13n_harness.compaction import compaction_disposition
 
-compacted_state = await apply_compaction_to_state(
-    latest_state, result=result, state_store=state_store
+continued = await executable.run(
+    "Continue", previous_state=latest_state, compaction_result=result, bindings=bindings
 )
-# Persist compacted_state before retiring the ready operation.
-continued = await executable.run("Continue", previous_state=compacted_state)
+# Commit continued.state through your Host's normal fenced checkpoint path.
+# Only the actually selected, committed state permits acknowledgement:
+disposition = await compaction_disposition(
+    committed_state, basis=result.basis, state_store=state_store
+)
+if disposition is not None:
+    await retire_operation(result.basis.operation_id)  # Your Host's operation store.
 ```
 
-该变换返回新的 `HarnessState`，不修改传入的检查点。结果自带 `CompactionBasis`，包含操作和 Thread 身份、前缀长度及摘要指纹、保留的语义输入。应用时根据当前历史验证这些依据和完整工具边界，并保留之后的全部消息、其他命名空间、Environment 状态和不透明引用。前缀内容已外置时，传入检查点对应的 `StateStore`；否则可以省略。
+Run 不修改传入的检查点。结果自带 `CompactionBasis`，包含操作和 Thread 身份、前缀长度及摘要指纹、保留的语义输入。Harness 在恢复逻辑改写历史之前解析并验证规范历史，仅替换匹配的前缀，保留完整后缀。检查点内容已外置时，通过 `RunBindings(state_store=...)` 提供存储。当前系统提示由 executable 决定；即使中间的 Run 更换、重排或删除系统提示，也不会使结果失效。其他历史修改会得到终态 `skipped`。匹配的历史若仍处于未闭合工具或挂起边界，则推迟应用，在后续 Run 再次传入结果。
 
-`a13n.compaction` 命名空间记录 `applied_operation_id`、`applied_basis_digest` 和待完成的运行时恢复。同一结果再次交付时，已保存的应用标记使其成为空操作。下一次 Run 首次投影上下文前，Harness 按当前定义恢复工具发现和 CodeAct 描述，并通过恢复事件重置记忆交付游标。待发送请求遵循当前图片、视频规则及容量检查。恢复过程不要求 executable 配置 `CompactionCapability` 或 operator。监听器失败或取消时保留待恢复标记，供后续重试。恢复事件本身不是保存确认。
+`a13n.compaction` 命名空间记录最近处理的操作、应用依据指纹、applied/skipped 处理结果和独立的待恢复标记。同一结果再次交付时，任一已保存的处理结果都使其成为空操作。通过 `compaction_disposition` 查询，不要解析该私有命名空间。下一次 Run 首次投影上下文前，Harness 按当前定义恢复工具发现和 CodeAct 描述，并通过恢复事件重置记忆交付游标。待发送请求遵循当前图片、视频规则及容量检查。恢复过程不要求 executable 配置 `CompactionCapability` 或 operator。监听器失败或取消时保留待恢复标记，供后续重试。恢复事件本身不是保存确认。
 
-`CompactionInput` 保存投影后的总结请求及捕获的模型配置。`CompactionResult` 仅保存应用依据和总结，应用时无需生成输入或模型配置。规范原始内容保留在 State 中。输入和结果都应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 是共享的纯历史变换；活动 Run 直接写回实时历史，`apply_compaction_to_state` 则在两个 Run 之间准备不可变续接状态。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
+`CompactionInput` 保存投影后的总结请求及捕获的模型配置。`CompactionResult` 仅保存应用依据和总结，应用时无需生成输入或模型配置。规范原始内容保留在 State 中。输入和结果都应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 是共享的纯历史变换；活动 Run 和下一次 Run 的联合恢复共享判断与恢复规则。普通检查点提交确认之前，同一操作持续占用未确认位置。后台完成后保存独立结果，空闲时等待下一次 Run，不改写检查点。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
 
 ## Handoff 与自动压缩
 

@@ -17,10 +17,19 @@ from typing import Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 from pydantic_ai import ModelSettings
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    SystemPromptPart,
+    TextPart,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import ModelRequestParameters
 
 from a13n_harness._context_history import _COMPACTION_PROMPT, _build_compacted_history
+from a13n_harness.content import replace_request_parts, request_parts
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import _requires_exact_history
 from a13n_harness.recovery import is_recoverable_model_failure
@@ -36,7 +45,7 @@ __all__ = [
     "CompactionOperator",
     "CompactionResult",
     "apply_compaction",
-    "apply_compaction_to_state",
+    "compaction_disposition",
     "compaction_tail",
     "generate_compaction",
 ]
@@ -50,8 +59,9 @@ _SETTINGS = TypeAdapter(dict[str, JsonValue])
 class _CompactionState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    applied_operation_id: str | None = None
-    applied_basis_digest: str | None = None
+    operation_id: str
+    basis_digest: str
+    disposition: Literal["applied", "skipped"]
     restoration_pending: bool = False
 
 
@@ -135,7 +145,7 @@ class CompactionInput(BaseModel):
             operation_id=operation_id,
             thread_id=thread_id,
             prefix_length=len(messages),
-            prefix_digest=sha256(encode_messages(messages)).hexdigest(),
+            prefix_digest=_prefix_digest(messages),
             replay_json=encode_messages(retained_requests).decode(),
         )
         # Remove structured output requirements, preserving ordinary tools,
@@ -221,7 +231,7 @@ class CompactionOperator(ABC):
     Submit is idempotent by operation ID and admits at most one unacknowledged
     operation per Thread. Save ready results before notifying the Host. Inspection
     and waiting never consume results. Cancellation of a waiter must not cancel
-    execution. The Host retires a result only after saving the applied marker.
+    execution. The Host retires a result only after committing its disposition.
     """
 
     @abstractmethod
@@ -287,60 +297,96 @@ def _validate_thread(basis: CompactionBasis, thread_id: str) -> None:
         raise DefinitionError("Compaction belongs to another Thread.", code="compaction_result_mismatch")
 
 
-def _already_applied(state: _CompactionState | None, basis: CompactionBasis) -> bool:
-    if state is None or state.applied_operation_id != basis.operation_id:
-        return False
-    if state.applied_basis_digest != basis.digest:
+def _processed_disposition(
+    state: _CompactionState | None, basis: CompactionBasis
+) -> Literal["applied", "skipped"] | None:
+    if state is None or state.operation_id != basis.operation_id:
+        return None
+    if state.basis_digest != basis.digest:
         raise DefinitionError("Compaction operation identity was reused.", code="compaction_result_mismatch")
-    return True
+    return state.disposition
 
 
-async def apply_compaction_to_state(
+async def compaction_disposition(
     state: HarnessState,
     *,
-    result: CompactionResult,
+    basis: CompactionBasis,
     state_store: StateStore | None = None,
-) -> HarnessState:
-    """Return a compacted continuation without changing the supplied checkpoint.
+) -> Literal["applied", "skipped"] | None:
+    """Read a checkpoint's terminal disposition for Host acknowledgement.
 
-    The Host selects the latest checkpoint under its writer fence and persists the
-    returned value. Only the fixed prefix is hydrated for comparison; suffix refs,
-    unrelated namespaces, Environment state and unknown fields are preserved.
-    The next Run finishes current-tool restoration before projecting model context,
-    even when its executable has no CompactionCapability or background operator.
+    Only the Host's selected, committed checkpoint permits retiring the operation.
+    A candidate checkpoint or a restoration event does not acknowledge persistence.
+    """
+    _validate_thread(basis, state.thread_id)
+    namespaces = AgentContextState(await RunStorage(state_store).resolve_context(state.agent_context_state))
+    previous = await namespaces.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+    return _processed_disposition(previous, basis)
+
+
+def _prefix_digest(messages: Sequence[ModelMessage]) -> str:
+    # System authority belongs to the current executable. Keep native message
+    # slots and rebuild semantic part annotations when stripping typed system parts.
+    comparison = [
+        replace_request_parts(
+            message, [(part, items) for part, items in request_parts(message) if not isinstance(part, SystemPromptPart)]
+        )
+        if isinstance(message, ModelRequest)
+        else message
+        for message in messages
+    ]
+    return sha256(encode_messages(comparison)).hexdigest()
+
+
+def _prefix_matches(basis: CompactionBasis, messages: Sequence[ModelMessage]) -> bool:
+    prefix = messages[: basis.prefix_length]
+    return len(prefix) == basis.prefix_length and _prefix_digest(prefix) == basis.prefix_digest
+
+
+def _prepare_compaction(
+    result: CompactionResult,
+    *,
+    thread_id: str,
+    messages: Sequence[ModelMessage],
+    previous: _CompactionState | None,
+    exact: bool = False,
+    next_request: ModelRequest | None = None,
+) -> tuple[list[ModelMessage], _CompactionState | None]:
+    """Decide against canonical history before recovery or request projection.
+
+    A returned marker and history must be published together by the caller.
+    None leaves provenance unchanged (duplicate delivery or a deferred boundary).
     """
     basis = result.basis
-    _validate_thread(basis, state.thread_id)
-    namespaces = AgentContextState(state.agent_context_state)
-    previous = await namespaces.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-    if _already_applied(previous, basis):
-        return state
-    messages = state.message_history
-    cutoff = basis.prefix_length
-    prefix = await RunStorage(state_store).resolve_messages(messages[:cutoff])
-    compacted = apply_compaction(result, thread_id=state.thread_id, messages=[*prefix, *messages[cutoff:]])
-    await namespaces.write(
-        COMPACTION_CAPABILITY_ID,
-        _CompactionState(
-            applied_operation_id=basis.operation_id,
-            applied_basis_digest=basis.digest,
-            restoration_pending=True,
-        ),
-        version="1",
-    )
-    return state.model_copy(
-        deep=True,
-        update={
-            "message_history_json": encode_messages(compacted),
-            "agent_context_state": await namespaces.snapshot(),
-        },
+    _validate_thread(basis, thread_id)
+    if _processed_disposition(previous, basis) is not None:
+        return list(messages), None
+    # Finish a prior restoration before replacing its retryable marker.
+    if previous is not None and previous.restoration_pending:
+        return list(messages), None
+    if not _prefix_matches(basis, messages):
+        disposition = "skipped"
+        replacement = list(messages)
+    elif (
+        exact
+        or _requires_exact_history(list(messages))
+        or _requires_exact_history(list(messages[: basis.prefix_length]))
+    ):
+        return list(messages), None
+    else:
+        disposition = "applied"
+        replacement = apply_compaction(result, thread_id=thread_id, messages=messages, next_request=next_request)
+    return replacement, _CompactionState(
+        operation_id=basis.operation_id,
+        basis_digest=basis.digest,
+        disposition=disposition,
+        restoration_pending=disposition == "applied",
     )
 
 
 def compaction_tail(basis: CompactionBasis, messages: Sequence[ModelMessage]) -> list[ModelMessage]:
     """Validate the fixed prefix and return every native message after its cutoff."""
-    prefix = messages[: basis.prefix_length]
-    if len(prefix) != basis.prefix_length or sha256(encode_messages(prefix)).hexdigest() != basis.prefix_digest:
+    if not _prefix_matches(basis, messages):
         raise DefinitionError("Compaction prefix changed since submission.", code="compaction_prefix_mismatch")
     return list(decode_messages(encode_messages(messages[basis.prefix_length :])))
 
@@ -351,6 +397,7 @@ def apply_compaction(
     thread_id: str,
     messages: Sequence[ModelMessage],
     retained_discovery: list[ModelMessage] | None = None,
+    next_request: ModelRequest | None = None,
 ) -> list[ModelMessage]:
     """Build Compact(H0) + delta without mutating input or replacing unrelated state.
 
@@ -364,7 +411,7 @@ def apply_compaction(
         raise DefinitionError("Compaction requires a complete tool boundary.", code="compaction_boundary_pending")
     return [
         *_build_compacted_history(
-            [*messages[: basis.prefix_length], *tail[:1]],
+            [*messages, *([next_request] if next_request is not None else [])],
             result.summary,
             retained_requests=basis.replay_requests,
             retained_discovery=deepcopy(retained_discovery),

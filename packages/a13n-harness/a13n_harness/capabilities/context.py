@@ -59,11 +59,10 @@ from a13n_harness.compaction import (
     CompactionInput,
     CompactionOperator,
     CompactionResult,
-    _already_applied,
     _CompactionState,
-    _validate_thread,
-    apply_compaction,
-    compaction_tail,
+    _prefix_matches,
+    _prepare_compaction,
+    _processed_disposition,
 )
 from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
@@ -908,55 +907,29 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         request: ModelRequestContext,
         result: CompactionResult,
     ) -> ModelRequestContext:
-        """Validate and apply ready work at an ordinary before-model boundary.
-
-        The applied marker is checkpoint provenance, never a Host persistence
-        acknowledgement. Offline application uses apply_compaction_to_state.
-        """
-        basis = result.basis
-        _validate_thread(basis, ctx.deps.thread_id)
+        """Publish a ready result using the same decision and restoration as resume."""
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if _already_applied(state, basis):
-            return request
-        if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
-            return request
-        # Validate before discovery retention changes any runtime cache.
-        compaction_tail(basis, ctx.messages)
-        from a13n_harness.tools.discovery import finish_discovery_replacement, retain_discovery
-
-        discovery, names = await retain_discovery(ctx, request)
-        messages = apply_compaction(
-            result, thread_id=ctx.deps.thread_id, messages=ctx.messages, retained_discovery=discovery
+        messages, marker = _prepare_compaction(
+            result,
+            thread_id=ctx.deps.thread_id,
+            messages=ctx.messages,
+            previous=state,
+            exact=bool(ctx.deps._tool_executions.history_calls) or _requires_exact_boundary(ctx, request.messages),
         )
-        replacement = _replace_context_history(ctx, request, messages, names)
-        replacement = await _project_compaction_media(ctx, replacement)
-        if await _compaction_request_fits(ctx, replacement) is False:
+        if marker is not None:
+            # State.write suspends only before mutation; publish canonical history
+            # before any restoration listener can fail or be cancelled.
+            await ctx.deps.state.write(COMPACTION_CAPABILITY_ID, marker, version="1")
+            ctx.messages[:] = messages
+            if marker.disposition == "applied":
+                request = _replace_messages(request, messages)
+        request = await _restore_compacted_state(ctx, request)
+        request = await _project_compaction_media(ctx, request)
+        if await _compaction_request_fits(ctx, request) is False:
             raise DefinitionError(
                 "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
             )
-        # No suspension between recording transformation provenance and publishing
-        # the canonical history. Event listeners see both, even if they then fail.
-        await ctx.deps.state.write(
-            COMPACTION_CAPABILITY_ID,
-            _CompactionState(
-                applied_operation_id=basis.operation_id,
-                applied_basis_digest=basis.digest,
-            ),
-            version="1",
-        )
-        ctx.messages[:] = messages
-        await finish_discovery_replacement(ctx)
-        await emit_harness_event(
-            ctx.deps.events,
-            kind="context",
-            payload=ContextOperationCompletedPayload(
-                type="compaction_completed",
-                operation_id=basis.operation_id,
-            ),
-        )
-        await ctx.emit(CompactionSummaryEvent(operation_id=basis.operation_id, summary=result.summary))
-        await ctx.emit(ContextRestoredEvent(source="compact", operation_id=basis.operation_id))
-        return replacement
+        return request
 
     async def _background_history(
         self,
@@ -1031,7 +1004,18 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     "Compaction failed with no verified request capacity.", code="compaction_capacity_unavailable"
                 )
             return request
-        compaction_tail(operation.input.basis, ctx.messages)
+        basis = operation.input.basis
+        state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+        if _processed_disposition(state, basis) is not None or not _prefix_matches(basis, ctx.messages):
+            if _processed_disposition(state, basis) is None:
+                await ctx.deps.state.write(
+                    COMPACTION_CAPABILITY_ID,
+                    _CompactionState(operation_id=basis.operation_id, basis_digest=basis.digest, disposition="skipped"),
+                    version="1",
+                )
+            if await _compaction_request_fits(ctx, request) is False:
+                raise DefinitionError("History exceeds the model window.", code="compaction_capacity_exceeded")
+            return request
         if await _compaction_request_fits(ctx, request) is True:
             return request
         completed = await self.operator.wait(ctx.deps.thread_id, operation.input.basis.operation_id)
@@ -1175,7 +1159,7 @@ def _compaction_replay_prefix(
 
 
 async def _restore_compacted_state(ctx: RunContext[AgentContext], request: ModelRequestContext) -> ModelRequestContext:
-    """Finish an offline transformation under this Run's tool and event authority."""
+    """Finish a committed transformation under this Run's tool and event authority."""
     state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
     if state is None or not state.restoration_pending:
         return request
@@ -1184,7 +1168,7 @@ async def _restore_compacted_state(ctx: RunContext[AgentContext], request: Model
     from a13n_harness.tools.discovery import finish_discovery_replacement, retain_discovery
 
     discovery, names = await retain_discovery(ctx, request, restore=True)
-    # Offline compaction leaves the discovery slot immediately after the summary.
+    # Compaction leaves the discovery slot immediately after the summary.
     messages = [*ctx.messages[:2], *discovery, *ctx.messages[2:]]
     replacement = _replace_context_history(
         replace(ctx, messages=messages, discovered_tool_names=ctx.discovered_tool_names | names),
@@ -1192,18 +1176,18 @@ async def _restore_compacted_state(ctx: RunContext[AgentContext], request: Model
         messages,
         names,
     )
-    assert state.applied_operation_id is not None
+    assert state.operation_id is not None
     summary = restored_history_summary(ctx.messages)
     if summary is None:
         raise DefinitionError("Compacted State has no summary.", code="compaction_summary_invalid")
     # Keep pending provenance until every listener succeeds. A failed/cancelled
     # restoration can retry without inserting discovery twice or losing resets.
-    await ctx.emit(ContextRestoredEvent(source="compact", operation_id=state.applied_operation_id))
-    await ctx.emit(CompactionSummaryEvent(operation_id=state.applied_operation_id, summary=summary))
+    await ctx.emit(ContextRestoredEvent(source="compact", operation_id=state.operation_id))
+    await ctx.emit(CompactionSummaryEvent(operation_id=state.operation_id, summary=summary))
     await emit_harness_event(
         ctx.deps.events,
         kind="context",
-        payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.applied_operation_id),
+        payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.operation_id),
     )
     await finish_discovery_replacement(ctx)
     # AgentContextState.write suspends only before mutation while acquiring its
