@@ -24,13 +24,38 @@ async def test_native_tools_keep_compact_refs_local_and_invalidate_after_navigat
 
     assert "[e1] button Continue" in await call("browser_observe")
     await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
-    backend.interact.assert_awaited_with(Click(kind="click", target=Ref(ref="opaque-target")), revision="revision-a")
+    backend.interact.assert_awaited_with(
+        Click(kind="click", target=Ref(kind="ref", ref="opaque-target")), revision="revision-a"
+    )
     await call("browser_navigate", url="https://example.com")
     with pytest.raises(ModelRetry):
         await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
     another = BrowserUseCapability(backend).get_toolset().tools
     with pytest.raises(ModelRetry):
-        await another["browser_act"].function_schema.call({"action": Click(kind="click", target=Ref(ref="e1"))}, None)
+        await another["browser_act"].function_schema.call(
+            {"action": Click(kind="click", target=Ref(kind="ref", ref="e1"))}, None
+        )
+
+
+@pytest.mark.parametrize(
+    "tool_name,argument,kind", [("browser_act", "action", "click"), ("browser_wait", "condition", "element")]
+)
+@pytest.mark.parametrize(
+    "target", [{"kind": "ref", "ref": "e1"}, {"kind": "locator", "role": "button", "name": "Continue"}]
+)
+async def test_target_discriminator_is_required_in_both_tool_schema_and_validation(tool_name, argument, kind, target):
+    from pydantic import ValidationError
+
+    tools = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset().tools
+    schema = tools[tool_name].function_schema
+    definition = schema.json_schema["$defs"]["Ref" if target["kind"] == "ref" else "Locator"]
+    assert "kind" in definition["required"]
+    assert "default" not in definition["properties"]["kind"]
+    valid = schema.validator.validate_python({argument: {"kind": kind, "target": target}})
+    assert valid[argument].target.kind == target["kind"]
+    without_kind = {key: value for key, value in target.items() if key != "kind"}
+    with pytest.raises(ValidationError, match="union_tag_not_found"):
+        schema.validator.validate_python({argument: {"kind": kind, "target": without_kind}})
 
 
 async def test_human_takeover_errors_are_tool_results_and_do_not_crash_the_run():
@@ -85,7 +110,7 @@ async def test_browser_tools_compose_in_the_native_harness_model_loop():
     result = await executable.run("Click Continue", bindings=RunBindings.embedded(browser_backend=backend))
     assert result.output_or_raise() == "Done"
     backend.interact.assert_awaited_once_with(
-        Click(kind="click", target=Ref(ref="continue-target")), revision="revision-a"
+        Click(kind="click", target=Ref(kind="ref", ref="continue-target")), revision="revision-a"
     )
 
 
@@ -189,8 +214,10 @@ async def test_reused_definition_resolves_each_run_backend_and_resets_references
     assert (
         await executable.run("second", bindings=RunBindings.embedded(browser_backend=second))
     ).output_or_raise() == "done"
-    first.interact.assert_awaited_once_with(Click(kind="click", target=Ref(ref="first")), revision="first")
-    second.interact.assert_awaited_once_with(Click(kind="click", target=Ref(ref="second")), revision="second")
+    first.interact.assert_awaited_once_with(Click(kind="click", target=Ref(kind="ref", ref="first")), revision="first")
+    second.interact.assert_awaited_once_with(
+        Click(kind="click", target=Ref(kind="ref", ref="second")), revision="second"
+    )
     assert owner._references == {}
 
 
@@ -258,7 +285,7 @@ async def test_element_and_tab_refs_never_alias_later_targets():
     with pytest.raises(ModelRetry):
         await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
     await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e2"}})
-    backend.interact.assert_awaited_once_with(Click(kind="click", target=Ref(ref="second")), revision="r2")
+    backend.interact.assert_awaited_once_with(Click(kind="click", target=Ref(kind="ref", ref="second")), revision="r2")
     assert "[t1]" in await call("browser_tabs")
     listing = await call("browser_tabs")
     assert "[t1]" not in listing

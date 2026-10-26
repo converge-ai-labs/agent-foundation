@@ -211,7 +211,7 @@ async def test_dialog_completion_does_not_wait_for_paused_input_or_leak_node_han
         interact(
             browser,
             page,
-            Click(kind="click", target=Ref(ref=observation.elements[0].target)),
+            Click(kind="click", target=Ref(kind="ref", ref=observation.elements[0].target)),
             revision=observation.revision,
         ),
         1,
@@ -332,7 +332,7 @@ async def test_navigation_caused_by_mouse_press_still_releases_gesture(browser):
 
     browser.client.send_raw.side_effect = send
     assert '"dispatch": "dispatched"' in await interact(
-        browser, page, Click(kind="click", target=Ref(ref="ref")), revision="observed"
+        browser, page, Click(kind="click", target=Ref(kind="ref", ref="ref")), revision="observed"
     )
     events = [
         call.args[1]["type"]

@@ -171,7 +171,7 @@ async def test_fill_replaces_existing_text(native_browser, markup, value_express
             observation = await backend.observe()
             element = next(item for item in observation.elements if item.description == "Editor")
             await backend.interact(
-                Fill(kind="fill", target=Ref(ref=element.target), text=text), revision=observation.revision
+                Fill(kind="fill", target=Ref(kind="ref", ref=element.target), text=text), revision=observation.revision
             )
             assert await backend.browser.evaluate(backend.page, value_expression) == text
 

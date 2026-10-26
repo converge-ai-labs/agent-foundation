@@ -7,13 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class Ref(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["ref"] = "ref"
+    kind: Literal["ref"]
     ref: str
 
 
 class Locator(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["locator"] = "locator"
+    kind: Literal["locator"]
     role: str = Field(default="", max_length=80)
     name: str = Field(default="", max_length=300)
     text: str = Field(default="", max_length=300)
