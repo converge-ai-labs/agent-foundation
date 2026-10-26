@@ -7,6 +7,12 @@ A skill is a package of instructions and supporting files that an agent can load
 
 A skill is identified by its [ID](resources.md#common-conventions) (`sk_…`), which paths such as `/api/v1/skills/{skill_id}` and agent configurations use. The model sees the skill by the `name` that the `SKILL.md` of its pinned revision declares. Two skills of a workspace may declare the same name, and a new revision may declare another, but the skills of one agent must declare distinct names.
 
+## Built-in skills
+
+The **Skills** page also lists release-owned built-in skills. Select **platform-operations** in an agent's **Skills** section and save a revision; the API field is `builtin_skills: ["platform-operations"]`. `GET /api/v1/builtin-skills` returns their names and descriptions. These entries have no workspace ID, revisions or import/edit actions, and selecting them does not grant platform tools or file permissions.
+
+Custom agents, including copies of Agent Composer, require a primary environment. Their built-in and imported skills use the same `skill_sync` policy and cannot share a declared name. Shared mode places the guide at `/workspace/.agents/skills/platform-operations/SKILL.md`; isolated mode uses the package-digest directory described below. The package includes `schemas/agent-config.json` and `instance/catalog.json`, with relative references. Built-in agents retain their read-only Host files and do not require a user environment for these instructions. Existing custom agents using built-in skills must now select a session environment or configure a default environment template; without a primary environment their runs fail before the model is called.
+
 ## Package format
 
 A skill package is a zip archive with `SKILL.md` at its root or inside its only top-level directory. `SKILL.md` is UTF-8 with YAML front matter that declares at least `name` and `description`:

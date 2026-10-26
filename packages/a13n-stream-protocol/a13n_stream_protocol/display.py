@@ -546,6 +546,7 @@ class DisplayFold:
             "a13n.tool_images",
             "a13n.harness-ui.tool_images",
             "a13n.harness-ui.mcp_apps",
+            "a13n.mcp_apps",
         }
         source = part if native or result else value if supplement else None
         if not isinstance(source, dict) or not isinstance(call_id := source.get("tool_call_id"), str):

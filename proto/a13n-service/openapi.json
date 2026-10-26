@@ -199,8 +199,7 @@
           "builtin_skills": {
             "default": [],
             "items": {
-              "const": "platform-operations",
-              "type": "string"
+              "$ref": "#/components/schemas/BuiltinSkillName"
             },
             "title": "Builtin Skills",
             "type": "array",
@@ -411,8 +410,7 @@
           "builtin_skills": {
             "default": [],
             "items": {
-              "const": "platform-operations",
-              "type": "string"
+              "$ref": "#/components/schemas/BuiltinSkillName"
             },
             "title": "Builtin Skills",
             "type": "array",
@@ -754,8 +752,7 @@
             "anyOf": [
               {
                 "items": {
-                  "const": "platform-operations",
-                  "type": "string"
+                  "$ref": "#/components/schemas/BuiltinSkillName"
                 },
                 "type": "array",
                 "uniqueItems": true
@@ -1013,8 +1010,7 @@
             "anyOf": [
               {
                 "items": {
-                  "const": "platform-operations",
-                  "type": "string"
+                  "$ref": "#/components/schemas/BuiltinSkillName"
                 },
                 "type": "array",
                 "uniqueItems": true
@@ -1390,6 +1386,19 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "builtin_instructions": {
+            "anyOf": [
+              {
+                "maxLength": 262144,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current deployment guidance for this builtin Agent, not a revision or Run snapshot.",
+            "title": "Builtin Instructions"
+          },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Output"
           },
@@ -1741,6 +1750,12 @@
             ],
             "title": "Agent Id"
           },
+          "instructions": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Instructions",
+            "type": "string"
+          },
           "max_traces": {
             "default": 10,
             "maximum": 20.0,
@@ -1951,6 +1966,140 @@
           "next_cursor"
         ],
         "title": "ApiKeyPage",
+        "type": "object"
+      },
+      "AppReference": {
+        "properties": {
+          "agent_revision_id": {
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "app_id": {
+            "title": "App Id",
+            "type": "string"
+          },
+          "connection_id": {
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "resource_uri": {
+            "title": "Resource Uri",
+            "type": "string"
+          },
+          "source_run_id": {
+            "title": "Source Run Id",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "title": "Tool Call Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "unavailable": {
+            "default": false,
+            "title": "Unavailable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "app_id",
+          "connection_id",
+          "agent_revision_id",
+          "source_run_id",
+          "tool_call_id",
+          "tool_name",
+          "resource_uri"
+        ],
+        "title": "AppReference",
+        "type": "object"
+      },
+      "AppResource": {
+        "properties": {
+          "html": {
+            "title": "Html",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "mime_type": {
+            "title": "Mime Type",
+            "type": "string"
+          },
+          "uri": {
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri",
+          "mime_type",
+          "html",
+          "metadata"
+        ],
+        "title": "AppResource",
+        "type": "object"
+      },
+      "AppResourceRead": {
+        "additionalProperties": false,
+        "properties": {
+          "uri": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "title": "AppResourceRead",
+        "type": "object"
+      },
+      "AppToolCall": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AppToolCall",
+        "type": "object"
+      },
+      "AppToolResult": {
+        "properties": {
+          "result": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Result",
+            "type": "object"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "AppToolResult",
         "type": "object"
       },
       "ApprovalDecision": {
@@ -2753,6 +2902,43 @@
         ],
         "title": "BootstrapInput",
         "type": "object"
+      },
+      "BuiltinSkill": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/BuiltinSkillName"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "BuiltinSkill",
+        "type": "object"
+      },
+      "BuiltinSkillCatalog": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BuiltinSkill"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BuiltinSkillCatalog",
+        "type": "object"
+      },
+      "BuiltinSkillName": {
+        "const": "platform-operations",
+        "type": "string"
       },
       "BusyOccurrence": {
         "additionalProperties": false,
@@ -13941,6 +14127,46 @@
         "title": "OpenView",
         "type": "object"
       },
+      "OpenedApp": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/AppReference"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/AppResource"
+          },
+          "result": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Result",
+            "type": "object"
+          },
+          "tool": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Tool",
+            "type": "object"
+          }
+        },
+        "required": [
+          "reference",
+          "tool",
+          "arguments",
+          "result",
+          "resource"
+        ],
+        "title": "OpenedApp",
+        "type": "object"
+      },
       "OperatingSystem": {
         "enum": [
           "linux",
@@ -14545,6 +14771,22 @@
         ],
         "type": "string"
       },
+      "PluginCatalog": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PluginType"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PluginCatalog",
+        "type": "object"
+      },
       "PluginSelection": {
         "additionalProperties": false,
         "description": "One instance of a Harness plugin factory the deployment installed.",
@@ -14572,6 +14814,68 @@
           "plugin_key"
         ],
         "title": "PluginSelection",
+        "type": "object"
+      },
+      "PluginType": {
+        "properties": {
+          "config_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Schema"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "distribution_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Name"
+          },
+          "distribution_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Version"
+          },
+          "plugin_key": {
+            "title": "Plugin Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_key",
+          "display_name",
+          "description",
+          "config_schema",
+          "distribution_name",
+          "distribution_version"
+        ],
+        "title": "PluginType",
         "type": "object"
       },
       "Position": {
@@ -21899,6 +22203,13 @@
             "title": "Input Schema",
             "type": "object"
           },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -23455,7 +23766,7 @@
   "paths": {
     "/api/v1/agent-composer": {
       "post": {
-        "description": "The workspace's Agent Composer, created or brought up to date with the deployment's definition.\n\nRefused with `model_required` while the workspace has no model the caller can use.",
+        "description": "The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.\n\nInitial preparation requires a usable model; later preparation preserves the selected model and revision.",
         "operationId": "prepare_composer",
         "parameters": [
           {
@@ -25894,6 +26205,65 @@
         "tags": [
           "auth"
         ]
+      }
+    },
+    "/api/v1/builtin-skills": {
+      "get": {
+        "description": "The skills bundled with this Service release, separately from workspace skill resources.",
+        "operationId": "list_builtin_skills",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuiltinSkillCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Builtin Skills",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/connections": {
@@ -38633,6 +39003,65 @@
         ]
       }
     },
+    "/api/v1/plugins": {
+      "get": {
+        "description": "The plugins loaded by this Control process, without constructing or executing instances.",
+        "operationId": "list_plugins",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Plugins",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/provider-types/{kind}": {
       "get": {
         "operationId": "list_provider_types",
@@ -39423,6 +39852,257 @@
           "effect": "read",
           "group": "execution"
         }
+      }
+    },
+    "/api/v1/runs/{run_id}/apps/{app_id}/open": {
+      "post": {
+        "description": "Open a saved MCP App with freshly read HTML and its original tool result.",
+        "operationId": "open_run_app",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenedApp"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Open Run App",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/apps/{app_id}/resources/read": {
+      "post": {
+        "description": "Read the HTML resource bound to a saved MCP App.",
+        "operationId": "read_run_app_resource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppResourceRead"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppResource"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Read Run App Resource",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/apps/{app_id}/tools/call": {
+      "post": {
+        "description": "Call an App-visible tool on the saved connection without starting a Run.",
+        "operationId": "call_run_app_tool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "app_id",
+            "required": true,
+            "schema": {
+              "title": "App Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppToolCall"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppToolResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Call Run App Tool",
+        "tags": [
+          "runs"
+        ]
       }
     },
     "/api/v1/runs/{run_id}/attempts": {

@@ -27,6 +27,8 @@ from a13n_service.runs import (
 )
 from a13n_service.runs import thread_stream as thread_streams
 from a13n_service.runs.display import StreamPosition
+from a13n_service.runs.mcp_apps import service as mcp_apps
+from a13n_service.runs.mcp_apps.schemas import AppResource, AppResourceRead, AppToolCall, AppToolResult, OpenedApp
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,
@@ -754,3 +756,42 @@ async def read_run_item_content(
         version=version,
         query=query,
     )
+
+
+# Browser App bridge operations stay outside the agent-facing management MCP surface.
+@router.post("/runs/{run_id}/apps/{app_id}/open", response_model=OpenedApp)
+async def open_run_app(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    run_id: str,
+    app_id: str,
+) -> OpenedApp:
+    """Open a saved MCP App with freshly read HTML and its original tool result."""
+    return await mcp_apps.open_app(runtime, actor, workspace_id, run_id, app_id)
+
+
+@router.post("/runs/{run_id}/apps/{app_id}/tools/call", response_model=AppToolResult)
+async def call_run_app_tool(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    run_id: str,
+    app_id: str,
+    body: AppToolCall,
+) -> AppToolResult:
+    """Call an App-visible tool on the saved connection without starting a Run."""
+    return await mcp_apps.call_tool(runtime, actor, workspace_id, run_id, app_id, body)
+
+
+@router.post("/runs/{run_id}/apps/{app_id}/resources/read", response_model=AppResource)
+async def read_run_app_resource(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    run_id: str,
+    app_id: str,
+    body: AppResourceRead,
+) -> AppResource:
+    """Read the HTML resource bound to a saved MCP App."""
+    return await mcp_apps.read_resource(runtime, actor, workspace_id, run_id, app_id, body.uri)

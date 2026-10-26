@@ -47,7 +47,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 - `POST …/archive` 阻止 agent 的新运行（`422 disabled`）；已接收的运行会完成。`POST …/unarchive` 取消归档。
 - 列表可按 `label`、`q`（名称或描述）、`archived`、`source`（`custom` 或 `builtin`）以及 `skill_id`、`skill_revision_id` 筛选，后两者保留包含引用该 skill 的修订版本的 agent。
 
-内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。它们的完整配置均只读，包括模型和模型设置。准备操作自动选择可用模型，并在当前模型仍可用时保留它。名称等元信息、头像、归档和默认版本切换受到保护。
+内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。你可以编辑它们的模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。修订版本保存用户补充；只读的官方指令由当前 Worker 在每次执行尝试时提供，包括恢复和等待后的继续执行。其他配置、名称等元信息、头像和归档仍受保护。可以在版本历史中选择以前的默认版本；准备操作会保留这一选择，受保护配置的更新只生成候选版本，官方指令更新不需要新版本。需要自由修改所有配置时，可复制为自定义 Agent。
 
 ### Agent 配置
 
@@ -497,12 +497,13 @@ Service 在 Run 接受时冻结 Agent／Thread／Run 三层的结果，恢复和
 curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| 事件     | 数据                                                        | 含义                                                                                                   |
-| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `thread` | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                   |
-| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                   |
-| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
-| `gap`    | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                      |
+| 事件        | 数据                                                        | 含义                                                                                                                               |
+| ----------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `thread`    | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                                               |
+| `items`     | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                                               |
+| `delta`     | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。                             |
+| `gap`       | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                                                  |
+| `app_ready` | `{thread_id, run_id, apps}`                                 | 列出的 MCP App 原始数据及引用已提交。收到该事件后才能启用对应入口；参阅 [MCP Apps](tools.md#mcp-apps-for-embedding-applications)。 |
 
 每个连接都从会话的当前状态开始：每个线程一个 `thread` 帧，按创建时间从旧到新，每个帧之后是其活跃运行的 `items` 帧和该运行已产生的输出。事件流没有游标，因此重连时不发送位置。渲染会话时：
 
@@ -573,10 +574,18 @@ API 使用 `GET …/traces/search`，提供明确的 `started_after`、`started_
 
 后续分析同一 agent 版本时，会收到近期已有的发现项，包括未审阅和已关闭的发现项。未审阅的发现项用于描述已有诊断，已审阅的发现项还会提供你的结论和理由；其他版本的发现项不会加入。Agent 会比较问题和证据，对相同诊断在摘要中引用已有发现项，报告新发现时说明证据的实质变化。这会减少重复诊断，但不保证完整去重，也不会合并已保存的发现项。反馈有数量和长度上限，可能被截短；每次分析保留接受时收到的反馈值，修改审阅只影响新分析，不改变重试的输入。可以在理由中解释误判原因或为什么错误属于预期行为。Agent 将反馈作为上下文参考，也可以根据新证据提出不同结论。
 
-选择 **分析 traces**，设置内置规则和时间范围、数量，无需选择 Agent；默认范围为工作空间内的 traces。分析自动使用内置 Finding Agent。准备操作自动选择可用模型，并在当前模型仍可用时保留它；模型和其他配置均只读。分析按需通过普通 Service Run 执行，需要部署已配置 trace 查询后端。内置规则关注执行失败、重试与恢复、回答质量；成功恢复的错误会结合上下文判断。在已结束的 trace 页面选择 **分析此 trace**，可以仅分析这一条。
+选择 **分析 traces**，设置内置规则和时间范围、数量，无需选择 Agent；默认范围为工作空间内的 traces。分析自动使用内置 Finding Agent。分析使用 Finding Agent 当前选定的默认版本和模型，可在其 Agent 页面修改。可填写“本次检查要求”，仅指导这一次分析，不修改 Agent 配置；要求会保存在分析历史中。分析按需通过普通 Service Run 执行，需要部署已配置 trace 查询后端。内置规则关注执行失败、重试与恢复、回答质量；成功恢复的错误会结合上下文判断。在已结束的 trace 页面选择 **分析此 trace**，可以仅分析这一条。
 
 选择过程最多扫描 100 个根节点，最多选取 20 条匹配 trace。执行与恢复规则在扫描范围内优先选取失败的 run，以及标记为错误或致命级别的根节点，同等优先级保留后端顺序。仅出现在子 span 中的错误不影响选择优先级。只选择回答质量规则时保留后端顺序。优先级信号提示值得调查，不代表已证实有问题。**分析历史**标签页用表格列出分析范围、运行状态和创建时间。点击记录，在详情弹窗中查看选中 trace 数、发现数、证据引用的不同 trace 数、选择上限和 trace 链接。这些数量不代表完整分析的 trace 数。打开分析运行，在最终回复中查看结果摘要和局限。没有发现项不代表所有 trace 都已审阅，也不代表 Agent 没有问题。
 
 对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读平台查询读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
 
 Finding Agent 只启用 `execution` 组中的六个[平台工具](tools.md#platform-tools)，均为允许：它读取所选 trace、其 span 和 span 内容、run 实际执行的配置和发现项，唯一的写入操作是提交发现项。它的发现项只引用已读取的所选 trace，并以其运行作为来源。自定义 Agent 可以选择相同的工具，写入默认需要询问用户。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。
+
+## 在 Console 中配置插件
+
+打开智能体配置，在「能力 → 插件」中点击「添加插件」。列表显示当前部署已启用的插件。选择插件，为实例设置唯一名称并编辑配置。简单 Schema 提供表单，也可切换为 JSON；其他 Schema 使用 JSON 编辑器。同一插件可以添加多个实例。
+
+添加、修改和移除操作先保留在草稿中，保存智能体后生效。保存会校验配置，但不运行插件，并按普通流程创建修订版本。重命名或移除实例时，也会更新工具发现分组对它的引用。预设配置只读。已保存的插件不可用时，仍可查看原有 JSON；请联系管理员恢复插件，或在保存前移除该实例。
+
+插件目录来自 Control 的 `GET /plugins`。管理员需在 Control 和 Worker 上安装一致的插件包并配置 `plugins.keys`；该列表不能证明 Worker 上的插件可用。

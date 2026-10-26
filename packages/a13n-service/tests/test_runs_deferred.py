@@ -73,7 +73,8 @@ def results():
     }
 
 
-async def test_incomplete_or_misclassified_batches_leave_no_successor(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_incomplete_or_misclassified_batches_leave_no_successor(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     for mistake in ["missing_approval", "missing_call", "unknown", "category", "old_envelope"]:
         body = results()
@@ -100,8 +101,9 @@ async def test_incomplete_or_misclassified_batches_leave_no_successor(service, s
 
 @pytest.mark.parametrize("failed", [False, True])
 async def test_custom_human_results_and_native_failures_share_the_same_resume(
-    service, scripted_model, runs_kit, failed
+    skill_service, scripted_model, runs_kit, failed
 ):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = results()
     if failed:
@@ -128,7 +130,8 @@ async def test_custom_human_results_and_native_failures_share_the_same_resume(
     assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1
 
 
-async def test_fork_discards_inherited_wait_only_in_the_new_branch(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_fork_discards_inherited_wait_only_in_the_new_branch(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     agent, waiting = await mixed_wait(service, scripted_model, runs_kit)
     response = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/fork",
@@ -152,7 +155,8 @@ async def test_fork_discards_inherited_wait_only_in_the_new_branch(service, scri
     assert "Do something else" in str(request["messages"][-1]["content"])
 
 
-async def test_application_resume_ignores_retired_answer_storage(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_application_resume_ignores_retired_answer_storage(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     from a13n_service.infra.db import short_session, transaction
     from a13n_service.runs.tables import PendingAnswerRow
 

@@ -116,6 +116,45 @@ flowchart TD
 
 需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
+### 后台压缩
+
+Host 可以独立于前台 Run 执行总结生成：
+
+```python
+from a13n_harness.compaction import CompactionOperator
+
+
+def background_compaction(operator: CompactionOperator) -> CompactionCapability:
+    return CompactionCapability(background=True, operator=operator)
+```
+
+在 operator 中实现 `submit(input)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。提交总结的 Run 关闭后，后台执行仍应继续。每个 Thread 同时只接纳一个未确认的操作，先保存就绪结果再通知，读取结果不消费结果。使用 `generate_compaction(input, request)` 执行总结协议与有界瞬态重试。回调接收 `CompactionInput`，通过 `request_messages`、`settings` 和 `parameters` 获取新的可变副本，使用新的 Host 模型调用授权，并统计每次尝试；不要捕获父 Run 的 Agent、资源或可变用量对象。
+
+Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。达到压缩触发线时，Harness 仅在容量已验证充足时启动后台，否则直接同步压缩，不提交新的后台操作。如果已有操作正在运行，容量未知或不足时就等待该操作。后台失败（包括跨 Run 前中断）且仍需压缩时，转为同步压缩。降级成功将旧操作标记为 skipped，Host 在检查点提交后才清理它。降级失败保留原历史，仅在容量已验证充足时继续；同一 Run 不会反复重试该失败。所有摘要调用仍遵循当前用量限制和准入规则。若替换后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
+
+结果在两个 Run 之间就绪时，将其与最新选定的检查点一起传给普通 Run：
+
+```python
+from a13n_harness.compaction import compaction_disposition
+
+continued = await executable.run(
+    "Continue", previous_state=latest_state, compaction_result=result, bindings=bindings
+)
+# Commit continued.state through your Host's normal fenced checkpoint path.
+# Only the actually selected, committed state permits acknowledgement:
+disposition = await compaction_disposition(
+    committed_state, basis=result.basis, state_store=state_store
+)
+if disposition is not None:
+    await retire_operation(result.basis.operation_id)  # Your Host's operation store.
+```
+
+Run 不修改传入的检查点。结果自带 `CompactionBasis`，包含操作和 Thread 身份、前缀长度及摘要指纹、保留的语义输入。Harness 在恢复逻辑改写历史之前解析并验证规范历史，仅替换匹配的前缀，保留完整后缀。检查点内容已外置时，通过 `RunBindings(state_store=...)` 提供存储。当前系统提示由 executable 决定；即使中间的 Run 更换、重排或删除系统提示，也不会使结果失效。其他历史修改会得到终态 `skipped`。匹配的历史若仍处于未闭合工具或挂起边界，则推迟应用，在后续 Run 再次传入结果。
+
+`a13n.compaction` 命名空间记录最近处理的操作、应用依据指纹、applied/skipped 处理结果和独立的待恢复标记。同一结果再次交付时，任一已保存的处理结果都使其成为空操作。通过 `compaction_disposition` 查询，不要解析该私有命名空间。下一次 Run 首次投影上下文前，Harness 按当前定义恢复工具发现和 CodeAct 描述，并通过恢复事件重置记忆交付游标。待发送请求遵循当前图片、视频规则及容量检查。恢复过程不要求 executable 配置 `CompactionCapability` 或 operator。监听器失败或取消时保留待恢复标记，供后续重试。恢复事件本身不是保存确认。
+
+`CompactionInput` 保存投影后的总结请求及捕获的模型配置。`CompactionResult` 仅保存应用依据和总结，应用时无需生成输入或模型配置。规范原始内容保留在 State 中。输入和结果都应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 是共享的纯历史变换；活动 Run 和下一次 Run 的联合恢复共享判断与恢复规则。普通检查点提交确认之前，同一操作持续占用未确认位置。后台完成后保存独立结果，空闲时等待下一次 Run，不改写检查点。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
+
 ## Handoff 与自动压缩
 
 续接总结保留仍需使用的 Skill 路径与作用。恢复时，若完整内容已不可用，应重新读取。

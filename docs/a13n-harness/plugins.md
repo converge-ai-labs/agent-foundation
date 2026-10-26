@@ -118,14 +118,12 @@ Register one no-argument factory class:
 The entry-point name and `plugin_key()` must match:
 
 ```python
-from collections.abc import Mapping
-
 from a13n_harness import AbstractHarnessPlugin
 from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
 )
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel
 
 
 class AuditConfiguration(BaseModel):
@@ -142,15 +140,13 @@ class AuditPlugin(AbstractHarnessPlugin):
 
 
 class AuditPluginFactory(HarnessPluginFactory):
+    configuration_model = AuditConfiguration
+    display_name = "Audit"
+    description = "Record run metadata."
+
     @classmethod
     def plugin_key(cls) -> str:
         return "acme.audit"
-
-    def validate_configuration(
-        self,
-        configuration: Mapping[str, JsonValue],
-    ) -> BaseModel:
-        return AuditConfiguration.model_validate(dict(configuration))
 
     def create_plugin(
         self,
@@ -160,7 +156,13 @@ class AuditPluginFactory(HarnessPluginFactory):
         return AuditPlugin(context.plugin_id)
 ```
 
-Validate configuration in `validate_configuration()` before creating a fresh plugin. Keep factory construction free of I/O and mutable Run data in `for_run()`.
+The base `validate_configuration()` calls the declared model's `model_validate()` before a Host accepts configuration. Put custom field validation and normalization in that model. Keep factory construction free of I/O and mutable Run data in `for_run()`.
+
+### Describe Configuration for Editors
+
+Declare `configuration_model` once, as above. Hosts generate the editor schema with `configuration_model.model_json_schema(mode="validation")`; the same model validates configuration. Field titles, descriptions, constraints, and defaults belong in the Pydantic model. `display_name` and `description` are optional, static, credential-free class attributes.
+
+Existing factories may keep their own `validate_configuration()` implementation without declaring a model; editors show the plugin key and a JSON editor. Service also falls back to JSON editing if schema generation fails. Schema generation happens when listing plugins, not when Harness loads factories. Backend validation remains authoritative, including custom validators that JSON Schema cannot express.
 
 ### Select Configured Plugins
 

@@ -5,6 +5,7 @@ import type { Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { AgentEditor } from "../agents/editor";
 import { AgentLink } from "../agents/link";
+import { editablePreset, useAgent } from "../agents/queries";
 import { ModelKeyLabel } from "../models/model-icon";
 import { useRunAgent } from "./queries";
 import styles from "./run-agent.module.css";
@@ -82,6 +83,7 @@ export function RunAgentDialog({
 function RunAgentConfiguration({ run }: { run: Run }) {
   const { t } = useTranslation();
   const executed = useRunAgent(run.id);
+  const agent = useAgent(run.agent_id);
   if (executed.isPending) return <Loading variant="detail" />;
   if (!executed.data)
     return (
@@ -94,6 +96,13 @@ function RunAgentConfiguration({ run }: { run: Run }) {
   const overridden = overriddenFields(run);
   return (
     <div className="grid gap-6">
+      {agent.data && editablePreset(agent.data) && (
+        <p>
+          {t(
+            "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.",
+          )}
+        </p>
+      )}
       <dl className={styles.facts}>
         <div>
           <dt>{t("Agent")}</dt>

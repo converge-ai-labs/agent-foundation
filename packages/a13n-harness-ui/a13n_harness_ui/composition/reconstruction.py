@@ -19,6 +19,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.capabilities import (
+    CompactionCapability,
     SubagentCapability,
     SubagentOperator,
     ToolExecutionCapability,
@@ -48,6 +49,8 @@ from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness_ui.compaction import BackgroundCompaction
+from a13n_harness_ui.compaction_model import CompactionRun
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
@@ -75,6 +78,7 @@ class ReconstructedAgent:
     run_configuration: RunConfiguration = field(default_factory=RunConfiguration)
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
     memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
+    compaction: CompactionRun | None = None
 
     def file_media_understanding(self, thread_id: str) -> FileMediaUnderstanding | None:
         if not self.media_models:
@@ -213,6 +217,7 @@ class AgentReconstructor:
         pricing_catalog: PricingCatalog | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
         organization: MemoryOrganizationRun | None = None,
+        background_compaction: BackgroundCompaction | None = None,
     ) -> ReconstructedAgent:
         if composition.memory_organization:
             if organization is None:
@@ -269,6 +274,27 @@ class AgentReconstructor:
                     and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
                 ),
             )
+            model_resolver = HarnessUiModelResolver(
+                model_recipes,
+                subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
+                configuration=composition.run_configuration,
+            )
+            compaction = (
+                CompactionRun(background_compaction, model_resolver.fresh(), pricing_catalog)
+                if background_compaction is not None and composition.background_compaction
+                else None
+            )
+            if compaction is not None:
+                definition = replace(
+                    definition,
+                    capabilities=tuple(
+                        CompactionCapability(item.policy, background=True, operator=compaction)
+                        if isinstance(item, CompactionCapability)
+                        else item
+                        for item in definition.capabilities
+                    ),
+                )
             executable = HarnessBuilder(
                 configured_plugins_enabled=False,
                 instrumentation=self._instrumentation,
@@ -284,12 +310,8 @@ class AgentReconstructor:
             run_configuration=composition.run_configuration,
             memory_cursors=cursors,
             executable=cast(ExecutableAgent[str], executable),
-            model_resolver=HarnessUiModelResolver(
-                model_recipes,
-                subscription_sources=subscription_sources,
-                api_keys=self._api_keys,
-                configuration=composition.run_configuration,
-            ),
+            model_resolver=model_resolver,
+            compaction=compaction,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
             media_models={
                 kind: recipe.model_copy(deep=True) for kind, recipe in composition.media_understanding.items()

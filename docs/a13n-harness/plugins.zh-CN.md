@@ -118,14 +118,12 @@ result = await executable.run(
 入口点名称必须与 `plugin_key()` 一致：
 
 ```python
-from collections.abc import Mapping
-
 from a13n_harness import AbstractHarnessPlugin
 from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
 )
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel
 
 
 class AuditConfiguration(BaseModel):
@@ -142,15 +140,13 @@ class AuditPlugin(AbstractHarnessPlugin):
 
 
 class AuditPluginFactory(HarnessPluginFactory):
+    configuration_model = AuditConfiguration
+    display_name = "Audit"
+    description = "Record run metadata."
+
     @classmethod
     def plugin_key(cls) -> str:
         return "acme.audit"
-
-    def validate_configuration(
-        self,
-        configuration: Mapping[str, JsonValue],
-    ) -> BaseModel:
-        return AuditConfiguration.model_validate(dict(configuration))
 
     def create_plugin(
         self,
@@ -160,7 +156,13 @@ class AuditPluginFactory(HarnessPluginFactory):
         return AuditPlugin(context.plugin_id)
 ```
 
-在 `validate_configuration()` 验证配置，再创建新插件。工厂构造不执行 I/O，可变 Run 数据放入 `for_run()`。
+基类的 `validate_configuration()` 调用所声明模型的 `model_validate()`，供 Host 在接受配置前执行校验。自定义字段校验和归一化也应放在这个模型中。工厂构造不执行 I/O，可变 Run 数据放入 `for_run()`。
+
+### 为配置编辑器提供描述
+
+按上例声明一次 `configuration_model` 即可。Host 调用 `configuration_model.model_json_schema(mode="validation")` 生成编辑器 Schema，同一个模型负责配置校验。字段标题、说明、约束和默认值都写在 Pydantic 模型中。`display_name` 和 `description` 是可选的静态类属性，不包含凭证。
+
+旧工厂可以保留自己的 `validate_configuration()` 实现，不声明模型；编辑器会显示插件标识并使用 JSON 编辑器。Schema 生成失败时，Service 也会退回 JSON 编辑。Schema 在查询插件目录时生成，不在 Harness 加载工厂时生成。最终配置始终由后端校验，包括 JSON Schema 无法表达的自定义校验逻辑。
 
 ### 通过配置选择插件
 

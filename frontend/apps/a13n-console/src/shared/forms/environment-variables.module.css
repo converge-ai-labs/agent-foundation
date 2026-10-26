@@ -37,7 +37,7 @@
   .environmentVariableRow {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .environmentVariableRow > input:first-child {
+  .environmentVariableRow > :first-child {
     grid-column: 1 / -1;
   }
 }

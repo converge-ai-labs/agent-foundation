@@ -24,7 +24,11 @@ import { useAgentComposer } from "./composer";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
 import { AgentEditor } from "./editor";
-import { editableAgent } from "./queries";
+import {
+  editableAgent,
+  editableAgentRevision,
+  editablePreset,
+} from "./queries";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
 import styles from "./agents.module.css";
@@ -117,7 +121,7 @@ export function AgentDetail() {
     setGeneration((value) => value + 1);
   };
   const state = agent.archived_at ? "archived" : "enabled";
-  const editable = can("write") && editableAgent(agent);
+  const editable = can("write") && editableAgentRevision(agent);
   return (
     <DetailPage
       back={`${basePath}/agents`}
@@ -151,7 +155,8 @@ export function AgentDetail() {
           }
           description={agent.description}
           edit={
-            editable && (
+            can("write") &&
+            editableAgent(agent) && (
               <ModalFrame
                 open={detailsOpen}
                 onOpenChange={setDetailsOpen}
@@ -240,6 +245,7 @@ export function AgentDetail() {
           pending={save.isPending}
           error={save.error}
           readonly={!editable}
+          preset={editablePreset(agent) ? revision : undefined}
           submit={(config, etag, note) => save.mutate({ config, etag, note })}
           discard={() => void reload()}
         />

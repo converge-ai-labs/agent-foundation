@@ -22,6 +22,7 @@ from a13n_service.infra.tasks import Tasks
 from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.traces import TraceProvider
+from a13n_service.resources.builtin_skills import BuiltinPackage, BuiltinSkillName
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.mailbox import Mailbox
 from a13n_service.settings import Settings
@@ -42,6 +43,7 @@ class Runtime:
     settings: Settings
     registry: Registry
     platform_mounts: dict[str, EnvironmentMount]
+    builtin_skills: dict[BuiltinSkillName, BuiltinPackage]
     # Who may call and what their grants mean: the distribution's authenticator, roles and grant sources.
     access: Access
     tasks: Tasks

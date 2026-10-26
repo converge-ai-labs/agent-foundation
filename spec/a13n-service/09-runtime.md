@@ -333,6 +333,8 @@ Both methods run in a short transaction the Service owns and refuse by raising a
 - `proceed` runs before every paid dispatch of an attempt: every model request, including inline subagents, every connection tool call and every web search or scrape. It runs after the attempt's cancellation and lease checks and, for a model request, the run's request limit ([05](05-runs.md#execute)). A refusal ends the run with a failure carrying the error's code, or a `conflict`'s reason; an `unavailable` error is a dependency failure, not a refusal.
 - `call_id` is established before dispatch, and the usage records of that call carry the same identity ([07](07-facts-and-delivery.md#usage-records)), so a policy can correlate what it allowed with what was charged, including concurrent calls and late reports. A child run carries its root run's identity; creating a new run never yields a fresh allowance.
 
+Direct MCP App tool actions use an optional `proceed_app(session, AppCallContext)` method on the installed policy. It receives the requesting principal, workspace, original Run and App IDs, connection, tool name and new call ID, with no fabricated attempt. It is SQL-only, short and idempotent like `proceed`, and runs before each native dispatch round. An installed policy without this method refuses direct App actions. Refusal is returned to the App caller and never changes the original Run's outcome. HTML reads do not dispatch tools and do not use this hook.
+
 The built-in distribution installs no admission policy. Its built-in limits are the per-run request limit and the structural capacity limits; it keeps no monetary ledger.
 
 ## Trade-offs
@@ -348,4 +350,4 @@ The built-in distribution installs no admission policy. Its built-in limits are 
 - The worker role never migrates, and no process serves or claims on a schema other than its build's head.
 - Duplicate routes, tables, settings sections, roles and provider types, and a second authenticator or admission policy, fail assembly or settings loading.
 - Every operational limit is a finite setting or a fixed bound in code, and nested bounds are validated at load.
-- Every creation path passes `accept`, and every paid dispatch passes `proceed` with a `call_id` its usage records share.
+- Every creation path passes `accept`; every paid attempt dispatch passes `proceed` with a `call_id` its usage records share. Direct App tool actions pass `proceed_app` when admission is installed.

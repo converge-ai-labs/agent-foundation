@@ -179,6 +179,7 @@ class ResolvedRunComposition(CompositionModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
     memory_organization: bool = Field(default=False, exclude_if=lambda value: not value)
+    background_compaction: bool = Field(default=False, exclude_if=lambda value: not value)
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     run_configuration: RunConfiguration = Field(

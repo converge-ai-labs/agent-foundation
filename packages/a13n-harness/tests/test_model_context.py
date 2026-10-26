@@ -64,6 +64,9 @@ class _ProjectionDeps:
         deferred_resume: Any = None,
         projection: ModelContextProjection | None = None,
     ) -> None:
+        from a13n_harness.state import AgentContextState
+
+        self.state = AgentContextState()
         self.deferred_resume = deferred_resume
         self.model_context = None
         self.projection = projection or ModelContextProjection()

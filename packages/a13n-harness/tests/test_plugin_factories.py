@@ -21,7 +21,7 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
-from pydantic import JsonValue, RootModel
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, field_validator
 from pydantic_ai.agent.spec import AgentSpec
 
 
@@ -547,3 +547,55 @@ def test_catalog_require_rejects_unselected_key() -> None:
         catalog.require("missing.plugin")
 
     assert exc_info.value.code == "plugin_factory_missing"
+
+
+class _DeclaredConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    count: int = Field(default=1, ge=1)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("secret validation detail")
+        return value.strip()
+
+
+class _DeclaredFactory(HarnessPluginFactory):
+    configuration_model = _DeclaredConfiguration
+
+    @classmethod
+    def plugin_key(cls) -> str:
+        return "test.declared"
+
+    def create_plugin(self, context):
+        return _HarnessPlugin(context.plugin_id, str(context.configuration["name"]))
+
+
+def test_declared_model_validates_and_normalizes_configuration() -> None:
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[_DeclaredFactory()])
+    assert catalog.validate_configuration("test.declared", {"name": "  recorder  "}) == {
+        "name": "recorder",
+        "count": 1,
+    }
+    assert _DeclaredFactory().configuration_model.model_json_schema()["properties"]["count"]["minimum"] == 1
+
+
+@pytest.mark.parametrize(
+    "configuration", [{}, {"name": " "}, {"name": "valid", "count": 0}, {"name": "valid", "token": "secret"}]
+)
+def test_declared_model_rejections_keep_sanitized_diagnostics(configuration) -> None:
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[_DeclaredFactory()])
+    with pytest.raises(PluginError) as caught:
+        catalog.validate_configuration("test.declared", configuration)
+    assert caught.value.code == "plugin_factory_configuration_invalid"
+    assert caught.value.details == {"plugin_key": "test.declared"}
+    assert "secret" not in "".join(traceback.format_exception(caught.value))
+
+
+def test_legacy_factory_keeps_custom_validation_without_declaring_a_model() -> None:
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[_Factory()])
+    assert catalog["test.plugin"].configuration_model is None
+    assert catalog.validate_configuration("test.plugin", {"name": "legacy"}) == {"name": "legacy"}

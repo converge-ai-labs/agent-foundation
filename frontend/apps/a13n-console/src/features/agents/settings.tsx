@@ -205,6 +205,7 @@ export function AgentActions({
         <ExportAgent
           agent={agent}
           config={revision.config}
+          builtinInstructions={revision.builtin_instructions}
           version={revision.number}
           trigger={
             <MenuItem closeOnClick={false}>

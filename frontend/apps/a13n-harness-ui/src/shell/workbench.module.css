@@ -612,6 +612,9 @@ a.resourceRow:hover {
 .settingsContent > * {
   flex-shrink: 0;
 }
+.settingsContent:has(.editorActions) {
+  padding-bottom: 0;
+}
 .search {
   width: min(100%, 320px);
 }
@@ -651,6 +654,18 @@ a.resourceRow:hover {
   width: 100%;
   max-width: 760px;
   min-width: 0;
+}
+.sourceDocument > .pageHeader {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+.sourceDocument > .pageHeader > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sourceDocument > .pageHeader > .actions {
+  flex-shrink: 0;
 }
 .editorActions {
   position: sticky;

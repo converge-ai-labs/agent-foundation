@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableSequence
+from collections.abc import MutableSequence
 from typing import Any
 
 from a13n_harness import (
@@ -19,7 +19,7 @@ from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
 )
-from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from a13n_plugin_examples.records import ObservedRunStatus, RunObservation
 
@@ -32,7 +32,11 @@ class RunRecorderConfiguration(BaseModel):
 
     model_config = ConfigDict(frozen=True, strict=True, extra="forbid")
 
-    record_usage: bool = True
+    record_usage: bool = Field(
+        default=True,
+        title="Record model requests",
+        description="Include the model request count in each run record.",
+    )
 
 
 class RunRecorderPlugin(AbstractHarnessPlugin):
@@ -99,16 +103,13 @@ class RunRecorderPlugin(AbstractHarnessPlugin):
 class RunRecorderPluginFactory(HarnessPluginFactory):
     """Create recorder plugins from the Harness-owned build envelope."""
 
+    configuration_model = RunRecorderConfiguration
+    display_name = "Run recorder"
+    description = "Record each run's outcome in memory, optionally including model request counts."
+
     @classmethod
     def plugin_key(cls) -> str:
         return PLUGIN_KEY
-
-    def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
-        try:
-            return RunRecorderConfiguration.model_validate(dict(configuration))
-        except ValidationError as exc:
-            # The catalog replaces this cause with a stable, sanitized public error.
-            raise ValueError("Invalid example.run-recorder configuration.") from exc
 
     def create_plugin(
         self,

@@ -39,6 +39,7 @@ from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
 from a13n_harness_ui.capability_runtime import production_run_bindings
+from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentReconstructor,
     CompositionAcceptanceService,
@@ -159,7 +160,9 @@ class RootRunExecutor:
         restart_coordinator: GracefulRestart | None = None,
         mcp_apps: AppSnapshots | None = None,
         tool_executions: ToolExecutions | None = None,
+        compaction: BackgroundCompaction | None = None,
     ) -> None:
+        self._compaction = compaction
         self._tool_executions = tool_executions
         self._store = store
         self._mcp_apps = mcp_apps
@@ -433,6 +436,7 @@ class RootRunExecutor:
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
                 published.value,
+                background_compaction=self._compaction,
                 pricing_catalog=pricing_catalog,
                 memory_positions=admission.memory_positions,
                 organization=admission.organization,
@@ -496,6 +500,19 @@ class RootRunExecutor:
                 actor="a13n-harness-ui.root",
                 host_refs={"thread_id": thread.thread_id},
             )
+            usage_reporter = self._store.usage.reporter(thread_id)
+            model_call_check = (
+                await reconstructed.compaction.prepare(
+                    instance=instance,
+                    reporter=usage_reporter,
+                    state=previous_state,
+                    limits=reconstructed.executable.definition_usage_limits(),
+                    resume_usage=admission.resume_usage,
+                )
+                if reconstructed.compaction is not None
+                else None
+            )
+            compaction_result = await self._compaction.restore(previous_state) if self._compaction is not None else None
             bindings = RunBindings(
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
                 codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
@@ -504,7 +521,8 @@ class RootRunExecutor:
                 environment=None if environment is None else environment.runtime,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
-                usage_reporter=self._store.usage.reporter(thread_id),
+                usage_reporter=usage_reporter,
+                model_call_check=model_call_check,
                 producer_observer=display.observe,
                 file_media_understanding=reconstructed.file_media_understanding(previous_state.thread_id),
                 working_state_observer=(
@@ -536,6 +554,7 @@ class RootRunExecutor:
                 input_factory=input_factory,
                 bindings=bindings,
                 previous_state=previous_state,
+                compaction_result=compaction_result,
                 resume_usage=admission.resume_usage,
                 deferred_resume=deferred_resume,
             )
@@ -924,6 +943,8 @@ class RootRunExecutor:
                         )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
+        if self._compaction is not None:
+            await self._compaction.acknowledge(state)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
         # execution checkpoint. Missing indexes rebuild on the next inspection.

@@ -23,6 +23,8 @@ flowchart LR
     Host -->|selected state and fresh bindings| Run2[New Harness Run]
 ```
 
+[Background compaction](09-context-and-memory.md#background-execution-and-result-application) joins ordinary resume through optional `compaction_result` on `run` and `stream`. Harness hydrates the selected checkpoint, decides prefix replacement before recovery normalization, and records applied or skipped disposition in `a13n.compaction`. The current executable owns system prompts; changing those prompts alone does not invalidate the result. Applied history completes retryable runtime restoration before dynamic-context projection, without requiring a Compaction Capability or operator. The Host queries `compaction_disposition` on its selected committed checkpoint before retiring the operation. Restoring an older checkpoint permits reapplication; restoring a saved disposition makes duplicate delivery a no-op. Background completion stores an independent result rather than rewriting an idle or sealed checkpoint.
+
 ## Live Continuation
 
 A Live Run exports native conversation messages and the same portable Capability and Environment state as an ordinary Run. Active export refreshes accepted native history, including sent text that has not received a provider reply. Session teardown settles interrupted history before terminal export. `audio_retention` defaults to native `transcript_only`; opting into input/output audio or `all` changes retained message data, not the semantic event channel.

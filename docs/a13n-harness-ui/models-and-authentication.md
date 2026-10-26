@@ -28,7 +28,7 @@ In WebUI, open **Settings → Models** to add, edit or clone a saved Model. Init
 1. Choose **ChatGPT subscription**, **Codex subscription**, **Grok subscription**, **GitHub Copilot subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
 2. Select a Codex/Grok account group, connect a subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
 3. Choose a suggestion or enter a case-sensitive Model ID. Suggestions describe known routes, not your account's entitlement; manual IDs remain available if the directory fails.
-4. Choose **Use this model** and adjust offered reasoning, speed and working context budget. When you change the connection, model ID or base URL of a saved Model, this button is labeled **Apply connection & defaults** and resets model-specific settings to reviewed defaults.
+4. Adjust reasoning, speed and context budget under **Model defaults**. Connection changes update the draft automatically and preserve explicit settings. Choose **Restore recommended defaults** to reset them deliberately. Select **Custom budget** to enter a numeric context limit.
 5. Save the Model YAML. Only saved Models appear in conversation selectors; advanced YAML editing remains available.
 
 Choose native tools on the **Agent**, after selecting its saved Model. Changing a Model does not rewrite an Agent's tools. See [Native tools](native-and-web-tools.md) for required provider resources and YAML examples.

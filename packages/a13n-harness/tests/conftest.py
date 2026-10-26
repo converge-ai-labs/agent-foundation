@@ -8,6 +8,27 @@ from PIL import Image
 from pydantic_ai.models.function import FunctionModel
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--browser-no-sandbox",
+        action="store_true",
+        help="Explicitly disable the Chromium sandbox for disposable native test profiles.",
+    )
+    parser.addoption(
+        "--browser-executable",
+        metavar="PATH",
+        help="Run native browser tests with an installed Chromium executable; no browser is downloaded.",
+    )
+
+
+@pytest.fixture
+def browser_executable(request: pytest.FixtureRequest) -> str:
+    executable = request.config.getoption("--browser-executable")
+    if not executable:
+        pytest.skip("Native browser tests require --browser-executable=PATH")
+    return executable
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

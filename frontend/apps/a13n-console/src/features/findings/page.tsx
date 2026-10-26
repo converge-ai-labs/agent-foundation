@@ -37,9 +37,9 @@ import {
 import { CopyButton, CopyableId, Identifier } from "../../shared/identity";
 import { Page, Section, useTabParam } from "../../shared/page";
 import { RefreshButton } from "../../shared/time-range";
+import { FormSection, TextAreaField } from "../../shared/forms";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
-import { FormSection } from "../../shared/forms";
 import { useMountedModal } from "../../shared/dialogs";
 
 export const categoryLabels = {
@@ -553,6 +553,14 @@ function AnalysisHistory({
                   <dd>{selected.cited_trace_count}</dd>
                 </div>
               </dl>
+              {selected.selection.instructions && (
+                <TextAreaField
+                  readOnly
+                  label={t("Requirements for this analysis")}
+                  value={selected.selection.instructions}
+                  onChange={() => {}}
+                />
+              )}
               <p className={styles.hint}>
                 {t(
                   "Counts do not indicate full coverage. Open the analysis run for the full report.",
@@ -611,6 +619,7 @@ function AnalyzeDialog({
     { workspace } = useWorkspace(),
     backend = useTraceBackend();
   const [days, setDays] = useState("1"),
+    [instructions, setInstructions] = useState(""),
     [limit, setLimit] = useState("10"),
     [presets, setPresets] = useState<Schema["AnalysisCreate"]["presets"]>([
       "execution",
@@ -638,6 +647,7 @@ function AnalyzeDialog({
             started_before: traceId ? undefined : windowEnd,
             max_traces: traceId ? 1 : Number(limit),
             presets,
+            instructions,
           },
           params: { header: commandHeaders(requestKey) },
         })
@@ -748,11 +758,22 @@ function AnalyzeDialog({
             ))}
           </div>
         </fieldset>
+        <TextAreaField
+          label={t("Requirements for this analysis")}
+          hint={t(
+            "Optional. Applies only to this analysis; the Finding Agent configuration stays unchanged.",
+          )}
+          value={instructions}
+          onChange={setInstructions}
+          maxLength={8192}
+          disabled={mutation.isPending}
+          rows={4}
+        />
         <DisclosureSection title={t("How analysis works")}>
           <ul className={styles.analysisNotes}>
             <li>
               {t(
-                "The built-in Finding Agent selects an available model automatically.",
+                "Analysis uses the Finding Agent's selected default version and model.",
               )}
             </li>
             {!traceId && (

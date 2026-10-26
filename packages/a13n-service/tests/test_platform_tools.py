@@ -1,5 +1,6 @@
 """Run-scoped MCP operations keep their authority through discovery, HTTP and recovery."""
 
+import asyncio
 import json
 from dataclasses import replace
 
@@ -333,7 +334,8 @@ async def test_new_grants_do_not_widen_accepted_run(service, scripted_model, run
         assert result["status"] == 403
 
 
-async def test_native_platform_read_and_write_review_survive_resume(service, scripted_model, runs_kit, listen):
+async def test_native_platform_read_and_write_review_survive_resume(skill_service, scripted_model, runs_kit, listen):
+    service = skill_service
     await runs_kit.pause_sweeps(service)
     schema = service.app.openapi()["paths"]
     read_name = tool_name(schema["/api/v1/agents"]["get"]["operationId"])
@@ -349,7 +351,7 @@ async def test_native_platform_read_and_write_review_survive_resume(service, scr
             "agents": {"enabled": True, "tools": {disabled: {"enabled": False}}},
         },
     )
-    scripted_model.call("view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide")
+    scripted_model.call("view", {"file_path": runs_kit.GUIDE}, call_id="guide")
     scripted_model.call(read_name, {}, call_id="read")
     scripted_model.call(
         write_name,
@@ -360,7 +362,17 @@ async def test_native_platform_read_and_write_review_survive_resume(service, scr
         },
         call_id="write",
     )
-    async with listen(service.app) as url:
+    first_request = True
+
+    async def slow_control(scope, receive, send):
+        nonlocal first_request
+        if first_request:
+            first_request = False
+            # Cold control startup can exceed the MCP client's default 5 s initialization deadline.
+            await asyncio.sleep(5.1)
+        await service.app(scope, receive, send)
+
+    async with listen(slow_control) as url:
         settings = service.runtime.settings
         runtime = replace(
             service.runtime,
@@ -453,9 +465,10 @@ async def test_provider_probe_waits_for_review_and_returns_saved_credential_stat
     }
 
 
-async def test_inline_child_reads_builtin_skill_without_parent_skill_or_user_environment(
-    service, scripted_model, runs_kit
+async def test_inline_child_reads_builtin_skill_in_parent_environment_without_parent_skill(
+    skill_service, scripted_model, runs_kit
 ):
+    service = skill_service
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.delegating(
         service,
@@ -469,9 +482,7 @@ async def test_inline_child_reads_builtin_skill_without_parent_skill_or_user_env
     scripted_model.call(
         "delegate", {"subagent": "helper", "prompt": "read the guide"}, call_id="delegate", to="coordinator"
     )
-    scripted_model.call(
-        "view", {"file_path": "/platform-skills/platform-operations/SKILL.md"}, call_id="guide", to="worker"
-    )
+    scripted_model.call("view", {"file_path": runs_kit.GUIDE}, call_id="guide", to="worker")
     scripted_model.say("Guide read", to="worker")
     scripted_model.say("Done", to="coordinator")
     submitted = await runs_kit.start_thread(service, agent, "ask the helper")

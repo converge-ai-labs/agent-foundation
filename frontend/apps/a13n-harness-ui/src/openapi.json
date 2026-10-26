@@ -22765,7 +22765,9 @@
             "enum": [
               "completed",
               "failed",
-              "suspended"
+              "suspended",
+              "goal_verified",
+              "goal_incomplete"
             ],
             "title": "Status",
             "type": "string"

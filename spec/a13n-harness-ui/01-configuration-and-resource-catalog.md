@@ -200,6 +200,12 @@ Grouping semantics and immutable Run capture belong to [Agent composition](02-ag
 
 [Setup and Environment Readiness](06-setup-and-environment-readiness.md) owns the explicit guided initialization shared by surfaces. It uses this same source tree, complete candidate validation, and last-write-wins publication. It creates no alternate settings store and never rewrites an existing installation merely because a new template is available.
 
+## Background Compaction
+
+Root `background_compaction` defaults to `true`; starter configuration writes it explicitly. Run composition captures the value. It switches an enabled native compaction Capability to App-owned background generation for root Threads. Harness UI selects this mode at root Run reconstruction; both inline and asynchronous subagents retain synchronous compaction. Harness leaves this execution policy to the Host. Existing captures without the field retain synchronous behavior. Memory organization retains its synchronous composition.
+
+Setting the field to `false` disables new background generation for later captured Runs while preserving delivery of already retained results. It changes neither compaction thresholds nor Model context characteristics. Harness itself retains its synchronous default. [Local Storage and Recovery](03-local-storage-and-recovery.md#retained-background-compaction) owns result persistence, checkpoint acknowledgement, interruption, and shutdown.
+
 ## Goal Iteration Policy
 
 Root YAML `max_goal_iterations` is an integer with default `10`. It limits additional self-check continuations after the initial response for [Goal submissions](05-runtime-subagents-and-surfaces.md#goal-execution). Values at or below zero disable automatic Goal follow-ups, not ordinary execution. Admission captures the effective value in Goal state; later configuration edits do not change an active, deferred, or gracefully restarted Goal's budget. This setting does not alter native request/tool/usage limits and is not a sticky Thread selection.

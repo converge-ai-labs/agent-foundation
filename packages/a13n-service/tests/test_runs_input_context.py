@@ -244,7 +244,8 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
             )
 
 
-async def test_resume_input_is_atomic_ordered_and_idempotent(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_resume_input_is_atomic_ordered_and_idempotent(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = {**results(), "input": {"content": [{"type": "text", "text": "Use the revised invoice"}]}}
     headers = runs_kit.fresh_key()
@@ -272,7 +273,8 @@ async def test_resume_input_is_atomic_ordered_and_idempotent(service, scripted_m
     assert len(inputs) == 1 and inputs[0]["content"]["metadata"]["source_id"] == run["id"]
 
 
-async def test_unreadable_resume_input_leaves_waiting_head_unchanged(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_unreadable_resume_input_leaves_waiting_head_unchanged(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = {**results(), "input": {"content": [{"type": "asset", "asset_id": "ast_00000000000000000000000000000000"}]}}
     response = await service.client.post(
@@ -284,7 +286,8 @@ async def test_unreadable_resume_input_leaves_waiting_head_unchanged(service, sc
     assert len((await service.client.get(f"{service.api}/threads/{waiting['thread_id']}/runs")).json()["items"]) == 1
 
 
-async def test_resume_input_survives_model_checkpoint_crash_once(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_resume_input_survives_model_checkpoint_crash_once(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    service = skill_service
     from urllib.parse import urlsplit
 
     configuration = {
@@ -324,8 +327,9 @@ async def test_resume_input_survives_model_checkpoint_crash_once(service, script
 
 
 async def test_resume_input_survives_pre_effect_checkpoint_without_replaying_approval(
-    service, scripted_model, runs_kit, monkeypatch
+    skill_service, scripted_model, runs_kit, monkeypatch
 ):  # type: ignore[no-untyped-def]
+    service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
     body = {**results(), "input": {"content": [{"type": "text", "text": "After approved tool"}]}}
     body["approvals"] = {"approve": {"action": "approve"}}
@@ -391,8 +395,9 @@ async def test_initial_history_survives_a_root_without_a_checkpoint(service, scr
 
 
 async def test_resume_input_materialization_failure_fails_the_successor_not_the_batch(
-    service, scripted_model, runs_kit, listen
+    skill_service, scripted_model, runs_kit, listen
 ):  # type: ignore[no-untyped-def]
+    service = skill_service
     from fastapi import FastAPI
 
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)

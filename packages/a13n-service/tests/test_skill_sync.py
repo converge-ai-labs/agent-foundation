@@ -51,8 +51,8 @@ def materializer(monkeypatch, version="new", *, overwrite=True, cleanup=False, e
         pass
 
     monkeypatch.setattr(skills, "load_packages", load)
-    return skills._PinnedSkills(
-        () if empty else (skills.PinnedSkill(version, version, "review", version),),
+    return skills._SkillPackages(
+        () if empty else (skills.SkillPackage(version, version, "review", version),),
         SimpleNamespace(storage=None, objects=None),
         "workspace",
         prove,
@@ -254,7 +254,7 @@ async def test_failed_preparation_leaves_no_shared_candidates(sync_root, monkeyp
 
     files, root = sync_root
     source = materializer(monkeypatch)
-    source.skills = tuple(skills.PinnedSkill(name, name, name, name) for name in ("one", "two", "three"))
+    source.skills = tuple(skills.SkillPackage(name, name, name, name) for name in ("one", "two", "three"))
     write = files.write_archive
 
     async def fail_one(path, archive):

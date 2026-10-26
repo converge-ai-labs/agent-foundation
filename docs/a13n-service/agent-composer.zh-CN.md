@@ -60,21 +60,24 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-首次调用创建工作空间预设（`source: "builtin"`、`preset_kind: "composer"`）。通过 `GET /api/v1/agents?source=builtin&preset_kind=composer` 可查到它。后续准备会刷新名称和描述，只有配置变化时才添加修订版本。
+首次调用创建工作空间预设（`source: "builtin"`、`preset_kind: "composer"`）。通过 `GET /api/v1/agents?source=builtin&preset_kind=composer` 可查到它。后续准备会刷新名称和描述，并将受保护配置的更新保存为候选版本。你选定的默认版本和模型保持不变。
 
 ## 选择模型
 
-准备时按以下顺序，选择已启用且调用者有权使用的模型：
+首次准备时按以下顺序，选择已启用且调用者有权使用的模型：
 
-1. Composer 当前修订版本的模型，只要它仍可用。
-2. 按部署的 [`composer.models`](configuration.md#execution) 列表顺序匹配首个可用模型。匹配使用上游名称，忽略 `vendor/` 前缀。
-3. 按 key 选择工作空间中首个可用模型。
+1. 按部署的 [`composer.models`](configuration.md#execution) 列表顺序匹配首个可用模型。匹配使用上游名称，忽略 `vendor/` 前缀。
+2. 按 key 选择工作空间中首个可用模型。
 
-没有可用模型时，准备操作返回 `409 conflict`，原因为 `model_required`。Console 会提供模型配置入口。[添加模型](models.md)后再次准备即可。
+首次配置时没有可用模型，准备操作返回 `409 conflict`，原因为 `model_required`。Console 会提供模型配置入口。[添加模型](models.md)后再次准备即可。
 
 ## 内置 agent 规则
 
-Composer 的配置和模型选择由准备操作管理。编辑、添加修订版本、归档或设置头像会返回 `409 conflict`，原因为 `builtin`。复制 Composer 可创建可修改的自定义 agent。
+打开 Composer 的 Agent 页面，可以修改模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。指令输入框只编辑你的补充内容，官方指令在只读折叠区展示。保存会创建只包含用户补充的修订版本。每次执行尝试，包括恢复和等待后的继续执行，都会使用当前 Worker 提供的官方指令；官方指令不随修订版本固定。折叠区展示当前部署的官方指令，某次运行实际使用的文本可在模型请求 trace 中查看。
+
+在“版本 → 设为默认”中切换或回退。后续准备保留选定版本，即使模型不可用也不会自动替换，请显式选择新模型。受保护配置的更新只生成候选版本，保留用户补充且不替换默认版本。其他配置、名称等元信息、头像和归档仍受保护；可复制为自定义 Agent 后自由修改。
+
+API 客户端复用校验和创建修订版本接口：先读取选定的默认版本和原始 head ETag，保留完整 `config`，仅修改允许的模型、参数和 `config.instructions` 中的用户补充。版本响应的 `builtin_instructions` 只读展示当前官方指令。Composer 始终将保存的指令视为用户补充，由 Worker 提供官方指令。复制和导出会将当前官方指令与用户补充合并，得到独立的自定义 Agent。
 
 ## 在自己的 agent 中使用工具集
 
@@ -99,10 +102,12 @@ Composer 的配置和模型选择由准备操作管理。编辑、添加修订�
 
 平台组和 skill 默认都不选择。每个工具有自己的 `permission`；`inherit` 时读取直接执行，写入先请求批准。选择工具提供操作能力，选择 skill 提供说明。修改配置后，正在执行的运行保留接收时的授权和工具范围。
 
-`platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`，部署目录位于 `/platform-instance`。
+内置 Agent Composer 的 `platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`，部署目录位于 `/platform-instance`。
 
 启用 `view`、`ls`、`glob` 和 `grep` 来读取 skill。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
 
 ### Computer 坐标模式
 
 请在[环境的 Computer 配置](environments.md#computer-coordinate-mode)中选择像素或相对坐标模式。
+
+用户 Agent（包括 Composer 的副本）会按照普通[技能同步策略](skills.md#runtime-synchronization)将选中的内置技能写入主环境。运行前请配置默认环境模板或选择会话环境。

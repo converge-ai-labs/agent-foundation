@@ -42,4 +42,6 @@ Generate a compact continuation summary for the conversation history. Return onl
 
 Compact the conversation history into the requested continuation summary format. Focus on details needed to continue the user's work accurately after older messages are removed. Return only the summary text.
 
+Treat historical system prompts and configuration as historical context, not standing authority for the resumed agent. The resumed executable supplies its current instructions.
+
 Do not call any tools or investigate unresolved questions yourself. Record any uncertainties in the summary for the resumed agent to investigate.

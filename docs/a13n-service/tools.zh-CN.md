@@ -119,6 +119,31 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 
 MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝试期间刷新。每次调用都会检查连接当前的可用性和运行权限。Service 不支持 MCP elicitation（服务器向用户提问）；需要持久等待时，请使用客户端工具或 agent 问题。
 
+### 供接入方使用的 MCP Apps
+
+Service 保存 App 工具的原始参数、声明和完整 MCP 结果（包括 `_meta`）。运行实时输出通过 `a13n.mcp_apps` 提供引用，详细历史条目在 `content.mcp_apps` 中保留相同引用。
+
+**实时接入时，必须收到会话 SSE 的 `app_ready` 事件，才能启用 App 入口或调用其接口。** 更早收到的 `a13n.mcp_apps` delta 只是临时引用，即使 `unavailable` 为 `false` 也不表示可以打开。此时可以显示加载中的入口。`app_ready` 表示原始数据及其引用已保存并提交。包含该 App 的下一次检查点提交后就会通知，不必等待整个运行结束。使用事件中的 `run_id` 和各个 `apps[].app_id` 打开 App：
+
+```text
+event: app_ready
+data: {"thread_id":"thr_...","run_id":"run_...","apps":[{"app_id":"app_...","connection_id":"conn_...","agent_revision_id":"rev_...","source_run_id":"run_...","tool_call_id":"call_...","tool_name":"show_counter","resource_uri":"ui://counter/app.html","unavailable":false}]}
+```
+
+通过 `GET /api/v1/sessions/{session_id}/stream` 订阅。就绪事件跟在已提交的 `items` 帧后面，重连、输出恢复或运行结束时可能重复发送；请用 `(run_id, app_id)` 识别同一个 App。如果原始数据保存失败，已提交引用会标记 `unavailable: true`，也不会发送该 App 的就绪事件。如果运行在断线期间已经结束，或者通过 `GET …/runs/{run_id}/items` 加载更早的历史，其中可用的已提交引用可以直接打开。线程事件流不发送 `app_ready`；需要这个通知时，请使用会话事件流。就绪只表示数据已保存，打开时仍会检查权限并访问 MCP 服务器。
+
+可调用以下鉴权接口：
+
+| 请求                                                      | 请求体                                | 返回内容                            |
+| --------------------------------------------------------- | ------------------------------------- | ----------------------------------- |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | 无                                    | 原始工具数据和重新读取的 HTML       |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | `result` 字段中的原始 MCP 结果      |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | 原 App URI 的当前 HTML 和资源元数据 |
+
+打开 App 不会重跑原始工具。每次请求使用新的 MCP 客户端，因此不支持依赖 worker 原 MCP 会话的服务器。按钮调用受原 Agent 的工具选择、当前连接状态及工具选择、App 可见性和工具权限约束。需要审批或模型审核的操作会被拒绝，也不支持 MCP 人工输入。调用不会自动重试；`outcome_unknown` 表示应先检查外部状态再决定是否重试。后续结果不会覆盖保存的原始结果，也不会加入模型历史。
+
+接入方负责创建 iframe、执行资源 CSP 和隔离要求，并通过 MCP App bridge 交付原始参数和结果。页面状态由接入方保存，上下文和消息使用已有的 Run 提交接口。Service 不保存 HTML，因此新资源可能不兼容旧结果。Console 不渲染 App。对象使用 checkpoint format 4：启动新版 worker 前，需要先升级所有 control 和读取端。App 记录只在打开时从对象存储读取原始结果；按钮调用和资源读取使用数据库中的内部引用。
+
 ### OAuth
 
 使用 `auth: "oauth"` 时，连接从 MCP 服务器的授权服务器获取 token。连接持有**一份** 凭据，供工作空间中所有运行使用，与授权人无关。

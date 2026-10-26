@@ -16,7 +16,7 @@ The workspace Start voice control and sidebar Live link appear only after Live i
 
 Use HTTPS or localhost in a browser that supports microphone capture and WebRTC. The selected account and network must support Codex Live. A successful ordinary Model request does not verify voice availability.
 
-WebUI setup and the WebUI Add model flow offer an initially checked Live option for Codex Models. Clear it to leave Live unconfigured. Existing Live settings are preserved. Upgrades do not turn Live on automatically.
+First-use WebUI setup offers an initially checked Live option for Codex Models. Clear it to leave Live unconfigured. Adding a Model from Settings or an Agent leaves Live settings unchanged; enable Live in **Settings → General → Live**. Upgrades do not turn Live on automatically.
 
 The equivalent root configuration is:
 

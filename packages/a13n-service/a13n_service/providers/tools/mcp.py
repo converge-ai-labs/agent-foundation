@@ -19,6 +19,8 @@ from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
 from fastmcp.client.transports.base import SessionKwargs, TransportOptions
 from mcp import ClientSession
+from mcp.client.extension import advertise
+from mcp.server.apps import APP_MIME_TYPE, EXTENSION_ID
 from mcp.types import CallToolRequest
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_ai import RunContext
@@ -28,6 +30,7 @@ from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset, ToolsetTool
 
 from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolDispatch, ToolInfo, unique
+from a13n_service.providers.tools.mcp_apps import AppClient, AppMCP, AppToolset, Capture
 
 MAX_HEADERS = 32
 
@@ -131,8 +134,8 @@ def _toolset(url: str, connection_id: str, client: httpx2.AsyncClient, *, timeou
 
 async def list_mcp_tools(url: str, connection_id: str, client: httpx2.AsyncClient, *, timeout: float) -> list[ToolInfo]:
     """Every tool the server lists, so a connection can select from a server larger than it may expose."""
-    async with _toolset(url, connection_id, client, timeout=timeout) as toolset:
-        tools = await toolset.list_tools()
+    async with mcp_client(url, connection_id, client, timeout=timeout, apps=True) as remote:
+        tools = await remote.list_tools()
     if len(tools) > DISCOVERY_MAX_TOOLS:
         raise ValueError("The server lists more tools than discovery reads")
     return [
@@ -141,6 +144,7 @@ async def list_mcp_tools(url: str, connection_id: str, client: httpx2.AsyncClien
             description=tool.description,
             input_schema=tool.input_schema,
             output_schema=tool.output_schema,
+            metadata=tool.meta or {},
             annotations={}
             if tool.annotations is None
             else tool.annotations.model_dump(mode="json", by_alias=True, exclude_none=True),
@@ -190,9 +194,18 @@ class DispatchTransport(ClientTransport):
         return self.wrapped.get_session_id()
 
 
-def mcp_client(url: str, connection_id: str, http: httpx2.AsyncClient, *, timeout: float) -> Client[ClientTransport]:
+def mcp_client(
+    url: str, connection_id: str, http: httpx2.AsyncClient, *, timeout: float, apps: bool = False
+) -> Client[ClientTransport]:
     """Use the upstream adapter; its transport enters the attempt's configured HTTP client."""
     client = _toolset(url, connection_id, http, timeout=timeout).client
+    if apps:
+        client = AppClient(
+            client.transport,
+            timeout=timeout,
+            init_timeout=timeout,
+            extensions=[advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})],
+        )
     client.transport = DispatchTransport(client.transport, connection_id)
     return client
 
@@ -212,7 +225,18 @@ class DispatchToolset(CheckedToolset):
             _dispatch.reset(token)
 
 
-class AttemptToolset(MCPToolset[AgentContext]):
+async def call_app_tool(
+    toolset: MCPToolset[AgentContext], dispatch: ToolDispatch, check: DispatchCheck, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Direct control dispatch, with per-round dispatch checks and no replay."""
+    token = _dispatch.set((dispatch, check))
+    try:
+        return await toolset.call_tool_for_app(dispatch.tool_name, arguments)
+    finally:
+        _dispatch.reset(token)
+
+
+class AttemptToolset(AppToolset):
     async def __aenter__(self) -> Self:
         if not self.client.is_connected():
             raise RuntimeError("The attempt-owned MCP client disconnected; the business call will not be replayed.")
@@ -225,6 +249,7 @@ def mcp_capability(
     *,
     tools: tuple[str, ...] | None,
     check: DispatchCheck,
+    capture: Capture | None = None,
 ) -> MCP[AgentContext]:
     """Fresh native projections borrow one entered client from the worker attempt.
 
@@ -234,7 +259,7 @@ def mcp_capability(
 
     async def local(_ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
         client = await open_client()
-        listed: AbstractToolset[AgentContext] = AttemptToolset(
+        native = AttemptToolset(
             client,
             id=connection_id,
             max_retries=0,
@@ -247,12 +272,14 @@ def mcp_capability(
             cache_prompts=False,
             include_instructions=False,
         )
+        native.capture = capture
+        listed: AbstractToolset[AgentContext] = native
         if tools is not None:
             selected = frozenset(tools)
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
         return DispatchToolset(listed, connection_id, None, check)
 
-    return MCP(
+    return AppMCP(
         id=connection_id,
         local=DynamicToolset(local, per_run_step=False),
         defer_loading=False,

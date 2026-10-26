@@ -27,7 +27,7 @@ export function AdvancedSection({
         label={t("Configuration JSON")}
         hideLabel
         code
-        value={readOnly ? advancedConfig(draft.initial, true) : draft.advanced}
+        value={readOnly ? advancedConfig(draft.initial) : draft.advanced}
         onChange={draft.setAdvanced}
         rows={8}
       />

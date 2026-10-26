@@ -160,6 +160,7 @@ export function ModelSettings({
   expanded,
   onExpandedChange,
   validation,
+  limited = false,
 }: {
   draft: AgentDraft;
   thinkingOptions: { value: string; label: string }[];
@@ -167,6 +168,7 @@ export function ModelSettings({
   expanded: boolean;
   onExpandedChange: (value: boolean) => void;
   validation?: Error;
+  limited?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const summary = [
@@ -215,9 +217,15 @@ export function ModelSettings({
       <TextAreaField
         readOnly={readOnly}
         label={t("Request parameters JSON")}
-        hint={t(
-          "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
-        )}
+        hint={
+          limited
+            ? t(
+                "Only temperature and top_p can be changed here for built-in agents.",
+              )
+            : t(
+                "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
+              )
+        }
         code
         value={draft.settings}
         onChange={draft.setSettings}

@@ -1,5 +1,8 @@
+import { useId } from "react";
+import { Checkbox } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
-import { SettingsSection } from "a13n-ui";
+import { Lightning } from "@phosphor-icons/react";
+import management from "./management.module.css";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -72,6 +75,7 @@ export function AgentNativeTools({
   source: string;
   onChange: (source: string) => void;
 }) {
+  const id = useId();
   const { client } = useTransport();
   const sources = useSources();
   const raw = readDocument(source)?.toJS();
@@ -118,44 +122,47 @@ export function AgentNativeTools({
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
   return (
-    <SettingsSection
-      title="Model-native tools"
-      description="Choices come from this Agent's saved Model. Changing the Model never silently replaces existing tools."
-    >
-      <div className={`${styles.stack} ${styles.fieldGroup}`}>
+    <div className={styles.fieldGroup}>
+      <h4 className={management.subsectionTitle}>
+        <Lightning aria-hidden="true" />
+        Model-native tools
+      </h4>
+      <div className={management.nativeOptions}>
         <ErrorNotice error={saved.error || options.error} />
         {!raw?.model ? (
           <p>Select a saved Model to see its native tool choices.</p>
         ) : options.isPending && request ? (
           <p>Loading tool support…</p>
         ) : !tools.length ? (
-          <p>
-            No guided native tools for this connection. Advanced capabilities
-            remain unchanged.
-          </p>
+          <p>No native tool choices for this model.</p>
         ) : (
           tools.map((tool) => (
-            <div key={tool.value}>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={configured.includes(tool.value)}
-                  disabled={!tool.capability}
-                  onChange={(event) =>
-                    onChange(
-                      toggleNativeTool(source, tool, event.target.checked),
-                    )
-                  }
-                />{" "}
-                {tool.label}
-                {tool.recommended ? " · Recommended" : ""}
-              </label>
-              <small>
-                {tool.description}
-                {!tool.capability &&
-                  " Configure required provider parameters in advanced YAML."}
-              </small>
-            </div>
+            <label key={tool.value} className={management.nativeOption}>
+              <Checkbox
+                aria-labelledby={`${id}-${tool.value}-label`}
+                aria-describedby={`${id}-${tool.value}-description`}
+                checked={configured.includes(tool.value)}
+                disabled={!tool.capability}
+                onCheckedChange={(checked) =>
+                  onChange(toggleNativeTool(source, tool, checked))
+                }
+              />
+              <span className={management.optionText}>
+                <span id={`${id}-${tool.value}-label`}>
+                  {tool.label}
+                  {tool.recommended && (
+                    <span className={management.recommendation}>
+                      Recommended
+                    </span>
+                  )}
+                </span>
+                <small id={`${id}-${tool.value}-description`}>
+                  {tool.description}
+                  {!tool.capability &&
+                    " Configure required provider parameters in advanced YAML."}
+                </small>
+              </span>
+            </label>
           ))
         )}
         {options.data &&
@@ -168,6 +175,6 @@ export function AgentNativeTools({
             </p>
           )}
       </div>
-    </SettingsSection>
+    </div>
   );
 }

@@ -383,6 +383,7 @@ async def preview_setup(
         }
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if not selection.is_addition:
+        root.setdefault("background_compaction", True)
         memory = root.setdefault("memory", {})
         if isinstance(memory, dict):
             memory.setdefault("enabled", True)

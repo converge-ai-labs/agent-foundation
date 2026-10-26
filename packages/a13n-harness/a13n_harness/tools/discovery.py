@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 from secrets import token_urlsafe
 from typing import Any
 
@@ -151,7 +152,7 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
             await self._save(ctx)
 
     async def retain(
-        self, ctx: RunContext[AgentContext], request: ModelRequestContext
+        self, ctx: RunContext[AgentContext], request: ModelRequestContext, *, restore: bool = False
     ) -> tuple[list[ModelMessage], set[str]]:
         from a13n_harness.toolsets.tool_search import proxy_discovery_entry
 
@@ -163,6 +164,18 @@ class ToolDiscoveryCapability(AbstractCapability[AgentContext]):
         proxy: list[dict[str, Any]] = []
         async with self._lock:
             snapshot = tuple(self._state.called)
+        if restore:
+            # Offline compaction already removed the old reveal exchanges. Use
+            # identity-matched call provenance as detached discovery evidence;
+            # native availability still validates current capability activation.
+            candidates = {
+                item.name
+                for item in snapshot
+                if (tool := tools.get(item.name)) is not None
+                and tool_identity(tool.tool_def).tool_id == item.tool_id
+                and proxy_membership(tool.tool_def) is None
+            }
+            ctx = replace(ctx, discovered_tool_names=ctx.discovered_tool_names | candidates)
         for item in reversed(snapshot):
             tool = tools.get(item.name)
             if (
@@ -321,12 +334,12 @@ def _context_bytes(
 
 
 async def retain_discovery(
-    ctx: RunContext[AgentContext], request: ModelRequestContext
+    ctx: RunContext[AgentContext], request: ModelRequestContext, *, restore: bool = False
 ) -> tuple[list[ModelMessage], set[str]]:
     owner = ctx.capabilities.get(_DISCOVERY_ID)
     if not isinstance(owner, ToolDiscoveryCapability):
         return [], set()
-    return await owner.retain(ctx, request)
+    return await owner.retain(ctx, request, restore=restore)
 
 
 async def finish_discovery_replacement(ctx: RunContext[AgentContext]) -> None:

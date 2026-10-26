@@ -5,6 +5,7 @@ import hashlib
 import io
 import zipfile
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, cast
 from uuid import uuid4
 
@@ -1070,3 +1071,57 @@ def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overri
     assert schema["$defs"]["ComputerCoordinateSpace"]["enum"] == ["pixels", "normalized_1000"]
     with pytest.raises(ValidationError):
         config(toolsets={"computer": {"config": {"coordinate_space": "auto"}}})
+
+
+async def test_plugin_catalog_is_authorized_and_exposes_only_public_metadata(service, monkeypatch) -> None:
+    class Described(_Factory):
+        configuration_model = _Settings
+        display_name = "Audit"
+
+        def validate_configuration(self, configuration):
+            raise AssertionError("listing must not validate or run a plugin")
+
+        def create_plugin(self, context):
+            raise AssertionError("listing must not validate or run a plugin")
+
+    runtime = service.runtime
+    monkeypatch.setattr(
+        service.app.state,
+        "runtime",
+        replace(
+            runtime,
+            plugins=HarnessPluginFactoryCatalog(
+                [
+                    (
+                        HarnessPluginFactoryRegistration(
+                            "test.audit", "private.module", "Factory", "/private/path", "audit-package", "1.0"
+                        ),
+                        Described(),
+                    ),
+                ]
+            ),
+        ),
+    )
+    response = await service.client.get(f"{service.api}/plugins")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "items": [
+            {
+                "plugin_key": "test.audit",
+                "display_name": "Audit",
+                "description": "",
+                "config_schema": _Settings.model_json_schema(),
+                "distribution_name": "audit-package",
+                "distribution_version": "1.0",
+            }
+        ]
+    }
+    assert "private" not in response.text
+    route = service.app.openapi()["paths"]["/api/v1/plugins"]["get"]
+    assert route["x-a13n-mcp"] is True
+    monkeypatch.setattr(service.app.state, "runtime", replace(runtime, plugins=HarnessPluginFactoryCatalog([])))
+    assert (await service.client.get(f"{service.api}/plugins")).json() == {"items": []}
+    denied = await service.client.get(f"{service.api}/plugins", headers={"x-workspace-id": new_object_id("ws")})
+    assert denied.status_code in (403, 404)
+    service.client.cookies.clear()
+    assert (await service.client.get(f"{service.api}/plugins")).status_code == 401

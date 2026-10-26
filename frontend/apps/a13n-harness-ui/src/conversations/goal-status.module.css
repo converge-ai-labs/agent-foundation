@@ -1,0 +1,129 @@
+.trigger {
+  flex-shrink: 0;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.name {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.phase {
+  color: var(--a13n-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.trigger[data-tone="warning"] > svg {
+  color: var(--warning-foreground);
+}
+.trigger[data-tone="danger"] > svg {
+  color: var(--destructive);
+}
+.popup {
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(600px, calc(100dvh - 40px));
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.popup > [data-slot="popover-viewport"] {
+  max-height: min(600px, calc(100dvh - 40px), var(--available-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.heading h2 {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
+}
+.outcome h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--a13n-text);
+}
+.outcome p {
+  margin: 6px 0 0;
+  color: var(--a13n-secondary);
+}
+.objective {
+  margin-top: 20px;
+}
+.objective button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  color: var(--a13n-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.objective button:hover {
+  color: var(--a13n-text);
+}
+.objective button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.objective button svg {
+  width: 12px;
+  height: 12px;
+}
+.objective button[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.objective p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.objective p[data-expanded="false"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.metrics {
+  display: grid;
+  gap: 4px;
+  margin: 20px 0 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.metrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.metrics dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.reuse {
+  margin: 16px 0 0 -8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.running {
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .running {
+    animation: none;
+  }
+}

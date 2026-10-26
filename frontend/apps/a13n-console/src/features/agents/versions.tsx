@@ -35,7 +35,7 @@ import { workspaceModelsQuery } from "../models/api";
 import { ModelKeyLabel } from "../models/model-icon";
 import { useAgentComposer } from "./composer";
 import { ExportAgent } from "./export";
-import { editableAgent } from "./queries";
+import { editableAgentRevision } from "./queries";
 import shared from "../../shared/shared.module.css";
 import styles from "./agents.module.css";
 
@@ -182,10 +182,25 @@ export function AgentVersions({
             </ReadOnlyField>
             <TextAreaField
               readOnly
-              label={t("Instructions")}
+              label={t(
+                selected.builtin_instructions != null
+                  ? "Supplemental instructions"
+                  : "Instructions",
+              )}
               value={selected.config.instructions ?? ""}
               onChange={() => {}}
             />
+            {selected.builtin_instructions != null && (
+              <TextAreaField
+                readOnly
+                label={t("Current official instructions")}
+                hint={t(
+                  "Official instructions follow the deployed version; they are not saved in this agent version.",
+                )}
+                value={selected.builtin_instructions}
+                onChange={() => {}}
+              />
+            )}
             <DisclosureSection title={t("Configuration details")}>
               <JsonView value={selected.config} />
             </DisclosureSection>
@@ -285,7 +300,7 @@ function VersionActions({
   return (
     <>
       {can("write") &&
-        editableAgent(agent) &&
+        editableAgentRevision(agent) &&
         revision.id !== agent.default_revision_id && (
           <Confirm
             subject={`${agent.name} · v${revision.number}`}
@@ -335,6 +350,7 @@ function VersionActions({
       <ExportAgent
         agent={agent}
         config={revision.config}
+        builtinInstructions={revision.builtin_instructions}
         version={revision.number}
         trigger={
           <MenuItem closeOnClick={false}>

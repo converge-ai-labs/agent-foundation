@@ -1,0 +1,215 @@
+.sectionTitle,
+.subsectionTitle,
+.inlineLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sectionTitle > svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.subsectionTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.subsectionTitle > svg,
+.inlineLabel > svg,
+.metadata > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.modelPickerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.credentialSummary,
+.capabilityHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.credentialSummary {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.credentialSummary > span {
+  overflow-wrap: anywhere;
+}
+.capability {
+  display: grid;
+  gap: 12px;
+}
+.capability > details {
+  border-top: 0;
+  padding-top: 0;
+}
+.capability + .capability {
+  border-top: 1px solid var(--a13n-border-soft);
+  padding-top: 16px;
+}
+.capabilityHeader > button,
+.credentialSummary > button {
+  flex-shrink: 0;
+}
+.checkboxRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.check,
+.nativeOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-block: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+}
+.check > [data-slot="checkbox"],
+.nativeOption > [data-slot="checkbox"] {
+  margin-top: 2px;
+}
+.nativeOptions {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+.nativeOption {
+  padding: 10px;
+  margin-inline: -10px;
+  border-radius: 8px;
+}
+.nativeOption:not(:has([data-disabled])):hover {
+  background: var(--a13n-hover);
+}
+.nativeOption:has([data-disabled]) {
+  cursor: not-allowed;
+}
+.nativeOption:has([data-disabled]) .optionText > span {
+  color: var(--a13n-secondary);
+}
+.optionText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.optionText > small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.recommendation {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 400;
+}
+.resourceIdentity {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.resourceIcon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-secondary);
+}
+.resourceIcon > svg {
+  width: 20px;
+  height: 20px;
+}
+.resourceInfo {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.resourceInfo > a,
+.resourceInfo > strong {
+  font-size: 14px;
+}
+.resourceMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+.resourceInfo small.metadata {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.metadata > svg {
+  margin-top: 1px;
+}
+.modelList {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--a13n-surface);
+  overflow: hidden;
+}
+.modelList:empty {
+  display: none;
+}
+.modelList > .modelRow {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  padding-block: 16px;
+}
+.collectionHeader > header {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+.collectionSearch {
+  max-width: 320px;
+}
+.subagentInfo {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.subagentInfo small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .modelPickerRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .modelPickerRow > button {
+    justify-self: start;
+  }
+  .modelRow {
+    gap: 8px;
+  }
+}

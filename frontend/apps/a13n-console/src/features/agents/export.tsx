@@ -50,7 +50,9 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
               <dt>{t("Capabilities")}</dt>
               <dd>
                 {t("{{skills}} skills · {{connections}} connections", {
-                  skills: file.config.skills?.length ?? 0,
+                  skills:
+                    (file.config.skills?.length ?? 0) +
+                    (file.config.builtin_skills?.length ?? 0),
                   connections: file.config.connection_tools?.length ?? 0,
                 })}
               </dd>
@@ -82,17 +84,19 @@ export function ExportAgent({
   agent,
   config,
   version,
+  builtinInstructions,
   trigger,
 }: {
   agent: Schema["Agent"];
   config: AgentConfig;
   version: number;
+  builtinInstructions?: string | null;
   trigger?: ReactElement;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<Error>();
-  const file = agentFile(agent, config);
+  const file = agentFile(agent, config, builtinInstructions);
   return (
     <ModalFrame
       open={open}

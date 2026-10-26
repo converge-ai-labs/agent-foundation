@@ -6,17 +6,20 @@ connection, or a toolset over the connector account. Before every tool call the 
 enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the call is never sent.
 """
 
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 
 import anyio
 from a13n_harness import AgentContext, RequestContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
+from mcp.types import Tool
 from pydantic_ai.capabilities import AbstractCapability, Toolset
 from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.mcp import MCPAppToolResult
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +49,7 @@ class SelectedConnection:
     tools: tuple[str, ...] | None
     # The run's frozen caller headers for this connection; empty for connectors.
     caller_headers: Mapping[str, str]
+    selection: ConnectionSelection | None = None
 
 
 async def resolve_connections(
@@ -76,7 +80,7 @@ async def resolve_connections(
             tools = exposed
         elif exposed is not None:
             tools = tuple(name for name in tools if name in exposed)
-        selected.append(SelectedConnection(connection, tools, headers))
+        selected.append(SelectedConnection(connection, tools, headers, selection))
     return tuple(selected)
 
 
@@ -91,6 +95,7 @@ async def open_connections(
     registry: Registry,
     policy: EndpointPolicy,
     settings: Providers,
+    capture: Callable[[SelectedConnection, AgentContext, str, Tool, MCPAppToolResult], None] | None = None,
     request_context: RequestContext | None = None,
 ) -> AsyncGenerator[tuple[AbstractCapability[AgentContext], ...]]:
     """One worker attempt owns lazily entered clients; native Runs borrow fresh projections."""
@@ -123,7 +128,11 @@ async def open_connections(
                             )
                         http.headers.update(headers)
                         client = mcp_client(
-                            connection.config.url, connection.id, http, timeout=settings.tool_call_seconds
+                            connection.config.url,
+                            connection.id,
+                            http,
+                            timeout=settings.tool_call_seconds,
+                            apps=capture is not None,
                         )
                         entered = await stack.enter_async_context(client)
                     return entered
@@ -141,6 +150,7 @@ async def open_connections(
                         client_source(connection, selected.caller_headers),
                         tools=selected.tools,
                         check=checked,
+                        capture=partial(capture, selected) if capture is not None else None,
                     )
                 )
                 continue

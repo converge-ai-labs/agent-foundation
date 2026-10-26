@@ -1,6 +1,7 @@
 import { Badge } from "a13n-ui";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import type { Schema } from "../../../shared/api";
 import { ExecutionFields } from "../../../shared/forms";
 import { ErrorToast } from "../../../shared/feedback";
 import {
@@ -35,6 +36,7 @@ import { ConfigurationGroup } from "./configuration-group";
 import { ModelSection, ModelSettings } from "./model";
 import styles from "./editor.module.css";
 import { ToolSearchSection } from "./tool-search";
+import { PluginsSection } from "./plugins";
 
 export interface AgentDraftSummary {
   modelName?: string;
@@ -54,9 +56,9 @@ export function AgentEditor({
   id,
   agentId,
   profile,
-  initial,
-  version,
-  etag,
+  initial: incomingInitial,
+  version: incomingVersion,
+  etag: incomingEtag,
   pending,
   error,
   readonly = false,
@@ -67,6 +69,7 @@ export function AgentEditor({
   unnamed = false,
   onUnnamed,
   overridden,
+  preset: incomingPreset,
 }: {
   /** Lets a submit button outside the form, such as a page header's, save. */
   id?: string;
@@ -82,6 +85,8 @@ export function AgentEditor({
   error: unknown;
   readonly?: boolean;
   submit: (config: AgentConfig, etag?: string, note?: string | null) => void;
+  /** A managed preset edits supplements; the Host supplies its official guidance. */
+  preset?: Schema["AgentRevision"];
   discard?: () => void;
   rail?: (summary: AgentDraftSummary) => ReactNode;
   saveLabel?: string;
@@ -93,8 +98,17 @@ export function AgentEditor({
   overridden?: Iterable<string>;
 }) {
   const { t } = useTranslation();
+  // Keep the draft, base revision and precondition together across background query refreshes.
+  // An explicit reload/remount starts a new edit.
+  const [{ initial, version, etag, preset }] = useState({
+    initial: incomingInitial,
+    version: incomingVersion,
+    etag: incomingEtag,
+    preset: incomingPreset,
+  });
   const creating = version === undefined;
   const draft = useAgentDraft(initial);
+  const configurationReadonly = readonly || !!preset;
   const [note, setNote] = useState(""),
     [modelExpanded, setModelExpanded] = useState(false),
     [attempted, setAttempted] = useState(false),
@@ -189,7 +203,20 @@ export function AgentEditor({
     setModelValidation(undefined);
     setToolSearchValidation(undefined);
     setValidation(undefined);
-    submit(built.config, etag, note.trim() || null);
+    if (preset) {
+      submit(
+        {
+          ...initial,
+          model: built.config.model,
+          model_settings: built.config.model_settings,
+          instructions: built.config.instructions,
+        },
+        etag,
+        note.trim() || null,
+      );
+    } else {
+      submit(built.config, etag, note.trim() || null);
+    }
   }
 
   return (
@@ -206,7 +233,7 @@ export function AgentEditor({
             />
           ),
           environmentId: draft.environmentTemplateId,
-          skillCount: draft.skills.length,
+          skillCount: draft.skills.length + draft.builtinSkills.length,
           connectionCount: draft.connections.length,
           dirty,
         })}
@@ -218,6 +245,9 @@ export function AgentEditor({
               draft={draft}
               readOnly={readonly}
               mark={mark("instructions")}
+              officialInstructions={
+                preset ? (preset.builtin_instructions ?? "") : undefined
+              }
             />
             <ModelSection
               id={modelId}
@@ -231,6 +261,7 @@ export function AgentEditor({
                   draft={draft}
                   thinkingOptions={thinkingOptions}
                   readOnly={readonly}
+                  limited={!!preset}
                   expanded={modelExpanded}
                   onExpandedChange={setModelExpanded}
                   validation={modelValidation}
@@ -248,7 +279,7 @@ export function AgentEditor({
                 onChange={draft.setToolsets}
                 config={built.ok ? built.config : undefined}
                 agentId={agentId}
-                readOnly={readonly}
+                readOnly={configurationReadonly}
                 mark={mark("toolsets")}
                 onReview={(target) => setReviewPanel({ target })}
                 onRequireReviewer={() => {
@@ -258,26 +289,37 @@ export function AgentEditor({
               <SkillsSection
                 draft={draft}
                 choices={choices}
-                readOnly={readonly}
+                hostSkills={!!preset}
+                readOnly={configurationReadonly}
                 mark={mark("skills")}
               />
               <ConnectionsSection
                 draft={draft}
                 choices={choices}
-                readOnly={readonly}
+                readOnly={configurationReadonly}
                 mark={mark("connections")}
                 onReview={(target) => setReviewPanel({ target })}
                 onRequireReviewer={() => {
                   if (!draft.reviewer?.model) setReviewPanel({});
                 }}
               />
-              <MediaUnderstandingSection draft={draft} readOnly={readonly} />
+              <PluginsSection
+                draft={draft}
+                readOnly={configurationReadonly}
+                pending={pending}
+                mark={mark("plugins")}
+                error={error}
+              />
+              <MediaUnderstandingSection
+                draft={draft}
+                readOnly={configurationReadonly}
+              />
             </SectionGroup>
             <AgentEnvironment
               value={draft.environmentTemplateId}
               onChange={draft.setEnvironmentTemplateId}
               disabled={pending}
-              readOnly={readonly}
+              readOnly={configurationReadonly}
             />
             <ConfigurationGroup
               title={t("Advanced")}
@@ -289,7 +331,7 @@ export function AgentEditor({
                 title={t("Memory")}
                 description={t("Knowledge available to new sessions.")}
               >
-                <MemorySection draft={draft} readOnly={readonly} />
+                <MemorySection draft={draft} readOnly={configurationReadonly} />
               </Section>
               <Section
                 title={t("Auto review")}
@@ -299,7 +341,7 @@ export function AgentEditor({
                 <ReviewerSection
                   draft={draft}
                   choices={choices}
-                  readOnly={readonly}
+                  readOnly={configurationReadonly}
                   mark={mark("reviewer")}
                   onOpen={() => setReviewPanel({})}
                 />
@@ -312,7 +354,7 @@ export function AgentEditor({
                 <ToolSearchSection
                   draft={draft}
                   choices={choices}
-                  readOnly={readonly}
+                  readOnly={configurationReadonly}
                   mark={mark("toolSearch")}
                   error={toolSearchValidation}
                 />
@@ -326,7 +368,7 @@ export function AgentEditor({
                   compact
                   value={draft.execution}
                   onChange={draft.setExecution}
-                  readOnly={readonly}
+                  readOnly={configurationReadonly}
                 />
               </Section>
               <Section
@@ -335,7 +377,7 @@ export function AgentEditor({
               >
                 <AdvancedSection
                   draft={draft}
-                  readOnly={readonly}
+                  readOnly={configurationReadonly}
                   mark={mark("advanced")}
                   validation={validation}
                 />
@@ -378,7 +420,7 @@ export function AgentEditor({
               (item) => item.settings_schemas ?? {},
             ) ?? []),
           )}
-          readOnly={readonly}
+          readOnly={configurationReadonly}
           onApply={draft.setReviewer}
           onClose={() => setReviewPanel(undefined)}
         />

@@ -30,6 +30,7 @@ from a13n_harness.tool_execution import ToolExecutionRuntime
 
 if TYPE_CHECKING:
     from a13n_harness.builder import AgentDefinition, SubagentDefinition
+    from a13n_harness.capabilities.browser import BrowserBackend
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
@@ -169,6 +170,7 @@ class RunBindings:
     toolset_instructions: bool | None = None
     deferred_tools_supported: bool = True
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
+    browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
@@ -220,6 +222,7 @@ class RunBindings:
             raise TypeError("observation must be a HarnessObservationContext or None")
         if self.state_store is not None and not isinstance(self.state_store, StateStore):
             raise TypeError("RunBindings.state_store must implement StateStore")
+        from a13n_harness.capabilities.browser import BrowserBackend
         from a13n_harness.capabilities.skills import _validate_skill_selection
         from a13n_harness.capabilities.web import WebBinding
         from a13n_harness.capabilities.working_state import TaskStateBinding
@@ -228,6 +231,7 @@ class RunBindings:
         from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
 
         for name, value, expected in (
+            ("browser_backend", self.browser_backend, BrowserBackend),
             ("web", self.web, WebBinding),
             ("document_converter", self.document_converter, DocumentConverter),
             ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
@@ -261,6 +265,7 @@ class RunBindings:
         model_call_check: ModelCallCheck | None = None,
         usage_reporter: UsageReporter | UsageDeltaReporter | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        browser_backend: BrowserBackend | None = None,
         web: WebBinding | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
@@ -293,6 +298,7 @@ class RunBindings:
             model_call_check=model_call_check,
             usage_reporter=usage_reporter,
             capabilities=tuple(capabilities),
+            browser_backend=browser_backend,
             web=web,
             document_converter=document_converter,
             file_media_understanding=file_media_understanding,
@@ -440,6 +446,7 @@ class AgentContext:
         compare=False,
     )
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
+    browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None

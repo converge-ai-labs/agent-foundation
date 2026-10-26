@@ -615,7 +615,7 @@ class SummaryCursor(_StreamModel):
 
 class RootOperationNotice(_StreamModel):
     receipt_id: str = Field(min_length=1, max_length=128)
-    status: Literal["completed", "failed", "suspended"]
+    status: Literal["completed", "failed", "suspended", "goal_verified", "goal_incomplete"]
     brief: str = Field(min_length=1, max_length=320)
 
 

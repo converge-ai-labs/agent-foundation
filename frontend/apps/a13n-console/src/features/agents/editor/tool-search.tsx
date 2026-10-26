@@ -55,7 +55,7 @@ export function ToolSearchSection({
         available: true,
       };
     }),
-    ...(draft.initial.plugins ?? []).map((plugin) => ({
+    ...draft.plugins.map((plugin) => ({
       kind: "plugins" as const,
       id: plugin.instance_name,
       label: plugin.instance_name,

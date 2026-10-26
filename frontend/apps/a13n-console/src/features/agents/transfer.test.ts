@@ -91,6 +91,24 @@ it("exports only metadata and authored configuration, without resource identity 
   );
 });
 
+it("exports current builtin guidance with the saved supplement as an independent configuration", () => {
+  const file = agentFile(
+    { name: "Composer", description: null },
+    config,
+    "Official guidance.",
+  );
+  expect(parseAgentFile(serializeAgentFile(file)).config.instructions).toBe(
+    "Official guidance.\n\n" + config.instructions,
+  );
+  expect(file.config).toEqual({
+    ...config,
+    instructions: "Official guidance.\n\n" + config.instructions,
+  });
+  expect(
+    agentFile({ name: "Legacy", description: null }, config, null).config,
+  ).toEqual(config);
+});
+
 describe("invalid Agent files", () => {
   const valid = serializeAgentFile(
     agentFile({ name: "Research", description: null }, config),

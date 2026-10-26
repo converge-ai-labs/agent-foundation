@@ -2,6 +2,7 @@
 
 import json
 import re
+from contextlib import asynccontextmanager
 from functools import partial
 from tempfile import TemporaryDirectory
 
@@ -18,7 +19,7 @@ from a13n_service.resources.agents.composer import configuration
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.toolsets import environment_configuration
 from a13n_service.runs.host import _environment
-from a13n_service.runs.platform_files import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_platform_mounts
+from a13n_service.runs.platform_files import INSTANCE_ROOT, ROOT, SOURCE, _mount, open_platform_files
 from a13n_service.settings import Settings
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -27,9 +28,11 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 pytestmark = pytest.mark.anyio
 
 
-def startup(settings=None):
+@asynccontextmanager
+async def startup(settings=None):
     settings = settings or Settings()
-    return open_platform_mounts(_registry(OSS, settings), settings)
+    async with open_platform_files(_registry(OSS, settings), settings) as files:
+        yield files.mounts
 
 
 async def test_local_mounts_schema_references_and_permissions():

@@ -16,6 +16,40 @@ function draftFor(config: Partial<ReturnType<typeof initialConfig>> = {}) {
   return renderHook(() => useAgentDraft(initial)).result;
 }
 
+it("edits builtin skill selections without losing workspace pins or changing tools", () => {
+  const skill = {
+    skill_id: "sk_0123456789abcdef0123",
+    revision_id: "skr_0123456789abcdef0123",
+  };
+  const toolsets = { files: { enabled: false } };
+  const draft = draftFor({
+    skills: [skill],
+    builtin_skills: ["platform-operations"],
+    toolsets,
+  });
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  expect(draft.current.advanced).not.toContain("builtin_skills");
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setBuiltinSkills([]));
+  expect(draft.current.dirty).toBe(true);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { builtin_skills: [], skills: [skill], toolsets },
+  });
+  act(() => draft.current.setBuiltinSkills(["platform-operations"]));
+  expect(draft.current.dirty).toBe(false);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: {
+      builtin_skills: ["platform-operations"],
+      skills: [skill],
+      toolsets,
+    },
+  });
+  act(() => draft.current.setAdvanced('{"builtin_skills": []}'));
+  expect(buildDraftConfig(draft.current, undefined, asIs).ok).toBe(false);
+});
+
 it("seeds media understanding from the saved configuration and publishes edits", () => {
   const draft = draftFor({
     media_understanding: { image: vision, video: null, audio: null },
@@ -368,4 +402,64 @@ it("publishes sparse execution defaults and removes them when reset to inherit",
   );
   const inherited = buildDraftConfig(draft.current, undefined, asIs);
   expect(inherited.ok && inherited.config.execution).toBeUndefined();
+});
+
+it("saves plugin edits and updates only the renamed or removed discovery memberships", () => {
+  const plugin = {
+    instance_name: "audit",
+    plugin_key: "test.audit",
+    config: { nested: { retained: true } },
+  };
+  const other = {
+    instance_name: "other",
+    plugin_key: "test.audit",
+    config: {},
+  };
+  const draft = draftFor({
+    plugins: [plugin, other],
+    tool_search: {
+      groups: {
+        lookup: {
+          description: "Lookup",
+          plugins: ["audit", "other"],
+          capabilities: ["environment"],
+        },
+      },
+      config: { mode: "proxy" },
+    },
+  });
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.applyPlugin({ ...plugin, instance_name: "renamed" }, "audit"),
+  );
+  expect(draft.current.dirty).toBe(true);
+  let built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built).toMatchObject({
+    ok: true,
+    config: {
+      plugins: [{ ...plugin, instance_name: "renamed" }, other],
+      tool_search: {
+        groups: {
+          lookup: {
+            plugins: ["renamed", "other"],
+            capabilities: ["environment"],
+          },
+        },
+      },
+    },
+  });
+  act(() => draft.current.removePlugin("renamed"));
+  built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built).toMatchObject({
+    ok: true,
+    config: {
+      plugins: [other],
+      tool_search: {
+        groups: {
+          lookup: { plugins: ["other"], capabilities: ["environment"] },
+        },
+      },
+    },
+  });
+  expect(draft.current.initial.plugins).toEqual([plugin, other]);
 });

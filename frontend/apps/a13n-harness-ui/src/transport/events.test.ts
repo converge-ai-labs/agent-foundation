@@ -128,43 +128,52 @@ it("rejoins summary streams with cursors, discards reset cursors and cancels ret
   }
 });
 
-it("retains root identity and bounded notices rather than reducing every event to a global refresh", async () => {
-  const event = {
-    kind: "root_operation",
-    epoch: "epoch",
-    sequence: 2,
-    root_thread_id: "thread-1",
-    notice: {
-      receipt_id: "receipt-1",
-      status: "completed",
-      brief: "Fixed the sidebar.",
-    },
-  };
-  const envelope = { kind: "invalidation", resume_cursor: "epoch:2", event };
-  expect(summaryFrame(envelope)).toEqual(envelope);
-  for (const notice of [
-    { ...event.notice, status: "running" },
-    { ...event.notice, brief: "x".repeat(321) },
-    { ...event.notice, receipt_id: null },
-  ]) {
-    expect(() =>
-      summaryFrame({ ...envelope, event: { ...event, notice } }),
-    ).toThrow("Invalid root operation notice");
-  }
-  const socket = mockWebSocket();
-  const { watchSummary } = await import("./events");
-  const received = vi.fn();
-  const transport = createTransport("test", () => {});
-  const stop = watchSummary(transport, received, () => {});
-  try {
-    socket().open();
-    socket().frame(envelope);
-    expect(received).toHaveBeenCalledWith(event);
-  } finally {
-    stop();
-    transport.close();
-  }
-});
+it.each([
+  "completed",
+  "failed",
+  "suspended",
+  "goal_verified",
+  "goal_incomplete",
+])(
+  "delivers %s notices without reducing them to a global refresh",
+  async (status) => {
+    const event = {
+      kind: "root_operation",
+      epoch: "epoch",
+      sequence: 2,
+      root_thread_id: "thread-1",
+      notice: {
+        receipt_id: "receipt-1",
+        status,
+        brief: "Fixed the sidebar.",
+      },
+    };
+    const envelope = { kind: "invalidation", resume_cursor: "epoch:2", event };
+    expect(summaryFrame(envelope)).toEqual(envelope);
+    for (const notice of [
+      { ...event.notice, status: "running" },
+      { ...event.notice, brief: "x".repeat(321) },
+      { ...event.notice, receipt_id: null },
+    ]) {
+      expect(() =>
+        summaryFrame({ ...envelope, event: { ...event, notice } }),
+      ).toThrow("Invalid root operation notice");
+    }
+    const socket = mockWebSocket();
+    const { watchSummary } = await import("./events");
+    const received = vi.fn();
+    const transport = createTransport("test", () => {});
+    const stop = watchSummary(transport, received, () => {});
+    try {
+      socket().open();
+      socket().frame(envelope);
+      expect(received).toHaveBeenCalledWith(event);
+    } finally {
+      stop();
+      transport.close();
+    }
+  },
+);
 
 it("manual retry retains the summary cursor and receives missed notices without overlapping requests", async () => {
   vi.useFakeTimers();

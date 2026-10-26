@@ -62,6 +62,7 @@ async def platform_capability(
         url,
         id=PLATFORM_SOURCE,
         http_client=http,
+        init_timeout=60,
         max_retries=0,
         tool_error_behavior="failed",
         prefer_tasks=False,

@@ -370,6 +370,7 @@ class HarnessUiDocument(ConfigurationModel):
     memory: MemoryConfiguration = Field(default_factory=MemoryConfiguration)
     live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
+    background_compaction: bool = True
 
 
 class EnvironmentVariableSource(StrictModel):

@@ -1937,6 +1937,7 @@ class _CompletedReconstructor:
         pricing_catalog=None,
         memory_positions=None,
         organization=None,
+        background_compaction=None,
     ):
         del composition, subagent_operator, subscription_sources
 
@@ -1958,6 +1959,7 @@ class _DeferredReconstructor:
         pricing_catalog=None,
         memory_positions=None,
         organization=None,
+        background_compaction=None,
     ):
         del composition, subagent_operator, subscription_sources
 
@@ -2031,6 +2033,7 @@ class _SlowReconstructor:
         pricing_catalog=None,
         memory_positions=None,
         organization=None,
+        background_compaction=None,
     ):
         del composition, subagent_operator, subscription_sources
 

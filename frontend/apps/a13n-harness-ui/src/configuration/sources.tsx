@@ -24,6 +24,7 @@ import {
   updateDocument,
   type ResourceKind,
 } from "./documents";
+import { useRootConfiguration } from "./root-configuration";
 import { MediaUnderstandingFields } from "./media-understanding";
 import {
   EnvdConfigurationFields,
@@ -138,6 +139,7 @@ export function SourcesPage({
 }) {
   const sources = useSources();
   const selectors = useSelectors();
+  const root = useRootConfiguration(kinds?.includes("agent"));
   const names = new Map([
     ...(selectors.data?.agents ?? []).map(
       (item) => [item.agent_id, item.name] as const,
@@ -224,11 +226,26 @@ export function SourcesPage({
               <div>
                 <strong>{displayName(source)}</strong>
                 <small>
-                  {kinds
-                    ? source.resource_ids.join(", ")
-                    : source.relative_path}
+                  {kinds?.length === 1 && kinds[0] === "agent"
+                    ? source.resource_ids
+                        .map((id) => {
+                          const model = selectors.data?.agents.find(
+                            (agent) => agent.agent_id === id,
+                          )?.model_id;
+                          return model
+                            ? (names.get(model) ?? model)
+                            : "No model selected";
+                        })
+                        .join(", ")
+                    : kinds
+                      ? source.resource_ids.join(", ")
+                      : source.relative_path}
                 </small>
               </div>
+              {source.resource_kind === "agent" &&
+                source.resource_ids.includes(
+                  root.configuration?.defaults?.agent,
+                ) && <span>Default</span>}
               {!kinds && (
                 <span>{source.resource_kind.replaceAll("_", " ")}</span>
               )}
@@ -239,7 +256,12 @@ export function SourcesPage({
             </Link>
           ))}
       </div>
-      {sources.data && !sources.data.sources.length && (
+      {sources.data &&
+        kinds &&
+        !sources.data.sources.some((source) =>
+          kinds.includes(source.resource_kind as ResourceKind),
+        ) && <p>No {title.toLowerCase()} yet. Add one to get started.</p>}
+      {sources.data && !kinds && !sources.data.sources.length && (
         <Panel title="No saved configuration">
           <p>
             Complete guided setup to create the root configuration before adding
@@ -346,6 +368,14 @@ export function SourceDocument({
     () => drafts.get(path) ?? null,
   );
   const [notice, setNotice] = useState("");
+  const [modelReady, setModelReady] = useState(false);
+  const kind = readDocument(draft?.content ?? "")?.get("kind");
+  const back =
+    kind === "agent"
+      ? "/settings/agents"
+      : kind === "model"
+        ? "/settings/models"
+        : "/settings/resources";
   const [deleting, setDeleting] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const source = useQuery({
@@ -439,7 +469,7 @@ export function SourceDocument({
     onSuccess: () => {
       drafts.delete(path);
       void queries.invalidateQueries();
-      navigate("/settings/resources");
+      navigate(back);
     },
   });
   const canEdit =
@@ -457,9 +487,13 @@ export function SourceDocument({
   return (
     <div className={styles.sourceDocument}>
       {!embedded && (
-        <Link className={styles.back} to="/settings">
+        <Link className={styles.back} to={back}>
           <ArrowLeft />
-          Settings
+          {kind === "agent"
+            ? "Agents"
+            : kind === "model"
+              ? "Models"
+              : "Configuration files"}
         </Link>
       )}
       <PageHeader
@@ -559,6 +593,7 @@ export function SourceDocument({
             />
           ) : (
             <ResourceFields
+              onReady={setModelReady}
               connectionsOnly={section === "connections"}
               source={draft!.content}
               onChange={(content) => update({ ...draft!, content })}
@@ -628,18 +663,8 @@ export function SourceDocument({
               </div>
             )}
             <div className={styles.editorState}>
-              <span>{dirty ? "Unsaved changes" : "No unsaved changes"}</span>
-              {notice ? (
-                <small role="status">{notice}</small>
-              ) : (
-                <small>
-                  {section === "envd"
-                    ? "Saved envd changes require a Harness UI restart."
-                    : section === "execution"
-                      ? "Defaults apply to new conversations."
-                      : "Saving validates changes for future runs."}
-                </small>
-              )}
+              {dirty && <span>Unsaved changes</span>}
+              {notice && <small role="status">{notice}</small>}
             </div>
             <div className={styles.actions}>
               {isNew ? (
@@ -656,7 +681,7 @@ export function SourceDocument({
                   destructive
                   onConfirm={() => {
                     drafts.delete(path);
-                    navigate("/settings/resources");
+                    navigate(back);
                   }}
                 />
               ) : (
@@ -670,7 +695,7 @@ export function SourceDocument({
               )}
               <Button
                 loading={save.isPending}
-                disabled={!dirty}
+                disabled={!dirty || (kind === "model" && !modelReady)}
                 onClick={() => save.mutate(draft!.content)}
               >
                 {isNew

@@ -9,6 +9,7 @@ from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.resources import catalog_reads
 from a13n_service.resources.agents import composer, read_views, service
+from a13n_service.resources.agents.plugins import PluginCatalog
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentCreate,
@@ -23,6 +24,7 @@ from a13n_service.resources.agents.schemas import (
 )
 from a13n_service.resources.agents.tables import PresetKind
 from a13n_service.resources.agents.toolsets import ToolsetCatalog
+from a13n_service.resources.builtin_skills import BuiltinSkillCatalog
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
 from a13n_service.tenancy.requests import Actor, ImageBody, WorkspaceId
@@ -53,9 +55,9 @@ async def validate_agent(workspace_id: WorkspaceId, body: AgentValidate, actor: 
 async def prepare_composer(
     response: Response, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime
 ) -> Agent:
-    """The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+    """The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.
 
-    Refused with `model_required` while the workspace has no model the caller can use.
+    Initial preparation requires a usable model; later preparation preserves the selected model and revision.
     """
     prepared = await composer.prepare(
         runtime.storage,
@@ -328,6 +330,18 @@ async def set_default_agent_revision(
 @router.get("/toolsets", response_model=ToolsetCatalog, openapi_extra=platform_operation("agents", "read"))
 async def list_toolsets(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> ToolsetCatalog:
     return await service.toolset_catalog(runtime.storage, actor, workspace_id, registry=runtime.registry)
+
+
+@router.get("/plugins", response_model=PluginCatalog, openapi_extra={"x-a13n-mcp": True})
+async def list_plugins(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> PluginCatalog:
+    """The plugins loaded by this Control process, without constructing or executing instances."""
+    return await service.plugin_catalog(runtime.storage, actor, workspace_id, plugins=runtime.plugins)
+
+
+@router.get("/builtin-skills", response_model=BuiltinSkillCatalog, openapi_extra={"x-a13n-mcp": True})
+async def list_builtin_skills(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> BuiltinSkillCatalog:
+    """The skills bundled with this Service release, separately from workspace skill resources."""
+    return await service.builtin_skill_catalog(runtime.storage, actor, workspace_id, skills=runtime.builtin_skills)
 
 
 @router.get(

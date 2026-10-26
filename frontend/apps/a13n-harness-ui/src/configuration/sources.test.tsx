@@ -15,7 +15,15 @@ import type { Transport } from "../transport/client";
 import { DraftContext, SourceDocument, type SourceDraft } from "./sources";
 
 vi.mock("./editor", () => ({ SourceEditor: () => null }));
-vi.mock("./fields", () => ({ ResourceFields: () => null }));
+vi.mock("./fields", async () => {
+  const { useEffect } = await import("react");
+  return {
+    ResourceFields: ({ onReady }: { onReady?: (ready: boolean) => void }) => {
+      useEffect(() => onReady?.(true), [onReady]);
+      return null;
+    },
+  };
+});
 afterEach(cleanup);
 
 it("retains unsaved configuration on cancel and navigates only after confirmed discard", async () => {

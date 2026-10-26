@@ -46,10 +46,10 @@ type LeaseProof = Callable[[], Awaitable[object]]
 
 
 @dataclass(frozen=True, slots=True)
-class PinnedSkill:
-    """One pinned revision as the catalog lists it."""
+class SkillPackage:
+    """A pinned workspace revision or a release-owned archive, synchronized by the same policy."""
 
-    revision_id: str
+    source: str | FileArchive
     digest: str
     name: str
     description: str
@@ -69,7 +69,7 @@ class PinnedSkill:
 
 async def resolve_skills(
     session: AsyncSession, run: RunRow, selections: Sequence[SkillSelection], *, sync: SkillSync = _DEFAULT_SYNC
-) -> tuple[PinnedSkill, ...]:
+) -> tuple[SkillPackage, ...]:
     """The run's pinned skill revisions, read in its short session; pins are frozen, so archived skills load."""
     if not selections and not (isinstance(sync, SharedSkillSync) and sync.cleanup):
         return ()
@@ -82,7 +82,7 @@ async def resolve_skills(
         )
     )
     found = {row.id: row for row in rows}
-    pinned: list[PinnedSkill] = []
+    pinned: list[SkillPackage] = []
     for selection in selections:
         row = found.get(selection.revision_id or "")
         if row is None or row.skill_id != selection.skill_id:
@@ -90,12 +90,12 @@ async def resolve_skills(
         manifest = SkillManifest.model_validate(row.config)
         # Validate the name before using it as a directory component.
         validate_name(manifest.name)
-        pinned.append(PinnedSkill(row.id, manifest.package_digest, manifest.name, manifest.description))
+        pinned.append(SkillPackage(row.id, manifest.package_digest, manifest.name, manifest.description))
     return tuple(pinned)
 
 
 def skills_capability(
-    skills: Sequence[PinnedSkill],
+    skills: Sequence[SkillPackage],
     *,
     runtime: Runtime,
     workspace_id: str,
@@ -105,7 +105,7 @@ def skills_capability(
     builtin: SkillSource | None = None,
 ) -> SkillsCapability:
     """The definition's skill catalog; the Harness materializes it when the run starts, before its first request."""
-    pinned = _PinnedSkills(tuple(skills), runtime, workspace_id, prove_lease, cache=cache, sync=sync)
+    pinned = _SkillPackages(tuple(skills), runtime, workspace_id, prove_lease, cache=cache, sync=sync)
     materialize = bool(skills) or (isinstance(sync, SharedSkillSync) and sync.cleanup)
     materializers = [pinned] if materialize else []
     sources: list[SkillSource] = [*materializers, *(() if builtin is None else (builtin,))]
@@ -113,7 +113,7 @@ def skills_capability(
     return SkillsCapability(SkillManager(sources, materializers=materializers, policy=policy))
 
 
-class _PinnedSkills:
+class _SkillPackages:
     """The catalog source and the materializer of the pinned skills, over one root the manager selects."""
 
     source_id = materializer_id = "a13n-service-skills"
@@ -122,7 +122,7 @@ class _PinnedSkills:
 
     def __init__(
         self,
-        skills: tuple[PinnedSkill, ...],
+        skills: tuple[SkillPackage, ...],
         runtime: Runtime,
         workspace_id: str,
         prove_lease: LeaseProof,
@@ -183,10 +183,8 @@ class _PinnedSkills:
                 await self.prove_lease()
                 await self._discard(files, path)
 
-    async def _publish_shared(self, files: FileOperator, sync: SharedSkillSync, selected: list[PinnedSkill]) -> None:
-        archives = await load_packages(
-            self.runtime.storage, self.runtime.objects, self.workspace_id, [skill.revision_id for skill in selected]
-        )
+    async def _publish_shared(self, files: FileOperator, sync: SharedSkillSync, selected: list[SkillPackage]) -> None:
+        archives = await self._archives(selected)
         # One stage holds every candidate and its transferred archive, so a failure leaves nothing else behind.
         stage = f"{_AGENTS}/.skill-stage-{uuid4().hex}"
         cleanup = True
@@ -233,11 +231,9 @@ class _PinnedSkills:
         if not missing:
             return
         await self.prove_lease()
-        archives = await load_packages(
-            self.runtime.storage, self.runtime.objects, self.workspace_id, [skill.revision_id for skill in missing]
-        )
+        archives = await self._archives(missing)
 
-        async def publish(item: tuple[PinnedSkill, FileArchive]) -> None:
+        async def publish(item: tuple[SkillPackage, FileArchive]) -> None:
             skill, archive = item
             candidate = f"{_ROOT}/.staging/{uuid4().hex}"
             cleanup = True
@@ -263,8 +259,17 @@ class _PinnedSkills:
 
         await map_concurrently(list(zip(missing, archives, strict=True)), publish)
 
+    async def _archives(self, skills: Sequence[SkillPackage]) -> list[FileArchive]:
+        revisions = [skill.source for skill in skills if isinstance(skill.source, str)]
+        loaded = iter(
+            await load_packages(self.runtime.storage, self.runtime.objects, self.workspace_id, revisions)
+            if revisions
+            else ()
+        )
+        return [next(loaded) if isinstance(skill.source, str) else skill.source for skill in skills]
 
-async def _published(files: FileOperator, skills: Sequence[PinnedSkill]) -> list[bool]:
+
+async def _published(files: FileOperator, skills: Sequence[SkillPackage]) -> list[bool]:
     published: list[bool] = []
     for offset in range(0, len(skills), FILE_BATCH):
         values = await files.batch(

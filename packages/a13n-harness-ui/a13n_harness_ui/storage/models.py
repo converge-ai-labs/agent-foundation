@@ -64,6 +64,18 @@ class ResourceIndexRecord(Base):
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 
 
+class CompactionRecord(Base):
+    """One unacknowledged Harness compaction operation per root Thread."""
+
+    __tablename__ = "compaction"
+    __table_args__ = (CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),)
+
+    thread_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class PlannedRestartRecord(Base):
     """The only prepared/claimed update handoff for this local data root."""
 

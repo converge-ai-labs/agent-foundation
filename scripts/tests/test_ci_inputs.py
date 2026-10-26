@@ -27,7 +27,7 @@ WORKFLOWS = ROOT / ".github/workflows"
         ("crates/a13n-envd/src/transfer.rs", {"daemon", "protocol"}),
         ("Makefile", {"client", "daemon", "protocol"}),
         ("conftest.py", {"client", "daemon", "protocol"}),
-        ("scripts/tests/test_envd_ci_workflow.py", {"client", "daemon", "protocol"}),
+        ("scripts/tests/test_envd_ci_workflow.py", set()),
         ("docs/a13n-service/index.md", set()),
     ],
 )
@@ -88,6 +88,8 @@ def test_consumers_retain_runtime_and_build_inputs_without_repeating_dependency_
             ("pyproject.toml", True),
             ("hatch_build.py", True),
             ("conftest.py", True),
+            ("README.md", False),
+            ("LICENSE", False),
             ("tests/test_unit.py", False),
             ("tests/conftest.py", False),
             ("tests/fixtures/input.json", False),
@@ -101,6 +103,12 @@ def test_consumers_retain_runtime_and_build_inputs_without_repeating_dependency_
                 selected = True  # The explicit native lifecycle tests use the Harness fixtures.
             for event in ("pull_request", "push"):
                 assert any(path.full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
+            if workflow_name in {"ci-a13n-service.yml", "ci-a13n-harness-ui.yml"}:
+                classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+                filters = yaml.safe_load(classifier["with"]["filters"])
+                assert (
+                    any(path.full_match(pattern) for patterns in filters.values() for pattern in patterns) == selected
+                )
     for event in ("pull_request", "push"):
         for path in ("pyproject.toml", "uv.lock"):
             assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
@@ -109,8 +117,40 @@ def test_consumers_retain_runtime_and_build_inputs_without_repeating_dependency_
             assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
 
 
+@pytest.mark.parametrize(
+    "workflow_name",
+    [
+        "ci-a13n-envd.yml",
+        "ci-a13n-harness.yml",
+        "ci-a13n-harness-ui.yml",
+        "ci-a13n-service.yml",
+        "ci-a13n-service-e2e.yml",
+        "ci-a13n-stream-protocol.yml",
+        "ci-containers.yml",
+        "ci-examples.yml",
+    ],
+)
+def test_routing_tests_do_not_select_product_ci_but_workflow_edits_do(workflow_name: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+    selections = [workflow[True][event]["paths"] for event in ("pull_request", "push") if event in workflow[True]]
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            if step.get("uses", "").startswith("dorny/paths-filter@"):
+                selections.extend(yaml.safe_load(step["with"]["filters"]).values())
+    for patterns in selections:
+        for test in (
+            "test_ci_inputs.py",
+            "test_envd_ci_workflow.py",
+            "test_harness_ui_ci_workflow.py",
+            "test_image_workflows.py",
+        ):
+            assert not any(Path(f"scripts/tests/{test}").full_match(pattern) for pattern in patterns)
+        assert any(Path(f".github/workflows/{workflow_name}").full_match(pattern) for pattern in patterns)
+
+
 def test_tooling_suites_keep_one_ci_owner_and_release_manifest_inputs() -> None:
     owners = {
+        "test_ci_inputs.py": "ci.yml",
         "test_envd_ci_workflow.py": "ci.yml",
         "test_image_workflows.py": "ci.yml",
         "test_harness_ui_ci_workflow.py": "ci.yml",
@@ -315,16 +355,48 @@ def test_service_shards_reject_empty_shards(tmp_path: Path, count: int) -> None:
         _service_matrix(workflow, "true", tmp_path, root=tmp_path)
 
 
-def test_service_docs_only_changes_skip_database_tests_but_keep_checks(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "path",
+    [
+        "docs/a13n-service/mcp.md",
+        "packages/a13n-service/README.md",
+        "packages/a13n-service/LICENSE",
+        "packages/a13n-logging/README.md",
+        "packages/a13n-logging/LICENSE",
+    ],
+)
+def test_service_documentation_only_changes_skip_database_tests_but_keep_checks(tmp_path: Path, path: str) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
-    jobs = workflow["jobs"]
-    assert [entry["name"] for entry in _service_matrix(workflow, "false", tmp_path)] == ["checks"]
-    # The tests filter is exactly the trigger list without the bundled documentation.
-    classifier = next(step for step in jobs["changes"]["steps"] if step.get("id") == "filter")
+    classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
     tests = yaml.safe_load(classifier["with"]["filters"])["tests"]
     for event in ("pull_request", "push"):
-        assert tests == [path for path in workflow[True][event]["paths"] if path != "docs/a13n-service/**"]
-    assert not any(Path("docs/a13n-service/mcp.md").full_match(pattern) for pattern in tests)
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
+    assert not any(Path(path).full_match(pattern) for pattern in tests)
+    assert [entry["name"] for entry in _service_matrix(workflow, "false", tmp_path)] == ["checks"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/a13n-service/pyproject.toml",
+        "packages/a13n-service/hatch_build.py",
+        "packages/a13n-service/build_docs.py",
+        "packages/a13n-service/.importlinter",
+        "packages/a13n-service/a13n_service/runs/worker.py",
+        "packages/a13n-service/tests/test_runs.py",
+        "packages/a13n-logging/pyproject.toml",
+        "packages/a13n-logging/a13n_logging/__init__.py",
+        "packages/a13n-logging/tests/test_logging.py",
+        "uv.lock",
+    ],
+)
+def test_service_retains_runtime_tests_for_code_and_build_inputs(path: str) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    tests = yaml.safe_load(classifier["with"]["filters"])["tests"]
+    assert any(Path(path).full_match(pattern) for pattern in tests)
+    for event in ("pull_request", "push"):
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
 
 
 @pytest.mark.parametrize(

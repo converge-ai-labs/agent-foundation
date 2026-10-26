@@ -22,6 +22,10 @@ from a13n_harness import (
     ModelRecoveryPolicy,
     RunBindings,
 )
+from a13n_harness._context_history import (
+    _COMPACTION_PROMPT,
+    _previous_assistant_reference,
+)
 from a13n_harness.capabilities import (
     CodeActCapability,
     CompactionCapability,
@@ -35,10 +39,6 @@ from a13n_harness.capabilities import (
     WorkingStateCapability,
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
-)
-from a13n_harness.capabilities.context import (
-    _COMPACTION_PROMPT,
-    _previous_assistant_reference,
 )
 from a13n_harness.environment import (
     EnvironmentAction,

@@ -28,6 +28,7 @@ import {
   useAppContextSelection,
 } from "../mcp-apps/context-selection";
 import { ComposerStatus } from "./composer-status";
+import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
@@ -599,6 +600,8 @@ function ConversationContent({
     },
   });
   const thread = detail.data?.thread;
+  const goal = currentGoal(thread, observedOperation.data);
+  const showGoal = !!goal && !guest && !readOnly && !thread?.archived;
   if (thread?.parent_thread_id)
     return (
       <div>
@@ -730,6 +733,7 @@ function ConversationContent({
                   threadId={threadId}
                   activity={
                     !readOnly &&
+                    !showGoal &&
                     !hasLater &&
                     !thread?.archived &&
                     !detail.data?.deferred_requests?.length &&
@@ -884,6 +888,25 @@ function ConversationContent({
             display={display}
             connected={connection === "Live"}
             reconcile={reconcile}
+            goal={showGoal ? goal : null}
+            activity={thread?.root_activity}
+            onUseGoal={
+              goal &&
+              thread?.root_activity.state === "inactive" &&
+              detail.data?.available_actions?.includes("run") &&
+              draft.submission.kind !== "pending" &&
+              draft.submission.kind !== "unknown"
+                ? () => {
+                    const text = draft.doc.getText("text");
+                    text.insert(
+                      text.length,
+                      `${text.length ? "\n\n" : ""}${goal.objective}`,
+                    );
+                    draft.mode = "goal";
+                    draft.notify();
+                  }
+                : undefined
+            }
           />
         )}
         {!guest && !readOnly && !thread?.archived && (
@@ -1014,23 +1037,6 @@ function ConversationContent({
             receipt={receipt}
             busy={thread.root_activity.state !== "inactive"}
             liveTokens={showLive ? display.contextUsage?.tokens : undefined}
-            savedGoal={thread.goal}
-            onRetryGoal={
-              thread.root_activity.state === "inactive" &&
-              detail.data?.available_actions?.includes("run") &&
-              draft.submission.kind !== "pending" &&
-              draft.submission.kind !== "unknown"
-                ? (objective) => {
-                    const text = draft.doc.getText("text");
-                    text.insert(
-                      text.length,
-                      `${text.length ? "\n\n" : ""}${objective}`,
-                    );
-                    draft.mode = "goal";
-                    draft.notify();
-                  }
-                : undefined
-            }
           />
         )}
         {!guest && !readOnly && (

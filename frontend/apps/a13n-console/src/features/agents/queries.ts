@@ -36,3 +36,19 @@ export function editableAgent(
 ) {
   return agent.source === "custom" && !agent.archived_at;
 }
+
+export function editablePreset(
+  agent: Pick<Schema["Agent"], "source" | "preset_kind">,
+) {
+  return (
+    agent.source === "builtin" &&
+    (agent.preset_kind === "composer" || agent.preset_kind === "finding")
+  );
+}
+
+/** Presets allow only model settings and supplemental instructions to change. */
+export function editableAgentRevision(
+  agent: Pick<Schema["Agent"], "source" | "preset_kind" | "archived_at">,
+) {
+  return !agent.archived_at && (editableAgent(agent) || editablePreset(agent));
+}

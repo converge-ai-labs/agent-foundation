@@ -12,9 +12,9 @@ from typing import Literal
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability, Instrumentation, ResolveModelId
 
+from a13n_harness.capabilities.browser import BROWSER_USE_CAPABILITY_ID, BrowserUseCapability
 from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
 from a13n_harness.capabilities.context import (
-    COMPACTION_CAPABILITY_ID,
     FILE_CONTEXT_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
     RUNTIME_CONTEXT_CAPABILITY_ID,
@@ -57,6 +57,7 @@ from a13n_harness.capabilities.working_state import (
     _WorkingStateRunCapability,
 )
 from a13n_harness.capability_types import _validate_capability_id
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import (
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
@@ -80,6 +81,7 @@ from a13n_harness.tools.surface import TOOL_SURFACE_CAPABILITY_ID, ToolSurfaceCa
 from a13n_harness.usage import USAGE_CAPABILITY_ID, UsageCapability, _RunUsageCapability
 
 _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]] = {
+    BROWSER_USE_CAPABILITY_ID: (BrowserUseCapability,),
     CLIENT_TOOLS_CAPABILITY_ID: (ClientToolsCapability,),
     TOOL_SEARCH_CAPABILITY_ID: (_ToolSearchSurfaceCapability,),
     CODEACT_CAPABILITY_ID: (CodeActCapability,),
@@ -480,5 +482,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             raise DefinitionError(
                 f"{label}Capability requires its RunBindings dependency.", code=f"{prefix}_binding_missing"
             )
+    if ctx.deps.browser_backend is not None and ctx.capabilities.get(BROWSER_USE_CAPABILITY_ID) is None:
+        raise DefinitionError("A browser binding requires its definition owner.", code="browser_owner_missing")
     if ctx.deps.task_state is not None and ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID) is None:
         raise DefinitionError("A task-state binding requires its definition owner.", code="task_state_owner_missing")

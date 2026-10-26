@@ -20,11 +20,14 @@ from a13n_harness.environment.advanced import EnvironmentRuntime, create_environ
 from a13n_harness.tools import ToolIdentity
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import ExecutionPolicy
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, invalid
+from a13n_service.resources.agents import instructions
 from a13n_service.resources.agents.schemas import SharedSkillSync
+from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.agents.toolsets import (
     enabled_tool,
     memory_file_tools,
@@ -36,8 +39,10 @@ from a13n_service.resources.connections.runtime import SelectedConnection, open_
 from a13n_service.runs.agent import ResolvedAgent, media_understanding
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease
+from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
-from a13n_service.runs.environments.mounts import PRIMARY
+from a13n_service.runs.environments.mounts import PRIMARY, has_primary
+from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
     file_memory,
@@ -50,7 +55,7 @@ from a13n_service.runs.platform_tools import platform_capability
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import RunOptions
 from a13n_service.runs.skill_cache import Cache
-from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
+from a13n_service.runs.skills import SkillPackage, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.runs.web import ResolvedWeb, open_web, resolve_web
@@ -61,9 +66,10 @@ from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Worksp
 class _Parts:
     connections: tuple[SelectedConnection, ...]
     web: ResolvedWeb | None
-    skills: tuple[PinnedSkill, ...]
+    skills: tuple[SkillPackage, ...]
     platform: Mapping[str, ToolIdentity]
-    builtin_skill: bool
+    host_skills: bool
+    builtin_instructions: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,10 +92,33 @@ async def resolve_host(
     authority: ExecutionAuthority,
 ) -> HostPlan:
     parts: dict[str, _Parts] = {}
+    # Resolve server-owned preset identities for the whole inline graph. Custom copies receive no guidance.
+    builtin = dict(
+        (
+            await session.execute(
+                select(AgentRevisionRow.id, AgentRow.preset_kind)
+                .join(AgentRow, AgentRow.id == AgentRevisionRow.agent_id)
+                .where(
+                    AgentRevisionRow.workspace_id == scope.workspace_id,
+                    AgentRevisionRow.id.in_({node.revision_id for node in agent.agents()}),
+                    AgentRow.source == "builtin",
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
     for node in agent.agents():
         if node.revision_id in parts:
             continue
         config = node.config
+        host_skills = bool(config.builtin_skills) and node.revision_id in builtin
+        if config.builtin_skills and not host_skills and not has_primary(run.environment_mounts):
+            raise invalid("builtin_skills", "builtin skills of custom agents need the run's primary environment")
+        skills = await resolve_skills(session, run, config.skills, sync=config.skill_sync)
+        # Reject before any shared directory is written, including configurations saved before this check existed.
+        if any(skill.name in config.builtin_skills for skill in skills):
+            raise invalid("builtin_skills", "a selected workspace skill has the same name as a builtin skill")
         parts[node.revision_id] = _Parts(
             connections=await resolve_connections(
                 session,
@@ -100,9 +129,10 @@ async def resolve_host(
                 authority=authority,
             ),
             web=await resolve_web(session, principal, scope, web_tools(config.toolsets), authority=authority),
-            skills=await resolve_skills(session, run, config.skills, sync=config.skill_sync),
+            skills=skills,
             platform=platform_tools(config.toolsets),
-            builtin_skill="platform-operations" in config.builtin_skills,
+            host_skills=host_skills,
+            builtin_instructions=instructions.for_preset(builtin.get(node.revision_id)),
         )
     return HostPlan(
         parts,
@@ -137,14 +167,22 @@ class Host:
             # Only conversation roots retain calls; inline children and memory organizers stay inline.
             features.append(ToolExecutionCapability(self.plan.execution.tools))
         parts = self.plan.parts[agent.revision_id]
+        if parts.builtin_instructions is not None:
+            features.append(BuiltinInstructionsCapability(parts.builtin_instructions))
         skills = parts.skills
+        if not parts.host_skills:
+            skills += tuple(
+                SkillPackage(package.archive, package.digest, package.definition.name, package.definition.description)
+                for name in sorted(agent.config.builtin_skills)
+                for package in (self.runtime.builtin_skills[name],)
+            )
         sync = agent.config.skill_sync
-        if parts.builtin_skill or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
+        if parts.host_skills or skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
             features.append(
                 skills_capability(
                     skills,
                     cache=self.skill_cache,
-                    builtin=SOURCE if parts.builtin_skill else None,
+                    builtin=SOURCE if parts.host_skills else None,
                     sync=sync,
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
@@ -183,12 +221,13 @@ async def open_host(
     configuration: RunConfiguration,
     skill_cache: Cache,
     environments: Mapping[str, EnvironmentMount],
+    app_captures: Captures | None = None,
     request_context: RequestContext | None = None,
 ) -> AsyncGenerator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
     async with AsyncExitStack() as stack:
-        platform_mounts = runtime.platform_mounts if any(parts.builtin_skill for parts in plan.parts.values()) else {}
+        platform_mounts = runtime.platform_mounts if any(parts.host_skills for parts in plan.parts.values()) else {}
         tools: dict[str, dict[str, AbstractCapability[AgentContext]]] = {}
         webs: dict[str, WebBinding] = {}
         for revision_id, parts in plan.parts.items():
@@ -202,6 +241,7 @@ async def open_host(
                     registry=runtime.registry,
                     policy=runtime.endpoint_policy.for_run(configuration),
                     settings=runtime.settings.providers,
+                    capture=partial(app_captures.add, revision_id) if app_captures is not None else None,
                     request_context=request_context,
                 )
             )

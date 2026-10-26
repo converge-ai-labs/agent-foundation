@@ -8,6 +8,10 @@ The package does not expose a serialized Agent-definition language, compiler, or
 
 Public `EnvironmentState`, `EnvironmentConnector`, `EnvironmentExecution`, and single-target operation types belong to `a13n_harness.environment`, alongside source/mount integration. Harness Provider definitions construct execution connectors only. Service management types and factories are not Harness exports. There is no independent Environment distribution; package and import compatibility are defined by [Environment Execution](08a-environment-execution.md#compatibility).
 
+## Browser API
+
+`a13n_harness.capabilities` exports `BrowserUseCapability`. Its owning `browser` module exposes the `BrowserBackend` protocol, observation/element/tab values, action types, and browser errors. `browser.cdp.Chromium` owns the CDP runtime; `browser.scope.CdpBrowserBackend` owns reusable tab scopes and the standalone `connect(cdp_url)` context manager. `cdp-use` is a normal dependency; browser installation and process provisioning remain Host-owned. [Browser Use](23-browser-use.md) defines these boundaries.
+
 ## Root Public Surface
 
 `a13n_harness.builder` owns `AgentDefinition`, `HarnessBuilder`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, and `derive_child_identity`. `a13n_harness.execution` exposes `ExecutableAgent` and `HarnessRunStream`; `a13n_harness.live` owns `HarnessLiveStream`. The execution module does not re-export construction APIs. The package root lazily exposes these values from their owners. Business-output adaptation is package-private.
@@ -29,33 +33,34 @@ The package root is a closed primary code-first facade. It exports only the valu
 
 `a13n_harness.__all__` is exactly this table. Feature-family APIs remain public through their owning stable modules rather than being duplicated at the package root. Important routes include:
 
-| Module                               | Owned surface                                                                                |
-| ------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `a13n_harness.capabilities`          | First-party Capability families and public Host boundaries, including the subagent operator  |
-| `a13n_harness.capability_types`      | `CapabilityTypeCatalog` and declarative Capability registration                              |
-| `a13n_harness.context`               | Advanced run context, built-subagent, Skill-path, and tool-metadata values                   |
-| `a13n_harness.environment`           | Mount policy, provider-neutral Run-local operations, and Environment Run Extension contracts |
-| `a13n_harness.environment.advanced`  | Explicit Run-local runtime construction over the same Environment mount inputs               |
-| `a13n_harness.environment.providers` | Advanced Host binding scopes, exact runtime mount ceilings, and entered aggregate contracts  |
-| `a13n_harness.events`                | Event emission helpers and typed first-party payloads                                        |
-| `a13n_harness.filters`               | First-party content, image, cold-start, and integrity filters                                |
-| `a13n_harness.mcp`                   | MCP context-header integration                                                               |
-| `a13n_harness.providers.memory`      | Memory store contracts, file format, local directory store, and Memory Provider definitions  |
-| `a13n_harness.providers.model.oauth` | Codex login supplements and Grok OAuth sources, flows, lifecycle, and Model construction     |
-| `a13n_harness.model_catalog`         | Official model catalog values                                                                |
-| `a13n_harness.model_context`         | Model-context middleware and projection contracts                                            |
-| `a13n_harness.models`                | Provider inference, request headers, transport, settings, and self-healing                   |
-| `a13n_harness.observation`           | Observation configuration constants and advanced instrumentation values                      |
-| `a13n_harness.plugin_configuration`  | Ambient YAML, JSON, and environment configuration plus Build Context                         |
-| `a13n_harness.plugin_factories`      | Plugin factory discovery and catalogs                                                        |
-| `a13n_harness.plugins`               | Complete plugin middleware protocol                                                          |
-| `a13n_harness.pricing`               | Bundled/current pricing catalogs and model-cost Capability family                            |
-| `a13n_harness.token_pricing`         | Selected-model-ID cost valuation against complete pricing entries                            |
-| `a13n_harness.state`                 | Advanced context and Capability state values                                                 |
-| `a13n_harness.tools`                 | Tool recovery declarations, managed tool invocation, and event helpers                       |
-| `a13n_harness.toolsets`              | First-party reusable Toolsets, including the standard async subagent dispatcher              |
-| `a13n_harness.model_calls`           | `ModelCall`, `ModelCallCheck`, `ModelCallCheckError`                                         |
-| `a13n_harness.usage`                 | Usage attribution, ledger, and `intersect_usage_limits`                                      |
+| Module                               | Owned surface                                                                                                                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n_harness.capabilities`          | First-party Capability families and public Host boundaries, including the subagent operator                                                                                                          |
+| `a13n_harness.capability_types`      | `CapabilityTypeCatalog` and declarative Capability registration                                                                                                                                      |
+| `a13n_harness.compaction`            | `CompactionBasis`, `CompactionInput`, `CompactionResult`, `CompactionOperation`, `CompactionOperator`, `CompactionModelRequest`, `generate_compaction`, `apply_compaction`, `compaction_disposition` |
+| `a13n_harness.context`               | Advanced run context, built-subagent, Skill-path, and tool-metadata values                                                                                                                           |
+| `a13n_harness.environment`           | Mount policy, provider-neutral Run-local operations, and Environment Run Extension contracts                                                                                                         |
+| `a13n_harness.environment.advanced`  | Explicit Run-local runtime construction over the same Environment mount inputs                                                                                                                       |
+| `a13n_harness.environment.providers` | Advanced Host binding scopes, exact runtime mount ceilings, and entered aggregate contracts                                                                                                          |
+| `a13n_harness.events`                | Event emission helpers and typed first-party payloads                                                                                                                                                |
+| `a13n_harness.filters`               | First-party content, image, cold-start, and integrity filters                                                                                                                                        |
+| `a13n_harness.mcp`                   | MCP context-header integration                                                                                                                                                                       |
+| `a13n_harness.providers.memory`      | Memory store contracts, file format, local directory store, and Memory Provider definitions                                                                                                          |
+| `a13n_harness.providers.model.oauth` | Codex login supplements and Grok OAuth sources, flows, lifecycle, and Model construction                                                                                                             |
+| `a13n_harness.model_catalog`         | Official model catalog values                                                                                                                                                                        |
+| `a13n_harness.model_context`         | Model-context middleware and projection contracts                                                                                                                                                    |
+| `a13n_harness.models`                | Provider inference, request headers, transport, settings, and self-healing                                                                                                                           |
+| `a13n_harness.observation`           | Observation configuration constants and advanced instrumentation values                                                                                                                              |
+| `a13n_harness.plugin_configuration`  | Ambient YAML, JSON, and environment configuration plus Build Context                                                                                                                                 |
+| `a13n_harness.plugin_factories`      | Plugin factory discovery and catalogs                                                                                                                                                                |
+| `a13n_harness.plugins`               | Complete plugin middleware protocol                                                                                                                                                                  |
+| `a13n_harness.pricing`               | Bundled/current pricing catalogs and model-cost Capability family                                                                                                                                    |
+| `a13n_harness.token_pricing`         | Selected-model-ID cost valuation against complete pricing entries                                                                                                                                    |
+| `a13n_harness.state`                 | Advanced context and Capability state values                                                                                                                                                         |
+| `a13n_harness.tools`                 | Tool recovery declarations, managed tool invocation, and event helpers                                                                                                                               |
+| `a13n_harness.toolsets`              | First-party reusable Toolsets, including the standard async subagent dispatcher                                                                                                                      |
+| `a13n_harness.model_calls`           | `ModelCall`, `ModelCallCheck`, `ModelCallCheckError`                                                                                                                                                 |
+| `a13n_harness.usage`                 | Usage attribution, ledger, and `intersect_usage_limits`                                                                                                                                              |
 
 `a13n_harness.models.codex` exports `CodexRequestModel`. The Model authentication feature exports `CodexLoginFlow`, `CodexLoginResult`, and the Codex device flow alongside Grok credential/source values, OAuth and refresh primitives, bounded errors, and `build_grok_model()`. Native Codex credential, source, provider, and ordinary browser-flow APIs are imported directly from `pydantic_ai.providers.openai_codex`; there are no compatibility aliases or parallel refresh APIs. Its lifecycle and Host boundary belong to [Model Authentication](16a-model-authentication.md).
 
@@ -273,6 +278,7 @@ class ExecutableAgent[OutputT]:
         environments: Mapping[str, EnvironmentSource | EnvironmentMount] | None = None,
         default_environment: str | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
@@ -290,6 +296,7 @@ class ExecutableAgent[OutputT]:
         environments: Mapping[str, EnvironmentSource | EnvironmentMount] | None = None,
         default_environment: str | None = None,
         previous_state: HarnessState | None = None,
+        compaction_result: CompactionResult | None = None,
         resume_usage: bool = False,
         tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,

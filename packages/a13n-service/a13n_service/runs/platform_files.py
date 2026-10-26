@@ -21,13 +21,14 @@ from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCA
 
 from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources.agents.toolsets import catalog
+from a13n_service.resources.builtin_skills import BuiltinPackage, BuiltinSkillName
 from a13n_service.resources.providers.service import list_provider_types
+from a13n_service.resources.skills.builtin import PACKAGE_ROOT, load_packages
 from a13n_service.settings import Settings
 
 ROOT = "/platform-skills/platform-operations"
 INSTANCE_ROOT = "/platform-instance"
 SOURCE = FileSkillSource("a13n-service-builtin-skills", (ROOT,))
-_PACKAGE = Path(__file__).parent.parent / "builtin_skills"
 _READ_TEXT = EnvironmentPermissionSet(
     operations=frozenset(
         {
@@ -39,6 +40,12 @@ _READ_TEXT = EnvironmentPermissionSet(
         }
     )
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PlatformFiles:
+    mounts: dict[str, EnvironmentMount]
+    skills: dict[BuiltinSkillName, BuiltinPackage]
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,7 +78,7 @@ def _mount(root: Path, path: str) -> EnvironmentMount:
 
 
 @asynccontextmanager
-async def open_platform_mounts(registry: Registry, settings: Settings) -> AsyncGenerator[dict[str, EnvironmentMount]]:
+async def open_platform_files(registry: Registry, settings: Settings) -> AsyncGenerator[PlatformFiles]:
     """Prepare deployment-specific references once for the process, outside individual attempts."""
     instance = {
         "providers": {
@@ -83,10 +90,18 @@ async def open_platform_mounts(registry: Registry, settings: Settings) -> AsyncG
         ).model_dump(mode="json"),
         "plugins": list(settings.plugins.keys),
     }
+    catalog_bytes = json.dumps(instance, indent=2).encode()
+    skills = await asyncio.to_thread(load_packages, catalog_bytes)
     directory = await asyncio.to_thread(TemporaryDirectory, prefix="a13n-platform-")
     try:
         root = Path(directory.name)
-        await asyncio.to_thread((root / "catalog.json").write_text, json.dumps(instance, indent=2), encoding="utf-8")
-        yield {"builtin-skills": _mount(_PACKAGE, "/platform-skills"), "builtin-instance": _mount(root, INSTANCE_ROOT)}
+        await asyncio.to_thread((root / "catalog.json").write_bytes, catalog_bytes)
+        yield PlatformFiles(
+            mounts={
+                "builtin-skills": _mount(PACKAGE_ROOT, "/platform-skills"),
+                "builtin-instance": _mount(root, INSTANCE_ROOT),
+            },
+            skills=skills,
+        )
     finally:
         await asyncio.to_thread(directory.cleanup)

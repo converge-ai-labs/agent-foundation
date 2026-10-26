@@ -3,7 +3,7 @@
 `make service-contract-generate` exports the current Service without opening process resources:
 
 - `openapi.json`: the HTTP API, including binary responses and idempotent replay results.
-- `session-stream.schema.json`: the data schema for each session stream SSE frame (`thread`, `items`, `delta`, `gap`).
+- `session-stream.schema.json`: the data schema for each session stream SSE frame (`thread`, `items`, `delta`, `app_ready`, `gap`, `schedule`, `occurrence`).
 - `thread-stream.schema.json`: the data schema for each thread stream SSE frame (`delta`, `boundary`, `changed`, `reset`, `gap`).
 
 Console HTTP types are regenerated from OpenAPI. The [HTTP API contract](../../spec/a13n-service/10-api.md) owns the exports; [Runs](../../spec/a13n-service/05-runs.md) and [Facts and delivery](../../spec/a13n-service/07-facts-and-delivery.md) own submission and stream semantics.

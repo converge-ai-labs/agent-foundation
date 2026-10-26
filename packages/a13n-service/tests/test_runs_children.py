@@ -143,7 +143,8 @@ async def test_a_child_result_waits_for_room_and_is_delivered_once(serve, settin
             assert (await session.get_one(OutboxRow, row.id)).status == "delivered"
 
 
-async def test_a_parent_steers_its_usage_limited_child(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_parent_steers_its_usage_limited_child(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     await runs_kit.pause_sweeps(service)
     edge = {"usage_limits": {"request_limit": 5}}
     worker = runs_kit.LOOKUP

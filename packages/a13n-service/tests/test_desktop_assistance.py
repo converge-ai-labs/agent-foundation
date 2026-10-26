@@ -167,9 +167,7 @@ async def waiting(service, scripted_model, runs_kit, monkeypatch, *, start_only=
                 },
             ),
         ).model_dump(mode="json")
-    agent = await runs_kit.create_agent(
-        service, scripted_model, toolsets={"computer": {"enabled": True}}, builtin_skills=["platform-operations"]
-    )
+    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"computer": {"enabled": True}})
     first = await runs_kit.start_thread(
         service,
         agent,

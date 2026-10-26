@@ -7,10 +7,14 @@ import httpx2
 from .api import eventually, expect
 
 # Automatic user-role parts added by Harness and Service, rather than the test's conversation inputs.
-RUNTIME_CONTEXT = ("Current Environment mounts (trusted dynamic context)", "<agent-context ", "<service-context ")
-# The builtin platform guide, and an agent configuration that reads it with `view`: a tool without effects, which
-# needs no environment and is allowed by default.
-GUIDE = "/platform-skills/platform-operations/SKILL.md"
+RUNTIME_CONTEXT = (
+    "Current Environment mounts (trusted dynamic context)",
+    "<agent-context ",
+    "<service-context ",
+    "<file-context ",
+)
+# Custom Agents read this builtin guide from their primary environment; use skill_environment_template.
+GUIDE = "/workspace/.agents/skills/platform-operations/SKILL.md"
 LOOKUP = {
     "builtin_skills": ["platform-operations"],
     "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},

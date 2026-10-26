@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { replacePluginReferences, type Plugin } from "../plugins";
 import { toolSearchConfig, toolSearchDraft } from "../tool-search";
 import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
@@ -71,7 +72,9 @@ export function useAgentDraft(initial: AgentConfig) {
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
+    [builtinSkills, setBuiltinSkills] = useState(initial.builtin_skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
+    [plugins, setPlugins] = useState(initial.plugins ?? []),
     [toolSearch, setToolSearch] = useState(
       toolSearchDraft(initial.tool_search),
     ),
@@ -79,6 +82,7 @@ export function useAgentDraft(initial: AgentConfig) {
     [memory, setMemory] = useState(initial.memory ?? {}),
     [execution, setExecution] = useState(initial.execution ?? {});
   const dirty =
+    JSON.stringify(plugins) !== JSON.stringify(initial.plugins ?? []) ||
     JSON.stringify(execution) !== JSON.stringify(initial.execution ?? {}) ||
     JSON.stringify(toolSearch) !==
       JSON.stringify(toolSearchDraft(initial.tool_search)) ||
@@ -98,6 +102,8 @@ export function useAgentDraft(initial: AgentConfig) {
     settings !== initialSettingsText ||
     advanced !== advancedConfig(initial) ||
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
+    JSON.stringify([...builtinSkills].sort()) !==
+      JSON.stringify([...(initial.builtin_skills ?? [])].sort()) ||
     JSON.stringify(connections) !==
       JSON.stringify(initial.connection_tools ?? []) ||
     JSON.stringify(memory) !== JSON.stringify(initial.memory ?? {}) ||
@@ -130,8 +136,30 @@ export function useAgentDraft(initial: AgentConfig) {
     setReviewer,
     skills,
     setSkills,
+    builtinSkills,
+    setBuiltinSkills,
     connections,
     setConnections,
+    plugins,
+    applyPlugin: (plugin: Plugin, previous?: string) => {
+      setPlugins((current) =>
+        previous
+          ? current.map((item) =>
+              item.instance_name === previous ? plugin : item,
+            )
+          : [...current, plugin],
+      );
+      if (previous && previous !== plugin.instance_name)
+        setToolSearch((current) =>
+          replacePluginReferences(current, previous, plugin.instance_name),
+        );
+    },
+    removePlugin: (name: string) => {
+      setPlugins((current) =>
+        current.filter((item) => item.instance_name !== name),
+      );
+      setToolSearch((current) => replacePluginReferences(current, name));
+    },
     toolSearch,
     setToolSearch,
     memoryMounts,
@@ -236,11 +264,13 @@ export function buildDraftConfig(
           model: draft.model,
           model_settings: modelSettings,
           skills: draft.skills,
+          builtin_skills: draft.builtinSkills,
           // Absent, not empty, while every kind inherits: the saved configuration stays silent.
           ...(mediaSelected(draft.mediaUnderstanding).length
             ? { media_understanding: draft.mediaUnderstanding }
             : {}),
           connection_tools: draft.connections,
+          plugins: draft.plugins,
           tool_search: proxy,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,

@@ -137,6 +137,10 @@
       "title": "AgentReviewer",
       "type": "object"
     },
+    "BuiltinSkillName": {
+      "const": "platform-operations",
+      "type": "string"
+    },
     "ChildEnvironmentPolicy": {
       "additionalProperties": false,
       "description": "What a child run mounts: no environment, the parent's, or a new one from `template_id`.",
@@ -1231,8 +1235,7 @@
     "builtin_skills": {
       "default": [],
       "items": {
-        "const": "platform-operations",
-        "type": "string"
+        "$ref": "#/$defs/BuiltinSkillName"
       },
       "title": "Builtin Skills",
       "type": "array",

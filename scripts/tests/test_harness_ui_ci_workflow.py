@@ -38,7 +38,6 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
             "conftest.py",
             "scripts/run_python_tests.py",
             ".github/workflows/ci-a13n-harness-ui*.yml",
-            "scripts/tests/test_harness_ui_ci_workflow.py",
             "docs/a13n-harness-ui/**",
         } <= set(triggers[event]["paths"])
 
@@ -199,6 +198,13 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["packages/a13n-stream-protocol/tests/test_projection.py"], set()),
         (["packages/a13n-logging/tests/test_logging.py"], set()),
         (["packages/a13n-harness-ui/a13n_harness_ui/app.py"], {"tests", "distribution"}),
+        (["packages/a13n-harness-ui/README.md"], {"distribution"}),
+        (["packages/a13n-harness-ui/LICENSE"], {"distribution"}),
+        (
+            ["packages/a13n-harness-ui/README.md", "packages/a13n-harness-ui/a13n_harness_ui/app.py"],
+            {"tests", "distribution"},
+        ),
+        (["packages/a13n-harness-ui/hatch_build.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/build_skills.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/pyproject.toml"], {"tests", "distribution"}),
         (["packages/a13n-envd-client/a13n_envd_client/eip/client.py"], {"tests", "distribution"}),
@@ -213,7 +219,13 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["scripts/tests/test_prepare_release_version.py"], set()),
         (["scripts/check_a13n_harness_ui_distribution.py"], {"tests", "distribution"}),
         ([".github/workflows/ci-a13n-harness-ui.yml"], {"tests", "frontend", "distribution"}),
-        (["scripts/tests/test_harness_ui_ci_workflow.py"], {"tests", "frontend", "distribution"}),
+        (["scripts/tests/test_harness_ui_ci_workflow.py"], set()),
+        (["packages/a13n-harness/README.md"], set()),
+        (["packages/a13n-envd-client/README.md"], set()),
+        (["packages/a13n-stream-protocol/README.md"], set()),
+        (["packages/a13n-logging/README.md"], set()),
+        (["packages/a13n-harness/README.md", "packages/a13n-harness/pyproject.toml"], {"tests", "distribution"}),
+        (["packages/a13n-harness/hatch_build.py"], {"tests", "distribution"}),
         (
             ["packages/a13n-harness-ui/tests/test_cli_interactions.py", "frontend/apps/a13n-console/src/app.tsx"],
             {"tests", "frontend"},
