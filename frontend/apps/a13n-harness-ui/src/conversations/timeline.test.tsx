@@ -314,7 +314,7 @@ it("renders owned summaries as distinct collapsed Markdown activity, never headi
     expect(group.querySelector("summary")!.textContent).toContain("Saved");
   }
   expect(screen.getByText("Authored input").closest("details")).toBeNull();
-  expect(screen.getAllByText("User")).toHaveLength(1);
+  expect(document.querySelectorAll('[class*="userMessage"]')).toHaveLength(1);
 });
 it("keeps history and an expanded summary through saved cutover and later continuations", () => {
   const text =

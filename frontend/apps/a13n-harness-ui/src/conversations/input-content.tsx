@@ -351,9 +351,7 @@ export function InputContent({
               </span>
               <ArrowUpRight size={12} aria-hidden="true" />
             </Link>
-          ) : (
-            "User"
-          )}
+          ) : null}
           {status && (
             <span role="status" className={styles.inputStatus}>
               {status}

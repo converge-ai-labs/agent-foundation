@@ -119,7 +119,7 @@ export function InputNavigation({
     setActive(id);
     onSelect(id);
   };
-  if (!items.length && !query.isError) return null;
+  if (items.length < 2 && !query.hasNextPage && !query.isError) return null;
   const moreLabel = query.isFetchingNextPage
     ? "Loading more inputs"
     : query.isError

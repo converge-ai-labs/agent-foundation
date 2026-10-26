@@ -454,11 +454,6 @@ function Rows({
         <ToolActivity tools={row.tools} />
       ) : row.kind === "assistant" ? (
         <section className={styles.assistantMessage}>
-          {!row.subagentRunId &&
-            ((index === 0 && !continuation) ||
-              (index > 0 &&
-                (all[index - 1].kind === "input" ||
-                  all[index - 1].subagentRunId))) && <header>Assistant</header>}
           <MessageText text={row.text} />
           {row.truncated && (
             <small>Saved preview truncated by the server.</small>

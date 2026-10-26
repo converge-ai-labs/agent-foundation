@@ -123,7 +123,7 @@ it("uses the source ID without a title and does not infer provenance from ordina
       <InputContent parts={[legacy]} renderText={(text) => text} />
     </MemoryRouter>,
   );
-  expect(screen.getByText("User")).toBeTruthy();
+  expect(document.querySelector('[class*="userMessage"]')).toBeTruthy();
   expect(screen.getByText(legacy.text!)).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
   expect(screen.queryByRole("button", { name: "Message details" })).toBeNull();

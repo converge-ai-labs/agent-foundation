@@ -215,7 +215,7 @@ it("omits model-only tool attachments without hiding genuine user media", () => 
       }
     />,
   );
-  expect(screen.getByText("User")).toBeTruthy();
+  expect(document.querySelector('[class*="userMessage"]')).toBeTruthy();
   expect(view.container.textContent).toContain("image/png");
   expect(view.container.textContent).not.toContain("payload_omitted");
 });
