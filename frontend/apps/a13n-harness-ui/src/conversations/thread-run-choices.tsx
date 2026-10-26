@@ -77,7 +77,7 @@ export function RunEnvironments({
           closeEditor();
         }}
       >
-        Use for next Run
+        Use for next run
       </Button>
     </>
   );

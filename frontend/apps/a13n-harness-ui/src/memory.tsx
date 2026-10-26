@@ -83,7 +83,7 @@ export function MemoryPage(props: {
         <header className={styles.header}>
           <div>
             <h2>{name} memory</h2>
-            <p>Automatic organization · fresh context each Run</p>
+            <p>Automatic organization · fresh context each run</p>
           </div>
           {thread && (
             <Button

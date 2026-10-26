@@ -263,7 +263,7 @@ function GuestShell({
               className={styles.mobileToggle}
               variant="ghost"
               size="icon-sm"
-              aria-label="Show Threads"
+              aria-label="Show conversations"
               aria-expanded={sidebar}
               onClick={() => setSidebar(!sidebar)}
             >
@@ -314,7 +314,7 @@ function GuestShell({
         {project && (
           <aside
             className={`${styles.sidebar} ${sidebar ? styles.sidebarOpen : ""}`}
-            aria-label="Project Threads"
+            aria-label="Project conversations"
           >
             <div className={styles.sidebarTop}>
               <h2>Threads</h2>
@@ -322,7 +322,7 @@ function GuestShell({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="New Thread"
+                  aria-label="New conversation"
                   loading={create.isPending}
                   onClick={() => create.mutate()}
                 >
@@ -332,8 +332,8 @@ function GuestShell({
             </div>
             <Input
               type="search"
-              aria-label="Search shared Threads"
-              placeholder="Search Threads…"
+              aria-label="Search shared conversations"
+              placeholder="Search conversations…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -358,7 +358,7 @@ function GuestShell({
                       isActive ? styles.activeThread : styles.thread
                     }
                   >
-                    <span>{thread.title || "Untitled Thread"}</span>
+                    <span>{thread.title || "Untitled conversation"}</span>
                     <small>
                       {thread.root_activity.state === "inactive"
                         ? new Date(
@@ -372,11 +372,11 @@ function GuestShell({
                   </NavLink>
                 ))}
               {list.isPending && (
-                <p className={styles.hint}>Loading Threads…</p>
+                <p className={styles.hint}>Loading conversations…</p>
               )}
               {list.data?.pages[0]?.total === 0 && (
                 <p className={styles.hint}>
-                  {search ? "No matching Threads." : "No Threads yet."}
+                  {search ? "No matching conversations." : "No Threads yet."}
                 </p>
               )}
               {list.hasNextPage && (
@@ -421,7 +421,7 @@ function GuestShell({
                         onClick={() => create.mutate()}
                       >
                         <Plus size={16} />
-                        New Thread
+                        New conversation
                       </Button>
                     )}
                   </div>
@@ -437,7 +437,7 @@ function GuestShell({
         open={profileOpen}
         onOpenChange={setProfileOpen}
         title="Your display name"
-        description="Shown to people in this Thread. Names are not verified identities."
+        description="Shown to people in this conversation. Names are not verified."
         closeLabel="Close"
       >
         <form

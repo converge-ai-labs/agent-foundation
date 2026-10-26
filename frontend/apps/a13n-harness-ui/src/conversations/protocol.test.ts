@@ -741,7 +741,7 @@ it("captures an HTTP environment override without changing defaults and never fa
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: {
-        parts: ["Use Full Control for this Run"],
+        parts: ["Use Full Control for this run"],
         environment: { environment_profile_id: "environment-native" },
       },
     }),

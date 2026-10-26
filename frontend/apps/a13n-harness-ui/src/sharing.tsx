@@ -162,7 +162,9 @@ function ShareContents({
           onValueChange={(value) => setScope(value as Scope)}
         />
         {scope === "project" && (
-          <p className={styles.hint}>Includes current and future Threads.</p>
+          <p className={styles.hint}>
+            Includes current and future conversations.
+          </p>
         )}
       </div>
       <section className={styles.linkSettings} aria-label="Link sharing">

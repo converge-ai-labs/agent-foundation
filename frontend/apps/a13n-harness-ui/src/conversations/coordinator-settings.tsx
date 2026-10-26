@@ -68,7 +68,7 @@ export function CoordinatorPromotion({
       onOpenChange={(value) => {
         if (!value) close();
       }}
-      title="Make this conversation a Coordinator?"
+      title="Make this conversation a coordinator?"
       closeLabel="Cancel"
       description="This keeps its history and settings. A Coordinator manages its own workers in this Project; existing conversations are not adopted. This role cannot be reversed."
     >

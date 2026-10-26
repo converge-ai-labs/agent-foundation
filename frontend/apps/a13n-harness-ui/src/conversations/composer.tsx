@@ -922,7 +922,7 @@ export function Composer({
     (coordinatorActive ? (
       <span
         className={styles.coordinatorIdentity}
-        title="This conversation is a Coordinator. Its role cannot be reversed."
+        title="This conversation is a coordinator. This can't be undone."
       >
         <CoordinatorIcon size={16} /> Coordinator
       </span>

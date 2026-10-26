@@ -1871,7 +1871,7 @@ it.each(["new", "existing"])(
     await user.click(await screen.findByRole("option", { name: /Sandbox/ }));
     expect(drafts.get(id)!.environment?.environment_profile_id).toBeUndefined();
     expect(writes).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+    await user.click(screen.getByRole("button", { name: "Use for next run" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(drafts.get(id)!.environment?.environment_profile_id).toBe(
       "environment-sandbox",

@@ -215,7 +215,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   const restoredFolder = screen.getByDisplayValue("/workspace");
   await user.clear(restoredFolder);
   await user.type(restoredFolder, "/accepted");
-  await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+  await user.click(screen.getByRole("button", { name: "Use for next run" }));
   expect(draft.environment?.local_roots).toEqual(["/accepted"]);
   await user.click(
     screen.getByRole("button", { name: "Agent & Model settings" }),
@@ -264,7 +264,7 @@ it.each([false, true])(
     expect(await screen.findByDisplayValue("/staged")).toBeTruthy();
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(draft.environment).toEqual({ environment_profile_id: "sandbox" });
-    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+    await user.click(screen.getByRole("button", { name: "Use for next run" }));
     expect(draft.environment?.local_roots).toEqual(["/staged"]);
     expect(draft.environment?.environment_profile_id).toBe("sandbox");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

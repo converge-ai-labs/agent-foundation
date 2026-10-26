@@ -80,7 +80,7 @@ function ConnectDeviceSteps({
       {!approved ? (
         <>
           <section className="flex flex-col gap-3">
-            <h3 className="font-medium">1. Run on the Device</h3>
+            <h3 className="font-medium">1. Run on the device</h3>
             <p className="text-sm text-muted-foreground">
               Install a13n-envd first and make sure it is on your PATH. This
               command runs in the foreground; keep the terminal open. It does

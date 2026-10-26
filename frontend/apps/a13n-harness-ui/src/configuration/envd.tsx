@@ -143,7 +143,7 @@ export function EnvdRuntime() {
     <>
       <SettingsSection
         title="Local runtime"
-        description={state?.host ?? "Loading Host…"}
+        description={state?.host ?? "Loading host…"}
       >
         <SettingsRow
           label="envd"

@@ -237,7 +237,7 @@ export class FocusDisplay {
         // observer's finite prefix instead of assigning the previous Run's base.
         this.cursor = undefined;
         throw new RootRunChanged(
-          "Root Run changed; reload its focused snapshot.",
+          "This conversation changed. Reload to see the latest.",
         );
       }
       this.sequence = frame.event.sequence; // Global sequences are sparse within one Thread.

@@ -1433,7 +1433,7 @@ it("promotes the selected ordinary conversation without replacing its identity o
     await screen.findByRole("menuitem", { name: "Make Coordinator" }),
   );
   const confirmation = await screen.findByRole("dialog", {
-    name: "Make this conversation a Coordinator?",
+    name: "Make this conversation a coordinator?",
   });
   expect(writes).toHaveLength(0);
   await userEvent.click(
@@ -2062,7 +2062,11 @@ it("keeps the source open and displays a fork failure without retrying the mutat
     if (new URL(request.url).pathname.endsWith("/fork")) {
       forks++;
       return json(
-        { error: { message: "The source Thread changed while copying." } },
+        {
+          error: {
+            message: "The original conversation changed while copying.",
+          },
+        },
         409,
       );
     }
@@ -2078,7 +2082,7 @@ it("keeps the source open and displays a fork failure without retrying the mutat
     await screen.findByRole("menuitem", { name: "Fork conversation" }),
   );
   expect(
-    await screen.findByText("The source Thread changed while copying."),
+    await screen.findByText("The original conversation changed while copying."),
   ).toBeTruthy();
   expect(screen.getByLabelText("Current route").textContent).toBe(
     "/threads/source",

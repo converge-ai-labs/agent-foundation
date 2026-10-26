@@ -202,7 +202,7 @@ export function ConversationConfiguration({
             </section>
           ) : (
             <section>
-              <h3>Next Run selections</h3>
+              <h3>Next run settings</h3>
               <p>
                 Changes here affect later Runs, not an already running Agent.
                 Shared resource content is resolved again at the next Run.
@@ -502,7 +502,7 @@ export function ThreadSelections({
           }
           onClick={() => mutation.mutate()}
         >
-          Save next Run selections
+          Save for next run
         </Button>
         {!!Object.keys(patch).length && (
           <Button

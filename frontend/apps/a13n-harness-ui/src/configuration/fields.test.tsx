@@ -198,7 +198,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   });
   await user.click(
     screen.getByRole("button", {
-      name: "Leave Thread environments and default unchanged",
+      name: "Keep this conversation's environments",
     }),
   );
   expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual(
@@ -226,7 +226,7 @@ it("allows the last local Project root to be removed only with Device bindings",
   expect(
     (
       screen.getByRole("button", {
-        name: "Leave Thread environments and default unchanged",
+        name: "Keep this conversation's environments",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);

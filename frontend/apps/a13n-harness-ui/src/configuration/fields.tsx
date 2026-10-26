@@ -283,7 +283,7 @@ export function ResourceFields({
                   ? "Device environments are unspecified: new conversations add none; applying Project defaults keeps the Thread's selection."
                   : bindings.length
                     ? "This selection replaces the Thread's added environments when Project defaults are applied."
-                    : "Explicitly empty: applying Project defaults removes the Thread's added environments."}
+                    : "Empty: applying project defaults removes environments added to this conversation."}
               </p>
               {roots ? (
                 <EnvironmentsEditor
@@ -363,7 +363,7 @@ export function ResourceFields({
                     disabled={!roots?.length}
                     onClick={() => setEnvironments(undefined, null)}
                   >
-                    Leave Thread environments and default unchanged
+                    Keep this conversation's environments
                   </Button>
                 )}
               </div>

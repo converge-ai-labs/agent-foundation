@@ -79,7 +79,7 @@ it("keeps dirty selections on external changes and requires review before versio
   expect(
     (
       screen.getByRole("button", {
-        name: "Save next Run selections",
+        name: "Save for next run",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -89,9 +89,7 @@ it("keeps dirty selections on external changes and requires review before versio
   fireEvent.click(
     screen.getByRole("button", { name: "Keep my edits against version 2" }),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
   expect(PATCH.mock.calls[0][1].body).toEqual({
     expected_version: 2,
@@ -140,9 +138,7 @@ it("clears a saved default Model with an explicit null versioned patch", async (
   await user.click(
     await screen.findByRole("option", { name: "Follow Agent model" }),
   );
-  await user.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
   expect(PATCH.mock.calls[0][1].body).toEqual({
     expected_version: 1,
@@ -153,9 +149,7 @@ it("clears a saved default Model with an explicit null versioned patch", async (
   await waitFor(() => expect(choice.textContent).toBe("Follow Agent model"));
   await user.click(choice);
   await user.click(await screen.findByRole("option", { name: "Saved model" }));
-  await user.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(2));
   expect(PATCH.mock.calls[1][1].body).toEqual({
     expected_version: 2,
@@ -306,9 +300,7 @@ it("disables selection editing during the submitted versioned write", async () =
   });
   fireEvent.click(screen.getByText("Change settings for the next run"));
   fireEvent.click(await screen.findByRole("checkbox", { name: "A" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Save next Run selections" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Save for next run" }));
   await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
   expect(screen.getByRole("checkbox", { name: "B" }).matches(":disabled")).toBe(
     true,
@@ -523,7 +515,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
   await user.clear(path);
   await user.type(path, "/selected");
   expect(onChange).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+  await user.click(screen.getByRole("button", { name: "Use for next run" }));
   expect(onChange).toHaveBeenCalledWith({
     local_roots: ["/selected"],
     environment_bindings: [
