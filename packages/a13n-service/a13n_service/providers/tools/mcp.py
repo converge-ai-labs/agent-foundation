@@ -226,7 +226,7 @@ class DispatchToolset(CheckedToolset):
 async def call_app_tool(
     toolset: MCPToolset[AgentContext], dispatch: ToolDispatch, check: DispatchCheck, arguments: dict[str, Any]
 ) -> dict[str, Any]:
-    """Direct control dispatch, with the same per-round authorization seam and no replay."""
+    """Direct control dispatch, with per-round dispatch checks and no replay."""
     token = _dispatch.set((dispatch, check))
     try:
         return await toolset.call_tool_for_app(dispatch.tool_name, arguments)

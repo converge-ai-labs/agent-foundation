@@ -15,6 +15,7 @@ from mcp.server.apps import APP_MIME_TYPE
 from mcp.types import INVALID_PARAMS, BlobResourceContents, ReadResourceResult, TextResourceContents
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPError, MCPToolset
+from sqlalchemy import select
 
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
@@ -25,6 +26,7 @@ from a13n_service.providers.tools.mcp_apps import require_classic
 from a13n_service.resources.connections.access import McpConnection, resolve_connection
 from a13n_service.resources.connections.oauth import open_mcp_client
 from a13n_service.resources.connections.service import check_caller_headers
+from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.runs import checkpoints, runs
 from a13n_service.runs.admission import AppCallContext
 from a13n_service.runs.contents import MAX_APP_BYTES, ContentObject, decode
@@ -202,16 +204,27 @@ async def call_tool(
     resolved = await _resolve(runtime, actor, workspace_id, saved, tool_name=body.name)
     call_id = new_object_id("call")
 
-    async def check(dispatch: ToolDispatch) -> None:
+    async def check(_dispatch: ToolDispatch) -> None:
         nonlocal sent
-        current = await _resolve(runtime, actor, workspace_id, saved, tool_name=dispatch.tool_name)
-        if current.connection.version != resolved.connection.version:
-            raise conflict("connection", current.connection.id, "connection_changed")
-        if runtime.admission is not None:
-            admit = getattr(runtime.admission, "proceed_app", None)
-            if admit is None:
-                raise ServiceError("forbidden", "This deployment does not admit direct MCP App calls")
-            async with transaction(runtime.storage) as session:
+        # Permission and configuration come from this request's first resolution. A dispatch round
+        # only fences the connection version and runs the deployment's admission policy.
+        connection = resolved.connection
+        async with transaction(runtime.storage) as session:
+            version = await session.scalar(
+                select(ConnectionRow.version).where(
+                    ConnectionRow.id == connection.id,
+                    ConnectionRow.workspace_id == connection.workspace_id,
+                    ConnectionRow.organization_id == connection.organization_id,
+                )
+            )
+            if version is None:
+                raise not_found("connection", connection.id)
+            if version != connection.version:
+                raise conflict("connection", connection.id, "connection_changed")
+            if runtime.admission is not None:
+                admit = getattr(runtime.admission, "proceed_app", None)
+                if admit is None:
+                    raise ServiceError("forbidden", "This deployment does not admit direct MCP App calls")
                 await admit(
                     session,
                     AppCallContext(

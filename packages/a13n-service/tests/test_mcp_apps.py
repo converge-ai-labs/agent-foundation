@@ -1,6 +1,8 @@
 """MCP App originals cross worker persistence and independent, authorized control requests."""
 
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -12,6 +14,7 @@ from a13n_service.runs.mcp_apps.schemas import AppBinding, AppReference
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
+from sqlalchemy import event
 
 from .test_connections import admin, create, patch, serve
 
@@ -99,6 +102,7 @@ async def app_run(service, scripted_model, runs_kit, request, monkeypatch):
         ref = refs[0]
         yield SimpleNamespace(
             path=f"{service.api}/runs/{run_id}/apps/{ref['app_id']}",
+            thread_id=submitted["thread"]["id"],
             run_id=run_id,
             reference=ref,
             calls=calls,
@@ -122,6 +126,16 @@ async def test_worker_saves_original_and_control_reopens_fresh_html_without_repl
     assert "increment" not in str(first_request)
     assert "original-private-value" not in str(second_request)
     assert "original-private-value" not in str(app_run.history)
+    from a13n_service.runs.stream import stream_key
+
+    entries = await service.runtime.redis.xrange(stream_key(app_run.thread_id))
+    events = [json.loads(fields["event"]) for _, fields in entries if "event" in fields]
+    app_events = [event for event in events if event.get("name") == "a13n.mcp_apps"]
+    assert len(app_events) == 1
+    assert app_events[0]["type"] == "CUSTOM"
+    assert app_events[0]["value"]["event"] == {"tool_call_id": "call_show", "apps": [app_run.reference]}
+    assert "original-private-value" not in str(app_events)
+    assert "html" not in app_events[0]["value"]["event"]
     assert (
         await service.client.get(f"{service.api}/runs/{app_run.run_id}/contents/{app_run.reference['app_id']}")
     ).status_code == 404
@@ -167,6 +181,130 @@ async def test_app_button_preserves_raw_error_result_without_retry(service, app_
     assert result["structuredContent"] == {"count": 1}
     assert result["_meta"]["action"] is True
     assert app_run.calls.increment == 1 and app_run.calls.show == 1
+
+
+@pytest.mark.parametrize("extra_rounds", [0, 2])
+async def test_app_dispatch_reuses_request_authorization(service, app_run, monkeypatch, extra_rounds):
+    from a13n_service.runs.mcp_apps import service as apps
+    from a13n_service.runs.mcp_apps.schemas import AppToolCall
+
+    resolve, dispatch = apps._resolve, apps.call_app_tool
+    resolutions, admitted = [], []
+
+    async def resolve_once(*args, **kwargs):
+        resolutions.append(kwargs.get("tool_name"))
+        return await resolve(*args, **kwargs)
+
+    async def continued(toolset, identity, check, arguments):
+        # Exercise the same dispatch callback the SDK invokes for native continuation rounds.
+        for _ in range(extra_rounds):
+            await check(identity)
+        return await dispatch(toolset, identity, check, arguments)
+
+    async def proceed_app(session, call):
+        admitted.append(call)
+
+    monkeypatch.setattr(apps, "_resolve", resolve_once)
+    monkeypatch.setattr(apps, "call_app_tool", continued)
+    runtime = replace(service.runtime, admission=SimpleNamespace(proceed_app=proceed_app))
+    with app_statements(runtime) as statements:
+        result = await apps.call_tool(
+            runtime,
+            admin(service),
+            service.tenant.workspace_id,
+            app_run.run_id,
+            app_run.reference["app_id"],
+            AppToolCall(name="increment"),
+        )
+    print(
+        f"App action: {len(statements)} SQL executions, {len(resolutions)} permission resolutions, {extra_rounds + 1} dispatch rounds"
+    )
+    assert result.result["structuredContent"] == {"count": 1}
+    assert len(admitted) == extra_rounds + 1
+    assert len({call.call_id for call in admitted}) == 1
+    assert resolutions == ["increment"]
+    assert sum("FROM runs" in statement for statement in statements) == 2
+    assert sum("FROM workspaces" in statement for statement in statements) == 2
+    assert len(statements) == 6 + extra_rounds
+
+
+async def test_app_request_keeps_initial_grants_but_next_request_observes_revocation(service, app_run, monkeypatch):
+    from a13n_service.infra.db import transaction
+    from a13n_service.infra.ids import new_object_id
+    from a13n_service.runs.mcp_apps import service as apps
+    from a13n_service.tenancy.tables import GrantRow
+    from sqlalchemy import delete
+
+    resolve = apps._resolve
+    resolved_count = 0
+
+    async def revoke_after_resolve(*args, **kwargs):
+        nonlocal resolved_count
+        resolved = await resolve(*args, **kwargs)
+        resolved_count += 1
+        if resolved_count == 1:
+            async with transaction(service.runtime.storage) as session:
+                await session.execute(
+                    delete(GrantRow).where(
+                        GrantRow.principal_id == service.tenant.principal_id,
+                        GrantRow.organization_id == service.tenant.organization_id,
+                    )
+                )
+                session.add(
+                    GrantRow(
+                        id=new_object_id("gr"),
+                        organization_id=service.tenant.organization_id,
+                        workspace_id=None,
+                        principal_id=service.tenant.principal_id,
+                        role="viewer",
+                        created_by_id=service.tenant.principal_id,
+                    )
+                )
+        return resolved
+
+    monkeypatch.setattr(apps, "_resolve", revoke_after_resolve)
+    response = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
+    assert response.status_code == 200, response.text
+    assert resolved_count == 1
+    denied = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
+    assert denied.status_code == 403, denied.text
+    assert app_run.calls.increment == 1
+
+
+async def test_app_dispatch_still_refuses_a_changed_connection(service, app_run, monkeypatch):
+    from a13n_service.runs.mcp_apps import service as apps
+
+    dispatch = apps.call_app_tool
+
+    async def change_before_dispatch(toolset, identity, check, arguments):
+        await patch(service, app_run.connection, {"name": "Changed during App request"})
+        return await dispatch(toolset, identity, check, arguments)
+
+    monkeypatch.setattr(apps, "call_app_tool", change_before_dispatch)
+    response = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["details"]["reason"] == "connection_changed"
+    assert app_run.calls.increment == 0
+
+
+@contextmanager
+def app_statements(runtime):
+    """Cursor executions for this operation and SDK child tasks, excluding fixture/background work and auth."""
+    active = ContextVar("app_sql", default=False)
+    statements = []
+
+    def record(connection, cursor, statement, parameters, context, executemany):
+        if active.get():
+            statements.append(statement)
+
+    engine = runtime.storage.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    token = active.set(True)
+    try:
+        yield statements
+    finally:
+        active.reset(token)
+        event.remove(engine, "before_cursor_execute", record)
 
 
 @pytest.mark.parametrize("app_run", ["tail", "paged"], indirect=True)
