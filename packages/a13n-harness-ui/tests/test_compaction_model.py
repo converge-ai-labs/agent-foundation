@@ -224,3 +224,68 @@ async def test_detached_model_resources_usage_and_resumed_budget(
         with pytest.raises(UsageLimitExceeded):
             await restored.check(_call("foreground"))
         await reopened.close()
+
+
+async def test_foreground_fallback_honors_shared_budget_after_background_consumption(tmp_path: Path) -> None:
+    from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+    from a13n_harness.capabilities.context import CompactionCapability
+    from a13n_harness.compaction import compaction_disposition
+
+    async def unavailable(input):
+        raise RuntimeError("background unavailable")
+
+    calls = []
+
+    async def model(messages, info):
+        calls.append(messages)
+        yield "must not dispatch"
+
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        repository = CompactionRepository(database.sessions)
+        owner = BackgroundCompaction(repository, tmp_path)
+        operator = owner.bind(unavailable)
+        messages = [ModelRequest(parts=[UserPromptPart("old")]), ModelResponse(parts=[TextPart("answer")])]
+        state = HarnessState.new(message_history=messages)
+        input = CompactionInput.create(
+            operation_id="compact-budget",
+            thread_id=state.thread_id,
+            run_id="run-original",
+            model_name="test",
+            provider_name="function",
+            messages=messages,
+            parameters=ModelRequestParameters(),
+        )
+        await operator.submit(input)
+        failed = await operator.wait(state.thread_id, input.basis.operation_id)
+        budget = CompactionBudget(UsageLimits(request_limit=1), WeakValueDictionary())
+        bindings = RunBindings.embedded(model_call_check=budget)
+        budget.agent_instance_ids.add(bindings.instance.agent_instance_id)
+        background = replace(_call("background"), agent_instance_id=bindings.instance.agent_instance_id)
+        await budget.check(background)
+        budget.finish("background", _record("background"))
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(CompactionCapability(background=True, operator=operator),),
+        )
+        from a13n_harness.model_calls import ModelCallCheckError
+
+        async with executable.stream(
+            "continue",
+            previous_state=state,
+            bindings=bindings,
+            usage_limits=UsageLimits(request_limit=2),
+        ) as stream:
+            with pytest.raises(ModelCallCheckError):
+                async for _ in stream:
+                    pass
+            retained = await stream.export_state()
+            assert not stream.context.usage_attribution.records
+        assert not calls
+        assert any(isinstance(m, ModelResponse) and m.parts == messages[1].parts for m in retained.message_history)
+        assert await compaction_disposition(retained, basis=input.basis) is None
+        await owner.acknowledge(retained)
+        assert await repository.get(state.thread_id) == failed
+        assert budget.used == 1 and budget.pending == 0
+        await owner.close()

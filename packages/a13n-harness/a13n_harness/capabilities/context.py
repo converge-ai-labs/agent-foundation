@@ -57,6 +57,7 @@ from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.compaction import (
     COMPACTION_CAPABILITY_ID,
     CompactionInput,
+    CompactionOperation,
     CompactionOperator,
     CompactionResult,
     _CompactionState,
@@ -857,11 +858,16 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self.background = background
         self.operator = operator
         self._depth = 0
+        self._failed_fallback_id: str | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
+        from a13n_harness.usage import UsageCapability
+
         return CapabilityOrdering(
             position="innermost",
-            wraps=() if self.background else (ModelContextCoordinatorCapability,),
+            # A nested summary must receive its own meter, not reuse the outer
+            # request's adapter and count/admit the same dispatch twice.
+            wraps=(UsageCapability,) if self.background else (ModelContextCoordinatorCapability, UsageCapability),
             wrapped_by=(InputCapability, HandoffCapability, ModelContextCoordinatorCapability, ImageFilterCapability)
             if self.background
             else (InputCapability, HandoffCapability),
@@ -888,17 +894,12 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if state is not None and state.restoration_pending:
+        if self._depth > 0 or (state is not None and state.restoration_pending):
             return request_context
         if self.background:
             prepared = await self._background_history(ctx, request_context)
         else:
             prepared = await self._compact_history(ctx, request_context)
-        if prepared is not request_context and not self.background:
-            from a13n_harness.tools.discovery import finish_discovery_replacement
-
-            ctx.messages[:] = prepared.messages
-            await finish_discovery_replacement(ctx)
         return prepared
 
     async def apply_result(
@@ -944,6 +945,8 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
             if snapshot is None or not snapshot[2]:
                 return request
+            if await _compaction_request_fits(ctx, request) is not True:
+                return await self._foreground_fallback(ctx, request)
             limits = ctx.usage_limits
             if (
                 limits is not None
@@ -997,13 +1000,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         if operation.status == "ready":
             assert operation.result is not None
             return await self.apply_result(ctx, request, operation.result)
-        if operation.status == "failed":
-            # A terminal record suppresses repeated generation on every turn.
-            if await _compaction_request_fits(ctx, request) is not True:
-                raise DefinitionError(
-                    "Compaction failed with no verified request capacity.", code="compaction_capacity_unavailable"
-                )
-            return request
         basis = operation.input.basis
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
         if _processed_disposition(state, basis) is not None or not _prefix_matches(basis, ctx.messages):
@@ -1014,19 +1010,64 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     version="1",
                 )
             if await _compaction_request_fits(ctx, request) is False:
-                raise DefinitionError("History exceeds the model window.", code="compaction_capacity_exceeded")
+                return await self._foreground_fallback(ctx, request)
             return request
+        if operation.status == "failed":
+            return await self._foreground_fallback(ctx, request, failed=operation)
         if await _compaction_request_fits(ctx, request) is True:
             return request
         completed = await self.operator.wait(ctx.deps.thread_id, operation.input.basis.operation_id)
         if completed.input != operation.input:
             raise DefinitionError("Compaction wait returned different work.", code="compaction_result_mismatch")
+        if completed.status == "failed":
+            return await self._foreground_fallback(ctx, request, failed=completed)
         if completed.status != "ready" or completed.result is None:
-            raise DefinitionError("Compaction could not free context capacity.", code="compaction_capacity_unavailable")
+            raise DefinitionError("Compaction wait returned unfinished work.", code="compaction_capacity_unavailable")
         return await self.apply_result(ctx, request, completed.result)
 
+    async def _foreground_fallback(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelRequestContext,
+        *,
+        failed: CompactionOperation | None = None,
+    ) -> ModelRequestContext:
+        fits = await _compaction_request_fits(ctx, request)
+        snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
+        if fits is True and (snapshot is None or not snapshot[2]):
+            return request
+        # One failed-operation fallback per Run, not a new retry loop on every turn.
+        if failed is not None and self._failed_fallback_id == failed.input.basis.operation_id:
+            prepared = request
+        else:
+            if failed is not None:
+                self._failed_fallback_id = failed.input.basis.operation_id
+            prepared = await self._compact_history(ctx, request, force=fits is not True, failed=failed)
+        if prepared is request:
+            if fits is not True:
+                raise DefinitionError(
+                    "Compaction could not free context capacity.", code="compaction_capacity_unavailable"
+                )
+        else:
+            # Background mode runs inside the ordinary projection coordinator.
+            # Full synchronous replacement needs fresh overlays before counting.
+            for capability in ctx.capabilities.values():
+                if isinstance(capability, ModelContextCoordinatorCapability):
+                    prepared = await capability.before_model_request(ctx, prepared)
+            prepared = await _project_compaction_media(ctx, prepared)
+            if await _compaction_request_fits(ctx, prepared) is False:
+                raise DefinitionError(
+                    "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
+                )
+        return prepared
+
     async def _compact_history(
-        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+        self,
+        ctx: RunContext[AgentContext],
+        request_context: ModelRequestContext,
+        *,
+        force: bool = False,
+        failed: CompactionOperation | None = None,
     ) -> ModelRequestContext:
         if (
             self._depth > 0
@@ -1036,19 +1077,18 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return request_context
         await ctx.deps._steering.resolve_delivered(request_context.messages)
         snapshot = _compaction_snapshot(ctx, request_context.messages, self.policy)
-        if snapshot is None:
-            return request_context
-        request_tokens, trigger_tokens, threshold_reached = snapshot
-        await emit_harness_event(
-            ctx.deps.events,
-            kind="context",
-            payload=ContextSnapshotPayload(
-                request_index=active_model_request_index(ctx),
-                request_tokens=request_tokens,
-                trigger_tokens=trigger_tokens,
-            ),
-        )
-        if not threshold_reached:
+        if snapshot is not None:
+            request_tokens, trigger_tokens, _ = snapshot
+            await emit_harness_event(
+                ctx.deps.events,
+                kind="context",
+                payload=ContextSnapshotPayload(
+                    request_index=active_model_request_index(ctx),
+                    request_tokens=request_tokens,
+                    trigger_tokens=trigger_tokens,
+                ),
+            )
+        if not force and (snapshot is None or not snapshot[2]):
             return request_context
         limits = ctx.usage_limits
         if limits is not None and limits.request_limit is not None and limits.request_limit - ctx.usage.requests < 2:
@@ -1077,7 +1117,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 summary = await _compact_with_same_agent(ctx, request_context)
                 discovery, names = await retain_discovery(ctx, request_context)
                 messages = _build_compacted_history(
-                    request_context.messages,
+                    ctx.messages if self.background else request_context.messages,
                     summary,
                     retained_discovery=discovery,
                     retained_requests=ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
@@ -1129,6 +1169,17 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         await ctx.emit(CompactionSummaryEvent(operation_id=operation_id, summary=summary))
         replacement = _replace_context_history(ctx, request_context, messages, names)
         await ctx.emit(ContextRestoredEvent(source="compact", operation_id=operation_id))
+        if failed is not None:
+            basis = failed.input.basis
+            await ctx.deps.state.write(
+                COMPACTION_CAPABILITY_ID,
+                _CompactionState(operation_id=basis.operation_id, basis_digest=basis.digest, disposition="skipped"),
+                version="1",
+            )
+        ctx.messages[:] = replacement.messages
+        from a13n_harness.tools.discovery import finish_discovery_replacement
+
+        await finish_discovery_replacement(ctx)
         return replacement
 
 

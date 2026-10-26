@@ -212,6 +212,9 @@ async def test_publication_retry_retains_summary_without_exposure(
         assert owner._operations[input.basis.thread_id].status == "running"
         assert owner._pending[input.basis.operation_id].status == "ready"
         assert calls == 1
+        with pytest.raises(RuntimeError, match="could not be persisted"):
+            await asyncio.wait_for(owner.wait(input.basis.thread_id, input.basis.operation_id), 3)
+        assert calls == 1
         monkeypatch.setattr(repository, "finish", finish)
         operation = await owner.inspect(input.basis.thread_id)
         assert operation is not None and operation.status == "ready"
@@ -268,9 +271,11 @@ async def test_concurrent_owners_admit_one_generation(tmp_path: Path) -> None:
         await asyncio.gather(*(owner.close() for owner in owners))
 
 
-@pytest.mark.parametrize("stale", [False, True])
-async def test_selected_native_marker_reconciles_lost_ack(tmp_path: Path, stale: bool, monkeypatch) -> None:
+@pytest.mark.parametrize("outcome", ["ready", "stale", "failed"])
+async def test_selected_native_marker_reconciles_lost_ack(tmp_path: Path, outcome: str, monkeypatch) -> None:
     from a13n_harness import AgentSpec, HarnessBuilder
+    from a13n_harness.capabilities.context import CompactionCapability
+    from a13n_harness.compaction import compaction_disposition
     from pydantic_ai.models.function import FunctionModel
 
     async def model(messages, info):
@@ -280,14 +285,26 @@ async def test_selected_native_marker_reconciles_lost_ack(tmp_path: Path, stale:
         repository = CompactionRepository(database.sessions)
         owner = BackgroundCompaction(repository, tmp_path)
         input = _input()
-        await owner.submit(input, _summary)
-        ready = await owner.wait(input.basis.thread_id, input.basis.operation_id)
+
+        async def generate(input):
+            if outcome == "failed":
+                raise RuntimeError("background unavailable")
+            return await _summary(input)
+
+        operator = owner.bind(generate)
+        await operator.submit(input)
+        ready = await operator.wait(input.basis.thread_id, input.basis.operation_id)
         state = HarnessState.new(thread_id=input.basis.thread_id, message_history=input.request_messages[:-1])
-        if stale:
+        if outcome == "stale":
             state = HarnessState.new(thread_id=state.thread_id)
         result = (
             await HarnessBuilder()
-            .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model))
+            .build(
+                AgentSpec(),
+                output_type=str,
+                model=FunctionModel(stream_function=model),
+                capabilities=(CompactionCapability(background=True, operator=operator),),
+            )
             .run(
                 "current input",
                 previous_state=state,
@@ -295,6 +312,9 @@ async def test_selected_native_marker_reconciles_lost_ack(tmp_path: Path, stale:
             )
         )
         assert result.state is not None
+        assert await compaction_disposition(result.state, basis=input.basis) == (
+            "applied" if outcome == "ready" else "skipped"
+        )
         # Generated/merged state alone is not selected checkpoint authority.
         assert await repository.get(state.thread_id) == ready
         retire = repository.retire

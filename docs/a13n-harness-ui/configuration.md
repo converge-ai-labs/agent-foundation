@@ -125,7 +125,7 @@ webui:
 
 ### Background compaction
 
-`background_compaction` defaults to `true`. Agents with the `compaction` Capability can summarize older history while the foreground Run continues, when the Model can verify enough context capacity. Otherwise, the Run waits for the summary. Only root Threads use this mode; inline and asynchronous subagents retain synchronous compaction.
+`background_compaction` defaults to `true`. Agents with the `compaction` Capability can summarize older history while the foreground Run continues, when the Model can verify enough context capacity. At the compaction trigger, insufficient or unknown capacity selects synchronous compaction when no background operation exists. If one is already running, the Run waits for it. Failed background work falls back to synchronous compaction, including failures observed in a later Run or after restart; current usage limits still apply. Only root Threads use this mode; inline and asynchronous subagents retain synchronous compaction.
 
 Completed summaries are saved before use. The current Run applies a ready summary at a safe model boundary, or a later Run restores it together with its current input. Completion alone does not rewrite an idle conversation. App restart restores completed work and never replays an interrupted summary request.
 

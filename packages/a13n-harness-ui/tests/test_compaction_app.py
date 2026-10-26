@@ -207,3 +207,96 @@ async def test_app_retains_background_result_then_delivers_with_current_input(
     if restart:
         async with open_harness_ui_app(settings, configuration_path=root) as app:
             await consume(app, thread.thread_id)
+
+
+@pytest.mark.parametrize("restart", [False, True])
+async def test_app_recovers_failed_background_in_next_run_and_commits_retirement(tmp_path: Path, monkeypatch, restart):
+    from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+    from pydantic_ai.messages import UserPromptPart
+
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(
+        agent.read_text() + "capabilities:\n  - capability: compaction\n    configuration:\n      trigger_tokens: 10\n"
+    )
+    model_path = tmp_path / "models/primary.yaml"
+    model_path.write_text(
+        model_path.read_text() + "settings: {max_tokens: 100}\nmodel_characteristics: {context_window_tokens: 10000}\n"
+    )
+    started = asyncio.Event()
+    background_calls = 0
+    fallback_calls = 0
+    foreground_requests = []
+
+    async def foreground(messages, info):
+        nonlocal fallback_calls
+        if any(
+            isinstance(part, UserPromptPart) and part.content == _COMPACTION_PROMPT
+            for message in messages
+            for part in message.parts
+        ):
+            fallback_calls += 1
+            assert "current recovery input" in str(messages)
+            yield "recovered summary"
+        else:
+            foreground_requests.append(str(messages))
+            yield "obsolete answer " * 30 if len(foreground_requests) == 1 else "done"
+
+    async def background(messages, info):
+        nonlocal background_calls, fallback_calls
+        if any(
+            isinstance(part, UserPromptPart) and part.content == _COMPACTION_PROMPT
+            for message in messages
+            for part in message.parts
+        ):
+            # Both paths use the same directive; a detached input ends in a
+            # frozen prefix, whereas fallback includes this Run's new input.
+            if "current recovery input" in str(messages):
+                fallback_calls += 1
+                return ModelResponse(parts=[TextPart("recovered summary")])
+        background_calls += 1
+        started.set()
+        if restart:
+            await asyncio.Event().wait()
+        raise RuntimeError("background unavailable")
+
+    class Model(FunctionModel):
+        async def count_tokens(self, messages, model_settings, model_request_parameters):
+            return RequestUsage(input_tokens=100)
+
+    async def resolve(self, model_id, *, thread_id):
+        return Model(function=background, stream_function=foreground)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    settings = _settings(tmp_path / "state")
+
+    async def submit(app, thread_id, prompt):
+        receipt = await app.submit_thread(thread_id=thread_id, prompt=prompt)
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed, operation
+        return operation
+
+    async def recover(app, thread_id):
+        failed = await app._compaction.inspect(thread_id)
+        assert failed is not None and failed.status == "failed"
+        if restart:
+            assert failed.error_code == "compaction_interrupted"
+        await submit(app, thread_id, "current recovery input")
+        assert "recovered summary" in foreground_requests[-1]
+        assert "obsolete answer" not in foreground_requests[-1]
+        assert "current recovery input" in foreground_requests[-1]
+        assert await app._store.compactions.get(thread_id) is None
+        assert fallback_calls == 1 and background_calls == 1
+
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        await submit(app, thread.thread_id, "original input")
+        await submit(app, thread.thread_id, "second input")
+        await asyncio.wait_for(started.wait(), 5)
+        if not restart:
+            operation = await app._store.compactions.get(thread.thread_id)
+            await app._compaction.wait(thread.thread_id, operation.input.basis.operation_id)
+            await recover(app, thread.thread_id)
+    if restart:
+        async with open_harness_ui_app(settings, configuration_path=root) as app:
+            await recover(app, thread.thread_id)

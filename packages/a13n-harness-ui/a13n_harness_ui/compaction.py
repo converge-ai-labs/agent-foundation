@@ -177,6 +177,10 @@ class BackgroundCompaction:
                 raise RuntimeError("Compaction operation was retired")
             if operation.status != "running":
                 return operation
+            if operation_id in self._pending:
+                # inspect already retried publication. Surface the storage failure
+                # instead of waiting forever or generating the same summary again.
+                raise RuntimeError("Compaction outcome could not be persisted")
             task = self._tasks.get(operation_id)
             if task is not None:
                 await asyncio.shield(task)
