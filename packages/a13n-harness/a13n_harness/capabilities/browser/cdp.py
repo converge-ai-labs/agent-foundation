@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath, PureWindowsPath
@@ -425,13 +425,23 @@ class Chromium:
     async def activate(self, page: Page) -> None:
         await self.send("Page.bringToFront", page=page)
 
-    async def resize_window(self, page: Page, width: int, height: int) -> None:
+    async def resize_window(
+        self,
+        page: Page,
+        width: int,
+        height: int,
+        *,
+        prepare_bounds: Callable[[int, int], Awaitable[None]] | None = None,
+        allow_minimum: bool = False,
+    ) -> None:
         identity = (await self.window(page))["windowId"]
         await self.window_bounds(identity, {"windowState": "normal"})
         # Restoring a maximized window may change its native decorations after
         # CDP acknowledges the bounds. Verify the actual content size and adjust
         # against current bounds, without viewport emulation or focus changes.
         matched = False
+        previous: tuple[int, int, int, int] | None = None
+        clamped = 0
         try:
             async with asyncio.timeout(3):
                 while True:
@@ -446,14 +456,20 @@ class Chromium:
                         return
                     matched = correct
                     if not correct and bounds.get("windowState", "normal") == "normal":
+                        geometry = (bounds["width"], bounds["height"], content["width"], content["height"])
+                        # Repeated smaller requests can settle at Chromium's
+                        # native minimum. Never accept an undersized viewport.
+                        clamped = clamped + 1 if geometry == previous else 0
+                        if allow_minimum and clamped >= 3 and content["width"] >= width and content["height"] >= height:
+                            return
+                        previous = geometry
+                        outer_width = max(200, width + bounds["width"] - content["width"])
+                        outer_height = max(200, height + bounds["height"] - content["height"])
+                        if prepare_bounds is not None:
+                            await prepare_bounds(outer_width, outer_height)
                         await self.window_bounds(
                             identity,
-                            {
-                                "left": 0,
-                                "top": 0,
-                                "width": max(200, width + bounds["width"] - content["width"]),
-                                "height": max(200, height + bounds["height"] - content["height"]),
-                            },
+                            {"left": 0, "top": 0, "width": outer_width, "height": outer_height},
                         )
                     await asyncio.sleep(0.05)
         except TimeoutError as exc:

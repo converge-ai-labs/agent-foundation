@@ -398,6 +398,60 @@ async def test_thread_tabs_concurrent_actions_and_human_selection(
         await browsers.close()
 
 
+@pytest.mark.parametrize("preset,minimum", [("tablet", (768, 1024)), ("phone", (390, 844))])
+async def test_saved_viewport_survives_window_lifecycle(tmp_path, browser_configuration, request, preset, minimum):
+    host = HostBrowsers(
+        root=tmp_path / "browser",
+        available=True,
+        authorize=AsyncMock(),
+        configuration=browser_configuration,
+        no_sandbox=request.config.getoption("--browser-no-sandbox"),
+    )
+    try:
+        state = await host.enable("a")
+        state = await host.start("a", state.session_id)
+        if not state.resize_available:
+            pytest.skip("Viewport presets require RandR")
+        second = await host.enable("b")
+        await host.start("b", second.session_id)
+        control = await host.control("a", state.session_id, human=True)
+        await host.resize(
+            "a",
+            BrowserViewportRequest(
+                session_id=state.session_id,
+                control_token=control.control_token,
+                preset=preset,
+            ),
+        )
+        await host.control("a", state.session_id, human=False)
+        runtime = host.runtime
+        other = host.bindings["b"].page
+        assert runtime and other
+
+        async def check():
+            page = host.bindings["a"].page
+            assert page and host.state("a").viewport == preset
+            width, height = await runtime.evaluate(page, "[innerWidth,innerHeight]")
+            assert width >= minimum[0] and height == minimum[1]
+            if preset == "tablet":
+                assert width == minimum[0]
+            assert other.target in runtime.pages
+
+        await check()
+        state = await host.reset("a", state.session_id)
+        await check()
+        state = await host.stop("a", state.session_id)
+        state = await host.start("a", state.session_id, explicit=True)
+        await check()
+        backend = host.backend("a", state.session_id)
+        for tab in await backend.tabs("list"):
+            await backend.tabs("close", target=tab.target)
+        await backend.tabs("new")
+        await check()
+    finally:
+        await host.close()
+
+
 async def test_saved_password_autofill_after_restart_without_model_secret_values(
     tmp_path, site, browser_configuration, request
 ):

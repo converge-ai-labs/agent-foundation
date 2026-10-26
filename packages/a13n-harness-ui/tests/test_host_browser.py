@@ -387,6 +387,41 @@ async def test_shutdown_drains_scoped_operations_before_closing_browser(browsers
     assert not runtime.owners and not runtime.scopes
 
 
+@pytest.mark.parametrize("kind", ["tigervnc", "x11vnc"])
+async def test_private_x11_desktop_does_not_inherit_host_wayland(monkeypatch, kind):
+    import a13n_harness_ui.browser_display as module
+    from a13n_harness_ui.browser_setup import VncExecutable
+
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-host")
+    monkeypatch.setenv("SWAYSOCK", "/host/sway.sock")
+    monkeypatch.setenv("DISPLAY", ":host")
+    monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
+    process = Mock(stdout=Mock(readline=AsyncMock(return_value=b"123\n")))
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(module, "spawn", spawn)
+    monkeypatch.setattr(module, "terminate", AsyncMock())
+    monkeypatch.setattr(module, "wait_socket", AsyncMock())
+    desktop = module.VncDesktop(
+        VncExecutable(
+            path="/prepared/vnc",
+            source="custom",
+            kind=kind,
+            display_server="/prepared/Xvfb",
+            window_manager="/prepared/openbox",
+        )
+    )
+    try:
+        await desktop.start()
+        assert desktop.env["DISPLAY"] == ":123"
+        assert desktop.env["XDG_SESSION_TYPE"] == "x11"
+        assert "WAYLAND_DISPLAY" not in desktop.env and "SWAYSOCK" not in desktop.env
+        for call in spawn.await_args_list:
+            assert call.kwargs["env"] == desktop.env
+    finally:
+        await desktop.close()
+
+
 @pytest.mark.parametrize("no_sandbox", [False, True])
 async def test_chromium_sandbox_requires_explicit_startup_opt_in(tmp_path, monkeypatch, no_sandbox):
     import a13n_harness_ui.browser as module
@@ -622,3 +657,40 @@ async def test_pause_failure_waits_for_other_scope_before_retiring(browsers):
         await takeover
     assert browsers.runtime_failed and browsers.released.is_set()
     assert all(item.status == "failed" for item in browsers.bindings.values())
+
+
+async def test_failed_resize_preserves_saved_preset_and_invalidates_observation(browsers):
+    item = browsers.bindings["thread-a"]
+    item.viewport = "tablet"
+    control = await browsers.control("thread-a", item.identity, human=True)
+    browsers.layout.side_effect = BrowserError("resize failed")
+    with pytest.raises(BrowserError, match="resize failed"):
+        await browsers.resize(
+            "thread-a",
+            BrowserViewportRequest(session_id=item.identity, control_token=control.control_token, preset="phone"),
+        )
+    assert item.viewport == "tablet" and item.status == "ready"
+    assert item.page.requires_observation
+
+
+async def test_recreated_window_receives_saved_layout(browsers):
+    item = browsers.bindings["thread-a"]
+    item.viewport = "tablet"
+    runtime = browsers.runtime
+    runtime._destroyed({"targetId": item.page.target}, None)
+    page = Page("replacement", "replacement-session")
+
+    async def create(**kwargs):
+        runtime.pages[page.target] = page
+        return page
+
+    runtime.create = AsyncMock(side_effect=create)
+    await browsers.backend("thread-a", item.identity).tabs("new")
+    browsers.layout.assert_awaited_once_with(page, item)
+    assert item.viewport == "tablet" and item.status == "ready"
+
+
+async def test_desktop_preparation_fits_requested_and_other_owned_windows(browsers):
+    browsers.runtime.window = AsyncMock(return_value={"bounds": {"width": 1300, "height": 900}})
+    await browsers.fit_desktop(776, 1115)
+    browsers.desktop.resize.assert_awaited_once_with(1301, 1116)

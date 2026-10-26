@@ -363,11 +363,23 @@ class HostBrowsers:
         if self.desktop.desktop.kind == "wayvnc":
             await sway_command(self.desktop.env, await self.native_window(page), "focus")
 
-    async def layout(self, page: Page, item: Binding) -> None:
+    async def fit_desktop(self, width: int, height: int) -> None:
         assert self.runtime and self.desktop
+        for target in self.owners:
+            if candidate := self.runtime.pages.get(target):
+                bounds = (await self.runtime.window(candidate))["bounds"]
+                width, height = max(width, bounds["width"]), max(height, bounds["height"])
+        # X11 constrains normal windows strictly below the screen dimensions.
+        await self.desktop.resize(width + 1, height + 1)
+
+    async def layout(self, page: Page, item: Binding, *, preset: BrowserPreset | None = None) -> None:
+        assert self.runtime and self.desktop
+        viewport = preset or item.viewport
         if self.desktop.desktop.xrandr:
-            size = VIEWPORT_BY_PRESET[item.viewport]
-            await self.runtime.resize_window(page, size.width, size.height)
+            size = VIEWPORT_BY_PRESET[viewport]
+            await self.runtime.resize_window(
+                page, size.width, size.height, prepare_bounds=self.fit_desktop, allow_minimum=True
+            )
         else:
             identity = (await self.runtime.window(page))["windowId"]
             await self.runtime.window_bounds(identity, {"windowState": "normal"})
@@ -383,13 +395,8 @@ class HostBrowsers:
             else:
                 await self.runtime.window_bounds(identity, {"left": 0, "top": 0, "width": width, "height": height})
         if self.desktop.desktop.xrandr:
-            width = height = 32
-            for target in self.owners:
-                if candidate := self.runtime.pages.get(target):
-                    bounds = (await self.runtime.window(candidate))["bounds"]
-                    width, height = max(width, bounds["width"]), max(height, bounds["height"])
-            await self.desktop.resize(width, height)
-        if item.viewport == "desktop" and self.desktop.desktop.window_manager:
+            await self.fit_desktop(32, 32)
+        if viewport == "desktop" and self.desktop.desktop.window_manager:
             identity = (await self.runtime.window(page))["windowId"]
             await self.runtime.window_bounds(identity, {"windowState": "maximized"})
 
@@ -478,10 +485,13 @@ class HostBrowsers:
             assert self.runtime
             async with item.page.lock:
                 self.require_control(thread_id, request.session_id, request.control_token)
-                item.viewport = request.preset
-                await self.layout(item.page, item)
-                item.page.invalidate()
-                item.page.requires_observation = True
+                try:
+                    await self.layout(item.page, item, preset=request.preset)
+                    item.viewport = request.preset
+                finally:
+                    # A failed resize may still have moved native content.
+                    item.page.invalidate()
+                    item.page.requires_observation = True
         return self.state(thread_id)
 
     async def release_keys(self, thread: str) -> None:
@@ -810,7 +820,20 @@ class HostBrowserBackend:
 
     async def tabs(self, action: BrowserTabAction, *, target: str = "", url: str = "") -> tuple[BrowserTab, ...]:
         async with self.operation() as scope:
-            return await scope.tabs(action, target=target, url=url)
+            empty = action == "new" and not await scope.tabs("list")
+            tabs = await scope.tabs(action, target=target, url=url)
+            page = scope.page if empty else None
+        if page is not None:
+            # Finish creation's admission before waiting for lifecycle locks:
+            # Stop/takeover must still retire/drain an in-flight tab creation.
+            async with self.browsers.control_lock, self.browsers.lifecycle:
+                async with self.operation() as scope:
+                    item = self.browsers.checked(self.thread_id, self.binding)
+                    if page.target not in scope.targets:
+                        raise BrowserError("New tab closed before layout. List tabs before continuing.")
+                    async with page.lock:
+                        await self.browsers.layout(page, item)
+        return tabs
 
     async def dialog(self, action: Literal["inspect", "accept", "dismiss"], *, text: str = "") -> str:
         async with self.operation() as scope:

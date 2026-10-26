@@ -293,7 +293,9 @@ class VncDesktop:
                 raise RuntimeError("The virtual display did not provide a display number.")
             self.display = ":" + number
             await asyncio.to_thread(write_private, authority, xauthority(number, cookie))
-            self.env = {**os.environ, "DISPLAY": self.display, "XAUTHORITY": str(authority)}
+            # This is a private X11 session even when the Host runs on Wayland.
+            self.env = {key: value for key, value in os.environ.items() if key not in {"WAYLAND_DISPLAY", "SWAYSOCK"}}
+            self.env.update(DISPLAY=self.display, XAUTHORITY=str(authority), XDG_SESSION_TYPE="x11")
             processes.append((display, "The virtual display"))
             if self.desktop.kind == "x11vnc":
                 vnc = await spawn(

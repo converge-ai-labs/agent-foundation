@@ -423,7 +423,9 @@ async def test_account_trail_shows_only_the_callers_events(service) -> None:  # 
     ).status_code == 400
 
 
-async def test_invitations_with_manual_links(service) -> None:  # type: ignore[no-untyped-def]
+async def test_invitations_with_manual_links(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    # State-specific errors require expired and revoked rows to remain until acceptance.
+    await runs_kit.pause_sweeps(service)
     invitation_password = "eight-88"
     client = service.client
     created = await client.post(

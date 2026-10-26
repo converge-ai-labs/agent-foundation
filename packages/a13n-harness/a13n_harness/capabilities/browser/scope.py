@@ -284,8 +284,9 @@ class CdpBrowserBackend:
                 raise BrowserError("Tab is not owned by this browser scope. List tabs again.")
             if action == "new":
                 if self._selected is None:
-                    # An empty scope has no owned native window to reuse.
-                    page = await self.browser.create(new_window=True)
+                    # Recreate a lost owned window, but preserve Chromium's
+                    # default tab placement for a scope that has never owned a tab.
+                    page = await self.browser.create(new_window=bool(self._download_targets))
                 else:
                     source = await self._selected_page()
                     async with source.lock:
