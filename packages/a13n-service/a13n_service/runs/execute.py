@@ -457,7 +457,9 @@ class _Attempt:
             else None
         )
         self.usage = UsageBuffer(self.check.calls)
-        self.usage_reporter = DeltaReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
+        self.usage_reporter = DeltaReporter(
+            runtime.storage, lease.run_id, lease.attempt_id, self.usage, check=self.check.reconcile
+        )
         self.yielding = False
         self.desktop_paused = False
         self.desktop_enabled = bool(enabled_tools(plan.agent.config.toolsets, "computer"))

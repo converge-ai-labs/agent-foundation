@@ -89,3 +89,126 @@ async def test_takeover_counts_unreported_old_dispatches(service, scripted_model
     async with transaction(service.runtime.storage) as session:
         assert (await totals(session, run_id))["requests"] == 0
         assert await session.scalar(select(func.count()).select_from(ModelDispatchRow)) == 2
+
+
+@pytest.mark.parametrize("reported_background", [False, True], ids=["pending-background", "reported-background"])
+async def test_continuation_reconciles_shared_ceiling_after_recording_charge(
+    service, scripted_model, runs_kit, reported_background
+):
+    from dataclasses import replace
+
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.calls import Refused
+    from a13n_service.runs.execute import _Attempt, _plan
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+    [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    plan = replace(await _plan(service.runtime, lease), limit=2)
+    attempt = _Attempt(service.runtime, lease, AttemptControl(), plan)
+
+    async def admit(call_id, *, continuation=False):
+        async with transaction(service.runtime.storage) as session:
+            await reserve(
+                session, run_id=run_id, attempt_id=lease.attempt_id, call_id=call_id, limit=2, continuation=continuation
+            )
+
+    def report(owner, sequence, *, call_id, record_id=None):
+        batch = delta(owner, sequence, sequence)
+        record = batch.records[0].model_copy(update={"call_id": call_id, "response_state": "suspended"})
+        if record_id is not None:
+            record = record.model_copy(update={"record_id": record_id, "response_state": "complete"})
+        return batch.model_copy(update={"records": (record,)})
+
+    await admit("foreground")
+    await admit("background")
+    if reported_background:
+        await ingest_delta(
+            service.runtime.storage,
+            run_id,
+            lease.attempt_id,
+            report("background", 1, call_id="background"),
+            {},
+        )
+    await attempt.usage_reporter.report_delta(report("foreground", 1, call_id="foreground"))
+    # A snapshot of the same suspended generation consumes no additional slot.
+    await admit("poll-same", continuation=True)
+    await attempt.usage_reporter.report_delta(report("foreground", 2, call_id="foreground"))
+    assert attempt.check.refusal is None
+    await admit("poll-new", continuation=True)
+    with pytest.raises(Refused):
+        await attempt.usage_reporter.report_delta(
+            report("foreground", 3, call_id="poll-new", record_id="record_new_generation")
+        )
+    assert attempt._refusal().failure.code == "usage_limit_exceeded"
+    async with transaction(service.runtime.storage) as session:
+        assert (await totals(session, run_id))["requests"] == 2 + int(reported_background)
+    # Retrying delivery preserves the charge and repeats the refusal without another debit.
+    with pytest.raises(Refused):
+        await attempt.usage_reporter.report_delta(
+            report("foreground", 3, call_id="poll-new", record_id="record_new_generation")
+        )
+    async with transaction(service.runtime.storage) as session:
+        assert (await totals(session, run_id))["requests"] == 2 + int(reported_background)
+
+
+async def test_metered_continuation_stops_on_shared_overflow(service, scripted_model, runs_kit):
+    from dataclasses import replace
+
+    from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
+    from a13n_harness.usage import UsageReportError
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.execute import _Attempt, _plan
+    from pydantic_ai import Agent
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+    from pydantic_ai.usage import RequestUsage
+
+    await runs_kit.pause_sweeps(service)
+    resource = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, resource, "hi"))["run"]["id"]
+    [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    attempt = _Attempt(service.runtime, lease, AttemptControl(), replace(await _plan(service.runtime, lease), limit=2))
+    async with transaction(service.runtime.storage) as session:
+        await reserve(session, run_id=run_id, attempt_id=lease.attempt_id, call_id="background", limit=2)
+
+    class Check:
+        async def check(self, call):
+            async with transaction(service.runtime.storage) as session:
+                await reserve(
+                    session,
+                    run_id=run_id,
+                    attempt_id=lease.attempt_id,
+                    call_id=call.call_id,
+                    continuation=call.continuation_of is not None,
+                    limit=2,
+                )
+
+    binding = replace(ModelUsageBinding.standalone(source="agent"), model_call_check=Check())
+    binding.ledger.reporter = attempt.usage_reporter
+    replies = iter(
+        [
+            ModelResponse(
+                parts=[], state="suspended", provider_response_id="first", usage=RequestUsage(input_tokens=1)
+            ),
+            ModelResponse(
+                parts=[], state="suspended", provider_response_id="first", usage=RequestUsage(input_tokens=2)
+            ),
+            ModelResponse(parts=[TextPart("done")], provider_response_id="second", usage=RequestUsage(input_tokens=3)),
+        ]
+    )
+    calls = []
+
+    def model(messages, info):
+        calls.append(messages)
+        return next(replies)
+
+    with pytest.raises(UsageReportError):
+        await Agent(FunctionModel(model), capabilities=[ModelUsageCapability(binding)]).run("go")
+    assert len(calls) == 3
+    assert attempt._refusal().failure.code == "usage_limit_exceeded"
+    await attempt.usage_reporter.flush()
+    async with transaction(service.runtime.storage) as session:
+        assert (await totals(session, run_id))["requests"] == 2
+        assert await session.scalar(select(func.count()).select_from(ModelDispatchRow)) == 2

@@ -299,11 +299,15 @@ async def sweep(runtime: Runtime, *, limit: int = 100) -> None:
         candidates = list(
             await session.scalars(
                 select(CompactionRow.thread_id)
+                .join(ThreadRow, ThreadRow.id == CompactionRow.thread_id)
                 .where(
                     CompactionRow.settled_at.is_(None),
                     or_(
                         and_(CompactionRow.status == "running", CompactionRow.lease_expires_at <= current),
-                        CompactionRow.completed_at <= current - RETENTION,
+                        and_(
+                            ThreadRow.current_run_id.is_(None),
+                            CompactionRow.completed_at <= current - RETENTION,
+                        ),
                     ),
                 )
                 .order_by(CompactionRow.created_at)

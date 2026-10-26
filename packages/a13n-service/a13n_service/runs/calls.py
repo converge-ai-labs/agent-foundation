@@ -87,6 +87,15 @@ class CallCheck:
             raise
         return self.budget
 
+    async def reconcile(self) -> None:
+        if self.limit is None:
+            return
+        try:
+            async with transaction(self.runtime.storage) as session:
+                await request_budget.reconcile(session, run_id=self.context.run_id, limit=self.limit)
+        except UsageLimitExceeded:
+            self.refuse(Outcome.failed("usage_limit_exceeded", f"The run used its {self.limit} model requests"))
+
     async def tool_call(
         self,
         *,

@@ -329,6 +329,47 @@ async def test_retention_waits_for_idle_thread(service, scripted_model, runs_kit
         assert len([delivery for delivery in cleanups if "keys" in delivery.payload]) == 1
 
 
+@pytest.mark.parametrize("expired_owner", [False, True], ids=["idle-retention", "expired-owner"])
+async def test_retention_ineligible_thread_does_not_starve_sweep(service, scripted_model, runs_kit, expired_owner):
+    from datetime import timedelta
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "active")
+    [active] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    await runs_kit.start_thread(service, agent, "later")
+    [later] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    owners = []
+    for lease, identity in ((active, "compaction-active"), (later, "compaction-later")):
+        input = frozen(lease, identity=identity)
+        owner = await compactions.reserve(service.runtime, lease, input)
+        assert owner is not None
+        await compactions.publish(service.runtime, owner, input)
+        owners.append(owner)
+    if not expired_owner:
+        await seal_attempt(service.runtime, later, Outcome.cancelled())
+    async with transaction(service.runtime.storage) as session:
+        current = await now(session)
+        for index, owner in enumerate(owners):
+            row = await session.get_one(CompactionRow, owner.operation_id)
+            row.created_at = current - timedelta(days=10 - index)
+            if index == 1 and expired_owner:
+                row.lease_expires_at = current - timedelta(seconds=1)
+            else:
+                row.status = "failed"
+                row.error_code = "compaction_failed"
+                row.completed_at = current - timedelta(days=8)
+    await compactions.sweep(service.runtime, limit=1)
+    async with transaction(service.runtime.storage) as session:
+        first = await session.get_one(CompactionRow, owners[0].operation_id)
+        second = await session.get_one(CompactionRow, owners[1].operation_id)
+        assert first.settled_at is None
+        if expired_owner:
+            assert (second.status, second.error_code) == ("failed", "compaction_interrupted")
+        else:
+            assert second.disposition == "expired"
+
+
 async def test_archive_during_upload_keeps_retryable_cleanup(service, scripted_model, runs_kit, monkeypatch):
     lease = await setup(service, scripted_model, runs_kit)
     input = frozen(lease)

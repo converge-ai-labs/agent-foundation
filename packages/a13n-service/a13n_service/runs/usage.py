@@ -8,7 +8,7 @@ made them: the attempt's own, or an inline subagent's whose events the attempt's
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
@@ -218,10 +218,19 @@ async def ingest_delta(
 class DeltaReporter:
     """Attempt-owned delivery of unacknowledged batches, inherited by inline children."""
 
-    def __init__(self, storage: Storage, run_id: str, attempt_id: str, buffer: UsageBuffer) -> None:
+    def __init__(
+        self,
+        storage: Storage,
+        run_id: str,
+        attempt_id: str,
+        buffer: UsageBuffer,
+        *,
+        check: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         from anyio import Lock
 
         self.storage, self.run_id, self.attempt_id, self.buffer = storage, run_id, attempt_id, buffer
+        self.check = check
         self._pending: dict[tuple[str, int], UsageDelta] = {}
         self._lock = Lock()
 
@@ -232,6 +241,10 @@ class DeltaReporter:
             raise ServiceError("conflict", "Usage sequence has conflicting pending facts")
         self._pending[key] = delta.model_copy(deep=True)
         await self.flush()
+        # A newly identified generation can exceed admission's reserved occupancy.
+        # Persist its charge before propagating the execution refusal.
+        if self.check is not None and any(isinstance(record, ModelUsageRecord) for record in delta.records):
+            await self.check()
 
     async def flush(self) -> None:
         async with self._lock:

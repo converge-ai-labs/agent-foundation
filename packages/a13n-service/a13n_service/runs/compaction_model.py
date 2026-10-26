@@ -95,6 +95,12 @@ class _CallCheck:
                 )
         self.calls[call.call_id] = selected.model
 
+    async def reconcile(self) -> None:
+        if self.selection.limit is None:
+            return
+        async with transaction(self.runtime.storage) as session:
+            await request_budget.reconcile(session, run_id=self.selection.context.run_id, limit=self.selection.limit)
+
 
 class BackgroundCompaction:
     """Only live generation tasks are retained; durable observations are always read from storage."""
@@ -151,7 +157,11 @@ class BackgroundCompaction:
         runtime, selected = self.runtime, selection.model
         check = _CallCheck(runtime, owner, selection)
         reporter = DeltaReporter(
-            runtime.storage, selection.context.run_id, selection.context.run_attempt_id, UsageBuffer(check.calls)
+            runtime.storage,
+            selection.context.run_id,
+            selection.context.run_attempt_id,
+            UsageBuffer(check.calls),
+            check=check.reconcile,
         )
         instance = AgentInstanceContext(
             identity=AgentIdentityRef(issuer="a13n-service", subject=selection.principal_id),
