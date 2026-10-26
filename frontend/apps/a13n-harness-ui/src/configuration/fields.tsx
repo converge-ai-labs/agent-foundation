@@ -387,12 +387,10 @@ export function ResourceFields({
               open={location.hash === "#live" || undefined}
             >
               <summary>
-                Live voice<small>Model, voice and workspace access</small>
+                Live voice
+                <small>Talk to your agent using your Codex subscription</small>
               </summary>
-              <SettingsSection
-                title="Live voice"
-                description="Talk to your agent using your Codex subscription."
-              >
+              <SettingsSection>
                 <SettingsRow
                   label="Live"
                   description="Start voice conversations from the workspace."
@@ -495,12 +493,13 @@ export function ResourceFields({
             </details>
             <details className={layout.disclosure}>
               <summary>
-                Memory<small>Shared knowledge and automatic organization</small>
+                Memory
+                <small>
+                  Remember preferences and keep separate knowledge for each
+                  Project
+                </small>
               </summary>
-              <SettingsSection
-                title="Memory"
-                description="Remember preferences across conversations and keep separate knowledge for each Project."
-              >
+              <SettingsSection>
                 <SettingsRow
                   label="File memory"
                   description="Use saved memory in future runs."
@@ -585,7 +584,7 @@ export function ResourceFields({
               <summary>
                 Sidekick<small>Defaults for delegated conversations</small>
               </summary>
-              <SettingsSection title="Sidekick">
+              <SettingsSection>
                 <SettingsRow
                   label="Sidekick"
                   description="Guide the agent to delegate work to separate conversations."

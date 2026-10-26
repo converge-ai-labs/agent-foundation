@@ -458,15 +458,68 @@ a.resourceRow:hover {
   padding-inline: 6px;
   color: var(--a13n-text-supporting);
 }
+/* The one disclosure: a grey summary row with a chevron that turns on open. */
 .details {
-  border-top: 1px solid var(--a13n-border);
-  padding-top: 16px;
+  width: 100%;
 }
-.details summary {
+.details > summary {
+  display: flex;
+  align-items: baseline;
+  list-style: none;
   cursor: pointer;
-  font-size: 13px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+  font-size: 14px;
   font-weight: 500;
-  margin-bottom: 12px;
+  line-height: 20px;
+  user-select: none;
+  transition: background-color 120ms ease-out;
+}
+.details > summary::-webkit-details-marker {
+  display: none;
+}
+/* Chevron disclosure marker: points right when closed, down when open. */
+.details > summary::before {
+  content: "";
+  flex: 0 0 auto;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  margin-inline: 2px 12px;
+  border-inline-end: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  color: var(--a13n-secondary);
+  transform: rotate(-45deg);
+  transition: transform 150ms ease-out;
+}
+.details[open] > summary::before {
+  transform: rotate(45deg);
+}
+.details > summary:hover {
+  background: var(--a13n-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .details > summary,
+  .details > summary::before {
+    transition: none;
+  }
+}
+.details > summary:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+.details[open] > summary {
+  margin-bottom: 20px;
+}
+.details > summary small {
+  margin-left: 12px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.details > :not(summary) {
+  margin-bottom: 16px;
 }
 .details pre {
   font-size: 12px;
@@ -815,6 +868,27 @@ a.resourceRow:hover {
 }
 .selectionOption > span {
   min-width: 0;
+}
+/* Unknown route: a centered state, like other empty states. */
+.notFound {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  padding: 64px 24px;
+  max-width: 420px;
+  text-align: center;
+  color: var(--a13n-secondary);
+}
+.notFound h2 {
+  margin: 0;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-lg);
+  font-weight: 600;
+}
+.notFound p {
+  margin: 0 0 8px;
 }
 /* Inline keyboard shortcut inside prose. */
 .kbd {

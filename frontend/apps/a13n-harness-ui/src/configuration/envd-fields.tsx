@@ -47,9 +47,6 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
   )?.ready;
   return (
     <>
-      <p>
-        Default for new conversations. Projects can override this selection.
-      </p>
       <SettingsSection>
         <SettingsRow
           label="Runtime"
@@ -134,9 +131,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
           Custom profile: <code>{selected}</code>. Change its configuration in
           Profiles & extensions.
         </p>
-      ) : direct ? (
-        <p className="text-sm text-muted-foreground">Ready to use.</p>
-      ) : (
+      ) : direct ? null : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/30 p-4 text-sm">
           <div>
             <p>

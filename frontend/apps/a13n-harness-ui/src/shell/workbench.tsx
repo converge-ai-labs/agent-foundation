@@ -38,6 +38,7 @@ import {
   List,
   Users,
   Gear,
+  Compass,
 } from "@phosphor-icons/react";
 import { useSetup, useSources, useStatus } from "../transport/context";
 import type { Schema } from "../transport/client";
@@ -53,7 +54,7 @@ import {
   EnvironmentsPage,
 } from "../configuration/settings";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
-import { ErrorNotice, Panel, TextField } from "./ui";
+import { ErrorNotice, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
 import { ParticipantAvatars } from "./participant-avatars";
@@ -562,10 +563,14 @@ function WorkbenchContent({
               <Route
                 path="*"
                 element={
-                  <Panel title="Page unavailable">
-                    <p>This page is not available in this build.</p>
-                    <Link to="/">Return to the workbench</Link>
-                  </Panel>
+                  <div className={styles.notFound}>
+                    <Compass size={32} aria-hidden="true" />
+                    <h2>Page not found</h2>
+                    <p>This address doesn't match a page in Harness UI.</p>
+                    <Button variant="outline" render={<Link to="/" />}>
+                      Go to home
+                    </Button>
+                  </div>
                 }
               />
             </Routes>

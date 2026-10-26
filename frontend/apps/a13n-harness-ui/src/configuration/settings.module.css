@@ -7,66 +7,7 @@
   width: 100%;
 }
 .disclosure {
-  width: 100%;
-}
-.disclosure > summary {
-  display: flex;
-  align-items: baseline;
-  list-style: none;
-  cursor: pointer;
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: var(--a13n-surface);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  user-select: none;
-  transition: background-color 120ms ease-out;
-}
-.disclosure > summary::-webkit-details-marker {
-  display: none;
-}
-/* Chevron disclosure marker: points right when closed, down when open. */
-.disclosure > summary::before {
-  content: "";
-  flex: 0 0 auto;
-  align-self: center;
-  width: 6px;
-  height: 6px;
-  margin-inline: 2px 12px;
-  border-inline-end: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  color: var(--a13n-secondary);
-  transform: rotate(-45deg);
-  transition: transform 150ms ease-out;
-}
-.disclosure[open] > summary::before {
-  transform: rotate(45deg);
-}
-.disclosure > summary:hover {
-  background: var(--a13n-hover);
-}
-@media (prefers-reduced-motion: reduce) {
-  .disclosure > summary,
-  .disclosure > summary::before {
-    transition: none;
-  }
-}
-.disclosure > summary:focus-visible {
-  outline: 2px solid var(--a13n-signal);
-  outline-offset: 2px;
-}
-.disclosure[open] > summary {
-  margin-bottom: 20px;
-}
-.disclosure > summary small {
-  margin-left: 12px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
-}
-.disclosure > :not(summary) {
-  margin-bottom: 16px;
+  composes: details from "../shell/workbench.module.css";
 }
 .tabs {
   display: flex;

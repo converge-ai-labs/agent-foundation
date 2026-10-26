@@ -506,7 +506,9 @@ export function SourceDocument({
             ? "Used when native input is unavailable."
             : section === "envd"
               ? "Settings for this whole server. Save, then restart Harness UI to apply them."
-              : undefined
+              : section === "execution"
+                ? "Default for new conversations. Projects can override this selection."
+                : undefined
         }
         title={
           title ||

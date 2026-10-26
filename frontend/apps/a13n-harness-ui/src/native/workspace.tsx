@@ -520,7 +520,11 @@ export function NativeWorkspace({
                     ? "Archived conversations"
                     : location.pathname === "/usage"
                       ? "Usage"
-                      : "Settings"}
+                      : /^\/(settings|setup|projects)(\/|$)/.test(
+                            location.pathname,
+                          )
+                        ? "Settings"
+                        : "Page not found"}
           </h1>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">

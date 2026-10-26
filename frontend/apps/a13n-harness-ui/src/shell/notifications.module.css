@@ -94,18 +94,32 @@
 .mobileLabel {
   display: none;
 }
-.settingRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+.settings {
+  display: grid;
+  gap: 16px;
+  width: 100%;
 }
-.settingRow label {
+/* Current state leads a row description, ahead of its explanation. */
+.status {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--a13n-text);
+  font-size: 13px;
   font-weight: 500;
 }
-.settingRow p {
-  margin: 6px 0 0;
+.message {
+  margin: 0;
   color: var(--a13n-secondary);
+  font-size: 13px;
+}
+.details {
+  composes: details from "./workbench.module.css";
+}
+.details p {
+  margin: 0 0 8px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 20px;
 }
 @media (max-width: 639px) {
   .desktopLabel {

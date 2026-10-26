@@ -11,7 +11,14 @@ import { Link, useMatch, useNavigate } from "react-router";
 import { fitVisualViewport } from "./visual-viewport";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, X } from "@phosphor-icons/react";
-import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
+import {
+  Button,
+  SettingsRow,
+  SettingsSection,
+  Switch,
+  ToastProvider,
+  useToast,
+} from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
 import { TransportContext } from "../transport/context";
@@ -23,7 +30,7 @@ import {
   supportsPush,
   testPush,
 } from "./push";
-import { PageHeader, Panel } from "./ui";
+import { PageHeader } from "./ui";
 import styles from "./notifications.module.css";
 
 type Permission = NotificationPermission | "unavailable" | "install-required";
@@ -444,65 +451,49 @@ export function NotificationSettings({
   embedded?: boolean;
 }) {
   const notifications = useNotifications()!;
+  const pushReady =
+    notifications.enabled &&
+    notifications.permission === "granted" &&
+    supportsPush();
+  const backgroundLabel = pushSubscriptionId()
+    ? "Reconnect background notifications"
+    : "Enable background notifications";
   return (
-    <>
-      <PageHeader
-        title="Notifications"
-        level={embedded ? 2 : 1}
-        description="This browser"
-      />
-      <Panel title="Browser notifications">
-        <div className={styles.settingRow}>
-          <div>
-            <label htmlFor="desktop-notifications">
-              Enable browser notifications
-            </label>
-            <p>
-              Task results and requests for your input across all conversations.
-              Previews may appear on your lock screen.
-            </p>
-          </div>
+    <div className={styles.settings}>
+      {!embedded && (
+        <PageHeader
+          title="Notifications"
+          description="Task results and requests for your input on this browser."
+        />
+      )}
+      <SettingsSection
+        title="This browser"
+        description="Previews may appear on your lock screen."
+      >
+        <SettingsRow
+          label="Enable browser notifications"
+          controlId="desktop-notifications"
+          description="Task results and requests for your input across all conversations."
+        >
           <Switch
             id="desktop-notifications"
             checked={notifications.enabled}
             onCheckedChange={notifications.setEnabled}
           />
-        </div>
-        <p>
-          Browser permission:{" "}
-          <strong>{permissionLabels[notifications.permission]}</strong>
-        </p>
-        {notifications.permission !== "granted" && (
-          <p>
-            <PermissionDescription permission={notifications.permission} />
-          </p>
-        )}
-        <p>
-          Background delivery:{" "}
-          <strong>{backgroundLabels[notifications.background]}</strong>
-          <br />
-          {notifications.background === "enabled"
-            ? "Connected. Alerts stay active for six hours after your last visit on this device."
-            : notifications.permission !== "granted"
-              ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
-              : "Without working push delivery, only in-app notices are available while WebUI is open."}
-        </p>
-        <div className={styles.actions}>
-          {notifications.enabled &&
-            notifications.permission === "granted" &&
-            supportsPush() && (
-              <Button
-                onClick={() => void notifications.request()}
-                loading={notifications.requesting}
-                variant={
-                  notifications.background === "enabled" ? "outline" : "default"
-                }
-              >
-                {pushSubscriptionId()
-                  ? "Reconnect background notifications"
-                  : "Enable background notifications"}
-              </Button>
-            )}
+        </SettingsRow>
+        <SettingsRow
+          label="Browser permission"
+          description={
+            <>
+              <span className={styles.status}>
+                {permissionLabels[notifications.permission]}
+              </span>
+              {notifications.permission !== "granted" && (
+                <PermissionDescription permission={notifications.permission} />
+              )}
+            </>
+          }
+        >
           {notifications.enabled && notifications.permission === "default" && (
             <Button
               variant="outline"
@@ -512,8 +503,42 @@ export function NotificationSettings({
               Allow notifications
             </Button>
           )}
+        </SettingsRow>
+        <SettingsRow
+          label="Background delivery"
+          description={
+            <>
+              <span className={styles.status}>
+                {backgroundLabels[notifications.background]}
+              </span>
+              {notifications.background === "enabled"
+                ? "Connected. Alerts stay active for six hours after your last visit on this device."
+                : notifications.permission !== "granted"
+                  ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
+                  : "Without working push delivery, only in-app notices are available while WebUI is open."}
+            </>
+          }
+        >
+          {pushReady && (
+            <Button
+              onClick={() => void notifications.request()}
+              loading={notifications.requesting}
+              variant={
+                notifications.background === "enabled" ? "outline" : "default"
+              }
+              aria-label={backgroundLabel}
+            >
+              {pushSubscriptionId() ? "Reconnect" : "Enable"}
+            </Button>
+          )}
+        </SettingsRow>
+        <SettingsRow
+          label="Test notification"
+          description="Send an alert to check delivery on this device."
+        >
           <Button
             variant="outline"
+            aria-label="Send test notification"
             disabled={
               !notifications.enabled ||
               notifications.permission !== "granted" ||
@@ -522,36 +547,42 @@ export function NotificationSettings({
             }
             onClick={notifications.test}
           >
-            Send test notification
+            Send test
           </Button>
-        </div>
-        {notifications.error && <p role="alert">{notifications.error}</p>}
-        {notifications.testStatus && (
-          <p role="status">{notifications.testStatus}</p>
-        )}
-        <details className={styles.details}>
-          <summary>Delivery help</summary>
-          <p>
-            The server must stay running and reach your browser's push service.
-            On iPhone or iPad, use Safari's Share → Add to Home Screen, then
-            enable notifications from the Home Screen app.
-          </p>
-          <p>
-            On Android Chrome, allow this site's notifications and Chrome's
-            system notifications. Force-stopping the browser, battery
-            restrictions, or Do Not Disturb can prevent alerts. On iPhone or
-            iPad, enable notifications inside the Home Screen app, not a Chrome
-            or Safari tab. Send a test notification to check delivery.
-          </p>
-          <p>
-            In-app notices remain available without notification permission.
-            Background push uses your browser's push service and can show alerts
-            alongside in-app notices even for the conversation you are viewing.
-            Keeping a WebUI page visible renews the six-hour delivery window.
-            Missed history is not replayed as new alerts.
-          </p>
-        </details>
-      </Panel>
-    </>
+        </SettingsRow>
+      </SettingsSection>
+      {notifications.error && (
+        <p role="alert" className={styles.message}>
+          {notifications.error}
+        </p>
+      )}
+      {notifications.testStatus && (
+        <p role="status" className={styles.message}>
+          {notifications.testStatus}
+        </p>
+      )}
+      <details className={styles.details}>
+        <summary>Delivery help</summary>
+        <p>
+          The server must stay running and reach your browser's push service. On
+          iPhone or iPad, use Safari's Share → Add to Home Screen, then enable
+          notifications from the Home Screen app.
+        </p>
+        <p>
+          On Android Chrome, allow this site's notifications and Chrome's system
+          notifications. Force-stopping the browser, battery restrictions, or Do
+          Not Disturb can prevent alerts. On iPhone or iPad, enable
+          notifications inside the Home Screen app, not a Chrome or Safari tab.
+          Send a test notification to check delivery.
+        </p>
+        <p>
+          In-app notices remain available without notification permission.
+          Background push uses your browser's push service and can show alerts
+          alongside in-app notices even for the conversation you are viewing.
+          Keeping a WebUI page visible renews the six-hour delivery window.
+          Missed history is not replayed as new alerts.
+        </p>
+      </details>
+    </div>
   );
 }
