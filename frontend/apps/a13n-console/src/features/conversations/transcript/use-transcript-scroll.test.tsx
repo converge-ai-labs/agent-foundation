@@ -263,3 +263,36 @@ it("keeps a visible message in place when earlier content is inserted inside the
   expect(view.stage.scrollTop).toBe(1000);
   expect(screen.getByText("Jump to latest")).toBeTruthy();
 });
+
+it.each(["wheel", "ArrowUp"])(
+  "keeps a small upward %s movement near the bottom instead of snapping back",
+  (input) => {
+    const view = setup();
+    if (input === "wheel") fireEvent.wheel(view.stage, { deltaY: -40 });
+    else fireEvent.keyDown(view.stage, { key: input });
+    view.stage.scrollTop = 1460;
+    fireEvent.scroll(view.stage);
+    if (input !== "wheel") fireEvent.keyUp(view.stage, { key: input });
+    fireEvent(view.stage, new Event("scrollend"));
+    expect(view.stage.scrollTop).toBe(1460);
+    // The jump button can remain hidden nearby without resuming following.
+    expect(screen.getByText("At latest")).toBeTruthy();
+    view.grow(300);
+    view.resize();
+    expect(view.stage.scrollTop).toBe(1460);
+    expect(screen.getByText("Jump to latest")).toBeTruthy();
+  },
+);
+
+it("keeps upward intent when keyup precedes the first animated scroll frame", () => {
+  const view = setup();
+  fireEvent.keyDown(view.stage, { key: "ArrowUp" });
+  fireEvent.keyUp(view.stage, { key: "ArrowUp" });
+  // A queued scroll event can still describe the old bottom position.
+  fireEvent.scroll(view.stage);
+  view.stage.scrollTop = 1460;
+  fireEvent.scroll(view.stage);
+  fireEvent(view.stage, new Event("scrollend"));
+  view.resize();
+  expect(view.stage.scrollTop).toBe(1460);
+});
