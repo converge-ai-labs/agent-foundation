@@ -67,23 +67,50 @@
   flex-wrap: wrap;
   gap: 12px 24px;
 }
+.check,
+.nativeOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-block: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+}
+.check > [data-slot="checkbox"],
+.nativeOption > [data-slot="checkbox"] {
+  margin-top: 2px;
+}
 .nativeOptions {
   display: grid;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 4px;
+  margin-top: 12px;
 }
-.nativeOption > label {
-  align-items: flex-start;
+.nativeOption {
+  padding: 10px;
+  margin-inline: -10px;
+  border-radius: 8px;
 }
-.nativeOption input {
-  flex-shrink: 0;
-  margin-top: 3px;
+.nativeOption:not(:has([data-disabled])):hover {
+  background: var(--a13n-hover);
 }
-.nativeOption > small {
-  display: block;
-  margin: 4px 0 0 23px;
+.nativeOption:has([data-disabled]) {
+  cursor: not-allowed;
+}
+.nativeOption:has([data-disabled]) .optionText > span {
+  color: var(--a13n-secondary);
+}
+.optionText {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.optionText > small {
   color: var(--a13n-secondary);
   font-size: 12px;
+  font-weight: 400;
   line-height: 1.5;
 }
 .recommendation {

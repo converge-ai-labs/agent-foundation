@@ -17,6 +17,7 @@ import { useRootConfiguration } from "./root-configuration";
 import { useQuery } from "@tanstack/react-query";
 import {
   Button,
+  Checkbox,
   ChoiceField,
   FormField,
   SettingsSection,
@@ -152,22 +153,20 @@ export function AgentFields({
             Tasks & notes
           </h4>
           <div className={management.checkboxRow}>
-            <label className={styles.check}>
-              <input
-                type="checkbox"
+            <label className={management.check}>
+              <Checkbox
                 checked={working.tasks_enabled ?? true}
-                onChange={(event) =>
-                  setWorking("tasks_enabled", event.target.checked)
+                onCheckedChange={(checked) =>
+                  setWorking("tasks_enabled", checked)
                 }
               />
               Tasks
             </label>
-            <label className={styles.check}>
-              <input
-                type="checkbox"
+            <label className={management.check}>
+              <Checkbox
                 checked={working.notes_enabled ?? true}
-                onChange={(event) =>
-                  setWorking("notes_enabled", event.target.checked)
+                onCheckedChange={(checked) =>
+                  setWorking("notes_enabled", checked)
                 }
               />
               Notes
@@ -350,17 +349,12 @@ export function AgentFields({
           </span>
         </summary>
         <div className={styles.stack}>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
+          <label className={management.check}>
+            <Checkbox
               checked={Array.isArray(raw.tools)}
-              onChange={(event) =>
+              onCheckedChange={(checked) =>
                 onChange(
-                  updateDocument(
-                    source,
-                    ["tools"],
-                    event.target.checked ? [] : undefined,
-                  ),
+                  updateDocument(source, ["tools"], checked ? [] : undefined),
                 )
               }
             />
@@ -488,22 +482,18 @@ function CapabilityOptions({
             ]}
             onValueChange={(mode) => set(["search", "mode"], mode)}
           />
-          <label className={styles.check}>
-            <input
-              type="checkbox"
+          <label className={management.check}>
+            <Checkbox
               checked={config.fetch?.enabled ?? true}
-              onChange={(event) =>
-                set(["fetch", "enabled"], event.target.checked)
-              }
+              onCheckedChange={(checked) => set(["fetch", "enabled"], checked)}
             />
             Fetch web resources
           </label>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
+          <label className={management.check}>
+            <Checkbox
               checked={config.download?.enabled ?? true}
-              onChange={(event) =>
-                set(["download", "enabled"], event.target.checked)
+              onCheckedChange={(checked) =>
+                set(["download", "enabled"], checked)
               }
             />
             Download files

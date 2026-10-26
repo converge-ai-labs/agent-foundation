@@ -372,21 +372,18 @@ it("edits Agent working state without losing custom configuration", async () => 
   renderFields(initial);
   const user = userEvent.setup();
   expect(
-    (
-      (await screen.findByRole("checkbox", {
-        name: "Tasks",
-      })) as HTMLInputElement
-    ).checked,
-  ).toBe(true);
+    (await screen.findByRole("checkbox", { name: "Tasks" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
   expect(
-    (
-      screen.getByRole("checkbox", {
-        name: "Notes",
-      }) as HTMLInputElement
-    ).checked,
-  ).toBe(false);
+    screen
+      .getByRole("checkbox", { name: "Notes" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
   expect(screen.getByTestId("source").textContent).toBe(initial);
-  await user.click(screen.getByRole("checkbox", { name: "Tasks" }));
+  screen.getByRole("checkbox", { name: "Tasks" }).focus();
+  await user.keyboard(" ");
   expect(
     parse(screen.getByTestId("source").textContent!).capabilities[0]
       .configuration,
