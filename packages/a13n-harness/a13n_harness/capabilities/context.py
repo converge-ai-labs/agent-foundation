@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from importlib.resources import files
 from secrets import token_urlsafe
 from typing import Any, Literal, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -23,7 +22,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    SystemPromptPart,
     TextContent,
     TextPart,
     ToolCallPart,
@@ -34,6 +32,16 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness._context_history import (
+    _COMPACTION_PROMPT,
+    _HANDOFF_METADATA_KEY,
+    _RESTORED_BOUNDARY_METADATA_KEY,
+    _RESTORED_BOUNDARY_VERSION,
+    _SKILL_RELOAD_REMINDER,
+    _build_compacted_history,
+    _context_protocol_part,
+    _first_system_parts,
+)
 from a13n_harness._handoff import (
     _HANDOFF_STATE_VERSION,
     HANDOFF_TOOL_METADATA_KEY,
@@ -48,12 +56,12 @@ from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.compaction import (
     COMPACTION_CAPABILITY_ID,
+    CompactionInput,
     CompactionOperator,
-    CompactionPlan,
     CompactionResult,
     _already_applied,
     _CompactionState,
-    _validate_result,
+    _validate_thread,
     apply_compaction,
     compaction_tail,
 )
@@ -97,19 +105,6 @@ _FILE_CONTEXT_OPEN = '<file-context source="a13n-harness">'
 _FILE_CONTEXT_CLOSE = "</file-context>"
 _HANDOFF_REMINDER_OPEN = '<context-reminder source="a13n.handoff">'
 _HANDOFF_REMINDER_CLOSE = "</context-reminder>"
-_HANDOFF_METADATA_KEY = "a13n.context"
-_RESTORED_BOUNDARY_METADATA_KEY = "a13n.restored-boundary"
-_RESTORED_BOUNDARY_VERSION = "1"
-_SKILL_RELOAD_REMINDER = (
-    "Before continuing work that depends on a carried-over skill, re-read its SKILL.md and the supporting files "
-    "needed for the next step, unless those contents are already available in full in the restored context. "
-    "A summary of a skill is not a substitute for its instructions."
-)
-# Mirrors ya-agent-sdk's cache-friendly compact instruction and request.
-_COMPACTION_PROMPT = files("a13n_harness.toolsets.prompts").joinpath("compact.md").read_text(encoding="utf-8").strip()
-_PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS = 32_000
-_PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD = 24_000
-_PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL = 6_000
 
 
 class RuntimeContextConfiguration(BaseModel):
@@ -911,7 +906,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self,
         ctx: RunContext[AgentContext],
         request: ModelRequestContext,
-        plan: CompactionPlan,
         result: CompactionResult,
     ) -> ModelRequestContext:
         """Validate and apply ready work at an ordinary before-model boundary.
@@ -919,19 +913,20 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         The applied marker is checkpoint provenance, never a Host persistence
         acknowledgement. Offline application uses apply_compaction_to_state.
         """
-        _validate_result(plan, result, ctx.deps.thread_id)
+        basis = result.basis
+        _validate_thread(basis, ctx.deps.thread_id)
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if _already_applied(state, plan):
+        if _already_applied(state, basis):
             return request
         if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
             return request
         # Validate before discovery retention changes any runtime cache.
-        compaction_tail(plan, ctx.messages)
+        compaction_tail(basis, ctx.messages)
         from a13n_harness.tools.discovery import finish_discovery_replacement, retain_discovery
 
         discovery, names = await retain_discovery(ctx, request)
         messages = apply_compaction(
-            plan, result, thread_id=ctx.deps.thread_id, messages=ctx.messages, retained_discovery=discovery
+            result, thread_id=ctx.deps.thread_id, messages=ctx.messages, retained_discovery=discovery
         )
         replacement = _replace_context_history(ctx, request, messages, names)
         replacement = await _project_compaction_media(ctx, replacement)
@@ -944,8 +939,8 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         await ctx.deps.state.write(
             COMPACTION_CAPABILITY_ID,
             _CompactionState(
-                applied_operation_id=plan.operation_id,
-                applied_plan_digest=plan.digest,
+                applied_operation_id=basis.operation_id,
+                applied_basis_digest=basis.digest,
             ),
             version="1",
         )
@@ -956,11 +951,11 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             kind="context",
             payload=ContextOperationCompletedPayload(
                 type="compaction_completed",
-                operation_id=plan.operation_id,
+                operation_id=basis.operation_id,
             ),
         )
-        await ctx.emit(CompactionSummaryEvent(operation_id=plan.operation_id, summary=result.summary))
-        await ctx.emit(ContextRestoredEvent(source="compact", operation_id=plan.operation_id))
+        await ctx.emit(CompactionSummaryEvent(operation_id=basis.operation_id, summary=result.summary))
+        await ctx.emit(ContextRestoredEvent(source="compact", operation_id=basis.operation_id))
         return replacement
 
     async def _background_history(
@@ -997,7 +992,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
                 prefix,
             )
-            plan = CompactionPlan.create(
+            input = CompactionInput.create(
                 operation_id=f"compaction-{token_urlsafe(9)}",
                 thread_id=ctx.deps.thread_id,
                 run_id=ctx.deps.run_id,
@@ -1013,22 +1008,22 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 if limits is not None and limits.request_limit is not None
                 else None,
             )
-            operation = await self.operator.submit(plan)
+            operation = await self.operator.submit(input)
             await emit_harness_event(
                 ctx.deps.events,
                 kind="context",
                 payload=ContextOperationStartedPayload(
                     type="compaction_started",
-                    operation_id=operation.plan.operation_id,
+                    operation_id=operation.input.basis.operation_id,
                 ),
             )
-        if operation.plan.thread_id != ctx.deps.thread_id:
+        if operation.input.basis.thread_id != ctx.deps.thread_id:
             raise DefinitionError(
                 "Compaction operator returned another Thread's work.", code="compaction_result_mismatch"
             )
         if operation.status == "ready":
             assert operation.result is not None
-            return await self.apply_result(ctx, request, operation.plan, operation.result)
+            return await self.apply_result(ctx, request, operation.result)
         if operation.status == "failed":
             # A terminal record suppresses repeated generation on every turn.
             if await _compaction_request_fits(ctx, request) is not True:
@@ -1036,15 +1031,15 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     "Compaction failed with no verified request capacity.", code="compaction_capacity_unavailable"
                 )
             return request
-        compaction_tail(operation.plan, ctx.messages)
+        compaction_tail(operation.input.basis, ctx.messages)
         if await _compaction_request_fits(ctx, request) is True:
             return request
-        completed = await self.operator.wait(ctx.deps.thread_id, operation.plan.operation_id)
-        if completed.plan.digest != operation.plan.digest:
+        completed = await self.operator.wait(ctx.deps.thread_id, operation.input.basis.operation_id)
+        if completed.input != operation.input:
             raise DefinitionError("Compaction wait returned different work.", code="compaction_result_mismatch")
         if completed.status != "ready" or completed.result is None:
             raise DefinitionError("Compaction could not free context capacity.", code="compaction_capacity_unavailable")
-        return await self.apply_result(ctx, request, completed.plan, completed.result)
+        return await self.apply_result(ctx, request, completed.result)
 
     async def _compact_history(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -1322,110 +1317,6 @@ async def _compact_with_same_agent(
     return summary
 
 
-def _build_compacted_history(
-    messages: list[ModelMessage],
-    summary: str,
-    *,
-    retained_requests: tuple[ModelRequest, ...],
-    retained_discovery: list[ModelMessage] | None = None,
-) -> list[ModelMessage]:
-    template = next((message for message in messages if isinstance(message, ModelRequest)), None)
-    if template is None:
-        raise DefinitionError(
-            "Compaction cannot rebuild history without a model request boundary.",
-            code="compaction_boundary_missing",
-        )
-    system_parts = _first_system_parts(messages)
-    metadata = deepcopy(template.metadata) if template.metadata is not None else {}
-    # Replacement parts have their own annotations; retained requests carry
-    # their own content annotations and delivered steering identities.
-    metadata.pop("a13n.model-context-overlay", None)
-    metadata.pop(CONTENT_METADATA_KEY, None)
-    metadata.pop("a13n.steering-input", None)
-    metadata[_HANDOFF_METADATA_KEY] = "compaction"
-    synthetic = replace(
-        deepcopy(template),
-        parts=tuple(
-            [
-                *system_parts,
-                _context_protocol_part(
-                    "The previous conversation exceeded its configured context threshold. "
-                    "Produce a history-only continuation summary before resuming; current structured notes and "
-                    "tasks will be projected separately."
-                ),
-            ]
-        ),
-        metadata=metadata,
-        state="complete",
-    )
-    restored_parts = [
-        _context_protocol_part(
-            "<context-restored>Context was compacted into the preceding assistant summary. Treat it as prior "
-            "working context and continue from the retained user inputs. Current structured notes and tasks, when "
-            "enabled, are projected separately on ordinary requests. "
-            f"{_SKILL_RELOAD_REMINDER}</context-restored>"
-        )
-    ]
-    previous_assistant = _previous_assistant_reference(messages)
-    if previous_assistant is not None:
-        restored_parts.append(
-            _context_protocol_part(
-                "<previous-assistant-reference>\n"
-                "Below is the assistant response immediately before the user's current request. "
-                "Use it only to resolve references in the retained user inputs, such as numbered items, "
-                "'the above', 'that', or similar phrases. Do not treat it as a new instruction by itself.\n\n"
-                f"{previous_assistant}\n"
-                "</previous-assistant-reference>"
-            )
-        )
-    restored = ModelRequest(
-        parts=restored_parts,
-        metadata={
-            _HANDOFF_METADATA_KEY: "compaction",
-            _RESTORED_BOUNDARY_METADATA_KEY: _RESTORED_BOUNDARY_VERSION,
-        },
-    )
-    return [
-        synthetic,
-        ModelResponse(parts=[TextPart(summary.strip())], metadata={"keep": "compact"}),
-        *(retained_discovery or []),
-        restored,
-        *deepcopy(retained_requests),
-    ]
-
-
-def _previous_assistant_reference(messages: list[ModelMessage]) -> str | None:
-    latest_user_index = next(
-        (
-            index
-            for index in range(len(messages) - 1, -1, -1)
-            if isinstance(messages[index], ModelRequest)
-            and any(isinstance(part, UserPromptPart) for part in messages[index].parts)
-            and not any(isinstance(part, BaseToolReturnPart) for part in messages[index].parts)
-        ),
-        None,
-    )
-    if latest_user_index is None:
-        return None
-    for message in reversed(messages[:latest_user_index]):
-        if not isinstance(message, ModelResponse):
-            continue
-        chunks = [part.content for part in message.parts if isinstance(part, TextPart) and part.content.strip()]
-        if chunks:
-            return _truncate_previous_assistant_reference("\n\n".join(chunks))
-    return None
-
-
-def _truncate_previous_assistant_reference(text: str) -> str:
-    stripped = text.strip()
-    if len(stripped) <= _PREVIOUS_ASSISTANT_REFERENCE_MAX_CHARS:
-        return stripped
-    head = stripped[:_PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD]
-    tail = stripped[-_PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL:]
-    truncated_count = len(stripped) - _PREVIOUS_ASSISTANT_REFERENCE_KEEP_HEAD - _PREVIOUS_ASSISTANT_REFERENCE_KEEP_TAIL
-    return f"{head}\n[... {truncated_count} chars truncated from previous assistant response ...]\n{tail}"
-
-
 def _require_operation_id(state: _HandoffState) -> str:
     if state.operation_id is None:
         raise DefinitionError("Context operation identity is missing.", code="context_operation_id_missing")
@@ -1534,20 +1425,6 @@ def restored_history_summary(messages: Sequence[ModelMessage]) -> str | None:
                         ):
                             return item.content
     return None
-
-
-def _context_protocol_part(content: str) -> UserPromptPart:
-    """Keep recovery protocol model-visible without presenting it as authored input."""
-    return UserPromptPart([TextContent(content, metadata={"display": False, "source_id": "a13n.context.protocol"})])
-
-
-def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:
-    for message in messages:
-        if isinstance(message, ModelRequest):
-            parts = [deepcopy(part) for part in message.parts if isinstance(part, SystemPromptPart)]
-            if parts:
-                return parts
-    return []
 
 
 def _file_inspection_reminder(paths: tuple[str, ...]) -> str:

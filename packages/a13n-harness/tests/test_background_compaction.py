@@ -9,9 +9,9 @@ from a13n_harness import AgentSpec, HarnessBuilder, HarnessModelCharacteristics,
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.compaction import (
+    CompactionInput,
     CompactionOperation,
     CompactionOperator,
-    CompactionPlan,
     CompactionResult,
     apply_compaction,
     apply_compaction_to_state,
@@ -48,9 +48,9 @@ def _previous():
     )
 
 
-def _plan(previous=None):
+def _input(previous=None):
     previous = previous or _previous()
-    return CompactionPlan.create(
+    return CompactionInput.create(
         operation_id="compaction-test",
         thread_id=previous.thread_id,
         run_id="run-test",
@@ -72,12 +72,12 @@ def _user_values(messages):
     ]
 
 
-async def test_plan_roundtrip_detaches_native_values_and_result_preserves_delta():
+async def test_input_roundtrip_detaches_native_values_and_result_preserves_delta():
     previous = _previous()
     messages = list(previous.message_history)
     replay = ModelRequest(parts=[UserPromptPart(["image", BinaryContent(b"image", media_type="image/png")])])
     messages += [replay, ModelResponse(parts=[TextPart("seen")])]
-    plan = CompactionPlan.create(
+    input = CompactionInput.create(
         operation_id="compaction-test",
         thread_id=previous.thread_id,
         run_id="run-test",
@@ -87,56 +87,56 @@ async def test_plan_roundtrip_detaches_native_values_and_result_preserves_delta(
         retained_requests=[replay],
         parameters=ModelRequestParameters(),
     )
-    frozen = plan.model_dump_json()
+    canonical = deepcopy(messages)
+    frozen = input.model_dump_json()
     messages[0].parts = []
-    plan.messages[0].parts = []
-    plan.replay_requests[0].parts = []
-    plan = CompactionPlan.model_validate_json(frozen)
-    assert plan.model_dump_json() == frozen
-    result = CompactionResult.from_summary(plan, "summary")
+    input.request_messages[0].parts = []
+    input.basis.replay_requests[0].parts = []
+    input = CompactionInput.model_validate_json(frozen)
+    assert input.model_dump_json() == frozen
+    result = CompactionResult.from_summary(input.basis, "summary")
     delta = [
         ModelRequest(parts=[UserPromptPart("later steering")]),
         ModelResponse(parts=[ToolCallPart("read", {}, "call-1")]),
         ModelRequest(parts=[ToolReturnPart("read", "new result", "call-1")]),
     ]
-    latest = [*plan.messages, *delta]
+    latest = [*canonical, *delta]
     before = encode_messages(latest)
-    merged = apply_compaction(plan, result, thread_id=plan.thread_id, messages=latest)
+    merged = apply_compaction(result, thread_id=input.basis.thread_id, messages=latest)
     assert encode_messages(merged[-3:]) == encode_messages(delta)
     assert _user_values(merged).count("later steering") == 1
-    assert plan.replay_requests[0].parts[0].content in _user_values(merged)
+    assert input.basis.replay_requests[0].parts[0].content in _user_values(merged)
     assert encode_messages(latest) == before
 
 
-@pytest.mark.parametrize("mismatch", ["thread", "operation", "digest", "prefix", "pending"])
+@pytest.mark.parametrize("mismatch", ["thread", "digest", "prefix", "pending"])
 async def test_application_rejects_incompatible_result_without_mutation(mismatch):
-    plan = _plan()
-    result = CompactionResult.from_summary(plan, "summary")
-    messages = plan.messages
-    thread_id = plan.thread_id
+    input = _input()
+    result = CompactionResult.from_summary(input.basis, "summary")
+    messages = input.request_messages[:-1]
+    thread_id = input.basis.thread_id
     if mismatch == "thread":
         thread_id = "thread-other"
-    elif mismatch == "operation":
-        result = result.model_copy(update={"operation_id": "other"})
     elif mismatch == "digest":
-        result = result.model_copy(update={"plan_digest": "other"})
+        result = result.model_copy(update={"basis": result.basis.model_copy(update={"prefix_digest": "other"})})
     elif mismatch == "prefix":
         messages[0].parts = [UserPromptPart("cleared or handoff history")]
     else:
         messages.append(ModelResponse(parts=[ToolCallPart("read", {}, "pending")]))
     before = encode_messages(messages)
     with pytest.raises(DefinitionError):
-        apply_compaction(plan, result, thread_id=thread_id, messages=messages)
+        apply_compaction(result, thread_id=thread_id, messages=messages)
     assert encode_messages(messages) == before
 
 
 async def test_generator_retries_same_snapshot_with_no_mutable_aliases():
-    plan = _plan()
+    input = _input()
     calls = []
     delays = []
 
-    async def request(actual, messages, settings, parameters):
-        assert actual == plan
+    async def request(actual):
+        assert actual == input
+        messages, settings, parameters = actual.request_messages, actual.settings, actual.parameters
         calls.append(encode_messages(messages))
         assert _COMPACTION_PROMPT in _user_values(messages)
         assert settings["tool_choice"] == "auto"
@@ -150,8 +150,8 @@ async def test_generator_retries_same_snapshot_with_no_mutable_aliases():
     async def sleep(delay):
         delays.append(delay)
 
-    result = await generate_compaction(plan, request, sleep=sleep)
-    assert result == CompactionResult.from_summary(plan, "summary")
+    result = await generate_compaction(input, request, sleep=sleep)
+    assert result == CompactionResult.from_summary(input.basis, "summary")
     assert len(calls) == 3 and calls[0] == calls[1] == calls[2]
     assert len(delays) == 2
 
@@ -166,7 +166,7 @@ async def test_generator_does_not_retry_refusal_permanent_failure_or_cancellatio
         raise error
 
     with pytest.raises(type(error)):
-        await generate_compaction(_plan(), request)
+        await generate_compaction(_input(), request)
     assert calls == 1
 
 
@@ -176,7 +176,7 @@ async def test_generator_rejects_invalid_summary_without_dispatching_tools(parts
         return ModelResponse(parts=parts)
 
     with pytest.raises(DefinitionError, match="Compaction returned"):
-        await generate_compaction(_plan(), request)
+        await generate_compaction(_input(), request)
 
 
 class _Operator(CompactionOperator):
@@ -191,23 +191,23 @@ class _Operator(CompactionOperator):
         self.submissions = 0
         self.notifications = []
 
-    async def submit(self, plan):
+    async def submit(self, input):
         if self.operation is not None:
             return self.operation
         self.submissions += 1
-        self.operation = CompactionOperation(plan=plan, status="running")
-        self.task = asyncio.create_task(self._execute(plan))
+        self.operation = CompactionOperation(input=input, status="running")
+        self.task = asyncio.create_task(self._execute(input))
         return self.operation
 
-    async def _execute(self, plan):
-        async def request(actual, messages, settings, parameters):
+    async def _execute(self, input):
+        async def request(actual):
             self.started.set()
             await self.release.wait()
             return ModelResponse(parts=[TextPart("background summary")])
 
-        result = await generate_compaction(plan, request)
-        self.operation = CompactionOperation(plan=plan, status="ready", result=result)
-        self.notifications.append(result.operation_id)
+        result = await generate_compaction(input, request)
+        self.operation = CompactionOperation(input=input, status="ready", result=result)
+        self.notifications.append(result.basis.operation_id)
         return self.operation
 
     async def inspect(self, thread_id):
@@ -259,7 +259,7 @@ async def test_background_survives_parent_close_and_applies_once_on_next_run():
     operator.release.set()
     await operator.task
     assert first.state.model_dump_json() == saved
-    assert operator.notifications == [operator.operation.plan.operation_id]
+    assert operator.notifications == [operator.operation.input.basis.operation_id]
     second = await executable.run("next input", previous_state=HarnessState.model_validate_json(saved))
     assert second.output_or_raise() == "foreground answer"
     assert second.state is not None
@@ -267,7 +267,7 @@ async def test_background_survives_parent_close_and_applies_once_on_next_run():
     assert _user_values(second.state.message_history).count("first input") == 1
     assert _user_values(second.state.message_history).count("next input") == 1
     marker = second.state.agent_context_state.get("a13n.compaction")
-    assert marker is not None and marker.data["applied_operation_id"] == operator.operation.plan.operation_id
+    assert marker is not None and marker.data["applied_operation_id"] == operator.operation.input.basis.operation_id
     third = await executable.run(
         "third input", previous_state=HarnessState.model_validate_json(second.state.model_dump_json())
     )
@@ -321,12 +321,12 @@ async def test_ready_result_applies_between_tool_rounds_and_keeps_delta():
 @pytest.mark.parametrize("status", ["running", "ready"])
 async def test_active_boundary_rejects_stale_operation_without_resubmission(status):
     previous = _previous()
-    plan = _plan(previous)
+    input = _input(previous)
     operator = _Operator()
     operation = CompactionOperation(
-        plan=plan,
+        input=input,
         status=status,
-        result=CompactionResult.from_summary(plan, "stale summary") if status == "ready" else None,
+        result=CompactionResult.from_summary(input.basis, "stale summary") if status == "ready" else None,
     )
     operator.operation = operation
     changed = HarnessState.new(
@@ -358,7 +358,7 @@ async def test_active_boundary_rejects_stale_operation_without_resubmission(stat
 async def test_failed_operation_requires_verified_capacity_and_suppresses_resubmission(counting):
     previous = _previous()
     operator = _Operator()
-    operation = CompactionOperation(plan=_plan(previous), status="failed", error_code="provider_unavailable")
+    operation = CompactionOperation(input=_input(previous), status="failed", error_code="provider_unavailable")
     operator.operation = operation
     requests = []
 
@@ -404,8 +404,8 @@ async def test_unknown_capacity_waits_and_waiter_cancellation_preserves_work():
 
 async def test_compacted_state_next_run_needs_no_capability_operator_or_summary_request():
     previous = _previous()
-    plan = _plan(previous)
-    result = CompactionResult.from_summary(plan, "supplied summary")
+    input = _input(previous)
+    result = CompactionResult.from_summary(input.basis, "supplied summary")
     requests = []
 
     async def stream(messages, info):
@@ -417,7 +417,7 @@ async def test_compacted_state_next_run_needs_no_capability_operator_or_summary_
         model=FunctionModel(stream_function=stream),
         output_type=str,
     )
-    compacted = await apply_compaction_to_state(previous, plan=plan, result=result)
+    compacted = await apply_compaction_to_state(previous, result=result)
     compacted = HarnessState.model_validate_json(compacted.model_dump_json())
     assert compacted.agent_context_state.get("a13n.compaction").data["restoration_pending"] is True
     first = await executable.run("continue", previous_state=compacted)
@@ -474,10 +474,10 @@ async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(m
     assert result.output_or_raise() == "done"
     assert operator.submissions == 1
     assert sum("initial semantic input" in value for value in _user_values(requests[-1])) == 1
-    assert len(operator.operation.plan.replay_requests) == 1
+    assert len(operator.operation.input.basis.replay_requests) == 1
     if media == "video":
         assert "video_input_unsupported" in str(requests[-1])
-        assert "video_input_unsupported" in str(operator.operation.plan.request_messages)
+        assert "video_input_unsupported" in str(operator.operation.input.request_messages)
         assert "video_input_unsupported" not in str(result.state.message_history)
     if media == "image":
 
@@ -492,7 +492,7 @@ async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(m
 
         assert [item.data for item in images(result.state.message_history)] == [image.getvalue()]
         assert len(images(requests[-1])) > 1
-        assert len(images(operator.operation.plan.request_messages)) > 1
+        assert len(images(operator.operation.input.request_messages)) > 1
     # The fourth request re-observes the applied result: the Host has not saved
     # a checkpoint and retired it, so no second operation may be submitted.
     assert len(requests) == 4
@@ -537,7 +537,7 @@ async def test_steering_delivered_after_cutoff_is_not_replayed_twice():
 
 
 async def test_retry_budget_is_bounded_by_captured_request_allowance():
-    plan = _plan().model_copy(update={"request_limit": 1})
+    input = _input().model_copy(update={"request_limit": 1})
     calls = 0
 
     async def request(*args):
@@ -546,7 +546,7 @@ async def test_retry_budget_is_bounded_by_captured_request_allowance():
         raise ModelHTTPError(503, "test")
 
     with pytest.raises(ModelHTTPError):
-        await generate_compaction(plan, request)
+        await generate_compaction(input, request)
     assert calls == 1
 
 
@@ -593,7 +593,7 @@ async def test_state_transform_preserves_envelope_namespaces_refs_and_complete_d
     from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, StoredRef
 
     previous = _previous()
-    plan = _plan(previous)
+    input = _input(previous)
     delta = [ModelRequest(parts=[UserPromptPart("later")]), ModelResponse(parts=[TextPart("later answer")])]
     previous = HarnessState.model_validate(
         previous.model_dump()
@@ -610,8 +610,8 @@ async def test_state_transform_preserves_envelope_namespaces_refs_and_complete_d
         }
     )
     original = previous.model_dump_json()
-    result = CompactionResult.from_summary(plan, "summary")
-    compacted = await apply_compaction_to_state(previous, plan=plan, result=result)
+    result = CompactionResult.from_summary(input.basis, "summary")
+    compacted = await apply_compaction_to_state(previous, result=result)
     assert previous.model_dump_json() == original
     assert encode_messages(compacted.message_history[-2:]) == encode_messages(delta)
     assert compacted.environment_states == previous.environment_states
@@ -621,23 +621,21 @@ async def test_state_transform_preserves_envelope_namespaces_refs_and_complete_d
     compacted.model_extra["future"]["nested"].append(3)
     assert previous.model_dump_json() == original
     compacted = HarnessState.model_validate_json(compacted.model_dump_json())
-    assert await apply_compaction_to_state(compacted, plan=plan, result=result) is compacted
-    changed = plan.model_copy(update={"run_id": "different"})
+    assert await apply_compaction_to_state(compacted, result=result) is compacted
+    changed = input.basis.model_copy(update={"prefix_digest": "different"})
     with pytest.raises(DefinitionError, match="identity was reused"):
-        await apply_compaction_to_state(compacted, plan=changed, result=CompactionResult.from_summary(changed, "other"))
+        await apply_compaction_to_state(compacted, result=CompactionResult.from_summary(changed, "other"))
 
 
-@pytest.mark.parametrize("mismatch", ["thread", "operation", "digest", "prefix", "pending"])
+@pytest.mark.parametrize("mismatch", ["thread", "digest", "prefix", "pending"])
 async def test_state_transform_rejects_stale_or_incomplete_work(mismatch):
     previous = _previous()
-    plan = _plan(previous)
-    result = CompactionResult.from_summary(plan, "summary")
+    input = _input(previous)
+    result = CompactionResult.from_summary(input.basis, "summary")
     if mismatch == "thread":
         previous = previous.fork()
-    elif mismatch == "operation":
-        result = result.model_copy(update={"operation_id": "other"})
     elif mismatch == "digest":
-        result = result.model_copy(update={"plan_digest": "other"})
+        result = result.model_copy(update={"basis": result.basis.model_copy(update={"prefix_digest": "other"})})
     elif mismatch == "prefix":
         previous = HarnessState.new(thread_id=previous.thread_id)
     else:
@@ -650,7 +648,7 @@ async def test_state_transform_rejects_stale_or_incomplete_work(mismatch):
         )
     original = previous.model_dump_json()
     with pytest.raises(DefinitionError):
-        await apply_compaction_to_state(previous, plan=plan, result=result)
+        await apply_compaction_to_state(previous, result=result)
     assert previous.model_dump_json() == original
 
 
@@ -664,15 +662,15 @@ async def test_state_transform_hydrates_prefix_but_preserves_stored_suffix():
     image = BinaryContent(b"image" * 200, media_type="image/png")
     prefix = [ModelRequest(parts=[UserPromptPart([image])]), ModelResponse(parts=[TextPart("seen")])]
     previous = HarnessState.new(message_history=prefix)
-    plan = _plan(previous)
-    result = CompactionResult.from_summary(plan, "summary")
+    input = _input(previous)
+    result = CompactionResult.from_summary(input.basis, "summary")
     delta = [ModelRequest(parts=[UserPromptPart([image])]), ModelResponse(parts=[TextPart("again")])]
     previous = previous.model_copy(update={"message_history_json": encode_messages([*prefix, *delta])})
     previous = await RunStorage(store).export(previous)
     saved = previous.model_dump_json()
     with pytest.raises(StateError, match="no state store"):
-        await apply_compaction_to_state(previous, plan=plan, result=result)
-    compacted = await apply_compaction_to_state(previous, plan=plan, result=result, state_store=store)
+        await apply_compaction_to_state(previous, result=result)
+    compacted = await apply_compaction_to_state(previous, result=result, state_store=store)
     assert previous.model_dump_json() == saved
     assert compacted.refs == previous.refs
     assert encode_messages(compacted.message_history[-2:]) == encode_messages(previous.message_history[-2:])
@@ -686,10 +684,8 @@ async def test_failed_restoration_keeps_pending_provenance_for_retry(cancel):
     from pydantic_ai.capabilities import AbstractCapability
 
     previous = _previous()
-    plan = _plan(previous)
-    compacted = await apply_compaction_to_state(
-        previous, plan=plan, result=CompactionResult.from_summary(plan, "summary")
-    )
+    input = _input(previous)
+    compacted = await apply_compaction_to_state(previous, result=CompactionResult.from_summary(input.basis, "summary"))
     contexts = []
     requests = []
 
@@ -748,9 +744,9 @@ async def test_state_restoration_resets_memory_before_first_projection():
     )
     first = await executable.run("hello")
     assert cursors.snapshot()
-    plan = _plan(first.state)
+    input = _input(first.state)
     compacted = await apply_compaction_to_state(
-        first.state, plan=plan, result=CompactionResult.from_summary(plan, "summary")
+        first.state, result=CompactionResult.from_summary(input.basis, "summary")
     )
     second = await executable.run("continue", previous_state=compacted)
     assert second.output_or_raise() == "done"
@@ -769,9 +765,9 @@ async def test_state_restoration_uses_current_discovery_and_codeact_tools():
     effects = []
     capabilities = (_source(effects), ToolSearch(strategy="keywords"), CodeActCapability())
     first, _ = await _run_calls(capabilities, [("search_tools", {"queries": ["double"]}), ("double", {"value": 20})])
-    plan = _plan(first.state)
+    input = _input(first.state)
     compacted = await apply_compaction_to_state(
-        first.state, plan=plan, result=CompactionResult.from_summary(plan, "summary")
+        first.state, result=CompactionResult.from_summary(input.basis, "summary")
     )
     second, snapshots = await _run_calls(
         capabilities, [("run_code", {"code": "await double(value=21)"})], previous_state=compacted
@@ -799,14 +795,12 @@ async def test_state_restoration_checks_capacity_after_current_projection_and_me
     from .memory_helpers import FakeFileStore
 
     previous = _previous()
-    plan = _plan(previous)
+    input = _input(previous)
     delta = [ModelRequest(parts=[UserPromptPart([VideoUrl("https://example.com/video.mp4")])])]
     previous = previous.model_copy(
         update={"message_history_json": encode_messages([*previous.message_history, *delta])}
     )
-    compacted = await apply_compaction_to_state(
-        previous, plan=plan, result=CompactionResult.from_summary(plan, "summary")
-    )
+    compacted = await apply_compaction_to_state(previous, result=CompactionResult.from_summary(input.basis, "summary"))
     counted = []
     requests = []
 
@@ -852,3 +846,94 @@ async def test_state_restoration_checks_capacity_after_current_projection_and_me
         assert "video_url_requires_materialization" not in str(result.state.message_history)
         assert "https://example.com/video.mp4" in str(result.state.message_history)
     assert len(counted) == 1
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("operation_id", "other"), ("thread_id", "other"), ("prefix_digest", "other"), ("replay_json", "[]")],
+)
+async def test_operation_rejects_a_result_with_a_different_basis(field, value):
+    input = _input()
+    if field == "replay_json":
+        value = encode_messages([ModelRequest(parts=[UserPromptPart("different replay")])]).decode()
+    basis = input.basis.model_copy(update={field: value})
+    with pytest.raises(ValueError, match="submitted basis"):
+        CompactionOperation(input=input, status="ready", result=CompactionResult.from_summary(basis, "summary"))
+
+
+async def test_serialized_result_applies_without_generation_input_and_uses_canonical_prefix():
+    from pydantic_ai.messages import SystemPromptPart
+
+    original = BinaryContent(b"original-media", media_type="image/png")
+    replay = ModelRequest(parts=[UserPromptPart(["retained input", original])])
+    prefix = [
+        ModelRequest(parts=[SystemPromptPart("canonical system"), UserPromptPart("prefix-only history")]),
+        ModelResponse(parts=[TextPart("earlier reference")]),
+        replay,
+        ModelResponse(parts=[TextPart("latest reference")]),
+    ]
+    state = HarnessState.new(message_history=prefix)
+    input = CompactionInput.create(
+        operation_id="compaction-detached",
+        thread_id=state.thread_id,
+        run_id="run-source",
+        model_id="selected-model",
+        model_name="test",
+        provider_name="function",
+        messages=prefix,
+        summary_messages=[ModelRequest(parts=[UserPromptPart("projected request")])],
+        retained_requests=[replay],
+        parameters=ModelRequestParameters(),
+    )
+
+    async def request(actual):
+        assert actual.model_id == "selected-model"
+        assert actual.run_id == "run-source"
+        assert "projected request" in _user_values(actual.request_messages)
+        assert "prefix-only history" not in actual.model_dump_json()
+        return ModelResponse(parts=[TextPart("summary")])
+
+    result = await generate_compaction(input, request)
+    serialized = result.model_dump_json()
+    assert "projected request" not in serialized
+    assert "selected-model" not in serialized and "run-source" not in serialized
+    del input
+    result = CompactionResult.model_validate_json(serialized)
+    result.basis.replay_requests[0].parts = []
+    assert result.model_dump_json() == serialized
+    delta = [ModelRequest(parts=[UserPromptPart("use the last answer")])]
+    latest = state.model_copy(update={"message_history_json": encode_messages([*prefix, *delta])})
+    compacted = await apply_compaction_to_state(latest, result=result)
+    active = apply_compaction(result, thread_id=state.thread_id, messages=latest.message_history)
+    for messages in (active, compacted.message_history):
+        assert messages[0].parts[0] == prefix[0].parts[0]
+        assert "latest reference" in str(messages)
+        assert "earlier reference" not in str(messages)
+        retained = next(
+            value for value in _user_values(messages) if isinstance(value, list) and value[0] == "retained input"
+        )
+        assert len(retained) == 2
+        assert isinstance(retained[1], BinaryContent)
+        assert retained[1].data == original.data and retained[1].media_type == original.media_type
+        assert encode_messages(messages[-1:]) == encode_messages(delta)
+    assert await apply_compaction_to_state(compacted, result=result) is compacted
+
+
+async def test_result_application_rejects_a_cutoff_inside_a_complete_tool_pair():
+    from hashlib import sha256
+
+    state = _previous()
+    prefix = [*state.message_history, ModelResponse(parts=[ToolCallPart("read", {}, "call")])]
+    messages = [*prefix, ModelRequest(parts=[ToolReturnPart("read", "value", "call")])]
+    basis = _input(state).basis.model_copy(
+        update={
+            "prefix_length": len(prefix),
+            "prefix_digest": sha256(encode_messages(prefix)).hexdigest(),
+        }
+    )
+    result = CompactionResult.from_summary(basis, "summary")
+    before = encode_messages(messages)
+    with pytest.raises(DefinitionError) as error:
+        apply_compaction(result, thread_id=state.thread_id, messages=messages)
+    assert error.value.code == "compaction_boundary_pending"
+    assert encode_messages(messages) == before
