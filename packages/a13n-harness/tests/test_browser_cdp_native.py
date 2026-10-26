@@ -55,15 +55,14 @@ async def native_browser(request, browser_executable):
             (extension / "popup.html").write_text("<!doctype html><h1>Synthetic extension popup</h1>")
             # Test fixture installation only; Harness never installs extensions.
             arguments.append("--load-extension=" + str(extension))
-        process = await asyncio.create_subprocess_exec(
-            *arguments, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
-        )
+        # Let pytest capture browser diagnostics instead of hiding startup failures.
+        process = await asyncio.create_subprocess_exec(*arguments, stdout=asyncio.subprocess.DEVNULL)
         try:
             endpoint = Path(directory) / "DevToolsActivePort"
             async with asyncio.timeout(20):
                 while True:
                     if process.returncode is not None:
-                        pytest.fail("Chromium exited before CDP startup")
+                        pytest.fail(f"Chromium exited before CDP startup (exit code {process.returncode})")
                     if endpoint.exists():
                         parts = endpoint.read_text().splitlines()
                         if len(parts) == 2:
