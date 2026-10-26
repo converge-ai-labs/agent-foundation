@@ -1,5 +1,8 @@
 .page {
-  container: new-conversation / size;
+  /* Also a conversation-page container, so the shared composer takes the
+     full phone width here exactly as it does inside a conversation. */
+  container-type: size;
+  container-name: new-conversation conversation-page;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -50,13 +53,16 @@
     margin-top: auto;
   }
 }
+/* The settings row shares the composer column and its 13px content inset, so
+   the project picker starts on the same line as the composer's own controls. */
 .context {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 20px;
-  margin: 0 4px 6px;
-  padding: 0 4px;
+  width: min(760px, 100% - 84px);
+  margin: 0 auto 6px;
+  padding: 0 13px;
   border: 0;
 }
 .context > * {
@@ -65,23 +71,28 @@
   max-width: 100%;
 }
 .location {
+  position: relative;
   width: 320px;
   display: flex;
   align-items: center;
-  gap: 4px;
   max-width: min(320px, 100%);
 }
+/* The folder icon sits inside the trigger's hover area, on the composer's
+   icon line. */
 .location > svg {
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 1;
+  left: 8px;
+  width: 16px;
+  height: 16px;
   color: var(--a13n-secondary);
-  width: 18px;
-  height: 18px;
+  pointer-events: none;
 }
 .location > button {
   width: 100%;
   min-width: 0;
   height: 32px;
-  padding-inline: 6px;
+  padding-inline: 30px 8px;
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -111,8 +122,9 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  margin: 0 8px 12px;
-  padding: 12px 14px;
+  width: min(760px, 100% - 84px);
+  margin: 0 auto 12px;
+  padding: 12px 13px;
   border-radius: 12px;
   background: var(--a13n-surface);
   font-size: 13px;
@@ -133,7 +145,9 @@
   text-decoration: underline;
 }
 .recoveryStatus {
-  margin: 0 12px 12px;
+  width: min(760px, 100% - 84px);
+  margin: 0 auto 12px;
+  padding-inline: 13px;
   color: var(--a13n-secondary);
   font-size: 13px;
 }
@@ -156,8 +170,6 @@
   }
   .context {
     gap: 8px;
-    padding-inline: 10px;
-    margin-inline: 6px;
   }
   .location {
     max-width: 100%;
@@ -170,4 +182,12 @@
 
 .choicePopup {
   min-width: min(300px, calc(100vw - 32px));
+}
+
+@container new-conversation (max-width: 600px) {
+  .context,
+  .projectNotice,
+  .recoveryStatus {
+    width: 100%;
+  }
 }
