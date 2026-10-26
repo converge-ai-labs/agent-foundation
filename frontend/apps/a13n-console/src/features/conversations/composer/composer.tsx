@@ -32,6 +32,7 @@ export function Composer({
   label,
   placeholder,
   disabled = false,
+  submitDisabled = false,
   agentName,
   options,
   stop,
@@ -44,6 +45,8 @@ export function Composer({
   label?: string;
   placeholder?: string;
   disabled?: boolean;
+  /** Block sending while keeping configuration controls available for correction. */
+  submitDisabled?: boolean;
   agentName?: string;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
@@ -161,7 +164,7 @@ export function Composer({
       className={styles.composer}
       onSubmit={(event) => {
         event.preventDefault();
-        mutation.mutate();
+        if (!disabled && !submitDisabled && !busy) mutation.mutate();
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.fields}>
@@ -274,7 +277,7 @@ export function Composer({
             className={styles.sendButton}
             aria-label={action}
             title={action}
-            disabled={empty || disabled || busy}
+            disabled={empty || disabled || submitDisabled || busy}
             loading={mutation.isPending}
           >
             <ArrowUpIcon size={15} />

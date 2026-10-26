@@ -3456,5 +3456,15 @@
   "Run recorder": "运行记录",
   "Record each run's outcome in memory, optionally including model request counts.": "在内存中记录每次运行的结果，可选择记录模型请求次数。",
   "Record model requests": "记录模型请求",
-  "Include the model request count in each run record.": "在每条运行记录中包含模型请求次数。"
+  "Include the model request count in each run record.": "在每条运行记录中包含模型请求次数。",
+  "Follow agent": "跟随 Agent",
+  "Custom · {{count}} spaces": "自定义 · {{count}} 个空间",
+  "Custom · {{count}} spaces_one": "自定义 · {{count}} 个空间",
+  "Custom · {{count}} spaces_other": "自定义 · {{count}} 个空间",
+  "Review settings": "检查设置",
+  "Applies only to this session.": "仅影响本会话。",
+  "Memory configuration": "记忆配置",
+  "This session has already been created. Retry with the same memory settings.": "本会话已创建，重试将使用相同的记忆设置。",
+  "Uses the first agent's memory settings when this session starts.": "会话开始时，使用首个 Agent 的记忆设置。",
+  "Configure this session without changing the agent's defaults.": "单独设置本会话，不修改 Agent 默认配置。"
 }

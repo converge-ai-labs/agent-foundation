@@ -3456,5 +3456,15 @@
   "Run recorder": "Run recorder",
   "Record each run's outcome in memory, optionally including model request counts.": "Record each run's outcome in memory, optionally including model request counts.",
   "Record model requests": "Record model requests",
-  "Include the model request count in each run record.": "Include the model request count in each run record."
+  "Include the model request count in each run record.": "Include the model request count in each run record.",
+  "Follow agent": "Follow agent",
+  "Custom · {{count}} spaces": "Custom · {{count}} spaces",
+  "Custom · {{count}} spaces_one": "Custom · {{count}} space",
+  "Custom · {{count}} spaces_other": "Custom · {{count}} spaces",
+  "Review settings": "Review settings",
+  "Applies only to this session.": "Applies only to this session.",
+  "Memory configuration": "Memory configuration",
+  "This session has already been created. Retry with the same memory settings.": "This session has already been created. Retry with the same memory settings.",
+  "Uses the first agent's memory settings when this session starts.": "Uses the first agent's memory settings when this session starts.",
+  "Configure this session without changing the agent's defaults.": "Configure this session without changing the agent's defaults."
 }

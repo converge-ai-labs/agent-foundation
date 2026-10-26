@@ -237,7 +237,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
   cache.clear();
 });
 
-it.each(["inherit", "off", "on"])(
+it.each(["inherit", "off", "on", "spaces"])(
   "starts a Console session with memory %s, reusing preparation on retry",
   async (memoryChoice) => {
     allowed = ["run"];
@@ -307,7 +307,9 @@ it.each(["inherit", "off", "on"])(
             ? [{ id: "agt_1", name: "Release Bot", image_url: null }]
             : path.endsWith("/environment-templates")
               ? [{ id: "envt_research", name: "Research" }]
-              : [],
+              : path.endsWith("/memory-spaces")
+                ? [{ id: "msp_team", name: "Team knowledge", enabled: true }]
+                : [],
           next_cursor: null,
         });
       },
@@ -339,12 +341,47 @@ it.each(["inherit", "off", "on"])(
     await user.click(screen.getByRole("button", { name: "Apply" }));
     if (memoryChoice !== "inherit") {
       await user.click(
-        screen.getByRole("switch", { name: "Use agent memory defaults" }),
+        screen.getByRole("button", { name: /Memory.*Follow agent/ }),
       );
-      if (memoryChoice === "on")
+      await user.click(screen.getByRole("button", { name: "Custom" }));
+      if (memoryChoice === "on" || memoryChoice === "spaces")
+        await user.click(screen.getByRole("switch", { name: "Memory spaces" }));
+      if (memoryChoice === "spaces") {
+        await user.click(screen.getByRole("button", { name: "Add space" }));
         await user.click(
-          screen.getByRole("switch", { name: "Use memory spaces" }),
+          await screen.findByRole("checkbox", { name: /Team knowledge/ }),
         );
+        await user.keyboard("{Escape}");
+        await user.clear(screen.getByRole("textbox", { name: "Mount name" }));
+        await user.keyboard("{Escape}");
+        await user.type(
+          screen.getByRole("textbox", { name: "Message" }),
+          "Check memory",
+        );
+        expect(screen.getByRole("button", { name: "Send" })).toHaveProperty(
+          "disabled",
+          true,
+        );
+        await user.keyboard("{Enter}");
+        expect(posts).toEqual([]);
+        await user.clear(screen.getByRole("textbox", { name: "Message" }));
+        await user.click(
+          screen.getByRole("button", { name: /Memory.*Review settings/ }),
+        );
+        await user.type(
+          screen.getByRole("textbox", { name: "Mount name" }),
+          "team",
+        );
+        await user.click(screen.getByRole("button", { name: "Follow agent" }));
+        expect(
+          screen.queryByRole("textbox", { name: "Mount name" }),
+        ).toBeNull();
+        await user.click(screen.getByRole("button", { name: "Custom" }));
+        expect(
+          screen.getByRole("textbox", { name: "Mount name" }),
+        ).toHaveProperty("value", "team");
+      }
+      await user.click(screen.getByRole("button", { name: "Done" }));
     }
     await user.type(
       screen.getByRole("textbox", { name: "Message" }),
@@ -352,6 +389,16 @@ it.each(["inherit", "off", "on"])(
     );
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText("Try again.");
+    await user.click(screen.getByRole("button", { name: /^Memory/ }));
+    expect(screen.getByRole("button", { name: "Custom" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    expect(screen.getByRole("button", { name: "Follow agent" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(
       await screen.findByText(
@@ -371,15 +418,25 @@ it.each(["inherit", "off", "on"])(
         ? {}
         : {
             memory: {
-              enabled: memoryChoice === "on",
-              spaces: [],
+              enabled: memoryChoice === "on" || memoryChoice === "spaces",
+              spaces:
+                memoryChoice === "spaces"
+                  ? [{ name: "team", space_id: "msp_team", access: "write" }]
+                  : [],
             },
           }),
     });
     expect(posts[1]?.body).toEqual({ template_id: "envt_research" });
     expect(posts[2]?.body).toEqual({
       agent_id: "agt_1",
-      payload: { content: [{ type: "text", text: "Run the checks" }] },
+      payload: {
+        content: [
+          {
+            type: "text",
+            text: "Run the checks",
+          },
+        ],
+      },
       session_id: "ses_1",
       environments: [{ name: "workspace", environment_id: "env_new" }],
     });
