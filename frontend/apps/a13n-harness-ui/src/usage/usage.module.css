@@ -1,8 +1,9 @@
 .page {
   width: 100%;
-  max-width: 1376px;
+  /* Same frame as the other document pages (native .documentPage). */
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 48px;
+  padding: 24px 24px 48px;
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
@@ -43,7 +44,7 @@
 }
 .summary {
   display: grid;
-  grid-template-columns: 1.25fr repeat(4, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 24px;
   margin: 0;
 }

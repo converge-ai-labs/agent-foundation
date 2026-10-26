@@ -123,7 +123,7 @@ export function UsagePage() {
     <div className={styles.page}>
       <PageHeader
         title="Usage"
-        description="Where your tokens and model estimated cost go."
+        description="Tokens and estimated model cost across your conversations."
         actions={
           <Button
             variant="ghost"
@@ -186,9 +186,9 @@ export function UsagePage() {
           />
         </div>
         <div className={styles.picker}>
-          <span>Actual model</span>
+          <span>Model</span>
           <SearchPicker
-            label="Actual model"
+            label="Model"
             placeholder="All models"
             emptyMessage="No models in this period"
             groups={[{ label: "Recorded models", options: modelOptions }]}
@@ -232,7 +232,7 @@ export function UsagePage() {
         <div aria-busy={query.isFetching} className={styles.results}>
           <dl className={styles.summary}>
             <div>
-              <dt>Model estimated cost</dt>
+              <dt>Estimated cost</dt>
               <dd>
                 <Cost totals={data.summary} />
               </dd>
@@ -302,7 +302,7 @@ export function UsagePage() {
                   <tr>
                     <th scope="col">
                       {filters.group_by === "model"
-                        ? "Actual model"
+                        ? "Model"
                         : filters.group_by === "thread"
                           ? "Conversation"
                           : "Project"}

@@ -147,7 +147,6 @@ button.metric:hover,
   margin: 2px 0 0;
 }
 /* One quiet line at every width; overflow scrolls under a fade. */
-/* One scrollable line on phones instead of a wrapped two-row block. */
 .metrics {
   flex-wrap: nowrap;
   overflow-x: auto;
