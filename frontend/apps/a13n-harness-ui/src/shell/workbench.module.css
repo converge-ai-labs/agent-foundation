@@ -671,6 +671,10 @@ a.resourceRow:hover {
 }
 .settingsContent > * {
   flex-shrink: 0;
+  /* One reading measure for every settings page: headers, lists, cards
+     and disclosures share the same right edge. */
+  width: 100%;
+  max-width: 760px;
 }
 .settingsContent:has(.editorActions) {
   padding-bottom: 0;

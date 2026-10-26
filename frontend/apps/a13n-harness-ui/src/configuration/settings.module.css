@@ -5,11 +5,9 @@
 }
 .formWidth {
   width: 100%;
-  max-width: 680px;
 }
 .disclosure {
   width: 100%;
-  max-width: 680px;
 }
 .disclosure > summary {
   display: flex;
@@ -89,7 +87,6 @@
   font-weight: 500;
 }
 .hint {
-  max-width: 680px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
