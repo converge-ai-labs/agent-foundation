@@ -9,8 +9,9 @@ import {
 } from "react";
 import { matchPath, useLocation } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
 import {
+  DotsThree,
   Folder,
   GitDiff,
   X,
@@ -460,6 +461,13 @@ export function NativeWorkspace({
     focusCenter();
     refresh();
   };
+  // Phones keep the title readable: CSS swaps the secondary view buttons
+  // for one menu below 640px, so first paint never reflows.
+  const hasViews = Boolean(
+    status.data?.features?.host_files ||
+    status.data?.features?.host_git ||
+    status.data?.features?.host_terminal,
+  );
   const show = (next: "files" | "changes") => {
     cancelOpening();
     if (pane === next) {
@@ -517,10 +525,41 @@ export function NativeWorkspace({
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
               <EnvironmentMonitor />
+              {hasViews && (
+                <Menu>
+                  <MenuTrigger
+                    render={<Button variant="ghost" size="icon" />}
+                    className={styles.viewsMenu}
+                    aria-label="More views"
+                    title="More views"
+                  >
+                    <DotsThree weight="bold" />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    {status.data?.features?.host_files && (
+                      <MenuItem onClick={() => show("files")}>
+                        <Folder /> Files
+                      </MenuItem>
+                    )}
+                    {status.data?.features?.host_git && (
+                      <MenuItem onClick={() => show("changes")}>
+                        <GitDiff /> Changes
+                      </MenuItem>
+                    )}
+                    {status.data?.features?.host_terminal && (
+                      <MenuItem onClick={toggleTerminal}>
+                        <TerminalWindow />
+                        {terminalOpen ? "Hide terminal" : "Terminal"}
+                      </MenuItem>
+                    )}
+                  </MenuPopup>
+                </Menu>
+              )}
               {status.data?.features?.host_files && (
                 <Button
                   variant="ghost"
                   size="icon"
+                  className={styles.viewButton}
                   title="Files"
                   aria-label="Files"
                   aria-pressed={pane === "files"}
@@ -533,6 +572,7 @@ export function NativeWorkspace({
                 <Button
                   variant="ghost"
                   size="icon"
+                  className={styles.viewButton}
                   title="Changes"
                   aria-label="Changes"
                   aria-pressed={pane === "changes"}
@@ -545,6 +585,7 @@ export function NativeWorkspace({
               )}
               {status.data?.features?.host_terminal && (
                 <TerminalAction
+                  className={styles.viewButton}
                   label="Terminal"
                   shortcut={terminalShortcutLabels().toggle}
                   aria-pressed={terminalOpen}

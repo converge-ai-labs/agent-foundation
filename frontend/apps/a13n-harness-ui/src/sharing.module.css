@@ -299,3 +299,14 @@
     flex-wrap: wrap;
   }
 }
+
+/* Phones keep the header title readable: Share collapses to its icon. */
+@media (max-width: 639px) {
+  .shareButton {
+    width: 32px;
+    padding: 0;
+  }
+  .shareLabel {
+    display: none;
+  }
+}

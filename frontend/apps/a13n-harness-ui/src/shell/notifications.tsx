@@ -377,6 +377,12 @@ function PermissionDescription({ permission }: { permission: Permission }) {
 }
 function PermissionToast() {
   const notifications = useNotifications()!;
+  const requestLabel =
+    notifications.permission === "granted"
+      ? notifications.background === "error"
+        ? "Reconnect"
+        : "Enable background delivery"
+      : "Enable notifications";
   return (
     <aside
       className={styles.permissionToast}
@@ -409,12 +415,12 @@ function PermissionToast() {
               size="sm"
               onClick={() => void notifications.request()}
               loading={notifications.requesting}
+              aria-label={requestLabel}
             >
-              {notifications.permission === "granted"
-                ? notifications.background === "error"
-                  ? "Reconnect"
-                  : "Enable background delivery"
-                : "Enable notifications"}
+              <span className={styles.desktopLabel}>{requestLabel}</span>
+              <span className={styles.mobileLabel}>
+                {requestLabel === "Reconnect" ? requestLabel : "Enable"}
+              </span>
             </Button>
           )}
           <Button

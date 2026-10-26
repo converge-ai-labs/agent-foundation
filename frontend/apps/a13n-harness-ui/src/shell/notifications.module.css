@@ -89,6 +89,11 @@
   height: 28px;
   padding: 6px;
 }
+/* Toast and bar actions carry a full label on wide screens and a single
+   verb on phones, so the message keeps the room. */
+.mobileLabel {
+  display: none;
+}
 .settingRow {
   display: flex;
   align-items: center;
@@ -103,9 +108,23 @@
   color: var(--a13n-secondary);
 }
 @media (max-width: 639px) {
+  .desktopLabel {
+    display: none;
+  }
+  .mobileLabel {
+    display: inline;
+  }
   .permissionToast p:not([role="alert"]),
   .actions a {
     display: none;
+  }
+  .actions button {
+    font-size: 13px;
+  }
+  .reminderClose {
+    width: 32px;
+    height: 32px;
+    padding: 8px;
   }
   .permissionToast h2 {
     flex-shrink: 1;

@@ -158,12 +158,18 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
+    /* Overflow scrolls under a fade, matching the metrics line. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
   }
   .strip::-webkit-scrollbar {
     display: none;
   }
   .strip > * {
     flex-shrink: 0;
+  }
+  .strip button svg {
+    width: 16px;
+    height: 16px;
   }
 }
 

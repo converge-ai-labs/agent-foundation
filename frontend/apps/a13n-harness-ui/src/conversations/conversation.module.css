@@ -1059,6 +1059,16 @@
   gap: 8px;
   margin-top: 8px;
 }
+/* Icon controls share one 32px box so their glyphs sit on the content line
+   (8px inset). Touch devices get a centered 44px hit area from Button. */
+.composerActions > button {
+  width: 32px;
+  height: 32px;
+}
+.composerActions > button svg {
+  width: 16px;
+  height: 16px;
+}
 .composerChoices {
   display: flex;
   flex: 1;
@@ -1072,38 +1082,21 @@
     --composer-font-size: 16px;
     --composer-content-height: 44px;
   }
+  /* Phone chrome keeps desktop type: 13px labels and 16px glyphs. */
   .composerHeader {
-    align-items: center;
     gap: 4px;
-    margin-bottom: 6px;
   }
   .composerHeader button {
-    min-height: 44px;
-    padding-inline: 8px;
+    height: 32px;
+    font-size: 13px;
+  }
+  .composerHeader button svg {
+    width: 16px;
+    height: 16px;
   }
   .composerActions {
     gap: 4px;
     margin-top: 6px;
-  }
-  .composerActions > button {
-    width: 44px;
-    min-height: 44px;
-    padding: 0;
-  }
-}
-@media (max-width: 600px) {
-  .composer {
-    padding: 8px;
-    border-radius: 16px;
-  }
-}
-@media (pointer: coarse) {
-  .composerHeader button,
-  .composerActions button {
-    min-height: 44px;
-  }
-  .composerActions > button {
-    min-width: 44px;
   }
 }
 .composerStatus {

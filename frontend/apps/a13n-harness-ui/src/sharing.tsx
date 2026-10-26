@@ -46,6 +46,9 @@ export function ShareButton() {
     <Button
       variant="ghost"
       size="sm"
+      className={styles.shareButton}
+      aria-label="Share"
+      title="Share"
       onClick={() =>
         setSearch(
           new URLSearchParams([...search.entries(), ["dialog", "share"]]),
@@ -53,7 +56,7 @@ export function ShareButton() {
       }
     >
       <ShareNetwork aria-hidden size={16} />
-      Share
+      <span className={styles.shareLabel}>Share</span>
     </Button>
   );
 }

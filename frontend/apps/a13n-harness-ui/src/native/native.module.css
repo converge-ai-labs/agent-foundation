@@ -14,6 +14,14 @@
   flex-shrink: 0;
   border-bottom: 1px solid var(--a13n-border);
 }
+/* Toolbar controls share one 32px height at every width; touch devices keep
+   a centered 44px hit area from Button. */
+.workToolbar button {
+  height: 32px;
+}
+.workToolbar button:has(> svg:only-child) {
+  width: 32px;
+}
 .workToolbar [aria-pressed="true"] {
   background: var(--a13n-surface);
 }
@@ -32,6 +40,19 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+/* Phones keep the title readable: Files, Changes and Terminal fold into one
+   "More views" menu below 640px. */
+.panelTools .viewsMenu {
+  display: none;
+}
+@media (max-width: 639px) {
+  .panelTools .viewsMenu {
+    display: inline-flex;
+  }
+  .panelTools .viewButton {
+    display: none;
+  }
 }
 .layout {
   display: flex;
