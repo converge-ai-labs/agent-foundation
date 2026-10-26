@@ -142,7 +142,10 @@
   }
 }
 .projectGroup {
-  margin-bottom: 10px;
+  margin-bottom: 2px;
+}
+.projectGroup[open] {
+  margin-bottom: 8px;
 }
 .projectSummary {
   width: 280px;

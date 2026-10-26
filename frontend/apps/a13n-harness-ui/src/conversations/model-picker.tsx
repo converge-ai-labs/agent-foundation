@@ -55,7 +55,9 @@ export function ModelOptions({
           onClick={() => onChange(undefined)}
         >
           <span>
-            {defaultSource === "thread" ? "Thread default" : "Agent default"}
+            {defaultSource === "thread"
+              ? "Conversation default"
+              : "Agent default"}
             <small>
               {defaultModel
                 ? `Currently ${defaultModel.name}`

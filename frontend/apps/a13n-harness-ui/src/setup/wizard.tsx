@@ -467,7 +467,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             "environment-native",
                             "Full Control",
                             Desktop,
-                            "Run directly as your Host account with full filesystem and network access.",
+                            "Run directly as your host account with full filesystem and network access.",
                           ],
                           [
                             "environment-sandbox",

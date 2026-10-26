@@ -275,14 +275,14 @@ export function ResourceFields({
           </SettingsSection>
           <SettingsSection
             title="Environments"
-            description="Project defaults are copied into new conversations. Applying them to an existing Thread changes only specified selections."
+            description="Project defaults are copied into new conversations. Applying them to an existing conversation changes only the specified settings."
           >
             <div className={styles.fieldGroup}>
               <p className="mb-3 text-sm text-muted-foreground">
                 {rawBindings == null
-                  ? "Device environments are unspecified: new conversations add none; applying Project defaults keeps the Thread's selection."
+                  ? "Device environments are unspecified: new conversations add none; applying project defaults keeps the conversation's selection."
                   : bindings.length
-                    ? "This selection replaces the Thread's added environments when Project defaults are applied."
+                    ? "This selection replaces the conversation's added environments when project defaults are applied."
                     : "Empty: applying project defaults removes environments added to this conversation."}
               </p>
               {roots ? (

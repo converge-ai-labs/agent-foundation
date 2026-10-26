@@ -178,7 +178,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
     screen.getByRole("combobox", { name: "Default working directory" }),
   );
   await user.click(
-    await screen.findByRole("option", { name: "Local · Thread files" }),
+    await screen.findByRole("option", { name: "Local · Conversation files" }),
   );
   let value = parse(screen.getByTestId("source").textContent ?? "");
   expect(value.defaults).toEqual({

@@ -70,7 +70,7 @@ export function CoordinatorPromotion({
       }}
       title="Make this conversation a coordinator?"
       closeLabel="Cancel"
-      description="This keeps its history and settings. A Coordinator manages its own workers in this Project; existing conversations are not adopted. This role cannot be reversed."
+      description="This keeps its history and settings. A coordinator manages its own workers in this Project; existing conversations are not adopted. This role cannot be reversed."
     >
       <ErrorNotice error={mutation.error} />
       <Button

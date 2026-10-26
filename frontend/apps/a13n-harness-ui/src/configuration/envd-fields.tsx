@@ -53,7 +53,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
       <SettingsSection>
         <SettingsRow
           label="Runtime"
-          description="Direct runs on this Host without downloading a runtime."
+          description="Direct runs on this host without downloading a runtime."
         >
           <ChoiceField
             label="Runtime"
@@ -87,7 +87,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
             label="Permissions"
             description={
               direct
-                ? "Commands run as the Host account with filesystem and network access."
+                ? "Commands run as the host account with filesystem and network access."
                 : "Sandbox restricts files and processes to the selected workspace grants."
             }
           >
@@ -116,7 +116,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
         {!custom && !direct && !sandbox && (
           <SettingsRow
             label="Computer Use"
-            description="Allow agents using this default to observe and control the Host desktop."
+            description="Allow agents using this default to observe and control the host desktop."
           >
             <Switch
               aria-label="Computer Use"
@@ -141,7 +141,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
           <div>
             <p>
               {ready
-                ? "envd checked on this Host"
+                ? "envd checked on this host"
                 : "Prepare envd before running with this default."}
             </p>
             <p className="text-muted-foreground">
@@ -224,7 +224,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
               label="Executable path"
               value={executable}
               onChange={(value) => update({ executable: value })}
-              description="Absolute path on the Harness Host to a13n-envd. Custom executables are never downloaded automatically."
+              description="Absolute path to a13n-envd on the Harness host. Custom executables are never downloaded automatically."
             />
           </div>
         )}
@@ -257,7 +257,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
         </SettingsRow>
         <SettingsRow
           label="Desktop capability"
-          description="Permit Computer Use runtimes on this Host. Agents still need a profile that explicitly allows desktop access."
+          description="Permit Computer Use runtimes on this host. Agents still need a profile that explicitly allows desktop access."
         >
           <Switch
             aria-label="Desktop capability"

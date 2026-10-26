@@ -468,7 +468,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
           className={styles.fileLink}
           size="sm"
           variant="ghost"
-          title="Look up this exact path on the WebUI server/container, not the Agent Environment. Opens current Host content or your existing private buffer."
+          title="Opens this path on the Harness UI server, not in the agent's environment. Shows the current file or your unsaved draft."
           onClick={() => openFile(path)}
         >
           <ArrowSquareOut />

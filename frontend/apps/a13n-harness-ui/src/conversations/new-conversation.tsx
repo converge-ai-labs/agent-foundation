@@ -485,7 +485,7 @@ function NewConversation({
               review.isPending
                 ? "Checking the previous creation attempt…"
                 : !ownerAvailable
-                  ? "The Coordinator must be available in this Project. Retry or remove the assignment."
+                  ? "The coordinator must be available in this project. Retry or remove the assignment."
                   : preview.isPending
                     ? "Updating conversation settings…"
                     : preview.error

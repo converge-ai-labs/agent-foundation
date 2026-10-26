@@ -342,7 +342,7 @@ export function Files({
                     ? "Create folder"
                     : "Create file"
         }
-        description="This operates on the server's filesystem, not an Agent Environment."
+        description="This works on the server's filesystem, not the agent's environment."
         closeLabel="Close"
       >
         {operation && (

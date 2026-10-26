@@ -603,7 +603,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
       <section>
         <h3>Context</h3>
         <p>Last reported request footprint, not a live token counter.</p>
-        <DebugId label="Thread" value={threadId} />
+        <DebugId label="Conversation ID" value={threadId} />
         <dl className={styles.detailGrid}>
           <div>
             <dt>Request tokens</dt>

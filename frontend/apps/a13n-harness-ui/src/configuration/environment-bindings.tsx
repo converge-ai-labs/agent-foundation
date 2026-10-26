@@ -64,7 +64,7 @@ export function DefaultWorkingDirectory({
                 {
                   value: "",
                   label:
-                    "Keep Thread default / automatic for new conversations",
+                    "Keep conversation default (automatic for new conversations)",
                 },
               ]
             : []),

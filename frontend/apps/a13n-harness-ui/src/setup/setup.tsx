@@ -111,7 +111,7 @@ export function SetupPage() {
       <Panel title="Execution environment">
         <p>
           {status?.environment_profile === "environment-native"
-            ? "Full Control runs as your Host account; it is not a sandbox."
+            ? "Full Control runs as your host account. It is not a sandbox."
             : status?.environment_profile}
         </p>
         <div className={styles.actions}>

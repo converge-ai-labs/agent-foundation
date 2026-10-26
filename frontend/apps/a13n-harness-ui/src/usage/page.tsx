@@ -173,12 +173,12 @@ export function UsagePage() {
           />
         </div>
         <div className={styles.picker}>
-          <span>Thread</span>
+          <span>Conversation</span>
           <SearchPicker
-            label="Thread"
-            placeholder="All threads"
-            emptyMessage="No threads found"
-            groups={[{ label: "Root threads", options: threadOptions }]}
+            label="Conversation"
+            placeholder="All conversations"
+            emptyMessage="No conversations found"
+            groups={[{ label: "Conversations", options: threadOptions }]}
             value={filters.thread_id ?? "all"}
             onValueChange={(value) =>
               change({ thread_id: value === "all" ? undefined : value })
@@ -304,7 +304,7 @@ export function UsagePage() {
                       {filters.group_by === "model"
                         ? "Actual model"
                         : filters.group_by === "thread"
-                          ? "Thread"
+                          ? "Conversation"
                           : "Project"}
                     </th>
                     {[

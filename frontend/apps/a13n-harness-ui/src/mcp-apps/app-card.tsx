@@ -92,12 +92,10 @@ function OwnerAppCard({
       },
       onmessage: async ({ content }) => {
         if (!session)
-          throw new Error(
-            "Activate server interactions in the Host App card first.",
-          );
+          throw new Error("Turn on server interactions in the app card first.");
         const text = content.map((part) => {
           if (part.type !== "text")
-            throw new Error("This Host accepts text App messages only.");
+            throw new Error("This host accepts text App messages only.");
           return { type: "text" as const, text: part.text };
         });
         const selected = session.captureContext()
@@ -109,12 +107,10 @@ function OwnerAppCard({
       },
       onupdatemodelcontext: async (value) => {
         if (!session)
-          throw new Error(
-            "Activate server interactions in the Host App card first.",
-          );
+          throw new Error("Turn on server interactions in the app card first.");
         if (value.content?.some((part) => part.type !== "text"))
           throw new Error(
-            "This Host accepts text and structured App context only.",
+            "This host accepts text and structured App context only.",
           );
         await session.updateContext(value);
         return {};
@@ -122,18 +118,14 @@ function OwnerAppCard({
       onreadresource: ({ uri }) => {
         if (!session)
           return Promise.reject(
-            new Error(
-              "Activate server interactions in the Host App card first.",
-            ),
+            new Error("Turn on server interactions in the app card first."),
           );
         return session.readResource(uri);
       },
       oncalltool: ({ name, arguments: args }) => {
         if (!session)
           return Promise.reject(
-            new Error(
-              "Activate server interactions in the Host App card first.",
-            ),
+            new Error("Turn on server interactions in the app card first."),
           );
         return session.call(name, args);
       },

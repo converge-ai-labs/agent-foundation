@@ -33,6 +33,7 @@ import {
   House,
   SidebarSimple,
   Moon,
+  SignOut,
   Sun,
   List,
   Users,
@@ -196,16 +197,20 @@ function WorkbenchContent({
     { to: "/settings", label: "Settings", icon: Gear },
   ];
   const themeToggle = (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-label={
-        theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
-      }
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-    >
-      {theme === "dark" ? <Sun /> : <Moon />}
-    </Button>
+    <Tooltip>
+      <TooltipTrigger
+        render={<Button variant="ghost" size="icon-sm" />}
+        aria-label={
+          theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+        }
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      >
+        {theme === "dark" ? <Sun /> : <Moon />}
+      </TooltipTrigger>
+      <TooltipPopup>
+        {theme === "dark" ? "Light theme" : "Dark theme"}
+      </TooltipPopup>
+    </Tooltip>
   );
   const usageEntry = (
     <Tooltip>
@@ -257,8 +262,8 @@ function WorkbenchContent({
         ))}
       </nav>
       <div className={styles.sidebarFooter}>
-        <div className={styles.actions}>
-          <Button variant="ghost" onClick={openPeople}>
+        <div className={styles.footerRow}>
+          <Button variant="ghost" size="sm" onClick={openPeople}>
             <Users />
             <span>
               {disconnected
@@ -266,10 +271,19 @@ function WorkbenchContent({
                 : `${live.presence?.participants.length ?? 0} online`}
             </span>
           </Button>
-          {themeToggle}
-          <Button variant="ghost" onClick={forget}>
-            Log out
-          </Button>
+          <span className={styles.footerIcons}>
+            {themeToggle}
+            <Tooltip>
+              <TooltipTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+                aria-label="Log out"
+                onClick={forget}
+              >
+                <SignOut />
+              </TooltipTrigger>
+              <TooltipPopup>Log out</TooltipPopup>
+            </Tooltip>
+          </span>
         </div>
         <small>
           {live.summary} · Version <span>{status.version}</span>

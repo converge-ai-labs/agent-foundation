@@ -51,7 +51,9 @@ export function EnvironmentsEditor({
         <div>
           <h3 className="font-medium">Local · Harness server</h3>
           <p className="text-sm text-muted-foreground">
-            {roots.length ? directoryCount(roots.length) : "Thread files only"}{" "}
+            {roots.length
+              ? directoryCount(roots.length)
+              : "Conversation files only"}{" "}
             on the computer running Harness. All local directories share this
             mode.
           </p>
@@ -142,7 +144,7 @@ export function EnvironmentsSummary({
           {profile?.name ?? value.environment_profile_id ?? "Default mode"}
           {value.local_roots?.length
             ? ` · ${directoryCount(value.local_roots.length)}`
-            : " · Thread files only"}
+            : " · Conversation files only"}
         </p>
         {(value.local_roots ?? []).map((path, index) => (
           <p key={path} className="break-all">
@@ -152,7 +154,7 @@ export function EnvironmentsSummary({
             )}
           </p>
         ))}
-        {selected === "thread-files" && <p>Thread files · Default</p>}
+        {selected === "thread-files" && <p>Conversation files · Default</p>}
       </section>
       <BindingSummary
         bindings={value.environment_bindings ?? []}

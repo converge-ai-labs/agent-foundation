@@ -1079,7 +1079,7 @@ function ConversationContent({
           open={inspection}
           onOpenChange={setInspection}
           title="Conversation details"
-          description="Inspect execution and configuration without changing the current Run."
+          description="See how this conversation runs. Nothing here changes the current run."
           closeLabel="Close"
         >
           <ConversationDetails

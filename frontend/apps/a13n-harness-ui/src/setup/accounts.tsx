@@ -559,11 +559,11 @@ export function ProviderAccount({
         title={`Log out of ${provider}?`}
         description={
           provider === "chatgpt"
-            ? "Clear the selected Host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
+            ? "Clear this host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
             : nativeAccountId
               ? "Clear this managed account’s credentials. The original CLI login and other managed accounts remain unchanged."
               : account.data?.source_id?.startsWith("native:")
-                ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
+                ? "Remove this host's credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
                 : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
         }
         closeLabel="Cancel"

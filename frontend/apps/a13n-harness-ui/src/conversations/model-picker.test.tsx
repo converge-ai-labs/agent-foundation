@@ -157,7 +157,7 @@ it("searches models in one panel and resets overrides on model changes", async (
   expect(screen.getByText("Model default: High")).toBeTruthy();
 });
 
-it("follows the saved Thread default and restores it after an explicit Run choice", async () => {
+it("follows the saved Conversation default and restores it after an explicit Run choice", async () => {
   const user = userEvent.setup();
   render(<Choices defaultModelId="model-two" />);
   expect(
@@ -165,11 +165,13 @@ it("follows the saved Thread default and restores it after an explicit Run choic
   ).toBeTruthy();
   await user.click(button("Agent & Model settings"));
   await user.click(button("Model"));
-  expect(button(/Thread default/).getAttribute("aria-pressed")).toBe("true");
+  expect(button(/Conversation default/).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
   await user.click(button("Reasoning model"));
   expect(button("Model").textContent).toBe("ModelReasoning model");
   await user.click(button("Model"));
-  await user.click(button(/Thread default/));
+  await user.click(button(/Conversation default/));
   expect(button("Model").textContent).toBe("ModelOther model");
 });
 

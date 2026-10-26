@@ -502,7 +502,7 @@ export function SourceDocument({
           mediaOnly
             ? "Used when native input is unavailable."
             : section === "envd"
-              ? "Host-wide settings. Save changes, then restart Harness UI to apply them."
+              ? "Settings for this whole server. Save, then restart Harness UI to apply them."
               : undefined
         }
         title={

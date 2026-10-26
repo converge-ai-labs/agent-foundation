@@ -371,7 +371,7 @@ export function InputContent({
           <button
             type="button"
             className={styles.threadMessageToggle}
-            aria-label="Thread message details"
+            aria-label="Message details"
             aria-expanded={expanded}
             aria-controls={contentId}
             onClick={() => setExpanded(!expanded)}

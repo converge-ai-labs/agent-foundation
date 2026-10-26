@@ -19,7 +19,7 @@ export function DeviceFields({
     return (
       <SettingsSection
         title="Paired Device"
-        description="This connection was approved on this Host. The credential stays on the Device and does not need to be entered here."
+        description="This connection was approved on this host. The credential stays on the device and does not need to be entered here."
       >
         <p>Native Device ID: {text(["device_id"])}</p>
         <p>
@@ -39,7 +39,7 @@ export function DeviceFields({
         label="Native Device ID"
         value={text(["device_id"])}
         onChange={(value) => set(["device_id"], value)}
-        description="The device_id configured in envd, not the Host resource ID above."
+        description="The device_id configured in envd, not the host resource ID above."
       />
       <ChoiceField
         label="Transport"

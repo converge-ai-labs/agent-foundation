@@ -142,7 +142,18 @@
 }
 .sidebarFooter small {
   display: block;
-  padding-top: 4px;
+  padding: 2px 8px 0;
+}
+.footerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.footerIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .workspace {
   flex: 1;

@@ -149,7 +149,7 @@ export function EnvdRuntime() {
           label="envd"
           description={
             state?.source === "custom"
-              ? "Custom executable · managed on this Host"
+              ? "Custom executable · managed on this host"
               : `Managed by Harness UI · ${state?.required_version ?? "loading version…"}`
           }
         >
@@ -224,7 +224,7 @@ export function EnvdRuntime() {
         <p role="status" className={layout.hint}>
           {progress}
           {action.variables === "desktop" &&
-            " Approve the permission prompt on the Host; this can take up to two minutes."}
+            " Approve the permission prompt on the host; this can take up to two minutes."}
         </p>
       )}
       {notice && (
@@ -265,7 +265,7 @@ export function EnvdRuntime() {
           label="Computer Use"
           description={
             state?.computer_use
-              ? "Screen observation and input require permission on this Host."
+              ? "Screen observation and input require permission on this host."
               : "Enable Desktop capability in Configuration, save, then restart Harness UI."
           }
         >
@@ -294,7 +294,7 @@ export function EnvdRuntime() {
           label="Required version"
           description={
             state?.source === "custom"
-              ? "Custom executables are updated on the Host. Restart the runtime after replacing the file."
+              ? "Custom executables are updated on the host. Restart the runtime after replacing the file."
               : state?.installed
                 ? "Reinstall this version and restart envd."
                 : "Downloaded when you install or update envd."

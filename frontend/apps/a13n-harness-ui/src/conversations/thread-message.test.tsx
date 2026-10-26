@@ -70,7 +70,7 @@ it.each(["live", "saved"])(
     expect(screen.getByText(parts[1].text!)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Copy message" })).toBeNull();
     const disclosure = screen.getByRole("button", {
-      name: "Thread message details",
+      name: "Message details",
       expanded: false,
     });
     expect(screen.getByText("Show message")).toBeTruthy();
@@ -126,9 +126,7 @@ it("uses the source ID without a title and does not infer provenance from ordina
   expect(screen.getByText("User")).toBeTruthy();
   expect(screen.getByText(legacy.text!)).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Thread message details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Message details" })).toBeNull();
   expect(inputCopyText([legacy])).toBe(legacy.text);
 });
 
@@ -158,7 +156,7 @@ it("reveals rich content only after keyboard expansion and copies the complete m
   );
   await user.tab();
   const disclosure = screen.getByRole("button", {
-    name: "Thread message details",
+    name: "Message details",
     expanded: false,
   });
   expect(document.activeElement).toBe(disclosure);

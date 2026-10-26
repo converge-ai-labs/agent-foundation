@@ -176,7 +176,7 @@ export function ConversationConfiguration({
             ) : (
               <p>
                 {data.capture_source === "active_operation"
-                  ? "This operation is preparing. Its configuration has not been captured yet; the previous Run is not a substitute."
+                  ? "This run is still starting. Its settings appear once they are captured."
                   : "No captured configuration is available."}
               </p>
             )}
