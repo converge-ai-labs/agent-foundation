@@ -236,7 +236,6 @@
 }
 .usage thead {
   color: var(--a13n-secondary);
-  background: var(--a13n-surface);
 }
 .usage tbody tr + tr {
   border-top: 12px solid transparent;
@@ -246,6 +245,14 @@
   .usage thead th {
     padding-top: 8px;
     padding-bottom: 8px;
+    border-bottom: 0;
+    background: var(--a13n-surface);
+  }
+  .usage thead th:first-child {
+    border-radius: 8px 0 0 8px;
+  }
+  .usage thead th:last-child {
+    border-radius: 0 8px 8px 0;
   }
   .usage :is(th, td):first-child {
     padding-left: 14px;
