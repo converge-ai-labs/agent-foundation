@@ -12,23 +12,22 @@ on:
       - "frontend/**"
       - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
-      - "packages/a13n-envd-client/*"
+      - "packages/a13n-envd-client/*.py"
       - "packages/a13n-envd-client/a13n_envd_client/**"
-      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/*.py"
       - "packages/a13n-logging/a13n_logging/**"
-      - "packages/a13n-harness/*"
+      - "packages/a13n-harness/*.py"
       - "packages/a13n-harness/a13n_harness/**"
       - "packages/a13n-harness/tests/providers_environment/test_direct_local.py"
       - "packages/a13n-harness/tests/**/conftest.py"
       - "packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py"
-      - "packages/a13n-stream-protocol/*"
+      - "packages/a13n-stream-protocol/*.py"
       - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
       - "packages/a13n-harness-ui/**"
       - "docs/a13n-harness-ui/**"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
-      - "scripts/tests/test_harness_ui_ci_workflow.py"
       - "scripts/check-a13n-harness-ui-distribution.py"
       - "scripts/check_a13n_harness_ui_distribution.py"
       - "scripts/export-a13n-harness-ui-openapi.py"
@@ -49,23 +48,22 @@ on:
       - "frontend/**"
       - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
-      - "packages/a13n-envd-client/*"
+      - "packages/a13n-envd-client/*.py"
       - "packages/a13n-envd-client/a13n_envd_client/**"
-      - "packages/a13n-logging/*"
+      - "packages/a13n-logging/*.py"
       - "packages/a13n-logging/a13n_logging/**"
-      - "packages/a13n-harness/*"
+      - "packages/a13n-harness/*.py"
       - "packages/a13n-harness/a13n_harness/**"
       - "packages/a13n-harness/tests/providers_environment/test_direct_local.py"
       - "packages/a13n-harness/tests/**/conftest.py"
       - "packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py"
-      - "packages/a13n-stream-protocol/*"
+      - "packages/a13n-stream-protocol/*.py"
       - "packages/a13n-stream-protocol/a13n_stream_protocol/**"
       - "packages/a13n-harness-ui/**"
       - "docs/a13n-harness-ui/**"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
-      - "scripts/tests/test_harness_ui_ci_workflow.py"
       - "scripts/check-a13n-harness-ui-distribution.py"
       - "scripts/check_a13n_harness_ui_distribution.py"
       - "scripts/export-a13n-harness-ui-openapi.py"
@@ -120,24 +118,25 @@ jobs:
               - '.pre-commit-config.yaml'
               - 'Makefile'
               - 'packages/*/pyproject.toml'
-              - 'packages/a13n-envd-client/*'
+              - 'packages/a13n-envd-client/*.py'
               - 'packages/a13n-envd-client/a13n_envd_client/**'
-              - 'packages/a13n-logging/*'
+              - 'packages/a13n-logging/*.py'
               - 'packages/a13n-logging/a13n_logging/**'
-              - 'packages/a13n-harness/*'
+              - 'packages/a13n-harness/*.py'
               - 'packages/a13n-harness/a13n_harness/**'
               - 'packages/a13n-harness/tests/providers_environment/test_direct_local.py'
               - 'packages/a13n-harness/tests/**/conftest.py'
               - 'packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py'
-              - 'packages/a13n-stream-protocol/*'
+              - 'packages/a13n-stream-protocol/*.py'
               - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
-              - 'packages/a13n-harness-ui/**'
+              - 'packages/a13n-harness-ui/*.py'
+              - 'packages/a13n-harness-ui/a13n_harness_ui/**'
+              - 'packages/a13n-harness-ui/tests/**'
               - 'docs/a13n-harness-ui/**'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'conftest.py'
               - 'scripts/run_python_tests.py'
-              - 'scripts/tests/test_harness_ui_ci_workflow.py'
               - 'scripts/check-a13n-harness-ui-distribution.py'
               - 'scripts/check_a13n_harness_ui_distribution.py'
               - 'scripts/prepare-a13n-harness-ui-assets.py'
@@ -153,7 +152,6 @@ jobs:
               - 'frontend/apps/a13n-console/**'
               - 'frontend/packages/**'
               - 'proto/a13n-service/**'
-              - 'scripts/tests/test_harness_ui_ci_workflow.py'
             distribution:
               - '.github/workflows/ci-a13n-harness-ui*.yml'
               - '.github/workflows/release-a13n-harness-ui.yml'
@@ -165,22 +163,23 @@ jobs:
               - 'frontend/packages/**'
               # Package-root metadata/build hooks and runtime sources, not tests.
               - 'packages/*/pyproject.toml'
-              - 'packages/a13n-envd-client/*'
+              - 'packages/a13n-envd-client/*.py'
               - 'packages/a13n-envd-client/a13n_envd_client/**'
-              - 'packages/a13n-logging/*'
+              - 'packages/a13n-logging/*.py'
               - 'packages/a13n-logging/a13n_logging/**'
-              - 'packages/a13n-harness/*'
+              - 'packages/a13n-harness/*.py'
               - 'packages/a13n-harness/a13n_harness/**'
-              - 'packages/a13n-stream-protocol/*'
+              - 'packages/a13n-stream-protocol/*.py'
               - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
-              - 'packages/a13n-harness-ui/*'
+              - 'packages/a13n-harness-ui/README.md'
+              - 'packages/a13n-harness-ui/LICENSE'
+              - 'packages/a13n-harness-ui/*.py'
               - 'packages/a13n-harness-ui/a13n_harness_ui/**'
               - 'docs/a13n-harness-ui/**'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'conftest.py'
               - 'scripts/run_python_tests.py'
-              - 'scripts/tests/test_harness_ui_ci_workflow.py'
               - 'scripts/check-a13n-harness-ui-distribution.py'
               - 'scripts/check_a13n_harness_ui_distribution.py'
               - 'scripts/export-a13n-harness-ui-openapi.py'
