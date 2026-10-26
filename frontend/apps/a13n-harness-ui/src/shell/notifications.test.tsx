@@ -31,7 +31,7 @@ let native: ReturnType<typeof vi.fn>;
 let queries: QueryClient;
 const notice = (
   receipt = "receipt-1",
-  status: "completed" | "failed" | "suspended" = "completed",
+  status: Schema<"RootOperationNotice">["status"] = "completed",
 ): Schema<"SummaryInvalidation"> => ({
   epoch: "epoch-1",
   sequence: 1,
@@ -478,4 +478,33 @@ it("uses the current route without replaying suppressed completion after navigat
   event = notice("another-receipt");
   fireEvent.click(screen.getByText("Emit"));
   expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
+});
+
+it.each([
+  ["goal_verified", "Goal verified by the Agent"],
+  ["goal_incomplete", "Goal not verified"],
+] as const)(
+  "presents %s from the receipt, not the currently cached Goal",
+  async (status, title) => {
+    queries.setQueryData(["thread", "thread-1", "detail"], {
+      thread: { title: "UI polish", goal: { status: "working" } },
+    });
+    mount("/threads/thread-other");
+    event = notice("goal-receipt", status);
+    fireEvent.click(screen.getByText("Emit"));
+    expect(await screen.findByText(`${title} · UI polish`)).toBeTruthy();
+    expect(screen.queryByText("Task completed · UI polish")).toBeNull();
+  },
+);
+
+it("suppresses a viewed Goal success but keeps incomplete Goal warnings", async () => {
+  mount();
+  event = notice("verified", "goal_verified");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(
+    screen.queryByText("Goal verified by the Agent · UI polish"),
+  ).toBeNull();
+  event = notice("incomplete", "goal_incomplete");
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findByText("Goal not verified · UI polish")).toBeTruthy();
 });

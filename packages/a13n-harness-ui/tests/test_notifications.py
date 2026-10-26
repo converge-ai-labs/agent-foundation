@@ -188,3 +188,35 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
     finally:
         await coordinator.close(timeout_seconds=1)
         await hub.close()
+
+
+@pytest.mark.parametrize(
+    ("goal_status", "operation_status", "expected"),
+    [
+        ("verified", "completed", "goal_verified"),
+        ("max_iterations", "completed", "goal_incomplete"),
+        ("unverified_stop", "completed", "goal_incomplete"),
+        ("verified", "failed", "failed"),
+        ("suspended", "suspended", "suspended"),
+        ("cancelled", "cancelled", None),
+    ],
+)
+def test_goal_notices_distinguish_verification_from_run_completion(goal_status, operation_status, expected):
+    from a13n_harness_ui.goal import GoalView
+    from a13n_harness_ui.notifications import root_operation_notice
+    from a13n_harness_ui.surfaces import RootOperationStatus, RootOperationView, RootRunReceipt
+
+    operation = RootOperationView(
+        receipt=RootRunReceipt(receipt_id="receipt-goal", thread_id="thread-goal", submitted_at=datetime.now(UTC)),
+        status=RootOperationStatus(operation_status),
+        goal=GoalView(objective="Verify the full objective", status=goal_status),
+    )
+    notice = root_operation_notice(operation, output="All done.")
+    if expected is None:
+        assert notice is None
+    else:
+        assert notice is not None
+        assert notice.status == expected
+        if expected == "goal_incomplete":
+            assert "All done" not in notice.brief
+            assert ("limit" in notice.brief) is (goal_status == "max_iterations")

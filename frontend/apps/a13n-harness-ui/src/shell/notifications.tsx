@@ -246,7 +246,7 @@ function NotificationState({ children }: { children: ReactNode }) {
       // The transcript already shows completion. Keep receipt deduplication,
       // attention/failure notices and server Push delivery independent.
       if (
-        notice.status === "completed" &&
+        (notice.status === "completed" || notice.status === "goal_verified") &&
         current.current.viewedThread === threadId
       )
         return;
@@ -259,12 +259,13 @@ function NotificationState({ children }: { children: ReactNode }) {
         detail?.thread.title ||
         detail?.thread.excerpt?.first_input ||
         "Conversation";
-      const state =
-        notice.status === "completed"
-          ? "Task completed"
-          : notice.status === "failed"
-            ? "Task failed"
-            : "Your input is needed";
+      const state = {
+        completed: "Task completed",
+        failed: "Task failed",
+        suspended: "Your input is needed",
+        goal_verified: "Goal verified by the Agent",
+        goal_incomplete: "Goal not verified",
+      }[notice.status];
       const title = `${state} · ${Array.from(name).slice(0, 80).join("")}`;
       const path = `/threads/${encodeURIComponent(threadId)}`;
       current.current.toast.add({
@@ -274,7 +275,8 @@ function NotificationState({ children }: { children: ReactNode }) {
         type:
           notice.status === "failed"
             ? "error"
-            : notice.status === "suspended"
+            : notice.status === "suspended" ||
+                notice.status === "goal_incomplete"
               ? "warning"
               : "success",
         timeout: notice.status === "suspended" ? 0 : 8000,

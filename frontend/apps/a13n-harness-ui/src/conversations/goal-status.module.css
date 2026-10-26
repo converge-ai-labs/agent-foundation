@@ -1,0 +1,88 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 860px;
+  min-width: 0;
+  margin: 0 auto 8px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.summary {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.summary > svg {
+  flex-shrink: 0;
+}
+.label {
+  font-weight: 500;
+}
+.count,
+.usage {
+  color: var(--a13n-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.bar[data-tone="warning"] .label,
+.bar[data-tone="warning"] svg {
+  color: var(--warning-foreground);
+}
+.bar[data-tone="danger"] .label,
+.bar[data-tone="danger"] svg {
+  color: var(--destructive);
+}
+.details {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.details:hover,
+.details[data-popup-open] {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+}
+.details:focus-visible {
+  outline: 1px solid var(--ring);
+}
+.popup {
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(600px, 70dvh);
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.popup p {
+  margin: 12px 0;
+}
+.objective {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.running {
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .running {
+    animation: none;
+  }
+}

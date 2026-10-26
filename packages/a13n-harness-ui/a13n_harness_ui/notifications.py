@@ -37,6 +37,22 @@ def root_operation_notice(
         return None
     brief = ""
     if status is RootOperationStatus.completed:
+        goal = operation.goal
+        if goal is not None:
+            verified = goal.status == "verified"
+            if verified:
+                brief = (
+                    reply_brief(output) if output else ""
+                ) or "The Agent checked the objective. Open the conversation to review the result."
+            elif goal.status == "max_iterations":
+                brief = "The follow-up check limit was reached. Completion has not been confirmed."
+            else:
+                brief = "The Goal stopped without verified completion. Open the conversation to review the output."
+            return RootOperationNotice(
+                receipt_id=operation.receipt.receipt_id,
+                status="goal_verified" if verified else "goal_incomplete",
+                brief=brief,
+            )
         brief = reply_brief(output) if output else ""
     elif status is RootOperationStatus.failed:
         failure = operation.failure

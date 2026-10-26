@@ -3,8 +3,7 @@ import { speedLabel } from "./speed-label";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
-import { GoalStatus } from "./goal-status";
+import { result } from "../transport/client";
 import {
   Button,
   Popover,
@@ -28,15 +27,11 @@ export function ComposerStatus({
   receipt,
   busy = false,
   liveTokens,
-  savedGoal,
-  onRetryGoal,
 }: {
   threadId: string;
   receipt?: string | null;
   busy?: boolean;
   liveTokens?: number;
-  savedGoal?: Schema<"GoalView"> | null;
-  onRetryGoal?: (objective: string) => void;
 }) {
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
@@ -47,8 +42,6 @@ export function ComposerStatus({
   const mainAccount = operation
     ? operation.main_account
     : row?.thread.last_execution?.main_account;
-  // Terminal receipts remain inspectable even after their working state is reset.
-  const goal = busy ? (operation?.goal ?? savedGoal) : savedGoal;
   const active =
     busy ||
     operation?.status === "running" ||
@@ -105,14 +98,6 @@ export function ComposerStatus({
           >
             MAIN <strong>{mainAccount.account_name}</strong>
           </span>
-        )}
-        {goal && (
-          <GoalStatus
-            goal={goal}
-            onRetry={
-              onRetryGoal ? () => onRetryGoal(goal.objective) : undefined
-            }
-          />
         )}
         {(
           [

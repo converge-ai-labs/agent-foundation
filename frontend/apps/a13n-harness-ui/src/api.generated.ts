@@ -7936,7 +7936,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "completed" | "failed" | "suspended";
+            status: "completed" | "failed" | "suspended" | "goal_verified" | "goal_incomplete";
             /** Brief */
             brief: string;
         };
