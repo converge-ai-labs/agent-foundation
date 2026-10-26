@@ -307,6 +307,7 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
+            background_compaction=source.document.background_compaction,
             run_configuration=run_configuration or source.document.run_configuration,
             tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
             role=selection.role,

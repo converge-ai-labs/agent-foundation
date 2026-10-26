@@ -36,6 +36,7 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
     assert not path.parent.exists()
     root = yaml.safe_load(preview.files[path.name])
     assert root["schema_version"] == "1"
+    assert root["background_compaction"] is True
     assert root["webui"] == {"sidekick": {}}
     assert root["tools"] == {
         "enable_ask_user_question": True,

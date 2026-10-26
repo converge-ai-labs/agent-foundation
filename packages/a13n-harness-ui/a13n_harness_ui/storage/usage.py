@@ -548,6 +548,22 @@ class ThreadUsageRepository:
                 )
                 await session.flush()
 
+    async def model_records(
+        self, *, thread_id: str, run_id: str, agent_instance_id: str
+    ) -> tuple[ModelUsageRecord, ...]:
+        """Restore a resumed Agent's model budget across foreground and detached scopes."""
+        async with short_session(self._sessions) as session:
+            root_id = await self._root_id(session, thread_id)
+            facts = _contributions(root_id)
+            payloads = await session.scalars(
+                select(facts.c.payload).where(
+                    func.json_extract(facts.c.payload, "$.kind") == "model",
+                    func.json_extract(facts.c.payload, "$.run_id") == run_id,
+                    func.json_extract(facts.c.payload, "$.agent_instance_id") == agent_instance_id,
+                )
+            )
+            return tuple(ModelUsageRecord.model_validate_json(payload) for payload in payloads)
+
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
         """Read current primary-request occupancy, never cumulative Context usage."""
         facts = _contributions(thread_id, root_only=True)

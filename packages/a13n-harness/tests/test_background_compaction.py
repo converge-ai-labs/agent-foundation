@@ -93,6 +93,34 @@ def _user_values(messages):
     ]
 
 
+async def test_input_snapshots_provider_tool_definitions_without_host_metadata():
+    from pydantic_ai.tools import ToolDefinition
+
+    # Host metadata can own resources that cannot be copied or serialized.
+    tool = ToolDefinition(
+        name="read",
+        parameters_json_schema={"type": "object"},
+        metadata={"owner": asyncio.get_running_loop()},
+    )
+    previous = _previous()
+    input = CompactionInput.create(
+        operation_id="compaction-test",
+        thread_id=previous.thread_id,
+        run_id="run-test",
+        model_name="test",
+        provider_name="function",
+        messages=previous.message_history,
+        parameters=ModelRequestParameters(function_tools=[tool]),
+    )
+    frozen = input.model_dump_json()
+    tool.parameters_json_schema["description"] = "later mutation"
+    restored = CompactionInput.model_validate_json(frozen).parameters.function_tools[0]
+    assert restored.name == "read"
+    assert restored.parameters_json_schema == {"type": "object"}
+    assert restored.metadata is None
+    assert tool.metadata is not None
+
+
 async def test_input_roundtrip_detaches_native_values_and_result_preserves_delta():
     previous = _previous()
     messages = list(previous.message_history)
@@ -376,7 +404,7 @@ async def test_active_boundary_skips_stale_operation_without_resubmission(status
 
 
 @pytest.mark.parametrize("counting", [False, True])
-async def test_failed_operation_requires_verified_capacity_and_suppresses_resubmission(counting):
+async def test_failed_operation_falls_back_once_and_acknowledges_on_next_run(counting):
     previous = _previous()
     operator = _Operator()
     operation = CompactionOperation(input=_input(previous), status="failed", error_code="provider_unavailable")
@@ -385,19 +413,16 @@ async def test_failed_operation_requires_verified_capacity_and_suppresses_resubm
 
     async def stream(messages, info):
         requests.append(messages)
-        yield "done"
+        yield "fallback summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
 
     executable = _build(operator, stream, counting=counting)
-    for _ in range(2):
-        if counting:
-            result = await executable.run("continue", previous_state=previous)
-            assert result.output_or_raise() == "done"
-            assert "old history" in _user_values(result.state.message_history)
-        else:
-            with pytest.raises(DefinitionError) as error:
-                await executable.run("continue", previous_state=previous)
-            assert error.value.code == "compaction_capacity_unavailable"
-    assert len(requests) == (2 if counting else 0)
+    for prompt in ("continue", "next run"):
+        result = await executable.run(prompt, previous_state=previous)
+        assert result.output_or_raise() == "done"
+        assert "old history" not in _user_values(result.state.message_history)
+        assert await compaction_disposition(result.state, basis=operation.input.basis) == "skipped"
+        previous = HarnessState.model_validate_json(result.state.model_dump_json())
+    assert len(requests) == 3
     assert operator.operation is operation
     assert operator.submissions == 0
 
@@ -410,8 +435,10 @@ async def test_unknown_capacity_waits_and_waiter_cancellation_preserves_work():
         requests.append(messages)
         yield "done"
 
+    previous = _previous()
+    await operator.submit(_input(previous))
     executable = _build(operator, stream, counting=False)
-    task = asyncio.create_task(executable.run("input", previous_state=_previous()))
+    task = asyncio.create_task(executable.run("input", previous_state=previous))
     await asyncio.wait_for(operator.waiting.wait(), 3)
     assert not requests
     task.cancel()
@@ -592,7 +619,9 @@ async def test_capacity_guard_waits_for_same_operation_and_rejects_oversized_mer
         output_type=str,
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=8000), background=True, operator=operator),),
     )
-    run = asyncio.create_task(executable.run("input", previous_state=_previous()))
+    previous = _previous()
+    await operator.submit(_input(previous))
+    run = asyncio.create_task(executable.run("input", previous_state=previous))
     await asyncio.wait_for(operator.waiting.wait(), 3)
     assert not requests
     operator.release.set()
@@ -1234,3 +1263,203 @@ async def test_joint_resume_defers_exact_approval_then_applies_on_later_run():
     assert later.state is not None
     assert await compaction_disposition(later.state, basis=result.basis) == "applied"
     assert executed == [1]
+
+
+@pytest.mark.parametrize("capacity", ["room", "tight", "unknown"])
+@pytest.mark.parametrize("triggered", [False, True])
+async def test_no_operation_chooses_background_only_with_verified_headroom(capacity, triggered):
+    operator = _Operator()
+    previous = _previous()
+    if not triggered:
+        previous = HarnessState.new(message_history=previous.message_history[:1])
+    requests = []
+
+    class Model(FunctionModel):
+        async def count_tokens(self, messages, model_settings, model_request_parameters):
+            if capacity == "unknown":
+                raise NotImplementedError
+            compacted = any(isinstance(m, ModelResponse) and m.metadata == {"keep": "compact"} for m in messages)
+            return RequestUsage(input_tokens=9999 if capacity == "tight" and not compacted else 100)
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "foreground summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": 100},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=Model(stream_function=stream),
+        output_type=str,
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=8000), background=True, operator=operator),),
+    )
+    result = await executable.run("current input", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    synchronous = triggered and capacity != "room"
+    assert len(requests) == (2 if synchronous else 1)
+    assert operator.submissions == int(triggered and capacity == "room")
+    assert ("old history" not in _user_values(result.state.message_history)) is synchronous
+    assert _user_values(result.state.message_history).count("current input") == 1
+    if synchronous:
+        assert any("agent-context" in str(v) for v in _user_values(requests[-1]))
+        assert result.usage.requests == 2
+    if operator.task is not None:
+        operator.release.set()
+        await operator.task
+
+
+@pytest.mark.parametrize("counting", [False, True])
+async def test_wait_failure_uses_current_history_for_synchronous_fallback(counting):
+    previous = _previous()
+
+    class FailingOperator(_Operator):
+        async def wait(self, thread_id, operation_id):
+            self.waiting.set()
+            self.operation = CompactionOperation(input=self.operation.input, status="failed", error_code="interrupted")
+            return self.operation
+
+    operator = FailingOperator()
+    operator.operation = CompactionOperation(input=_input(previous), status="running")
+    requests = []
+
+    class Model(FunctionModel):
+        async def count_tokens(self, messages, model_settings, model_request_parameters):
+            if not counting:
+                raise NotImplementedError
+            compacted = any(isinstance(m, ModelResponse) and m.metadata == {"keep": "compact"} for m in messages)
+            return RequestUsage(input_tokens=100 if compacted else 9999)
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "fallback summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": 100},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=Model(stream_function=stream),
+        output_type=str,
+        capabilities=(CompactionCapability(background=True, operator=operator),),
+    )
+    result = await executable.run("new input after background capture", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert operator.waiting.is_set() and operator.submissions == 0
+    assert len(requests) == 2
+    assert "new input after background capture" in _user_values(requests[0])
+    assert "old history" not in _user_values(requests[1])
+    assert await compaction_disposition(result.state, basis=operator.operation.input.basis) == "skipped"
+
+
+@pytest.mark.parametrize("counting", [False, True])
+async def test_failed_foreground_fallback_is_bounded_and_preserves_history(counting):
+    previous = _previous()
+    operator = _Operator()
+    operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
+    summaries = 0
+    ordinary = 0
+
+    async def step():
+        return "tool result"
+
+    async def stream(messages, info):
+        nonlocal summaries, ordinary
+        if _COMPACTION_PROMPT in _user_values(messages):
+            summaries += 1
+            raise RuntimeError("summary unavailable")
+        ordinary += 1
+        if ordinary == 1:
+            yield {0: DeltaToolCall(name="step", json_args="{}", tool_call_id="step")}
+        else:
+            yield "done"
+
+    executable = _build(operator, stream, counting=counting, extra=(Capability(id="step", tools=[step]),))
+    if counting:
+        result = await executable.run("continue", previous_state=previous)
+        assert result.output_or_raise() == "done"
+        assert "old history" in _user_values(result.state.message_history)
+        assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None
+        assert ordinary == 2
+    else:
+        with pytest.raises(DefinitionError, match="could not free"):
+            await executable.run("continue", previous_state=previous)
+        assert ordinary == 0
+    assert summaries == 1 and operator.submissions == 0
+
+
+@pytest.mark.parametrize("counting", [False, True])
+async def test_foreground_fallback_respects_remaining_request_budget(counting):
+    from pydantic_ai.usage import UsageLimits
+
+    previous = _previous()
+    operator = _Operator()
+    operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(messages)
+        assert _COMPACTION_PROMPT not in _user_values(messages)
+        yield "done"
+
+    executable = _build(operator, stream, counting=counting)
+    if counting:
+        result = await executable.run("continue", previous_state=previous, usage_limits=UsageLimits(request_limit=1))
+        assert result.output_or_raise() == "done"
+    else:
+        with pytest.raises(DefinitionError, match="could not free"):
+            await executable.run("continue", previous_state=previous, usage_limits=UsageLimits(request_limit=1))
+    assert len(requests) == int(counting)
+    assert operator.submissions == 0
+
+
+async def test_cancelled_foreground_fallback_preserves_failed_operation():
+    from pydantic_ai.capabilities import AbstractCapability
+
+    previous = _previous()
+    operator = _Operator()
+    operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
+    contexts = []
+    started = asyncio.Event()
+
+    class Capture(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            contexts.append(ctx)
+            return request_context
+
+    async def stream(messages, info):
+        assert _COMPACTION_PROMPT in _user_values(messages)
+        started.set()
+        await asyncio.Event().wait()
+        yield "unreachable"
+
+    executable = _build(operator, stream, extra=(Capture(),))
+    task = asyncio.create_task(executable.run("continue", previous_state=previous))
+    await asyncio.wait_for(started.wait(), 3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    state = await contexts[0].deps.export_state(contexts[0].messages)
+    assert "old history" in _user_values(state.message_history)
+    assert await compaction_disposition(state, basis=operator.operation.input.basis) is None
+    assert operator.operation.status == "failed" and operator.submissions == 0
+
+
+async def test_failed_operation_below_trigger_continues_without_fallback():
+    previous = _previous()
+    messages = previous.message_history
+    messages[-1].usage = RequestUsage(input_tokens=10)
+    previous = HarnessState.new(thread_id=previous.thread_id, message_history=messages)
+    operator = _Operator()
+    operator.operation = CompactionOperation(input=_input(previous), status="failed", error_code="interrupted")
+    calls = []
+
+    async def stream(messages, info):
+        calls.append(messages)
+        assert _COMPACTION_PROMPT not in _user_values(messages)
+        yield "done"
+
+    result = await _build(operator, stream).run("continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 1 and operator.submissions == 0
+    assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None

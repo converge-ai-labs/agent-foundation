@@ -45,6 +45,7 @@ from a13n_harness_ui.browser import (
     HostBrowsers,
 )
 from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup, inspect_browser, scan_browsers
+from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentCompositionResolver,
     AgentReconstructor,
@@ -428,8 +429,10 @@ class HarnessUiApp:
         mcp_operations: AppOperations | None = None,
         mcp_connections: HostConnections | None = None,
         mcp_inputs: Inputs | None = None,
+        compaction: BackgroundCompaction | None = None,
     ) -> None:
         self._browsers = browsers
+        self._compaction = compaction
         self._settings = settings
         self._mcp_apps = mcp_apps
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
@@ -3199,6 +3202,8 @@ class HarnessUiApp:
         if graceful:
             await self._restart.drain(self._settings.shutdown_timeout_seconds)
         await self._subagent_operator.stop_admission()
+        if self._compaction is not None:
+            await self._compaction.stop_admission()
 
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
             await idle.wait()
@@ -3235,6 +3240,8 @@ class HarnessUiApp:
             finally:
                 get_logger(__name__).debug("Closing live subscriptions…")
                 with CancelScope(shield=True):
+                    if self._compaction is not None:
+                        await self._compaction.close()
                     try:
                         await self._tool_executions.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
                     finally:
@@ -3420,6 +3427,8 @@ async def open_harness_ui_app(
             resources.push_async_callback(mcp_connections.close)
             app_connections = mcp_connections if isinstance(mcp_connections, Connections) else None
             mcp_apps = AppSnapshots(store.objects, app_connections) if app_connections is not None else None
+            compaction = BackgroundCompaction(store.compactions, store.layout.root)
+            resources.push_async_callback(compaction.close)
             agent_reconstructor = AgentReconstructor(
                 catalog,
                 mcp_apps=app_connections,
@@ -3518,6 +3527,7 @@ async def open_harness_ui_app(
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
                 browsers=browsers,
+                compaction=compaction,
                 tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 restart_coordinator=restart_coordinator,
@@ -3677,6 +3687,7 @@ async def open_harness_ui_app(
                 browsers=browsers,
                 share_computer=share_computer,
                 web_push=web_push,
+                compaction=compaction,
                 memory_organizer=memory_organizer,
                 restart_coordinator=restart_coordinator,
             )

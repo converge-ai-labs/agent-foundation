@@ -112,6 +112,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "accepted_configuration",
             "alembic_version",
             "child_execution",
+            "compaction",
             "configuration_source",
             "current_configuration",
             "environment_binding",
