@@ -99,7 +99,7 @@ class CompactionRun(CompactionOperator):
         instance: AgentInstanceContext,
         reporter: ThreadUsageReporter,
         state: HarnessState,
-        limits: UsageLimits | None = None,
+        limits: UsageLimits,
         resume_usage: bool = False,
     ) -> CompactionBudget:
         snapshot = UsageSnapshot.from_state(state) if resume_usage else None

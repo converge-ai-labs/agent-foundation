@@ -98,6 +98,32 @@ async def test_other_owner_does_not_interrupt_live_generation(tmp_path: Path) ->
         await second.close()
 
 
+async def test_owner_lock_contention_does_not_block_other_threads(tmp_path: Path, monkeypatch) -> None:
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        owner = BackgroundCompaction(CompactionRepository(database.sessions), tmp_path)
+        input = _input()
+        held = owner._owner_lock(input.basis.operation_id)
+        contender = owner._owner_lock(input.basis.operation_id)
+        attempted = asyncio.Event()
+        acquire = contender.acquire
+
+        def acquire_contended(*args, **kwargs):
+            attempted.set()
+            return acquire(*args, **kwargs)
+
+        monkeypatch.setattr(contender, "acquire", acquire_contended)
+        monkeypatch.setattr(owner, "_owner_lock", lambda operation_id: contender)
+        held.acquire(timeout=0)
+        submitting = asyncio.create_task(owner.bind(_summary).submit(input))
+        try:
+            await asyncio.wait_for(attempted.wait(), timeout=2)
+            assert await asyncio.wait_for(owner.inspect("thread_other"), timeout=2) is None
+        finally:
+            held.release()
+            await submitting
+            await owner.close()
+
+
 async def test_dead_owner_is_failed_without_replaying_generation(tmp_path: Path) -> None:
     async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
         repository = CompactionRepository(database.sessions)
@@ -124,7 +150,7 @@ async def test_clear_fences_late_completion(tmp_path: Path) -> None:
         input = _input()
         await owner.bind(request).submit(input)
         await started.wait()
-        await owner.clear(input.basis.thread_id)
+        await repository.retire(input.basis.thread_id, input.basis.operation_id)
         finish.set()
         await asyncio.gather(*owner._tasks.values())
         assert await repository.get(input.basis.thread_id) is None

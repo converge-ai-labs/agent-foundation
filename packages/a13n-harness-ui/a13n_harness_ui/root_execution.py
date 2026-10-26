@@ -506,6 +506,7 @@ class RootRunExecutor:
                     instance=instance,
                     reporter=usage_reporter,
                     state=previous_state,
+                    limits=reconstructed.executable.definition_usage_limits(),
                     resume_usage=admission.resume_usage,
                 )
                 if reconstructed.compaction is not None

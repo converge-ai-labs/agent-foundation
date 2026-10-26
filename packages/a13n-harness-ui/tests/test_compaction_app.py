@@ -51,6 +51,62 @@ async def test_background_compaction_configuration_is_captured(tmp_path: Path, e
         await owner.close()
 
 
+async def test_root_run_passes_effective_limits_to_detached_compaction(tmp_path: Path, monkeypatch):
+    from a13n_harness.compaction import CompactionInput
+    from a13n_harness.execution import ExecutableAgent
+    from a13n_harness_ui.composition import AgentReconstructor
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.usage import UsageLimits
+
+    root = _write_configuration(tmp_path)
+    reconstructed = []
+    reconstruct = AgentReconstructor.reconstruct
+    background_calls = 0
+
+    def capture(self, *args, **kwargs):
+        result = reconstruct(self, *args, **kwargs)
+        reconstructed.append(result)
+        return result
+
+    async def foreground(messages, info):
+        yield "foreground answer"
+
+    async def background(messages, info):
+        nonlocal background_calls
+        background_calls += 1
+        return ModelResponse(parts=[TextPart("summary")])
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(function=background, stream_function=foreground)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", capture)
+    monkeypatch.setattr(ExecutableAgent, "definition_usage_limits", lambda self: UsageLimits(request_limit=1))
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="original input")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed, operation
+        assert operation.run_id is not None
+        compaction = reconstructed[-1].compaction
+        assert compaction is not None
+        input = CompactionInput.create(
+            operation_id="compaction-limited",
+            thread_id=thread.thread_id,
+            run_id=operation.run_id,
+            model_id="model-primary",
+            model_name="test",
+            provider_name="function",
+            messages=[ModelRequest(parts=[UserPromptPart("old")]), ModelResponse(parts=[TextPart("answer")])],
+            parameters=ModelRequestParameters(),
+        )
+        await compaction.submit(input)
+        result = await compaction.wait(thread.thread_id, input.basis.operation_id)
+        assert result.status == "failed"
+        assert background_calls == 0
+
+
 @pytest.mark.parametrize("restart,clear", [(False, False), (True, False), (False, True)])
 async def test_app_retains_background_result_then_delivers_with_current_input(
     tmp_path: Path, monkeypatch, restart: bool, clear: bool

@@ -89,38 +89,36 @@ class BackgroundCompaction:
             raise
 
     async def _submit(self, input: CompactionInput, request: CompactionModelRequest) -> CompactionOperation:
-        async with self._lock:
-            if self._closed:
-                raise RuntimeError("Background compaction is closing")
-            # Admission rechecks durable authority; another App may have retired a cached result.
-            self._operations.pop(input.basis.thread_id, None)
-            current = await self._inspect(input.basis.thread_id)
-            if current is not None:
-                return current
-            lock = self._owner_lock(input.basis.operation_id)
-            while True:
+        lock = self._owner_lock(input.basis.operation_id)
+        while True:
+            async with self._lock:
+                if self._closed:
+                    raise RuntimeError("Background compaction is closing")
+                # Admission rechecks durable authority; another App may have retired a cached result.
+                self._operations.pop(input.basis.thread_id, None)
+                current = await self._inspect(input.basis.thread_id)
+                if current is not None:
+                    return current
                 try:
                     lock.acquire(timeout=0)
-                    break
                 except Timeout:
-                    current = await self._repository.get(input.basis.thread_id)
-                    if current is not None:
-                        return current
-                    await asyncio.sleep(0.05)
-            handed_off = False
-            try:
-                operation = await self._repository.admit(CompactionOperation(input=input, status="running"))
-                if operation.input.basis != input.basis or operation.status != "running":
-                    return operation
-                self._operations[input.basis.thread_id] = operation
-                self._owners[input.basis.operation_id] = lock
-                task = asyncio.create_task(self._generate(input, request), context=Context())
-                self._tasks[input.basis.operation_id] = task
-                handed_off = True
-                return operation
-            finally:
-                if not handed_off:
-                    lock.release()
+                    pass
+                else:
+                    handed_off = False
+                    try:
+                        operation = await self._repository.admit(CompactionOperation(input=input, status="running"))
+                        if operation.input.basis != input.basis or operation.status != "running":
+                            return operation
+                        self._operations[input.basis.thread_id] = operation
+                        self._owners[input.basis.operation_id] = lock
+                        task = asyncio.create_task(self._generate(input, request), context=Context())
+                        self._tasks[input.basis.operation_id] = task
+                        handed_off = True
+                        return operation
+                    finally:
+                        if not handed_off:
+                            lock.release()
+            await asyncio.sleep(0.05)
 
     async def _generate(self, input: CompactionInput, request: CompactionModelRequest) -> None:
         operation_id = input.basis.operation_id
@@ -206,13 +204,6 @@ class BackgroundCompaction:
             self._operations.pop(state.thread_id, None)
             operation = await self._inspect(state.thread_id)
         return operation.result if operation is not None else None
-
-    async def clear(self, thread_id: str) -> None:
-        async with self._lock:
-            operation = await self._repository.get(thread_id)
-            if operation is not None:
-                await self._repository.retire(thread_id, operation.input.basis.operation_id)
-            self._operations.pop(thread_id, None)
 
     async def stop_admission(self) -> None:
         async with self._lock:
