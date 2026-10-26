@@ -14,7 +14,6 @@ import {
   MenuTrigger,
   MenuPopup,
   MenuItem,
-  MenuSeparator,
 } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -281,7 +280,6 @@ function ScheduleContent({
                     )}
                     {open && can("write") && (
                       <>
-                        {(editable || can("admin")) && <MenuSeparator />}
                         {can("write") && (
                           <Confirm
                             title={t("Archive schedule")}
@@ -386,7 +384,7 @@ function ScheduleContent({
             )}
           </p>
         )}
-        {schedule.pause_reason && (
+        {schedule.pause_reason && schedule.pause_reason !== "manual" && (
           <p className={styles.notice}>
             {t(`schedule.reason.${schedule.pause_reason}`, {
               defaultValue: schedule.pause_reason,
