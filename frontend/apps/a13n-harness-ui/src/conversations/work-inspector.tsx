@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Button,
   Popover,
@@ -29,6 +29,7 @@ import { Children } from "./details";
 import type { FocusDisplay } from "./stream";
 import { Processes } from "./processes";
 import { ToolExecutions } from "./tool-executions";
+import { GoalStatus } from "./goal-status";
 import styles from "./work-inspector.module.css";
 
 type Task = Schema<"TaskView">;
@@ -127,16 +128,25 @@ export function WorkInspector({
   display,
   connected = true,
   reconcile,
+  goal,
+  activity,
+  onUseGoal,
 }: {
   threadId: string;
   display: FocusDisplay;
   connected?: boolean;
   reconcile: () => void;
+  goal?: Schema<"GoalView"> | null;
+  activity?: Schema<"RootActivityView">;
+  onUseGoal?: () => void;
 }) {
   const guest = useGuestAccess();
   const [tab, setTab] = useState<
-    "tasks" | "notes" | "children" | "processes" | "tools" | null
+    "goal" | "tasks" | "notes" | "children" | "processes" | "tools" | null
   >(null);
+  useEffect(() => {
+    if (!goal && tab === "goal") setTab(null);
+  }, [goal, tab]);
   const work = useThreadWork(threadId, {
     tasks: tab === "tasks",
     notes: tab === "notes",
@@ -174,6 +184,15 @@ export function WorkInspector({
   ).filter((key) => !guest || (key !== "processes" && key !== "tools"));
   return (
     <div className={styles.strip} aria-label="Work inspection">
+      {goal && (
+        <GoalStatus
+          goal={goal}
+          activity={activity}
+          open={tab === "goal"}
+          onOpenChange={(open) => setTab(open ? "goal" : null)}
+          onUseObjective={onUseGoal}
+        />
+      )}
       {tabs.map((key) => {
         const Icon =
           key === "tasks"

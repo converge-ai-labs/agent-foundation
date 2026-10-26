@@ -28,7 +28,7 @@ import {
   useAppContextSelection,
 } from "../mcp-apps/context-selection";
 import { ComposerStatus } from "./composer-status";
-import { currentGoal, GoalStatus } from "./goal-status";
+import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
@@ -888,6 +888,25 @@ function ConversationContent({
             display={display}
             connected={connection === "Live"}
             reconcile={reconcile}
+            goal={showGoal ? goal : null}
+            activity={thread?.root_activity}
+            onUseGoal={
+              goal &&
+              thread?.root_activity.state === "inactive" &&
+              detail.data?.available_actions?.includes("run") &&
+              draft.submission.kind !== "pending" &&
+              draft.submission.kind !== "unknown"
+                ? () => {
+                    const text = draft.doc.getText("text");
+                    text.insert(
+                      text.length,
+                      `${text.length ? "\n\n" : ""}${goal.objective}`,
+                    );
+                    draft.mode = "goal";
+                    draft.notify();
+                  }
+                : undefined
+            }
           />
         )}
         {!guest && !readOnly && !thread?.archived && (
@@ -908,28 +927,6 @@ function ConversationContent({
               Refresh agent selection before sending
             </Button>
           )}
-        {showGoal && goal && (
-          <GoalStatus
-            goal={goal}
-            activity={thread?.root_activity}
-            onRetry={
-              thread?.root_activity.state === "inactive" &&
-              detail.data?.available_actions?.includes("run") &&
-              draft.submission.kind !== "pending" &&
-              draft.submission.kind !== "unknown"
-                ? () => {
-                    const text = draft.doc.getText("text");
-                    text.insert(
-                      text.length,
-                      `${text.length ? "\n\n" : ""}${goal.objective}`,
-                    );
-                    draft.mode = "goal";
-                    draft.notify();
-                  }
-                : undefined
-            }
-          />
-        )}
         {canCompose && !thread?.archived && (
           <Composer
             autoFocus={pageReady && search.get("compose") === "1"}

@@ -1,12 +1,17 @@
+import { useId, useState } from "react";
 import {
+  ArrowElbowDownLeft,
+  CaretDown,
   Check,
   CircleNotch,
   Target,
   WarningCircle,
+  X,
 } from "@phosphor-icons/react";
 import {
   Button,
   Popover,
+  PopoverClose,
   PopoverTrigger,
   PopoverPopup,
   PopoverTitle,
@@ -14,16 +19,59 @@ import {
 import type { Schema } from "../transport/client";
 import styles from "./goal-status.module.css";
 
-const labels: Record<NonNullable<Schema<"GoalView">["status"]>, string> = {
-  working: "Working",
-  checking: "Checking",
-  auditing: "Reviewing after context restoration",
-  suspended: "Waiting for your response",
-  verified: "Verified by the Agent",
-  max_iterations: "Check limit reached · Not verified",
-  cancelled: "Stopped · Not verified",
-  error: "Error · Not verified",
-  unverified_stop: "Stopped without verification",
+type GoalStatusName = NonNullable<Schema<"GoalView">["status"]>;
+const phases: Record<
+  GoalStatusName,
+  { label: string; title: string; detail: string }
+> = {
+  working: {
+    label: "Working",
+    title: "Working on the objective",
+    detail: "The Agent is carrying out the requested work.",
+  },
+  checking: {
+    label: "Checking",
+    title: "Checking completion",
+    detail: "The Agent is checking the result against the objective.",
+  },
+  auditing: {
+    label: "Reviewing",
+    title: "Reviewing restored context",
+    detail: "The Agent is checking current evidence after context restoration.",
+  },
+  suspended: {
+    label: "Needs input",
+    title: "Your response is needed",
+    detail:
+      "Respond to the pending request in the conversation to continue this Goal.",
+  },
+  verified: {
+    label: "Verified",
+    title: "Verified by the Agent",
+    detail:
+      "The Agent reported that the objective was met after its checks. This is same-Agent verification.",
+  },
+  max_iterations: {
+    label: "Not verified",
+    title: "Completion not verified",
+    detail: "The follow-up check limit was reached.",
+  },
+  cancelled: {
+    label: "Not verified",
+    title: "Stopped before verification",
+    detail: "Execution was cancelled before completion was confirmed.",
+  },
+  error: {
+    label: "Not verified",
+    title: "Completion not verified",
+    detail:
+      "Execution ended with an error. Review the error in the conversation.",
+  },
+  unverified_stop: {
+    label: "Not verified",
+    title: "Stopped without verification",
+    detail: "Execution stopped without confirming that the objective was met.",
+  },
 };
 
 export function currentGoal(
@@ -42,103 +90,135 @@ export function currentGoal(
 export function GoalStatus({
   goal,
   activity,
-  onRetry,
+  open,
+  onOpenChange,
+  onUseObjective,
 }: {
   goal: Schema<"GoalView">;
   activity?: Schema<"RootActivityView">;
-  onRetry?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onUseObjective?: () => void;
 }) {
   const status = goal.status ?? "working";
   const iteration = goal.iteration ?? 0;
   const limit = goal.max_iterations ?? 10;
   const executing = ["working", "checking", "auditing"].includes(status);
-  const running = executing && activity?.state === "running";
   const preparing = executing && activity?.state === "preparing";
+  const moving = executing && (preparing || activity?.state === "running");
   const incomplete =
     !executing && status !== "suspended" && status !== "verified";
-  const label = preparing ? "Preparing" : labels[status];
-  const Icon =
-    running || preparing
-      ? CircleNotch
-      : status === "verified"
-        ? Check
-        : incomplete || status === "suspended"
-          ? WarningCircle
-          : Target;
+  const phase = phases[status];
+  const label = preparing ? "Preparing" : phase.label;
+  const Icon = moving
+    ? CircleNotch
+    : status === "verified"
+      ? Check
+      : incomplete || status === "suspended"
+        ? WarningCircle
+        : Target;
+  const tone =
+    status === "error"
+      ? "danger"
+      : incomplete || status === "suspended"
+        ? "warning"
+        : "neutral";
   return (
-    <div
-      className={styles.bar}
-      data-tone={
-        status === "error"
-          ? "danger"
-          : incomplete || status === "suspended"
-            ? "warning"
-            : "neutral"
-      }
-    >
-      <div className={styles.summary} role="status" aria-live="polite">
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger
+        render={<Button variant="ghost" size="sm" />}
+        className={styles.trigger}
+        aria-label={`Inspect Goal: ${label}${status === "checking" && !preparing && iteration > 0 ? ` ${iteration}` : ""}`}
+        data-tone={tone}
+      >
         <Icon
-          size={16}
-          className={running || preparing ? styles.running : undefined}
+          className={moving ? styles.running : undefined}
           aria-hidden="true"
         />
-        <span className={styles.label}>
-          Goal <span aria-hidden="true">·</span> {label}
+        <span className={styles.name}>Goal</span>
+        <span className={styles.phase} role="status" aria-live="polite">
+          <span aria-hidden="true">· </span>
+          {label}
+          {status === "checking" && !preparing && iteration > 0 && (
+            <> {iteration}</>
+          )}
         </span>
-        {iteration > 0 && (
-          <span className={styles.count}>
-            {iteration} follow-up {iteration === 1 ? "check" : "checks"}
-          </span>
-        )}
-      </div>
-      <Popover>
-        <PopoverTrigger className={styles.details} aria-label="Goal details">
-          Details
-        </PopoverTrigger>
-        <PopoverPopup side="top" align="end" className={styles.popup}>
-          <PopoverTitle>Goal · {label}</PopoverTitle>
-          <p className={styles.objective}>{goal.objective}</p>
+      </PopoverTrigger>
+      <PopoverPopup
+        side="top"
+        align="start"
+        sideOffset={10}
+        className={styles.popup}
+      >
+        <div className={styles.heading}>
+          <PopoverTitle>Goal</PopoverTitle>
+          <PopoverClose
+            render={<Button variant="ghost" size="icon-sm" />}
+            aria-label="Close Goal"
+          >
+            <X />
+          </PopoverClose>
+        </div>
+        <div className={styles.outcome} data-tone={tone}>
+          <h3>{preparing ? "Preparing execution" : phase.title}</h3>
           <p>
-            {limit > 0
-              ? `Follow-up checks used: ${iteration} of ${limit}.`
-              : "Automatic follow-up checks are disabled."}
+            {preparing
+              ? "The Goal is being prepared for execution."
+              : status === "max_iterations" && limit <= 0
+                ? "Automatic follow-up checks are disabled."
+                : phase.detail}
           </p>
-          {goal.needs_restore_audit && (
+          {goal.needs_restore_audit && status !== "auditing" && (
             <p>
               A fresh review is required before completion can be confirmed.
             </p>
           )}
-          {status === "auditing" && (
-            <p>
-              The Agent is checking current evidence after context restoration.
-            </p>
-          )}
-          {status === "suspended" && (
-            <p>Respond to the pending request to continue this Goal.</p>
-          )}
-          {incomplete && (
-            <p>
-              Completion has not been confirmed. Review the output before
-              starting another Goal.
-            </p>
-          )}
-          {status === "verified" && (
-            <p>
-              The same Agent checked the objective; this is not independent
-              verification.
-            </p>
-          )}
-          <p className={styles.usage}>
-            Goal tokens: {(goal.input_tokens ?? 0).toLocaleString()} input ·{" "}
-            {(goal.output_tokens ?? 0).toLocaleString()} output
-          </p>
-          {incomplete && onRetry && (
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              Prepare new Goal
-            </Button>
-          )}
-        </PopoverPopup>
-      </Popover>
+        </div>
+        <Objective key={goal.objective} text={goal.objective} />
+        <dl className={styles.metrics}>
+          <div>
+            <dt>Follow-up checks</dt>
+            <dd>{limit > 0 ? `${iteration} / ${limit}` : "Disabled"}</dd>
+          </div>
+          <div>
+            <dt>Tokens</dt>
+            <dd>
+              {(goal.input_tokens ?? 0).toLocaleString()} in ·{" "}
+              {(goal.output_tokens ?? 0).toLocaleString()} out
+            </dd>
+          </div>
+        </dl>
+        {incomplete && onUseObjective && (
+          <PopoverClose
+            render={<Button variant="ghost" size="sm" />}
+            className={styles.reuse}
+            onClick={onUseObjective}
+          >
+            <ArrowElbowDownLeft />
+            Use objective in composer
+          </PopoverClose>
+        )}
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
+function Objective({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  return (
+    <div className={styles.objective}>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={id}
+        onClick={() => setExpanded(!expanded)}
+      >
+        Objective <CaretDown aria-hidden="true" />
+      </button>
+      <p id={id} data-expanded={expanded}>
+        {text}
+      </p>
     </div>
   );
 }

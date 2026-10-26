@@ -10,13 +10,13 @@ afterEach(cleanup);
 it.each([
   ["working", "Working"],
   ["checking", "Checking"],
-  ["auditing", "Reviewing after context restoration"],
-  ["suspended", "Waiting for your response"],
-  ["verified", "Verified by the Agent"],
-  ["max_iterations", "Check limit reached · Not verified"],
-  ["cancelled", "Stopped · Not verified"],
-  ["error", "Error · Not verified"],
-  ["unverified_stop", "Stopped without verification"],
+  ["auditing", "Reviewing"],
+  ["suspended", "Needs input"],
+  ["verified", "Verified"],
+  ["max_iterations", "Not verified"],
+  ["cancelled", "Not verified"],
+  ["error", "Not verified"],
+  ["unverified_stop", "Not verified"],
 ] as const)(
   "shows authoritative %s progress and explicit, non-submitting retry",
   async (status, label) => {
@@ -30,32 +30,35 @@ it.each([
       needs_restore_audit: true,
     };
     const retry = vi.fn();
-    render(<GoalStatus goal={goal} onRetry={retry} />);
-    const button = screen.getByRole("button", { name: "Goal details" });
+    render(<GoalStatus goal={goal} onUseObjective={retry} />);
+    const button = screen.getByRole("button", { name: /Inspect Goal:/ });
     expect(screen.getByRole("status").textContent).toContain(label);
-    expect(screen.getByRole("status").textContent).toContain(
-      "2 follow-up checks",
+    expect(screen.getByRole("status").textContent?.includes("2")).toBe(
+      status === "checking",
     );
     expect(screen.queryByText(goal.objective)).toBeNull();
     fireEvent.click(button);
     expect(await screen.findByText("Check all requirements")).toBeTruthy();
-    expect(screen.getByText(/120 input/)).toBeTruthy();
-    expect(screen.getByText("Follow-up checks used: 2 of 10.")).toBeTruthy();
-    expect(screen.getByText(/A fresh review is required/)).toBeTruthy();
+    expect(screen.getByText(/120 in/)).toBeTruthy();
+    expect(screen.getByText("2 / 10")).toBeTruthy();
+    if (status !== "auditing")
+      expect(screen.getByText(/A fresh review is required/)).toBeTruthy();
     if (
       ["max_iterations", "cancelled", "error", "unverified_stop"].includes(
         status,
       )
     ) {
-      expect(
-        screen.getByText(/Completion has not been confirmed/),
-      ).toBeTruthy();
+      expect(screen.getByRole("heading", { level: 3 }).textContent).toMatch(
+        /not verified|before verification|without verification/,
+      );
       expect(retry).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole("button", { name: "Prepare new Goal" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Use objective in composer" }),
+      );
       expect(retry).toHaveBeenCalledTimes(1);
     } else
       expect(
-        screen.queryByRole("button", { name: "Prepare new Goal" }),
+        screen.queryByRole("button", { name: "Use objective in composer" }),
       ).toBeNull();
   },
 );
@@ -106,7 +109,7 @@ it.each([0, -1])(
       />,
     );
     expect(screen.getByRole("status").textContent).toContain("Not verified");
-    fireEvent.click(screen.getByRole("button", { name: "Goal details" }));
+    fireEvent.click(screen.getByRole("button", { name: /Inspect Goal:/ }));
     expect(
       await screen.findByText("Automatic follow-up checks are disabled."),
     ).toBeTruthy();
@@ -125,7 +128,7 @@ it("announces preparing separately from execution and keeps details open across 
     <GoalStatus goal={goal} activity={{ state: "preparing" }} />,
   );
   expect(screen.getByRole("status").textContent).toContain("Preparing");
-  fireEvent.click(screen.getByRole("button", { name: "Goal details" }));
+  fireEvent.click(screen.getByRole("button", { name: /Inspect Goal:/ }));
   await screen.findByText(goal.objective);
   view.rerender(
     <GoalStatus
@@ -133,8 +136,24 @@ it("announces preparing separately from execution and keeps details open across 
       activity={{ state: "running" }}
     />,
   );
-  expect(screen.getByRole("status").textContent).toContain(
-    "Checking1 follow-up check",
-  );
+  expect(screen.getByRole("status").textContent).toContain("Checking 1");
   expect(screen.getByText(goal.objective)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Objective" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Objective" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  view.rerender(
+    <GoalStatus
+      goal={{ ...goal, status: "verified", iteration: 1 }}
+      activity={{ state: "inactive" }}
+    />,
+  );
+  expect(screen.getByRole("status").textContent).toContain("Verified");
+  expect(screen.getByRole("status").textContent).not.toContain("1");
+  expect(
+    screen.getByRole("heading", { name: "Verified by the Agent" }),
+  ).toBeTruthy();
+  expect(screen.getByText(/same-Agent verification/)).toBeTruthy();
 });

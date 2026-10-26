@@ -453,3 +453,60 @@ it("inspects retained tools without consuming results and cancels the exact chil
   expect(POST).toHaveBeenCalledOnce();
   expect(GET.mock.calls.length).toBeGreaterThan(1);
 });
+
+it("shares one open inspector with Goal and forgets a cleared Goal selection", async () => {
+  const GET = vi.fn(async () => ({
+    data: {
+      thread_id: "root",
+      epoch: "epoch",
+      sequence: 1,
+      revision: 1,
+      source: "saved",
+      tasks: { total: 0, completed: 0 },
+      notes: { total: 0 },
+      children: {},
+    },
+  }));
+  const setup = harness(GET);
+  const props = {
+    threadId: "root",
+    display: new FocusDisplay(),
+    reconcile: vi.fn(),
+  };
+  const goal = { objective: "Confirm the result", status: "verified" } as const;
+  const view = render(<WorkInspector {...props} goal={goal} />, setup);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  await screen.findByRole("heading", { name: "Verified by the Agent" });
+  await user.click(screen.getByRole("button", { name: "Inspect tasks" }));
+  await screen.findByRole("heading", { name: "Tasks" });
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("heading", { name: "Verified by the Agent" }),
+    ).toBeNull(),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  await screen.findByRole("heading", { name: "Verified by the Agent" });
+  await waitFor(() =>
+    expect(screen.queryByRole("heading", { name: "Tasks" })).toBeNull(),
+  );
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+    ),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Inspect Goal: Verified" }),
+  );
+  view.rerender(<WorkInspector {...props} />);
+  expect(screen.queryByRole("button", { name: /Inspect Goal:/ })).toBeNull();
+  view.rerender(<WorkInspector {...props} goal={goal} />);
+  expect(
+    screen.queryByRole("heading", { name: "Verified by the Agent" }),
+  ).toBeNull();
+});
