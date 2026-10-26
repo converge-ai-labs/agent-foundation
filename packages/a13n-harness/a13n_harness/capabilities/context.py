@@ -1211,6 +1211,8 @@ async def _restore_compacted_state(ctx: RunContext[AgentContext], request: Model
         payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.applied_operation_id),
     )
     await finish_discovery_replacement(ctx)
+    # AgentContextState.write suspends only before mutation while acquiring its
+    # lock. No suspension separates clearing pending from publishing history.
     await ctx.deps.state.write(
         COMPACTION_CAPABILITY_ID, state.model_copy(update={"restoration_pending": False}), version="1"
     )

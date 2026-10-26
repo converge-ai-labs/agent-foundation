@@ -14,7 +14,6 @@ from pydantic_ai.capabilities import MCP, AbstractCapability, Instrumentation, R
 
 from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
 from a13n_harness.capabilities.context import (
-    COMPACTION_CAPABILITY_ID,
     FILE_CONTEXT_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
     RUNTIME_CONTEXT_CAPABILITY_ID,
@@ -57,6 +56,7 @@ from a13n_harness.capabilities.working_state import (
     _WorkingStateRunCapability,
 )
 from a13n_harness.capability_types import _validate_capability_id
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import (
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID,

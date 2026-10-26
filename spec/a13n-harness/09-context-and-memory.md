@@ -447,6 +447,8 @@ The replacement is the standard compact boundary for the fixed prefix followed b
 
 The Host retires a ready operation only after saving a checkpoint containing its applied marker and corresponding history. Failure before that save permits application to the old checkpoint again. Save success followed by lost acknowledgement permits a duplicate read, which the marker makes harmless. Neither reading a result nor receiving `ContextRestoredEvent` acknowledges persistence. Background completion never updates a sealed parent checkpoint or requires an idle Thread-history writer.
 
+The one-unacknowledged-operation rule also applies after active application: subsequent boundaries observe the same result as a no-op until Host retirement. A Host that saves checkpoints only at Run termination therefore admits at most one background compaction per Run. Harness does not retire or replace that operation to start a second one. A stale running or ready operation fails the eligible boundary with `compaction_prefix_mismatch`, preserving current history and the Host record rather than silently discarding and resubmitting work. Failed records likewise remain visible and suppress resubmission. Hosts own reconciliation and retention for stale and failed records; the applied-checkpoint acknowledgement rule applies to successfully applied ready results. The Harness operator interface provides observation and submission, not a retirement API.
+
 ### Context Restoration Notification
 
 `ContextRestoredEvent` is a public native `CapabilityEvent` in namespace `a13n.context`, named `restored`, with immediate dispatch. Its `source` is `summarize` or `compact`, and `operation_id` identifies the successful context operation. Handoff and compaction emit it after constructing a valid replacement and before returning the replacement to the outer request pipeline. Failed or cancelled replacement does not emit it.
@@ -502,7 +504,12 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | A catalog-bearing Environment route changes during scanning or run use | The bound scan or next model/tool boundary fails with `skill_catalog_stale`; unrelated mount changes remain valid |
 | Monitor binding is missing or no longer live                           | Process start or completion attachment fails explicitly                                                           |
 | Resource exceeds policy or conversion fails                            | Owning tool returns a bounded typed failure and cleans its partial assets                                         |
-| Compaction output is invalid                                           | Original history remains active                                                                                   |
+| Synchronous compaction output is invalid                               | Original history remains active                                                                                   |
+| Background summary is empty or contains function-tool calls            | `compaction_summary_invalid`; the operation fails without dispatching tools                                       |
+| Background result or applied identity does not match its plan          | `compaction_result_mismatch`; history remains unchanged                                                           |
+| Running or ready compaction no longer matches the canonical prefix     | `compaction_prefix_mismatch`; boundary fails and Host reconciliation is required                                  |
+| Background operation fails without verified foreground capacity        | `compaction_capacity_unavailable`; no foreground request or automatic resubmission                                |
+| Compacted request still exceeds the known model window                 | `compaction_capacity_exceeded`; no suffix truncation or provider dispatch                                         |
 | Context exceeds the provider limit after policy                        | Model step fails with a bounded context error                                                                     |
 
 ## Boundaries

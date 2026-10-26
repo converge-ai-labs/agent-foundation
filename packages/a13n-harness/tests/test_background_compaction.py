@@ -318,6 +318,69 @@ async def test_ready_result_applies_between_tool_rounds_and_keeps_delta():
     assert _user_values(requests[-1]).count("current input") == 1
 
 
+@pytest.mark.parametrize("status", ["running", "ready"])
+async def test_active_boundary_rejects_stale_operation_without_resubmission(status):
+    previous = _previous()
+    plan = _plan(previous)
+    operator = _Operator()
+    operation = CompactionOperation(
+        plan=plan,
+        status=status,
+        result=CompactionResult.from_summary(plan, "stale summary") if status == "ready" else None,
+    )
+    operator.operation = operation
+    changed = HarnessState.new(
+        thread_id=previous.thread_id,
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("replacement history")]),
+            ModelResponse(parts=[TextPart("replacement answer")]),
+        ),
+    )
+    saved = changed.model_dump_json()
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(messages)
+        yield "done"
+
+    executable = _build(operator, stream)
+    for _ in range(2):
+        with pytest.raises(DefinitionError) as error:
+            await executable.run("continue", previous_state=changed)
+        assert error.value.code == "compaction_prefix_mismatch"
+    assert not requests
+    assert operator.operation is operation
+    assert operator.submissions == 0
+    assert changed.model_dump_json() == saved
+
+
+@pytest.mark.parametrize("counting", [False, True])
+async def test_failed_operation_requires_verified_capacity_and_suppresses_resubmission(counting):
+    previous = _previous()
+    operator = _Operator()
+    operation = CompactionOperation(plan=_plan(previous), status="failed", error_code="provider_unavailable")
+    operator.operation = operation
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(messages)
+        yield "done"
+
+    executable = _build(operator, stream, counting=counting)
+    for _ in range(2):
+        if counting:
+            result = await executable.run("continue", previous_state=previous)
+            assert result.output_or_raise() == "done"
+            assert "old history" in _user_values(result.state.message_history)
+        else:
+            with pytest.raises(DefinitionError) as error:
+                await executable.run("continue", previous_state=previous)
+            assert error.value.code == "compaction_capacity_unavailable"
+    assert len(requests) == (2 if counting else 0)
+    assert operator.operation is operation
+    assert operator.submissions == 0
+
+
 async def test_unknown_capacity_waits_and_waiter_cancellation_preserves_work():
     operator = _Operator()
     requests = []
@@ -390,7 +453,7 @@ async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(m
 
     async def stream(messages, info):
         requests.append(deepcopy(messages))
-        if len(requests) <= 2:
+        if len(requests) <= 3:
             yield {0: DeltaToolCall(name="step", json_args="{}", tool_call_id=f"step-{len(requests)}")}
         else:
             yield "done"
@@ -430,7 +493,10 @@ async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(m
         assert [item.data for item in images(result.state.message_history)] == [image.getvalue()]
         assert len(images(requests[-1])) > 1
         assert len(images(operator.operation.plan.request_messages)) > 1
-    for call_id in ("step-1", "step-2"):
+    # The fourth request re-observes the applied result: the Host has not saved
+    # a checkpoint and retired it, so no second operation may be submitted.
+    assert len(requests) == 4
+    for call_id in ("step-1", "step-2", "step-3"):
         parts = [part for message in requests[-1] for part in message.parts]
         assert sum(isinstance(part, ToolCallPart) and part.tool_call_id == call_id for part in parts) == 1
         assert sum(isinstance(part, ToolReturnPart) and part.tool_call_id == call_id for part in parts) == 1

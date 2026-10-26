@@ -35,15 +35,13 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from a13n_harness._capability_contract import _validate_capability_source
 from a13n_harness._output_contract import _business_output_contains_deferred_value
-from a13n_harness.capabilities.context import (
-    COMPACTION_CAPABILITY_ID,
-    HANDOFF_CAPABILITY_ID,
-)
+from a13n_harness.capabilities.context import HANDOFF_CAPABILITY_ID
 from a13n_harness.capabilities.producer import ProducerCaptureCapability
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
     steering_input_ids,
 )
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID
 from a13n_harness.content import (
     content_items,
     merge_request_history,
