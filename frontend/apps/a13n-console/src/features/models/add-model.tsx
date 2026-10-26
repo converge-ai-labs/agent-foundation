@@ -14,7 +14,8 @@ import { FormActions } from "../../shared/forms";
 import { ResourceEditorButton } from "../../shared/identity";
 import { connectStepDescription, connectStepTitle } from "./add-provider";
 import { ModelPicker } from "./model-picker";
-import { ModelFields, ModelSelection, useModelDraft } from "./model-form";
+import { useModelDraft } from "./model-form";
+import { ModelFields, ModelSelection } from "./model-fields";
 import { ModelIcon, ModelProviderIcon, providerBrand } from "./model-icon";
 import { useProviderDraft } from "./provider-draft";
 import { ProviderChoice, ProviderConnect } from "./provider-setup";
@@ -135,32 +136,32 @@ export function AddModel({
             <ModelPicker model={model} onSelected={() => setStep("details")} />
           </CatalogStep>
         ) : (
-          <CatalogStep
-            backLabel={t("Choose a model")}
-            onBack={() => setStep("model")}
+          <form
+            className={`${styles.modelForm} ${styles.modelConfigurationForm} ${styles.modelCreateForm}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              model.save.mutate();
+            }}
           >
-            <form
-              className={styles.modelForm}
-              onSubmit={(event) => {
-                event.preventDefault();
-                model.save.mutate();
-              }}
-            >
-              <ModelSelection model={model} showAddress={model.manual} />
-              <ModelFields
-                model={model}
-                compact
-                requireEnabled={requireEnabled}
-              />
-              <ErrorNotice error={model.save.error} />
-              <FormActions
-                onCancel={() => setOpen(false)}
-                pending={model.save.isPending}
-                disabled={model.incomplete}
-                label={submitLabel ?? t("Add model")}
-              />
-            </form>
-          </CatalogStep>
+            <ModelSelection
+              model={model}
+              showAddress={model.manual}
+              compact
+              onChange={() => setStep("model")}
+            />
+            <ModelFields
+              model={model}
+              compact
+              requireEnabled={requireEnabled}
+            />
+            <ErrorNotice error={model.save.error} />
+            <FormActions
+              onCancel={() => setOpen(false)}
+              pending={model.save.isPending}
+              disabled={model.incomplete}
+              label={submitLabel ?? t("Add model")}
+            />
+          </form>
         ))}
     </ModalFrame>
   );

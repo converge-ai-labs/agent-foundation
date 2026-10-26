@@ -351,14 +351,13 @@
 }
 
 /* Model editing follows the order in which a workspace model is understood. */
-.modelEditForm {
+.modelConfigurationForm {
   gap: 24px;
 }
-.modelEditForm .modelDetails {
+.modelConfigurationForm .modelDetails {
   gap: 24px;
 }
-.editorBasics,
-.connectionSection {
+.fieldGroup {
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -369,8 +368,7 @@
   justify-content: space-between;
   gap: 16px;
 }
-.sectionHeading h3,
-.connectionSection > h3 {
+.sectionHeading h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
@@ -387,23 +385,25 @@
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: 16px;
 }
-.connectionBody {
+.fieldGroupBody,
+.modelConfigurationForm .advancedGroup,
+.modelConfigurationForm .pricingEditor {
   padding: 16px;
   border: 1px solid var(--a13n-border-soft);
   border-radius: 12px;
 }
-.connectionBody .chosenRow {
+.fieldGroupBody .chosenRow {
   padding: 0;
   background: transparent;
 }
-.modelEditForm [data-slot="field"] {
+.modelConfigurationForm [data-slot="field"] {
   gap: 8px;
 }
-.modelEditForm [data-slot="field-label"] {
+.modelConfigurationForm [data-slot="field-label"] {
   font-size: 13px;
   font-weight: 500;
 }
-.connectionBody .chosenActions :is(button, a) {
+.fieldGroupBody .chosenActions :is(button, a) {
   font-size: 13px;
 }
 .capabilityItem {
@@ -451,10 +451,10 @@
   .editorIdentity {
     grid-template-columns: minmax(0, 1fr);
   }
-  .connectionBody {
+  .fieldGroupBody {
     padding: 14px;
   }
-  .connectionBody .chosenActions {
+  .fieldGroupBody .chosenActions {
     width: 100%;
     margin: 0;
     justify-content: flex-end;
@@ -467,26 +467,12 @@
   }
 }
 
-.modelEditForm
+.modelConfigurationForm
   :is(.pricingSection, .advancedSection)
   > [data-slot="disclosure-surface"]
   > [data-slot="collapsible-trigger"] {
   font-size: 15px;
   font-weight: 600;
-}
-.modelEditForm
-  .advancedSection
-  [data-slot="collapsible-panel"]
-  .modelDetails
-  > section {
-  padding: 16px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 12px;
-}
-.modelEditForm .pricingEditor {
-  padding: 16px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 12px;
 }
 .pricingScroll {
   container-type: inline-size;
@@ -532,4 +518,59 @@
   .pricingTable td:last-child:empty {
     display: none;
   }
+}
+
+.creationSource {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.providerSummary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.providerSummary > span,
+.providerSummary > small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.providerSummary strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.creationSource .chosenActions {
+  margin: 0;
+}
+.creationSource button {
+  font-size: 13px;
+}
+.identityFields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.modelCreateForm .capabilitySummary {
+  gap: 8px;
+}
+.modelCreateForm .capabilitySummary > span {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  font-size: 12px;
+}
+.modelCreateForm .advancedSection {
+  padding-top: 8px;
+}
+.modelCreateForm
+  .advancedSection
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  padding-top: 20px;
 }

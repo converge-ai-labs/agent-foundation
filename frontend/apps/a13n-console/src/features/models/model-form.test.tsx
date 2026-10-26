@@ -391,7 +391,7 @@ it("applies a newly selected model immediately, including its catalog values", a
       body: {
         provider_id: "mprov_test",
         key: null,
-        name: "GPT-5.5",
+        name: "GPT-5.6",
         description: "",
         enabled: true,
         config: {
@@ -1177,4 +1177,23 @@ it("preserves saved PDF opt-in when editing a model", async () => {
   expect(state.PATCH.mock.calls[0][1].body.config.characteristics).toEqual(
     saved.config.characteristics,
   );
+});
+
+it("preserves a custom display name when choosing another model during creation", async () => {
+  mount({ providerId: "mprov_test" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
+  await user.clear(screen.getByLabelText("Name"));
+  await user.type(screen.getByLabelText("Name"), "Support assistant model");
+  await user.click(screen.getByRole("button", { name: "Choose a model" }));
+  await user.click(await screen.findByRole("button", { name: /GPT-5\.6/ }));
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
+    "Support assistant model",
+  );
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  expect(state.POST.mock.calls[0][1].body).toMatchObject({
+    name: "Support assistant model",
+    config: { model_name: "gpt-5.6" },
+  });
 });
