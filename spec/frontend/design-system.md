@@ -72,6 +72,8 @@ Interface text uses the system sans-serif family at 13px; prose and message cont
 
 Monospace is reserved for code, JSON, commands, and Markdown code. Identifiers use the sans family; a copy affordance appears beside them. Numbers that are compared use tabular figures.
 
+Labels, headings, badges and eyebrows use sentence case. Interface text is never set in all capitals or with widened letter spacing; emphasis comes from weight, color and size. Only literal values that must be read character by character, such as device codes, may use extra tracking.
+
 ## Color and Status
 
 Neutral surfaces carry the interface. The single filled accent is the primary button (near-black in light, near-white in dark). Indigo is a signal, not a brand fill: it marks focus, text selection, prose links, and the first chart series, and never fills buttons or decorates. Navigation and resource links inside the interface use text color with medium weight and an underline on hover. Console Markdown prose links use the signal color, medium weight and a persistent underline so they remain recognizable within generated answers and document previews; hover strengthens the underline and keyboard focus adds a visible ring. External navigation links carry a trailing arrow icon and open in a new tab only when leaving the product.
@@ -150,7 +152,7 @@ Tooltips use a compact dark rounded surface with light text in both themes, with
 
 ## Accessibility and Motion
 
-Every interactive element keeps a visible focus ring at both densities. Titled regions name themselves through their heading, so assistive technology can address them. Fields and icon-only actions have accessible names; tooltips complement, never replace, them. A resource without an image presents initials from the first and last word of its name on a hue derived from its identifier, so similar names stay distinguishable. Base UI controls keep keyboard interaction and disabled semantics. Motion is short (100–200ms), used for hover fills, disclosures, and overlays, and respects reduced-motion preferences.
+Every interactive element keeps a visible focus ring at both densities. Titled regions name themselves through their heading, so assistive technology can address them. Fields and icon-only actions have accessible names; tooltips complement, never replace, them. A resource without an image presents initials from the first and last word of its name on a hue derived from its identifier, so similar names stay distinguishable. Base UI controls keep keyboard interaction and disabled semantics. Motion is short (100–200ms), animates only color, opacity and transform, is used for hover fills, press feedback, disclosures, and overlays, and respects reduced-motion preferences. Buttons confirm a press with a slight scale (0.97) on top of their pressed fill; reduced motion keeps the fill only.
 
 ## Themes and Language
 

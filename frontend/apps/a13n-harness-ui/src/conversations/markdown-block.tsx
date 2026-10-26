@@ -13,6 +13,7 @@ import { ImagePreview } from "../shell/image-preview";
 import { renderDiagram } from "./mermaid-render";
 import { SyntaxCode } from "./syntax-code";
 import styles from "./markdown.module.css";
+import { copyText } from "../platform";
 
 export const MarkdownSource = createContext("");
 type Node = { type: string; value?: string; children?: Node[] };
@@ -170,7 +171,7 @@ export function MarkdownPre({
           aria-label={diagram ? "Copy diagram source" : "Copy code"}
           onClick={async () => {
             try {
-              await navigator.clipboard.writeText(source);
+              await copyText(source);
               setCopied(true);
               setCopyError(false);
             } catch {

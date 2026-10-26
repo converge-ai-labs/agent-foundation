@@ -90,17 +90,3 @@ export function TextField({
     </FormField>
   );
 }
-export function JsonDetails({
-  value,
-  label = "Details",
-}: {
-  value: unknown;
-  label?: string;
-}) {
-  return (
-    <details className={styles.details}>
-      <summary>{label}</summary>
-      <pre>{JSON.stringify(value, null, 2)}</pre>
-    </details>
-  );
-}

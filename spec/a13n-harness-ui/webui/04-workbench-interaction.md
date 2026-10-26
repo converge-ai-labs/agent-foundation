@@ -305,3 +305,7 @@ Terminal search operates on retained screen output, with previous/next matches; 
 7. Terminal takeover changes input authority without disconnecting other viewers or replaying input.
 8. Disabled sharing, missing Git, unsupported PTY, and authentication failures have distinct recovery paths.
 9. Two people can see whether they are on the same Chat, file, or configuration page without being navigated there by each other; multiple/background tabs are distinguishable.
+
+## Debug Mode
+
+Debug mode is a per-browser presentation preference, off by default. It is toggled from General settings or with Command+Option+D (Control+Alt+D elsewhere) and applies to owner and guest views alike. While enabled, surfaces may reveal data-level detail behind quiet, copyable affordances: identifiers, raw payloads, events and token figures. Debug mode never changes behavior, authority or what the server returns; it only reveals data the page already holds.

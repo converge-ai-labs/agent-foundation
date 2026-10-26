@@ -139,7 +139,7 @@ export function VoicePage() {
         data-running={running}
         aria-label="Voice conversation"
       >
-        <p className={styles.eyebrow}>HARNESS UI · LIVE</p>
+        <p className={styles.eyebrow}>Harness UI · Live</p>
         <h1>
           {running ? (
             "Live conversation"

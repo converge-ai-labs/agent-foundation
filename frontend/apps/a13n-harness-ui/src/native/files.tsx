@@ -14,6 +14,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { basename, joinPath, gitPath, FileBuffers, withinRoot } from "./buffer";
 import { useGitStatus } from "./changes";
 import styles from "./native.module.css";
+import { copyText } from "../platform";
 
 type Operation =
   | { kind: "new-file" | "new-directory" | "upload" }
@@ -42,7 +43,7 @@ export function Files({
   const [filter, setFilter] = useState("");
   const [copyError, setCopyError] = useState(false);
   const copyPath = (path: string) => {
-    void navigator.clipboard.writeText(path).then(
+    void copyText(path).then(
       () => setCopyError(false),
       () => setCopyError(true),
     );

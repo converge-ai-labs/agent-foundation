@@ -11,6 +11,7 @@ import accountStyles from "./accounts.module.css";
 import { SubscriptionAccounts, AccountGroups } from "./subscriptions";
 import { CredentialKeys } from "./credential-keys";
 import { ChatGPTAllowance, CopilotAllowance } from "./provider-usage";
+import { copyText } from "../platform";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -248,7 +249,7 @@ export function ProviderAccount({
   async function copyCode() {
     if (!code) return;
     try {
-      await navigator.clipboard.writeText(code);
+      await copyText(code);
       setCopiedCode(code);
       setCopyFailed(false);
     } catch {

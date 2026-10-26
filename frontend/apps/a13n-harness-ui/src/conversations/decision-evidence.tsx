@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Badge, Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import styles from "./decisions.module.css";
+import { copyText } from "../platform";
 
 type Request = Schema<"ApprovalRequestView"> | Schema<"ExternalRequestView">;
 export function record(value: unknown): Record<string, unknown> | undefined {
@@ -164,7 +165,7 @@ function CopyCommand({ command }: { command: string }) {
       onClick={() => {
         void (async () => {
           try {
-            await navigator.clipboard.writeText(command);
+            await copyText(command);
             setStatus("Copied");
           } catch {
             setStatus("Copy failed");

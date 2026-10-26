@@ -30,6 +30,7 @@ import { useTransport } from "../transport/context";
 import { TerminalConnection, type TerminalState } from "./terminal-connection";
 import "@xterm/xterm/css/xterm.css";
 import styles from "./terminal.module.css";
+import { copyText, readText, openExternal } from "../platform";
 
 const searchOptions = {
   decorations: {
@@ -101,8 +102,7 @@ export default function TerminalScreen({
     search.current = finder;
     term.loadAddon(
       new WebLinksAddon((_event, uri) => {
-        if (/^https?:\/\//i.test(uri))
-          window.open(uri, "_blank", "noopener,noreferrer");
+        if (/^https?:\/\//i.test(uri)) openExternal(uri);
       }),
     );
     term.open(host);
@@ -317,7 +317,7 @@ export default function TerminalScreen({
     const text = terminal.current?.getSelection();
     if (!text) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       setFeedback("Selection copied.");
     } catch {
       setFeedback("Copy unavailable. Use your browser's copy action.");
@@ -329,7 +329,7 @@ export default function TerminalScreen({
     if (!session?.controls || !term) return;
     const epoch = session.state.frame?.terminal.control_epoch;
     try {
-      const text = await navigator.clipboard.readText();
+      const text = await readText();
       // Clipboard permission can resolve after a detach or control transfer.
       if (
         !shown.current ||

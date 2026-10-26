@@ -35,6 +35,7 @@ import styles from "./tool-call.module.css";
 import { SyntaxCode, codeLanguage } from "./syntax-code";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { RetainedImagePreview } from "./image-preview";
+import { copyText } from "../platform";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
@@ -62,7 +63,7 @@ function CodeContent({
           variant="ghost"
           aria-label={`Copy ${title.toLowerCase()}`}
           onClick={() => {
-            void navigator.clipboard.writeText(content).then(
+            void copyText(content).then(
               () => {
                 setCopied(true);
                 setError(false);
@@ -412,6 +413,12 @@ function ToolDetails({ tool }: { tool: ToolView }) {
     </div>
   );
 }
+function toolState(phase: string) {
+  if (phase === "Failed") return "failed";
+  if (phase === "Result received") return "done";
+  return "running";
+}
+
 const toolIcons = {
   file: FileText,
   edit: PencilSimple,
@@ -581,7 +588,11 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   if (tool.name === "ask_user_question")
     return <QuestionInteraction tool={tool} />;
   return (
-    <section className={styles.tool} data-tool-id={tool.id}>
+    <section
+      className={styles.tool}
+      data-tool-id={tool.id}
+      data-state={toolState(info.phase)}
+    >
       <DisclosureSection
         open={expanded}
         onOpenChange={setExpanded}
@@ -745,6 +756,11 @@ export const ToolActivity = memo(function ToolActivity({
       className={`${styles.tool} ${styles.group}`}
       data-activity={kind}
       data-tool-id={tools[0].id}
+      data-state={
+        tools.some((tool) => toolState(describeTool(tool).phase) === "running")
+          ? "running"
+          : undefined
+      }
     >
       <DisclosureSection
         className={styles.groupDisclosure}

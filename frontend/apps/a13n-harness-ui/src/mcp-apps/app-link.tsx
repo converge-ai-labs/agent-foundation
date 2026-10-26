@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "a13n-ui";
 import styles from "./app-card.module.css";
+import { openExternal } from "../platform";
 
 /** App-provided destinations never navigate the authenticated Host or its sandbox. */
 export function externalAppLink(
@@ -69,7 +70,7 @@ export function useAppLink() {
             const link = pending.current;
             if (!link) return;
             // Keep window.open in the trusted Host click, not an asynchronous App callback.
-            window.open(link.href, "_blank", "noopener,noreferrer");
+            openExternal(link.href);
             pending.current = undefined;
             setHref(undefined);
             link.resolve({});

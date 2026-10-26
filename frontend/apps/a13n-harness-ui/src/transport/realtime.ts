@@ -1,4 +1,5 @@
 import type { Schema } from "./client";
+import { apiOrigin } from "../platform";
 
 type Subscription = {
   stream: "summary" | "focus";
@@ -68,8 +69,7 @@ export class Realtime {
   }
   private connect() {
     if (this.closed || this.socket || this.timer || !this.channels.size) return;
-    const url =
-      this.endpoint ?? new URL("/api/realtime/connect", window.location.origin);
+    const url = this.endpoint ?? new URL("/api/realtime/connect", apiOrigin());
     if (url.protocol === "https:") url.protocol = "wss:";
     else if (url.protocol === "http:") url.protocol = "ws:";
     const socket = new WebSocket(url);

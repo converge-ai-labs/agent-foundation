@@ -6,9 +6,8 @@
 }
 .eyebrow {
   color: var(--a13n-secondary);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.1em;
   margin-bottom: 8px;
 }
 .steps {

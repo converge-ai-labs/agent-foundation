@@ -8,6 +8,7 @@ import { NewResourceButton } from "./sources";
 import { useDeviceInfo } from "./device-directory";
 
 import { connectCommand } from "./device-command";
+import { copyText } from "../platform";
 
 export function ConnectDevice({
   onConnected,
@@ -71,7 +72,7 @@ function ConnectDeviceSteps({
     desktop,
   );
   const copy = useMutation({
-    mutationFn: () => navigator.clipboard.writeText(command),
+    mutationFn: () => copyText(command),
     onSuccess: () => setCopied(command),
   });
   return (

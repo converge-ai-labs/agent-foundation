@@ -15,6 +15,7 @@ import { useProjects, useTransport } from "./transport/context";
 import { useThread } from "./conversations/queries";
 import { ErrorNotice } from "./shell/ui";
 import styles from "./sharing.module.css";
+import { copyText } from "./platform";
 
 type Permission = Schema<"ShareGrant">["permission"];
 type Scope = Schema<"ShareGrant">["scope"];
@@ -137,7 +138,7 @@ function ShareContents({
   const copy = async () => {
     setCopyError("");
     try {
-      await navigator.clipboard.writeText(link);
+      await copyText(link);
       setCopied(true);
     } catch {
       setCopyError("Select the link above and copy it manually.");

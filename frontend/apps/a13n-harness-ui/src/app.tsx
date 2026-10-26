@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter } from "react-router";
 import { GuestApp } from "./guest-app";
+import { DebugProvider } from "./shell/debug";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import {
@@ -61,7 +62,11 @@ export function BrowserApp() {
   const shareId = /^\/share\/([^/]+)(?:\/|$)/.exec(
     window.location.pathname,
   )?.[1];
-  return shareId ? <GuestApp shareId={shareId} /> : <OwnerApp />;
+  return (
+    <DebugProvider>
+      {shareId ? <GuestApp shareId={shareId} /> : <OwnerApp />}
+    </DebugProvider>
+  );
 }
 function OwnerApp() {
   // Consume and remove the URL credential before mounting the router or any network consumer.

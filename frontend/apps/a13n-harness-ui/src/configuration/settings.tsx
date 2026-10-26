@@ -1,7 +1,8 @@
 import { useContext, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { SettingsSection, Skeleton } from "a13n-ui";
+import { SettingsRow, SettingsSection, Skeleton, Switch } from "a13n-ui";
+import { debugShortcutLabel, useDebug } from "../shell/debug";
 import {
   useSelectors,
   useSources,
@@ -118,6 +119,25 @@ export function SettingsLayout() {
   );
 }
 
+function DebugModeSetting() {
+  const debug = useDebug();
+  return (
+    <SettingsSection title="Developer">
+      <SettingsRow
+        label="Debug mode"
+        controlId="debug-mode"
+        description={`Show identifiers, raw payloads, events and token details across the app. Toggle anywhere with ${debugShortcutLabel()}.`}
+      >
+        <Switch
+          id="debug-mode"
+          checked={debug.enabled}
+          onCheckedChange={(checked) => debug.setEnabled(checked)}
+        />
+      </SettingsRow>
+    </SettingsSection>
+  );
+}
+
 export function GeneralSettings() {
   const location = useLocation();
   const sources = useSources();
@@ -154,6 +174,9 @@ export function GeneralSettings() {
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
+      <div className={layout.formWidth}>
+        <DebugModeSetting />
+      </div>
       <details
         id="notifications"
         className={layout.disclosure}

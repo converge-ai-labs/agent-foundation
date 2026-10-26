@@ -1,54 +1,124 @@
+/* Tool activity reads like a quiet log line (icon · verb · target · state).
+   Details open into an indented rail so the transcript keeps its rhythm. */
 .tool {
+  --tool-row: 30px;
   min-width: 0;
-  margin: 0.25rem 0;
-  font-size: 0.8125rem;
+  margin: 2px 0;
+  font-size: 13px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: 0.25rem;
+  column-gap: 4px;
 }
 .tool [data-slot="disclosure-surface"] {
-  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  background: transparent;
 }
 .tool [data-slot="disclosure-surface"] > button {
-  min-height: 32px;
-  padding-block: 6px;
-  font-size: 12px;
-  color: var(--a13n-text-supporting);
-}
-.tool .title {
-  font-size: 12px;
-}
-.tool .title strong {
+  min-height: var(--tool-row);
+  padding-block: 4px;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 400;
+  color: var(--a13n-text-supporting, var(--muted-foreground));
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.tool [data-slot="disclosure-surface"] > button:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+.tool [data-slot="disclosure-surface"] > button:active {
+  background: var(--muted);
+}
+.tool [data-slot="disclosure-surface"] > button > svg:first-child {
+  opacity: 0.55;
+  transition:
+    transform 150ms ease-out,
+    opacity 120ms ease;
+}
+.tool [data-slot="disclosure-surface"] > button:hover > svg:first-child,
+.tool
+  [data-slot="disclosure-surface"]
+  > button[aria-expanded="true"]
+  > svg:first-child {
+  opacity: 1;
+}
+.tool [data-slot="disclosure-surface"] > button[aria-expanded="true"] {
+  color: var(--foreground);
+}
+/* Expanded content hangs off a hairline rail aligned under the tool icon. */
+.tool [data-slot="disclosure-surface"] > [data-slot="collapsible-panel"],
+.tool [data-slot="disclosure-surface"] > div:last-child:not(button) {
+  margin-left: 13px;
+  padding-left: 15px;
+  border-left: 1px solid var(--border);
 }
 .title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   min-width: 0;
   font-weight: 400;
+  line-height: 20px;
 }
 .title > svg {
   flex: 0 0 auto;
-  width: 1rem;
-  height: 1rem;
+  width: 15px;
+  height: 15px;
   color: var(--muted-foreground);
 }
 .title strong {
   flex: 0 0 auto;
   font-weight: 500;
+  color: var(--foreground);
 }
 .title > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.75rem;
+  font: 12px/20px var(--font-mono);
   color: var(--muted-foreground);
 }
 .phase {
-  font-size: 0.6875rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
   white-space: nowrap;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.phase:not(:empty)::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+.tool[data-state="running"] .phase::before,
+.group[data-state="running"] .phase::before {
+  background: var(--a13n-accent, #3b82f6);
+  opacity: 1;
+  animation: toolPulse 1.2s ease-in-out infinite;
+}
+@keyframes toolPulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool[data-state="running"] .phase::before,
+  .group[data-state="running"] .phase::before {
+    animation: none;
+  }
+}
+.tool[data-state="failed"] .title > svg,
+.tool[data-state="failed"] .phase {
+  color: var(--destructive);
 }
 .error {
   color: var(--destructive);
@@ -60,10 +130,10 @@
   height: 1.5rem;
 }
 .details {
-  max-height: min(65vh, 40rem);
+  max-height: min(70vh, 44rem);
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  padding: 2px 2px 8px 0;
   display: grid;
   grid-auto-rows: max-content;
   align-content: start;
@@ -78,15 +148,16 @@
 .details small,
 .diff > small {
   color: var(--muted-foreground);
-  font-size: 0.6875rem;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .content,
 .diff {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: 10px;
   overflow: hidden;
-  background: var(--background);
+  background: color-mix(in srgb, var(--muted) 30%, var(--background));
 }
 .content {
   margin-top: 0.35rem;
@@ -97,21 +168,24 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 2rem;
-  padding: 0.2rem 0.65rem;
+  min-height: 30px;
+  padding: 0 4px 0 12px;
   color: var(--muted-foreground);
-  font-size: 0.6875rem;
+  font-size: 12px;
   border-bottom: 1px solid var(--border);
+  background: var(--background);
 }
 .content pre,
 .diff pre {
   margin: 0;
   overflow-x: auto;
-  font: 0.75rem/1.65 var(--font-mono);
+  font: 12px/1.6 var(--font-mono);
   tab-size: 4;
 }
 .content pre {
-  padding: 0.65rem;
+  max-height: 22rem;
+  overflow: auto;
+  padding: 10px 12px;
   white-space: pre;
 }
 .diff > small {
@@ -234,7 +308,7 @@
 }
 .operation + .operation {
   padding-top: 1rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px dashed var(--border);
 }
 .operation > header {
   display: flex;
