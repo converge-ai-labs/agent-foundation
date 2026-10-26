@@ -1,9 +1,17 @@
-import { createContext, memo, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useGuestAccess } from "../transport/context";
 import {
   ArrowSquareOut,
+  BracketsCurly,
   Check,
   Copy,
   FileText,
@@ -245,9 +253,71 @@ function ToolImages({ tool }: { tool: ToolView }) {
   );
 }
 
-function ToolDetails({ tool }: { tool: ToolView }) {
+/** Recorded arguments and result, formatted or exactly as received. */
+function ToolData({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [raw, setRaw] = useState(false);
+  return (
+    <>
+      <div className={styles.format}>
+        <Button
+          size="sm"
+          variant={raw ? "ghost" : "secondary"}
+          aria-pressed={!raw}
+          onClick={() => setRaw(false)}
+        >
+          Formatted
+        </Button>
+        <Button
+          size="sm"
+          variant={raw ? "secondary" : "ghost"}
+          aria-pressed={raw}
+          onClick={() => setRaw(true)}
+        >
+          Raw
+        </Button>
+      </div>
+      {tool.inputOmitted ? (
+        <p>Arguments omitted by the server.</p>
+      ) : (
+        tool.input !== undefined && (
+          <CodeContent
+            title="Arguments"
+            value={raw ? tool.input : parsed(tool.input)}
+          />
+        )
+      )}
+      {tool.resultParts && <AguiContent parts={tool.resultParts} />}
+      {tool.resultOmitted ? (
+        <p>Result omitted by the server.</p>
+      ) : (
+        tool.result !== undefined && (
+          <CodeContent
+            title="Result"
+            value={raw ? tool.result : parsed(tool.result)}
+          />
+        )
+      )}
+      {tool.result === undefined &&
+        !tool.resultParts &&
+        !tool.resultOmitted && (
+          <small>
+            {info.phase}. This does not establish whether side effects occurred.
+          </small>
+        )}
+    </>
+  );
+}
+
+function ToolDetails({
+  tool,
+  data = true,
+}: {
+  tool: ToolView;
+  /** Grouped operations offer recorded data from their own row instead. */
+  data?: boolean;
+}) {
+  const info = describeTool(tool);
   const replacements =
     tool.name === "multi_edit" && Array.isArray(info.args.edits)
       ? info.args.edits.filter(record)
@@ -376,56 +446,55 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       {tool.name === "run_code" && typeof info.args.code === "string" && (
         <CodeContent title="Code" value={info.args.code} language="python" />
       )}
-      <DisclosureSection title="Arguments & result">
-        <div className={styles.format}>
-          <Button
-            size="sm"
-            variant={raw ? "ghost" : "secondary"}
-            aria-pressed={!raw}
-            onClick={() => setRaw(false)}
-          >
-            Formatted
-          </Button>
-          <Button
-            size="sm"
-            variant={raw ? "secondary" : "ghost"}
-            aria-pressed={raw}
-            onClick={() => setRaw(true)}
-          >
-            Raw
-          </Button>
-        </div>
-        {tool.inputOmitted ? (
-          <p>Arguments omitted by the server.</p>
-        ) : (
-          tool.input !== undefined && (
-            <CodeContent
-              title="Arguments"
-              value={raw ? tool.input : parsed(tool.input)}
-            />
-          )
-        )}
-        {tool.resultParts && <AguiContent parts={tool.resultParts} />}
-        {tool.resultOmitted ? (
-          <p>Result omitted by the server.</p>
-        ) : (
-          tool.result !== undefined && (
-            <CodeContent
-              title="Result"
-              value={raw ? tool.result : parsed(tool.result)}
-            />
-          )
-        )}
-        {tool.result === undefined &&
-          !tool.resultParts &&
-          !tool.resultOmitted && (
-            <small>
-              {info.phase}. This does not establish whether side effects
-              occurred.
-            </small>
-          )}
-      </DisclosureSection>
+      {data && (
+        <DisclosureSection title="Arguments & result">
+          <ToolData tool={tool} />
+        </DisclosureSection>
+      )}
     </div>
+  );
+}
+
+/** One grouped call: a single row whose semantic details follow directly. */
+function ToolOperation({ tool }: { tool: ToolView }) {
+  const detail = describeTool(tool);
+  const [data, setData] = useState(false);
+  const panel = useId();
+  return (
+    <section
+      className={styles.operation}
+      data-operation-id={tool.id}
+      data-state={toolState(detail.phase)}
+    >
+      <header>
+        <span className={styles.operationName}>{detail.label}</span>
+        <span className={styles.operationSummary} title={detail.summary}>
+          {detail.summary}
+        </span>
+        {detail.phase !== "Result received" && (
+          <small className={styles.phase}>{detail.phase}</small>
+        )}
+        <ToolActions tool={tool} />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className={styles.dataToggle}
+          aria-label="Arguments & result"
+          title="Arguments & result"
+          aria-expanded={data}
+          aria-controls={data ? panel : undefined}
+          onClick={() => setData((open) => !open)}
+        >
+          <BracketsCurly />
+        </Button>
+      </header>
+      {data && (
+        <div id={panel} className={styles.operationData}>
+          <ToolData tool={tool} />
+        </div>
+      )}
+      <ToolDetails tool={tool} data={false} />
+    </section>
   );
 }
 function toolState(phase: string) {
@@ -795,28 +864,9 @@ export const ToolActivity = memo(function ToolActivity({
       >
         {expanded && (
           <div className={styles.operations}>
-            {tools.map((tool) => {
-              const detail = describeTool(tool);
-              return (
-                <section
-                  key={tool.id}
-                  className={styles.operation}
-                  data-operation-id={tool.id}
-                >
-                  <header>
-                    <span className={styles.operationName}>{detail.label}</span>
-                    {detail.summary && (
-                      <span title={detail.summary}>{detail.summary}</span>
-                    )}
-                    {detail.phase !== "Result received" && (
-                      <small className={styles.phase}>{detail.phase}</small>
-                    )}
-                  </header>
-                  <ToolActions tool={tool} />
-                  <ToolDetails tool={tool} />
-                </section>
-              );
-            })}
+            {tools.map((tool) => (
+              <ToolOperation key={tool.id} tool={tool} />
+            ))}
           </div>
         )}
       </DisclosureSection>
