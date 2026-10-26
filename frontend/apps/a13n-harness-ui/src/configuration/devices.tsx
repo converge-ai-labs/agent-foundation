@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice } from "../shell/ui";
+import { EmptyList, ErrorNotice } from "../shell/ui";
 import { DraftLinks } from "./sources";
 import { useDeviceInfo } from "./device-directory";
 import { ConnectDevice, PendingDevice } from "./connect-device";
@@ -49,7 +49,9 @@ export function DevicesSection() {
         </div>
       )}
       <DraftLinks kinds={["device"]} />
-      {devices.data?.length === 0 && <p>No Devices connected yet.</p>}
+      {devices.data?.length === 0 && (
+        <EmptyList>No devices connected yet.</EmptyList>
+      )}
       {devices.data?.map((device) => {
         const source = sources.data?.sources.find(
           (item) =>

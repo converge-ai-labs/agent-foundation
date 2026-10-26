@@ -14,6 +14,7 @@ import { Plus, ArrowLeft, DotsThree, Trash } from "@phosphor-icons/react";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import {
+  EmptyList,
   ErrorNotice,
   PageHeader,
   Panel,
@@ -176,6 +177,9 @@ export function SourcesPage({
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [kind, setKind] = useState<ResourceKind>("model");
+  const listed = sources.data?.sources.filter(
+    (source) => !kinds || kinds.includes(source.resource_kind as ResourceKind),
+  );
   const [id, setId] = useState("model-primary");
   const drafts = useContext(DraftContext);
   const navigate = useNavigate();
@@ -203,20 +207,18 @@ export function SourcesPage({
           void selectors.refetch();
         }}
       />
-      <SearchField
-        label={`Search ${inlineLabel(title)}`}
-        value={search}
-        onChange={setSearch}
-      />
+      {!!listed?.length && (
+        <SearchField
+          label={`Search ${inlineLabel(title)}`}
+          value={search}
+          onChange={setSearch}
+        />
+      )}
       {sources.isPending && <p role="status">Loading resources…</p>}
       <DraftLinks kinds={kinds} search={search} />
       <div className={styles.resourceList}>
-        {sources.data?.sources
-          .filter(
-            (source) =>
-              !kinds || kinds.includes(source.resource_kind as ResourceKind),
-          )
-          .filter((source) =>
+        {listed
+          ?.filter((source) =>
             `${displayName(source)} ${source.relative_path} ${source.resource_ids.join(" ")}`
               .toLowerCase()
               .includes(search.toLowerCase()),
@@ -260,11 +262,11 @@ export function SourcesPage({
             </Link>
           ))}
       </div>
-      {sources.data &&
-        kinds &&
-        !sources.data.sources.some((source) =>
-          kinds.includes(source.resource_kind as ResourceKind),
-        ) && <p>No {inlineLabel(title)} yet. Add one to get started.</p>}
+      {kinds && listed?.length === 0 && (
+        <EmptyList>
+          No {inlineLabel(title)} yet. Add one to get started.
+        </EmptyList>
+      )}
       {sources.data && !kinds && !sources.data.sources.length && (
         <Panel title="No saved configuration">
           <p>

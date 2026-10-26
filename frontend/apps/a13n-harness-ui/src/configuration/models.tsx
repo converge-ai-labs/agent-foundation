@@ -11,7 +11,13 @@ import {
 } from "a13n-ui";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, SearchField, TextField } from "../shell/ui";
+import {
+  EmptyList,
+  ErrorNotice,
+  PageHeader,
+  SearchField,
+  TextField,
+} from "../shell/ui";
 import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
@@ -24,9 +30,9 @@ import {
   Plus,
   Copy,
   Image,
-  SlidersHorizontal,
 } from "@phosphor-icons/react";
 import management from "./management.module.css";
+import layout from "./settings.module.css";
 import styles from "../shell/workbench.module.css";
 
 export function ModelsPage() {
@@ -259,18 +265,15 @@ export function ModelsPage() {
           })}
       </div>
       {selectors.data && !selectors.data.models?.length && (
-        <p>
-          No saved Models yet. Add a subscription or API connection to get
-          started.
-        </p>
+        <EmptyList>
+          No models yet. Add a subscription or API connection to get started.
+        </EmptyList>
       )}
       {root && (
-        <details className={styles.details}>
+        <details className={layout.disclosure}>
           <summary>
-            <span className={management.inlineLabel}>
-              <SlidersHorizontal aria-hidden="true" />
-              Media understanding defaults
-            </span>
+            <span>Media understanding defaults</span>
+            <small>Fallback models when native input is unavailable</small>
           </summary>
           <SourceDocument
             key={root.relative_path}

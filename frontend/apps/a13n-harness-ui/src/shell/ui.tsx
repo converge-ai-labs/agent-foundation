@@ -93,6 +93,10 @@ export function SearchField({
     />
   );
 }
+/** The placeholder a list shows when it has no items yet. */
+export function EmptyList({ children }: { children: ReactNode }) {
+  return <p className={styles.emptyList}>{children}</p>;
+}
 export function TextField({
   label,
   value,

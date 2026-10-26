@@ -664,7 +664,8 @@ a.resourceRow:hover {
   max-width: 100%;
 }
 .settingsNav h2 {
-  padding: 0 12px;
+  /* Same inset as the rows below, so the title starts on the icon column. */
+  padding: 0 8px;
   margin-bottom: 16px;
 }
 .settingsContent {
@@ -689,6 +690,16 @@ a.resourceRow:hover {
 }
 .search {
   width: min(100%, 320px);
+}
+.emptyList {
+  margin: 0;
+  padding: 20px 16px;
+  border: 1px dashed var(--a13n-border);
+  border-radius: 10px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
 }
 .panelContent {
   display: flex;
@@ -802,4 +813,16 @@ a.resourceRow:hover {
 }
 .selectionOption > span {
   min-width: 0;
+}
+/* Inline keyboard shortcut inside prose. */
+.kbd {
+  display: inline-block;
+  padding: 0 4px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 4px;
+  background: var(--a13n-surface);
+  font: inherit;
+  font-size: 0.92em;
+  line-height: 1.4;
+  white-space: nowrap;
 }

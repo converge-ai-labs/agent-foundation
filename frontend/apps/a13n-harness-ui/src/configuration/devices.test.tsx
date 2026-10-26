@@ -150,7 +150,7 @@ it("rejects an unrecognized request without adding a Device", async () => {
   mount();
   await user.click(await screen.findByRole("button", { name: "Reject" }));
   await waitFor(() => expect(screen.queryByText("ABCD-1234")).toBeNull());
-  expect(screen.getByText("No Devices connected yet.")).not.toBeNull();
+  expect(screen.getByText("No devices connected yet.")).not.toBeNull();
   expect(requests).not.toContain("POST /api/device-pairings/pair-one/approve");
 });
 

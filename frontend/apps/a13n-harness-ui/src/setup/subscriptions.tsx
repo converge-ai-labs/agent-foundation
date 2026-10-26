@@ -35,7 +35,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 import {
   ChatGPTAllowance,
@@ -660,7 +660,9 @@ export function SubscriptionAccounts({
           !accounts.length &&
           !connected.length &&
           !singleAccounts.some((item) => item.isPending) && (
-            <p>No accounts connected. Add an account to get started.</p>
+            <EmptyList>
+              No accounts connected. Add an account to get started.
+            </EmptyList>
           )}
       </div>
       {!!catalog.data?.adoption && (
@@ -876,7 +878,7 @@ export function AccountGroups() {
             </article>
           ))}
         {!catalog.isPending && !catalog.data?.groups.length && (
-          <p>No groups yet. Create one to combine accounts.</p>
+          <EmptyList>No groups yet. Create one to combine accounts.</EmptyList>
         )}
       </div>
     </section>

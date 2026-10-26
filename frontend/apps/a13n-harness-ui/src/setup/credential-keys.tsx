@@ -11,7 +11,7 @@ import { Button, Input, ModalFrame } from "a13n-ui";
 import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 
 export function CredentialKeys({
@@ -249,11 +249,11 @@ export function CredentialKeys({
           </section>
         ))}
       {!keys.isPending && !keys.error && !grouped.size && (
-        <p className={styles.empty}>
+        <EmptyList>
           {filter
             ? "No keys match your search."
             : "No saved keys yet. Add an API key, then select it in a Model or Device."}
-        </p>
+        </EmptyList>
       )}
       <p className={styles.help}>
         These credentials are shared by Models and Devices, separate from your

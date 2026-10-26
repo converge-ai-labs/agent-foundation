@@ -370,12 +370,6 @@
 .modelLinks a:hover {
   text-decoration: underline;
 }
-.empty {
-  background: var(--a13n-surface);
-  padding: 24px;
-  border-radius: 12px;
-  color: var(--a13n-secondary);
-}
 @media (max-width: 700px) {
   .accountCard {
     padding: 14px;

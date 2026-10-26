@@ -909,8 +909,8 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  await user.click(await screen.findByText("Capabilities"));
-  const catalog = screen.getByText("Capabilities").parentElement!;
+  await user.click(await screen.findByText("Installed capabilities"));
+  const catalog = screen.getByText("Installed capabilities").parentElement!;
   expect(await within(catalog).findByText("available")).toBeTruthy();
   expect(within(catalog).getByText("Built-in")).toBeTruthy();
   expect(within(catalog).queryByText("pydantic")).toBeNull();
@@ -1017,7 +1017,7 @@ it.each(["read-only", "missing"])(
       }),
     );
     render(<BrowserApp />);
-    fireEvent.click(await screen.findByText("Capabilities"));
+    fireEvent.click(await screen.findByText("Installed capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (availability === "missing") {
       expect(
@@ -1068,7 +1068,7 @@ it.each([false, true])(
       }),
     );
     render(<BrowserApp />);
-    fireEvent.click(await screen.findByText("Capabilities"));
+    fireEvent.click(await screen.findByText("Installed capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (failed) {
       await screen.findByText("Agent list unavailable");

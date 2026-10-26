@@ -126,7 +126,13 @@ function DebugModeSetting() {
       <SettingsRow
         label="Debug mode"
         controlId="debug-mode"
-        description={`Show identifiers, raw payloads, events and token details across the app. Toggle anywhere with ${debugShortcutLabel()}.`}
+        description={
+          <>
+            Show identifiers, raw payloads, events and token details across the
+            app. Toggle anywhere with{" "}
+            <kbd className={styles.kbd}>{debugShortcutLabel()}</kbd>.
+          </>
+        }
       >
         <Switch
           id="debug-mode"
@@ -225,7 +231,7 @@ export function AgentsPage() {
         description="Configure instructions, models and tools for each agent."
       />
       <details className={layout.disclosure}>
-        <summary>Capabilities</summary>
+        <summary>Installed capabilities</summary>
         <InstalledCatalog kind="capability" />
       </details>
     </>
@@ -251,7 +257,7 @@ export function ConnectionsPage() {
       <SourcesPage
         kinds={["harness_plugin"]}
         headingLevel={2}
-        title="Agent plugins"
+        title="Harness plugins"
       />
       {root && (
         <details className={layout.disclosure}>
@@ -265,7 +271,7 @@ export function ConnectionsPage() {
         </details>
       )}
       <details className={layout.disclosure}>
-        <summary>Plugins</summary>
+        <summary>Installed plugins</summary>
         <InstalledCatalog kind="harness_plugin" />
       </details>
     </>
