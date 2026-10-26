@@ -3410,5 +3410,7 @@
   "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.": "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.",
   "Allocating Sprite": "Allocating Sprite",
   "Installing Envd and desktop dependencies": "Installing Envd and desktop dependencies",
-  "Install Envd, desktop dependencies and human control on each new sandbox.": "Install Envd, desktop dependencies and human control on each new sandbox."
+  "Install Envd, desktop dependencies and human control on each new sandbox.": "Install Envd, desktop dependencies and human control on each new sandbox.",
+  "Earlier runs": "Earlier runs",
+  "Later runs": "Later runs"
 }

@@ -349,7 +349,7 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
   const queue = screen.getByText("Thread inbox");
   const dock = queue.closest("[data-thread-dock]");
   expect(dock).not.toBeNull();
-  await user.click(list.getByRole("button", { name: "Load earlier runs" }));
+  await user.click(list.getByRole("button", { name: "Earlier runs" }));
   const selected = await list.findByRole("button", { name: /^Run 4/ });
   const rows = list.getAllByRole("button");
   panel.scrollTop = 90;

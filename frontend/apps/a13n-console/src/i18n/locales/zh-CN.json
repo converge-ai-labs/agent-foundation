@@ -3410,5 +3410,7 @@
   "Each new Sprites desktop installs Envd and desktop dependencies and can take several minutes. Existing Sprites retain the installation after sleep. You can leave this page while creation continues.": "每个新的 Sprites 桌面都需要安装 Envd 和桌面依赖，可能耗时数分钟。已有 Sprite 休眠后会保留安装结果。创建期间可以离开此页面。",
   "Allocating Sprite": "正在分配 Sprite",
   "Installing Envd and desktop dependencies": "正在安装 Envd 和桌面依赖",
-  "Install Envd, desktop dependencies and human control on each new sandbox.": "在每个新沙箱内安装 Envd、桌面依赖和人工接管服务。"
+  "Install Envd, desktop dependencies and human control on each new sandbox.": "在每个新沙箱内安装 Envd、桌面依赖和人工接管服务。",
+  "Earlier runs": "更早的运行",
+  "Later runs": "更晚的运行"
 }

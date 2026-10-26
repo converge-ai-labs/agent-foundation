@@ -159,12 +159,12 @@ it("opens a deep run without walking thousands of pages and numbers both directi
   expect(requests[0]!.searchParams.get("anchor")).toBe("run_5000");
   await userEvent
     .setup()
-    .click(screen.getByRole("button", { name: "Load earlier runs" }));
+    .click(screen.getByRole("button", { name: "Earlier runs" }));
   await screen.findByText("Run 4997");
   expect(screen.getByText("Run 5000")).toBeTruthy();
   await userEvent
     .setup()
-    .click(screen.getByRole("button", { name: "Load newer runs" }));
+    .click(screen.getByRole("button", { name: "Later runs" }));
   await screen.findByText("Run 5002");
   expect(requests).toHaveLength(3);
   expect(
@@ -211,7 +211,7 @@ it("repairs a page that shrinks after sealing without refetching older history",
   await screen.findByText("Run 8");
   await userEvent
     .setup()
-    .click(screen.getByRole("button", { name: "Load earlier runs" }));
+    .click(screen.getByRole("button", { name: "Earlier runs" }));
   await screen.findByText("Run 5");
   shrunk = true;
   await act(() =>
@@ -259,7 +259,7 @@ it("refreshes a loaded newest cursor page when another Run arrives", async () =>
   await screen.findByText("Run 4");
   await userEvent
     .setup()
-    .click(screen.getByRole("button", { name: "Load newer runs" }));
+    .click(screen.getByRole("button", { name: "Later runs" }));
   await screen.findByText("Run 6");
   total = 7;
   await act(() =>
@@ -267,7 +267,7 @@ it("refreshes a loaded newest cursor page when another Run arrives", async () =>
   );
   await screen.findByText("Run 7");
   expect(requests.filter((cursor) => cursor === "newer4")).toHaveLength(2);
-  expect(screen.queryByRole("button", { name: "Load newer runs" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Later runs" })).toBeNull();
 });
 
 it("keeps the requested selection while a retained Run is inert and lets the reader return to it", async () => {

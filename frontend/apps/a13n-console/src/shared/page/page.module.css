@@ -61,6 +61,7 @@
   line-height: 20px;
 }
 .actions {
+  composes: compact from "../controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -402,7 +403,7 @@
 }
 @media (width < 768px) {
   .page {
-    padding: 24px var(--a13n-page-gutter-mobile) 40px;
+    padding: 16px var(--a13n-page-gutter-mobile) 40px;
   }
   .header {
     flex-direction: column;
@@ -413,11 +414,33 @@
     flex-basis: auto;
     width: 100%;
   }
+  .page > .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 12px;
+  }
+  .page > .header > :first-child {
+    display: contents;
+  }
+  .page > .header .titleRow {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .page > .header .description {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .page > .header > .actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
   .actions {
     justify-content: flex-start;
+    gap: 6px;
   }
   .toolbar {
-    margin-top: 16px;
+    margin-top: 14px;
   }
   .detailPage {
     padding: 20px var(--a13n-page-gutter-mobile) 140px;

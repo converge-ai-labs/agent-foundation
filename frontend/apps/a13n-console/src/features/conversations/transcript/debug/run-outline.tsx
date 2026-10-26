@@ -1,3 +1,4 @@
+import { CaretUpIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { useEffect, useRef } from "react";
 import { Button, MenuItem } from "a13n-ui";
 import { ErrorNotice } from "../../../../shared/feedback";
@@ -84,14 +85,25 @@ export function RunPages({
   const { t } = useTranslation();
   const older = direction === "older";
   if (!(older ? outline.hasOlder : outline.hasNewer)) return null;
+  const content = (
+    <>
+      {older ? (
+        <CaretUpIcon aria-hidden="true" />
+      ) : (
+        <CaretDownIcon aria-hidden="true" />
+      )}
+      {t(older ? "Earlier runs" : "Later runs")}
+    </>
+  );
   if (menu)
     return (
       <MenuItem
+        className={styles.pageAction}
         closeOnClick={false}
         disabled={outline.loading}
         onClick={older ? outline.loadOlder : outline.loadNewer}
       >
-        {t(older ? "Load earlier runs" : "Load newer runs")}
+        {content}
       </MenuItem>
     );
   return (
@@ -99,10 +111,11 @@ export function RunPages({
       type="button"
       size="sm"
       variant="ghost"
+      className={styles.pageAction}
       disabled={outline.loading}
       onClick={older ? outline.loadOlder : outline.loadNewer}
     >
-      {t(older ? "Load earlier runs" : "Load newer runs")}
+      {content}
     </Button>
   );
 }

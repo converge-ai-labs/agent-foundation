@@ -132,6 +132,7 @@ tr:focus-within .rowMenu,
 
 /* Toolbar ---------------------------------------------------------------- */
 .toolbar {
+  composes: compact from "../controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -324,6 +325,11 @@ tr:focus-within .rowMenu,
   color: var(--a13n-secondary);
 }
 @media (max-width: 760px) {
+  .toolbar,
+  .toolbarFilters,
+  .toolbarTrailing {
+    gap: 6px;
+  }
   .toolbarSearch {
     flex-basis: 140px;
     min-width: 0;
