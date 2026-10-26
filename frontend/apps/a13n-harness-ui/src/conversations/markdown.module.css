@@ -135,9 +135,23 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
+/* Header controls stay 28px with 13px labels at every width; coarse pointers
+   keep the shared 44px hit area. */
 .codeHeader button {
+  height: 28px;
   color: var(--a13n-secondary);
+  font-size: 13px;
   font-weight: 400;
+}
+.codeHeader button:hover {
+  color: var(--a13n-text);
+}
+.codeLanguage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--a13n-mono);
 }
 .codeHeader button[aria-pressed="true"] {
   color: var(--a13n-text);
@@ -145,6 +159,7 @@
 }
 .codeActions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 2px;
 }
@@ -245,5 +260,14 @@
   }
   .diagramCanvas {
     padding: 12px;
+  }
+  /* Diagram actions fold to icons so the header stays one row; Copy keeps
+     its label for the Copied confirmation. */
+  .actionLabel {
+    display: none;
+  }
+  .codeHeader button:has(.actionLabel) {
+    width: 28px;
+    padding: 0;
   }
 }

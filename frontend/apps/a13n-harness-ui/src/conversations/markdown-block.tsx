@@ -93,18 +93,20 @@ function Diagram({
             size="sm"
             onClick={() => setOriginal(!original)}
             aria-pressed={original}
+            aria-label="Source"
           >
             <Code />
-            Source
+            <span className={styles.actionLabel}>Source</span>
           </Button>
           <Button
             variant="ghost"
             size="sm"
             disabled={!current?.src}
             onClick={() => setExpanded(true)}
+            aria-label="Expand"
           >
             <ArrowsOut />
-            Expand
+            <span className={styles.actionLabel}>Expand</span>
           </Button>
         </>,
       )}
@@ -170,7 +172,9 @@ export function MarkdownPre({
   const header = (actions?: ReactNode) => (
     <>
       <div className={styles.codeHeader}>
-        <span>{diagram ? "Mermaid" : language || "Text"}</span>
+        <span className={styles.codeLanguage}>
+          {diagram ? "mermaid" : language || "text"}
+        </span>
         <div className={styles.codeActions}>
           {actions}
           <Button

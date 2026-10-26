@@ -1651,6 +1651,18 @@
   margin-inline-start: 5px;
   border-inline-start: 1px solid var(--a13n-border);
 }
+/* Inside Run details, reasoning keeps the 32px row rhythm of the tool groups
+   instead of the looser spacing it has between transcript paragraphs. */
+.executionContent .reasoning {
+  margin: 2px 0;
+}
+.executionContent .reasoning > summary {
+  min-height: 32px;
+  margin-bottom: 2px;
+}
+.executionContent .reasoning[open]:not(:last-child) {
+  margin-bottom: 12px;
+}
 .executionContent:focus-visible {
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
