@@ -243,6 +243,10 @@
 }
 
 @container (width > 720px) {
+  .usage thead th {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
   .usage :is(th, td):first-child {
     padding-left: 14px;
   }
