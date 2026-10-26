@@ -146,3 +146,15 @@ button.metric:hover,
 .numbers .scope {
   margin: 2px 0 0;
 }
+@media (max-width: 639px) {
+  /* One scrollable line on phones instead of a wrapped two-row block. */
+  .metrics {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
+  .metrics::-webkit-scrollbar {
+    display: none;
+  }
+}

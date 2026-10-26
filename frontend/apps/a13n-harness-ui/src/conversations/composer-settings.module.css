@@ -210,16 +210,9 @@
   .environmentLabel {
     display: none;
   }
-  .summary {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0;
-    font-size: 11px;
-    line-height: 16px;
-  }
-  .summary > span:not([aria-hidden]) {
-    max-width: 100%;
-  }
+  /* Narrow composers keep one line: the model name only; the agent stays
+     available in the settings popover the summary opens. */
+  .summary > span:not([aria-hidden]):first-child,
   .summary > [aria-hidden] {
     display: none;
   }

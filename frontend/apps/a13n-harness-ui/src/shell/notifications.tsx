@@ -382,8 +382,8 @@ function PermissionToast() {
       className={styles.permissionToast}
       aria-label="Notification permission"
     >
-      <Bell size={20} aria-hidden="true" />
-      <div>
+      <Bell size={14} aria-hidden="true" />
+      <div className={styles.permissionBody}>
         <h2>
           {notifications.permission === "granted"
             ? notifications.background === "error"
@@ -402,6 +402,7 @@ function PermissionToast() {
         </p>
         {notifications.error && <p role="alert">{notifications.error}</p>}
         <div className={styles.actions}>
+          <Link to="/settings/notifications">Settings</Link>
           {(notifications.permission === "default" ||
             (notifications.permission === "granted" && supportsPush())) && (
             <Button
@@ -421,12 +422,11 @@ function PermissionToast() {
             size="sm"
             onClick={() => notifications.setEnabled(false)}
             aria-label="Turn off reminders"
-            className={styles.dismissReminder}
+            title="Turn off reminders"
+            className={styles.reminderClose}
           >
-            <span className={styles.desktopLabel}>Turn off reminders</span>
-            <X className={styles.mobileLabel} aria-hidden />
+            <X aria-hidden />
           </Button>
-          <Link to="/settings/notifications">Settings</Link>
         </div>
       </div>
     </aside>
