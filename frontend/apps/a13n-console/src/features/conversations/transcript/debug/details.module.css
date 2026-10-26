@@ -241,3 +241,12 @@
 .usage tbody tr + tr {
   border-top: 12px solid transparent;
 }
+
+@container (width > 720px) {
+  .usage :is(th, td):first-child {
+    padding-left: 14px;
+  }
+  .usage :is(th, td):last-child {
+    padding-right: 14px;
+  }
+}
