@@ -15,7 +15,7 @@ import { ResourceEditorButton } from "../../shared/identity";
 import { connectStepDescription, connectStepTitle } from "./add-provider";
 import { ModelPicker } from "./model-picker";
 import { useModelDraft } from "./model-form";
-import { ModelFields, ModelSelection } from "./model-fields";
+import { ModelFields, ModelSelection, ModelStatus } from "./model-fields";
 import { ModelIcon, ModelProviderIcon, providerBrand } from "./model-icon";
 import { useProviderDraft } from "./provider-draft";
 import { ProviderChoice, ProviderConnect } from "./provider-setup";
@@ -149,13 +149,10 @@ export function AddModel({
               compact
               onChange={() => setStep("model")}
             />
-            <ModelFields
-              model={model}
-              compact
-              requireEnabled={requireEnabled}
-            />
+            <ModelFields model={model} compact />
             <ErrorNotice error={model.save.error} />
             <FormActions
+              leading={!requireEnabled && <ModelStatus model={model} />}
               onCancel={() => setOpen(false)}
               pending={model.save.isPending}
               disabled={model.incomplete}

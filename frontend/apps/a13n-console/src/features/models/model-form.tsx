@@ -9,7 +9,7 @@ import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, jsonObject, validateSettings } from "../../shared/forms";
 import { modelApi, workspaceProvidersQuery } from "./api";
 import { catalogRefKey } from "./catalog-picker";
-import { ModelFields } from "./model-fields";
+import { ModelFields, ModelStatus } from "./model-fields";
 import { ModelPicker } from "./model-picker";
 import {
   imageInputDraft,
@@ -341,6 +341,7 @@ export function EditModelForm({
         retry={() => void reload()}
       />
       <FormActions
+        leading={<ModelStatus model={model} />}
         onCancel={close}
         pending={model.save.isPending}
         disabled={model.incomplete || !model.dirty}

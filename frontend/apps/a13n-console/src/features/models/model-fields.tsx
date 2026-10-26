@@ -145,12 +145,10 @@ function ModelAddress({ model }: { model: ModelDraft }) {
 export function ModelFields({
   model,
   compact = false,
-  requireEnabled = false,
   onChangeModel,
 }: {
   model: ModelDraft;
   compact?: boolean;
-  requireEnabled?: boolean;
   onChangeModel?: () => void;
 }) {
   const { t } = useTranslation();
@@ -167,10 +165,7 @@ export function ModelFields({
   );
   const details = (
     <div className={styles.modelDetails}>
-      <ModelFieldGroup
-        title={t("Basic information")}
-        action={(!compact || !requireEnabled) && <ModelStatus model={model} />}
-      >
+      <ModelFieldGroup title={t("Basic information")}>
         <div
           className={compact ? styles.identityFields : styles.editorIdentity}
         >
@@ -293,11 +288,9 @@ function ModelKeyField({ model }: { model: ModelDraft }) {
 
 function ModelFieldGroup({
   title,
-  action,
   children,
 }: {
   title: string;
-  action?: ReactNode;
   children: ReactNode;
 }) {
   const id = useId();
@@ -305,7 +298,6 @@ function ModelFieldGroup({
     <section className={styles.fieldGroup} aria-labelledby={id}>
       <div className={styles.sectionHeading}>
         <h3 id={id}>{title}</h3>
-        {action}
       </div>
       <div className={styles.fieldGroupBody}>{children}</div>
     </section>
@@ -313,15 +305,16 @@ function ModelFieldGroup({
 }
 
 /** Whether agents can select the model. */
-function ModelStatus({ model }: { model: ModelDraft }) {
+export function ModelStatus({ model }: { model: ModelDraft }) {
   const { t } = useTranslation();
   return (
     <label className={styles.inlineStatus}>
-      {t("Enabled")}
       <Switch
+        disabled={model.save.isPending}
         checked={model.draft.enabled}
         onCheckedChange={(value) => model.change("enabled", value)}
       />
+      {t("Enabled")}
     </label>
   );
 }
