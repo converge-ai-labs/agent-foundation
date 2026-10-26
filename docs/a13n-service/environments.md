@@ -108,7 +108,7 @@ Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` expli
 
 Each instance saves its resolved image before its first create; upgrades and interrupted creates keep that image. Legacy instances without a saved image keep the historical `a13n-docker-environment:dev`; recreate them to migrate before removing that old image. Create a new environment to use a changed image or template.
 
-This Service dependency line uses EIP 0.3. Upgrade custom Envd endpoints and images to the compatible 0.5 line before upgrading workers. Recreate existing environments to replace their frozen older image recipes; changing the default does not upgrade an existing instance.
+Service uses EIP 0.3 with Envd 0.5.1.
 
 ## Instances
 

@@ -465,6 +465,33 @@ async def test_detached_model_preserves_run_network_restrictions(service, script
     assert "HostNotAllowedError" in str([record.__dict__.get("exception_details") for record in caplog.records])
 
 
+@pytest.mark.parametrize("typed", [False, True], ids=["unexpected", "harness"])
+async def test_generation_failure_preserves_harness_code(service, scripted_model, runs_kit, monkeypatch, typed):
+    from a13n_harness import HarnessError
+    from a13n_service.runs import compaction_model
+
+    lease = await setup(service, scripted_model, runs_kit)
+    plan = await _plan(service.runtime, lease)
+    attempt = _Attempt(service.runtime, lease, AttemptControl(), plan)
+    input = frozen(lease, model_id=plan.agent.model.key)
+
+    async def fail_generation(*args):
+        if typed:
+            raise HarnessError("No summary produced", code="compaction_empty")
+        raise ValueError("Unexpected provider failure")
+
+    monkeypatch.setattr(compaction_model, "generate_compaction", fail_generation)
+    assert attempt.compaction is not None
+    await attempt.compaction.submit(input)
+    async with asyncio.timeout(10):
+        operation = await attempt.compaction.wait(lease.thread_id, input.basis.operation_id)
+    expected = "compaction_empty" if typed else "compaction_failed"
+    assert (operation.status, operation.error_code) == ("failed", expected)
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(CompactionRow, input.basis.operation_id)
+        assert row.error_code == expected
+
+
 @pytest.fixture
 async def small_object_executing(settings, service_app):
     from .conftest import _skill_service

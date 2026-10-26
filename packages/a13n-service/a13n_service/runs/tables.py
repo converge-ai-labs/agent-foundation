@@ -204,6 +204,7 @@ class CompactionRow(Base):
 
     __tablename__ = "compactions"
     __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
         ForeignKeyConstraint(["thread_id", "run_id"], ["runs.thread_id", "runs.id"]),
         ForeignKeyConstraint(["run_id", "attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),

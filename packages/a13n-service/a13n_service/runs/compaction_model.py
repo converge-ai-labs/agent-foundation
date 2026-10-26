@@ -220,7 +220,10 @@ class BackgroundCompaction:
                 await compactions.fail(runtime, owner, "compaction_interrupted")
             raise
         except Exception as error:
-            code = error.code if isinstance(error, HarnessError) else "compaction_failed"
+            cause = error
+            while isinstance(cause, ExceptionGroup) and len(cause.exceptions) == 1:
+                cause = cause.exceptions[0]
+            code = cause.code if isinstance(cause, HarnessError) else "compaction_failed"
             logger.warning(
                 "Compaction failed",
                 extra={"operation_id": owner.operation_id, "exception_details": exception_details(error)},

@@ -205,11 +205,9 @@ def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     if set(declarations) != set(expected):
         raise ReleaseVersionError(f"Expected {label} keys {sorted(expected)}, found {sorted(declarations)}")
     ranges = {
-        package: (
-            validate_dependency_pin
-            if manifest == HARNESS_UI_MANIFEST and package in HARNESS_PACKAGES
-            else validate_dependency_range
-        )(_string(declarations[package], f"{label}.{package}"))
+        package: (validate_dependency_pin if package in HARNESS_PACKAGES else validate_dependency_range)(
+            _string(declarations[package], f"{label}.{package}")
+        )
         for package in expected
     }
     if (
