@@ -7,11 +7,11 @@ import {
 } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { parseDocument } from "yaml";
-import { Button, Input, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { EmptyList, ErrorNotice, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, SearchField, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 
 export function CredentialKeys({
@@ -173,12 +173,11 @@ export function CredentialKeys({
           resources.find((resource) => resource.error)?.error
         }
       />
-      <Input
-        aria-label="Filter API keys"
-        placeholder="Find a key, Model, or Device…"
+      <SearchField
+        label="Search API keys"
+        placeholder="Search keys, models or devices…"
         value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-        className={styles.search}
+        onChange={setFilter}
       />
       {saved && <p role="status">{saved}</p>}
       {keys.isPending && <p role="status">Loading keys…</p>}

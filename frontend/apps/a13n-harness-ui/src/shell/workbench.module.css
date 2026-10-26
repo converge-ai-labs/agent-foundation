@@ -333,8 +333,9 @@
 .resourceList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  /* The same grey grouped list as Models and Accounts. */
+  background: var(--a13n-surface);
+  border-radius: 12px;
   overflow: hidden;
 }
 .resourceList:empty {
@@ -354,7 +355,8 @@
   border-bottom: none;
 }
 a.resourceRow:hover {
-  background: var(--a13n-hover);
+  /* Rows sit on the grey surface, so hover steps one shade further. */
+  background: var(--a13n-selected);
 }
 .resourceRow > :first-child {
   flex: 1;

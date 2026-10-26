@@ -35,7 +35,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { EmptyList, ErrorNotice, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, SearchField, TextField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 import {
   ChatGPTAllowance,
@@ -433,12 +433,10 @@ export function SubscriptionAccounts({
             </Button>
           </div>
         )}
-      <Input
-        aria-label="Filter subscription accounts"
-        placeholder="Find an account…"
+      <SearchField
+        label="Search accounts"
         value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-        className={styles.search}
+        onChange={setFilter}
       />
       {catalog.isPending && <p role="status">Loading accounts…</p>}
       <div className={styles.rows}>
@@ -823,13 +821,7 @@ export function AccountGroups() {
           Add group
         </Button>
       </header>
-      <Input
-        aria-label="Filter account groups"
-        placeholder="Find a group…"
-        value={filter}
-        onChange={(event) => setFilter(event.target.value)}
-        className={styles.search}
-      />
+      <SearchField label="Search groups" value={filter} onChange={setFilter} />
       <div className={styles.rows}>
         {catalog.data?.groups
           .filter((item) =>

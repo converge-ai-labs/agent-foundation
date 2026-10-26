@@ -138,7 +138,7 @@ it("groups keys by linked model providers, distinguishes shared and unlinked key
       }),
     ).getByText("key-spare"),
   ).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Filter API keys"), {
+  fireEvent.change(screen.getByLabelText("Search API keys"), {
     target: { value: "Work Claude" },
   });
   expect(screen.queryByText("key-shared")).toBeNull();
@@ -220,7 +220,7 @@ it("shows Device-only and shared consumers before confirming deletion", async ()
   ).toBeTruthy();
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
   expect(writes).toHaveLength(0);
-  fireEvent.change(screen.getByLabelText("Filter API keys"), {
+  fireEvent.change(screen.getByLabelText("Search API keys"), {
     target: { value: "Office Device" },
   });
   expect(screen.getByText("key-device")).toBeTruthy();

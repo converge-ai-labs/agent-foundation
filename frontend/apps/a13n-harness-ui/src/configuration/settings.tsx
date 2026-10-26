@@ -180,9 +180,6 @@ export function GeneralSettings() {
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
-      <div className={layout.formWidth}>
-        <DebugModeSetting />
-      </div>
       <details
         id="notifications"
         className={layout.disclosure}
@@ -193,6 +190,9 @@ export function GeneralSettings() {
         </summary>
         <NotificationSettings embedded />
       </details>
+      <div className={layout.formWidth}>
+        <DebugModeSetting />
+      </div>
       <details className={layout.disclosure}>
         <summary>Setup and diagnostics</summary>
         {memory && (
