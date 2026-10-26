@@ -3426,5 +3426,8 @@
   "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter to send",
   "More schedule actions": "More schedule actions",
   "Execution permissions": "Execution permissions",
-  "Click to copy": "Click to copy"
+  "Click to copy": "Click to copy",
+  "Basic information": "Basic information",
+  "Model connection": "Model connection",
+  "Declare the inputs this model supports and its context limit.": "Declare the inputs this model supports and its context limit."
 }

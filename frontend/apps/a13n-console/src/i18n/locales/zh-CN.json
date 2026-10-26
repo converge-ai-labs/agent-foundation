@@ -3426,5 +3426,8 @@
   "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter 发送",
   "More schedule actions": "更多定时任务操作",
   "Execution permissions": "执行权限",
-  "Click to copy": "点击复制"
+  "Click to copy": "点击复制",
+  "Basic information": "基本信息",
+  "Model connection": "模型连接",
+  "Declare the inputs this model supports and its context limit.": "声明此模型支持的输入类型及上下文上限。"
 }

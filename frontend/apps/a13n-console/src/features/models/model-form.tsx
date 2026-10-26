@@ -436,10 +436,12 @@ export function ModelFields({
   model,
   compact = false,
   requireEnabled = false,
+  selection,
 }: {
   model: ModelDraft;
   compact?: boolean;
   requireEnabled?: boolean;
+  selection?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { draft, selectedEntry } = model;
@@ -456,20 +458,33 @@ export function ModelFields({
   const details = (
     <div className={styles.modelDetails}>
       {compact && !model.manual && <ModelAddress model={model} />}
-      <section className={styles.identityFields}>
-        {/* A saved model's key is fixed and already in the dialog title. */}
-        {compact ? <ModelKeyField model={model} /> : name}
-        <FormField label={t("Description")}>
-          <Input
-            maxLength={2048}
-            value={draft.description}
-            placeholder={t("Optional")}
-            onChange={(event) =>
-              model.change("description", event.target.value)
-            }
-          />
-        </FormField>
+      <section
+        className={compact ? styles.identityFields : styles.editorBasics}
+      >
+        {!compact && (
+          <div className={styles.sectionHeading}>
+            <h3>{t("Basic information")}</h3>
+            <ModelStatus model={model} inline />
+          </div>
+        )}
+        <div
+          className={compact ? styles.identityFields : styles.editorIdentity}
+        >
+          {/* A saved model's key is fixed and already in the dialog title. */}
+          {compact ? <ModelKeyField model={model} /> : name}
+          <FormField label={t("Description")}>
+            <Input
+              maxLength={2048}
+              value={draft.description}
+              placeholder={t("Optional")}
+              onChange={(event) =>
+                model.change("description", event.target.value)
+              }
+            />
+          </FormField>
+        </div>
       </section>
+      {selection}
       <ModelInformation
         value={draft.characteristics}
         onChange={(value) => model.change("characteristics", value)}
@@ -505,6 +520,7 @@ export function ModelFields({
         details
       )}
       <DisclosureSection
+        className={styles.advancedSection}
         title={t("Advanced")}
         summary={
           model.settingsJson.trim() !== "{}" ||
@@ -561,8 +577,24 @@ function ModelKeyField({ model }: { model: ModelDraft }) {
 }
 
 /** Whether agents can select the model. */
-export function ModelStatus({ model }: { model: ModelDraft }) {
+export function ModelStatus({
+  model,
+  inline = false,
+}: {
+  model: ModelDraft;
+  inline?: boolean;
+}) {
   const { t } = useTranslation();
+  if (inline)
+    return (
+      <label className={styles.inlineStatus}>
+        {t("Enabled")}
+        <Switch
+          checked={model.draft.enabled}
+          onCheckedChange={(value) => model.change("enabled", value)}
+        />
+      </label>
+    );
   return (
     <SettingsSection>
       <SettingsRow
@@ -606,23 +638,31 @@ export function EditModelForm({
     );
   return (
     <form
-      className={styles.modelForm}
+      className={`${styles.modelForm} ${styles.modelEditForm}`}
       onSubmit={(event) => {
         event.preventDefault();
         model.save.mutate();
       }}
     >
-      <ModelSelection
+      <ModelFields
         model={model}
-        onChange={() => setChanging(true)}
-        actions={
-          model.selectedProvider && (
-            <ManageProvidersLink variant="ghost" category="models" />
-          )
+        selection={
+          <section className={styles.connectionSection}>
+            <h3>{t("Model connection")}</h3>
+            <div className={styles.connectionBody}>
+              <ModelSelection
+                model={model}
+                onChange={() => setChanging(true)}
+                actions={
+                  model.selectedProvider && (
+                    <ManageProvidersLink variant="ghost" category="models" />
+                  )
+                }
+              />
+            </div>
+          </section>
         }
       />
-      <ModelStatus model={model} />
-      <ModelFields model={model} />
       <ErrorNotice
         error={
           model.save.error ?? model.definitions.error ?? model.providers.error

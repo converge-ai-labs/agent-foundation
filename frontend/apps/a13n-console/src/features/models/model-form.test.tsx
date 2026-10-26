@@ -260,7 +260,7 @@ it("adds a catalog model without opening details and preserves its known capabil
   });
 });
 
-it("keeps model setup open while saving, including close and escape actions", async () => {
+it("allows dismissing model setup while its pending save completes", async () => {
   let finish!: (value: unknown) => void;
   state.POST.mockImplementationOnce(
     () =>
@@ -274,11 +274,14 @@ it("keeps model setup open while saving, including close and escape actions", as
   await user.click(screen.getByRole("button", { name: "Add model" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Close" }));
-  await user.keyboard("{Escape}");
-  expect(state.close).not.toHaveBeenCalled();
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(state.close).toHaveBeenCalledOnce();
+  // The controlled test owner stays mounted; dismissal does not cancel the request.
+  expect(
+    screen.getByRole("button", { name: "Add model" }).hasAttribute("disabled"),
+  ).toBe(true);
   finish({ data: model, response: response() });
-  await waitFor(() => expect(state.close).toHaveBeenCalledOnce());
+  await waitFor(() => expect(state.close).toHaveBeenCalledTimes(2));
+  expect(state.POST).toHaveBeenCalledOnce();
 });
 
 it("creates a manual model with JSON request defaults in its configuration", async () => {

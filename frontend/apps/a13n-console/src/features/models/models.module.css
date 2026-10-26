@@ -284,7 +284,9 @@
 .capabilityGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 28px;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
 }
 .capabilitySummary {
   display: flex;
@@ -346,4 +348,188 @@
 .pricingActions {
   display: flex;
   justify-content: space-between;
+}
+
+/* Model editing follows the order in which a workspace model is understood. */
+.modelEditForm {
+  gap: 24px;
+}
+.modelEditForm .modelDetails {
+  gap: 24px;
+}
+.editorBasics,
+.connectionSection {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sectionHeading h3,
+.connectionSection > h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.inlineStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.editorIdentity {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 16px;
+}
+.connectionBody {
+  padding: 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+}
+.connectionBody .chosenRow {
+  padding: 0;
+  background: transparent;
+}
+.modelEditForm [data-slot="field"] {
+  gap: 8px;
+}
+.modelEditForm [data-slot="field-label"] {
+  font-size: 13px;
+  font-weight: 500;
+}
+.connectionBody .chosenActions :is(button, a) {
+  font-size: 13px;
+}
+.capabilityItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 60px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.capabilityItem:nth-child(odd) {
+  border-right: 1px solid var(--a13n-border-soft);
+}
+.capabilityItem:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+.capabilityItem > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.capabilityItem svg {
+  flex: none;
+  color: var(--a13n-secondary);
+}
+.contextLabel {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+.contextLabel small {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.contextInput {
+  width: 108px;
+  flex: none;
+  font-size: 12px;
+}
+@media (max-width: 480px) {
+  .editorIdentity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .connectionBody {
+    padding: 14px;
+  }
+  .connectionBody .chosenActions {
+    width: 100%;
+    margin: 0;
+    justify-content: flex-end;
+  }
+  .capabilityItem:nth-child(odd) {
+    border-right: 0;
+  }
+  .capabilityItem:nth-last-child(2) {
+    border-bottom: 1px solid var(--a13n-border-soft);
+  }
+}
+
+.modelEditForm
+  :is(.pricingSection, .advancedSection)
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-trigger"] {
+  font-size: 15px;
+  font-weight: 600;
+}
+.modelEditForm
+  .advancedSection
+  [data-slot="collapsible-panel"]
+  .modelDetails
+  > section {
+  padding: 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+}
+.modelEditForm .pricingEditor {
+  padding: 16px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 12px;
+}
+.pricingScroll {
+  container-type: inline-size;
+}
+@container (width < 500px) {
+  .pricingTable {
+    display: block;
+    min-width: 0;
+  }
+  .pricingTable thead {
+    display: none;
+  }
+  .pricingTable tbody {
+    display: grid;
+    gap: 16px;
+  }
+  .pricingTable tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .pricingTable tr + tr {
+    padding-top: 16px;
+    border-top: 1px solid var(--a13n-border-soft);
+  }
+  .pricingTable td {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    min-width: 0;
+  }
+  .pricingTable td:first-child {
+    grid-column: 1 / -1;
+  }
+  .pricingTable td[data-label]::before {
+    content: attr(data-label);
+    color: var(--a13n-secondary);
+  }
+  .pricingTable td:last-child {
+    grid-column: 1 / -1;
+    justify-content: end;
+  }
+  .pricingTable td:last-child:empty {
+    display: none;
+  }
 }
