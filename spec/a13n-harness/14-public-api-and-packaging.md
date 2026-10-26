@@ -8,6 +8,10 @@ The package does not expose a serialized Agent-definition language, compiler, or
 
 Public `EnvironmentState`, `EnvironmentConnector`, `EnvironmentExecution`, and single-target operation types belong to `a13n_harness.environment`, alongside source/mount integration. Harness Provider definitions construct execution connectors only. Service management types and factories are not Harness exports. There is no independent Environment distribution; package and import compatibility are defined by [Environment Execution](08a-environment-execution.md#compatibility).
 
+## Browser API
+
+`a13n_harness.capabilities` exports `BrowserUseCapability`. Its owning `browser` module exposes the `BrowserBackend` protocol, observation/element/tab values, action types, and browser errors. `browser.cdp.Chromium` owns the CDP runtime; `browser.scope.CdpBrowserBackend` owns reusable tab scopes and the standalone `connect(cdp_url)` context manager. `cdp-use` is a normal dependency; browser installation and process provisioning remain Host-owned. [Browser Use](23-browser-use.md) defines these boundaries.
+
 ## Root Public Surface
 
 `a13n_harness.builder` owns `AgentDefinition`, `HarnessBuilder`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, and `derive_child_identity`. `a13n_harness.execution` exposes `ExecutableAgent` and `HarnessRunStream`; `a13n_harness.live` owns `HarnessLiveStream`. The execution module does not re-export construction APIs. The package root lazily exposes these values from their owners. Business-output adaptation is package-private.

@@ -39,6 +39,8 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [21a-record-memory.md](21a-record-memory.md)                                             | Record memory store contract, Memory Providers and mem0 over REST, mounts, tools, and recall                                     |
 | [22-provider-subsystem.md](22-provider-subsystem.md)                                     | Shared Provider core across all five domains, credential declaration, catalogs, and the installed Environment manifest           |
 
+[Browser Use](23-browser-use.md) owns Chromium CDP tools, scoped tab membership, human-control admission, and the Host lifecycle boundary.
+
 [Codex Live Transport](16c-codex-live.md) owns subscription WebRTC bootstrap, sideband lifetime, typed client delegation, and the media/Host boundary.
 
 ## Reading Paths

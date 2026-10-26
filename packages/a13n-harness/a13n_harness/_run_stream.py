@@ -620,6 +620,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 events=self._emitter,
                 delivered=self._emitter.observe_input,
             ),
+            browser_backend=bindings.browser_backend,
             web=bindings.web,
             document_converter=bindings.document_converter,
             file_media_understanding=bindings.file_media_understanding,

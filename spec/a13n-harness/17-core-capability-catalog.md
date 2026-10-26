@@ -37,6 +37,8 @@ Model self-healing is installed by default, with an explicit builder opt-out. `S
 
 ## Optional Capability Roles
 
+`BrowserUseCapability` contributes Chromium browser tools over a Host-authorized `RunBindings.browser_backend` or trusted embedded backend. The core owns scoped tabs and fresh references; Hosts own browser processes, profiles, and viewer access. [Browser Use](23-browser-use.md) owns binding, lifecycle, concurrency, and recovery.
+
 `ToolPermissionsCapability` selects stable-ID rules before custom validation for all locally executable tools. The same Capability owns optional model-backed or code-first risk review at that gate, with shell-specific input rendering but no separate review Capability. It does not grant Host authority. [Tool permissions and review](07-tool-execution.md#tool-permissions-and-review) owns modes, identity, ordering, and approval provenance.
 
 `ToolSearchCapability(groups=...)` optionally presents grouped local tools through one dynamic search/call pair. Each passive `ToolSearchGroup` supplies a Toolset or Capability source and a description; native composition preserves source Agent/run binding. This presentation composes with CodeAct but owns no independent executor; [Grouped ToolSearch Discovery](07-tool-execution.md#grouped-toolsearch-discovery) owns its contract.
