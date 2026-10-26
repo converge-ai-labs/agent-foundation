@@ -10,7 +10,6 @@ on:
       - "Cargo.toml"
       - "Makefile"
       - "conftest.py"
-      - "scripts/tests/test_envd_ci_workflow.py"
       - "crates/a13n-envd/**"
       - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
@@ -45,7 +44,6 @@ on:
       - "Cargo.toml"
       - "Makefile"
       - "conftest.py"
-      - "scripts/tests/test_envd_ci_workflow.py"
       - "crates/a13n-envd/**"
       - "deploy/docker/images/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
@@ -109,7 +107,6 @@ jobs:
               - '.github/workflows/ci-a13n-envd.yml'
               - 'Makefile'
               - 'conftest.py'
-              - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'crates/a13n-envd/**'
               - 'deploy/docker/images/sandbox/Dockerfile'
@@ -125,7 +122,6 @@ jobs:
               - '.github/workflows/ci-a13n-envd.yml'
               - 'Makefile'
               - 'conftest.py'
-              - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'packages/a13n-envd-client/**'
               - 'proto/a13n-envd/eip/**'
@@ -137,7 +133,6 @@ jobs:
               - '.github/workflows/ci-a13n-envd.yml'
               - 'Makefile'
               - 'conftest.py'
-              - 'scripts/tests/test_envd_ci_workflow.py'
               - '.github/workflows/release-a13n-envd.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
