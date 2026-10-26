@@ -36,6 +36,7 @@ vi.mock("../transport/context", () => ({
   }),
   useSelectors: () => ({
     data: {
+      agents: [],
       media_understanding: state.selection,
       media_understanding_environment: ["video"],
       models: [
@@ -109,6 +110,7 @@ function setup(dirty = false) {
 
 it("selects compatible defaults, preserves root fields, saves and clears", async () => {
   const { user } = setup();
+  await user.click(screen.getByText("Media understanding defaults"));
   const image = await screen.findByRole("combobox", {
     name: "Image understanding",
   });
@@ -123,7 +125,7 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
   await user.click(await screen.findByRole("option", { name: "Vision" }));
   expect(state.put).not.toHaveBeenCalled();
   expect(
-    screen.getByRole("heading", { name: "Media understanding", level: 2 }),
+    screen.getByRole("heading", { name: "Fallback models", level: 2 }),
   ).toBeTruthy();
   expect(
     screen.queryByRole("button", { name: "Check configuration" }),
@@ -149,8 +151,9 @@ it("selects compatible defaults, preserves root fields, saves and clears", async
 
 it("quick actions refresh the clean editor and disable unsupported purposes", async () => {
   const { user, drafts } = setup();
+  await user.click(screen.getByText("Media understanding defaults"));
   await screen.findByRole("combobox", { name: "Image understanding" });
-  await user.click(screen.getAllByRole("button", { name: "Set as…" })[0]);
+  await user.click(screen.getByRole("button", { name: "Actions for Vision" }));
   const video = await screen.findByRole("menuitem", {
     name: "Default video understanding",
   });
@@ -171,8 +174,9 @@ it("quick actions refresh the clean editor and disable unsupported purposes", as
 
 it("does not quick-save an existing root draft and supports confirmed discard", async () => {
   const { user, drafts } = setup(true);
+  await user.click(screen.getByText("Media understanding defaults"));
   await screen.findByRole("combobox", { name: "Image understanding" });
-  await user.click(screen.getAllByRole("button", { name: "Set as…" })[0]);
+  await user.click(screen.getByRole("button", { name: "Actions for Vision" }));
   await user.click(
     await screen.findByRole("menuitem", {
       name: "Default image understanding",
@@ -197,6 +201,7 @@ it("does not quick-save an existing root draft and supports confirmed discard", 
 
 it("retains media edits and shows save failures beside the shared actions", async () => {
   const { user, drafts } = setup();
+  await user.click(screen.getByText("Media understanding defaults"));
   await user.click(
     await screen.findByRole("combobox", { name: "Image understanding" }),
   );

@@ -108,6 +108,9 @@ it("selects saved key metadata without rewriting model settings or dropping an u
     'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai-responses:custom-model\nauthentication: {kind: api_key, credential_ref: key-missing}\nsettings: {temperature: 0.3}\n';
   renderFields(initial);
   const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Change credential" }),
+  );
   const key = await screen.findByRole("combobox", {
     name: "Credential source",
   });
@@ -129,6 +132,9 @@ it("keeps an empty environment-variable draft in its chosen credential mode", as
     'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai-responses:custom-model\nauthentication: {kind: api_key, env: MODEL_KEY}\n',
   );
   const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Change credential" }),
+  );
   await user.clear(
     await screen.findByRole("textbox", { name: "Environment variable" }),
   );
@@ -357,5 +363,64 @@ it("can clear an organization override to follow the global Agent model", async 
     parse(screen.getByTestId("source").textContent!).memory.auto_organize,
   ).toEqual({
     instructions: "Keep decisions concise.",
+  });
+});
+
+it("edits Agent working state without losing custom configuration", async () => {
+  const initial =
+    'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: working_state\n    configuration: {task_mode: tools, notes_enabled: false}\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  expect(
+    (await screen.findByRole("checkbox", { name: "Tasks" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Notes" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  screen.getByRole("checkbox", { name: "Tasks" }).focus();
+  await user.keyboard(" ");
+  expect(
+    parse(screen.getByTestId("source").textContent!).capabilities[0]
+      .configuration,
+  ).toEqual({ task_mode: "tools", notes_enabled: false, tasks_enabled: false });
+});
+
+it("allows typing multiple skill directories and preserves advanced options", async () => {
+  renderFields(
+    'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: skills\n    configuration: {roots: [], custom: keep}\n',
+  );
+  const user = userEvent.setup();
+  const roots = await screen.findByRole("textbox", {
+    name: "Additional skill directories",
+  });
+  await user.type(roots, "/srv/skills{Enter}/srv/team{Enter}");
+  expect((roots as HTMLTextAreaElement).value).toBe("/srv/skills\n/srv/team\n");
+  await user.tab();
+  expect(
+    parse(screen.getByTestId("source").textContent!).capabilities[0]
+      .configuration,
+  ).toEqual({ roots: ["/srv/skills", "/srv/team"], custom: "keep" });
+});
+
+it("edits web options without replacing nested custom constraints", async () => {
+  renderFields(
+    'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: web\n    configuration:\n      search: {mode: auto, allowed_domains: [example.com]}\n      download: {max_bytes: 1234}\n',
+  );
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("Web options"));
+  await user.click(screen.getByRole("combobox", { name: "Web search" }));
+  await user.click(await screen.findByRole("option", { name: "Host search" }));
+  await user.click(screen.getByRole("checkbox", { name: "Download files" }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).capabilities[0]
+      .configuration,
+  ).toEqual({
+    search: { mode: "host", allowed_domains: ["example.com"] },
+    download: { max_bytes: 1234, enabled: false },
   });
 });

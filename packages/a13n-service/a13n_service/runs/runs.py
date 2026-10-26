@@ -222,14 +222,14 @@ async def _load(runtime: Runtime, window: _Window) -> tuple[Tail, list[Page]]:
     )
 
 
-async def _content_ref(
+async def content_ref(
     runtime: Runtime,
     actor: Principal,
     workspace_id: str,
     run_id: str,
     content_id: str,
     *,
-    purpose: Literal["value", "image"],
+    purpose: Literal["value", "image", "app"],
 ) -> ContentObject:
     """Read only values reachable from this run's committed tail or immutable pages; no object I/O in the session."""
     async with short_session(runtime.storage) as session:
@@ -255,7 +255,7 @@ async def _content_ref(
 
 
 async def image(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, image_id: str) -> tuple[bytes, str]:
-    ref = await _content_ref(runtime, actor, workspace_id, run_id, image_id, purpose="image")
+    ref = await content_ref(runtime, actor, workspace_id, run_id, image_id, purpose="image")
     if ref.media_type not in {"image/png", "image/jpeg"} or ref.size_bytes > MAX_IMAGE_BYTES:
         raise not_found("run_image", image_id)
     value = await checkpoints.load(runtime.objects, ref)
@@ -265,7 +265,7 @@ async def image(runtime: Runtime, actor: Principal, workspace_id: str, run_id: s
 
 
 async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, content_id: str) -> RunContent:
-    ref = await _content_ref(runtime, actor, workspace_id, run_id, content_id, purpose="value")
+    ref = await content_ref(runtime, actor, workspace_id, run_id, content_id, purpose="value")
     assert ref.media_type == "text/plain" or ref.media_type == "application/json"
     value = decode(await checkpoints.load(runtime.objects, ref), ref)
     return RunContent(id=ref.id, media_type=ref.media_type, value=value, truncated=ref.truncated)

@@ -119,6 +119,31 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 
 MCP clients live for one attempt; tool catalogs can refresh during that attempt. Each call checks the connection's current availability and the run's permissions. Service does not support MCP elicitation (a server asking the user for input); use client tools or agent questions for durable waits.
 
+### MCP Apps for embedding applications
+
+Service saves an App tool's original arguments, declaration and full MCP result, including `_meta`. Live run output emits `a13n.mcp_apps`; detailed run items retain the same references in `content.mcp_apps`.
+
+**Wait for the session SSE `app_ready` event before enabling a live App or calling its endpoints.** The earlier `delta` containing `a13n.mcp_apps` is provisional, even when `unavailable` is `false`. You may show a loading entry at that point. `app_ready` confirms that the original data and its reference have been saved and committed. It arrives after the next checkpoint containing the App, without waiting for the run to finish. Use the event's `run_id` and each `apps[].app_id` to open the App:
+
+```text
+event: app_ready
+data: {"thread_id":"thr_...","run_id":"run_...","apps":[{"app_id":"app_...","connection_id":"conn_...","agent_revision_id":"rev_...","source_run_id":"run_...","tool_call_id":"call_...","tool_name":"show_counter","resource_uri":"ui://counter/app.html","unavailable":false}]}
+```
+
+Subscribe through `GET /api/v1/sessions/{session_id}/stream`. Ready events follow committed `items` frames and may repeat after reconnect, output repair or run completion; identify an App by `(run_id, app_id)`. If saving the original fails, the committed reference has `unavailable: true` and no ready event is sent for it. If a run ended while disconnected, or you load older history through `GET …/runs/{run_id}/items`, its available committed references can be opened directly. The thread stream does not emit `app_ready`; use the session stream for this notification. Readiness confirms saved data, not ongoing access or MCP server availability.
+
+Use these authenticated endpoints:
+
+| Request                                                   | Body                                  | Result                                                      |
+| --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------- |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/open`           | None                                  | Original tool data and freshly fetched HTML                 |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/tools/call`     | `{"name":"increment","arguments":{}}` | Raw MCP result under `result`                               |
+| `POST /api/v1/runs/{run_id}/apps/{app_id}/resources/read` | `{"uri":"ui://counter/app.html"}`     | Current HTML and resource metadata for the original App URI |
+
+Opening never repeats the original tool. Each request uses a new MCP client; servers requiring the worker's original session are unsupported. Button calls use the saved connection and Agent selection, current connection availability and tool selection, and App visibility. Tools requiring approval or model review are refused, and MCP human input is unsupported. Calls are never automatically retried; `outcome_unknown` means callers must check external state before trying again. Follow-up results do not replace the saved original or enter model history.
+
+The embedding application creates the iframe, enforces resource CSP and isolation, and supplies the original arguments and result through its MCP App bridge. It owns View state and sends context or messages through the existing Run submission API. HTML is not saved, so a newer resource can be incompatible with old result data. Console does not render Apps. Objects use checkpoint format 4: upgrade all control/readers before starting the new workers. App records load the original from object storage only when opening; button calls and resource reads use private database references.
+
 ### OAuth
 
 With `auth: "oauth"`, the connection obtains its token from the MCP server's authorization server. The connection holds **one** credential that serves every run in the workspace, whoever authorized it.

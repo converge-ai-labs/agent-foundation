@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import {
   Button,
@@ -15,8 +15,18 @@ import { ErrorNotice, PageHeader, TextField } from "../shell/ui";
 import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
-import { updateDocument } from "./documents";
-import { LiveOptIn } from "../setup/live-opt-in";
+import { readDocument, updateDocument } from "./documents";
+import {
+  DotsThree,
+  Cpu,
+  Key,
+  Robot,
+  Plus,
+  Copy,
+  Image,
+  SlidersHorizontal,
+} from "@phosphor-icons/react";
+import management from "./management.module.css";
 import styles from "../shell/workbench.module.css";
 
 export function ModelsPage() {
@@ -109,25 +119,29 @@ export function ModelsPage() {
   });
   return (
     <>
-      <PageHeader
-        title="Models"
-        actions={
-          <AddModelButton onSaved={() => void queries.invalidateQueries()} />
-        }
-      />
+      <div className={management.collectionHeader}>
+        <PageHeader
+          title="Models"
+          actions={
+            <AddModelButton onSaved={() => void queries.invalidateQueries()} />
+          }
+        />
+      </div>
       <ErrorNotice
         error={
           selectors.error || sources.error || clone.error || setDefault.error
         }
       />
-      <TextField
-        label="Search models"
-        type="search"
-        value={search}
-        onChange={setSearch}
-      />
+      <div className={management.collectionSearch}>
+        <TextField
+          label="Search models"
+          type="search"
+          value={search}
+          onChange={setSearch}
+        />
+      </div>
       <DraftLinks kinds={["model"]} search={search} />
-      <div className={styles.resourceList}>
+      <div className={management.modelList}>
         {(selectors.data?.models ?? [])
           .filter((model) =>
             `${model.name} ${model.route} ${model.model_id}`
@@ -141,58 +155,102 @@ export function ModelsPage() {
                 item.resource_ids.includes(model.model_id),
             );
             return (
-              <div key={model.model_id} className={styles.resourceRow}>
-                <div>
-                  {source ? (
-                    <Link
-                      to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
-                    >
+              <div
+                key={model.model_id}
+                className={`${styles.resourceRow} ${management.modelRow}`}
+              >
+                <div className={management.resourceIdentity}>
+                  <span className={management.resourceIcon}>
+                    <Cpu aria-hidden="true" weight="duotone" />
+                  </span>
+                  <div className={management.resourceInfo}>
+                    {source ? (
+                      <Link
+                        to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
+                      >
+                        <strong>{model.name}</strong>
+                      </Link>
+                    ) : (
                       <strong>{model.name}</strong>
-                    </Link>
-                  ) : (
-                    <strong>{model.name}</strong>
-                  )}
-                  <small>{model.route}</small>
-                  <small>{source?.relative_path ?? model.model_id}</small>
-                  {mediaKinds.some(
-                    (kind) =>
-                      selectors.data?.media_understanding?.[kind] ===
-                      model.model_id,
-                  ) && (
-                    <small>
-                      Default:{" "}
-                      {mediaKinds
-                        .filter(
-                          (kind) =>
-                            selectors.data?.media_understanding?.[kind] ===
-                            model.model_id,
-                        )
-                        .map((kind) => mediaLabels[kind])
-                        .join(", ")}
-                    </small>
-                  )}
+                    )}
+                    <small>{model.route}</small>
+                    <div className={management.resourceMeta}>
+                      {source?.content_available && (
+                        <ModelCredentialSummary path={source.relative_path} />
+                      )}
+                      <small className={management.metadata}>
+                        <Robot aria-hidden="true" />
+                        <span>
+                          {selectors.data?.agents
+                            .filter(
+                              (agent) => agent.model_id === model.model_id,
+                            )
+                            .map((agent) => agent.name)
+                            .join(", ") || "No agents using this model"}
+                        </span>
+                      </small>
+                    </div>
+                    {mediaKinds.some(
+                      (kind) =>
+                        selectors.data?.media_understanding?.[kind] ===
+                        model.model_id,
+                    ) && (
+                      <small>
+                        Default:{" "}
+                        {mediaKinds
+                          .filter(
+                            (kind) =>
+                              selectors.data?.media_understanding?.[kind] ===
+                              model.model_id,
+                          )
+                          .map((kind) => mediaLabels[kind])
+                          .join(", ")}
+                      </small>
+                    )}
+                  </div>
                 </div>
-                <span>{source?.writable ? "Editable" : "Read only"}</span>
+                {source && !source.writable && <span>Read only</span>}
                 <Menu>
                   <MenuTrigger
                     render={
                       <Button
-                        variant="outline"
-                        disabled={!root?.writable || setDefault.isPending}
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Actions for ${model.name}`}
                       />
                     }
                   >
-                    Set as…
+                    <DotsThree />
                   </MenuTrigger>
                   <MenuPopup align="end">
+                    {source?.content_available &&
+                      source.resource_ids.length === 1 && (
+                        <MenuItem
+                          disabled={clone.isPending}
+                          onClick={() =>
+                            clone.mutate({
+                              path: source.relative_path,
+                              name: model.name,
+                            })
+                          }
+                        >
+                          <Copy aria-hidden="true" />
+                          Clone model
+                        </MenuItem>
+                      )}
                     {mediaKinds.map((kind) => (
                       <MenuItem
                         key={kind}
-                        disabled={!model.media_capabilities?.includes(kind)}
+                        disabled={
+                          !root?.writable ||
+                          setDefault.isPending ||
+                          !model.media_capabilities?.includes(kind)
+                        }
                         onClick={() =>
                           setDefault.mutate({ kind, modelId: model.model_id })
                         }
                       >
+                        <Image aria-hidden="true" />
                         {selectors.data?.media_understanding?.[kind] ===
                         model.model_id
                           ? "Clear"
@@ -202,21 +260,6 @@ export function ModelsPage() {
                     ))}
                   </MenuPopup>
                 </Menu>
-                {source?.content_available &&
-                  source.resource_ids.length === 1 && (
-                    <Button
-                      variant="outline"
-                      disabled={clone.isPending}
-                      onClick={() =>
-                        clone.mutate({
-                          path: source.relative_path,
-                          name: model.name,
-                        })
-                      }
-                    >
-                      Clone
-                    </Button>
-                  )}
               </div>
             );
           })}
@@ -228,15 +271,62 @@ export function ModelsPage() {
         </p>
       )}
       {root && (
-        <SourceDocument
-          key={root.relative_path}
-          path={root.relative_path}
-          title="Media understanding"
-          mediaOnly
-          embedded
-        />
+        <details className={styles.details}>
+          <summary>
+            <span className={management.inlineLabel}>
+              <SlidersHorizontal aria-hidden="true" />
+              Media understanding defaults
+            </span>
+          </summary>
+          <SourceDocument
+            key={root.relative_path}
+            path={root.relative_path}
+            title="Fallback models"
+            mediaOnly
+            embedded
+          />
+        </details>
       )}
     </>
+  );
+}
+
+function ModelCredentialSummary({ path }: { path: string }) {
+  const { client } = useTransport();
+  const source = useQuery({
+    queryKey: ["source", path],
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/configuration/sources/{relative_path}", {
+          params: { path: { relative_path: path } },
+          signal,
+        }),
+      ),
+  });
+  const auth = readDocument(source.data?.content ?? "")?.toJS().authentication;
+  const keys = useQuery({
+    queryKey: ["keys"],
+    enabled: auth?.kind === "api_key" && !!auth.credential_ref,
+    queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
+  });
+  if (source.error || keys.error)
+    return <small>Credential status unavailable</small>;
+  if (auth?.kind !== "api_key") return null;
+  return (
+    <small className={management.metadata}>
+      <Key aria-hidden="true" />
+      <span>
+        {auth.env
+          ? `Environment · ${auth.env}`
+          : keys.data
+            ? keys.data.some(
+                (key) => key.credential_ref === auth.credential_ref,
+              )
+              ? "API key saved"
+              : "API key missing"
+            : "API key reference"}
+      </span>
+    </small>
   );
 }
 
@@ -246,6 +336,7 @@ export function AddModelButton({ onSaved }: { onSaved: (id: string) => void }) {
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
+        <Plus aria-hidden="true" />
         Add model
       </Button>
       {open && (
@@ -267,7 +358,6 @@ function AddModelDialog({
   const [name, setName] = useState("");
   const [recipe, setRecipe] = useState<Schema<"ModelRecipe"> | null>(null);
   const [recipeReady, setRecipeReady] = useState(false);
-  const [enableLive, setEnableLive] = useState(true);
   const save = useMutation({
     mutationFn: async () => {
       const publication = await result(
@@ -278,7 +368,7 @@ function AddModelDialog({
               new_model_id: id,
               new_model_name: name.trim() || recipe!.route,
               environment_profile: "environment-native",
-              enable_live: enableLive,
+              enable_live: false,
             },
           },
         }),
@@ -308,23 +398,17 @@ function AddModelDialog({
           loading={save.isPending}
           onClick={() => save.mutate()}
         >
-          Save model & select
+          Save model
         </Button>
       }
     >
       <div className={styles.stack}>
         <ErrorNotice error={save.error} />
         <TextField label="Model name" value={name} onChange={setName} />
-        <p>Saved Models remain available even if you cancel the Agent draft.</p>
         <ModelEditor
           value={recipe}
           onChange={setRecipe}
           onRecipeReady={setRecipeReady}
-        />
-        <LiveOptIn
-          model={recipe}
-          enabled={enableLive}
-          onChange={setEnableLive}
         />
       </div>
     </ModalFrame>

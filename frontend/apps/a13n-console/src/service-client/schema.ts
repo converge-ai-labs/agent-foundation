@@ -2363,6 +2363,66 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/apps/{app_id}/open": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Open Run App
+     * @description Open a saved MCP App with freshly read HTML and its original tool result.
+     */
+    post: operations["open_run_app"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/apps/{app_id}/resources/read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Read Run App Resource
+     * @description Read the HTML resource bound to a saved MCP App.
+     */
+    post: operations["read_run_app_resource"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/apps/{app_id}/tools/call": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Call Run App Tool
+     * @description Call an App-visible tool on the saved connection without starting a Run.
+     */
+    post: operations["call_run_app_tool"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/attempts": {
     parameters: {
       query?: never;
@@ -4952,6 +5012,62 @@ export interface components {
       items: components["schemas"]["ApiKey"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** AppReference */
+    AppReference: {
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** App Id */
+      app_id: string;
+      /** Connection Id */
+      connection_id: string;
+      /** Resource Uri */
+      resource_uri: string;
+      /** Source Run Id */
+      source_run_id: string;
+      /** Tool Call Id */
+      tool_call_id: string;
+      /** Tool Name */
+      tool_name: string;
+      /**
+       * Unavailable
+       * @default false
+       */
+      unavailable?: boolean;
+    };
+    /** AppResource */
+    AppResource: {
+      /** Html */
+      html: string;
+      /** Metadata */
+      metadata: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Mime Type */
+      mime_type: string;
+      /** Uri */
+      uri: string;
+    };
+    /** AppResourceRead */
+    AppResourceRead: {
+      /** Uri */
+      uri: string;
+    };
+    /** AppToolCall */
+    AppToolCall: {
+      /** Arguments */
+      arguments?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Name */
+      name: string;
+    };
+    /** AppToolResult */
+    AppToolResult: {
+      /** Result */
+      result: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
     };
     ApprovalDecision:
       components["schemas"]["Approve"] | components["schemas"]["Deny"];
@@ -9039,6 +9155,23 @@ export interface components {
       /** Session Id */
       session_id: string;
     };
+    /** OpenedApp */
+    OpenedApp: {
+      /** Arguments */
+      arguments: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      reference: components["schemas"]["AppReference"];
+      resource: components["schemas"]["AppResource"];
+      /** Result */
+      result: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Tool */
+      tool: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
     /**
      * OperatingSystem
      * @enum {string}
@@ -11680,6 +11813,10 @@ export interface components {
       description: string | null;
       /** Input Schema */
       input_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Metadata */
+      metadata?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
       /** Name */
@@ -17906,6 +18043,98 @@ export interface operations {
             | components["schemas"]["RunAgent"]
             | components["schemas"]["RunAgentSummary"]
             | components["schemas"]["TextRead"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  open_run_app: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        app_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OpenedApp"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_run_app_resource: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        app_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AppResourceRead"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AppResource"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  call_run_app_tool: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        app_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AppToolCall"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AppToolResult"];
         };
       };
       400: components["responses"]["Error"];

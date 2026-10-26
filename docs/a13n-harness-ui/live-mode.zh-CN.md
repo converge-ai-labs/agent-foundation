@@ -16,7 +16,7 @@ Live 模式为 WebUI 提供连续语音对话，并保留任务与决策记录�
 
 请使用支持麦克风采集和 WebRTC 的浏览器，通过 HTTPS 或 localhost 访问。所选账户和网络必须支持 Codex Live。普通 Model 请求成功并不代表语音功能可用。
 
-WebUI 的初始设置和添加模型流程会为 Codex Model 提供默认勾选的 Live 选项。取消勾选即可保持未配置状态。已有 Live 设置会保留，升级不会自动启用 Live。
+WebUI 首次设置会为 Codex Model 提供默认勾选的 Live 选项。取消勾选即可保持未配置状态。从 Settings 或 Agent 添加 Model 不修改 Live 设置；需要启用时前往 **Settings → General → Live**。升级不会自动启用 Live。
 
 等效的根配置如下：
 

@@ -82,6 +82,13 @@ it("reads complete current work through HTTP after scoped summary hints and rest
           }),
         );
         expect(operation.status).toBe("completed");
+        // Completion can precede execution persistence and admission release.
+        const detail = await result(
+          transport.client.GET("/api/threads/{thread_id}", {
+            params: { path },
+          }),
+        );
+        expect(detail.thread.root_activity.state).toBe("inactive");
       },
       { timeout: 10000 },
     );

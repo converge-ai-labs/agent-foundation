@@ -918,19 +918,26 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   expect(within(catalog).getByText("Unavailable to configure")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   await user.click(
-    await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
+    await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
   expect(window.location.search).toBe("?path=agents%2Fassistant.yaml");
-  fireEvent.change(await screen.findByLabelText("Instructions"), {
+  fireEvent.change(await screen.findByLabelText("Additional instructions"), {
     target: { value: "Unfinished instructions" },
   });
-  await user.click(screen.getByRole("link", { name: "Agents" }));
   await user.click(
-    await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
+    within(
+      screen.getByRole("navigation", { name: "Settings sections" }),
+    ).getByRole("link", { name: "Agents" }),
+  );
+  await user.click(
+    await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
   expect(
-    ((await screen.findByLabelText("Instructions")) as HTMLTextAreaElement)
-      .value,
+    (
+      (await screen.findByLabelText(
+        "Additional instructions",
+      )) as HTMLTextAreaElement
+    ).value,
   ).toBe("Unfinished instructions");
   await user.click(
     await screen.findByRole("combobox", { name: "Add capability" }),
@@ -969,7 +976,7 @@ it("opens the owning agent editor to repair malformed capability YAML", async ()
   );
   render(<BrowserApp />);
   fireEvent.click(
-    await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
+    await screen.findByRole("link", { name: /Assistant.*No model selected/ }),
   );
   await screen.findByText(/Structured fields are unavailable/);
   fireEvent.click(
@@ -1014,11 +1021,13 @@ it.each(["read-only", "missing"])(
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (availability === "missing") {
       expect(
-        screen.queryByRole("link", { name: /Assistant.*agent-assistant/ }),
+        screen.queryByRole("link", { name: /Assistant.*No model selected/ }),
       ).toBeNull();
     } else {
       fireEvent.click(
-        await screen.findByRole("link", { name: /Assistant.*agent-assistant/ }),
+        await screen.findByRole("link", {
+          name: /Assistant.*No model selected/,
+        }),
       );
       expect(
         (await screen.findByLabelText("YAML source")).getAttribute(
@@ -1083,14 +1092,20 @@ it("reopens a one-click agent draft from its own settings list without writing o
   });
   const draftPath = new URLSearchParams(window.location.search).get("path")!;
   expect(
-    screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
+    within(screen.getByRole("navigation", { name: "Settings sections" }))
+      .getByRole("link", { name: "Agents" })
+      .getAttribute("aria-current"),
   ).toBe("page");
   expect(
     screen
       .getByRole("link", { name: "Configuration files" })
       .getAttribute("aria-current"),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("link", { name: "Agents" }));
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Settings sections" }),
+    ).getByRole("link", { name: "Agents" }),
+  );
   fireEvent.click(
     await screen.findByRole("link", {
       name: /Unfinished assistant.*Unsaved draft/,
@@ -1101,7 +1116,9 @@ it("reopens a one-click agent draft from its own settings list without writing o
   ).toBe("Unfinished assistant");
   expect(window.location.search).toContain("new=1");
   expect(
-    screen.getByRole("link", { name: "Agents" }).getAttribute("aria-current"),
+    within(screen.getByRole("navigation", { name: "Settings sections" }))
+      .getByRole("link", { name: "Agents" })
+      .getAttribute("aria-current"),
   ).toBe("page");
   expect(
     fetcher.mock.calls.some(

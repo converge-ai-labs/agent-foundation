@@ -162,3 +162,27 @@ fieldset:disabled .chip {
     transition: none;
   }
 }
+
+.memoryPopup {
+  width: min(460px, calc(100vw - 32px));
+}
+.memoryHeader {
+  display: grid;
+  gap: 8px;
+}
+.memoryModes {
+  width: 100%;
+}
+.memoryModes > button {
+  flex: 1;
+}
+.memoryDescription {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
+}
+.memoryFooter {
+  display: flex;
+  justify-content: flex-end;
+}

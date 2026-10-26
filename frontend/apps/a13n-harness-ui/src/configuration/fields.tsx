@@ -1,4 +1,6 @@
 import { useLocation } from "react-router";
+import { PlugsConnected, Robot } from "@phosphor-icons/react";
+import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
 import {
@@ -17,6 +19,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
+import { useRootConfiguration } from "./root-configuration";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
@@ -27,7 +30,9 @@ export function ResourceFields({
   source,
   onChange,
   connectionsOnly = false,
+  onReady,
 }: {
+  onReady?: (ready: boolean) => void;
   connectionsOnly?: boolean;
   source: string;
   onChange: (value: string) => void;
@@ -40,6 +45,9 @@ export function ResourceFields({
     queryKey: ["catalog"],
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
+  const root = useRootConfiguration(
+    readDocument(source)?.get("kind") === "agent",
+  );
   const document = readDocument(source);
   if (!document)
     return (
@@ -139,6 +147,13 @@ export function ResourceFields({
       <SelectionField
         key={path.join(".")}
         label={label}
+        inherited={
+          kind === "agent"
+            ? root.configuration
+              ? `${(root.configuration.defaults?.[path[0]] ?? []).map((id: string) => options.find((option) => option.value === id)?.label ?? id).join(", ") || "None"} · Instance defaults for new conversations`
+              : "Loading instance defaults…"
+            : undefined
+        }
         value={values}
         options={options}
         onChange={(value) => set(path, value)}
@@ -184,28 +199,51 @@ export function ResourceFields({
     );
   return (
     <div className={styles.stack}>
-      <ErrorNotice error={selectors.error || sources.error || catalog.error} />
-      {kind && <div>{field("Name", ["name"])}</div>}
+      <ErrorNotice
+        error={selectors.error || sources.error || catalog.error || root.error}
+      />
+      {kind && kind !== "agent" && <div>{field("Name", ["name"])}</div>}
       {kind === "model" && (
-        <SettingsSection title="Model connection">
+        <SettingsSection
+          title={
+            <span className={management.sectionTitle}>
+              <PlugsConnected aria-hidden="true" weight="duotone" />
+              Model connection
+            </span>
+          }
+        >
           <div className={styles.fieldGroup}>
-            <ModelFields source={source} onChange={onChange} />
+            <ModelFields
+              source={source}
+              onChange={onChange}
+              onReady={onReady}
+            />
           </div>
         </SettingsSection>
       )}
       {kind === "agent" && (
         <>
-          <SettingsSection title="Agent behavior">
+          <SettingsSection
+            title={
+              <span className={management.sectionTitle}>
+                <Robot aria-hidden="true" weight="duotone" />
+                Basics
+              </span>
+            }
+          >
             <div className={`${styles.fieldGroup} ${styles.stack}`}>
-              <ResourceChoice
-                label="Model"
-                value={text(["model"])}
-                loading={selectors.isPending || sources.isPending}
-                onValueChange={(value) => set(["model"], value || undefined)}
-                options={[{ value: "", label: "Not connected" }, ...models]}
-              />
-              <AddModelButton onSaved={(id) => set(["model"], id)} />
-              <FormField label="Instructions">
+              {field("Name", ["name"])}
+              <div className={management.modelPickerRow}>
+                <ResourceChoice
+                  label="Model"
+                  value={text(["model"])}
+                  loading={selectors.isPending || sources.isPending}
+                  onValueChange={(value) => set(["model"], value || undefined)}
+                  options={[{ value: "", label: "Not connected" }, ...models]}
+                />
+                <AddModelButton onSaved={(id) => set(["model"], id)} />
+              </div>
+              <FormField label="Additional instructions">
                 <Textarea
                   value={text(["instructions"])}
                   onChange={(event) =>
@@ -216,10 +254,11 @@ export function ResourceFields({
               </FormField>
             </div>
           </SettingsSection>
-          <SettingsSection title="Connections">
-            {referenceLists([])}
-          </SettingsSection>
-          <AgentFields source={source} onChange={onChange} />
+          <AgentFields
+            source={source}
+            onChange={onChange}
+            connections={referenceLists([])}
+          />
         </>
       )}
       {kind === "device" && (

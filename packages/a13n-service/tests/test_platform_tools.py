@@ -1,5 +1,6 @@
 """Run-scoped MCP operations keep their authority through discovery, HTTP and recovery."""
 
+import asyncio
 import json
 from dataclasses import replace
 
@@ -361,7 +362,17 @@ async def test_native_platform_read_and_write_review_survive_resume(skill_servic
         },
         call_id="write",
     )
-    async with listen(service.app) as url:
+    first_request = True
+
+    async def slow_control(scope, receive, send):
+        nonlocal first_request
+        if first_request:
+            first_request = False
+            # Cold control startup can exceed the MCP client's default 5 s initialization deadline.
+            await asyncio.sleep(5.1)
+        await service.app(scope, receive, send)
+
+    async with listen(slow_control) as url:
         settings = service.runtime.settings
         runtime = replace(
             service.runtime,

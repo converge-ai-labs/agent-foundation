@@ -497,12 +497,13 @@ A failed run's `failure.code` names the cause, such as `usage_limit_exceeded`, `
 curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| Event    | Data                                                        | Meaning                                                                                                                           |
-| -------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `thread` | `{thread, current_run, last_run, entries}`                  | The current state of one thread: the thread, its active run, the run that ended last, and its pending and assigned inbox entries. |
-| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | The committed items of a run from ordinal `first` on. `complete` is `true` for the final items of a run that ended.               |
-| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | One [AG-UI](https://docs.ag-ui.com) event of an active run, and the display item it changed (`{id, kind, state}` or `null`).      |
-| `gap`    | `{thread_id, run_id}`                                       | Live output of the run was lost. The run sends no more deltas until its next `items` frame.                                       |
+| Event       | Data                                                        | Meaning                                                                                                                                                                |
+| ----------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `thread`    | `{thread, current_run, last_run, entries}`                  | The current state of one thread: the thread, its active run, the run that ended last, and its pending and assigned inbox entries.                                      |
+| `items`     | `{thread_id, run_id, first, items, continuation, complete}` | The committed items of a run from ordinal `first` on. `complete` is `true` for the final items of a run that ended.                                                    |
+| `delta`     | `{thread_id, run_id, attempt, sequence, event, item}`       | One [AG-UI](https://docs.ag-ui.com) event of an active run, and the display item it changed (`{id, kind, state}` or `null`).                                           |
+| `gap`       | `{thread_id, run_id}`                                       | Live output of the run was lost. The run sends no more deltas until its next `items` frame.                                                                            |
+| `app_ready` | `{thread_id, run_id, apps}`                                 | The listed MCP Apps have committed originals and references. Enable their entries only after this event; see [MCP Apps](tools.md#mcp-apps-for-embedding-applications). |
 
 Every connection starts with the current state of the session: one `thread` frame per thread, oldest first, each followed by an `items` frame for its active run and the output that run already streamed. The stream has no cursor, so a reconnect sends no position. To render a session:
 

@@ -232,10 +232,10 @@ def test_legacy_checkpoint_defaults_to_no_session_hints(format):
     pointer = StatePointer(key="legacy", digest="0" * 64, size=1, format=format, seq=1, attempt=1)
     assert checkpoints.require_compatible(RunRow(id="run_legacy", checkpoint=pointer.model_dump())) == pointer
     upgraded = RunState(harness=restored.harness, seq=2, attempt=2)
-    assert upgraded.format == checkpoints.FORMAT == 3
+    assert upgraded.format == checkpoints.FORMAT == 4
 
 
-@pytest.mark.parametrize("format", [1, 2, 3])
+@pytest.mark.parametrize("format", checkpoints.READABLE_FORMATS)
 def test_checkpoint_preserves_unknown_fields_in_model_round_trip(format):
     payload = RunState(harness=HarnessState.new(thread_id="thr_extra"), seq=1, attempt=1).model_dump(mode="json")
     payload.update(format=format, extension={"items": [1, "value", None]})
@@ -244,7 +244,9 @@ def test_checkpoint_preserves_unknown_fields_in_model_round_trip(format):
     assert RunState.model_validate_json(restored.model_dump_json()).model_dump(mode="json") == payload
 
 
-@pytest.mark.parametrize("changes", [{"seq": 0}, {"attempt": 0}, {"format": 4}, {"envd_sessions": []}])
+@pytest.mark.parametrize(
+    "changes", [{"seq": 0}, {"attempt": 0}, {"format": checkpoints.FORMAT + 1}, {"envd_sessions": []}]
+)
 def test_checkpoint_extensions_do_not_relax_known_fields(changes):
     from pydantic import ValidationError
 

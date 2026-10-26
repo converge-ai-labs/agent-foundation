@@ -413,6 +413,81 @@
       "title": "AgentReviewer",
       "type": "object"
     },
+    "AppReady": {
+      "description": "App originals and references are committed; opening still checks access and fetches current HTML.",
+      "properties": {
+        "apps": {
+          "items": {
+            "$ref": "#/$defs/AppReference"
+          },
+          "title": "Apps",
+          "type": "array"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "thread_id": {
+          "title": "Thread Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id",
+        "run_id",
+        "apps"
+      ],
+      "title": "AppReady",
+      "type": "object"
+    },
+    "AppReference": {
+      "properties": {
+        "agent_revision_id": {
+          "title": "Agent Revision Id",
+          "type": "string"
+        },
+        "app_id": {
+          "title": "App Id",
+          "type": "string"
+        },
+        "connection_id": {
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "resource_uri": {
+          "title": "Resource Uri",
+          "type": "string"
+        },
+        "source_run_id": {
+          "title": "Source Run Id",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "unavailable": {
+          "default": false,
+          "title": "Unavailable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "app_id",
+        "connection_id",
+        "agent_revision_id",
+        "source_run_id",
+        "tool_call_id",
+        "tool_name",
+        "resource_uri"
+      ],
+      "title": "AppReference",
+      "type": "object"
+    },
     "ApprovalDecision": {
       "discriminator": {
         "mapping": {
@@ -4255,6 +4330,9 @@
     }
   },
   "frames": {
+    "app_ready": {
+      "$ref": "#/$defs/AppReady"
+    },
     "delta": {
       "$ref": "#/$defs/Delta"
     },

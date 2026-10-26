@@ -73,6 +73,14 @@ const mocks = vi.hoisted(() => ({
                 },
               },
               {
+                id: "grok",
+                label: "Grok API",
+                provider: "grok",
+                authentication: "api_key",
+                models: [],
+                default_model: "grok-reviewed",
+              },
+              {
                 id: "openai-responses",
                 label: "API",
                 provider: "openai-responses",
@@ -167,12 +175,12 @@ model_characteristics:
   context_window: 128000
   capabilities: []
 `;
-function mount(initial = original) {
+function mount(initial = original, onReady = vi.fn()) {
   function Editor() {
     const [source, setSource] = useState(initial);
     return (
       <>
-        <ModelFields source={source} onChange={setSource} />
+        <ModelFields source={source} onChange={setSource} onReady={onReady} />
         <textarea
           aria-label="Advanced source"
           value={source}
@@ -198,6 +206,13 @@ function mount(initial = original) {
     </MemoryRouter>,
   );
 }
+async function chooseModel(id: string) {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Model" }));
+  const search = await screen.findByPlaceholderText("Find a model");
+  await user.type(search, id);
+  await user.click(await screen.findByRole("option", { name: new RegExp(id) }));
+}
 function source() {
   return (screen.getByLabelText("Advanced source") as HTMLTextAreaElement)
     .value;
@@ -212,6 +227,14 @@ it.each([false, true])(
         )
       : original;
     mount(initial);
+    const user = userEvent.setup();
+    await user.click(await screen.findByText("Model defaults"));
+    await user.click(
+      await screen.findByRole("combobox", { name: "Context budget" }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: "Custom budget" }),
+    );
     const input = await screen.findByLabelText("Working context budget");
     expect((input as HTMLInputElement).value).toBe("128000");
     expect(source()).toBe(initial);
@@ -228,23 +251,28 @@ it.each([false, true])(
 it("provider defaults remove preset-owned fields without removing custom native settings", async () => {
   mount();
   const user = userEvent.setup();
+  await user.click(await screen.findByText("Model defaults"));
   const preset = await screen.findByRole("combobox", {
     name: "Settings preset",
   });
   await waitFor(() =>
     expect(preset.textContent).toContain("High reasoning (default)"),
   );
-  const budget = screen.getByRole("combobox", { name: "Context preset" });
+  const budget = screen.getByRole("combobox", { name: "Context budget" });
   expect(budget.textContent).toContain("128,000 tokens");
   await user.click(budget);
   await user.click(
     await screen.findByRole("option", { name: "Compact · 64,000 tokens" }),
   );
   expect(budget.textContent).toContain("64,000 tokens");
+  await user.click(budget);
+  await user.click(
+    await screen.findByRole("option", { name: "Custom budget" }),
+  );
   fireEvent.change(screen.getByLabelText("Working context budget"), {
     target: { value: "32000" },
   });
-  expect(budget.textContent).toContain("Custom · 32,000 tokens");
+  expect(budget.textContent).toContain("Custom budget");
   await user.click(preset);
   expect(screen.queryByRole("option", { name: /Keep current/ })).toBeNull();
   await user.click(
@@ -254,7 +282,7 @@ it("provider defaults remove preset-owned fields without removing custom native 
   expect(parse(source()).settings).toEqual({ temperature: 0.3 });
   expect(source()).toContain("# Keep custom setting");
 });
-it("an old prepare cannot overwrite advanced edits after route-triggered remount", async () => {
+it("an old prepare cannot overwrite advanced source edits", async () => {
   let complete!: (value: unknown) => void;
   mocks.prepare.mockImplementation(
     () =>
@@ -263,16 +291,7 @@ it("an old prepare cannot overwrite advanced edits after route-triggered remount
       }),
   );
   mount();
-  fireEvent.change(await screen.findByLabelText("Model ID"), {
-    target: { value: "new-model" },
-  });
-  const button = await screen.findByRole("button", {
-    name: "Apply connection & defaults",
-  });
-  await waitFor(() =>
-    expect((button as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(button);
+  await chooseModel("new-model");
   await waitFor(() => expect(mocks.prepare).toHaveBeenCalledTimes(1));
   const advanced = original
     .replace("old-custom", "advanced-new")
@@ -300,6 +319,7 @@ it("edits the permanent reasoning mode without clobbering effort, and removes on
       "  thinking: high\n  openai_reasoning_mode: pro\n  openai_reasoning_summary: detailed",
     ),
   );
+  await user.click(await screen.findByText("Model defaults"));
   await user.click(
     await screen.findByRole("combobox", { name: "Reasoning mode" }),
   );
@@ -358,17 +378,11 @@ it("saves an unauthenticated subscription recipe independently of the Agent draf
   });
   const onSaved = mountAddModel();
   fireEvent.click(screen.getByRole("button", { name: "Add model" }));
-  const useModel = await screen.findByRole("button", {
-    name: "Use this model",
-  });
-  await waitFor(() =>
-    expect((useModel as HTMLButtonElement).disabled).toBe(false),
-  );
-  fireEvent.click(useModel);
-  const save = screen.getByRole("button", { name: "Save model & select" });
+  expect(screen.queryByRole("button", { name: "Use this model" })).toBeNull();
+  const save = screen.getByRole("button", { name: "Save model" });
   await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
   expect(
-    screen.getByText(/Connect its account before running it/),
+    screen.getByText(/Connect an account before running this model/),
   ).toBeTruthy();
   fireEvent.click(save);
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
@@ -384,7 +398,7 @@ it("saves an unauthenticated subscription recipe independently of the Agent draf
         new_model_id: onSaved.mock.calls[0]![0],
         new_model_name: "openai-codex:reviewed",
         environment_profile: "environment-native",
-        enable_live: true,
+        enable_live: false,
       },
     },
   });
@@ -403,24 +417,15 @@ it("cannot save the previous recipe after changing the visible connection or mod
   mountAddModel();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Add model" }));
-  const useModel = await screen.findByRole("button", {
-    name: "Use this model",
-  });
-  await waitFor(() =>
-    expect((useModel as HTMLButtonElement).disabled).toBe(false),
-  );
-  await user.click(useModel);
+
   const save = screen.getByRole("button", {
-    name: "Save model & select",
+    name: "Save model",
   }) as HTMLButtonElement;
   await waitFor(() => expect(save.disabled).toBe(false));
-  fireEvent.change(screen.getByLabelText("Model ID"), {
-    target: { value: "different-model" },
-  });
+  mocks.prepare.mockImplementation(() => new Promise(() => {}));
+  await chooseModel("different-model");
   await waitFor(() => expect(save.disabled).toBe(true));
-  fireEvent.change(screen.getByLabelText("Model ID"), {
-    target: { value: "reviewed" },
-  });
+  await chooseModel("reviewed");
   await waitFor(() => expect(save.disabled).toBe(false));
   await user.click(screen.getByRole("combobox", { name: "Model connection" }));
   await user.click(
@@ -554,3 +559,102 @@ authentication: {kind: codex_subscription${selected ? `, group: ${selected}` : "
     );
   },
 );
+
+it("restores the API connection when discarding a same-route subscription change", async () => {
+  const initial = original.replace(
+    "openai-responses:old-custom",
+    "grok:grok-reviewed",
+  );
+  mocks.prepare.mockResolvedValue({
+    data: {
+      route: "grok:grok-reviewed",
+      authentication: { kind: "grok_subscription" },
+      model_configuration: {},
+    },
+  });
+  mount(initial);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Model connection" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Grok subscription" }),
+  );
+  await waitFor(() =>
+    expect(parse(source()).authentication.kind).toBe("grok_subscription"),
+  );
+  fireEvent.change(screen.getByLabelText("Advanced source"), {
+    target: { value: initial },
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Model connection" }).textContent,
+    ).toContain("Grok API"),
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  });
+  expect(source()).toBe(initial);
+  expect(mocks.prepare).toHaveBeenCalledTimes(1);
+});
+
+it.each(["openai:gpt-5", "google-cloud:gemini-2.5-pro"])(
+  "keeps advanced-only route %s saveable without normalizing it",
+  async (route) => {
+    const initial = original.replace("openai-responses:old-custom", route);
+    const ready = vi.fn();
+    mount(initial, ready);
+    await waitFor(() => expect(ready).toHaveBeenLastCalledWith(true));
+    const edited = initial.replace("name: Existing", "name: Renamed");
+    fireEvent.change(screen.getByLabelText("Advanced source"), {
+      target: { value: edited },
+    });
+    expect(source()).toBe(edited);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(screen.queryByText("Restore recommended defaults")).toBeNull();
+  },
+);
+
+it("clears API endpoint configuration on a subscription transition", async () => {
+  mocks.prepare.mockResolvedValue({
+    data: {
+      route: "openai-codex:reviewed",
+      authentication: { kind: "codex_subscription" },
+      model_configuration: {},
+    },
+  });
+  mount(
+    `${original}model_configuration:\n  base_url: https://gateway.example/v1\n  session_affinity_header: X-Session-Id\n`,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Model connection" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Codex subscription" }),
+  );
+  await waitFor(() =>
+    expect(parse(source()).route).toBe("openai-codex:reviewed"),
+  );
+  expect(parse(source()).model_configuration).toEqual({});
+});
+
+it("preserves custom API configuration when changing models", async () => {
+  mocks.prepare.mockResolvedValue({
+    data: {
+      route: "openai-responses:new-model",
+      authentication: { kind: "api_key", credential_ref: "key-saved" },
+      model_configuration: {},
+    },
+  });
+  mount(
+    `${original}model_configuration:\n  session_affinity_header: X-Session-Id\n`,
+  );
+  await chooseModel("new-model");
+  await waitFor(() =>
+    expect(parse(source()).route).toBe("openai-responses:new-model"),
+  );
+  expect(parse(source()).model_configuration).toEqual({
+    session_affinity_header: "X-Session-Id",
+  });
+});

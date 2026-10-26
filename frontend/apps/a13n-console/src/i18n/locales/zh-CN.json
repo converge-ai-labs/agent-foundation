@@ -3467,5 +3467,15 @@
   "Enable {{name}}": "启用 {{name}}",
   "These instructions use Service's read-only files. File tools and platform tools keep their own permissions.": "这些操作指引使用 Service 的只读文件。文件工具和平台工具仍遵循各自的权限设置。",
   "These instructions are copied into the run's primary environment. Enable file reading and the platform tools the agent needs separately.": "这些操作指引会复制到运行的主环境中。请另行启用文件读取工具和 Agent 所需的平台工具。",
-  "Configure workspace resources, manage one-time and recurring schedules, and diagnose executions using the Service MCP tools.": "使用 Service MCP 工具配置工作区资源、管理一次性及周期性定时任务，并诊断执行问题。"
+  "Configure workspace resources, manage one-time and recurring schedules, and diagnose executions using the Service MCP tools.": "使用 Service MCP 工具配置工作区资源、管理一次性及周期性定时任务，并诊断执行问题。",
+  "Follow agent": "跟随 Agent",
+  "Custom · {{count}} spaces": "自定义 · {{count}} 个空间",
+  "Custom · {{count}} spaces_one": "自定义 · {{count}} 个空间",
+  "Custom · {{count}} spaces_other": "自定义 · {{count}} 个空间",
+  "Review settings": "检查设置",
+  "Applies only to this session.": "仅影响本会话。",
+  "Memory configuration": "记忆配置",
+  "This session has already been created. Retry with the same memory settings.": "本会话已创建，重试将使用相同的记忆设置。",
+  "Uses the first agent's memory settings when this session starts.": "会话开始时，使用首个 Agent 的记忆设置。",
+  "Configure this session without changing the agent's defaults.": "单独设置本会话，不修改 Agent 默认配置。"
 }

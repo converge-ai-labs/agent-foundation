@@ -46,10 +46,11 @@ from a13n_service.runs.usage import UsageReport, ingest
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
-# Format 2 adds the private search retention ledger to tails; format 3 adds Session hints to state.
-# New workers read both older formats; old workers skip newer checkpoints. Upgrade readers first.
-FORMAT = 3
-READABLE_FORMATS = (1, 2, 3)
+# Format 2 adds the private search retention ledger; 3 adds Session hints;
+# 4 adds private App originals with separate authorization bindings.
+# New workers read older formats; old workers skip newer checkpoints. Upgrade readers first.
+FORMAT = 4
+READABLE_FORMATS = (1, 2, 3, 4)
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -115,7 +116,7 @@ class PageRef(_Frozen):
 class RunState(_Frozen):
     model_config = ConfigDict(extra="allow", frozen=True)
 
-    format: Literal[1, 2, 3] = FORMAT
+    format: Literal[1, 2, 3, 4] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
@@ -192,7 +193,10 @@ async def load_tail(objects: ObjectStore, pointer: TailPointer | None, *, hydrat
         return Tail()
     tail = Tail.model_validate_json(await load(objects, pointer))
     if hydrate:
-        refs = {ref.id: ref for ref in tail.refs if ref.purpose != "image"}
+        needed = {ref.id for item in tail.items for ref in item.content_refs.values()}
+        if tail.continuation_ref is not None:
+            needed.add(tail.continuation_ref.id)
+        refs = {ref.id: ref for ref in tail.refs if ref.id in needed}
         values = {identifier: decode(await load(objects, ref), ref) for identifier, ref in refs.items()}
         for item in tail.items:
             for field, ref in item.content_refs.items():

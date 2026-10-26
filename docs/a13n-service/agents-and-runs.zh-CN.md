@@ -497,12 +497,13 @@ Service 在 Run 接受时冻结 Agent／Thread／Run 三层的结果，恢复和
 curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| 事件     | 数据                                                        | 含义                                                                                                   |
-| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `thread` | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                   |
-| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                   |
-| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
-| `gap`    | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                      |
+| 事件        | 数据                                                        | 含义                                                                                                                               |
+| ----------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `thread`    | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                                               |
+| `items`     | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                                               |
+| `delta`     | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。                             |
+| `gap`       | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                                                  |
+| `app_ready` | `{thread_id, run_id, apps}`                                 | 列出的 MCP App 原始数据及引用已提交。收到该事件后才能启用对应入口；参阅 [MCP Apps](tools.md#mcp-apps-for-embedding-applications)。 |
 
 每个连接都从会话的当前状态开始：每个线程一个 `thread` 帧，按创建时间从旧到新，每个帧之后是其活跃运行的 `items` 帧和该运行已产生的输出。事件流没有游标，因此重连时不发送位置。渲染会话时：
 

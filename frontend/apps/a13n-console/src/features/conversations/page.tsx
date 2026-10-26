@@ -1,4 +1,4 @@
-import { Button, Label, SearchPicker, Switch } from "a13n-ui";
+import { Button, SearchPicker } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -35,13 +35,10 @@ import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
 import { SessionStreamProvider } from "./session-stream";
 import { useSession } from "./queries";
-import {
-  defaultSessionMemory,
-  SessionMemoryFields,
-  validSpaceSelection,
-} from "../memories/session-settings";
+import { validSpaceSelection } from "../memories/session-settings";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { ThreadInbox } from "./transcript/inbox";
+import { SessionMemoryControl } from "./composer/session-memory";
 import styles from "./conversations.module.css";
 
 export function ConversationsPage() {
@@ -79,6 +76,7 @@ export function NewConversation() {
     session?: Schema["SessionView"];
     environment?: Schema["EnvironmentView"];
   }>({});
+  const [memoryLocked, setMemoryLocked] = useState(false);
   async function consoleSession() {
     prepared.current.session ??= data(
       await client.workspace(workspace.id).POST("/api/v1/sessions", {
@@ -89,6 +87,7 @@ export function NewConversation() {
         },
       }),
     );
+    setMemoryLocked(true);
     return prepared.current.session;
   }
   /** A template choice reserves its environment first, then mounts it. */
@@ -160,45 +159,25 @@ export function NewConversation() {
             },
           ]}
         />
-        {can("run") && (
-          <div className="grid gap-4">
-            <div className="grid gap-1">
-              <Label className="flex items-center gap-2">
-                <Switch
-                  checked={memory === null}
-                  disabled={!!prepared.current.session}
-                  onCheckedChange={(inherit) =>
-                    setMemory(inherit ? null : defaultSessionMemory)
-                  }
-                />
-                {t("Use agent memory defaults")}
-              </Label>
-              <p className="text-muted-foreground text-xs">
-                {t(
-                  "The first agent's settings apply to this session. Turn off to choose your own.",
-                )}
-              </p>
-            </div>
-            {memory !== null && (
-              <SessionMemoryFields
-                value={memory}
-                onChange={setMemory}
-                disabled={!!prepared.current.session}
-              />
-            )}
-          </div>
-        )}
         <Composer
           initial={
             message ? { content: [{ type: "text", text: message }] } : undefined
           }
-          disabled={
-            !can("run") ||
-            !selected ||
-            (memory !== null && !validSpaceSelection(memory))
-          }
+          disabled={!can("run") || !selected}
+          submitDisabled={memory !== null && !validSpaceSelection(memory)}
           agentName={selected?.name}
-          options={<RunOptions options={options} showAgent={false} />}
+          options={
+            <>
+              <RunOptions options={options} showAgent={false} />
+              {can("run") && (
+                <SessionMemoryControl
+                  value={memory}
+                  onChange={setMemory}
+                  locked={memoryLocked}
+                />
+              )}
+            </>
+          }
           submit={async (payload) => {
             const { environment, ...choice } = options.build();
             if (!selected) return;

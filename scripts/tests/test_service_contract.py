@@ -27,6 +27,7 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
         "thread",
         "items",
         "delta",
+        "app_ready",
         "gap",
         "schedule",
         "occurrence",

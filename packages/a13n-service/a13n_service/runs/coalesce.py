@@ -18,6 +18,7 @@ from ag_ui.core import ToolCallArgsEvent, ToolCallResultEvent
 from a13n_service.runs import images
 from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, extend, fragment
+from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.stream import ThreadStream
 
 # The size in which the observer splits long input text: merging never rebuilds what it split, and a merged event
@@ -46,10 +47,17 @@ class Coalescer:
     fragment event, for at most `window` seconds from the fragment that started it; a window of 0 holds none."""
 
     def __init__(
-        self, fold: DisplayFold, stream: ThreadStream, *, window: float, contents: Contents | None = None
+        self,
+        fold: DisplayFold,
+        stream: ThreadStream,
+        *,
+        window: float,
+        contents: Contents | None = None,
+        app_captures: Captures | None = None,
     ) -> None:
         self.fold, self.stream, self.window = fold, stream, window
         self.contents = contents
+        self.app_captures = app_captures
         self.held: _Event | None = None
         # The stream the held fragment continues, and the length of its text so far.
         self.held_stream: object = None
@@ -72,6 +80,12 @@ class Coalescer:
             image_event = images.observe(source, root_run_id=self.fold.observer.run_id, contents=self.contents)
             if image_event is not None:
                 ready += self._accept(_Event.of(image_event))
+            if self.app_captures is not None:
+                app_event = self.app_captures.observe(
+                    source, root_run_id=self.fold.observer.run_id, contents=self.contents
+                )
+                if app_event is not None:
+                    ready += self._accept(_Event.of(app_event))
         self._publish(ready, source)
 
     def flush(self) -> None:

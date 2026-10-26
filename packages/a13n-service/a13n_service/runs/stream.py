@@ -8,12 +8,13 @@ run and attempt are current.
 Each Control process has one `SessionHub`. For the sessions that have readers it shares one blocking XREAD over
 their threads and, every `control.stream_refresh_seconds` or sooner when a reader meets a run it does not follow,
 reads their state and each reader's authority once. Schedule-owned Sessions also send compact
-`schedule` / `occurrence` state. Every Thread uses the same four output frames:
+`schedule` / `occurrence` state. Every Thread uses the same output frames:
 
 - `thread`: a thread's current state, whenever it changes;
 - `items`: a run's committed items from an ordinal on, whenever the connection follows the run from a fresh base:
   on connect, for a new run or attempt, once a checkpoint covers lost output, and at seal;
 - `delta`: one live event of a followed run;
+- `app_ready`: committed App references that can now be opened;
 - `gap`: output of a followed run was lost; its deltas are held until a checkpoint covers the loss.
 
 A client never sends a position: every connection starts from a fresh snapshot.
@@ -42,6 +43,7 @@ from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, Pointer, TailPointer
 from a13n_service.runs.contents import ContentObject, decode
 from a13n_service.runs.display import Observed, Page, Tail
+from a13n_service.runs.mcp_apps.schemas import AppReference
 from a13n_service.runs.runs import NEWEST_ITEMS, newest
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import observation
@@ -109,12 +111,21 @@ class Gap(BaseModel):
     run_id: str
 
 
-type FrameName = Literal["thread", "items", "delta", "gap", "schedule", "occurrence"]
+class AppReady(BaseModel):
+    """App originals and references are committed; opening still checks access and fetches current HTML."""
+
+    thread_id: str
+    run_id: str
+    apps: list[AppReference]
+
+
+type FrameName = Literal["thread", "items", "delta", "app_ready", "gap", "schedule", "occurrence"]
 # The SSE `event` name of each frame and the model of its `data`.
 FRAMES: dict[FrameName, type[BaseModel]] = {
     "thread": ThreadState,
     "items": RunSnapshot,
     "delta": Delta,
+    "app_ready": AppReady,
     "gap": Gap,
     "schedule": observation.ScheduleEvent,
     "occurrence": observation.OccurrenceEvent,
@@ -315,6 +326,8 @@ class _Base:
     resume_after: str | None
     # The first in-progress item shown as a preview of a large field, which live output does not extend.
     preview: int | None
+    # Public references whose originals are reachable from this committed base.
+    apps: tuple[AppReference, ...] = ()
 
 
 class SessionHub:
@@ -554,6 +567,12 @@ class SessionHub:
             continuation=tail.continuation if current and not sealed else None,
             complete=sealed,
         )
+        refs = {ref.id: ref for ref in (*tail.refs, *(ref for page in loaded for ref in page.refs))}
+        apps = {
+            ref.id: ref.app.reference
+            for ref in refs.values()
+            if ref.purpose == "app" and ref.app is not None and ref.app.run_id == run_id
+        }
         return _Base(
             snapshot,
             attempt,
@@ -561,6 +580,7 @@ class SessionHub:
             tail_first,
             tail.resume_after if current else None,
             min((item.ordinal for item in items if item.state == "in_progress" and item.content_refs), default=None),
+            tuple(app for app in apps.values() if not app.unavailable),
         )
 
     async def _object(self, ref: Pointer | PageRef | ContentObject) -> bytes:
@@ -620,6 +640,15 @@ def _frame(event: FrameName, data: BaseModel) -> str:
     return f"event: {event}\ndata: {data.model_dump_json()}\n\n"
 
 
+def _items_frames(base: _Base) -> list[str]:
+    """Only committed display can announce readiness, including reconnect, repair and final seal."""
+    snapshot = base.snapshot
+    frames = [_frame("items", snapshot)]
+    for app in base.apps:
+        frames.append(_frame("app_ready", AppReady(thread_id=snapshot.thread_id, run_id=snapshot.run_id, apps=[app])))
+    return frames
+
+
 def _order(entry_id: str) -> tuple[int, int]:
     milliseconds, _, sequence = entry_id.partition("-")
     return int(milliseconds), int(sequence or 0)
@@ -640,6 +669,8 @@ class _Follow:
     held: int | None = None
     # A committed sequence the last refresh found ahead of the output this connection received.
     expected: int | None = None
+    # Earliest provisional App supplement not yet confirmed by a committed base.
+    app_sequence: int | None = None
 
 
 class _Connection:
@@ -665,7 +696,19 @@ class _Connection:
         if isinstance(signal, StateFrame):
             return [signal.frame]
         if isinstance(signal, StreamEntry):
-            return self.entry(signal)
+            frames = self.entry(signal)
+            run_id = signal.fields["run_id"]
+            follow = self.follows.get(run_id)
+            if (
+                "boundary" in signal.fields
+                and follow is not None
+                and follow.held is None
+                and int(signal.fields["attempt"]) == follow.attempt
+                and follow.app_sequence is not None
+                and int(signal.fields["sequence"]) >= follow.app_sequence
+            ):
+                frames += await self.follow(follow.thread_id, run_id, follow.first)
+            return frames
         return await self.update(signal)
 
     def entry(self, entry: StreamEntry) -> list[str]:
@@ -705,6 +748,8 @@ class _Connection:
             event=json.loads(fields["event"]),
             item=json.loads(fields.get("item", "null")),
         )
+        if delta.event.get("name") == "a13n.mcp_apps" and follow.app_sequence is None:
+            follow.app_sequence = sequence
         return [_frame("delta", delta)]
 
     def hold(self, run_id: str, follow: _Follow, through: int | None) -> list[str]:
@@ -729,7 +774,7 @@ class _Connection:
                 # Sealed: its final display.
                 del self.follows[run_id]
                 self.ended.add(run_id)
-                frames.append(_frame("items", (await self.hub.base(run_id, follow.first)).snapshot))
+                frames += _items_frames(await self.hub.base(run_id, follow.first))
         if progress is None or progress.run_id in self.ended:
             return frames
         run_id = progress.run_id
@@ -740,6 +785,9 @@ class _Connection:
         committed = progress.position
         covered = committed.attempt == follow.attempt
         if follow.held is None and covered:
+            if follow.app_sequence is not None and committed.sequence >= follow.app_sequence:
+                # Covers a lost Redis boundary too; readiness never depends on receiving that marker.
+                return frames + await self.follow(update.thread_id, run_id, follow.first)
             if follow.expected is not None and follow.sequence < follow.expected:
                 # Output committed a whole refresh interval ago never arrived: it was lost on its way here.
                 frames += self.hold(run_id, follow, follow.expected)
@@ -759,7 +807,7 @@ class _Connection:
         """Send a fresh base of the run, then the deltas Redis retains after it up to this connection's position."""
         base = await self.hub.base(run_id, first)
         self.asked.difference_update(key for key in self.asked.copy() if key[0] == run_id)
-        frames = [_frame("items", base.snapshot)]
+        frames = _items_frames(base)
         if base.snapshot.complete:
             self.follows.pop(run_id, None)
             self.ended.add(run_id)
