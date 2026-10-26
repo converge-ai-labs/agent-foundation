@@ -517,22 +517,30 @@ it("offers affinity presets and captures a custom replacement alongside the endp
     expect(
       (
         screen.getByRole("button", {
-          name: "Use this model",
+          name: "Continue",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
+  await user.click(await screen.findByText("Advanced connection options"));
+  const affinity = screen.getByRole("combobox", {
+    name: "Gateway session affinity",
+  });
+  await user.click(affinity);
+  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
+  expect(
+    readWizardDraft(status.draft_scope!)?.selection.model?.model_configuration
+      ?.session_affinity_header,
+  ).toBe("x-litellm-session-id");
+
+  await user.click(affinity);
+  await user.click(
+    await screen.findByRole("option", { name: "Custom header" }),
+  );
   const input = (await screen.findByLabelText(
     "Session affinity header",
   )) as HTMLInputElement;
-  expect(input.value).toBe("");
-  await user.click(
-    screen.getByRole("combobox", { name: "Gateway session affinity" }),
-  );
-  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
   expect(input.value).toBe("x-litellm-session-id");
-
   fireEvent.change(input, { target: { value: "x-company-session" } });
   await continueStep();
   const model = readWizardDraft(status.draft_scope!)?.selection.model;
@@ -625,13 +633,12 @@ async function chooseModel() {
     expect(
       (
         screen.getByRole("button", {
-          name: "Use this model",
+          name: "Continue",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
   expect(await screen.findByText(/Account: account-test/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
 }
 
 it("shows download, verification and isolation progress; cancels and retries before saving Sandbox", async () => {
