@@ -243,3 +243,22 @@ async def test_readiness_deadline_includes_scope_admission(scoped_browser, opera
             )
     assert json.loads(result) == {"verification": "timed_out", "dispatch": "not_dispatched"}
     browser.client.send_raw.assert_not_awaited()
+
+
+async def test_close_prunes_only_its_download_history_including_closed_popups(scoped_browser):
+    browser, _ = scoped_browser
+    one = CdpBrowserBackend(browser, browser.pages["one"])
+    two = CdpBrowserBackend(browser, browser.pages["two"])
+    one._claim("gone-popup")
+    one._removed("gone-popup")
+    browser.download_records = {
+        key: {"page": target, "state": "completed"} for key, target in (("a", "one"), ("b", "gone-popup"), ("c", "two"))
+    }
+    browser.download_omitted = {"one": 1, "gone-popup": 2, "two": 3}
+    await one.close()
+    assert browser.download_records == {"c": {"page": "two", "state": "completed"}}
+    assert browser.download_omitted == {"two": 3}
+    assert not one._download_targets
+    assert two in browser.scopes
+    await one.close()
+    assert "c" in browser.download_records

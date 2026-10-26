@@ -87,6 +87,7 @@ class Page:
     dialog: dict | None = None
     dialog_opened: asyncio.Event = field(default_factory=asyncio.Event)
     epoch: int = 0
+    visual_epoch: int = 0
     navigation: int = 0
     deferred_objects: list[tuple[Frame, str]] = field(default_factory=list)
     requires_observation: bool = False
@@ -96,8 +97,9 @@ class Page:
 
     def invalidate(self, frames: set[str] | None = None) -> None:
         self.epoch += 1
-        self.visual = None
         if frames is None:
+            self.visual_epoch += 1
+            self.visual = None
             self.revision = ""
             self.elements.clear()
         else:

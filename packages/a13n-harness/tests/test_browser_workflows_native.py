@@ -871,3 +871,152 @@ async def test_uncommitted_iframe_download_is_owned(native_browser, workflow_sit
         assert Path(report["downloads"][0]["path"]).read_bytes() == b"synthetic download"
         assert json.loads(await other.downloads()) == {"downloads": [], "omitted": 0}
         await other.close()
+
+
+async def test_visual_and_element_wait_survive_unrelated_frame_churn(native_browser):
+    from urllib.parse import quote
+
+    from a13n_harness.capabilities.browser.actions import Click, Clip, ElementCondition, Locator, Ref, Visual
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate(
+            "data:text/html,"
+            + quote("""
+            <style>body{margin:0}button{position:fixed;left:20px;top:20px;width:100px;height:60px}
+            iframe{position:fixed;left:400px;top:200px;width:20px;height:20px}</style>
+            <button onclick="this.dataset.clicks=Number(this.dataset.clicks||0)+1">Stable</button>
+        """)
+        )
+        observation = await backend.observe()
+        ref = next(item.target for item in observation.elements if item.description == "Stable")
+        await backend.browser.evaluate(
+            backend.page,
+            """
+            window.churn=setInterval(()=>{
+                document.querySelector('iframe')?.remove();
+                document.body.appendChild(document.createElement('iframe'));
+            },10)
+        """,
+        )
+        for _ in range(5):
+            shot = await backend.screenshot(clip=Clip(x=20, y=20, width=100, height=60))
+            assert shot.data.startswith(b"\xff\xd8")
+            # Leave enough time for several unrelated frame events after capture.
+            await asyncio.sleep(0.05)
+            result = json.loads(
+                await backend.interact(
+                    Click(kind="click", target=Visual(kind="visual", screenshot=shot.token, x=0.5, y=0.5))
+                )
+            )
+            assert result["dispatch"] == "dispatched", result
+        assert await backend.browser.evaluate(backend.page, "document.querySelector('button').dataset.clicks") == "5"
+        for target in (Ref(kind="ref", ref=ref), Locator(kind="locator", role="button", name="Stable")):
+            result = json.loads(
+                await backend.wait(
+                    ElementCondition(kind="element", target=target), revision=observation.revision, timeout=2
+                )
+            )
+            assert result["verification"] == "passed", result
+        await backend.browser.evaluate(backend.page, "clearInterval(window.churn)")
+
+
+async def test_shift_chords_insert_us_keyboard_symbols(native_browser):
+    from urllib.parse import quote
+
+    from a13n_harness.capabilities.browser.actions import Locator
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate("data:text/html," + quote('<input aria-label="Symbols">'))
+        target = Locator(kind="locator", role="textbox", name="Symbols")
+        for key in ("1", "9", "0", "/", "a"):
+            result = json.loads(await backend.interact(Press(kind="press", key="Shift+" + key, target=target)))
+            assert result["dispatch"] == "dispatched", result
+        assert await backend.browser.evaluate(backend.page, "document.querySelector('input').value") == "!()?A"
+
+
+async def test_idle_background_screenshot_preserves_foreground(native_browser):
+    from urllib.parse import quote
+
+    from a13n_harness.capabilities.browser.actions import Click, Clip, Visual
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        other = CdpBrowserBackend(backend.browser)
+        await other.tabs("new")
+        tracking = """window.events=[];
+            for(const name of ['visibilitychange','focus','blur'])
+                addEventListener(name,()=>events.push(name));"""
+        await backend.browser.send("Page.addScriptToEvaluateOnNewDocument", {"source": tracking}, backend.page)
+        await backend.browser.evaluate(other.page, tracking)
+        await asyncio.sleep(3.566)
+        await backend.navigate(
+            "data:text/html,"
+            + quote("""
+            <style>body{margin:0}button{position:absolute;left:20px;top:20px;width:100px;height:60px}</style>
+            <button onclick="document.body.dataset.clicked='yes'">Target</button>
+        """)
+        )
+        await asyncio.sleep(3.064)
+        async with asyncio.timeout(3):
+            shot = await backend.screenshot(clip=Clip(x=20, y=20, width=100, height=60))
+        assert shot.data.startswith(b"\xff\xd8")
+        assert (shot.width, shot.height) == (100, 60)
+        assert await backend.browser.evaluate(backend.page, "[document.hidden,document.hasFocus(),events]") == [
+            True,
+            False,
+            [],
+        ]
+        assert await backend.browser.evaluate(other.page, "[document.hidden,document.hasFocus(),events]") == [
+            False,
+            True,
+            [],
+        ]
+        outcome = json.loads(
+            await backend.interact(
+                Click(kind="click", target=Visual(kind="visual", screenshot=shot.token, x=0.5, y=0.5))
+            )
+        )
+        assert outcome["dispatch"] == "dispatched", outcome
+        assert await backend.browser.evaluate(backend.page, "document.body.dataset.clicked") == "yes"
+        await other.close()
+
+
+async def test_screenshot_leaves_other_session_screencast_running(native_browser):
+    from a13n_harness.capabilities.browser.cdp import Frame
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        browser = backend.browser
+        await backend.navigate("data:text/html,<body>Stream</body>")
+        attached = await browser.send("Target.attachToTarget", {"targetId": backend.page.target, "flatten": True})
+        observer = Frame(backend.page.target, attached["sessionId"])
+        received = asyncio.Event()
+        frames = []
+
+        def on_frame(event, session):
+            if session == observer.session:
+                frames.append(event)
+                browser.background(browser.send("Page.screencastFrameAck", {"sessionId": event["sessionId"]}, observer))
+                received.set()
+
+        browser.client.register.Page.screencastFrame(on_frame)
+        try:
+            await browser.send("Page.enable", page=observer)
+            await browser.send("Page.startScreencast", {"format": "jpeg", "maxWidth": 96, "maxHeight": 96}, observer)
+            async with asyncio.timeout(3):
+                await received.wait()
+            await backend.screenshot()
+            # Drain any in-flight frame, then force a new visible paint after
+            # our session has stopped. The observer must still deliver it.
+            await asyncio.sleep(0.2)
+            received.clear()
+            before = len(frames)
+            await browser.evaluate(backend.page, "document.body.style.background='red'")
+            async with asyncio.timeout(3):
+                await received.wait()
+            assert len(frames) > before
+        finally:
+            await browser.send("Page.stopScreencast", page=observer)
+            await browser.send("Target.detachFromTarget", {"sessionId": observer.session})

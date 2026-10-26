@@ -518,3 +518,116 @@ async def test_shift_letter_sends_uppercase_text_and_releases_keys(browser):
     events = [call.args[2] for call in browser.dispatch_input.await_args_list]
     assert events[1]["text"] == events[1]["key"] == "A"
     assert [event["key"] for event in events[2:]] == ["A", "Shift"]
+
+
+@pytest.mark.parametrize("key,expected", list(zip("1234567890-=[]\\;',./`", '!@#$%^&*()_+{}|:"<>?~', strict=True)))
+async def test_shift_punctuation_chords(browser, key, expected):
+    from a13n_harness.capabilities.browser.interaction import press
+
+    browser.dispatch_input = AsyncMock()
+    await press(browser, Page("owned", "session"), "Shift+" + key)
+    events = [call.args[2] for call in browser.dispatch_input.await_args_list]
+    assert events[1]["text"] == events[1]["key"] == expected
+    assert [event["key"] for event in events[2:]] == [expected, "Shift"]
+
+
+@pytest.mark.parametrize("whole_page", [False, True])
+async def test_capture_checks_page_invalidation_not_unrelated_frame_events(browser, whole_page):
+    from a13n_harness.capabilities.browser.actions import Visual
+    from a13n_harness.capabilities.browser.visual import capture, pointer
+
+    page = Page("owned", "session")
+    viewport = {"pageX": 0, "pageY": 0, "clientWidth": 100, "clientHeight": 100, "scale": 1}
+
+    async def send(method, params=None, page=None):
+        if method == "Page.getLayoutMetrics":
+            return {"cssVisualViewport": viewport}
+        if method == "Page.captureScreenshot":
+            page.invalidate(None if whole_page else {"child"})
+            return {"data": "/9j/2Q=="}
+        return {}
+
+    browser.send = AsyncMock(side_effect=send)
+    if whole_page:
+        with pytest.raises(BrowserError, match="changed during capture"):
+            await capture(browser, page)
+        assert page.visual is None
+    else:
+        shot = await capture(browser, page)
+        target = Visual(kind="visual", screenshot=shot.token, x=0.5, y=0.5)
+        page.invalidate({"another-child"})
+        await pointer(browser, page, Click(kind="click", target=target), target)
+        page.invalidate()
+        with pytest.raises(BrowserError, match="expired"):
+            await pointer(browser, page, Click(kind="click", target=target), target)
+
+
+@pytest.mark.parametrize("event_stage", ["Runtime.callFunctionOn", "Runtime.releaseObject"])
+@pytest.mark.parametrize("invalidated_frame", ["unrelated", "root", None])
+async def test_element_wait_revalidates_after_read_and_release(browser, event_stage, invalidated_frame):
+    from a13n_harness.capabilities.browser.actions import ElementCondition
+    from a13n_harness.capabilities.browser.cdp import Frame, Node
+
+    page = Page("owned", "session", revision="observed")
+    page.frames["root"] = Frame("root", "session")
+    page.elements["button"] = Node(1, "root", "session")
+    browser.pages[page.target] = page
+    backend = CdpBrowserBackend(browser, page)
+
+    async def send(method, params, session):
+        if method == event_stage:
+            page.invalidate(None if invalidated_frame is None else {invalidated_frame})
+        if method == "DOM.resolveNode":
+            return {"object": {"objectId": "button"}}
+        if method == "Runtime.callFunctionOn":
+            return {"result": {"value": True}}
+        return {}
+
+    browser.client.send_raw.side_effect = send
+    condition = ElementCondition(kind="element", target=Ref(kind="ref", ref="button"))
+    if invalidated_frame == "unrelated":
+        result = await backend.wait(condition, revision="observed", timeout=0.2)
+        assert '"verification": "passed"' in result
+    else:
+        with pytest.raises(BrowserError, match="expired"):
+            await backend.wait(condition, revision="observed", timeout=0.2)
+    assert page.epoch == 1
+
+
+@pytest.mark.parametrize("failure", ["start", "capture", "cancel", "stop"])
+async def test_capture_stops_own_screencast_on_failure(browser, failure):
+    from a13n_harness.capabilities.browser.visual import capture
+
+    page = Page("owned", "session")
+    viewport = {"pageX": 0, "pageY": 0, "clientWidth": 100, "clientHeight": 100, "scale": 1}
+    capture_started = asyncio.Event()
+
+    async def send(method, params, session):
+        assert session == "session"
+        if method == "Page.getLayoutMetrics":
+            return {"cssVisualViewport": viewport}
+        if method == "Page.startScreencast" and failure == "start":
+            raise RuntimeError("start failed")
+        if method == "Page.captureScreenshot":
+            capture_started.set()
+            if failure == "capture":
+                raise RuntimeError("capture failed")
+            if failure == "cancel":
+                await asyncio.Event().wait()
+            return {"data": "/9j/2Q=="}
+        if method == "Page.stopScreencast" and failure == "stop":
+            raise RuntimeError("stop failed")
+        return {}
+
+    browser.client.send_raw.side_effect = send
+    if failure == "cancel":
+        task = asyncio.create_task(capture(browser, page))
+        await capture_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    else:
+        with pytest.raises(BrowserError):
+            await capture(browser, page)
+    assert browser.client.send_raw.call_args_list[-1].args == ("Page.stopScreencast", {}, "session")
+    assert page.visual is None

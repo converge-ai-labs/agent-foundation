@@ -29,7 +29,7 @@ async def capture(
     if full_page and clip is not None:
         raise BrowserError("Choose full_page or clip, not both.")
     page.visual = None
-    epoch = page.epoch
+    epoch = page.visual_epoch
     metrics = await browser.send("Page.getLayoutMetrics", page=page)
     viewport = metrics["cssVisualViewport"]
     if viewport["scale"] != 1:
@@ -51,13 +51,22 @@ async def capture(
         }
     if area["width"] * area["height"] > 16_000_000:
         raise BrowserError("Screenshot exceeds 16 million CSS pixels. Use a viewport or clip.")
-    result = await browser.send(
-        "Page.captureScreenshot",
-        {"format": "jpeg", "quality": 75, "clip": {**area, "scale": 1}, "captureBeyondViewport": full_page},
-        page,
-    )
+    # Keep background targets producing frames without taking native focus.
+    # The short-lived screencast belongs to our page session; its frames are
+    # unused, and stopping it leaves other CDP sessions' streams alone.
+    try:
+        await browser.send(
+            "Page.startScreencast", {"format": "jpeg", "maxWidth": 64, "maxHeight": 64, "everyNthFrame": 1}, page
+        )
+        result = await browser.send(
+            "Page.captureScreenshot",
+            {"format": "jpeg", "quality": 75, "clip": {**area, "scale": 1}, "captureBeyondViewport": full_page},
+            page,
+        )
+    finally:
+        await browser.send("Page.stopScreencast", page=page)
     current = (await browser.send("Page.getLayoutMetrics", page=page))["cssVisualViewport"]
-    if page.epoch != epoch or (not full_page and current != viewport):
+    if page.visual_epoch != epoch or (not full_page and current != viewport):
         raise BrowserError("Page or viewport changed during capture. Take a fresh screenshot.")
     # Full-page capture can change scrollbar layout. It is observation-only;
     # pointer fallback uses a viewport capture with a stable coordinate space.
@@ -69,7 +78,7 @@ async def capture(
 
 async def pointer(browser: Chromium, page: Page, action: Click | Hover, target: Visual) -> None:
     view = page.visual
-    if view is None or view.token != target.screenshot or view.epoch != page.epoch:
+    if view is None or view.token != target.screenshot or view.epoch != page.visual_epoch:
         raise BrowserError("Screenshot reference expired. Take a fresh browser_screenshot.")
     current = (await browser.send("Page.getLayoutMetrics", page=page))["cssVisualViewport"]
     if current != view.viewport or page.visual is not view:
@@ -85,7 +94,7 @@ async def pointer(browser: Chromium, page: Page, action: Click | Hover, target: 
         return
     for count in range(1, action.count + 1):
         current = (await browser.send("Page.getLayoutMetrics", page=page))["cssVisualViewport"]
-        if current != view.viewport or page.visual is not view or page.epoch != view.epoch:
+        if current != view.viewport or page.visual is not view or page.visual_epoch != view.epoch:
             raise BrowserError(
                 "Page or viewport changed during the gesture. Take a fresh screenshot; remaining clicks were not sent.",
                 dispatch="dispatched" if count > 1 else "not_dispatched",

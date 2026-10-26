@@ -152,8 +152,8 @@ async def press(browser: Chromium, page: Page, chord: str, *, literal: bool = Fa
     # Character code points are not virtual key codes (for example, '!' is not PageUp).
     number = codes.get(key, ord(key.upper()) if len(key) == 1 and key.isascii() and key.isalnum() else 0)
     key = " " if key == "Space" else key
-    if "Shift" in held and len(key) == 1 and key.isascii() and key.isalpha():
-        key = key.upper()
+    if "Shift" in held and len(key) == 1 and key.isascii():
+        key = key.upper().translate(str.maketrans("`1234567890-=[]\\;',./", '~!@#$%^&*()_+{}|:"<>?'))
     mask = 0
     pressed = []
     try:
@@ -369,8 +369,8 @@ async def condition_met(browser: Chromium, page: Page, condition: Condition, rev
                 },
                 frame,
             )
-            browser.reference(page, key, revision)
-            return response.get("result", {}).get("value") is True
+        browser.reference(page, key, revision)
+        return response.get("result", {}).get("value") is True
     finally:
         if temporary:
             page.elements.pop(key, None)
@@ -391,6 +391,8 @@ async def wait(
                 raise
             met = False
         check_access()
-        if met and page.epoch == epoch:
+        # Element polls revalidate their exact frame-bound ref after reading.
+        # Unrelated subframe events must not discard a verified result.
+        if met and (isinstance(condition, ElementCondition) or page.epoch == epoch):
             return json.dumps({"verification": "passed", "dispatch": "not_dispatched", "url": page.url})
         await asyncio.sleep(0.1)

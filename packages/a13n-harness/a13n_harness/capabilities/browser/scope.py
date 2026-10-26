@@ -184,6 +184,12 @@ class CdpBrowserBackend:
                         errors.append(exc)
             if errors:
                 raise BrowserError("Some scoped tabs could not be closed; the Host may retry cleanup.") from errors[0]
+            for guid, item in tuple(self.browser.download_records.items()):
+                if item["page"] in self._download_targets:
+                    self.browser.download_records.pop(guid)
+            for target in self._download_targets:
+                self.browser.download_omitted.pop(target, None)
+            self._download_targets.clear()
             self.browser.scopes.discard(self)
 
     @classmethod
