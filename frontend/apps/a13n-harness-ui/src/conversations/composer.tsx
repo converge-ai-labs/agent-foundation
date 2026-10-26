@@ -1094,7 +1094,7 @@ export function Composer({
               "receipt" in draft.submission &&
               draft.submission.receipt && (
                 <details>
-                  <summary>Submission details</summary>
+                  <summary>Message details</summary>
                   <small>Operation: {draft.submission.receipt}</small>
                 </details>
               )}
@@ -1245,7 +1245,7 @@ export function Composer({
               </p>
             )}
             <details>
-              <summary>Captured source identity</summary>
+              <summary>Source</summary>
               <pre className={styles.code}>
                 {JSON.stringify(preview.source, null, 2)}
               </pre>

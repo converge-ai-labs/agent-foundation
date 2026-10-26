@@ -312,7 +312,7 @@ export function ProviderAccount({
           {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
-              <summary>Choose account source</summary>
+              <summary>Account source</summary>
               <p>
                 A selection replaces this server's binding. Missing credentials
                 never fall back to another account.
@@ -478,7 +478,7 @@ export function ProviderAccount({
                 className={accountStyles.advanced}
                 open={method === "manual_callback" || undefined}
               >
-                <summary>Callback cannot reach this server?</summary>
+                <summary>Callback can't reach this server?</summary>
                 <div className={styles.stack}>
                   <p>
                     {login.data.message ??

@@ -109,7 +109,7 @@ function Attachment({
           </small>
           {attachment.source && (
             <details>
-              <summary>Captured source and revision</summary>
+              <summary>Source and revision</summary>
               <pre className={styles.code}>
                 {JSON.stringify(attachment.source, null, 2)}
               </pre>
@@ -151,7 +151,7 @@ function Attachment({
             </Button>
           )}
           <details className={styles.rawSource}>
-            <summary>Model-visible attachment content</summary>
+            <summary>What the model sees</summary>
             {related.map((item, offset) => (
               <pre key={offset} className={styles.code}>
                 {item.text || JSON.stringify(item.value, null, 2)}

@@ -340,7 +340,7 @@ export function Child({
               open={showTools}
               onToggle={(event) => setShowTools(event.currentTarget.open)}
             >
-              <summary>Tool executions</summary>
+              <summary>Tool calls</summary>
               {showTools && (
                 <ToolExecutions
                   threadId={child.child_thread_id}
@@ -634,7 +634,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
         <UsageDetails usage={usage.data} />
         {usage.data && (
           <details className={styles.activity}>
-            <summary>Usage records and recent Runs</summary>
+            <summary>Usage and recent runs</summary>
             <pre className={styles.code}>
               {JSON.stringify(usage.data, null, 2)}
             </pre>

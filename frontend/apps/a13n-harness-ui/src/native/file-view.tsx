@@ -316,7 +316,7 @@ export function FileView({
             current disk version below before resolving.
           </p>
           <details>
-            <summary>Inspect latest disk version</summary>
+            <summary>Show latest saved version</summary>
             <p>
               Revision: {buffer.observed.entry.revision} ·{" "}
               {buffer.observed.presentation}
@@ -487,7 +487,7 @@ export function FileView({
         }
       />
       <details className={styles.metadata}>
-        <summary>Reviewed file identity</summary>
+        <summary>File version</summary>
         <p>Server native filesystem · revision {buffer.base.entry.revision}</p>
         <p>Resolved path: {buffer.base.resolved_path}</p>
       </details>

@@ -167,7 +167,7 @@ export function ConversationConfiguration({
                   </div>
                 </dl>
                 <details className={styles.activity}>
-                  <summary>Captured configuration details</summary>
+                  <summary>Configuration used</summary>
                   <pre className={styles.code}>
                     {JSON.stringify(data.captured, null, 2)}
                   </pre>
@@ -212,7 +212,7 @@ export function ConversationConfiguration({
               />
               <p>Model: {data.next_model_id || "Not configured"}</p>
               <details className={styles.activity}>
-                <summary>Selection origins and tool proxy</summary>
+                <summary>Where these settings come from</summary>
                 <pre className={styles.code}>
                   {JSON.stringify(
                     {
@@ -364,7 +364,7 @@ export function ThreadSelections({
   });
   return (
     <details className={styles.activity}>
-      <summary>Change next Run selections</summary>
+      <summary>Change settings for the next run</summary>
       <fieldset
         className={`${styles.form} ${styles.responseInputs}`}
         disabled={mutation.isPending}

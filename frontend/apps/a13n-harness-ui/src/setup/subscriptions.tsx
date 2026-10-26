@@ -663,7 +663,7 @@ export function SubscriptionAccounts({
       </div>
       {!!catalog.data?.adoption && (
         <details className={styles.migration}>
-          <summary>Migration from existing CLI logins</summary>
+          <summary>Import existing CLI logins</summary>
           <p>
             Imported once on first startup. Original CLI files are unchanged;
             logout and deletion here never re-import them.

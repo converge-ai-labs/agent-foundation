@@ -438,7 +438,7 @@ it("keeps every input and text part visible between independent execution segmen
     />
   );
   const view = render(transcript());
-  const toggles = screen.getAllByRole("button", { name: /Execution details/ });
+  const toggles = screen.getAllByRole("button", { name: /Run details/ });
   expect(toggles).toHaveLength(2);
   expect(toggles.map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(
     ["false", "false"],
@@ -463,7 +463,7 @@ it("keeps every input and text part visible between independent execution segmen
   view.rerender(transcript("new-head"));
   expect(
     screen
-      .getAllByRole("button", { name: /Execution details/ })
+      .getAllByRole("button", { name: /Run details/ })
       .map((toggle) => toggle.getAttribute("aria-expanded")),
   ).toEqual(["true", "false"]);
   fireEvent.click(toggles[1]);
@@ -499,7 +499,7 @@ it("defaults unfinished details closed without treating prose as successful comp
       threadId="one"
     />,
   );
-  const toggle = screen.getByRole("button", { name: /Execution details/ });
+  const toggle = screen.getByRole("button", { name: /Run details/ });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByText("Working").closest("[hidden]")).toBeNull();
   fireEvent.click(toggle);
@@ -537,9 +537,7 @@ it("marks missing conversation history outside details without inventing an exec
       threadId="one"
     />,
   );
-  expect(
-    screen.queryByRole("button", { name: /Execution details/ }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /Run details/ })).toBeNull();
   expect(
     screen.getByText("Turn history is incomplete.").closest("[hidden]"),
   ).toBeNull();
@@ -581,7 +579,7 @@ it("keeps legacy output and a resumed live suffix in chronological order", () =>
   expect(view.container.textContent).toMatch(
     /Progress.*Saved closing answer.*New progress/s,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Execution details" }));
+  fireEvent.click(screen.getByRole("button", { name: "Run details" }));
   expect(screen.getByText("Plan").closest("[hidden]")).toBeNull();
 });
 
@@ -694,11 +692,11 @@ it("counts only the tool calls in each execution segment", () => {
   );
   expect(
     screen
-      .getAllByRole("button", { name: /Execution details/ })
+      .getAllByRole("button", { name: /Run details/ })
       .map((toggle) => toggle.textContent),
   ).toEqual([
-    "Execution details · 1 tool call · 1 running",
-    "Execution details · 2 tool calls · 2 running",
+    "Run details · 1 tool call · 1 running",
+    "Run details · 2 tool calls · 2 running",
   ]);
 });
 
@@ -771,7 +769,7 @@ it("leaves applied live steering and agent text outside folded execution", () =>
     ).toBeNull();
   expect(
     screen
-      .getAllByRole("button", { name: /Execution details/ })
+      .getAllByRole("button", { name: /Run details/ })
       .map((button) => button.getAttribute("aria-expanded")),
   ).toEqual(["false", "false"]);
 });
@@ -799,9 +797,9 @@ it("preserves an open execution reader when live rows become saved history", () 
       ]}
     />,
   );
-  const toggle = screen.getByRole("button", { name: /Execution details/ });
+  const toggle = screen.getByRole("button", { name: /Run details/ });
   fireEvent.click(toggle);
-  const reader = screen.getByRole("region", { name: "Execution details" });
+  const reader = screen.getByRole("region", { name: "Run details" });
   view.rerender(
     <ConversationTranscript
       threadId="one"
@@ -821,13 +819,9 @@ it("preserves an open execution reader when live rows become saved history", () 
       turns={[{ ...turn, end_position: 2, final_position: 1 }]}
     />,
   );
-  expect(screen.getByRole("button", { name: /Execution details/ })).toBe(
-    toggle,
-  );
+  expect(screen.getByRole("button", { name: /Run details/ })).toBe(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
-  );
+  expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
 });
 
 it.each(["desktop", "mobile"])(
@@ -897,16 +891,14 @@ it.each(["desktop", "mobile"])(
       </QueryClientProvider>
     );
     const view = render(transcript(false));
-    fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Run details/ }));
     const reader = await screen.findByRole("region", {
-      name: "Execution details",
+      name: "Run details",
     });
     const dialog = screen.queryByRole("dialog");
     view.rerender(transcript(true));
     await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-      reader,
-    );
+    expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
     if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
     await act(async () =>
       finish({
@@ -925,9 +917,7 @@ it.each(["desktop", "mobile"])(
     await waitFor(() =>
       expect(view.container.textContent).not.toContain("Loading turn…"),
     );
-    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-      reader,
-    );
+    expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
     if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
     expect(GET).toHaveBeenCalledTimes(1);
     view.unmount();
@@ -963,7 +953,7 @@ it.each([false, true])(
     };
     const view = render(<ConversationTranscript {...props} />);
     const existing = screen.queryByRole("button", {
-      name: /Execution details/,
+      name: /Run details/,
     });
     view.rerender(
       <ConversationTranscript
@@ -971,19 +961,19 @@ it.each([false, true])(
         recovery={{ id: "retry-1", state: "resumed", retries: 1 }}
       />,
     );
-    expect(
-      screen.getAllByRole("button", { name: /Execution details/ }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /Run details/ })).toHaveLength(
+      1,
+    );
     if (existing)
-      expect(screen.getByRole("button", { name: /Execution details/ })).toBe(
+      expect(screen.getByRole("button", { name: /Run details/ })).toBe(
         existing,
       );
     expect(screen.queryByRole("status")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Run details/ }));
     const notice = screen.getByRole("status");
     expect(notice.textContent).toContain("Model connection restored · 1 retry");
     expect(notice.closest("[data-execution-reader]")).toBe(
-      screen.getByRole("region", { name: "Execution details" }),
+      screen.getByRole("region", { name: "Run details" }),
     );
   },
 );
@@ -1017,9 +1007,9 @@ it.each(["desktop", "mobile"])(
       blocks: [{ id: "reply", kind: "assistant" as const, text: "Checking" }],
     };
     const view = render(<ConversationTranscript {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Run details/ }));
     const reader = await screen.findByRole("region", {
-      name: "Execution details",
+      name: "Run details",
     });
     const dialog = screen.queryByRole("dialog");
     view.rerender(
@@ -1031,9 +1021,7 @@ it.each(["desktop", "mobile"])(
         ]}
       />,
     );
-    expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-      reader,
-    );
+    expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
     if (layout === "mobile") expect(screen.getByRole("dialog")).toBe(dialog);
     expect(screen.getByRole("status").textContent).toContain(
       "Model connection restored · 1 retry",
@@ -1078,7 +1066,7 @@ it("deduplicates the current failure in loaded turn history and restores it for 
     </QueryClientProvider>
   );
   const view = render(content("failed-run"));
-  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Run details/ }));
   expect(screen.queryByRole("alert")).toBeNull();
   view.rerender(content());
   expect(screen.getByText("Saved root failure")).toBeTruthy();

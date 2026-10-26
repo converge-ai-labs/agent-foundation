@@ -120,7 +120,7 @@ export function ProjectPage() {
             environments or defaults.
           </p>
           <details className={styles.details}>
-            <summary>Preview saved defaults & check local readiness</summary>
+            <summary>Preview defaults and check readiness</summary>
             <ReadinessPreview
               projectId={project.project_id}
               projectPath={project.roots[0]}

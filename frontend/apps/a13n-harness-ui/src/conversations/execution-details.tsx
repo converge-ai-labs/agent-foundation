@@ -70,7 +70,7 @@ export function ExecutionDetails({
             ) : (
               <CaretRight aria-hidden="true" />
             )}
-            Execution details
+            Run details
           </span>
           {summary}
         </button>
@@ -91,7 +91,7 @@ export function ExecutionDetails({
     >
       <DialogTrigger className={styles.preview}>
         <span className={styles.previewHeading}>
-          <span>Execution details{summary}</span>
+          <span>Run details{summary}</span>
           <ArrowRight aria-hidden="true" />
         </span>
         <span className={styles.excerpt}>{preview}</span>
@@ -112,9 +112,7 @@ export function ExecutionDetails({
               <ArrowLeft />
             </DialogClose>
             <div>
-              <DialogTitle className={styles.title}>
-                Execution details
-              </DialogTitle>
+              <DialogTitle className={styles.title}>Run details</DialogTitle>
               <div className={styles.metrics}>
                 {complete ? "Completed" : "Execution history"}
                 {summary}

@@ -1687,7 +1687,7 @@ it.each([
       }),
     ).toBeNull();
     const details = await screen.findByRole("button", {
-      name: /Execution details/,
+      name: /Run details/,
     });
     expect(details.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Folded intermediate work")).toBeNull();
@@ -2038,9 +2038,7 @@ it.each(["desktop", "mobile"])(
       screen.getByText("Current answer").closest("[data-execution-reader]"),
     ).toBeNull();
     // A failed complete-turn read cannot reveal a partial execution segment.
-    expect(
-      screen.queryByRole("button", { name: /Execution details/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Run details/ })).toBeNull();
     await act(async () => {
       const draft = drafts.get(id)!;
       draft.localInputs = [
@@ -2082,9 +2080,7 @@ it.each(["desktop", "mobile"])(
         name: "Load earlier messages in this turn",
       }),
     ).toBeNull();
-    expect(
-      screen.queryByRole("region", { name: "Execution details" }),
-    ).toBeNull();
+    expect(screen.queryByRole("region", { name: "Run details" })).toBeNull();
     expect(requests).toEqual([
       "conversation:latest",
       "execution:latest",
@@ -2094,12 +2090,12 @@ it.each(["desktop", "mobile"])(
       "execution:steps",
     ]);
     const segments = screen.getAllByRole("button", {
-      name: /Execution details/,
+      name: /Run details/,
     });
     expect(segments).toHaveLength(2);
     fireEvent.click(segments[0]);
     const execution = await screen.findByRole("region", {
-      name: "Execution details",
+      name: "Run details",
     });
     expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
     expect(within(execution).queryByText("Recent execution work")).toBeNull();
@@ -2126,9 +2122,9 @@ it.each(["desktop", "mobile"])(
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     } else fireEvent.click(segments[0]);
     fireEvent.click(segments[0]);
-    expect(
-      await screen.findByRole("region", { name: "Execution details" }),
-    ).toBe(execution);
+    expect(await screen.findByRole("region", { name: "Run details" })).toBe(
+      execution,
+    );
     expect(requests).toHaveLength(6);
   },
 );
@@ -2192,8 +2188,8 @@ it("keeps readable messages and an open execution reader through a multi-page ch
   });
   mount(`/threads/${id}`);
   const message = await screen.findByText("Earlier progress");
-  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
-  const reader = screen.getByRole("region", { name: "Execution details" });
+  fireEvent.click(screen.getByRole("button", { name: /Run details/ }));
+  const reader = screen.getByRole("region", { name: "Run details" });
   await act(async () => {
     queries.setQueryData(["thread", id, "detail"], {
       ...threadDetail,
@@ -2203,21 +2199,17 @@ it("keeps readable messages and an open execution reader through a multi-page ch
   await waitFor(() => expect(turnPages).toBe(2));
   expect(screen.queryByText("Loading turn…")).toBeNull();
   expect(screen.getByText("Earlier progress")).toBe(message);
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
-  );
+  expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
   await act(async () => finish());
   await waitFor(() =>
     expect(queries.getQueryData(["thread", id, "history", "C1"])).toBeTruthy(),
   );
   expect(screen.queryByText("Loading turn…")).toBeNull();
   expect(screen.getByText("Earlier progress")).toBe(message);
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
-  );
+  expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
   expect(
     screen
-      .getByRole("button", { name: /Execution details/ })
+      .getByRole("button", { name: /Run details/ })
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(turnPages).toBe(2);

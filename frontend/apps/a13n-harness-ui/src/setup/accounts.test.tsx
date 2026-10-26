@@ -189,7 +189,7 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
   await screen.findByText(/also affects the official CLI and other Hosts/);
   expect(removed).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  fireEvent.click(screen.getByText("Choose account source"));
+  fireEvent.click(screen.getByText("Account source"));
   fireEvent.click(
     await screen.findByRole("button", { name: "other-user · Host login" }),
   );
@@ -231,9 +231,7 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
   expect(
     (await screen.findByRole("combobox", { name: "Login method" })).textContent,
   ).toContain("Automatic browser callback");
-  fireEvent.click(
-    await screen.findByText("Callback cannot reach this server?"),
-  );
+  fireEvent.click(await screen.findByText("Callback can't reach this server?"));
   const input = screen.getByLabelText("Complete callback URL");
   expect(input.getAttribute("type")).toBe("password");
   fireEvent.change(input, {

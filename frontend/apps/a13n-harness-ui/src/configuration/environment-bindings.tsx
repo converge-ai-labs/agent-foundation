@@ -240,7 +240,7 @@ export function EnvironmentBindings({
               </Button>
             </div>
             <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Execution details</summary>
+              <summary className="cursor-pointer">Run details</summary>
               <p className="mt-2">
                 {policy.permission_ceiling?.operations?.join(", ") ??
                   "Files and execution"}

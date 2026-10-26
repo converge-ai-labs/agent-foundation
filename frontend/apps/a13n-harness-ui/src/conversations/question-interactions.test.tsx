@@ -95,7 +95,7 @@ it("keeps question receipts between independently keyed execution stretches with
   expect(screen.queryByText("Every surface")).toBeNull();
   expect(container.querySelectorAll("[data-turn-id]")).toHaveLength(1);
   expect(container.querySelectorAll("[data-message-id]")).toHaveLength(1);
-  const toggles = screen.getAllByRole("button", { name: /Execution details/ });
+  const toggles = screen.getAllByRole("button", { name: /Run details/ });
   expect(toggles).toHaveLength(2);
   fireEvent.click(toggles[0]);
   expect(toggles.map((item) => item.getAttribute("aria-expanded"))).toEqual([
@@ -146,7 +146,7 @@ it("correlates a resume result with its saved call and preserves disclosures thr
   const details = screen.getByRole("button", { name: "Questions & details" });
   fireEvent.click(details);
   const execution = screen.getAllByRole("button", {
-    name: /Execution details/,
+    name: /Run details/,
   });
   fireEvent.click(execution[1]);
   view.rerender(
@@ -163,7 +163,7 @@ it("correlates a resume result with its saved call and preserves disclosures thr
   );
   expect(screen.getByRole("region", { name: "Answers" })).toBe(receipt);
   expect(details.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getAllByRole("button", { name: /Execution details/ })).toEqual(
+  expect(screen.getAllByRole("button", { name: /Run details/ })).toEqual(
     execution,
   );
   expect(execution[1].getAttribute("aria-expanded")).toBe("true");
@@ -431,7 +431,7 @@ it("keeps inline child questions and replies inside execution without replacing 
   expect(
     screen.getByText("Root reply").closest("[data-execution-reader]"),
   ).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Run details/ }));
   expect(
     screen.getByText("Child-only reply").closest("[data-execution-reader]"),
   ).not.toBeNull();

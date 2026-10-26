@@ -598,7 +598,7 @@ function WorkbenchContent({
           />
           <p>Presence: {live.presenceState}</p>
           <details>
-            <summary>Instance information</summary>
+            <summary>About this instance</summary>
             <p>
               Version {status.version} · {status.app?.state ?? "Connected"}
             </p>

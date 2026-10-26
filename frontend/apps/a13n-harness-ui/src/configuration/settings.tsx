@@ -188,7 +188,7 @@ export function GeneralSettings() {
         <NotificationSettings embedded />
       </details>
       <details className={layout.disclosure}>
-        <summary>Setup & diagnostics</summary>
+        <summary>Setup and diagnostics</summary>
         {memory && (
           <SettingsSection title="Memory organization status">
             <p role="status" className={styles.fieldGroup}>
@@ -225,7 +225,7 @@ export function AgentsPage() {
         description="Configure instructions, models and tools for each agent."
       />
       <details className={layout.disclosure}>
-        <summary>Available capabilities</summary>
+        <summary>Capabilities</summary>
         <InstalledCatalog kind="capability" />
       </details>
     </>
@@ -265,7 +265,7 @@ export function ConnectionsPage() {
         </details>
       )}
       <details className={layout.disclosure}>
-        <summary>Available plugins</summary>
+        <summary>Plugins</summary>
         <InstalledCatalog kind="harness_plugin" />
       </details>
     </>
@@ -393,7 +393,7 @@ export function EnvironmentsPage() {
             </div>
           </section>
           <details className={layout.disclosure}>
-            <summary>Installed environment providers</summary>
+            <summary>Environment providers</summary>
             <p>Create a profile from an installed provider.</p>
             <InstalledCatalog kind="environment_provider" />
           </details>

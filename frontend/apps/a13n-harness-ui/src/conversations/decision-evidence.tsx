@@ -131,7 +131,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
           </dl>
           {rest && Object.keys(rest).length > 0 && (
             <details>
-              <summary>Other execution parameters</summary>
+              <summary>More settings</summary>
               <pre className={styles.code}>{JSON.stringify(rest, null, 2)}</pre>
             </details>
           )}

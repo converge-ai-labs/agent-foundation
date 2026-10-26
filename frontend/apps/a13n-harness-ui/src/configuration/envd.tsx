@@ -386,7 +386,7 @@ function RuntimeDetails() {
   const { data: state } = useEnvdStatus();
   return (
     <details className={styles.details}>
-      <summary>Installation & instance details</summary>
+      <summary>Installation details</summary>
       <dl className={layout.metadata}>
         <dt>Verified managed release</dt>
         <dd>{state?.verified_version ?? "Not verified"}</dd>

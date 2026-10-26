@@ -742,7 +742,7 @@ export function activitySummary(tools: ToolView[]) {
   );
   let title: string;
   if (kind === "executions")
-    title = `Tool executions · ${count(tools.length, "operation")}`;
+    title = `Tool calls · ${count(tools.length, "operation")}`;
   else if (kind === "work" || kind === "subagents")
     title = `${kind === "work" ? "Tasks & notes" : "Subagents"} · ${count(tools.length, "operation")}`;
   else if (kind === "edit")

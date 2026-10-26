@@ -77,7 +77,7 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     <ConversationTranscript {...base} blocks={[tool]} activity={working} />,
   );
   const trigger = screen.getByRole("button", {
-    name: /Execution details\s*· 1 tool call · 1 running/,
+    name: /Run details\s*· 1 tool call · 1 running/,
     expanded: false,
   });
   const status = screen.getByRole("status");
@@ -86,9 +86,7 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     trigger.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(status.closest("[data-execution-reader]")).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Run details" })).toBeNull();
   view.rerender(
     <ConversationTranscript
       {...base}
@@ -98,7 +96,7 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
   );
   expect(
     screen.getByRole("button", {
-      name: /Execution details\s*· 1 tool call$/,
+      name: /Run details\s*· 1 tool call$/,
       expanded: false,
     }),
   ).toBe(trigger);
@@ -159,7 +157,7 @@ it.each([
     );
     expect(
       screen.getByRole("button", {
-        name: /Execution details\s*· 1 tool call$/,
+        name: /Run details\s*· 1 tool call$/,
       }),
     ).toBeTruthy();
     expect(screen.queryByText(/running/)).toBeNull();
@@ -234,15 +232,13 @@ function transcript(complete = false) {
 it("shows a compact mobile preview and opens only one execution reader on demand", async () => {
   viewport();
   const view = render(transcript());
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Run details" })).toBeNull();
   expect(screen.queryByText("A long internal plan")).toBeNull();
-  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  const trigger = screen.getByRole("button", { name: /Run details/ });
   const user = userEvent.setup();
   await user.click(trigger);
   const dialog = await screen.findByRole("dialog", {
-    name: "Execution details",
+    name: "Run details",
   });
   expect(within(dialog).getByText("A long internal plan")).toBeTruthy();
   expect(within(dialog).queryByText("Investigate scrolling")).toBeNull();
@@ -265,10 +261,10 @@ it("retains inner disclosure state and reader identity across visits and support
   viewport();
   render(transcript());
   const user = userEvent.setup();
-  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  const trigger = screen.getByRole("button", { name: /Run details/ });
   await user.click(trigger);
   const reader = await screen.findByRole("region", {
-    name: "Execution details",
+    name: "Run details",
   });
   const reasoning = screen
     .getByText("A long internal plan")
@@ -279,7 +275,7 @@ it("retains inner disclosure state and reader identity across visits and support
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(trigger);
-  expect(await screen.findByRole("region", { name: "Execution details" })).toBe(
+  expect(await screen.findByRole("region", { name: "Run details" })).toBe(
     reader,
   );
   expect(reasoning.open).toBe(false);
@@ -289,20 +285,18 @@ it("switches between mobile inspection and the existing desktop disclosure", asy
   const resize = viewport();
   render(transcript());
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: /Execution details/ }));
+  await user.click(screen.getByRole("button", { name: /Run details/ }));
   await screen.findByRole("dialog");
   resize(false);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: "Execution details" })
+      .getByRole("button", { name: "Run details" })
       .getAttribute("aria-expanded"),
   ).toBe("false");
   resize(true);
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Run details" })).toBeNull();
 });
 
 it("mounts desktop details on first expansion and preserves the reader and disclosures on collapse", async () => {
@@ -311,24 +305,20 @@ it("mounts desktop details on first expansion and preserves the reader and discl
   expect(document.querySelectorAll("[data-execution-reader]")).toHaveLength(0);
   expect(screen.queryByText("A long internal plan")).toBeNull();
   const user = userEvent.setup();
-  const trigger = screen.getByRole("button", { name: /Execution details/ });
+  const trigger = screen.getByRole("button", { name: /Run details/ });
   await user.click(trigger);
-  const reader = screen.getByRole("region", { name: "Execution details" });
+  const reader = screen.getByRole("region", { name: "Run details" });
   const reasoning = within(reader)
     .getByText("A long internal plan")
     .closest("details")!;
   fireEvent.click(within(reader).getByText("Reasoning"));
   expect(reasoning.open).toBe(false);
   await user.click(trigger);
-  expect(
-    screen.queryByRole("region", { name: "Execution details" }),
-  ).toBeNull();
+  expect(screen.queryByRole("region", { name: "Run details" })).toBeNull();
   expect(reader.isConnected).toBe(true);
   view.rerender(transcript(true));
   await user.click(trigger);
-  expect(screen.getByRole("region", { name: "Execution details" })).toBe(
-    reader,
-  );
+  expect(screen.getByRole("region", { name: "Run details" })).toBe(reader);
   expect(reasoning.open).toBe(false);
   expect(
     screen.getByText("The final answer").closest("[data-execution-reader]"),

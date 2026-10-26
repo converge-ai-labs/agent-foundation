@@ -909,8 +909,8 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  await user.click(await screen.findByText("Available capabilities"));
-  const catalog = screen.getByText("Available capabilities").parentElement!;
+  await user.click(await screen.findByText("Capabilities"));
+  const catalog = screen.getByText("Capabilities").parentElement!;
   expect(await within(catalog).findByText("available")).toBeTruthy();
   expect(within(catalog).getByText("Built-in")).toBeTruthy();
   expect(within(catalog).queryByText("pydantic")).toBeNull();
@@ -1017,7 +1017,7 @@ it.each(["read-only", "missing"])(
       }),
     );
     render(<BrowserApp />);
-    fireEvent.click(await screen.findByText("Available capabilities"));
+    fireEvent.click(await screen.findByText("Capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (availability === "missing") {
       expect(
@@ -1068,7 +1068,7 @@ it.each([false, true])(
       }),
     );
     render(<BrowserApp />);
-    fireEvent.click(await screen.findByText("Available capabilities"));
+    fireEvent.click(await screen.findByText("Capabilities"));
     expect(await screen.findByText("Available to agents")).toBeTruthy();
     if (failed) {
       await screen.findByText("Agent list unavailable");
@@ -1174,7 +1174,7 @@ it("shows built-in environments as read-only and does not offer configuration fo
   expect(
     within(profiles).getByRole("button", { name: "Add local profile" }),
   ).toBeTruthy();
-  const providers = screen.getByText("Installed environment providers", {
+  const providers = screen.getByText("Environment providers", {
     selector: "summary",
   });
   expect(providers.closest("details")?.open).toBe(false);

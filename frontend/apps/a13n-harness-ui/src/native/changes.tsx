@@ -169,7 +169,7 @@ export function Changes({
             </strong>
             <div className={styles.path}>{repository.root}</div>
             <details>
-              <summary>Repository identity</summary>
+              <summary>Repository details</summary>
               <p>HEAD: {repository.head_oid ?? "Empty tree (no commits)"}</p>
               <p>Git directory: {repository.git_dir}</p>
               <p>Common directory: {repository.common_dir}</p>
@@ -389,7 +389,7 @@ export function DiffView({
             </p>
           )}
           <details className={styles.metadata}>
-            <summary>Reviewed comparison identity</summary>
+            <summary>Comparison version</summary>
             <p>Repository: {value.repository.root}</p>
             <p>
               HEAD: {value.repository.head_oid ?? "Empty tree (unborn HEAD)"}

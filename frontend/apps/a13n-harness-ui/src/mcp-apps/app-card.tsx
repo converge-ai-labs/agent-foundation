@@ -294,7 +294,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
       <pre>{state.request.content.map((part) => part.text).join("\n")}</pre>
       {state.context && (
         <details>
-          <summary>Included App context</summary>
+          <summary>App context</summary>
           <pre>{JSON.stringify(state.context.value, null, 2)}</pre>
         </details>
       )}
@@ -356,7 +356,7 @@ function AppModelContext({
       {state.context && (
         <>
           <details>
-            <summary>Inspect App context</summary>
+            <summary>Show app context</summary>
             <pre>{JSON.stringify(state.context.value, null, 2)}</pre>
           </details>
           <label>

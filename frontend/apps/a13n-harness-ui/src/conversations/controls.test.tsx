@@ -62,7 +62,7 @@ it("keeps dirty selections on external changes and requires review before versio
     <ThreadSelections threadId="one" configuration={configuration} />,
     { wrapper },
   );
-  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(screen.getByText("Change settings for the next run"));
   const checkbox = await screen.findByRole("checkbox", { name: "Tools" });
   fireEvent.click(checkbox);
   view.rerender(
@@ -133,7 +133,7 @@ it("clears a saved default Model with an explicit null versioned patch", async (
     />,
     { wrapper },
   );
-  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(screen.getByText("Change settings for the next run"));
   const choice = await screen.findByRole("combobox", { name: "Default model" });
   await waitFor(() => expect(choice.textContent).toBe("Saved model"));
   await user.click(choice);
@@ -304,7 +304,7 @@ it("disables selection editing during the submitted versioned write", async () =
   render(<ThreadSelections threadId="one" configuration={configuration} />, {
     wrapper,
   });
-  fireEvent.click(screen.getByText("Change next Run selections"));
+  fireEvent.click(screen.getByText("Change settings for the next run"));
   fireEvent.click(await screen.findByRole("checkbox", { name: "A" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Save next Run selections" }),

@@ -118,7 +118,7 @@ export function ToolExecutions({
     void queries.invalidateQueries({ queryKey: key });
   };
   return (
-    <section aria-label="Tool executions">
+    <section aria-label="Tool calls">
       <p className={styles.caption}>
         Retained tool calls in this app session. Results are retrieved by the
         agent; inspecting status does not consume them.

@@ -220,7 +220,7 @@ function Observation({
     <>
       <div className={styles.identity}>
         <details className={styles.deviceInfo}>
-          <summary>Device information</summary>
+          <summary>Device</summary>
           <p>
             {env.name} · {env.transport} · {env.id}
           </p>
@@ -423,7 +423,7 @@ function Observation({
             chartProps={chartProps}
           />
           <details>
-            <summary>Connections and cumulative counters</summary>
+            <summary>Connections and totals</summary>
             <div className={styles.resourceSection}>
               <MetricList
                 title="Sockets"
@@ -458,7 +458,7 @@ function Observation({
             chartProps={chartProps}
           />
           <details>
-            <summary>Cumulative disk counters</summary>
+            <summary>Disk totals</summary>
             <CounterTable sample={sample} kind="disk" />
           </details>
           {filesystems.length > 0 && (
@@ -529,7 +529,7 @@ function Observation({
       )}
       {sample && (
         <details>
-          <summary>Latest observation details</summary>
+          <summary>Latest check</summary>
           <p className={styles.note}>
             Pressure, limits and cumulative counters retain their native units.
             Counters are not averaged or summed across Devices.

@@ -183,7 +183,7 @@ it("keeps one live App frame outside execution details when the original becomes
     { wrapper },
   );
   const frame = await screen.findByTitle("counter");
-  expect(frame.closest('[aria-label="Execution details"]')).toBeNull();
+  expect(frame.closest('[aria-label="Run details"]')).toBeNull();
   view.rerender(
     <ConversationTranscript
       {...props}
@@ -257,7 +257,7 @@ it("exposes inspect, opt-in selection and discard outside the frame without repl
     name: "Include in my next messages",
   });
   expect((selection as HTMLInputElement).checked).toBe(false);
-  expect(screen.getByText("Inspect App context").closest("iframe")).toBeNull();
+  expect(screen.getByText("Show app context").closest("iframe")).toBeNull();
   fireEvent.click(selection);
   expect((selection as HTMLInputElement).checked).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Discard context" }));

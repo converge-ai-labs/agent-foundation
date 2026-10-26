@@ -144,7 +144,7 @@ function ConnectDeviceSteps({
               localhost refers to the Device itself.
             </p>
             <details>
-              <summary>Reconnect and multiple Hosts</summary>
+              <summary>Reconnecting and multiple hosts</summary>
               <p>
                 Rerun this same command and environment after restarting. Saved
                 identity and credentials are reused, but the saved Host
@@ -181,7 +181,7 @@ function ConnectDeviceSteps({
             ))}
           </section>
           <details>
-            <summary>Manual HTTP or WebSocket connection</summary>
+            <summary>Connect manually</summary>
             <p>
               For an existing daemon or credentials you manage yourself. Return
               to the Device picker after saving.

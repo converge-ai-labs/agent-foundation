@@ -466,7 +466,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   ];
   const mounted = render(<LiveOutput gap={false} blocks={blocks} />);
   const group = screen.getByRole("button", {
-    name: /Tool executions · 2 operations/,
+    name: /Tool calls · 2 operations/,
   });
   expect(group.textContent).toContain("1 waiting");
   fireEvent.click(group);
@@ -483,7 +483,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   );
   expect(
     screen
-      .getByRole("button", { name: /Tool executions/ })
+      .getByRole("button", { name: /Tool calls/ })
       .getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.queryByText("1 waiting")).toBeNull();
@@ -512,7 +512,7 @@ it("groups execution controls in live and saved output and keeps waiting distinc
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
   expect(saved).toHaveLength(2);
   expect(activitySummary(saved)).toMatchObject({
-    title: "Tool executions · 2 operations",
+    title: "Tool calls · 2 operations",
     status: "Running at last check",
   });
 });
@@ -646,7 +646,7 @@ it("renders saved Shell retrieval failures and output with exact receipt provena
     label: "Retrieve tool result",
   });
   render(<ToolActivity tools={[result]} />);
-  fireEvent.click(screen.getByRole("button", { name: /Tool executions/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Tool calls/ }));
   expect(screen.getByText("test failed")).toBeTruthy();
   expect(screen.getByText(/Exit 7/)).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
