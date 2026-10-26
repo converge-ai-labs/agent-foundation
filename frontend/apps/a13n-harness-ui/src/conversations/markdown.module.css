@@ -188,7 +188,6 @@
 .markdown td {
   padding: 10px 14px;
   vertical-align: top;
-  min-width: 100px;
 }
 .markdown th {
   text-align: left;
