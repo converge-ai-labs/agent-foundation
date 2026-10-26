@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -149,9 +149,6 @@ export function ComposerEditor({
       parent: host.current,
       doc: doc.getText("text").toString(),
       extensions: [
-        placeholder(
-          local ? "Describe a task or ask a question" : "Write a shared prompt",
-        ),
         EditorView.lineWrapping,
         EditorView.domEventHandlers({
           focus: activate,
