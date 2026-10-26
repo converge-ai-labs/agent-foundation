@@ -23,10 +23,21 @@ from pydantic_ai.models import ModelRequestParameters
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import _requires_exact_history
 from a13n_harness.recovery import is_recoverable_model_failure
-from a13n_harness.state import decode_messages, encode_messages
+from a13n_harness.state import AgentContextState, HarnessState, StateStore, decode_messages, encode_messages
+from a13n_harness.storage import RunStorage
+
+COMPACTION_CAPABILITY_ID = "a13n.compaction"
 
 _PARAMETERS = TypeAdapter(ModelRequestParameters)
 _SETTINGS = TypeAdapter(dict[str, JsonValue])
+
+
+class _CompactionState(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    applied_operation_id: str | None = None
+    applied_plan_digest: str | None = None
+    restoration_pending: bool = False
 
 
 class CompactionPlan(BaseModel):
@@ -263,6 +274,56 @@ def _validate_result(plan: CompactionPlan, result: CompactionResult, thread_id: 
         raise DefinitionError(
             "Compaction result does not match this Thread and plan.", code="compaction_result_mismatch"
         )
+
+
+def _already_applied(state: _CompactionState | None, plan: CompactionPlan) -> bool:
+    if state is None or state.applied_operation_id != plan.operation_id:
+        return False
+    if state.applied_plan_digest != plan.digest:
+        raise DefinitionError("Compaction operation identity was reused.", code="compaction_result_mismatch")
+    return True
+
+
+async def apply_compaction_to_state(
+    state: HarnessState,
+    *,
+    plan: CompactionPlan,
+    result: CompactionResult,
+    state_store: StateStore | None = None,
+) -> HarnessState:
+    """Return a compacted continuation without changing the supplied checkpoint.
+
+    The Host selects the latest checkpoint under its writer fence and persists the
+    returned value. Only the fixed prefix is hydrated for comparison; suffix refs,
+    unrelated namespaces, Environment state and unknown fields are preserved.
+    The next Run finishes current-tool restoration before projecting model context,
+    even when its executable has no CompactionCapability or background operator.
+    """
+    _validate_result(plan, result, state.thread_id)
+    namespaces = AgentContextState(state.agent_context_state)
+    previous = await namespaces.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+    if _already_applied(previous, plan):
+        return state
+    messages = state.message_history
+    cutoff = len(plan.messages)
+    prefix = await RunStorage(state_store).resolve_messages(messages[:cutoff])
+    compacted = apply_compaction(plan, result, thread_id=state.thread_id, messages=[*prefix, *messages[cutoff:]])
+    await namespaces.write(
+        COMPACTION_CAPABILITY_ID,
+        _CompactionState(
+            applied_operation_id=plan.operation_id,
+            applied_plan_digest=plan.digest,
+            restoration_pending=True,
+        ),
+        version="1",
+    )
+    return state.model_copy(
+        deep=True,
+        update={
+            "message_history_json": encode_messages(compacted),
+            "agent_context_state": await namespaces.snapshot(),
+        },
+    )
 
 
 def compaction_tail(plan: CompactionPlan, messages: Sequence[ModelMessage]) -> list[ModelMessage]:

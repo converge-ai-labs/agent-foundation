@@ -139,27 +139,41 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
     ) -> ModelRequestContext:
         if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
             return request_context
-        request = _classify_request(ctx, request_context.messages)
-        if request is None:
-            return request_context
+        from a13n_harness.capabilities.context import (
+            _compaction_request_fits,
+            _project_compaction_media,
+            _restore_compacted_state,
+        )
 
-        projection = await _project_model_context(ctx, request)
-        original_request = request_context.messages[-1]
-        assert isinstance(original_request, ModelRequest)
-        committed = _commit_projection(request_context.messages, request, projection)
-        _persist_projection(ctx.messages, original_request, committed, request, projection)
-        # Observe only freshly produced overlay content. Native user input and
-        # delivered steering have their own event boundaries, never history replay.
-        for event in input_events(
-            [
-                ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
-                for block in projection.blocks
-            ],
-            source="context",
-            input_id=f"context-{ctx.run_id}-{ctx.run_step}",
-        ):
-            await ctx.emit(event)
-        return _replace_messages(request_context, committed)
+        restored = await _restore_compacted_state(ctx, request_context)
+        restoring_compaction = restored is not request_context
+        request_context = restored
+        request = _classify_request(ctx, request_context.messages)
+        prepared = request_context
+        if request is not None:
+            projection = await _project_model_context(ctx, request)
+            original_request = request_context.messages[-1]
+            assert isinstance(original_request, ModelRequest)
+            committed = _commit_projection(request_context.messages, request, projection)
+            _persist_projection(ctx.messages, original_request, committed, request, projection)
+            # Observe only freshly produced overlays, never history replay.
+            for event in input_events(
+                [
+                    ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
+                    for block in projection.blocks
+                ],
+                source="context",
+                input_id=f"context-{ctx.run_id}-{ctx.run_step}",
+            ):
+                await ctx.emit(event)
+            prepared = _replace_messages(request_context, committed)
+        if restoring_compaction:
+            prepared = await _project_compaction_media(ctx, prepared)
+            if await _compaction_request_fits(ctx, prepared) is False:
+                raise DefinitionError(
+                    "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
+                )
+        return prepared
 
 
 async def _project_model_context(

@@ -47,9 +47,12 @@ from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.compaction import (
+    COMPACTION_CAPABILITY_ID,
     CompactionOperator,
     CompactionPlan,
     CompactionResult,
+    _already_applied,
+    _CompactionState,
     _validate_result,
     apply_compaction,
     compaction_tail,
@@ -87,7 +90,6 @@ from a13n_harness.toolsets.context import HandoffToolset
 RUNTIME_CONTEXT_CAPABILITY_ID = "a13n.runtime-context"
 WORKSPACE_OUTLINE_CAPABILITY_ID = "a13n.workspace-outline"
 FILE_CONTEXT_CAPABILITY_ID = "a13n.file-context"
-COMPACTION_CAPABILITY_ID = "a13n.compaction"
 _RUNTIME_OPEN = '<runtime-context source="a13n-harness">'
 _RUNTIME_CLOSE = "</runtime-context>"
 _WORKSPACE_OUTLINE_PREFIX = "Workspace file outline (content not loaded):\n"
@@ -832,13 +834,6 @@ class CompactionPolicy(BaseModel):
     trigger_tokens: int = Field(gt=0)
 
 
-class _CompactionState(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    applied_operation_id: str | None = None
-    applied_plan_digest: str | None = None
-
-
 @dataclass(init=False)
 class CompactionCapability(AbstractCapability[AgentContext]):
     """Replace long history with a cache-friendly plain-text nested run."""
@@ -851,8 +846,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         *,
         background: bool = False,
         operator: CompactionOperator | None = None,
-        plan: CompactionPlan | None = None,
-        result: CompactionResult | None = None,
     ) -> None:
         if policy is not None and not isinstance(policy, CompactionPolicy):
             policy = CompactionPolicy.model_validate(policy, strict=True)
@@ -866,21 +859,17 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             raise DefinitionError(
                 "A compaction operator requires background mode.", code="compaction_operator_unexpected"
             )
-        if (plan is None) != (result is None):
-            raise ValueError("Supply both the compaction plan and result.")
         self.policy = policy.model_copy(deep=True) if policy is not None else None
         self.background = background
         self.operator = operator
-        self._plan = plan
-        self._result = result
         self._depth = 0
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(
             position="innermost",
-            wraps=() if self.background or self._plan is not None else (ModelContextCoordinatorCapability,),
+            wraps=() if self.background else (ModelContextCoordinatorCapability,),
             wrapped_by=(InputCapability, HandoffCapability, ModelContextCoordinatorCapability, ImageFilterCapability)
-            if self.background or self._plan is not None
+            if self.background
             else (InputCapability, HandoffCapability),
         )
 
@@ -897,8 +886,6 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             self.policy,
             background=self.background,
             operator=self.operator,
-            plan=self._plan,
-            result=self._result,
         )
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
         return replacement
@@ -906,13 +893,14 @@ class CompactionCapability(AbstractCapability[AgentContext]):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        if self._plan is not None and self._result is not None:
-            prepared = await self.apply_result(ctx, request_context, self._plan, self._result)
-        elif self.background:
+        state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+        if state is not None and state.restoration_pending:
+            return request_context
+        if self.background:
             prepared = await self._background_history(ctx, request_context)
         else:
             prepared = await self._compact_history(ctx, request_context)
-        if prepared is not request_context and not (self.background or self._plan is not None):
+        if prepared is not request_context and not self.background:
             from a13n_harness.tools.discovery import finish_discovery_replacement
 
             ctx.messages[:] = prepared.messages
@@ -928,14 +916,12 @@ class CompactionCapability(AbstractCapability[AgentContext]):
     ) -> ModelRequestContext:
         """Validate and apply ready work at an ordinary before-model boundary.
 
-        The same entry point serves active and next-Run application. The applied
-        marker is checkpoint provenance, never a Host persistence acknowledgement.
+        The applied marker is checkpoint provenance, never a Host persistence
+        acknowledgement. Offline application uses apply_compaction_to_state.
         """
         _validate_result(plan, result, ctx.deps.thread_id)
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if state is not None and state.applied_operation_id == plan.operation_id:
-            if state.applied_plan_digest != plan.digest:
-                raise DefinitionError("Compaction operation identity was reused.", code="compaction_result_mismatch")
+        if _already_applied(state, plan):
             return request
         if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
             return request
@@ -948,7 +934,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             plan, result, thread_id=ctx.deps.thread_id, messages=ctx.messages, retained_discovery=discovery
         )
         replacement = _replace_context_history(ctx, request, messages, names)
-        replacement = await _project_compaction_images(ctx, replacement)
+        replacement = await _project_compaction_media(ctx, replacement)
         if await _compaction_request_fits(ctx, replacement) is False:
             raise DefinitionError(
                 "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
@@ -1006,7 +992,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             if cutoff <= 0:
                 return request
             prefix = ctx.messages[:cutoff]
-            projected = await _project_compaction_images(ctx, _replace_messages(request, prefix))
+            projected = await _project_compaction_media(ctx, _replace_messages(request, prefix))
             retained = _compaction_replay_prefix(
                 ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
                 prefix,
@@ -1193,14 +1179,53 @@ def _compaction_replay_prefix(
     return tuple(request for request in retained if present(request))
 
 
-async def _project_compaction_images(
-    ctx: RunContext[AgentContext], request: ModelRequestContext
-) -> ModelRequestContext:
-    # Image preparation is request-only. Reproject the new canonical prefix or
-    # replacement rather than persisting cropped/pruned images as history.
+async def _restore_compacted_state(ctx: RunContext[AgentContext], request: ModelRequestContext) -> ModelRequestContext:
+    """Finish an offline transformation under this Run's tool and event authority."""
+    state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+    if state is None or not state.restoration_pending:
+        return request
+    if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, ctx.messages):
+        return request
+    from a13n_harness.tools.discovery import finish_discovery_replacement, retain_discovery
+
+    discovery, names = await retain_discovery(ctx, request, restore=True)
+    # Offline compaction leaves the discovery slot immediately after the summary.
+    messages = [*ctx.messages[:2], *discovery, *ctx.messages[2:]]
+    replacement = _replace_context_history(
+        replace(ctx, messages=messages, discovered_tool_names=ctx.discovered_tool_names | names),
+        request,
+        messages,
+        names,
+    )
+    assert state.applied_operation_id is not None
+    summary = restored_history_summary(ctx.messages)
+    if summary is None:
+        raise DefinitionError("Compacted State has no summary.", code="compaction_summary_invalid")
+    # Keep pending provenance until every listener succeeds. A failed/cancelled
+    # restoration can retry without inserting discovery twice or losing resets.
+    await ctx.emit(ContextRestoredEvent(source="compact", operation_id=state.applied_operation_id))
+    await ctx.emit(CompactionSummaryEvent(operation_id=state.applied_operation_id, summary=summary))
+    await emit_harness_event(
+        ctx.deps.events,
+        kind="context",
+        payload=ContextOperationCompletedPayload(type="compaction_completed", operation_id=state.applied_operation_id),
+    )
+    await finish_discovery_replacement(ctx)
+    await ctx.deps.state.write(
+        COMPACTION_CAPABILITY_ID, state.model_copy(update={"restoration_pending": False}), version="1"
+    )
+    ctx.messages[:] = messages
+    return replacement
+
+
+async def _project_compaction_media(ctx: RunContext[AgentContext], request: ModelRequestContext) -> ModelRequestContext:
+    from a13n_harness.capabilities.video_url import VideoUrlCapability
+
+    # Media preparation is request-only. Reapply both built-in projections to
+    # rebuilt canonical history, preserving originals in continuation state.
     for capability in ctx.capabilities.values():
-        if isinstance(capability, ImageFilterCapability):
-            return await capability.before_model_request(ctx, request)
+        if isinstance(capability, ImageFilterCapability | VideoUrlCapability):
+            request = await capability.before_model_request(ctx, request)
     return request
 
 

@@ -14,6 +14,7 @@ from a13n_harness.compaction import (
     CompactionPlan,
     CompactionResult,
     apply_compaction,
+    apply_compaction_to_state,
     generate_compaction,
 )
 from a13n_harness.errors import DefinitionError
@@ -338,7 +339,7 @@ async def test_unknown_capacity_waits_and_waiter_cancellation_preserves_work():
     assert operator.operation.status == "ready"
 
 
-async def test_explicit_plan_result_next_run_needs_no_operator_or_summary_request():
+async def test_compacted_state_next_run_needs_no_capability_operator_or_summary_request():
     previous = _previous()
     plan = _plan(previous)
     result = CompactionResult.from_summary(plan, "supplied summary")
@@ -352,11 +353,14 @@ async def test_explicit_plan_result_next_run_needs_no_operator_or_summary_reques
         AgentSpec(),
         model=FunctionModel(stream_function=stream),
         output_type=str,
-        capabilities=(CompactionCapability(plan=plan, result=result),),
     )
-    first = await executable.run("continue", previous_state=previous)
+    compacted = await apply_compaction_to_state(previous, plan=plan, result=result)
+    compacted = HarnessState.model_validate_json(compacted.model_dump_json())
+    assert compacted.agent_context_state.get("a13n.compaction").data["restoration_pending"] is True
+    first = await executable.run("continue", previous_state=compacted)
     assert first.output_or_raise() == "done"
     assert first.state is not None
+    assert first.state.agent_context_state.get("a13n.compaction").data["restoration_pending"] is False
     second = await executable.run("again", previous_state=first.state)
     assert second.output_or_raise() == "done"
     assert len(requests) == 2
@@ -364,15 +368,17 @@ async def test_explicit_plan_result_next_run_needs_no_operator_or_summary_reques
     assert "continue" in _user_values(requests[1])
 
 
-@pytest.mark.parametrize("with_image", [False, True])
-async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(with_image):
+@pytest.mark.parametrize("media", ["text", "image", "video"])
+async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(media):
     image = BytesIO()
     Image.new("RGB", (10, 5000), "white").save(image, format="PNG")
     initial = (
         ["initial semantic input", BinaryContent(image.getvalue(), media_type="image/png")]
-        if with_image
+        if media == "image"
         else "initial semantic input"
     )
+    if media == "video":
+        initial = ["initial semantic input", BinaryContent(b"video", media_type="video/mp4")]
     operator = _Operator()
     requests = []
 
@@ -406,7 +412,11 @@ async def test_same_run_cutoff_keeps_tool_pairs_and_replays_initial_input_once(w
     assert operator.submissions == 1
     assert sum("initial semantic input" in value for value in _user_values(requests[-1])) == 1
     assert len(operator.operation.plan.replay_requests) == 1
-    if with_image:
+    if media == "video":
+        assert "video_input_unsupported" in str(requests[-1])
+        assert "video_input_unsupported" in str(operator.operation.plan.request_messages)
+        assert "video_input_unsupported" not in str(result.state.message_history)
+    if media == "image":
 
         def images(messages):
             return [
@@ -510,3 +520,269 @@ async def test_capacity_guard_waits_for_same_operation_and_rejects_oversized_mer
         result = await run
         assert result.output_or_raise() == "done"
     assert operator.submissions == 1
+
+
+async def test_state_transform_preserves_envelope_namespaces_refs_and_complete_delta():
+    from a13n_harness.environment.models import EnvironmentState
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, StoredRef
+
+    previous = _previous()
+    plan = _plan(previous)
+    delta = [ModelRequest(parts=[UserPromptPart("later")]), ModelResponse(parts=[TextPart("later answer")])]
+    previous = HarnessState.model_validate(
+        previous.model_dump()
+        | {
+            "message_history": [*previous.message_history, *delta],
+            "agent_context_state": AgentContextStateSnapshot(
+                entries={"unknown.owner": CapabilityState(version="future", data={"opaque": [1, 2]})}
+            ),
+            "environment_states": {
+                "workspace": EnvironmentState(provider_key="test", state_version="1", state={"id": "kept"})
+            },
+            "refs": [StoredRef(key="nested-child", digest="0" * 64, size=20)],
+            "future": {"nested": [1, 2]},
+        }
+    )
+    original = previous.model_dump_json()
+    result = CompactionResult.from_summary(plan, "summary")
+    compacted = await apply_compaction_to_state(previous, plan=plan, result=result)
+    assert previous.model_dump_json() == original
+    assert encode_messages(compacted.message_history[-2:]) == encode_messages(delta)
+    assert compacted.environment_states == previous.environment_states
+    assert compacted.refs == previous.refs
+    assert compacted.agent_context_state.get("unknown.owner") == previous.agent_context_state.get("unknown.owner")
+    assert compacted.model_extra == previous.model_extra
+    compacted.model_extra["future"]["nested"].append(3)
+    assert previous.model_dump_json() == original
+    compacted = HarnessState.model_validate_json(compacted.model_dump_json())
+    assert await apply_compaction_to_state(compacted, plan=plan, result=result) is compacted
+    changed = plan.model_copy(update={"run_id": "different"})
+    with pytest.raises(DefinitionError, match="identity was reused"):
+        await apply_compaction_to_state(compacted, plan=changed, result=CompactionResult.from_summary(changed, "other"))
+
+
+@pytest.mark.parametrize("mismatch", ["thread", "operation", "digest", "prefix", "pending"])
+async def test_state_transform_rejects_stale_or_incomplete_work(mismatch):
+    previous = _previous()
+    plan = _plan(previous)
+    result = CompactionResult.from_summary(plan, "summary")
+    if mismatch == "thread":
+        previous = previous.fork()
+    elif mismatch == "operation":
+        result = result.model_copy(update={"operation_id": "other"})
+    elif mismatch == "digest":
+        result = result.model_copy(update={"plan_digest": "other"})
+    elif mismatch == "prefix":
+        previous = HarnessState.new(thread_id=previous.thread_id)
+    else:
+        previous = previous.model_copy(
+            update={
+                "message_history_json": encode_messages(
+                    [*previous.message_history, ModelResponse(parts=[ToolCallPart("read", {}, "pending")])]
+                )
+            }
+        )
+    original = previous.model_dump_json()
+    with pytest.raises(DefinitionError):
+        await apply_compaction_to_state(previous, plan=plan, result=result)
+    assert previous.model_dump_json() == original
+
+
+async def test_state_transform_hydrates_prefix_but_preserves_stored_suffix():
+    from a13n_harness.errors import StateError
+    from a13n_harness.storage import RunStorage
+
+    from .test_state_store import MemoryStore
+
+    store = MemoryStore()
+    image = BinaryContent(b"image" * 200, media_type="image/png")
+    prefix = [ModelRequest(parts=[UserPromptPart([image])]), ModelResponse(parts=[TextPart("seen")])]
+    previous = HarnessState.new(message_history=prefix)
+    plan = _plan(previous)
+    result = CompactionResult.from_summary(plan, "summary")
+    delta = [ModelRequest(parts=[UserPromptPart([image])]), ModelResponse(parts=[TextPart("again")])]
+    previous = previous.model_copy(update={"message_history_json": encode_messages([*prefix, *delta])})
+    previous = await RunStorage(store).export(previous)
+    saved = previous.model_dump_json()
+    with pytest.raises(StateError, match="no state store"):
+        await apply_compaction_to_state(previous, plan=plan, result=result)
+    compacted = await apply_compaction_to_state(previous, plan=plan, result=result, state_store=store)
+    assert previous.model_dump_json() == saved
+    assert compacted.refs == previous.refs
+    assert encode_messages(compacted.message_history[-2:]) == encode_messages(previous.message_history[-2:])
+    restored = await RunStorage(store).resolve_messages(compacted.message_history)
+    assert encode_messages(restored[-2:]) == encode_messages(delta)
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_failed_restoration_keeps_pending_provenance_for_retry(cancel):
+    from a13n_harness.capabilities.context import ContextRestoredEvent
+    from pydantic_ai.capabilities import AbstractCapability
+
+    previous = _previous()
+    plan = _plan(previous)
+    compacted = await apply_compaction_to_state(
+        previous, plan=plan, result=CompactionResult.from_summary(plan, "summary")
+    )
+    contexts = []
+    requests = []
+
+    class Listener(AbstractCapability):
+        async def on_event(self, ctx, *, event):
+            if isinstance(event, ContextRestoredEvent):
+                contexts.append(ctx)
+                if len(contexts) == 1:
+                    raise asyncio.CancelledError() if cancel else RuntimeError("listener failed")
+
+    async def stream(messages, info):
+        requests.append(messages)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), model=FunctionModel(stream_function=stream), output_type=str, capabilities=(Listener(),)
+    )
+    if cancel:
+        with pytest.raises(asyncio.CancelledError):
+            await executable.run("continue", previous_state=compacted)
+    else:
+        failed = await executable.run("continue", previous_state=compacted)
+        assert failed.state.agent_context_state.get("a13n.compaction").data["restoration_pending"] is True
+    assert not requests
+    from a13n_harness.compaction import _CompactionState
+
+    marker = await contexts[0].deps.state.read("a13n.compaction", _CompactionState, version="1")
+    assert marker.restoration_pending
+    second = await executable.run("continue", previous_state=compacted)
+    assert second.output_or_raise() == "done"
+    assert len(contexts) == 2
+    assert second.state.agent_context_state.get("a13n.compaction").data["restoration_pending"] is False
+
+
+async def test_state_restoration_resets_memory_before_first_projection():
+    from a13n_harness.capabilities import FileMemoryCapability, FileMount, MemoryCursors
+
+    from .memory_helpers import FakeFileStore
+    from .test_memory_context import _blocks, _parse
+
+    store = FakeFileStore({"README.md": "remember me", "other.md": "index entry"})
+    cursors = MemoryCursors()
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            FileMemoryCapability([FileMount("user", store, "write", always_load=("README.md",))], cursors=cursors),
+        ),
+    )
+    first = await executable.run("hello")
+    assert cursors.snapshot()
+    plan = _plan(first.state)
+    compacted = await apply_compaction_to_state(
+        first.state, plan=plan, result=CompactionResult.from_summary(plan, "summary")
+    )
+    second = await executable.run("continue", previous_state=compacted)
+    assert second.output_or_raise() == "done"
+    blocks = _blocks(requests[-1])
+    assert len(blocks) == 1
+    assert "remember me" in blocks[0] and "other.md" in blocks[0]
+    assert _parse(blocks[0])[1] == _parse(_blocks(requests[0])[0])[1]
+
+
+async def test_state_restoration_uses_current_discovery_and_codeact_tools():
+    from a13n_harness.capabilities import CodeActCapability
+    from pydantic_ai.capabilities import ToolSearch
+
+    from .test_tool_discovery_retention import _run_calls, _source
+
+    effects = []
+    capabilities = (_source(effects), ToolSearch(strategy="keywords"), CodeActCapability())
+    first, _ = await _run_calls(capabilities, [("search_tools", {"queries": ["double"]}), ("double", {"value": 20})])
+    plan = _plan(first.state)
+    compacted = await apply_compaction_to_state(
+        first.state, plan=plan, result=CompactionResult.from_summary(plan, "summary")
+    )
+    second, snapshots = await _run_calls(
+        capabilities, [("run_code", {"code": "await double(value=21)"})], previous_state=compacted
+    )
+    assert second.output_or_raise()
+    assert effects == [20, 21]
+    assert "double" in snapshots[0][1].model_request_parameters.revealed_tool_names
+    for tool in snapshots[0][1].function_tools:
+        if tool.name in {"run_code", "run_program"}:
+            assert "async def double" in tool.description
+            assert "async def triple" not in tool.description
+
+    _, snapshots = await _run_calls((CodeActCapability(),), [], previous_state=compacted)
+    assert not snapshots[0][1].model_request_parameters.revealed_tool_names
+    for tool in snapshots[0][1].function_tools:
+        if tool.name in {"run_code", "run_program"}:
+            assert "async def double" not in tool.description
+
+
+@pytest.mark.parametrize("too_large", [False, True])
+async def test_state_restoration_checks_capacity_after_current_projection_and_media(too_large):
+    from a13n_harness.capabilities import FileMemoryCapability, FileMount
+    from pydantic_ai.messages import VideoUrl
+
+    from .memory_helpers import FakeFileStore
+
+    previous = _previous()
+    plan = _plan(previous)
+    delta = [ModelRequest(parts=[UserPromptPart([VideoUrl("https://example.com/video.mp4")])])]
+    previous = previous.model_copy(
+        update={"message_history_json": encode_messages([*previous.message_history, *delta])}
+    )
+    compacted = await apply_compaction_to_state(
+        previous, plan=plan, result=CompactionResult.from_summary(plan, "summary")
+    )
+    counted = []
+    requests = []
+
+    class CountingModel(FunctionModel):
+        async def count_tokens(self, messages, model_settings, model_request_parameters):
+            counted.append(deepcopy(messages))
+            assert "fresh memory" in str(messages)
+            assert "video_url_requires_materialization" in str(messages)
+            assert not any(
+                isinstance(value, VideoUrl)
+                for values in _user_values(messages)
+                if isinstance(values, list)
+                for value in values
+            )
+            return RequestUsage(input_tokens=10000 if too_large else 100)
+
+    async def stream(messages, info):
+        requests.append(messages)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": 100},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=CountingModel(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            FileMemoryCapability(
+                [FileMount("user", FakeFileStore({"README.md": "fresh memory"}), "write", always_load=("README.md",))]
+            ),
+        ),
+    )
+    if too_large:
+        with pytest.raises(DefinitionError) as error:
+            await executable.run("continue", previous_state=compacted)
+        assert error.value.code == "compaction_capacity_exceeded"
+        assert not requests
+    else:
+        result = await executable.run("continue", previous_state=compacted)
+        assert result.output_or_raise() == "done"
+        assert "video_url_requires_materialization" in str(requests[0])
+        assert "video_url_requires_materialization" not in str(result.state.message_history)
+        assert "https://example.com/video.mp4" in str(result.state.message_history)
+    assert len(counted) == 1

@@ -23,7 +23,7 @@ flowchart LR
     Host -->|selected state and fresh bindings| Run2[New Harness Run]
 ```
 
-[Background compaction](09-context-and-memory.md#background-execution-and-result-application) records applied transformation provenance in `a13n.compaction`. The Host saves that marker together with its corresponding canonical history before retiring the ready result. Restoring an older checkpoint permits reapplication; restoring the saved marker makes duplicate delivery a no-op. A result never replaces an entire older `HarnessState`, and completion does not mutate an already exported checkpoint.
+[Background compaction](09-context-and-memory.md#background-execution-and-result-application) records applied transformation provenance in `a13n.compaction`. `apply_compaction_to_state` returns a new checkpoint with the applied history and pending runtime restoration; it preserves the supplied checkpoint, unrelated state and opaque references. The next Run completes restoration before dynamic-context projection, without requiring a Compaction Capability or operator. The Host saves the applied marker together with its corresponding canonical history before retiring the ready result. Restoring an older checkpoint permits reapplication; restoring the saved marker makes duplicate delivery a no-op. A result never replaces an entire older `HarnessState`, and completion does not mutate an already exported checkpoint.
 
 ## Live Continuation
 

@@ -132,19 +132,23 @@ Implement `submit(plan)`, `inspect(thread_id)` and `wait(thread_id, operation_id
 
 Harness freezes a complete prefix before the outgoing request. When the summary is ready, Harness replaces that prefix and preserves all later native messages, including tool results and steering. It applies at the next eligible model boundary. Concurrent foreground progress requires native token counting, a known context window and an explicit `max_tokens` reserve. When that capacity is unknown or insufficient, Harness waits for the same operation. It rejects a known oversized merged request instead of trimming recent work.
 
-For a ready result supplied on a subsequent Run, no custom history merge is needed:
+For a result ready between Runs, transform the latest checkpoint under your Host's Thread writer fence:
 
 ```python
-from a13n_harness.compaction import CompactionPlan, CompactionResult
+from a13n_harness.compaction import apply_compaction_to_state
 
-
-def ready_compaction(plan: CompactionPlan, result: CompactionResult) -> CompactionCapability:
-    return CompactionCapability(plan=plan, result=result)
+compacted_state = await apply_compaction_to_state(
+    latest_state, plan=plan, result=result, state_store=state_store
+)
+# Persist compacted_state before retiring the ready operation.
+continued = await executable.run("Continue", previous_state=compacted_state)
 ```
 
-Build the executable with this Capability and run it with the latest saved `HarnessState`. Harness validates the Thread, operation, plan digest and unchanged prefix before replacing context. It records `applied_operation_id` and `applied_plan_digest` in the `a13n.compaction` state namespace. Save the returned state before retiring the Host's ready result. Re-delivery with that saved marker is a no-op. A restoration event alone is not a save acknowledgement.
+The transform returns a new `HarnessState`; it leaves the supplied checkpoint unchanged. It validates the Thread, operation, plan digest, unchanged canonical prefix and complete tool boundary, then preserves every later message, unrelated namespace, Environment state and opaque reference. Supply the checkpoint's `StateStore` when prefix content is externalized; otherwise omit it.
 
-Plans contain encoded native history, replay inputs, request parameters and JSON model settings. Store them as confidential execution data. Keep credentials and connection policy in the fresh Host request callback. `apply_compaction` is also available for a pure validated history transformation; the Capability adds canonical runtime writeback and restoration events. Service and Harness UI require their own operator and persistence integration to enable this mode.
+The `a13n.compaction` namespace records `applied_operation_id`, `applied_plan_digest` and pending runtime restoration. Re-delivery with the saved applied marker is a no-op. Before the next Run's first context projection, Harness restores current tool discovery and CodeAct descriptions and resets memory delivery cursors through restoration events. Current image/video rules and capacity checks govern the outgoing request. The resumed executable needs neither a `CompactionCapability` nor an operator for this restoration. Listener failure or cancellation leaves restoration pending for retry. A restoration event alone is not a save acknowledgement.
+
+Plans contain encoded native history, replay inputs, request parameters and JSON model settings. Store them as confidential execution data. Keep credentials and connection policy in the fresh Host request callback. `apply_compaction` is the shared pure history transformation; active-Run application writes live history directly, while `apply_compaction_to_state` prepares an immutable continuation between Runs. Service and Harness UI require their own operator and persistence integration to enable this mode.
 
 ## Handoff versus automatic compaction
 

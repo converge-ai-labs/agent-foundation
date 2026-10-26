@@ -132,19 +132,23 @@ def background_compaction(operator: CompactionOperator) -> CompactionCapability:
 
 Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。容量未知或不足时，Harness 等待同一个操作。若合并后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
 
-在后续 Run 中提供已就绪结果时，无需自行合并历史：
+结果在两个 Run 之间就绪时，在 Host 的 Thread 写入隔离保护下转换最新检查点：
 
 ```python
-from a13n_harness.compaction import CompactionPlan, CompactionResult
+from a13n_harness.compaction import apply_compaction_to_state
 
-
-def ready_compaction(plan: CompactionPlan, result: CompactionResult) -> CompactionCapability:
-    return CompactionCapability(plan=plan, result=result)
+compacted_state = await apply_compaction_to_state(
+    latest_state, plan=plan, result=result, state_store=state_store
+)
+# Persist compacted_state before retiring the ready operation.
+continued = await executable.run("Continue", previous_state=compacted_state)
 ```
 
-使用这个 Capability 构建 executable，并传入最新保存的 `HarnessState` 运行。Harness 在替换上下文前验证 Thread、操作、plan 摘要及历史前缀一致性，并在 `a13n.compaction` 状态命名空间记录 `applied_operation_id` 和 `applied_plan_digest`。先保存返回状态，再清理 Host 保留的就绪结果。重新交付同一结果时，已保存的标记会阻止重复应用。恢复事件本身不是保存确认。
+该变换返回新的 `HarnessState`，不修改传入的检查点。它验证 Thread、操作、plan 摘要、规范历史前缀一致性及完整工具边界，并保留之后的全部消息、其他命名空间、Environment 状态和不透明引用。前缀内容已外置时，传入检查点对应的 `StateStore`；否则可以省略。
 
-Plan 包含编码后的原生历史、重放输入、请求参数和 JSON 模型设置，应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 也提供经过验证的纯历史转换；Capability 额外负责规范历史写回与恢复事件。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
+`a13n.compaction` 命名空间记录 `applied_operation_id`、`applied_plan_digest` 和待完成的运行时恢复。同一结果再次交付时，已保存的应用标记使其成为空操作。下一次 Run 首次投影上下文前，Harness 按当前定义恢复工具发现和 CodeAct 描述，并通过恢复事件重置记忆交付游标。待发送请求遵循当前图片、视频规则及容量检查。恢复过程不要求 executable 配置 `CompactionCapability` 或 operator。监听器失败或取消时保留待恢复标记，供后续重试。恢复事件本身不是保存确认。
+
+Plan 包含编码后的原生历史、重放输入、请求参数和 JSON 模型设置，应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 是共享的纯历史变换；活动 Run 直接写回实时历史，`apply_compaction_to_state` 则在两个 Run 之间准备不可变续接状态。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
 
 ## Handoff 与自动压缩
 
