@@ -1,7 +1,6 @@
 """User takeover crosses real execution, HTTP and SQL boundaries without a fabricated tool call."""
 
 import asyncio
-import json
 
 import pytest
 from a13n_service.infra.db import transaction
@@ -136,7 +135,7 @@ async def test_takeover_during_generation_skips_stale_tool_then_resumes(
         service, scripted_model, runs_kit, monkeypatch, start_only=True, provider_key=provider_key
     )
     gate = asyncio.Event()
-    runs_kit.lookup(scripted_model, call_id="stale", gate=gate)
+    scripted_model.call("computer_observe", {}, call_id="stale", gate=gate)
     running = await runs_kit.attempt(service)
     await scripted_model.request()
     view = await open_desktop(service, first["run"])
@@ -281,7 +280,7 @@ async def test_admitted_tool_drains_and_is_not_replayed(service, scripted_model,
                             "index": index,
                             "id": f"admitted-{index}",
                             "type": "function",
-                            "function": {"name": "view", "arguments": json.dumps({"file_path": runs_kit.GUIDE})},
+                            "function": {"name": "tool_execution_info", "arguments": "{}"},
                         }
                         for index in range(tool_count)
                     ]
@@ -391,7 +390,7 @@ async def test_expired_user_control_requires_cleanup_and_explicit_resume(
 
     first, endpoint = await waiting(service, scripted_model, runs_kit, monkeypatch, start_only=True)
     gate = asyncio.Event()
-    runs_kit.lookup(scripted_model, call_id="stale", gate=gate)
+    scripted_model.call("computer_observe", {}, call_id="stale", gate=gate)
     running = await runs_kit.attempt(service)
     await scripted_model.request()
     view = await open_desktop(service, first["run"])

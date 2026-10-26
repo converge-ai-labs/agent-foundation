@@ -33,9 +33,14 @@ async def tool_committed(api, run_id: str) -> None:  # type: ignore[no-untyped-d
 
 
 @pytest.mark.isolated_service
-async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack) -> None:  # type: ignore[no-untyped-def]
+async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack, skill_environment_template) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
+    agent = await api.create_agent(
+        "Helper",
+        await api.create_model(model.base_url),
+        **LOOKUP,
+        default_environment_template_id=skill_environment_template,
+    )
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[crash]")
     # The worker dies while this request is outstanding; its answer never comes.
     await model.say("Lost with the worker.", to="[crash]", hold="never")
@@ -108,9 +113,14 @@ async def test_heartbeats_keep_one_attempt_through_a_slow_model(stack) -> None: 
 
 
 @pytest.mark.isolated_service
-async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # type: ignore[no-untyped-def]
+async def test_a_draining_worker_hands_its_run_to_another(stack, skill_environment_template) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **LOOKUP)
+    agent = await api.create_agent(
+        "Helper",
+        await api.create_model(model.base_url),
+        **LOOKUP,
+        default_environment_template_id=skill_environment_template,
+    )
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[drain]", hold="drain")
     draining, successor = stack.workers
     with stack.only(draining):
