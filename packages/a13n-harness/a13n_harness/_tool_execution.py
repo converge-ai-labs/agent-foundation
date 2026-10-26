@@ -39,6 +39,8 @@ class RunToolExecutions:
         self.unsupported_calls: set[str] = set()
         self.handoff_ready = asyncio.Event()
         self.handoff_ready.set()
+        # Retained runners still dispatch against their original step's native discovery evidence.
+        self.history_calls: set[str] = set()
         self.calls: dict[str, ToolExecutionRecord] = {}
         self.returns: dict[str, Any] = {}
         self.observed_returns: set[str] = set()
@@ -139,13 +141,7 @@ class RunToolExecutions:
         return await observe(0)
 
     def receipt(self, record: ToolExecutionRecord) -> dict[str, Any]:
-        value = {
-            "type": "tool_execution_receipt",
-            "execution_id": record.execution_id,
-            "tool_name": record.tool_name,
-            "status": record.status,
-            "message": "The original invocation is owned by the runtime. Use tool_execution_result or tool_execution_wait; do not reissue it.",
-        }
+        value = record.receipt()
         self.returns[record.tool_call_id] = value
         return value
 
@@ -197,7 +193,7 @@ class RunToolExecutions:
     async def reconcile(
         self, runtime: ToolExecutionRuntime | None, thread_id: str, messages: Sequence[ModelMessage]
     ) -> None:
-        if runtime is None:
+        if runtime is None or not self.deliveries:
             return
         for message in messages:
             if not isinstance(message, ModelRequest):

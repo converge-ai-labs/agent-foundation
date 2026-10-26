@@ -11,7 +11,6 @@ import anyio
 from a13n_logging import get_logger
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.providers.environment.modal.diagnostics import measure
 from a13n_harness.providers.environment.native.errors import failure
 
 if TYPE_CHECKING:
@@ -91,16 +90,10 @@ class TransportPool:
                         raise failure("modal", "provider_closed", Category.UNAVAILABLE)
                 entry = Transport(key)
                 self._entries[key] = entry
-                with measure("transport_cache_miss"):
-                    pass
-            else:
-                with measure("transport_cache_hit"):
-                    pass
             # Count waiters before yielding so expiry/eviction cannot detach a borrowed handle.
             entry.borrowers += 1
         try:
-            with measure("transport_lease_wait"):
-                await entry.lock.acquire()
+            await entry.lock.acquire()
         except BaseException:
             entry.borrowers -= 1
             with anyio.CancelScope(shield=True):
@@ -159,7 +152,7 @@ class TransportPool:
             if close is None:
                 continue
             try:
-                with anyio.CancelScope(shield=True), anyio.fail_after(5), measure(stage):
+                with anyio.CancelScope(shield=True), anyio.fail_after(5):
                     await close()
             except BaseException as error:
                 # Never log SDK error text, URLs or credentials.

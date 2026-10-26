@@ -77,6 +77,8 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
     TextContent,
     TextPart,
@@ -730,9 +732,7 @@ async def test_compaction_resumes_after_codeact_rejects_a_streamed_tool_batch() 
             compactions += 1
             assert executed == []
             assert any(
-                isinstance(part, RetryPromptPart)
-                and part.tool_name is None
-                and "only executable tool call" in str(part.content)
+                isinstance(part, UserPromptPart) and "only executable tool call" in str(part.content)
                 for message in messages
                 for part in message.parts
             )
@@ -833,7 +833,8 @@ async def test_compaction_after_restore_uses_native_repair_of_older_function_cal
 
 @pytest.mark.parametrize("older_pending", [False, True])
 @pytest.mark.parametrize("tool_retry", [False, True])
-def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, tool_retry: bool) -> None:
+@pytest.mark.parametrize("native", [False, True])
+def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, tool_retry: bool, native: bool) -> None:
     history: list[ModelMessage] = []
     if older_pending:
         history.append(ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="older-pending")]))
@@ -849,7 +850,13 @@ def test_model_retry_retires_only_the_rejected_tool_batch(older_pending: bool, t
             rejected,
             ModelRequest(
                 parts=[
-                    RetryPromptPart(
+                    (
+                        ToolReturnPart("lookup", "Retry the response", "rejected-lookup", outcome="retried")
+                        if tool_retry
+                        else RetryFeedbackPart("Retry the response", retry=RetryInfo(cause="model_retry"))
+                    )
+                    if native
+                    else RetryPromptPart(
                         "Retry the response",
                         tool_name="lookup" if tool_retry else None,
                         tool_call_id="rejected-lookup" if tool_retry else "model-retry",
@@ -1252,14 +1259,18 @@ async def test_compaction_blocks_function_tool_dispatch() -> None:
     assert "Original task" in _user_text(list(result.all_messages()))
 
 
-async def test_compaction_preserves_outer_request_limit() -> None:
-    calls = 0
+@pytest.mark.parametrize("request_limit", [0, 1, 2, None])
+async def test_compaction_preserves_outer_request_limit(request_limit: int | None) -> None:
+    calls: list[str] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal calls
-        del messages, info
-        calls += 1
-        yield "unexpected"
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            calls.append("summary")
+            yield "Condensed conversation summary"
+        else:
+            calls.append("answer")
+            yield "done"
 
     previous = HarnessState.new(
         message_history=(
@@ -1277,18 +1288,78 @@ async def test_compaction_preserves_outer_request_limit() -> None:
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    result = await executable.run(
+    events: list[HarnessEvent] = []
+    async with executable.stream(
         "Continue",
         bindings=RunBindings.embedded(),
         previous_state=previous,
-        usage_limits=UsageLimits(request_limit=0),
+        usage_limits=UsageLimits(request_limit=request_limit),
+    ) as run:
+        result = await _consume_run(run, events)
+
+    if request_limit == 0:
+        assert result.status == "failed"
+        assert result.failure is not None
+        assert result.failure.code == "usage_limit_exceeded"
+        assert calls == []
+    else:
+        assert result.output_or_raise() == "done"
+        assert calls == (["answer"] if request_limit == 1 else ["summary", "answer"])
+    assert result.usage.requests == len(calls)
+    if request_limit in (0, 1):
+        from a13n_harness.capabilities.context import CompactionSummaryEvent, ContextRestoredEvent
+
+        assert "Original task" in _user_text(list(result.all_messages()))
+        assert not any(isinstance(item.event, (CompactionSummaryEvent, ContextRestoredEvent)) for item in events)
+        assert not any(
+            isinstance(item.event, HarnessExtensionEvent)
+            and item.event.kind == "context"
+            and str(item.event.payload.get("type", "")).startswith("compaction_")
+            for item in events
+        )
+
+
+async def test_compaction_leaves_last_request_after_current_run_usage() -> None:
+    calls: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        if _COMPACTION_PROMPT in _user_text(messages):
+            calls.append("summary")
+            yield "Condensed conversation summary"
+        else:
+            calls.append("answer")
+            yield "long response " * 2_000 if len(calls) == 1 else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    assert result.status == "failed"
-    assert result.failure is not None
-    assert result.failure.code == "usage_limit_exceeded"
-    assert result.usage.requests == 0
-    assert calls == 0
+    @executable._agent.output_validator
+    def validate_output(output: str) -> str:
+        if output != "done":
+            raise ModelRetry("Try again")
+        return output
+
+    events: list[HarnessEvent] = []
+    async with executable.stream(
+        "Original task", bindings=RunBindings.embedded(), usage_limits=UsageLimits(request_limit=2)
+    ) as run:
+        result = await _consume_run(run, events)
+
+    assert result.output_or_raise() == "done"
+    assert calls == ["answer", "answer"]
+    assert result.usage.requests == 2
+    snapshots = [
+        item.event.payload
+        for item in events
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.payload.get("type") == "context_snapshot"
+    ]
+    assert any(snapshot["request_tokens"] >= 2_000 for snapshot in snapshots)
+    assert "Original task" in _user_text(list(result.all_messages()))
 
 
 async def test_compaction_fails_open_on_blank_summary() -> None:
@@ -1800,7 +1871,7 @@ def _user_text(messages: list[ModelMessage]) -> str:
     return "\n".join(text)
 
 
-async def test_concurrent_handoff_summaries_accept_one_state_transition() -> None:
+async def test_concurrent_handoff_summaries_are_rejected_before_state_transition() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1842,8 +1913,7 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         for event in events
         if isinstance(event.event, FunctionToolResultEvent) and event.event.part.tool_name == "summarize"
     ]
-    assert len(tool_results) == 2
-    assert sum(part.outcome == "failed" for part in tool_results) == 1
+    assert tool_results == []
     context_payloads = [
         event.event.payload
         for event in events
@@ -1851,21 +1921,12 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         and event.event.kind == "context"
         and str(event.event.payload.get("type", "")).startswith("handoff_")
     ]
-    assert [payload["type"] for payload in context_payloads] == [
-        "handoff_started",
-        "handoff_prepared",
-        "handoff_completed",
-    ]
-    assert len({payload["operation_id"] for payload in context_payloads}) == 1
+    assert context_payloads == []
     from a13n_harness.toolsets.events import HandoffSummaryEvent
 
-    summaries = [item.event for item in events if isinstance(item.event, HandoffSummaryEvent)]
-    assert len(summaries) == 1
-    assert summaries[0].operation_id == context_payloads[1]["operation_id"]
-    assert summaries[0].tool_call_id in {"summary-concurrent-1", "summary-concurrent-2"}
-    restored_text = str(calls[1])
-    assert summaries[0].summary in _user_text(calls[1])
-    assert ("first-summary-only" in restored_text) != ("second-summary-only" in restored_text)
+    assert not any(isinstance(item.event, HandoffSummaryEvent) for item in events)
+    assert "Handoff must be the only executable tool call in a model response." in str(calls[1])
+    assert "start" in _user_text(calls[1])
 
 
 async def test_compaction_preserves_the_effective_request_model() -> None:

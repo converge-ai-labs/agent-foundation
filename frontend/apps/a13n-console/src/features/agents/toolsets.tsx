@@ -22,9 +22,9 @@ import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
+import { Section } from "../../shared/page";
 import { webProviderApi } from "../web/api";
 import { providersPath } from "../providers/navigation";
-import { Section } from "../../shared/page";
 import type { ReviewTarget } from "./reviewer";
 import type { AgentConfig } from "./configuration";
 import { toolState } from "./toolset-state";
@@ -454,12 +454,11 @@ export function AgentToolsets({
       </div>
       {platform.length > 0 && (
         <DisclosureSection
-          title={t("Advanced / Platform Features")}
+          className={`${styles.outlinedDisclosure} ${styles.platformTools}`}
+          title={t("Platform tools")}
           defaultOpen={false}
         >
-          <div className={`${styles.toolsetCard} ${styles.toolsetCardNested}`}>
-            {platform.map(renderGroup)}
-          </div>
+          <div className={styles.toolsetCard}>{platform.map(renderGroup)}</div>
         </DisclosureSection>
       )}
       <ErrorNotice error={catalog.error} />

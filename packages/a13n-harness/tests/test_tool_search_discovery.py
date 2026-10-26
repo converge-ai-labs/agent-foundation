@@ -84,6 +84,32 @@ async def test_exact_identity_precedes_fuzzy_candidates_and_disambiguates_groups
     assert [x["tool"] for x in results[4].content["tools"]] == ["lookup_extra"]
 
 
+@pytest.mark.parametrize("groups", [("a_", "a_u"), ("a_u", "a_")])
+@pytest.mark.parametrize("query,expected_group", [("a_u__b", "a_"), ("a_uu__b", "a_u")])
+async def test_exact_registered_name_ranks_before_similar_escaped_groups(groups, query, expected_group):
+    sources = {
+        group: ToolSearchGroup(FunctionToolset([Tool(_operation, name="b")], id=group), "Operations")
+        for group in groups
+    }
+    result, results = await _run(
+        (ToolSearchCapability(groups=sources),),
+        [
+            ("discover_tools", {"query": query, "limit": 1}),
+            ("discover_tools", {"query": f" {query.upper()} ", "limit": 1}),
+            ("discover_tools", {"query": query, "limit": 1, "offset": 1}),
+        ],
+    )
+    assert result.status == "completed"
+    for page in (item.content for item in results[:2]):
+        assert page["detail"] == "summary"
+        assert [(tool["group"], tool["tool"]) for tool in page["tools"]] == [(expected_group, "b")]
+        assert page["total"] == 2 and page["next_offset"] == 1
+    last_page = results[2].content
+    other_group = next(group for group in groups if group != expected_group)
+    assert [(tool["group"], tool["tool"]) for tool in last_page["tools"]] == [(other_group, "b")]
+    assert last_page["total"] == 2 and last_page["next_offset"] is None
+
+
 async def test_ranking_prefers_name_words_then_whole_words_with_stable_ties():
     _, results = await _run(
         (
@@ -169,7 +195,13 @@ async def test_auto_expansion_budget_counts_complete_utf8_response(budget):
 @pytest.mark.parametrize("detail,default_count", [("auto", 10), ("summary", 10), ("full", 5)])
 async def test_default_page_sizes_and_no_legacy_tool_aliases(detail, default_count):
     def inspect(_step, info):
-        assert {x.name for x in info.function_tools} == {"discover_tools", "describe_tool", "call_tool"}
+        assert {x.name for x in info.function_tools} == {
+            "discover_tools",
+            "describe_tool",
+            "call_tool",
+            "list_tools",
+            "list_tool_groups",
+        }
         assert all("proxy" not in x.description.lower() for x in info.function_tools)
 
     _, results = await _run(
@@ -274,7 +306,7 @@ async def test_describe_control_name_validation(names):
 
 
 async def test_nonempty_punctuation_query_is_not_browsing_and_describe_checks_availability():
-    from pydantic_ai.messages import RetryPromptPart
+    from pydantic_ai.messages import ToolReturnPart
 
     result, _ = await _run(
         (_group(_operation),),
@@ -283,7 +315,12 @@ async def test_nonempty_punctuation_query_is_not_browsing_and_describe_checks_av
             ("describe_tool", {"group": "crm", "tool": "missing"}),
         ],
     )
-    retries = [p.content for m in result.all_messages() for p in m.parts if isinstance(p, RetryPromptPart)]
+    retries = [
+        p.content
+        for m in result.all_messages()
+        for p in m.parts
+        if isinstance(p, ToolReturnPart) and p.outcome == "retried"
+    ]
     assert len(retries) == 2
     assert "operation keywords" in retries[0]
     assert "unavailable" in retries[1]

@@ -645,6 +645,62 @@ def test_codex_turn_state_capture_skips_unrelated_repeated_headers() -> None:
     assert state.value == "turn-state"
 
 
+@pytest.mark.parametrize("observer_fails", [False, True])
+async def test_codex_response_observer_runs_before_stream_without_replay(observer_fails: bool) -> None:
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    requests = []
+    observations = []
+
+    async def observe(headers: Mapping[str, str]) -> None:
+        observations.append(headers["x-codex-primary-used-percent"])
+        if observer_fails:
+            raise OSError("snapshot publication failed")
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream", "x-codex-primary-used-percent": "42"},
+            content=_responses_sse(),
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client, response_headers=observe)
+        async with model.request_stream([], None, ModelRequestParameters()) as response:
+            assert observations == ["42"]
+            async for _ in response:
+                pass
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "url, observed",
+    [
+        ("https://chatgpt.com/backend-api/codex/responses", True),
+        ("https://chatgpt.com:443/backend-api/codex/responses", True),
+        ("http://chatgpt.com/backend-api/codex/responses", False),
+        ("https://chatgpt.com:8443/backend-api/codex/responses", False),
+        ("https://example.com/responses", False),
+    ],
+)
+async def test_codex_error_response_observer_is_origin_scoped(url: str, observed: bool) -> None:
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    observations = []
+
+    async def observe(headers: Mapping[str, str]) -> None:
+        observations.append(headers["x-codex-primary-used-percent"])
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(429, headers={"x-codex-primary-used-percent": "100"}),
+        )
+    ) as client:
+        CodexRequestModel("gpt-5", credential_source=source, http_client=client, response_headers=observe)
+        response = await client.get(url)
+        assert response.status_code == 429
+    assert observations == (["100"] if observed else [])
+
+
 async def test_codex_routing_hint_and_turn_state_follow_effective_run() -> None:
     source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     request_headers: list[httpx2.Headers] = []

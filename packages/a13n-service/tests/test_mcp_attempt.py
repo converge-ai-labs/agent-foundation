@@ -43,7 +43,7 @@ async def test_projection_refreshes_catalog_without_owning_client_or_handler():
             async def check(dispatch):
                 pass
 
-            capability = mcp_capability("connection-one", acquire, tools=None, defer_loading=False, check=check)
+            capability = mcp_capability("connection-one", acquire, tools=None, check=check)
             calls = 0
 
             async def model(messages, info):
@@ -122,7 +122,6 @@ async def test_state_only_rounds_recheck_authority_without_replaying(service, re
             connection["id"],
             acquire,
             tools=None,
-            defer_loading=False,
             check=_checked(service.runtime.storage, connection["id"], check),
         )
         seen = await run_tool((capability,), "advance", {})

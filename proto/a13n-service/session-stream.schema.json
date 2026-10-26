@@ -640,19 +640,13 @@
       "type": "object"
     },
     "ConnectionSelection": {
-      "additionalProperties": false,
-      "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+      "description": "An agent's selected tools and permissions.",
       "properties": {
         "connection_id": {
           "maxLength": 41,
           "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
           "title": "Connection Id",
           "type": "string"
-        },
-        "defer_loading": {
-          "default": false,
-          "title": "Defer Loading",
-          "type": "boolean"
         },
         "permission": {
           "$ref": "#/$defs/ToolPermissionSetting",
@@ -1045,7 +1039,8 @@
         "kind": {
           "enum": [
             "message",
-            "child_result"
+            "child_result",
+            "tool_result"
           ],
           "title": "Kind",
           "type": "string"
@@ -1239,6 +1234,54 @@
         }
       },
       "title": "EnvironmentPermissionSet",
+      "type": "object"
+    },
+    "EnvironmentVariables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+      "type": "object"
+    },
+    "ExecutionOverride": {
+      "additionalProperties": false,
+      "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
+      "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvironmentVariables"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "steering": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Steering"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ExecutionOverride",
       "type": "object"
     },
     "Failed": {
@@ -1840,39 +1883,6 @@
         "content"
       ],
       "title": "MessagePayload",
-      "type": "object"
-    },
-    "NativeToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Provider-native discovery; omitted strategy uses the provider default.",
-      "properties": {
-        "mode": {
-          "const": "native",
-          "default": "native",
-          "title": "Mode",
-          "type": "string"
-        },
-        "strategy": {
-          "anyOf": [
-            {
-              "enum": [
-                "bm25",
-                "regex"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Strategy"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "NativeToolSearchConfig",
       "type": "object"
     },
     "ObserverContinuation": {
@@ -2544,48 +2554,6 @@
       "title": "Progress",
       "type": "object"
     },
-    "ProxyToolSearchConfig": {
-      "additionalProperties": false,
-      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
-      "properties": {
-        "call_name": {
-          "default": "call_tool",
-          "title": "Call Name",
-          "type": "string"
-        },
-        "describe_name": {
-          "default": "describe_tool",
-          "title": "Describe Name",
-          "type": "string"
-        },
-        "max_results": {
-          "default": 10,
-          "title": "Max Results",
-          "type": "integer"
-        },
-        "max_search_bytes": {
-          "default": 32768,
-          "title": "Max Search Bytes",
-          "type": "integer"
-        },
-        "mode": {
-          "const": "proxy",
-          "default": "proxy",
-          "title": "Mode",
-          "type": "string"
-        },
-        "search_name": {
-          "default": "discover_tools",
-          "title": "Search Name",
-          "type": "string"
-        }
-      },
-      "required": [
-        "mode"
-      ],
-      "title": "ProxyToolSearchConfig",
-      "type": "object"
-    },
     "RecordSource": {
       "additionalProperties": false,
       "properties": {
@@ -2603,6 +2571,21 @@
         "sha256"
       ],
       "title": "RecordSource",
+      "type": "object"
+    },
+    "RequestContext": {
+      "additionalProperties": false,
+      "description": "Explicit business headers, frozen in accepted Run options and kept out of model projections.",
+      "properties": {
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        }
+      },
+      "title": "RequestContext",
       "type": "object"
     },
     "Resume": {
@@ -2741,6 +2724,28 @@
           "anyOf": [
             {
               "$ref": "#/$defs/RunConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionOverride"
             },
             {
               "type": "null"
@@ -3280,6 +3285,13 @@
       "title": "SkillSelection",
       "type": "object"
     },
+    "Steering": {
+      "enum": [
+        "boundary",
+        "immediate"
+      ],
+      "type": "string"
+    },
     "StreamPosition": {
       "additionalProperties": false,
       "properties": {
@@ -3478,6 +3490,17 @@
           ],
           "title": "Current Run Id"
         },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -3629,6 +3652,43 @@
       "pattern": "\\S",
       "type": "string"
     },
+    "ToolExecutionOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "foreground_wait_seconds": {
+          "anyOf": [
+            {
+              "maximum": 300,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Foreground Wait Seconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "inline",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "ToolExecutionOverride",
+      "type": "object"
+    },
     "ToolPermissionMode": {
       "enum": [
         "allow",
@@ -3714,25 +3774,69 @@
       "type": "object"
     },
     "ToolSearchConfig": {
-      "discriminator": {
-        "mapping": {
-          "native": "#/$defs/NativeToolSearchConfig",
-          "proxy": "#/$defs/ProxyToolSearchConfig"
+      "additionalProperties": false,
+      "description": "Names and bounded discovery settings for one Agent's proxy surface.",
+      "properties": {
+        "call_name": {
+          "default": "call_tool",
+          "title": "Call Name",
+          "type": "string"
         },
-        "propertyName": "mode"
-      },
-      "oneOf": [
-        {
-          "$ref": "#/$defs/ProxyToolSearchConfig"
+        "describe_name": {
+          "default": "describe_tool",
+          "title": "Describe Name",
+          "type": "string"
         },
-        {
-          "$ref": "#/$defs/NativeToolSearchConfig"
+        "groups_name": {
+          "default": "list_tool_groups",
+          "title": "Groups Name",
+          "type": "string"
+        },
+        "list_name": {
+          "default": "list_tools",
+          "title": "List Name",
+          "type": "string"
+        },
+        "max_results": {
+          "default": 10,
+          "title": "Max Results",
+          "type": "integer"
+        },
+        "max_search_bytes": {
+          "default": 32768,
+          "title": "Max Search Bytes",
+          "type": "integer"
+        },
+        "mode": {
+          "const": "proxy",
+          "default": "proxy",
+          "title": "Mode",
+          "type": "string"
+        },
+        "search_name": {
+          "default": "discover_tools",
+          "title": "Search Name",
+          "type": "string"
         }
-      ]
+      },
+      "title": "ProxyToolSearchConfig",
+      "type": "object"
     },
     "ToolSearchGroup": {
       "additionalProperties": false,
       "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "enum": [
+              "environment",
+              "web"
+            ],
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
         "connections": {
           "default": [],
           "items": {
@@ -3848,6 +3952,7 @@
         "queued",
         "resume",
         "child_result",
+        "tool_result",
         "spawned"
       ],
       "type": "string"

@@ -1,4 +1,10 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -37,7 +43,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it("saves the environment choice together with other configuration edits", async () => {
+it("preserves collapsed model settings and saves them with the environment choice", async () => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -50,6 +56,7 @@ it("saves the environment choice together with other configuration edits", async
   HTMLElement.prototype.setPointerCapture = () => {};
   HTMLElement.prototype.releasePointerCapture = () => {};
   HTMLElement.prototype.scrollIntoView = () => {};
+  let cloudName = "Sandbox";
   http.GET.mockImplementation(async (path: string) => ({
     data: {
       items:
@@ -62,7 +69,7 @@ it("saves the environment choice together with other configuration edits", async
               },
               {
                 id: "envtpl_1234567890abcdef1234",
-                name: "Sandbox",
+                name: cloudName,
                 provider_id: "provider_cloud",
               },
             ]
@@ -99,13 +106,39 @@ it("saves the environment choice together with other configuration edits", async
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+  await user.type(
+    screen.getByRole("spinbutton", { name: "Max output tokens" }),
+    "2048",
+  );
+  await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+  expect(submit).not.toHaveBeenCalled();
+  expect(screen.getByText("{{value}} tokens")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+  expect(
+    (
+      screen.getByRole("spinbutton", {
+        name: "Max output tokens",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("2048");
+  await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+  await user.click(screen.getByRole("button", { name: /^Model settings/ }));
+  await user.clear(
+    screen.getByRole("textbox", { name: "Request parameters JSON" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Request parameters JSON" }),
+    '{{"temperature":0.4}',
+  );
+  await user.click(screen.getByRole("button", { name: /^Model settings/ }));
   await user.type(
     screen.getByRole("textbox", { name: "System instructions" }),
     " Keep the draft.",
   );
   await user.click(
     screen.getByRole("combobox", {
-      name: "Default runtime environment (optional)",
+      name: "Environment",
     }),
   );
   const cloud = await screen.findByRole("group", { name: "Cloud hosting" });
@@ -118,14 +151,28 @@ it("saves the environment choice together with other configuration edits", async
   await user.click(within(cloud).getByRole("option", { name: "Sandbox E2B" }));
   expect(
     screen.getByRole("combobox", {
-      name: "Default runtime environment (optional)",
+      name: "Environment",
     }).textContent,
   ).toContain("E2B");
+  expect(submit).not.toHaveBeenCalled();
+  cloudName = "Renamed in another tab";
+  await user.click(
+    within(screen.getByRole("region", { name: "Environment" })).getByRole(
+      "button",
+      { name: "Refresh" },
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Environment" }).textContent,
+    ).toContain(cloudName),
+  );
   expect(submit).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
       instructions: "Check the evidence. Keep the draft.",
+      model_settings: { max_tokens: 2048, temperature: 0.4 },
       default_environment_template_id: "envtpl_1234567890abcdef1234",
     }),
     '"agent-v1"',

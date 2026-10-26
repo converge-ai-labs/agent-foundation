@@ -30,6 +30,7 @@ from .repositories import (
     ThreadRepository,
 )
 from .usage import ThreadUsageRepository
+from .usage_analytics import UsageAnalyticsRepository
 from .voice import VoiceTranscriptRepository
 from .work import WorkRepository
 
@@ -61,6 +62,7 @@ class LocalStore:
         self.inspections = InspectionRepository(database.sessions)
         self.work = WorkRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
+        self.usage_analytics = UsageAnalyticsRepository(database.sessions)
         self.voice = VoiceTranscriptRepository(database.sessions, objects)
         self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)

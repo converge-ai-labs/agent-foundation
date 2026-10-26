@@ -105,6 +105,11 @@ beforeEach(() => {
             },
           ],
         });
+      if (url.pathname.endsWith("/tool-executions")) {
+        expect(url.pathname).toBe("/api/v1/threads/thr_1/tool-executions");
+        expect(url.searchParams.get("run_id")).toBe("run_2");
+        return Response.json({ items: [], next_cursor: null });
+      }
       if (url.pathname.endsWith("/lineage"))
         return Response.json({ items: [fixtureRun()], next_cursor: null });
       if (url.pathname.endsWith("/environments"))
@@ -439,6 +444,23 @@ it("reads an asynchronous child's result as the child's own reply", () => {
   // The child's terminal status is the quiet second line of the request.
   expect(screen.getAllByText("state.completed").length).toBe(2);
   expect(screen.queryByText(/child_run_id/)).toBeNull();
+});
+
+it("shows retained completion as a system notification, without user attribution or raw JSON", () => {
+  const run = fixtureRun({
+    trigger: "tool_result",
+    input: {
+      execution_id: "exec_background",
+      tool_name: "shell_exec",
+      status: "succeeded",
+    },
+  });
+  show({ run, timeline: fixtureTimeline({ run }) });
+  expect(screen.getByText("trigger.tool_result")).toBeTruthy();
+  expect(screen.getByText(/shell_exec/)).toBeTruthy();
+  expect(screen.getByText("exec_background")).toBeTruthy();
+  expect(screen.queryByText("User")).toBeNull();
+  expect(screen.queryByText(/execution_id/)).toBeNull();
 });
 
 it("reads a child thread's run as the task its parent delegated", () => {

@@ -594,6 +594,17 @@ function ProjectGroup({
                 <DotsThree />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
+                <MenuItem
+                  onClick={() =>
+                    navigate(
+                      group.projectId
+                        ? `/usage?project_id=${encodeURIComponent(group.projectId)}`
+                        : "/usage?projectless=true",
+                    )
+                  }
+                >
+                  View usage
+                </MenuItem>
                 {unreadCount > 0 && (
                   <MenuItem
                     disabled={markingRead}

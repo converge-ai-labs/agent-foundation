@@ -138,6 +138,23 @@ Envd 隐藏其配置、传输凭据、broker 运行时和启动账号的 `.a13n`
 
 每个受控会话创建时，会从设备总预算中预留已配置的会话预算。这种保守分配可能使可接纳的空闲会话数量低于 `max_sessions`；需要时提高对应设备总额。确认 worker 死亡后释放容量。如果无法证明暂存文件已清理，则其预留一直计费到守护进程销毁；重复清理失败不能绕过设备计量。
 
+## 验证沙箱镜像
+
+1. 安装上述前置条件。
+2. 预置执行账号。
+3. 以部署使用的 root 启动者运行公开 EIP 集成测试：
+
+```bash
+python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd
+
+# Additional native sudo, package, identity, file and cleanup checks.
+# Requires a disposable Debian/Ubuntu sandbox, sudo, ACL tools and UID/GID 1000
+# with a test-only NOPASSWD sudoers rule. This test changes the sandbox system.
+python3 crates/a13n-envd/tests/execution_linux.py /path/to/a13n-envd --controlled
+```
+
+测试使用生成的测试凭据请求 `httpbin.org`。`--http-host httpbingo.org` 可选择其他兼容端点。仅允许必要开发服务的镜像可用 `--http-host api.github.com`，通过 GitHub 媒体类型验证检查请求头替换和响应头脱敏，替代 Basic 身份验证和响应体回显。测试覆盖真实 HTTPS 身份验证、响应脱敏、策略更新、重放、文件系统访问、原生 Unix socket、容量复用和 broker 死亡清理。`--local-network-fixture` 还会在外层测试命名空间创建临时公共地址别名，用于 TCP/UDP 回显检查；仅在可丢弃的特权 Linux 沙箱中使用。
+
 ## 云平台验证记录
 
 以下结果记录于 **2026-09-22** 或之前。五个云平台使用同一个 Linux x86_64 二进制文件和生成的测试凭据。provider 凭据保留在会话之外。这些是在临时沙箱中的 Envd 运行时探测，不代表验证了 provider/Service 出站网络集成或所有厂商镜像。
@@ -186,20 +203,3 @@ sandbox = modal.Sandbox.create(
 测试镜像补装了缺失的网络工具和 CA 证书。临时启动探测使用 Vercel 账号接受的超时值，省略与 Daytona 默认快照不兼容的资源覆盖。Modal 的本地 SDK 客户端需要代理支持依赖，并为宿主 Python 安装显式配置 CA bundle 路径；这些是客户端连接设置，不是载荷代理配置。这些探测调整均未改动生产 provider 代码。
 
 所有临时云沙箱均已终止；原生 provider 实例已核对为不存在，五个 Modal 实例（包括连接诊断尝试）也全部确认停止。新一轮验证应一并记录日期、镜像、运行时、内核、启动身份和 fixture 覆盖范围，包括尚未重测的行为变更。某个镜像或旧 Envd 二进制文件通过，不构成整个平台的支持保证。
-
-## 验证沙箱镜像
-
-1. 安装上述前置条件。
-2. 预置执行账号。
-3. 以部署使用的 root 启动者运行公开 EIP 集成测试：
-
-```bash
-python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd
-
-# Additional native sudo, package, identity, file and cleanup checks.
-# Requires a disposable Debian/Ubuntu sandbox, sudo, ACL tools and UID/GID 1000
-# with a test-only NOPASSWD sudoers rule. This test changes the sandbox system.
-python3 crates/a13n-envd/tests/execution_linux.py /path/to/a13n-envd --controlled
-```
-
-测试使用生成的测试凭据请求 `httpbin.org`。`--http-host httpbingo.org` 可选择其他兼容端点。仅允许必要开发服务的镜像可用 `--http-host api.github.com`，通过 GitHub 媒体类型验证检查请求头替换和响应头脱敏，替代 Basic 身份验证和响应体回显。测试覆盖真实 HTTPS 身份验证、响应脱敏、策略更新、重放、文件系统访问、原生 Unix socket、容量复用和 broker 死亡清理。`--local-network-fixture` 还会在外层测试命名空间创建临时公共地址别名，用于 TCP/UDP 回显检查；仅在可丢弃的特权 Linux 沙箱中使用。

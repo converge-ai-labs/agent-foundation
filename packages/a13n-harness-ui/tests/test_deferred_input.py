@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from a13n_harness import DeferredToolResume, HarnessState
+from a13n_harness import DeferredToolCall, DeferredToolRequests, DeferredToolResume, HarnessState
 from a13n_harness_ui.storage.contracts import (
     CompactChildDisplay,
     StoredChildCheckpoint,
@@ -13,10 +13,11 @@ from a13n_harness_ui.storage.contracts import (
 from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from pydantic_ai import ToolApproved, ToolDenied, ToolFailed, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.tools import DeferredToolResults
 
 
 @pytest.mark.parametrize("child", [False, True])
+@pytest.mark.parametrize("forwarded", [False, True])
 @pytest.mark.parametrize(
     "value",
     [
@@ -26,11 +27,22 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
     ],
 )
 @pytest.mark.parametrize("approval", [ToolApproved(override_args={"value": 2}), ToolDenied("declined")])
-def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, value, approval):
+def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, value, approval, forwarded):
     calls = [ToolCallPart("lookup", {}, "call_external"), ToolCallPart("change", {"value": 1}, "call_local")]
-    state = HarnessState.new(thread_id="thread_test", message_history=[ModelResponse(parts=calls)])
+    models = (
+        [
+            ToolCallPart("call_tool", {"tool": call.tool_name, "arguments": call.args}, "model-" + call.tool_call_id)
+            for call in calls
+        ]
+        if forwarded
+        else calls
+    )
+    entries = [
+        DeferredToolCall(model, call, "tool/test/" + call.tool_name) for model, call in zip(models, calls, strict=True)
+    ]
+    state = HarnessState.new(thread_id="thread_test", message_history=[ModelResponse(parts=models)])
     accepted = DeferredToolResume(
-        DeferredToolRequests(calls=calls[:1], approvals=calls[1:]),
+        DeferredToolRequests(calls=entries[:1], approvals=entries[1:]),
         DeferredToolResults(
             calls={"call_external": value},
             approvals={"call_local": approval},
@@ -72,7 +84,7 @@ def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, v
         thread_id=state.thread_id,
         message_history=[
             *state.message_history,
-            ModelRequest(parts=[ToolReturnPart("lookup", "known", "call_external")]),
+            ModelRequest(parts=[ToolReturnPart(models[0].tool_name, "known", models[0].tool_call_id)]),
         ],
     )
     retained = StoredDeferredInput.capture(recovered, incorporated)
@@ -81,7 +93,7 @@ def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, v
         thread_id=state.thread_id,
         message_history=[
             *incorporated.message_history,
-            ModelRequest(parts=[ToolReturnPart("change", "closed", "call_local")]),
+            ModelRequest(parts=[ToolReturnPart(models[1].tool_name, "closed", models[1].tool_call_id)]),
         ],
     )
     assert StoredDeferredInput.capture(retained.recover(), completed) is None
@@ -91,8 +103,14 @@ def test_async_child_missing_responses_are_failures_not_successful_answers():
     from a13n_harness_ui.subagent_operator import _deny_deferred
 
     requests = DeferredToolRequests(
-        calls=[ToolCallPart("ask_user_question", {}, "question"), ToolCallPart("external", {}, "external")],
-        approvals=[ToolCallPart("change", {}, "approval")],
+        calls=[
+            DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+            for call in [ToolCallPart("ask_user_question", {}, "question"), ToolCallPart("external", {}, "external")]
+        ],
+        approvals=[
+            DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+            for call in [ToolCallPart("change", {}, "approval")]
+        ],
     )
     denied = _deny_deferred(requests)
     assert all(isinstance(result, ToolFailed) for result in denied.results.calls.values())

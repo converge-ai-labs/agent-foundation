@@ -113,6 +113,55 @@ async def test_checkpoint_control_is_serial_and_independent_of_public_consumptio
             assert all(cut.completed.done() for cut in cuts)
 
 
+async def test_checkpoint_writer_survives_repeated_native_preemption() -> None:
+    from a13n_harness import ToolExecutionRuntime
+
+    boundaries = Boundaries(lambda: {})
+    fold = DisplayFold("run", Tail(), attempt=1, page_items=20, page_bytes=65536)
+    boundaries.freeze_display = lambda _: fold.snapshot()
+    entered = [asyncio.Event() for _ in range(3)]
+    cuts: list[Staged] = []
+    calls = 0
+
+    async def commit(staged: Staged) -> None:
+        cuts.append(staged)
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        index = calls
+        calls += 1
+        entered[index].set()
+        if index < 2:
+            await asyncio.Event().wait()
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(boundaries,)
+    )
+    runtime = ToolExecutionRuntime()
+    try:
+        async with (
+            asyncio.timeout(3),
+            executable.stream("start", bindings=RunBindings.embedded(tool_execution=runtime)) as stream,
+        ):
+            async with boundaries.process(commit):
+
+                async def consume() -> None:
+                    async for _ in stream:
+                        pass
+
+                consumer = asyncio.create_task(consume())
+                for index in range(2):
+                    await entered[index].wait()
+                    await stream.steer(f"update {index}", immediate=True)
+                await consumer
+            assert stream.result is not None and stream.result.output_or_raise() == "done"
+        assert calls == 3 and len(cuts) == 3
+        assert all(cut.completed.done() and not cut.completed.cancelled() for cut in cuts)
+    finally:
+        await runtime.close()
+
+
 async def test_handoff_keeps_model_cut_when_tool_checkpoint_is_already_queued(
     service, scripted_model, runs_kit, monkeypatch
 ) -> None:

@@ -58,6 +58,14 @@ The App owns:
 
 It does not expose database sessions, storage paths as authority, native Models, credentials, Provider objects, Environment adapters, Harness contexts or results, Pydantic AI message objects, runtime task or lock objects, callbacks, or Python exceptions through a surface API.
 
+### Consumption Query
+
+The App exposes a detached consumption analytics view through instance-authenticated `GET /api/usage`. Guest links and agent tools do not expose this query. It follows [consumption analytics](03-local-storage-and-recovery.md#consumption-analytics) without changing the existing Thread usage endpoint.
+
+Required `start` and exclusive `end` select 1–366 UTC days. Optional `project_id`, `projectless`, `thread_id` (a root), and `model` filters intersect; `project_id` and `projectless=true` are mutually exclusive. `model` is the compact JSON encoding of the actual `[provider_name, model_name]` tuple, preserving nulls. `group_by` selects `project`, `thread`, or `model`; `order_by` selects descending `tokens` or `cost`, with stable identity tie-breaking and unknown-only cost groups last. `offset` is nonnegative; `limit` is 1–100, default 25. Invalid query shapes return validation errors.
+
+The response includes `as_of`, the selected range, observation coverage, summary, one bucket per UTC day, paginated groups and their full count. Project choices include current configured and retained historical identifiers. Root choices follow the Project filter, including roots without matching records. Actual-model choices follow date, Project, and root scope before the model filter. The response completes its read transaction before HTTP serialization and has no live subscription.
+
 ## App Lifetime
 
 One App lifetime:
@@ -310,6 +318,8 @@ Linked resume is permitted from a successful terminal execution whose exact sele
 
 All Thread, root-operation, child-execution, and presentation command results, query results, and stream items are strict, frozen, bounded, serializable values. A returned collection is immutable and every nested mutable payload is copied. Opaque digests or IDs can correlate a later command, but a surface never receives an immutable-object path, object kind, or storage read authority.
 
+Tool-name projections preserve the complete accepted name, including any registered group prefix. Thread details, decisions, and transcripts do not impose a smaller display-only length limit or truncate names. Client delivery keeps its existing declared-name projection; response correlation continues to use target call IDs.
+
 A root-Thread summary query accepts one Project selector: all root Threads, one exact Project ID, or unresolved Project references. The all selector includes every root Thread even when its current Project no longer resolves; an exact selector matches the current sticky Project ID; the unresolved selector matches Threads whose current Project ID is absent from the accepted generation. It also accepts an explicit archived selector and optional normalized search text. Search matches a Unicode-casefolded literal substring of Thread ID, explicit title, first-input excerpt, latest-input excerpt, or latest-reply excerpt; empty search is omission. Matching happens before keyset pagination across the entire selected scope, not just loaded rows. A query can also select an exact set of Project IDs for current-directory membership, including an empty set. It uses either one Project ID or a Project-ID set, never both. The default sort remains metadata update time; activity sort uses saved conversation activity, falling back to creation time for empty Threads. Cursor identity includes search, Project selection, archive selection, optional star membership, and sort. These selectors change presentation membership only and never mutate Thread metadata or configuration.
 
 Thread queries provide:
@@ -376,7 +386,7 @@ A review projection is either embedded in a deferred request or queried through 
 
 Thread title and archive state share a metadata head independent from sticky configuration. A metadata mutation supplies its exact expected metadata version and changes title, archive state, or both atomically. Archiving an active root Thread is rejected. Unarchiving is valid, and a title can be explicitly cleared. Child metadata is managed only through parent-scoped child operations.
 
-Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
+Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Typed Harness failures raised during root preparation retain these safe fields and include a diagnostic report reference; missing MCP environment references identify the variable and how to repair it without including credential values. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
 
 ### Configuration Sources and Defaults
 

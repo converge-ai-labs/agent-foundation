@@ -1202,9 +1202,9 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
         await environment.close()
 
 
-@pytest.mark.parametrize("native_search", [False, True])
+@pytest.mark.parametrize("explicit_config", [False, True])
 async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(
-    tmp_path: Path, native_search: bool
+    tmp_path: Path, explicit_config: bool
 ) -> None:
     path = _write_source(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
@@ -1218,7 +1218,7 @@ tool_search:
       mcp_servers: [mcp-docs]
       harness_plugins: [plugin-memory]
 """
-        + ("  config: {mode: native}\n" if native_search else "  config: {mode: proxy, max_results: 5}\n")
+        + ("  config: {mode: proxy, max_results: 5}\n" if explicit_config else "")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
@@ -1226,9 +1226,9 @@ tool_search:
     composition = resolver.resolve_run(source, selection)
     proxy = composition.root.tool_search
     assert proxy is not None
-    if not native_search:
+    if explicit_config:
         assert proxy.config.max_results == 5
-    assert (proxy.config.mode == "native") is native_search
+    assert proxy.config.mode == "proxy"
     payload = composition.model_dump_json()
     assert '"native_search"' not in payload
     assert type(composition).model_validate_json(payload).model_dump_json() == payload

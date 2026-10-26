@@ -31,6 +31,33 @@ def admit(runtime, operation, **kwargs):
     )
 
 
+async def test_reconciliation_skips_history_without_pending_deliveries(monkeypatch):
+    from a13n_harness._tool_execution import RunToolExecutions
+    from pydantic_ai.messages import ModelRequest
+
+    executions = RunToolExecutions()
+    runtime = ToolExecutionRuntime()
+    acknowledged = []
+
+    async def acknowledge(thread_id, execution_id):
+        acknowledged.append((thread_id, execution_id))
+
+    monkeypatch.setattr(runtime, "acknowledge_delivery", acknowledge)
+
+    class UnreadHistory(tuple):
+        def __iter__(self):
+            pytest.fail("Empty delivery reconciliation must not traverse history")
+
+    await executions.reconcile(runtime, "thread-a", UnreadHistory())
+    executions.deliveries.update({"call-a": "exec-a", "call-b": "exec-b"})
+    history = (ModelRequest(parts=[ToolReturnPart("lookup", {"answer": 42}, tool_call_id="call-a")]),)
+    await executions.reconcile(runtime, "thread-a", history)
+    await executions.reconcile(runtime, "thread-a", history)
+    assert acknowledged == [("thread-a", "exec-a")]
+    assert executions.deliveries == {"call-b": "exec-b"}
+    await runtime.close()
+
+
 async def test_admission_precedes_effect_and_fast_result_keeps_native_value():
     store = MemoryToolExecutionStore()
     completed = []
@@ -452,7 +479,6 @@ def tool_agent(operation, *, config, owned=True):
 @pytest.mark.parametrize("exhaust_retries", [False, True])
 async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaust_retries):
     from pydantic_ai import ModelRetry
-    from pydantic_ai.messages import RetryPromptPart
 
     calls = 0
     prompts = []
@@ -465,8 +491,18 @@ async def test_owned_tool_preserves_native_retry_prompt_and_budget(bound, exhaus
         return "sunny"
 
     async def model(messages, info):
-        retries = [part for message in messages for part in message.parts if isinstance(part, RetryPromptPart)]
-        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        retries = [
+            part
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.outcome == "retried"
+        ]
+        returns = [
+            part
+            for message in messages
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.outcome == "success"
+        ]
         if returns:
             assert returns[-1].content == "sunny"
             yield "done"
@@ -506,7 +542,6 @@ async def test_detached_retry_returns_original_correction_without_retrying_retri
     import json
 
     from pydantic_ai import ModelRetry
-    from pydantic_ai.messages import RetryPromptPart
 
     finish = asyncio.Event()
     calls = 0
@@ -528,7 +563,11 @@ async def test_detached_retry_returns_original_correction_without_retrying_retri
         assert stored.record.status == "failed"
 
         async def model(messages, info):
-            assert not any(isinstance(part, RetryPromptPart) for message in messages for part in message.parts)
+            assert not any(
+                isinstance(part, ToolReturnPart) and part.outcome == "retried"
+                for message in messages
+                for part in message.parts
+            )
             returns = [
                 part
                 for message in messages
@@ -927,3 +966,40 @@ async def test_early_close_observes_all_settled_returns_without_filling_public_q
         assert all(part.content["type"] == "tool_execution_receipt" for part in returns)
     finally:
         await runtime.close()
+
+
+async def test_definite_admission_rejection_releases_capacity_without_poisoning_runtime(monkeypatch):
+    from a13n_harness.tool_execution import ToolExecutionAdmissionRejected
+
+    store = MemoryToolExecutionStore()
+    original = store.save
+    saves, effects, releases = [], [], []
+
+    async def save(value):
+        saves.append(value.record.status)
+        if len(saves) == 1:
+            raise ToolExecutionAdmissionRejected("Origin stopped before admission.")
+        await original(value)
+
+    monkeypatch.setattr(store, "save", save)
+    runtime = ToolExecutionRuntime(store=store, max_active=1)
+
+    async def operation():
+        effects.append(True)
+        return 42
+
+    async def release():
+        releases.append(True)
+
+    rejected = admit(runtime, operation, release=release)
+    result = await runtime.wait("thread-a", rejected.execution_id)
+    assert result.record.status == "failed"
+    assert "Origin stopped" in result.record.error
+    assert saves == ["queued"] and effects == [] and releases == [True]
+    assert await store.get("thread-a", rejected.execution_id) is None
+    assert await runtime.result("other-thread", rejected.execution_id) is None
+    assert runtime.accepting and not runtime.active
+    accepted = admit(runtime, operation)
+    assert (await runtime.wait("thread-a", accepted.execution_id)).result == 42
+    assert effects == [True]
+    await runtime.close()

@@ -209,10 +209,12 @@ async def test_direct_download_settlement_and_google_sdk_validation(monkeypatch)
     from pydantic_ai.models.google import GoogleModel
     from pydantic_ai.providers.google import GoogleProvider
 
-    mock_download(
-        monkeypatch, lambda request: httpx2.Response(200, content=b"123456", headers={"content-type": "video/mp4"})
-    )
-    result = await read_url()
+    with monkeypatch.context() as download_patch:
+        mock_download(
+            download_patch,
+            lambda request: httpx2.Response(200, content=b"123456", headers={"content-type": "video/mp4"}),
+        )
+        result = await read_url()
     assert isinstance(result, ToolReturn) and result.content[0].data == b"123456"
     settled = _render_tool_return(
         await _apply_result_policy(result, ToolOutputPolicy(max_inline_bytes=256 * 1024, max_output_bytes=256 * 1024))

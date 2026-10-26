@@ -74,7 +74,9 @@ Some reads are bounded catalogues and return all their items with `next_cursor: 
 
 ### Bounded read representations
 
-Run lists/details, thread Runs, lineage, Agent revisions, Run configuration, inbox, display items/content, model catalog and trace reads accept `view=detailed|compact`. Omission keeps the original detailed response and behavior. HTTP owns these representations; MCP forwards the same body and defaults. New read routes require explicit MCP/platform admission and reuse the original business authorization. ETags and write preconditions do not change.
+Run details, Agent revisions, Run configuration, inbox, display items/content, model catalog and trace reads accept `view=detailed|compact`. Omission keeps the original detailed response and behavior. HTTP owns these representations; MCP forwards the same body and defaults. New read routes require explicit MCP/platform admission and reuse the original business authorization. ETags and write preconditions do not change.
+
+Run collections use the single metadata representation defined in [Runs](05-runs.md#reads), without a `view` parameter. Workspace, Thread and lineage discovery pages use the same whole-record response budget below, and input previews retain at most 200 Unicode code points. Thread pages additionally report their total, chronological position and both directional cursors. The page membership and counts share one database snapshot. `limit` is a maximum record count; the character budget can return fewer records, and callers continue with the returned cursor rather than assuming a full page.
 
 Compact collections default to ten records and stop at whole-record boundaries when the serialized body approaches 10,000 characters, reserving space toward a 12,000-character model-visible response target. This is a character budget, not a token count. Continuation resumes before every unreturned matching record. Individual summaries shorten only their text previews to fit; identity and state remain exact. Existing unfiltered detailed calls can still exceed that budget. Scoped detailed calls may refuse an oversized record with `payload_too_large`, directing callers to its section/fragment read.
 
@@ -303,6 +305,15 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/subscriptions/{subscription}/deliveries/{delivery}/redeliver` | POST               | [07](07-facts-and-delivery.md#lifecycle-webhooks) |
 
 ### Sessions, threads and runs
+
+Retained-execution list, detail and bounded-result queries are admitted to MCP under execution/read. Cancellation remains an HTTP command outside MCP.
+
+| Path                                                   | Methods | Owner                                     |
+| ------------------------------------------------------ | ------- | ----------------------------------------- |
+| `/threads/{thread}/tool-executions`                    | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}`        | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}/result` | GET     | [05](05-runs.md#retained-tool-executions) |
+| `/threads/{thread}/tool-executions/{execution}/cancel` | POST    | [05](05-runs.md#retained-tool-executions) |
 
 | Path                                  | Methods            | Owner                                             |
 | ------------------------------------- | ------------------ | ------------------------------------------------- |

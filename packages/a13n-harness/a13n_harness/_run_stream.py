@@ -609,6 +609,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             _storage=storage,
             _state_extensions=dict(self._previous_state.model_extra or {}),
             metadata=bindings.metadata,
+            request_context=bindings.request_context,
             _steering=SteeringBridge(
                 context_state,
                 run_id=self.run_id,
@@ -1244,7 +1245,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._tool_recovery.messages if self._tool_recovery is not None else self._initial_history
         )
         deferred_results = (
-            self._deferred_resume.results
+            self._deferred_resume.model_results()
             if self._deferred_resume is not None
             else self._tool_recovery.results
             if self._tool_recovery is not None
@@ -1542,7 +1543,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 _messages=messages,
                 _new_message_index=new_message_index,
             )
-        deferred = result.output
+        deferred = self._deferred_input.export(result.output)
         return HarnessRunResult(
             thread_id=self.thread_id,
             run_id=self.run_id,

@@ -140,11 +140,30 @@ class _CapabilityProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestContext:
+    """Detached business headers supplied by the Host, available only to trusted runtime code."""
+
+    headers: Mapping[str, str] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self) -> None:
+        headers: dict[str, str] = {}
+        for name, value in self.headers.items():
+            if not isinstance(name, str) or not isinstance(value, str):
+                raise TypeError("Request context headers must be strings")
+            name = name.lower()
+            if name in headers:
+                raise ValueError("Request context header names must be unique ignoring case")
+            headers[name] = value
+        object.__setattr__(self, "headers", MappingProxyType(headers))
+
+
+@dataclass(frozen=True, slots=True)
 class RunBindings:
     """Fresh trusted authority and optional advanced integrations supplied by the caller."""
 
     instance: AgentInstanceContext
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
+    request_context: RequestContext = field(default_factory=RequestContext, repr=False, kw_only=True)
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
@@ -184,6 +203,8 @@ class RunBindings:
             raise TypeError("RunBindings.codeact_state must be a CodeActStateOwner")
         if self.tool_execution is not None and not isinstance(self.tool_execution, ToolExecutionRuntime):
             raise TypeError("RunBindings.tool_execution must be a ToolExecutionRuntime")
+        if not isinstance(self.request_context, RequestContext):
+            raise TypeError("RunBindings.request_context must be a RequestContext")
         if not isinstance(self.configuration, RunConfiguration):
             raise TypeError("RunBindings.configuration must be a RunConfiguration")
         if not isinstance(self.deferred_tools_supported, bool):
@@ -231,6 +252,7 @@ class RunBindings:
         *,
         identity: AgentIdentityRef | None = None,
         configuration: RunConfiguration | None = None,
+        request_context: RequestContext | None = None,
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
@@ -262,6 +284,7 @@ class RunBindings:
                 agent_instance_id=instance_id,
             ),
             configuration=configuration or RunConfiguration(),
+            request_context=request_context or RequestContext(),
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
@@ -402,6 +425,7 @@ class AgentContext:
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
+    request_context: RequestContext = field(default_factory=RequestContext, repr=False)
     deferred_tools_supported: bool = True
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)

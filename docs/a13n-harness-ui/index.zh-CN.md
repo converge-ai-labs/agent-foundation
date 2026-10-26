@@ -16,7 +16,7 @@ cd your-repository
 a13n-harness-ui
 ```
 
-设置向导通过受支持的订阅或 API 密钥连接 Model，并让你选择执行权限。Full Control 使用 Host 账户，Sandbox 使用受支持的 Linux/macOS 隔离机制。Windows 的内置执行支持 Full Control。具体步骤见[设置](setup.md)，升级方法见[安装](installation.md)。
+设置向导通过受支持的订阅或 API 密钥连接 Model，并让你选择执行权限。Full Control 使用 Host 账户；Sandbox 在使用前检查[本地隔离要求](environments-and-projects.md#execution-permissions)。具体步骤见[设置](setup.md)，升级方法见[安装](installation.md)。
 
 试着发送第一条提示：
 

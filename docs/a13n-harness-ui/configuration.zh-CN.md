@@ -15,6 +15,7 @@ description: 根配置文件、加载优先级，以及修改何时生效。
 | 默认 Agent、Environment、插件或 MCP              | `a13n-harness-ui.yaml` → `defaults` | [默认选择](#default-resource-selections)                                 |
 | 主题和输出详细程度                               | `a13n-harness-ui.yaml` → `display`  | [显示设置](#display-settings)                                            |
 | 提问、CodeAct、内置子级                          | 根 `tools` 和 `subagents`           | [内置工具](#built-in-tools-and-subagents)                                |
+| 订阅账户和有序故障切换组                         | `subscription_groups/*.yaml`        | [账户与分组](models-and-authentication.md#account-store-locations)       |
 | 提供方、API 密钥引用、端点、推理、上下文         | `models/*.yaml`                     | [Model 字段](models-and-authentication.md#model-file-reference)          |
 | 指令、Capability、可见工具、子级                 | `agents/*.yaml`                     | [Agent 字段](agents-and-subagents.md#agent-file-reference)               |
 | 本地根目录和 Device 绑定                         | `projects/*.yaml`                   | [Project 字段](environments-and-projects.md#project-file-reference)      |
@@ -38,16 +39,17 @@ a13n-harness-ui config subagents --format json
 
 根文件所在目录还包含：
 
-| 路径                       | 用途                                            | 详细参考                                                               |
-| -------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------- |
-| `AGENTS.md`                | 可选的全局上下文指引                            | [指引](agents-and-subagents.md#instructions-and-guidance)              |
-| `models/*.yaml`            | 可复用 Model 和凭据引用                         | [Model](models-and-authentication.md#model-file-reference)             |
-| `agents/*.yaml`            | Agent 定义和子级清单                            | [创建 Agent](agents-and-subagents.md#create-an-agent-from-files)       |
-| `subagents/*.md`           | 轻量子级指令                                    | [Markdown subagent](agents-and-subagents.md#write-a-markdown-subagent) |
-| `projects/*.yaml`          | 本地根目录、Device 选择和创建默认值             | [Project](environments-and-projects.md#project-file-reference)         |
-| `devices/*.yaml`           | 可复用 Device 连接和凭据引用                    | [Device](environments-and-projects.md#add-device-bindings)             |
-| `extensions/*.yaml`        | Harness Plugin、Environment 配置、Run Extension | [扩展](extensions-and-mcp.md)                                          |
-| `mcp/*.yaml`、`mcp/*.json` | MCP 服务器定义                                  | [MCP](mcp.md)                                                          |
+| 路径                         | 用途                                            | 详细参考                                                               |
+| ---------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------- |
+| `AGENTS.md`                  | 可选的全局上下文指引                            | [指引](agents-and-subagents.md#instructions-and-guidance)              |
+| `subscription_groups/*.yaml` | 有序原生订阅账户和选择策略                      | [账户与分组](models-and-authentication.md#account-store-locations)     |
+| `models/*.yaml`              | 可复用 Model 和凭据引用                         | [Model](models-and-authentication.md#model-file-reference)             |
+| `agents/*.yaml`              | Agent 定义和子级清单                            | [创建 Agent](agents-and-subagents.md#create-an-agent-from-files)       |
+| `subagents/*.md`             | 轻量子级指令                                    | [Markdown subagent](agents-and-subagents.md#write-a-markdown-subagent) |
+| `projects/*.yaml`            | 本地根目录、Device 选择和创建默认值             | [Project](environments-and-projects.md#project-file-reference)         |
+| `devices/*.yaml`             | 可复用 Device 连接和凭据引用                    | [Device](environments-and-projects.md#add-device-bindings)             |
+| `extensions/*.yaml`          | Harness Plugin、Environment 配置、Run Extension | [扩展](extensions-and-mcp.md)                                          |
+| `mcp/*.yaml`、`mcp/*.json`   | MCP 服务器定义                                  | [MCP](mcp.md)                                                          |
 
 各目录只扫描一层，不递归或合并祖先目录。扩展名区分大小写：`subagents/` 接受 `.md`，但排除 `README.md`；其他目录接受 `.yaml`；`mcp/` 还接受 `.json`。每个文件定义一个资源，MCP 多服务器 `mcpServers` 格式除外。环境和 header 引用见 [MCP 配置](mcp.md)。
 
@@ -197,7 +199,7 @@ webui:
 
 ### Shell 审查快捷配置
 
-`security.shell_review.enable` 默认 `false`，不自动注入权限/审查器。设置向导通常初始化为 `true`。关闭表示不使用快捷配置，不表示移除显式 Agent 策略。
+`security.shell_review.enable` 默认 `false`，不自动注入权限/审查器。[设置向导](setup.md#advanced-setup)在选择 shell 审查后启用它；API 密钥设置需要显式选择审查模型。关闭表示不使用快捷配置，不表示移除显式 Agent 策略。
 
 开启后仅审查根及子级的 `environment.shell_exec`。显式快捷字段覆盖 Agent 的 shell 规则，其他规则保留。省略/null 字段先继承 Agent 审查设置，再用内置默认值。字段值、合并和故障处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。修改影响后续 Run 捕获。
 
@@ -347,7 +349,7 @@ tools:
 4. 根 YAML 默认值。
 5. 内置 Environment 回退。
 
-列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改；修改 Project 默认值不重新应用。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
+列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改。TUI 恢复会话时会重新应用当前 MCP 默认值（依次为 Project、Agent、全局）；其他选择和界面继续保留已保存的设置。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
 
 | 修改内容                                                          | 生效时间                                                     | 保持不变的内容                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
@@ -375,16 +377,16 @@ tools:
 
 改变数据根会打开独立状态，不迁移旧对话。相对启动路径从启动目录解析。Project 根目录在展开 `~` 后必须为绝对路径；缺失根目录可以保存，但可用前不能用于 Run。
 
-| 输入                                         | 用途                                                         |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| `A13N_HARNESS_UI_DATA_ROOT`                  | 选择本地数据存储                                             |
-| `authentication.env` 指定的变量              | 从 Harness UI 进程读取 Model API 密钥                        |
-| MCP `environment` / `headers` 引用指定的变量 | MCP 环境和请求值                                             |
-| `CODEX_HOME`                                 | 兼容 Codex 存储位置；默认 `~/.codex`                         |
-| `COPILOT_HOME`                               | 复用账户时使用的 Copilot CLI 存储位置；默认 `~/.copilot`     |
-| `GROK_AUTH_PATH`、`GROK_HOME`                | 兼容 Grok 文件存储位置                                       |
-| `GROK_AUTH`                                  | 可识别的 Grok 内联模式，不支持共享可写登录；应切换为文件存储 |
-| `COLORFGBG`                                  | 自动主题选择使用的被动终端元数据                             |
+| 输入                                         | 用途                                                     |
+| -------------------------------------------- | -------------------------------------------------------- |
+| `A13N_HARNESS_UI_DATA_ROOT`                  | 选择本地数据存储                                         |
+| `authentication.env` 指定的变量              | 从 Harness UI 进程读取 Model API 密钥                    |
+| MCP `environment` / `headers` 引用指定的变量 | MCP 环境和请求值                                         |
+| `CODEX_HOME`                                 | Codex 一次性迁移来源；默认 `~/.codex`                    |
+| `COPILOT_HOME`                               | 复用账户时使用的 Copilot CLI 存储位置；默认 `~/.copilot` |
+| `GROK_AUTH_PATH`、`GROK_HOME`                | Grok 一次性迁移来源                                      |
+| `GROK_AUTH`                                  | Grok 内联模式不导入；请使用原生登录                      |
+| `COLORFGBG`                                  | 自动主题选择使用的被动终端元数据                         |
 
 没有通用 `A13N_HARNESS_UI_*` 设置覆盖机制。`storage`、`envd_runtime` 和应用关闭超时是嵌入/运行时设置，**不是** 根 YAML 章节。Web 监听和身份验证选项是[进程本地 CLI 参数](webui.md)，不是资源配置。
 

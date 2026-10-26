@@ -63,9 +63,10 @@ class SpanReadPage(BaseModel):
 
 
 class SpanContentPage(BaseModel):
-    """A matching span's selected content, or a continuation to keep locating that span."""
+    """A matching span's selected content, or no items when the trace has no such span."""
 
     items: list[reads.TextRead]
+    # Always null: the span is selected directly. Kept so earlier clients that followed it still terminate.
     next_cursor: str | None
 
 

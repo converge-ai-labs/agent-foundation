@@ -17,6 +17,7 @@ const sectionFields = {
   toolsets: ["toolsets"],
   reviewer: ["reviewer"],
   environment: ["default_environment_template_id"],
+  execution: ["execution"],
 } as const;
 export type EditorSection = keyof typeof sectionFields | "advanced";
 /** Shown by no section and kept verbatim by a save. */
@@ -70,6 +71,7 @@ export function buildConfig(
     | "toolsets"
     | "reviewer"
     | "default_environment_template_id"
+    | "execution"
   >,
   advanced: string,
 ): AgentConfig {

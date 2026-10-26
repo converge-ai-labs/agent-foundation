@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ci-a13n-service.yml"
       - ".github/workflows/release-a13n-service.yml"
+      - ".github/service-test-durations.json"
       - "conftest.py"
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
@@ -29,6 +30,7 @@ on:
     paths:
       - ".github/workflows/ci-a13n-service.yml"
       - ".github/workflows/release-a13n-service.yml"
+      - ".github/service-test-durations.json"
       - "conftest.py"
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
@@ -87,6 +89,7 @@ jobs:
             tests:
               - '.github/workflows/ci-a13n-service.yml'
               - '.github/workflows/release-a13n-service.yml'
+              - '.github/service-test-durations.json'
               - 'conftest.py'
               - 'scripts/tests/test_ci_inputs.py'
               - 'dev/**'
@@ -114,6 +117,7 @@ jobs:
           import json
           import os
           from pathlib import Path
+          from statistics import median
 
           matrix = [{"name": "checks", "runner": "ubuntu-latest", "targets": ""}]
           if os.environ["TESTS_CHANGED"] == "true":
@@ -126,8 +130,20 @@ jobs:
                   and path not in {root / "test_environments_envd.py", root / "test_monitoring_collectors_live.py"}
                   and not path.is_relative_to(root / "environment_providers")
               )
-              for shard in range(2):
-                  targets = files[shard::2]
+              # Historical seconds are weights, never an allowlist. New files get the
+              # current suite's median; removed files' stale timings have no effect.
+              durations = json.loads(Path(".github/service-test-durations.json").read_text())
+              known = [durations[path] for path in files if path in durations]
+              fallback = median(known) if known else 1.0
+              weights = {path: durations.get(path, fallback) for path in files}
+              shards = [[], []]
+              totals = [0.0, 0.0]
+              for path in sorted(files, key=lambda path: (-weights[path], path)):
+                  shard = min(range(2), key=lambda index: (totals[index], len(shards[index]), index))
+                  shards[shard].append(path)
+                  totals[shard] += weights[path]
+              for shard, targets in enumerate(shards):
+                  print(f"Service shard {shard + 1}: {len(targets)} files, {totals[shard]:.1f} historical test-seconds")
                   assert targets, "Service test shards must not be empty"
                   matrix.append({
                       "name": f"tests-{shard + 1}",

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from a13n_harness import HarnessRunResult, HarnessState
+from a13n_harness import DeferredToolCall, DeferredToolRequests, HarnessRunResult, HarnessState
 from a13n_harness.usage import RunUsageSummary
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization
 from a13n_harness_ui.errors import RunCoordinationError
@@ -15,7 +15,6 @@ from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import ObjectKind, ObjectRef
 from a13n_harness_ui.surfaces import ExternalToolResult, RootOperationStatus, ThreadDeferredResponse
 from anyio import Event, create_task_group, fail_after
-from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
 
 from .test_root_run import capture
@@ -28,10 +27,16 @@ CONTINUATION = "1" * 64
 def suspended_outcome(*, seconds=120, selected=True):
     requests = DeferredToolRequests(
         calls=[
-            ToolCallPart("ask_user_question", {}, "question"),
-            ToolCallPart("external", {}, "external"),
+            DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+            for call in [
+                ToolCallPart("ask_user_question", {}, "question"),
+                ToolCallPart("external", {}, "external"),
+            ]
         ],
-        approvals=[ToolCallPart("shell_exec", {}, "approval")],
+        approvals=[
+            DeferredToolCall(call, call, "tool/test/" + call.tool_name)
+            for call in [ToolCallPart("shell_exec", {}, "approval")]
+        ],
     )
     return RootRunOutcome(
         result=HarnessRunResult(

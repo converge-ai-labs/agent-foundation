@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from a13n_stream_protocol.display import Item, ItemRef, StreamPosition
 
     from a13n_harness_ui.goal import GoalView
+    from a13n_harness_ui.model_accounts.models import MainAccountSelection
     from a13n_harness_ui.storage.usage import UsageTotals
     from a13n_harness_ui.surfaces import NotePage, StructuredQuestionRequestView
 
@@ -69,6 +70,7 @@ class Status:
     state: str = "starting"
     execution_status: str | None = None
     goal: GoalView | None = None
+    main_account: MainAccountSelection | None = None
     agent: str = "not configured"
     model: str = "not configured"
     thinking: str = "default"
@@ -200,7 +202,9 @@ class Status:
         token_count = "--"
         if total is not None:
             token_count = (
-                f"{total / 1_000_000:.1f}M"
+                f"{total / 1_000_000_000:.1f}B"
+                if total >= 1_000_000_000
+                else f"{total / 1_000_000:.1f}M"
                 if total >= 1_000_000
                 else f"{total / 1_000:.1f}K"
                 if total >= 1000
@@ -222,6 +226,7 @@ class Status:
         fields = [
             state,
             *((goal_label,) if goal_label is not None else ()),
+            *((f"MAIN {self.main_account.account_name}",) if self.main_account else ()),
             *((speed_label,) if not compact and speed_label is not None else ()),
             *(("Pro",) if not compact and self.reasoning_mode == "pro" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
@@ -992,7 +997,7 @@ class StreamRenderer:
             fields = part if isinstance(part, dict) else {}
             native_state = "returned"
             native_content = fields.get("content")
-            if fields.get("part_kind") == "retry-prompt":
+            if fields.get("part_kind") == "retry-prompt" or fields.get("outcome") == "retried":
                 native_state = "retry"
             elif fields.get("outcome") in ("failed", "denied"):
                 native_state = str(fields["outcome"])

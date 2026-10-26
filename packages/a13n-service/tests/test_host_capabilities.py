@@ -59,8 +59,9 @@ from a13n_service.resources.skills.service import create_skill
 from a13n_service.resources.uploads.service import stage
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.assets import AssetsCapability
-from a13n_service.runs.attempts import AttemptControl, Lease
+from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.calls import CallCheck
+from a13n_service.runs.claim import claim
 from a13n_service.runs.skills import resolve_skills
 from a13n_service.runs.skills import skills_capability as build_skills
 from a13n_service.runs.tables import RunRow
@@ -445,23 +446,20 @@ async def test_builtin_and_pinned_skills_share_catalog_and_standard_file_tools(r
 # Assets.
 
 
-async def test_publish_asset_attributes_the_run_and_bounds_the_file(runtime, tenant, tmp_path) -> None:  # type: ignore[no-untyped-def]
+async def test_publish_asset_attributes_the_run_and_bounds_the_file(
+    service, scripted_model, runs_kit, tmp_path
+) -> None:
+    runtime, tenant = service.runtime, service.tenant
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await runs_kit.start_thread(service, agent, "publish a report")
+    (lease,) = await claim(runtime, worker_id="asset-test", worker_build="test", limit=1)
     workspace = tmp_path / ENVIRONMENT
     workspace.mkdir()
     (workspace / "report.txt").write_bytes(b"the report")
     (workspace / "large.bin").write_bytes(b"x" * 65537)
     actor = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["builder"]),))
     scope = WorkspaceScope(tenant.organization_id, tenant.workspace_id)
-    lease = Lease(
-        run_id="run_000000000000000000000000000000",
-        attempt_id="rat_000000000000000000000000000000",
-        thread_id="thr_x",
-        organization_id=tenant.organization_id,
-        workspace_id=tenant.workspace_id,
-        number=1,
-        worker_id="worker",
-        token="token",
-    )
 
     async def publish(runtime: Any, path: str, *, verbs: frozenset[Any] | None = None) -> Any:
         authority = execution_authority(actor, scope)

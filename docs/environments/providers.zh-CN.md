@@ -8,56 +8,6 @@ description: 注册 provider 插件，并配置每个内置 provider 的运行�
 
 简要比较见[选择后端](index.md#choose-a-backend)。本页介绍目录、扩展注册和内置运行时要求。
 
-## Provider 目录与插件
-
-`ProviderCatalog` 是不可变的显式允许列表，由全部五个 provider 领域共用：Model、Web、Connector、Memory 和 Environment。内置环境定义按精确类型选择，已安装插件提供自己的定义：
-
-```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.plugins import load_provider_plugins
-
-plugins = load_provider_plugins(("acme",))
-catalog = ProviderCatalog(
-    (
-        *select_builtin_environment_providers(("direct_local", "docker")),
-        *(item for plugin in plugins for item in plugin.manifest.environment),
-    )
-)
-definition = catalog.require("acme_sandbox")
-```
-
-`load_provider_plugins()` 只导入明确列出的入口名称；选择为空时不扫描已安装元数据。它拒绝重复、格式错误、缺失或含糊的名称，并报告每个已加载插件的分发包名称、版本和导入目标作为来源信息。目录随后拒绝重复 provider 类型，因此插件不能覆盖内置定义。
-
-显式选择插件，修改插件代码后重启 Host。
-
-已安装分发包在共享入口组中发布一个 manifest：
-
-```toml
-[project.entry-points."a13n_harness.providers.plugins"]
-acme = "acme_agent_environment:manifest"
-```
-
-```python
-from a13n_harness.providers.plugins import ProviderManifest
-
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
-```
-
-`EnvironmentProviderDefinition` 应当：
-
-1. 声明稳定的 `type`、显示名称和可选 HTTPS 设置链接；
-2. 分别声明账号配置、凭据和目标配置模型；
-3. 只声明执行元数据；Service 组合独立的 `EnvironmentManagementDefinition` 提供管理；
-4. 通过纯 `connector_factory` 返回固定目标的 `EnvironmentConnector`；
-5. 每次 `open()` 返回新的已就绪 `EnvironmentExecution`，包含独立的 `execution_id` 和操作对象；
-6. 验证固定目标引用，不修改权威状态；
-7. 由 Service 或嵌入方 Host 管理目标。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
-
-可运行的 [provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)展示单个已安装 manifest 使用相同的目录、验证、构建和 Harness 路径。共享编写契约见[插件与扩展](../a13n-harness/plugins.md#provider-plugins)。
-
-完整 Host 侧内置生命周期，包括 Docker 状态重新进入和显式销毁，见[内置 provider 示例](examples.md)。
-
 ## 内置 provider
 
 执行能力分为 Native 基础路径和 Envd 通用路径，资源管理按供应商保留独立实现。完整模型见[选择后端](index.md#choose-a-backend)。
@@ -66,17 +16,17 @@ manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
 | ------------- | ---------------- | ---------------------------------------------------- | --------------------- |
 | Native        | `direct_local`   | 本地 Host 上的 Files & Shell                         | Host 管理的已有目录   |
 | Native / Envd | `docker`         | Native Files & Shell；显式选择 HTTP EIP 使用通用执行 | Docker provider       |
-| Native        | `e2b`            | 远程沙箱中的 Files & Shell                           | E2B provider          |
+| Native / Envd | `e2b`            | Native Files & Shell；显式选择 HTTP EIP              | E2B provider          |
 | Envd          | `local_envd`     | 通过 stdio 连接本地守护进程                          | Host 管理的守护进程   |
 | Envd          | `daytona`        | 通过 EIP 连接兼容的沙箱守护进程                      | Daytona provider      |
 | Envd          | `modal`          | 通过 EIP 连接兼容的沙箱守护进程                      | Modal provider        |
-| Envd          | `vercel`         | 通过 EIP 连接兼容的沙箱守护进程                      | Vercel provider       |
-| Envd          | `sprites`        | 通过 EIP 连接兼容的沙箱守护进程                      | Sprites provider      |
-| Envd          | `runloop`        | 通过 EIP 连接兼容的沙箱守护进程                      | Runloop provider      |
+| Native / Envd | `vercel`         | Native Files & Shell；显式选择 HTTP EIP              | Vercel provider       |
+| Native / Envd | `sprites`        | Native Files & Shell；私有隧道 EIP                   | Sprites provider      |
+| Native        | `runloop`        | 厂商 Files & Shell；尚未接入 EIP                     | Runloop provider      |
 | Envd          | `http_envd`      | HTTP(S) EIP                                          | 仅连接                |
 | Envd          | `websocket_envd` | 反向 WebSocket EIP                                   | 仅连接；Host 管理入口 |
 
-Native Local、Docker、E2B 直接提供 Files & Shell。Daytona、Modal、Vercel、Sprites、Runloop 的通用执行统一使用 Envd/EIP；各自的资源管理 provider 继续使用厂商 API。Docker 保留显式的 Native 和 Envd 路径。
+Daytona 和 Modal 使用 Envd/EIP。Docker、E2B、Vercel 和 Sprites 提供显式的 Native 与 Envd 路径。Sprites 由 Service 在每个新沙箱内安装桌面。Runloop 当前仅通过厂商接口提供 Files & Shell，尚未接入 Envd、Computer 和人工桌面访问。本地执行是独立路径。
 
 部署 Envd 前，检查[沙箱验证记录](../a13n-envd/egress.md#cloud-platform-validation-record)中的启动身份、出站网络覆盖和平台限制。执行能力由守护进程协商结果与 Host 策略决定。
 
@@ -131,20 +81,20 @@ Native Docker 提供 Files & Shell，包括进程控制和输出观察。端口�
 
 ## 云 provider
 
-E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。E2B 提供 Native Files & Shell；其余五种使用通用 Envd 执行路径。E2B 目标需要进阶能力时，也通过兼容的 Envd 连接使用这些能力。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
+E2B、Daytona、Modal、Vercel Sandbox、Fly.io Sprites 和 Runloop 各自保留资源管理 provider。Daytona 和 Modal 使用 Envd。E2B、Vercel 和 Sprites 保留 Native Files & Shell，并通过显式的 Envd 路径提供进阶能力。Runloop 当前仅提供 Native Files & Shell。Service 的 E2B 账号通过域名选择 E2B 云或其他兼容服务，见 [Service 环境](../a13n-service/environments.md#providers)。
 
-| Provider       | 后端设置                                                              | 凭据字段                         | 常用目标配置设置                                                               |
-| -------------- | --------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
-| E2B            | `domain`、可选 `api_url`                                              | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`         |
-| Daytona        | `organization_id`、`target`（默认 `us`）                              | `api_key`                        | `snapshot`，决定沙箱资源                                                       |
-| Modal          | `workspace`、已有已部署 `app_name`、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | 兼容 Envd 的必填 `image`、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                               | `api_key`（Vercel access token） | `runtime`（默认 `python3.13`）、`vcpus`、`timeout_seconds`                     |
-| Fly.io Sprites | `organization`                                                        | `api_key`（Sprites token）       | `region`                                                                       |
-| Runloop        | `organization`                                                        | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                        |
+| Provider       | 后端设置                                                                                 | 凭据字段                         | 常用目标配置设置                                                                                               |
+| -------------- | ---------------------------------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| E2B            | `domain`、可选 `api_url`                                                                 | `api_key`                        | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                         |
+| Daytona        | `organization_id`、`target`（默认 `us`）                                                 | `api_key`                        | `snapshot`，决定沙箱资源                                                                                       |
+| Modal          | 可选 `workspace`、`app_name`（默认 `a13n-sandboxes`）、`environment_name`（默认 `main`） | `token_id`, `token_secret`       | Service 自动桌面 `image="auto"` 或兼容 Envd 的自定义镜像、`desktop`、`cpu`、`memory`（MiB）、`timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                                  | `api_key`（Vercel access token） | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                      |
+| Fly.io Sprites | `organization`                                                                           | `api_key`（Sprites token）       | `region`                                                                                                       |
+| Runloop        | `organization`                                                                           | `api_key`                        | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                        |
 
-使用拥有所提供凭据的组织、团队或 Modal `workspace`；这些字段描述后端命名空间，不授予权限。凭据绝不属于目标配置或重连状态。
+组织和团队配置描述后端命名空间，不授予权限。Modal 账号由凭据决定，可选的 `workspace` 字段仅作说明。凭据绝不属于目标配置或重连状态。
 
-Daytona、Modal、Vercel、Sprites 和 Runloop 的管理 provider 负责准备目标、兼容的 Envd 运行时和授权连接。镜像和快照可预装守护进程。文件路径、命令、进程和输出语义由 EIP 提供；OS sandbox 和 Egress 按 Host 选择的策略执行。能力以实际协商结果为准。现有目标引用与配置的迁移必须显式进行，不能将旧的原生执行配置静默解释为 Envd 配置。
+Daytona、Modal 和显式选择 Envd 路径的 Vercel、Sprites 管理 provider 负责准备目标、兼容的 Envd 运行时和授权连接。Runloop 尚未实现 Envd 准备流程。镜像和快照可预装守护进程。文件路径、命令、进程和输出语义由 EIP 提供；OS sandbox 和 Egress 按 Host 选择的策略执行。能力以实际协商结果为准。现有目标引用与配置的迁移必须显式进行，不能将旧的原生执行配置静默解释为 Envd 配置。
 
 ### 重连与生命周期
 
@@ -221,7 +171,11 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 
 ### E2B 桌面准备 {#e2b-desktop-preparation}
 
-E2B 默认使用 `execution="native"` 提供 Files & Shell，无需 Envd。使用 Computer 时选择 `execution="envd_http"` 和 `desktop=true`，并提供预装 Envd 与桌面组件的自建模板；官方 `desktop` 模板不包含 `a13n-envd`。
+E2B 默认使用 `execution="native"` 提供 Files & Shell，无需 Envd。在 Console 选择已有 E2B 连接，勾选**桌面环境**即可。默认的**自动桌面**会在首次创建环境时构建私有模板，后续创建复用；无需本地准备二进制或手动构建。API Key 需要同时拥有模板构建和沙箱权限，首次创建耗时较长。官方 E2B `desktop` 模板本身不包含 `a13n-envd`。
+
+自动构建固定基础镜像摘要、官方 Envd 版本和启动文件校验和。复用按工作区、连接、后端、凭据版本和构建清单隔离；更新凭据或构建清单后，新实例准备新模板，已有实例保持原模板。构建失败会保留目标记录，并在核验归属后清理；成功的私有模板保留在 E2B 账户中供后续使用。
+
+需要自行维护模板时，可切换到**自定义模板**，使用下面的方式。
 
 [模板构建脚本](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py)打包兼容的 Linux amd64 Envd 二进制、公共桌面启动器、Noto 中文字体、Chromium 和桌面访问 supervisor。在源码检出中运行，先安全配置 `E2B_API_KEY`：
 
@@ -231,21 +185,25 @@ uv sync --locked
 uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-在 Console 填写模板名称或 ID。Service 创建沙箱时启动预装组件，为每个实例生成独立凭据，并通过 E2B 的 HTTPS 端口路由连接，无需另建 Envd 账号或填写公开 bearer URL。此模式下文件、Shell、Computer 操作全部走 EIP，工作目录为 `/workspace`；Native 的用户、根目录和 helper 限制仅用于 Native 路径。连接已有目标不会启动或修复组件，daemon 不可用或方法不兼容会明确报错。
+自定义构建后，在 Console 填写模板名称或 ID。两种方式下，Service 创建沙箱时启动预装组件，为每个实例生成独立凭据，并通过 E2B 的 HTTPS 端口路由连接，无需另建 Envd 账号或填写公开 bearer URL。此模式下文件、Shell、Computer 操作全部走 EIP，工作目录为 `/workspace`；Native 的用户、根目录和 helper 限制仅用于 Native 路径。连接已有目标不会启动或修复组件，daemon 不可用或方法不兼容会明确报错。
 
-需要查看和人工接管时启用 `desktop_assistance=true`。Agent 的 Computer 工具和挂载权限仍单独配置。Supervisor 执行连接授权与撤销，Service 协调安全暂停和恢复。输入、坐标转换和截图由 Envd 统一实现。目前 Linux X11 后端支持物理按键，但不支持 Unicode 文字输入，不会回退到 E2B Desktop SDK。见 [Envd Computer use](../a13n-envd/computer-use.md)。
+自动桌面默认启用 `desktop_assistance=true`；自定义模板需要查看和人工接管时，须显式启用。Agent 的 Computer 工具和挂载权限仍单独配置。Supervisor 执行连接授权与撤销，Service 协调安全暂停和恢复。输入、坐标转换和截图由 Envd 统一实现。目前 Linux X11 后端支持物理按键，但不支持 Unicode 文字输入，不会回退到 E2B Desktop SDK。见 [Envd Computer use](../a13n-envd/computer-use.md)。
 
 ### Daytona
 
 Daytona 的 Agent 文件、Shell、进程、端口和 Computer 操作全部通过 Envd/EIP 执行。Provider 保留沙箱创建、检查、停止／启动、删除和私有连接配置。工作目录为 `/workspace`，绝对文件路径指向沙箱文件系统。停止／启动保留文件，不保证桌面进程或旧截图观察仍有效。停止前需确认自动删除已禁用；删除等待目标最终销毁。
 
-无桌面和桌面环境都需要预装兼容 Envd 的自定义 snapshot。在本仓库使用 Linux amd64 二进制构建，并通过私有环境提供具有 snapshot 构建权限的 `DAYTONA_API_KEY`：
+在 Service / Console 填入 Daytona API Key，再勾选桌面即可。系统从 Key 识别组织；`organization_id` 是可选的账号约束，默认区域为 `us`。保存模板不会构建；首次创建自动构建包含 Envd、桌面依赖和人工接管组件的私有快照，后续复用记录的快照 ID。无需下载本地二进制或运行脚本。Key 需要 Sandbox 操作及 Snapshot 读写、删除权限。
+
+Console 会提示首次构建可能耗时数分钟，展示真实阶段和已等待时间；离开页面后后台继续。回到环境实例即可查看就绪桌面，确认失败后可修正原因并重试。自动快照使用 2 CPU、4 GiB 内存和 10 GiB 磁盘。复用按工作区、Provider、后端、凭据版本及构建清单版本隔离，每次核验归属、身份和构建内容。失败构建须通过校验后清理；提交结果不确定时只核对原提交，不盲目重复构建。就绪快照作为可复用资源保留，停止或删除实例不会删除快照。
+
+自定义快照、无桌面环境或仅有沙箱权限的运行凭据仍可使用原有方式。在本仓库使用 Linux amd64 二进制构建，并通过私有环境提供具有 snapshot 构建权限的 `DAYTONA_API_KEY`：
 
 ```bash
 uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-仅需文件和 Shell 时使用 `{"snapshot": "my-envd"}`；需要 Computer 和人工操作时使用 `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}`。Snapshot 启动 Envd，并按配置启动共用的 X11 桌面和访问 supervisor。Service 在创建／启动后检查 EIP 就绪状态。连接或授权访问不会安装、重启或修复服务。运行沙箱的 Key 不需要 snapshot 构建权限。
+仅需文件和 Shell 时使用 `{"snapshot": "my-envd"}`；需要 Computer 和人工操作时使用 `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}`。Snapshot 启动 Envd，并按配置启动共用的 X11 桌面和访问 supervisor。Service 在创建／启动后检查 EIP 就绪状态。连接或授权访问不会安装、重启或修复服务。仅使用自定义快照的运行 Key 不需要 snapshot 构建权限。
 
 Agent 的 EIP 操作通过私有 HTTP 端口 8888。Daytona 代理认证与客体 Envd 凭据独立，只保留在内存中；Host 根据部署和 Run 策略校验发现的地址，不会回退到原生执行。Agent Computer 工具和挂载权限需单独开启。Snapshot 预装中文字体；当前 Envd X11 输入支持物理按键，但不支持直接输入文字，包括中文和多行文字。
 
@@ -257,7 +215,13 @@ Agent 的 EIP 操作通过私有 HTTP 端口 8888。Daytona 代理认证与客�
 
 ### Modal
 
-必须显式提供兼容 Envd 的 `image`，可以是镜像仓库地址或同一账号的 Modal 镜像 ID（`im-...`）。使用已部署的现有 App。Agent 文件、Shell、进程和 Computer 操作通过 Envd/EIP 执行，默认工作目录为 `/workspace`，执行用户 UID/GID 为 1000。旧的纯 Python 镜像和 `root`、`python` 等原生配置需要迁移并创建新环境。
+在 Service / Console 中，只需配置 Modal Token ID 和 Token Secret，再勾选桌面。连接配置可留空：默认使用 `main` 环境中的 `a13n-sandboxes` App，首次创建时若不存在则自动创建。`workspace` 仅为可选说明，账号由凭据决定。保存模板不会触发构建。
+
+桌面配方省略 `image` 时使用 `auto`：首次创建从固定版本和校验和的公开文件构建 Envd、桌面与人工接管组件，后续复用已记录的镜像 ID。无需本地下载二进制或运行构建脚本。Console 提示首次可能耗时数分钟，展示真实阶段与等待时间；离开页面后后台继续，就绪后可查看桌面，确认失败后可修正凭据再重试。自动桌面默认 2 CPU、4096 MiB、3600 秒及人工协助开启，可显式修改。
+
+构建记录按工作区、连接、凭据版本及配方隔离，复用仍验证当前凭据的镜像访问权。超时继续等待相同内容的构建，不新建临时沙箱。可复用镜像与 App 保留；分配出的沙箱仍执行原有归属校验和异常清理。
+
+自定义镜像和无桌面环境仍需显式提供兼容 Envd 的 `image`，使用已有 App。Agent 操作通过 Envd/EIP 执行，工作目录 `/workspace`，UID/GID 为 1000。下面脚本是可选的自定义镜像构建方式：
 
 运行以下构建脚本前，使用 `modal token new` 登录，并准备兼容的 Linux amd64 Envd 二进制。脚本只构建镜像，不写入运行时凭据：
 
@@ -269,7 +233,13 @@ uv run --locked python examples/environment-provider/modal_desktop_image.py \
 配方使用输出的镜像 ID：
 
 ```json
-{"image": "im-yourImageId", "desktop": true, "desktop_assistance": true, "cpu": 2, "memory": 4096}
+{
+  "image": "im-yourImageId",
+  "desktop": true,
+  "desktop_assistance": true,
+  "cpu": 2,
+  "memory": 4096
+}
 ```
 
 `desktop` 要求创建和恢复时验证桌面可观察且可输入。`desktop_assistance` 是 Service 的额外开关，要求桌面访问 supervisor；它通过独立的 6081 TLS 通道提供只读查看、独占控制、撤销和归还。8888 TLS 通道承载 Envd，使用独立的客体令牌；浏览器不接收 Modal 或 Envd 凭据。Agent Computer 工具和挂载权限仍需单独开启。
@@ -282,11 +252,38 @@ Service 在进程内有界缓存 Modal Client 和 Sandbox，用于桌面请求�
 
 ### Vercel Sandbox
 
-默认运行时：`python3.13`；根目录：`/vercel/sandbox`。命名持久沙箱使用原生停止/恢复。目标身份包含原生创建时间；仅新运行会话不会替换持久文件系统身份。删除还会请求原生异步清理孤立快照。
+Vercel 默认使用 `execution="native"`，保留已有 Files & Shell 环境。Computer use 需要 `execution="envd_http"`、运维构建的 `snapshot` 和 `desktop=true`。人工访问还需单独开启 Service 的 `desktop_assistance=true`。
+
+在当前源码中使用兼容的 Linux amd64 Envd 二进制构建快照，并通过安全环境变量配置 `VERCEL_TOKEN`、`VERCEL_TEAM_ID` 和 `VERCEL_PROJECT_ID`：
+
+```sh
+uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py --binary /path/to/linux-amd64/a13n-envd
+```
+
+构建脚本创建临时计费沙箱，安装桌面依赖和 Google Chrome，上传指定二进制与共享启动脚本，再保存不含运行中守护进程或 guest 凭据的快照。它删除构建沙箱，保留快照供后续使用。
+
+本机上传较慢时，可用 `--archive-url` 指定兼容的官方 Linux amd64 发布压缩包，并用 `--archive-sha256` 提供已核实的 `SHA256SUMS` 校验值，替代 `--binary`。沙箱下载后先校验哈希，再仅提取 `a13n-envd`。
+
+```json
+{
+  "execution": "envd_http",
+  "snapshot": "snap_yourSnapshot",
+  "desktop": true,
+  "desktop_assistance": true,
+  "vcpus": 2,
+  "timeout_seconds": 1800
+}
+```
+
+Envd 使用 `/workspace` 和 UID/GID 1001；原生执行仍使用 `/vercel/sandbox`。创建和显式恢复启动预装组件，并检查 EIP 与 Computer 就绪状态。连接和访问授权不会安装、修复或恢复桌面。8888 端口承载认证后的 EIP；6081 端口承载可撤销桌面访问。浏览器仅收到短期 supervisor 凭据，不会收到 Vercel access token 或 Envd guest token。Service 校验所有权、原生身份、当前 session 和端点策略。停止保留文件；恢复会重建桌面进程，旧截图引用与授权失效。
+
+Runloop 仍通过厂商命令接口提供 Files & Shell。历史独立 Envd 运行时探测不能证明当前 Provider 或 Console 已完成接入。
 
 ### Fly.io Sprites
 
 默认根目录：`/home/sprite`；Python：客体 PATH 上的 `python3`。[Sprites 环境指南](https://docs.sprites.dev/working-with-sprites/)介绍可写 home 和预装工具。原生自动休眠保留磁盘；不支持显式停止。销毁等待确认不存在。
+
+需要 Computer Use 和人工接管时，Service 可[在每个新 Sprite 内自动安装桌面](../a13n-service/environments.md#automatic-sprites-desktops)。Harness 随后以 `execution="envd_http"` 连接已准备的目标；原生执行方式保持不变。
 
 ### Runloop
 
@@ -325,3 +322,53 @@ A13N_TEST_CLOUD_PROVIDERS=daytona make test \
 原生 API 参考：[E2B](https://e2b.dev/docs)、[Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/)、[Modal 快照](https://modal.com/docs/guide/sandbox-snapshots)、[Vercel Sandbox SDK](https://github.com/vercel/sandbox)、[Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/) 和 [Runloop 异步 Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html)。
 
 Docker 模板可选择 `execution: envd_http`，并用 `desktop: true` 要求桌面就绪。容器生命周期仍使用 `docker_host`，HTTP EIP 则需单独配置可达主机和端口发布策略。启动、权限和重启行为见[桌面配置说明](../a13n-envd/sandbox.md)。
+
+## Provider 目录与插件
+
+`ProviderCatalog` 是不可变的显式允许列表，由全部五个 provider 领域共用：Model、Web、Connector、Memory 和 Environment。内置环境定义按精确类型选择，已安装插件提供自己的定义：
+
+```python
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.plugins import load_provider_plugins
+
+plugins = load_provider_plugins(("acme",))
+catalog = ProviderCatalog(
+    (
+        *select_builtin_environment_providers(("direct_local", "docker")),
+        *(item for plugin in plugins for item in plugin.manifest.environment),
+    )
+)
+definition = catalog.require("acme_sandbox")
+```
+
+`load_provider_plugins()` 只导入明确列出的入口名称；选择为空时不扫描已安装元数据。它拒绝重复、格式错误、缺失或含糊的名称，并报告每个已加载插件的分发包名称、版本和导入目标作为来源信息。目录随后拒绝重复 provider 类型，因此插件不能覆盖内置定义。
+
+显式选择插件，修改插件代码后重启 Host。
+
+已安装分发包在共享入口组中发布一个 manifest：
+
+```toml
+[project.entry-points."a13n_harness.providers.plugins"]
+acme = "acme_agent_environment:manifest"
+```
+
+```python
+from a13n_harness.providers.plugins import ProviderManifest
+
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+```
+
+`EnvironmentProviderDefinition` 应当：
+
+1. 声明稳定的 `type`、显示名称和可选 HTTPS 设置链接；
+2. 分别声明账号配置、凭据和目标配置模型；
+3. 只声明执行元数据；Service 组合独立的 `EnvironmentManagementDefinition` 提供管理；
+4. 通过纯 `connector_factory` 返回固定目标的 `EnvironmentConnector`，接受每次都会传入的 `session_recovery` 关键字（包括 `None`）；Native 接受它但不生成会话提示；
+5. 每次 `open()` 返回新的已就绪 `EnvironmentExecution`，包含独立的 `execution_id` 和操作对象；
+6. 验证固定目标引用，不修改权威状态；
+7. 由 Service 或嵌入方 Host 管理目标。打开、检查就绪和关闭执行不创建、启动、替换、续期或销毁目标。
+
+可运行的 [provider 插件示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)展示单个已安装 manifest 使用相同的目录、验证、构建和 Harness 路径。共享编写契约见[插件与扩展](../a13n-harness/plugins.md#provider-plugins)。
+
+完整 Host 侧内置生命周期，包括 Docker 状态重新进入和显式销毁，见[内置 provider 示例](examples.md)。

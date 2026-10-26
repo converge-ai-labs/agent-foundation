@@ -175,17 +175,16 @@ def test_invalid_operator_tls_environment_is_rejected_at_service_startup(
         load_settings()
 
 
-def test_chatgpt_client_and_callback_environment_overrides(tmp_path, monkeypatch, clean_environment):
+def test_chatgpt_loopback_callback_environment_override(tmp_path, monkeypatch, clean_environment):
     config = tmp_path / "chatgpt.toml"
     config.write_text('[providers]\nchatgpt_redirect_uri = "http://127.0.0.1:1555/auth/callback"\n')
     assert load_settings(config).providers.chatgpt_redirect_uri == "http://127.0.0.1:1555/auth/callback"
     monkeypatch.setenv("A13N_SERVER__PUBLIC_URL", "https://service.test")
     monkeypatch.setenv("A13N_PROVIDERS__CHATGPT_CLIENT_ID", "approved-client")
-    monkeypatch.setenv("A13N_PROVIDERS__CHATGPT_REDIRECT_URI", "https://service.test/custom/callback")
+    monkeypatch.setenv("A13N_PROVIDERS__CHATGPT_REDIRECT_URI", "http://127.0.0.1:1666/auth/callback")
     loaded = load_settings(config)
     assert loaded.providers.chatgpt_client_id == "approved-client"
-    assert loaded.providers.chatgpt_redirect_uri == "https://service.test/custom/callback"
-    assert loaded.providers.chatgpt_browser_callback
+    assert loaded.providers.chatgpt_redirect_uri == "http://127.0.0.1:1666/auth/callback"
 
 
 @pytest.mark.parametrize(
@@ -203,3 +202,21 @@ def test_chatgpt_client_and_callback_environment_overrides(tmp_path, monkeypatch
 def test_invalid_chatgpt_callback_configuration_fails_at_startup(providers):
     with pytest.raises(ValueError, match="chatgpt"):
         Settings.model_validate({"server": {"public_url": "https://service.test"}, "providers": providers})
+
+
+@pytest.mark.parametrize("value", ["true", "false", " FALSE "])
+def test_harness_forwarding_default_does_not_change_service_category_switches(monkeypatch, clean_environment, value):
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", value)
+    settings = load_settings()
+    assert settings.providers.forward_model_context_headers is True
+    assert settings.providers.forward_mcp_context_headers is True
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADER", "false")
+    with pytest.raises(ValueError, match="Unknown Service setting"):
+        load_settings()
+
+
+@pytest.mark.parametrize("value", ["", "0", "off", "invalid"])
+def test_invalid_harness_forwarding_default_is_rejected_at_startup(monkeypatch, clean_environment, value):
+    monkeypatch.setenv("A13N_HARNESS_FORWARD_CONTEXT_HEADERS", value)
+    with pytest.raises(ValueError, match="A13N_HARNESS_FORWARD_CONTEXT_HEADERS must be true or false"):
+        load_settings()

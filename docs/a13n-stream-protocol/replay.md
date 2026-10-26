@@ -46,7 +46,9 @@ assert item.content["text"] == "Hello world"
 assert item.state == "completed"
 ```
 
-The restored message is identical to uninterrupted output. Export returns a detached checkpoint and leaves active messages and tool calls open.
+The restored message is identical to uninterrupted output. Export returns a detached checkpoint and leaves active messages and tool calls open. If you use a Host processor, pass the same policy as `processor=` when constructing and restoring the fold.
+
+For incremental checkpoints, call `fold.capture_delta()`. It returns changed items and the current continuation, independently of live publication. Keep the prior item prefix, merge changes by item ID, and persist the merged items with that continuation. Corrections keep their IDs. A delta alone is not a complete checkpoint; resume after the captured position with no gap or overlap.
 
 To convert native Harness observations and accumulate the display:
 

@@ -1,11 +1,11 @@
 """Attach shared EIP to a validated E2B target, without starting guest services."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.e2b.connection import close_sandbox, open_sandbox
@@ -30,7 +30,7 @@ class HttpReference(E2BReference):
 @asynccontextmanager
 async def http_runtime(
     reference: E2BReference, *, credential_cache: ManagedCredentialCache | None = None
-) -> AsyncIterator[HttpEnvdProviderRuntime]:
+) -> AsyncGenerator[HttpEnvdProviderRuntime]:
     if reference._state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     sandbox = await open_sandbox(reference._state.sandbox_id, reference._options(), reference._validate_target)
@@ -71,7 +71,7 @@ async def http_runtime(
 @asynccontextmanager
 async def http_session(
     reference: E2BReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSessionBinding]:
     async with http_runtime(reference) as runtime:
         async with runtime.open_session(
             expected_device_id=reference._native_id,
@@ -93,6 +93,7 @@ def http_execution(
     if reference.state is None:
         raise provider_error("provider_state_required", Category.INVALID)
     return RemoteEnvdExecution(
+        environment=reference._configuration.environment,
         provider_key="e2b",
         environment_id=reference.environment_id,
         state=reference.state,

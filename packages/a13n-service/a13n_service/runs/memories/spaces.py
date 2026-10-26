@@ -9,8 +9,8 @@ from a13n_service.infra.http import require_match
 from a13n_service.resources.memories.schemas import OrganizationPolicy
 from a13n_service.resources.memories.tables import MemoryRow, MemorySpaceRow
 from a13n_service.resources.rows import audit_row, find_row
+from a13n_service.runs import listings
 from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
-from a13n_service.runs.runs import run_views
 from a13n_service.runs.schemas import RunPage, SessionPage, SpaceOrganizationStatus
 from a13n_service.runs.sessions import _views as session_views
 from a13n_service.runs.tables import RunRow, SessionRow
@@ -72,7 +72,10 @@ async def history(
         state = await session.get(SpaceOrganizationRow, space_id)
         rows, next_cursor = await cursors.keyset_page(
             session,
-            select(RunRow).where(RunRow.session_id == (state.session_id if state is not None else "")),
+            listings.query().where(
+                RunRow.workspace_id == scope.workspace_id,
+                RunRow.session_id == (state.session_id if state is not None else ""),
+            ),
             (RunRow.created_at, RunRow.id),
             kind="space_organizations",
             owner=space_id,
@@ -80,7 +83,7 @@ async def history(
             limit=limit,
             newest_first=True,
         )
-        return RunPage(items=await run_views(session, rows), next_cursor=next_cursor)
+        return RunPage(items=await listings.views(session, rows), next_cursor=next_cursor)
 
 
 async def associations(

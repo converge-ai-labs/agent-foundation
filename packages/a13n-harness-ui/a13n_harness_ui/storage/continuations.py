@@ -84,10 +84,12 @@ async def publish_continuation(objects: ImmutableObjectStore, value: Continuatio
     if archive is None and legacy_display is not None:
         archive = DisplayArchive(tail=legacy_display)
     checkpoint_id = uuid4().hex
-    native = await objects.publish_model(
-        object_kind=ObjectKind.continuation_state,
-        value=ContinuationState(checkpoint_id=checkpoint_id, harness_state=state),
-    )
+    native_ref = (
+        await objects.publish_model(
+            object_kind=ObjectKind.continuation_state,
+            value=ContinuationState(checkpoint_id=checkpoint_id, harness_state=state),
+        )
+    ).ref
     display_ref = None
     if archive is not None:
         display_ref = (
@@ -97,7 +99,7 @@ async def publish_continuation(objects: ImmutableObjectStore, value: Continuatio
             )
         ).ref
     manifest = ReferencedContinuation.model_validate(
-        {**_metadata(value), "checkpoint_id": checkpoint_id, "native_state": native.ref, "display": display_ref},
+        {**_metadata(value), "checkpoint_id": checkpoint_id, "native_state": native_ref, "display": display_ref},
         extra="allow",
     )
     return (await objects.publish_model(object_kind=ObjectKind.continuation, value=manifest)).ref

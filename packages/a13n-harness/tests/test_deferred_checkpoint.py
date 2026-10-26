@@ -155,7 +155,7 @@ async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_a
         assert result.status == "suspended"
         assert result.deferred is not None and result.state is not None
         assert not result.deferred.calls
-        assert [call.tool_call_id for call in result.deferred.approvals] == ["call_change"]
+        assert [call.target_call.tool_call_id for call in result.deferred.approvals] == ["call_change"]
         result = await recovery.run(
             previous_state=HarnessState.model_validate_json(result.state.model_dump_json()),
             deferred_resume=DeferredToolResume(result.deferred, DeferredToolResults(approvals={"call_change": False})),
@@ -250,9 +250,9 @@ async def test_recovery_omits_results_already_incorporated_in_history():
 async def test_accepted_input_is_retired_before_arbitrary_history_replacement():
     from types import SimpleNamespace
 
+    from a13n_harness import DeferredToolRequests
     from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
     from pydantic_ai.messages import ModelResponse
-    from pydantic_ai.tools import DeferredToolRequests
 
     @dataclass
     class ReplaceHistory(AbstractCapability):
@@ -313,10 +313,10 @@ async def test_accepted_input_is_retired_before_arbitrary_history_replacement():
     # The approved tool must still exist; use only the absent external failure for
     # this independent processor test, with an exact authoritative tail.
     external = first.deferred.calls[0]
-    state = HarnessState.new(message_history=[ModelResponse(parts=[external])])
+    state = HarnessState.new(message_history=[ModelResponse(parts=[external.model_call])])
     failed = DeferredToolResume(
         DeferredToolRequests(calls=[external]),
-        DeferredToolResults(calls={external.tool_call_id: ToolFailed("unavailable")}),
+        DeferredToolResults(calls={external.target_call.tool_call_id: ToolFailed("unavailable")}),
     )
     async with resumed.stream(previous_state=state, deferred_resume=failed) as stream:
         async for _ in stream:

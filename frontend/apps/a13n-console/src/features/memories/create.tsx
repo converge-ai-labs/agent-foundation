@@ -46,7 +46,7 @@ export function CreateMemory({
       size="lg"
       title={t("Create memory")}
       description={t(
-        "A memory keeps what agents read and write across conversations.",
+        "A memory keeps what agents read and write across sessions.",
       )}
       closeLabel={t("Close")}
       open={open}

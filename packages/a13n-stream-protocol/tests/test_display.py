@@ -41,6 +41,34 @@ def test_snapshot_and_raw_suffix_reconstruct_text_and_tool_lifecycle() -> None:
             assert batch.item is not None and batch.item.state == "completed"
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_native_retry_result_remains_failed_across_snapshot_restore(legacy: bool) -> None:
+    from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
+
+    events = HarnessAguiObserver().observe(
+        HarnessEvent(
+            thread_id="thread",
+            run_id="run",
+            sequence=1,
+            occurred_at=datetime.now(UTC),
+            event=FunctionToolResultEvent(ToolReturnPart("lookup", "Invalid arguments", "call", outcome="retried")),
+        )
+    )
+    raw = [event.model_dump(mode="json", by_alias=True) for event in events]
+    if legacy:
+        # Older persisted wire events retain their original retry-prompt shape.
+        raw[-1]["value"]["event"]["part"]["part_kind"] = "retry-prompt"
+        raw[-1]["value"]["event"]["part"].pop("outcome")
+    fold = DisplayFold("run")
+    fold.fold(raw)
+    (item,) = fold.items.values()
+    assert item.content["retry"] is True
+    assert item.state == "failed"
+    assert item.content["value"] == "Invalid arguments"
+    assert item.content["outcome"] == (None if legacy else "retried")
+    assert DisplayFold.restore(fold.export()).items == fold.items
+
+
 def test_snapshot_is_detached_from_later_raw_events() -> None:
     fold = DisplayFold("run")
     fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "a"}])

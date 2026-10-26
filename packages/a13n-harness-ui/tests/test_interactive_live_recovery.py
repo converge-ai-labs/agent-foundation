@@ -59,6 +59,7 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
         return SimpleNamespace(
             status=RootOperationStatus.completed,
             goal=None,
+            main_account=None,
             outcome=SimpleNamespace(
                 execution=SimpleNamespace(output="Recovered answer, still live.", output_omitted=False),
                 environment=SimpleNamespace(cleanup_failures=()),
@@ -68,7 +69,7 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
     app = SimpleNamespace(
         live_events=hub.subscribe,
         submit_thread=AsyncMock(side_effect=submit),
-        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None)),
+        get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None, main_account=None)),
         wait_root_operation=wait,
         context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
         thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals())),

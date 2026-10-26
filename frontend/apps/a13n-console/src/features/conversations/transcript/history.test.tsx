@@ -638,7 +638,7 @@ it("loads one Debug ancestor per click and preserves that range across repeated 
   view.cache.clear();
 });
 
-it("prepares all of an earlier Debug Run before insertion and preserves position during a slow page", async () => {
+it("inserts the latest window of an earlier Debug Run immediately and loads its older content on request", async () => {
   let finish!: () => void;
   const waiting = new Promise<void>((resolve) => {
     finish = resolve;
@@ -667,7 +667,7 @@ it("prepares all of an earlier Debug Run before insertion and preserves position
           next_cursor: null,
         });
       if (url.pathname.endsWith("/items")) {
-        const historical = url.searchParams.has("after");
+        const historical = url.searchParams.has("before");
         if (historical) await waiting;
         return Response.json({
           run: ancestor("parent"),
@@ -697,10 +697,13 @@ it("prepares all of an earlier Debug Run before insertion and preserves position
   viewport.scrollTop = 100;
   fireEvent.scroll(viewport);
   fireEvent.click(button);
+  await screen.findByText("Saved reply 3");
+  expect(requests.some((url) => url.searchParams.has("before"))).toBe(false);
+  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier content" }));
   await waitFor(() =>
-    expect(requests.some((url) => url.searchParams.has("after"))).toBe(true),
+    expect(requests.some((url) => url.searchParams.has("before"))).toBe(true),
   );
-  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(1);
   expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
   expect(screen.queryByText(/Execution history is incomplete/)).toBeNull();
   viewport.scrollTop = 150;

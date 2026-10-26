@@ -181,6 +181,16 @@ def validate_dependency_range(value: str) -> str:
     return f">={minimum.python_package},<{maximum.python_package}"
 
 
+def validate_dependency_pin(value: str) -> str:
+    """Require one exact published Python release, including normalized RCs."""
+    if not value.startswith("=="):
+        raise ReleaseVersionError(f"Dependency pin must use ==VERSION: {value}")
+    version = parse_release_version(re.sub(r"rc([1-9][0-9]*)$", r"-rc.\1", value[2:]))
+    if value[2:] != version.python_package or (version.major, version.minor, version.patch) == (0, 0, 0):
+        raise ReleaseVersionError(f"Dependency pin must select a published Python release: {value}")
+    return f"=={version.python_package}"
+
+
 def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     """Read independently versioned dependencies without constraining local workspace members."""
     expected = {
@@ -195,13 +205,18 @@ def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     if set(declarations) != set(expected):
         raise ReleaseVersionError(f"Expected {label} keys {sorted(expected)}, found {sorted(declarations)}")
     ranges = {
-        package: validate_dependency_range(_string(declarations[package], f"{label}.{package}")) for package in expected
+        package: (
+            validate_dependency_pin
+            if manifest == HARNESS_UI_MANIFEST and package in HARNESS_PACKAGES
+            else validate_dependency_range
+        )(_string(declarations[package], f"{label}.{package}"))
+        for package in expected
     }
     if (
         manifest in {HARNESS_UI_MANIFEST, A13N_SERVICE_MANIFEST}
         and len({ranges[package] for package in HARNESS_PACKAGES}) != 1
     ):
-        raise ReleaseVersionError("Consumers must declare the same compatible range for all Harness-group dependencies")
+        raise ReleaseVersionError("Consumers must declare the same requirement for all Harness-group dependencies")
     return ranges
 
 

@@ -70,6 +70,8 @@ docker compose -f a13n-service.yaml up -d --wait
 
 保持相同的 Compose 项目和数据卷即可保留数据。要更新镜像，在启动命令中添加 `--pull always`；升级现有部署前，请先阅读 [Compose 升级指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)。
 
+重置前，请先[删除已创建的托管环境](environments.md#stop-rename-and-delete)。它们位于 Compose 服务之外；先删除数据卷会丢失 Service 用于清理这些环境的记录。
+
 要**永久删除整套服务的数据**，运行 `docker compose -f a13n-service.yaml down --volumes`。下次启动后，打开 Console 并注册新的管理员账号。
 
 ## 故障排查

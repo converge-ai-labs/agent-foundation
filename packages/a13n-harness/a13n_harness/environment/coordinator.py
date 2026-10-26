@@ -9,6 +9,7 @@ import sys
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from pydantic import JsonValue
@@ -37,6 +38,7 @@ from a13n_harness.environment.mounts import (
     EnvironmentSnapshot,
 )
 from a13n_harness.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_harness.environment.variables import validate_variables, with_defaults
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.identity import AgentInstanceContext
 
@@ -735,6 +737,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
             requested = limits.wall_time_seconds
             effective = ceiling_value if requested is None else min(requested, ceiling_value)
             limits = limits.model_copy(update={"wall_time_seconds": effective})
+        request = with_defaults(
+            request,
+            self._runtime._command_environment,
+            windows=not entered.public.descriptor.environment_case_sensitive,
+        )
         return entered, request.model_copy(update={"cwd": cwd, "limits": limits})
 
     @asynccontextmanager
@@ -748,11 +755,35 @@ class CompositeBoundEnvironment(BoundEnvironment):
         alias: str | None = None,
         timeout_seconds: float = 0,
     ) -> AsyncGenerator[BoundProcessOperations]:
+        async with self.authorize_retained_process(
+            handle.identity,
+            backing_identity=backing_identity,
+            actions=actions,
+            alias=alias,
+            timeout_seconds=timeout_seconds,
+        ):
+            async with owner.retained_process_dispatch(handle, actions=actions) as processes:
+                yield processes
+
+    @asynccontextmanager
+    async def retained_process_dispatch(
+        self, handle: BoundProcessHandle, *, actions: frozenset[EnvironmentAction]
+    ) -> AsyncGenerator[BoundProcessOperations]:
+        original = self._entered_for_handle(handle)
+        async with self._mount_slot(original, allow_retired=True):
+            yield _ProcessFacade(self, retained_handle=handle, authorized_actions=actions)
+
+    @asynccontextmanager
+    async def authorize_retained_process(
+        self,
+        identity: ProcessIdentity,
+        *,
+        backing_identity: str | None,
+        actions: frozenset[EnvironmentAction],
+        alias: str | None = None,
+        timeout_seconds: float = 0,
+    ) -> AsyncGenerator[None]:
         self._assert_open()
-        if not isinstance(owner, CompositeBoundEnvironment):
-            raise EnvironmentError("Retained process owner is unsupported.", code="environment_unsupported")
-        identity = handle.identity
-        original = owner._entered_for_handle(handle)
         matches = [
             item
             for item in self._entered.values()
@@ -770,7 +801,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         for action in actions:
             self.require_action(entered.mount_id, action)
         async with AsyncExitStack() as stack:
-            await stack.enter_async_context(owner._mount_slot(original, allow_retired=True))
             current = await stack.enter_async_context(
                 self._operation_scope(entered, "processes", timeout_seconds=timeout_seconds)
             )
@@ -788,7 +818,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 # Already-entered Host guards must know no native control ran.
                 exc.details["dispatch_stage"] = "pre_dispatch"
                 raise
-            yield _ProcessFacade(owner, retained_handle=handle, authorized_actions=actions)
+            yield
 
     def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredMount:
         if not isinstance(identity, ProcessIdentity):
@@ -1414,6 +1444,7 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     _initial_mounts: tuple[_MountRequest, ...]
     _default_mount: str | None
     _extensions: tuple[tuple[str, EnvironmentRunExtension], ...] = ()
+    _command_environment: Mapping[str, str] = field(default_factory=dict)
     _noop: bool = False
     _used: bool = field(default=False, init=False, repr=False)
     _bound: CompositeBoundEnvironment | None = field(default=None, init=False, repr=False)
@@ -1889,6 +1920,7 @@ def create_environment_runtime(
     mounts: Mapping[str, EnvironmentEntry],
     default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
+    command_environment: Mapping[str, str] | None = None,
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
     try:
@@ -1906,12 +1938,14 @@ def create_environment_runtime(
         )
     except (AttributeError, TypeError, ValueError) as exc:
         raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc
+    defaults = MappingProxyType(validate_variables(dict(command_environment or {})))
     captured_extensions = _normalize_environment_run_extensions(extensions)
     _validate_initial_mounts(captured, default_mount)
     return ManagedEnvironmentRuntime(
         _initial_mounts=captured,
         _default_mount=default_mount,
         _extensions=captured_extensions,
+        _command_environment=defaults,
     )
 
 

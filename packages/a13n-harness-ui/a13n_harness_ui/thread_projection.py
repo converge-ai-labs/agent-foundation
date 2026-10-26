@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
+from a13n_harness import DeferredToolRequests
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
@@ -23,6 +24,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    RetryFeedbackPart,
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
@@ -31,7 +33,6 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
@@ -1034,9 +1035,16 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
         content = tool_result_content(execution_value)
         parts = [item.model_dump(mode="json", by_alias=True) for item in content] if isinstance(content, list) else []
         value, omitted = _bounded_json(parts if isinstance(content, list) else execution_value)
+        retry_text = (
+            (part.content if isinstance(part.content, str) else "Tool input validation failed.")
+            if part.outcome == "retried"
+            else None
+        )
         return (
             TranscriptPart(
-                kind="tool_result",
+                kind="retry" if retry_text is not None else "tool_result",
+                text=_bounded_text(retry_text) if retry_text is not None else None,
+                text_truncated=retry_text is not None and len(retry_text) > _MAX_TEXT,
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
@@ -1049,6 +1057,9 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
                 value_omitted=omitted,
             ),
         )
+    if isinstance(part, RetryFeedbackPart):
+        text = part.content if isinstance(part.content, str) else "Model output validation failed."
+        return (TranscriptPart(kind="retry", text=_bounded_text(text), text_truncated=len(text) > _MAX_TEXT),)
     if isinstance(part, RetryPromptPart):
         text = part.content if isinstance(part.content, str) else "Tool input validation failed."
         return (
@@ -1117,9 +1128,9 @@ def _deferred_requests(value: object | None) -> tuple[DeferredRequestView, ...]:
     if not isinstance(value, DeferredToolRequests):
         raise ThreadError("Stored deferred requests are invalid.", code="thread_continuation_incompatible")
     projected: list[DeferredRequestView] = []
-    for request in value.calls:
+    for request in (entry.target_call for entry in value.calls):
         projected.append(_deferred_request(value, request, kind="external"))
-    for request in value.approvals:
+    for request in (entry.target_call for entry in value.approvals):
         projected.append(_deferred_request(value, request, kind="approval"))
     return tuple(projected)
 

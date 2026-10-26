@@ -620,8 +620,7 @@
    What the Session waits for and what is queued behind it are cards beside
    the Runs, on their edges. */
 /* With the stage's 4px gap, every card stands 12px from the next. */
-.feedback,
-.inbox {
+.feedback {
   margin-bottom: 8px;
 }
 .feedback {
@@ -629,31 +628,6 @@
   padding: 14px 14px 14px 16px;
   border: 1px solid var(--a13n-border-soft);
   border-radius: var(--a13n-radius-group);
-}
-
-/* Inbox ------------------------------------------------------------------
-   Past the trigger's 1px border, the 14px caret centres 21px into the card
-   and the title starts at 39px, on the Runs' own edges. */
-.inbox {
-  padding: 3px 14px 3px 9px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: var(--a13n-radius-group);
-}
-.inbox > [data-slot="disclosure-surface"] {
-  border-radius: 0;
-  background: none;
-}
-.inbox > [data-slot="disclosure-surface"] > button {
-  gap: 11px;
-  padding-left: 3px;
-  padding-right: 0;
-  font-size: var(--a13n-text-sm);
-}
-.inbox > [data-slot="disclosure-surface"] > button > svg {
-  margin: 0;
-}
-.inbox [data-slot="collapsible-panel"] > div {
-  padding: 4px 0 10px 29px;
 }
 
 @container (max-width: 640px) {

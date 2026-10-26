@@ -7,16 +7,17 @@ A Model chooses a provider connection, request settings, and working context bud
 
 ## Choose your task
 
-| Task                                         | Start here                                                                                    |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Create a Model interactively                 | `a13n-harness-ui add model`                                                                   |
-| Write a complete API-key Model               | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
-| Point to a compatible endpoint               | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
-| Find every Model field                       | [Model file reference](#model-file-reference)                                                 |
-| Change request parameters                    | [Native request settings](#native-request-settings-and-connection-wiring)                     |
-| Tune context or enable image input           | [Context and modality policy](#context-and-modality-policy)                                   |
-| Use a subscription account                   | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
-| Change the TUI Model for the current Project | [TUI selection](#change-the-agent-or-model-in-the-tui)                                        |
+| Task                                            | Start here                                                                                    |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Create a Model interactively                    | `a13n-harness-ui add model`                                                                   |
+| Write a complete API-key Model                  | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
+| Point to a compatible endpoint                  | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
+| Find every Model field                          | [Model file reference](#model-file-reference)                                                 |
+| Change request parameters                       | [Native request settings](#native-request-settings-and-connection-wiring)                     |
+| Tune context or enable image input              | [Context and modality policy](#context-and-modality-policy)                                   |
+| Manage accounts, allowance, and failover groups | [Accounts and groups](#account-store-locations)                                               |
+| Use a subscription account                      | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
+| Change the TUI Model for the current Project    | [TUI selection](#change-the-agent-or-model-in-the-tui)                                        |
 
 `settings` controls model requests. `model_configuration` controls connection wiring such as `base_url`. `model_characteristics` controls local context/input policy. These mappings are not interchangeable, and none belongs at the root of `a13n-harness-ui.yaml`.
 
@@ -25,7 +26,7 @@ A Model chooses a provider connection, request settings, and working context bud
 In WebUI, open **Settings → Models** to add, edit or clone a saved Model. Initial setup and an Agent's **Add model** action use the same flow. Saving a Model changes no active Run.
 
 1. Choose **ChatGPT subscription**, **Codex subscription**, **Grok subscription**, **GitHub Copilot subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
-2. Connect the shared subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
+2. Select a Codex/Grok account group, connect a subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
 3. Choose a suggestion or enter a case-sensitive Model ID. Suggestions describe known routes, not your account's entitlement; manual IDs remain available if the directory fails.
 4. Choose **Use this model** and adjust offered reasoning, speed and working context budget. When you change the connection, model ID or base URL of a saved Model, this button is labeled **Apply connection & defaults** and resets model-specific settings to reviewed defaults.
 5. Save the Model YAML. Only saved Models appear in conversation selectors; advanced YAML editing remains available.
@@ -103,7 +104,7 @@ a13n-harness-ui auth key set key-primary
 a13n-harness-ui auth key delete key-primary
 ```
 
-For Codex, Grok and Copilot, device authorization is the default and needs no Host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the Host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
+For Codex, Grok and Copilot, device authorization is the default and needs no Host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the Host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different identity in the selected account requires `--allow-account-switch` through the CLI.
 
 For API access, choose **API key** in initial setup, `a13n-harness-ui add model`, or the **Create a new model** branch of `a13n-harness-ui add agent`. Then select the provider or protocol, confirm its base URL, and enter the key in the hidden field. Choose a model suggestion or type a case-sensitive model ID. Finally, select a settings preset and review the working context budget. You can instead enter `key:key-primary` for a stored key or `env:OPENAI_API_KEY` for an environment variable available to the Harness UI process. A newly entered key is saved immediately under a fresh reference in the local key store, independently of configuration publication. Never paste an API key into the normal composer.
 
@@ -127,9 +128,9 @@ settings: {}
 model_configuration: {}
 ```
 
-Discover model slugs after login or enter one manually. Account visibility is not a guarantee of inference access. ChatGPT uses the public Responses endpoint with `store: false`, `stream: true`, full input history and developer instructions; ordinary calls collect the required stream through the native Model. It does not support endpoint overrides, static API keys, previous-response IDs, temperature, Top P, output-token limits, or hosted tools other than policy-permitted web search.
+Discover model slugs after login or enter one manually. Account visibility is not a guarantee of inference access. ChatGPT uses the public Responses endpoint with `store: false`, `stream: true`, full input history and developer instructions; ordinary calls collect the required stream through the native Model. It does not support endpoint overrides or static API keys. The official profile omits generic temperature, Top P and output-token limits; other settings and tool serialization follow the native Model.
 
-Credentials are plaintext in the Host data root's private `auth.json`, alongside but separate from API keys. They never use `~/.codex` or Codex credentials. `a13n-harness-ui auth logout chatgpt` clears tokens, keeps the issued registration for future login, and requests OpenAI revocation; an unconfirmed revocation is reported separately. Replacing the account affects everyone using this Host.
+Credentials are plaintext in the Host data root's private `auth.json`, alongside but separate from API keys. They never use `~/.codex` or Codex credentials. `a13n-harness-ui auth logout chatgpt` clears local tokens and keeps the issued registration for future login. Manage remote access in ChatGPT settings. Active Models may retain cached access tokens. Expiry and 401 refresh use the official provider, with complete-set saves to the Host store and no cross-process refresh exclusion. Replacing the account affects everyone using this Host.
 
 ## GitHub Copilot subscription
 
@@ -383,7 +384,7 @@ authentication:
 ```
 
 ```yaml
-# Compatible account store, no literal token:
+# Native default account group, no literal token:
 authentication:
   kind: codex_subscription
 ```
@@ -428,9 +429,47 @@ The selected root, independent child and image-understanding Model each use thei
 
 ### Account-store locations
 
-Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use an explicit shared-store credential source. The in-process Codex model provider caches credentials for its lifetime and rereads the store before refresh, not on every request. A new Run or account operation gets a fresh model provider. If refreshed credentials cannot be saved, the request fails, but the model provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
+Codex and Grok credentials are managed in `<data-root>/oauth/accounts/<account-id>.json`. The nonsecret catalog is `oauth/accounts.json`; usage snapshots are under `oauth/state/`. These are private-permission plaintext files. Protect the Host and backups.
 
-Harness retains device login, Thread affinity, routing hints, and per-run turn state where the official Codex provider has no equivalent. Browser PKCE and callback handling use the official flow; a small login-exchange adapter retains the real ID token required by native Codex `auth.json`. New login and account switching write that ID token, and same-account refresh preserves it. No second Codex subscription store is created.
+On the first upgraded App startup, Harness UI imports a supported existing Codex/Grok login once. Codex discovery respects `CODEX_HOME` and its file policy; Grok checks `GROK_AUTH_PATH`, then `GROK_HOME`. Unsupported or invalid sources are shown in **Migration from existing CLI logins**; sign in natively to recover. Original CLI files are unchanged. Later refresh, login, logout and deletion use only the native files and never re-import an external login. The imported copy shares the original refresh grant: rotation by either Harness UI or the original CLI can invalidate the other client's login even though its file is unchanged. Sign in separately in each affected client to recover.
+
+Existing Models with `codex_subscription` or `grok_subscription` need no YAML edit: an omitted `group` selects `codex-default` or `grok-default`. The default group starts with the migrated account. Deleting that group is respected; restore it or select another group explicitly.
+
+Open **Settings → Accounts & API keys** to add and sign in accounts, rename or pause them, and create same-provider groups. Select **Ordered consumption** to use members in order, or **Weighted balance** to distribute Runs by positive integer weights. In **Settings → Models**, select the group for each subscription Model:
+
+```yaml
+authentication:
+  kind: codex_subscription
+  group: codex-work
+```
+
+The group is an ordinary file such as `subscription_groups/work.yaml`. Copy account IDs from the account page; keep credentials out of this file:
+
+```yaml
+schema_version: "1"
+kind: subscription_group
+id: codex-work
+name: Work accounts
+provider: codex
+strategy: weighted
+allow_credits: false
+accounts:
+  - account: acct-work
+    weight: 3
+  - account: acct-personal
+    weight: 1
+```
+
+A Run captures membership and policy. Account pause, logout, deletion and changed credentials are checked before each request. Included allowance is preferred; rechargeable balance requires **Allow rechargeable credits**. Provider snapshots can lag concurrent consumption, so this is a best-effort guard, not a strict billing cap. Authentication/quota failures switch accounts only before response delivery. Tools and visible streams are never replayed. The conversation's **MAIN** status identifies the actual account and selection reason; auxiliary inference does not replace it. Live selects an eligible account at connection and pins it for that session.
+
+Codex responses update reported usage windows immediately. Before a request, accounts whose last usage API check is at least **60 seconds** old are refreshed. A **10-minute** background refresh covers idle accounts; reset timestamps do not schedule refreshes. Use **Refresh** on an account, or `/usage accounts` in the TUI, for an immediate update. `/usage subscription` shows compact cached accounts and groups. Failed refreshes retain the last successful observation with a timestamp and error. Multiple TUIs sharing the data root eventually converge on the shared snapshots. **Reset voucher…** and `/usage reset` separately require an account, voucher and explicit confirmation; polling and failover never consume a voucher.
+
+The account cards show provider-specific allowance:
+
+- **Codex:** actual-duration windows such as **5h** and **Weekly**, each with its reset date, local time and timezone. Named/model limits and monthly credit limits appear separately. Available reset vouchers and their earliest known expiry are visible without opening **Manage**; rechargeable credits are a separate balance. Failed voucher-detail reads preserve any count reported by the usage API.
+- **Grok:** its current weekly/monthly billing allowance and next reset, with purchased credits in USD and legacy pay-as-you-go details where reported. It uses the Grok Build billing endpoint, not Codex windows. Missing billing configuration is unavailable, not zero. The same managed-account refresh controls apply.
+- **GitHub Copilot:** the selected account's returned quota buckets, including unlimited allowance, remaining percentage/count, additional usage and reset date. Its card refreshes on entry and every ten minutes, with **Refresh allowance** for an immediate check. This uses an internal endpoint used by the official client; a provider rejection appears as unavailable.
+- **ChatGPT:** a direct link to its official usage settings. This independent connection does not currently expose numeric allowance; it never borrows Codex quota.
 
 ```console
 a13n-harness-ui auth status codex --format json
@@ -438,7 +477,7 @@ a13n-harness-ui auth logout codex
 a13n-harness-ui login codex --allow-account-switch
 ```
 
-Logout and account replacement are explicit credential mutations; inspect which shared account/store you are changing. Never post account files, tokens, or stored-key files in diagnostics.
+Logout and account replacement are explicit credential mutations; inspect which native account you are changing. Never post account files, tokens, or stored-key files in diagnostics.
 
 ## Change the Agent or Model in the TUI
 
@@ -488,7 +527,7 @@ Review the saved value for your endpoint, context size, reasoning needs, latency
 
 The release-owned recommendations were checked against provider references on September 10, 2026: [OpenAI model limits](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Claude model limits](https://platform.claude.com/docs/en/models/sonnet-4-6/overview), [Gemini output limits](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro), [DeepSeek model details](https://api-docs.deepseek.com/quick_start/pricing), [GLM model details](https://docs.z.ai/guides/llm/glm-5.3), [Moonshot's model card](https://huggingface.co/moonshotai/Kimi-K2.5), and [OpenRouter's model metadata](https://openrouter.ai/api/v1/models). These sources describe model capabilities and examples, not a promise that a custom endpoint or account will accept every setting. Native SDK request serialization is tested with mock HTTP; it is not a live provider test. In particular, the installed native DeepSeek adapter emits `max_completion_tokens`, whereas DeepSeek's API reference documents `max_tokens`; acceptance and enforcement of that alias have not been verified against the live service. Harness UI does not override the adapter's field mapping.
 
-After initial setup, `add model` saves only a reusable Model, then offers a separate Add Agent flow for that Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. Initial setup creates the initial Model and Agent together without an existing-Model question. Setup and Add Agent initialize an absent root `security.shell_review` shortcut, preserving existing root selections. Codex and Grok subscription setup creates a separate shell review Model; ChatGPT, GitHub Copilot, and API-key setup reuse the connected Model. The shortcut applies across Agents with `risk_threshold: extra_high`, approval on flagged shell calls, and no added restriction on non-timeout review failure by default. Review timeout always denies execution. Add Model never modifies this root policy. Existing Agent files are not migrated. See [shell review configuration](configuration-recipes.md#configure-shell-review); the risk threshold is independent of the Model's thinking effort.
+To add a connection or Agent, follow [the setup workflow](setup.md#add-another-connection-or-agent). API-key setup enables shell review only when you select a reviewer, saved as a separate Model on the same connection. Existing root review policy is preserved. The [shell-review recipe](configuration-recipes.md#configure-shell-review) owns risk thresholds and failure handling; review timeout always denies execution.
 
 ## Native request settings and connection wiring
 

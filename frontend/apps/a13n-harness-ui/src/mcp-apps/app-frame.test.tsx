@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { AppFrame } from "./app-frame";
 
 const bridge = vi.hoisted(() => ({
+  construct: vi.fn(),
   setHostContext: vi.fn(),
   connect: vi.fn().mockResolvedValue(undefined),
   close: vi.fn(),
@@ -13,7 +14,8 @@ const bridge = vi.hoisted(() => ({
 }));
 vi.mock("@modelcontextprotocol/ext-apps/app-bridge", () => ({
   AppBridge: class {
-    constructor() {
+    constructor(...args: unknown[]) {
+      bridge.construct(...args);
       return bridge;
     }
   },
@@ -42,6 +44,35 @@ const props = {
   capabilities: {},
   handlers: {},
 };
+it("supplies initial context without notifying an uninitialized App", async () => {
+  document.documentElement.lang = "en-US";
+  render(<AppFrame {...props} />);
+  expect(bridge.construct).toHaveBeenCalledWith(
+    null,
+    expect.any(Object),
+    props.capabilities,
+    {
+      hostContext: expect.objectContaining({ theme: "light", locale: "en-US" }),
+    },
+  );
+  await act(async () => {
+    document.documentElement.classList.add("dark");
+    window.dispatchEvent(new Event("languagechange"));
+  });
+  expect(bridge.setHostContext).not.toHaveBeenCalled();
+  act(() => bridge.oninitialized());
+  expect(bridge.setHostContext).toHaveBeenLastCalledWith(
+    expect.objectContaining({ theme: "dark", locale: "en-US" }),
+  );
+  await waitFor(() => expect(bridge.sendToolResult).toHaveBeenCalledTimes(1));
+  cleanup();
+  bridge.setHostContext.mockClear();
+  await act(async () => {
+    document.documentElement.lang = "fr";
+    window.dispatchEvent(new Event("languagechange"));
+  });
+  expect(bridge.setHostContext).not.toHaveBeenCalled();
+});
 it("updates Host theme and locale without remounting the frame or replaying tool results", async () => {
   render(<AppFrame {...props} />);
   const frame = screen.getByTitle("Example");

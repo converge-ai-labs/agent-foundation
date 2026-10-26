@@ -100,6 +100,8 @@ The Harness coordinates reopening with admitted operations and cleanup. Referenc
 
 `EnvironmentDescriptor` describes target identity evidence, execution generation, execution boundary, default working directory, operation families, permission support, and limits. `EnvironmentAvailability` reports status, ready families, and a bounded reason. `EnvironmentOperations` exposes typed file, shell, process, output, port, and computer facets independently; unsupported guarantees fail before dispatch rather than degrading silently.
 
+`EnvironmentDescriptor.environment_case_sensitive` defaults to true; native Windows reports false, and Envd adapters use the connected Device's path style to preserve the target's semantics. This describes command variable matching, not filesystem routing.
+
 Configured descriptor projection is inert. The live descriptor can narrow configured capabilities but cannot expand admitted authority. The package supplies structured capability and observation data. The Host sets authorization policy; the Harness owns presentation and routing and applies that policy without expanding provider capabilities.
 
 Operation paths, receipts, handles, and output references carry only provider, target, and Environment execution identity. Native target incarnation, execution resource generation, and Host-supplied lifecycle operation identity remain distinct. Application task, routing, and persistence identifiers are not part of these values; the Host and Harness maintain their own correlation separately.

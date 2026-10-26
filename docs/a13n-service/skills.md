@@ -28,7 +28,11 @@ Limits: at most 1000 files, 8 MiB per file, 32 MiB expanded, 256 KiB for `SKILL.
 
 ## Add a skill
 
-In Console, open **Skills → Import skill** and choose a ZIP file or a GitHub repository. Through the API, a skill's source is either an upload or a public GitHub directory:
+1. In Console, open **Skills → Import skill** and choose a ZIP file or a GitHub repository.
+2. Open the agent, select the imported skill and save a revision. Saving pins the selected skill revision.
+3. Start a conversation with a [primary environment](environments.md) and ask the agent to use the skill. Check that it reads `SKILL.md` before following its instructions.
+
+Through the API, a skill's source is either an upload or a public GitHub directory:
 
 ```sh
 # Stage the archive (see Uploads), then create the skill from it
@@ -91,9 +95,9 @@ When agents need conflicting versions in the same environment, choose isolated m
 {"skill_sync": {"mode": "isolated", "cache_count": 128}}
 ```
 
-Its catalog paths are `/workspace/.agents/skill-cache/<package-digest>/<name>`. Different packages coexist, while identical archive bytes reuse the same directory without downloading again. `cache_count` is a nonnegative soft package-count budget for this environment; `0` disables trimming. Each agent applies its own configured budget when materializing. Active packages stay pinned until execution teardown; bounded least-recently-used trimming removes idle packages and may leave the cache above budget. Shared cleanup never touches this cache.
+Catalog paths use `/workspace/.agents/skill-cache/<package-digest>/<name>`, so different versions coexist and identical packages reuse one directory. `cache_count` is a soft package-count budget; `0` disables trimming. Each agent applies its own budget, removing idle packages while keeping active ones. The cache can remain above budget. Shared cleanup never touches it.
 
-Isolated mode shares immutable package content, rather than allocating a copy per agent. Immutability is a Service publication guarantee; authorized file and shell operations can still modify the files. Cache publication failure leaves existing packages intact. Cancellation or uncertain mutation outcomes retain protection against eviction, and can leave staging directories or pins for later operator cleanup.
+Service publishes packages immutably; authorized file and shell operations can still modify them. Publication failure preserves existing packages. For state left by cancellation or uncertain outcomes, follow [publication and cleanup](#publication-and-cleanup).
 
 ### Override one run
 

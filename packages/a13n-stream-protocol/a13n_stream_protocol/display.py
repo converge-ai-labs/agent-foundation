@@ -590,7 +590,7 @@ class DisplayFold:
             else:
                 content["truncated"] = True
             content["outcome"] = source.get("outcome")
-            content["retry"] = source.get("part_kind") == "retry-prompt"
+            content["retry"] = source.get("part_kind") == "retry-prompt" or content["outcome"] == "retried"
             state = (
                 "failed"
                 if content["retry"] or content["outcome"] in {"failed", "denied", "interrupted"}

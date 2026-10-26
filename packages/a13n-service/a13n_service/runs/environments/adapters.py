@@ -12,6 +12,8 @@ from a13n_harness.providers.environment.daytona.shared import DaytonaConnectionC
 from a13n_harness.providers.environment.docker.shared import DockerConnectionConfiguration
 from a13n_harness.providers.environment.e2b.configuration import E2BConnectionConfiguration
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential, ModalRuntime
+from a13n_harness.providers.environment.sprites.shared import SpritesConnectionConfiguration
+from a13n_harness.providers.environment.vercel.shared import VercelConnectionConfiguration
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -73,6 +75,8 @@ async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider
             E2BConnectionConfiguration,
             DaytonaConnectionConfiguration,
             ModalConnectionConfiguration,
+            VercelConnectionConfiguration,
+            SpritesConnectionConfiguration,
         ),
     ):
         connection._endpoint_policy = runtime.endpoint_policy
@@ -113,6 +117,8 @@ async def execution_connector(
             E2BConnectionConfiguration,
             DaytonaConnectionConfiguration,
             ModalConnectionConfiguration,
+            VercelConnectionConfiguration,
+            SpritesConnectionConfiguration,
         ),
     ):
         connection._endpoint_policy = policy

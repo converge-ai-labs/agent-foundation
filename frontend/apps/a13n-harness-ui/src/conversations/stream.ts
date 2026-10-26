@@ -680,7 +680,7 @@ export class FocusDisplay {
       block.failure = object(content.failure)
         ? string(content.failure.message)
         : undefined;
-      block.retry = content.retry === true;
+      block.retry = content.retry === true || content.outcome === "retried";
       block.images = content.tool_images as
         Schema<"ToolImageView">[] | undefined;
       block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
@@ -979,16 +979,18 @@ export class FocusDisplay {
           toolCallId: string(part.tool_call_id),
           result: sourceText(part.content),
           done: true,
-          retry: part.part_kind === "retry-prompt",
+          retry:
+            part.part_kind === "retry-prompt" || part.outcome === "retried",
           outcome:
             part.outcome === "failed" ||
             part.outcome === "denied" ||
             part.outcome === "interrupted" ||
+            part.outcome === "retried" ||
             part.outcome === "success"
               ? part.outcome
               : undefined,
           failure:
-            part.part_kind === "retry-prompt"
+            part.part_kind === "retry-prompt" || part.outcome === "retried"
               ? sourceText(part.content) || "Tool input validation failed."
               : undefined,
         });

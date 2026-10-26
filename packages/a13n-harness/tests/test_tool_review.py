@@ -652,7 +652,7 @@ async def test_native_approval_satisfies_review_and_current_policy() -> None:
     )
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
-    call_id = first.deferred.approvals[0].tool_call_id
+    call_id = first.deferred.approvals[0].target_call.tool_call_id
     metadata = first.deferred.metadata[call_id]
     assert first_policy.calls == 0
     assert metadata["a13n.harness.approval-presentation"]["reason"] == "Tool reviewer requires approval."
@@ -831,7 +831,7 @@ async def test_timeout_on_approved_resume_still_denies() -> None:
     executable = _build(reviewer, executed)
     first = await executable.run("go")
     assert first.deferred is not None and first.state is not None
-    call_id = first.deferred.approvals[0].tool_call_id
+    call_id = first.deferred.approvals[0].target_call.tool_call_id
     result = await executable.run(
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
@@ -848,7 +848,7 @@ async def test_other_review_failure_still_requests_approval_without_assessment()
     result = await _build(_Reviewer([ToolReviewError("tool_review_failed")]), executed).run("go")
     assert result.status == "suspended"
     assert result.deferred is not None
-    call_id = result.deferred.approvals[0].tool_call_id
+    call_id = result.deferred.approvals[0].target_call.tool_call_id
     assert (
         result.deferred.metadata[call_id]["a13n.harness.approval-presentation"]["reason"]
         == "Tool review could not complete."

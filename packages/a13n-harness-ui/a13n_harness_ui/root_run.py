@@ -14,8 +14,9 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
-from a13n_harness.usage import RunUsageSummary, UsageReportError
+from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
@@ -28,6 +29,7 @@ from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
+from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
@@ -86,6 +88,7 @@ class _RootOperation:
     restart: RestartItem | None = None
     goal: GoalView | None = None
     observation_only: bool = False
+    main_account: MainAccountSelection | None = None
 
 
 @dataclass(slots=True)
@@ -640,6 +643,7 @@ class RootRunCoordinator:
                         admission,
                         goal=operation.goal,
                         on_goal=lambda value: self._goal_changed(operation, value),
+                        on_main_account=lambda value: self._main_account_changed(operation, value),
                         on_stream=lambda stream, input_files=None: self._running(
                             operation.receipt.receipt_id, stream, input_files
                         ),
@@ -663,8 +667,8 @@ class RootRunCoordinator:
                         )
                     )
                     failure = (
-                        FailureView(code=exc.code, message=f"{exc}\n{feedback}")
-                        if isinstance(exc, UsageReportError)
+                        _exception_failure(exc, code="root_operation_failed", feedback=feedback)
+                        if isinstance(exc, HarnessError)
                         else FailureView(
                             code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                         )
@@ -850,6 +854,14 @@ class RootRunCoordinator:
         elif self._tool_executions is not None:
             self._tool_executions.retry(operation.receipt.thread_id)
 
+    async def _main_account_changed(self, operation: _RootOperation, value: MainAccountSelection) -> None:
+        previous = operation.main_account
+        if previous is not None and previous.account_id == value.account_id and previous.model_id == value.model_id:
+            return
+        operation.main_account = value
+        await self._persist_execution(operation)
+        await self._publish_change(operation)
+
     async def _persist_execution(self, operation: _RootOperation) -> None:
         if self._save_execution is None:
             return
@@ -861,6 +873,7 @@ class RootRunCoordinator:
         await self._save_execution(
             operation.receipt.thread_id,
             ThreadExecution(
+                main_account=operation.main_account,
                 execution_id=operation.receipt.receipt_id,
                 status=operation.status.value,
                 submitted_at=operation.receipt.submitted_at,
@@ -913,6 +926,7 @@ def _view(operation: _RootOperation) -> RootOperationView:
         outcome=operation.outcome,
         failure=operation.failure,
         goal=operation.goal,
+        main_account=operation.main_account,
         available_actions=tuple(action for action in actions if action == "wait")
         if operation.observation_only
         else actions,
@@ -978,20 +992,24 @@ def _safe_failure(value: SafeFailure) -> FailureView:
     )
 
 
-def _exception_failure(value: BaseException, *, code: str) -> FailureView:
-    if isinstance(value, HarnessUiError):
+def _exception_failure(value: BaseException, *, code: str, feedback: str = "") -> FailureView:
+    if isinstance(value, (HarnessUiError, HarnessError)):
         return FailureView(
             code=value.code[:256],
-            message=_bounded_message(str(value)),
+            message=_bounded_message(str(value), suffix=f"\n{feedback}" if feedback else ""),
             details=_json_mapping(value.details),
+            retry_hint=value.retry_hint if isinstance(value, HarnessError) else None,
         )
     return FailureView(code=code, message=_bounded_message(str(value) or type(value).__name__))
 
 
-def _bounded_message(value: str) -> str:
-    if len(value) <= 32 * 1024:
-        return value
-    return value[: 32 * 1024 - 23] + "\n...[message truncated]"
+def _bounded_message(value: str, *, suffix: str = "") -> str:
+    # Reserve room for diagnostic feedback before truncating the error text.
+    budget = 32 * 1024 - len(suffix)
+    if len(value) <= budget:
+        return value + suffix
+    marker = "\n...[message truncated]"
+    return value[: budget - len(marker)] + marker + suffix
 
 
 def _bounded_json(value: object) -> tuple[JsonValue | None, bool]:

@@ -27,10 +27,10 @@ from check_a13n_harness_ui_distribution import (  # noqa: E402
 type Artifact = tuple[Path, Callable[..., None]]
 COSS_LICENSE = (SCRIPTS_DIRECTORY.parent / "frontend/packages/a13n-ui/LICENSE.coss").read_bytes()
 
-HARNESS_RANGE = ">=0.0.5,<0.1.0"
+HARNESS_PIN = "==0.0.5"
 LOGGING_RANGE = ">=0.2.3,<0.3.0"
 RELEASE_REQUIREMENTS = [
-    *(f"{name}{HARNESS_RANGE}" for name in INTERNAL_PACKAGES),
+    *(f"{name}{HARNESS_PIN}" for name in INTERNAL_PACKAGES),
     f"a13n-logging{LOGGING_RANGE}",
 ]
 
@@ -132,7 +132,7 @@ def test_validates_cli_distribution(tmp_path: Path) -> None:
     )
 
     assert validate_wheel(wheel, require_compatible_dependencies=True) == {
-        **dict.fromkeys(INTERNAL_PACKAGES, HARNESS_RANGE),
+        **dict.fromkeys(INTERNAL_PACKAGES, HARNESS_PIN),
         "a13n-logging": LOGGING_RANGE,
     }
 
@@ -282,16 +282,15 @@ def _validate_release_artifact(path: Path) -> dict[str, str] | None:
     return validate_sdist(path, require_compatible_dependencies=True)[1]
 
 
-@pytest.mark.parametrize("dependency_range", [HARNESS_RANGE, ">=0.0.5rc1,<0.1.0"])
-def test_normalizes_compatible_ranges_and_allows_independent_logging_range(
+@pytest.mark.parametrize("dependency_range", [HARNESS_PIN, "==0.0.5rc1"])
+def test_accepts_exact_pins_with_extras_and_independent_logging_range(
     artifact: Artifact, dependency_range: str
 ) -> None:
     path, write = artifact
-    lower, upper = dependency_range.split(",")
     write(
         path,
         requirements=[
-            f"a13n-harness{upper},{lower}",
+            f"a13n-harness[docker,e2b,modal]{dependency_range}",
             f"a13n-stream-protocol{dependency_range}",
             "a13n-logging<0.3.0,>=0.2.3",
         ],
@@ -304,35 +303,45 @@ def test_normalizes_compatible_ranges_and_allows_independent_logging_range(
 
 
 @pytest.mark.parametrize("package", INTERNAL_PACKAGES)
-@pytest.mark.parametrize("dependency_range", [">=0.0.6,<0.1.0", ">=0.0.5,<0.2.0"])
+@pytest.mark.parametrize("dependency_range", ["==0.0.6", "==0.0.5rc1"])
 def test_rejects_mismatched_internal_dependency_ranges(artifact: Artifact, package: str, dependency_range: str) -> None:
     path, write = artifact
     write(
         path,
         requirements=[
-            f"{package}{dependency_range}" if value == f"{package}{HARNESS_RANGE}" else value
+            f"{package}{dependency_range}" if value == f"{package}{HARNESS_PIN}" else value
             for value in RELEASE_REQUIREMENTS
         ],
     )
 
-    with pytest.raises(DistributionError, match="internal dependency ranges do not match"):
+    with pytest.raises(DistributionError, match="internal dependency pins do not match"):
         _validate_release_artifact(path)
 
 
 @pytest.mark.parametrize("package", [*INTERNAL_PACKAGES, "a13n-logging"])
 @pytest.mark.parametrize(
     "dependency_range",
-    ["", "==0.0.5", ">=0.0.5", "<0.1.0", ">=0.0.0,<0.1.0", ">=0.1.0,<0.1.0", ">=0.2.0,<0.1.0"],
+    [
+        "",
+        "==0.0.0",
+        "==0.0.*",
+        "==0.0.5-rc.1",
+        ">=0.0.5",
+        "<0.1.0",
+        ">=0.0.0,<0.1.0",
+        ">=0.1.0,<0.1.0",
+        ">=0.2.0,<0.1.0",
+    ],
 )
 def test_rejects_invalid_dependency_ranges(artifact: Artifact, package: str, dependency_range: str) -> None:
     path, write = artifact
     write(
         path,
-        requirements=[value for value in RELEASE_REQUIREMENTS if not value.startswith(f"{package}>")]
+        requirements=[value for value in RELEASE_REQUIREMENTS if not value.startswith(package)]
         + [f"{package}{dependency_range}"],
     )
 
-    with pytest.raises(DistributionError, match=f"compatible dependency range for {package}"):
+    with pytest.raises(DistributionError, match=f"required dependency policy for {package}"):
         _validate_release_artifact(path)
 
 
@@ -342,8 +351,8 @@ def test_rejects_missing_or_duplicate_dependencies(artifact: Artifact, package: 
     path, write = artifact
     write(
         path,
-        requirements=[value for value in RELEASE_REQUIREMENTS if not value.startswith(f"{package}>")]
-        + [f"{package}{HARNESS_RANGE}"] * count,
+        requirements=[value for value in RELEASE_REQUIREMENTS if not value.startswith(package)]
+        + [f"{package}{HARNESS_PIN}"] * count,
     )
 
     with pytest.raises(DistributionError, match=f"Expected one {package} requirement"):
@@ -364,7 +373,7 @@ def test_main_compares_normalized_wheel_and_sdist_ranges(
     sdist = tmp_path / "a13n_harness_ui-9.8.7.tar.gz"
     _write_sdist(sdist)
     wheel = tmp_path / "a13n_harness_ui-9.8.7-py3-none-any.whl"
-    dependency_range = "<0.2.0,>=0.0.5" if mismatched == "harness" else "<0.1.0,>=0.0.5"
+    dependency_range = "==0.0.6" if mismatched == "harness" else HARNESS_PIN
     logging_range = "<0.4.0,>=0.2.3" if mismatched == "logging" else "<0.3.0,>=0.2.3"
     _write_wheel(
         wheel,
@@ -389,7 +398,7 @@ def test_rebuild_compares_normalized_dependency_ranges(
     _write_sdist(sdist)
     monkeypatch.setattr(checker.shutil, "which", lambda name: "/tools/uv")
     monkeypatch.setattr(checker, "_validate_wheel_imports", lambda path: None)
-    dependency_range = "<0.2.0,>=0.0.5" if mismatched == "harness" else "<0.1.0,>=0.0.5"
+    dependency_range = "==0.0.6" if mismatched == "harness" else HARNESS_PIN
     logging_range = "<0.4.0,>=0.2.3" if mismatched == "logging" else "<0.3.0,>=0.2.3"
 
     def build(command: list[str], **kwargs: object) -> SimpleNamespace:

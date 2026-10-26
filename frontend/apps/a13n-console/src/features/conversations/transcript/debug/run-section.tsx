@@ -56,6 +56,7 @@ export function DebugRunSection({
   thread,
   timeline,
   index,
+  earlier,
   resubmit,
   jumpToDock = () => {},
 }: {
@@ -65,6 +66,8 @@ export function DebugRunSection({
   timeline: RunTimeline;
   /** Position in the Thread; omitted while the Thread's Runs are unknown. */
   index: number | null;
+  /** History paging belongs inside this Run, below its identity. */
+  earlier?: ReactNode;
   /** Prefills the dock with this stopped Run's message, when it may be sent again. */
   resubmit?: () => void;
   jumpToDock?: () => void;
@@ -86,7 +89,6 @@ export function DebugRunSection({
     start: started,
     child: child && {
       path: childThreadPath(basePath, child),
-      runs: child.runs.length,
     },
     answerable: isInteractive(thread) && can("run"),
     jumpToDock,
@@ -164,6 +166,7 @@ export function DebugRunSection({
         </div>
         {open && <RunFacts run={run} duration={duration} />}
       </header>
+      {open && earlier}
       {open && (
         <RunLog>
           <AgentRow scope={scope} onOpen={() => setConfiguring(true)} />
@@ -186,7 +189,8 @@ export function DebugRunSection({
               <RequestContent request={request} />
             </Clamp>
           </LogBlock>
-          {timeline.coverage !== "complete" && (
+          {(timeline.coverage === "partial" ||
+            timeline.coverage === "unavailable") && (
             <p role="status" className={styles.coverage}>
               {t(
                 timeline.coverage === "unavailable"

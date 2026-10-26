@@ -329,7 +329,11 @@ export function TemplateConfig({
                       ? "daytona"
                       : definition?.type === "modal"
                         ? "modal"
-                        : "default"
+                        : definition?.type === "vercel"
+                          ? "vercel"
+                          : definition?.type === "sprites"
+                            ? "sprites"
+                            : "default"
               }
             >
               <DisclosureSection

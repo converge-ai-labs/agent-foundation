@@ -56,7 +56,7 @@ export function SessionList() {
     <Page
       title={t("Sessions")}
       description={t(
-        "Find a conversation, follow its progress, or trace it back to the source.",
+        "Find a session, follow its progress, or trace it back to the source.",
       )}
       actions={create}
       toolbar={<SessionFilterBar search={search} setSearch={setSearch} />}
@@ -236,7 +236,7 @@ function SessionResults({
           title={t(filtered ? "No matching sessions" : "No sessions yet")}
           description={t(
             filtered
-              ? "Try a title, source, external ID, or words from the conversation."
+              ? "Try a title, source, external ID, or words from the session."
               : "Start a session to talk with an agent in this workspace.",
           )}
           action={!filtered && create}

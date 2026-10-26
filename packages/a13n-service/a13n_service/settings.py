@@ -13,12 +13,17 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
-from a13n_harness.http import OUTBOUND_TLS_VERIFY_ENV, outbound_tls_verify
+from a13n_harness.http import (
+    FORWARD_CONTEXT_HEADERS_ENV,
+    OUTBOUND_TLS_VERIFY_ENV,
+    forward_context_headers_default,
+    outbound_tls_verify,
+)
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.model.oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTOAuthFlow
 
 from a13n_service.infra.outbox import OutboxKind, Policy
 from a13n_service.providers.collectors import Configuration as CollectorConfiguration
@@ -259,6 +264,15 @@ class Outbox(Section):
         return self
 
 
+class ToolExecutions(Section):
+    max_active: int = Field(default=64, ge=1, le=1024)
+    foreground_wait_seconds: float = Field(default=5, ge=0, le=300)
+    delivered_retention_seconds: int = Field(default=3600, ge=1, le=31536000)
+    max_retention_seconds: int = Field(default=86400, ge=1, le=31536000)
+    shutdown_grace_seconds: float = Field(default=300, ge=0, le=3600)
+    finalization_seconds: float = Field(default=10, gt=0, le=300)
+
+
 class Worker(Section):
     slots: int = Field(default=4, ge=1, le=128)
     max_attempts: int = Field(default=3, ge=1, le=20)
@@ -416,6 +430,9 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
+    forward_model_context_headers: bool = True
+    forward_mcp_context_headers: bool = True
+
     http_origins: tuple[str, ...] = ()
     require_https: bool = True
     # Exact URLs a browser authorization may return to after the connection callback, besides any page on the
@@ -434,27 +451,21 @@ class Providers(Section):
     # Per-read timeout of one model exchange; reasoning models can stay silent for minutes.
     model_timeout: float = Field(default=300, gt=0, le=3600)
     response_bytes: int = Field(default=16777216, ge=65536, le=268435456)
-    # Explicitly provisioned public SIWC client; an OSS-issued ID does not authorize HTTPS callbacks.
+    # Public ChatGPT registration and loopback callback.
     chatgpt_client_id: str | None = Field(default=None, min_length=1, max_length=256)
     chatgpt_redirect_uri: str = Field(default="http://127.0.0.1:1456/auth/callback", max_length=2048)
 
     @model_validator(mode="after")
     def chatgpt_callback(self) -> "Providers":
         if self.chatgpt_client_id is not None and (
-            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == DYNAMIC_CLIENT_ID
+            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == "dynamic_agent_client"
         ):
-            raise ValueError("providers.chatgpt_client_id must be an explicitly provisioned client ID")
+            raise ValueError("providers.chatgpt_client_id must be an issued public client ID")
         try:
-            validate_chatgpt_redirect_uri(
-                self.chatgpt_redirect_uri, preconfigured_client=self.chatgpt_client_id is not None
-            )
+            OpenAIChatGPTOAuthFlow(app_name="Agent Foundation OSS", redirect_uri=self.chatgpt_redirect_uri)
         except UserError as error:
             raise ValueError(f"providers.chatgpt_redirect_uri: {error}") from None
         return self
-
-    @property
-    def chatgpt_browser_callback(self) -> bool:
-        return urlsplit(self.chatgpt_redirect_uri).scheme == "https"
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:
@@ -605,6 +616,7 @@ class Settings(Section):
     schedules: Schedules = Field(default_factory=Schedules)
     outbox: Outbox = Field(default_factory=Outbox)
     worker: Worker = Field(default_factory=Worker)
+    tool_executions: ToolExecutions = Field(default_factory=ToolExecutions)
     run_search: RunSearch = Field(default_factory=RunSearch)
     environments: Environments = Field(default_factory=Environments)
     provisioning: Provisioning = Field(default_factory=Provisioning)
@@ -616,17 +628,6 @@ class Settings(Section):
     monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def chatgpt_callback_origin(self) -> "Settings":
-        if self.providers.chatgpt_browser_callback:
-            parts = urlsplit(self.providers.chatgpt_redirect_uri)
-            origin = f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}"
-            if origin != self.server.public_origin:
-                raise ValueError(
-                    "providers.chatgpt_redirect_uri must share server.public_url's origin for browser cookies"
-                )
-        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":
@@ -700,13 +701,18 @@ class Settings(Section):
 
 def load_settings(path: Path | None = None, *, extensions: Mapping[str, type[Section]] = {}) -> Settings:
     outbound_tls_verify()
+    forward_context_headers_default()
     selected = path or (Path(os.environ["A13N_SETTINGS_FILE"]) if "A13N_SETTINGS_FILE" in os.environ else None)
     values: dict[str, Any] = tomllib.loads(selected.read_text()) if selected else {}
     known = set(Settings.model_fields) - {"extensions"}
     if shadowed := known & set(extensions):
         raise ValueError(f"Distribution settings sections shadow core sections: {sorted(shadowed)}")
     for name, value in os.environ.items():
-        if not name.startswith("A13N_") or name in {"A13N_SETTINGS_FILE", OUTBOUND_TLS_VERIFY_ENV}:
+        if not name.startswith("A13N_") or name in {
+            "A13N_SETTINGS_FILE",
+            OUTBOUND_TLS_VERIFY_ENV,
+            FORWARD_CONTEXT_HEADERS_ENV,
+        }:
             continue
         parts = name.removeprefix("A13N_").lower().split("__")
         if len(parts) != 2 or parts[0] not in known | set(extensions):

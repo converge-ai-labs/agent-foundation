@@ -49,17 +49,19 @@ def _parts(item: Item) -> list[dict[str, Any]]:
             "provider": content.get("provider"),
         }
         parts = [{"kind": "tool_call", "value": content.get("arguments"), **common}]
+        # Older saved items predate the native retried outcome's retry flag.
+        retry = content.get("retry") or content.get("outcome") == "retried"
         # Reserve the result coordinate with the call: a later result must not
         # renumber assistant parts that already have saved transcript positions.
         parts.append(
             {
-                "kind": "retry" if content.get("retry") else "tool_result",
+                "kind": "retry" if retry else "tool_result",
                 **common,
                 "outcome": content.get("outcome")
                 or ("failed" if item.state == "failed" else "success" if item.state == "completed" else None),
                 "value": content.get("value", content.get("result", content.get("failure"))),
                 "content_parts": content.get("result_parts", []),
-                "text": str(content.get("value", "")) if content.get("retry") else None,
+                "text": str(content.get("value", "")) if retry else None,
                 "applied_edit": content.get("applied_edit"),
                 "tool_images": content.get("tool_images", []),
                 "mcp_apps": content.get("mcp_apps", []),

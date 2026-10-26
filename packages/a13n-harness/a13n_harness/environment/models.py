@@ -231,6 +231,7 @@ class EnvironmentDescriptor(BaseModel):
 
     generation: str
     backing_identity: str | None = Field(default=None, min_length=1, max_length=256)
+    environment_case_sensitive: bool = Field(default=True, exclude_if=lambda value: value)
     execution_boundary: Mapping[str, JsonValue] = Field(default_factory=dict)
     working_directory: str = Field(default="/", pattern=r"^/[^\x00]*$")
     operation_families: frozenset[EnvironmentOperationFamily]

@@ -1,32 +1,26 @@
 """Workspace-shared Model Provider OAuth, with short claims around external I/O.
 
-The Harness owns the OpenAI protocol. Service owns encrypted state, authorization,
-consumption fences and renewable grant publication across Control and Workers.
+Pydantic AI owns the OpenAI protocol and refresh. Service owns encrypted state,
+authorization, pending-attempt consumption and credential publication.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import UTC, datetime, timedelta
-from time import monotonic
+from datetime import datetime
 from typing import Literal
-from urllib.parse import urlsplit
 from uuid import uuid4
 
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.oauth.chatgpt import (
     ChatGPTAuthorization,
-    OpenAIChatGPTCredentials,
-    OpenAIChatGPTOAuthFlow,
-    OpenAIChatGPTRefresh,
-    revoke_chatgpt_credentials,
+    StoredChatGPTCredentials,
+    credential_metadata,
 )
-from a13n_harness.providers.model.oauth.models import ModelAuthenticationError, RefreshNotDispatched
-from a13n_harness.providers.model.oauth.rotation import require_same_account
-from a13n_harness.providers.model.openai_chatgpt import Config, Credential
-from anyio import CancelScope, sleep
+from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
+from a13n_harness.providers.model.openai_chatgpt import Config
+from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentials, OpenAIChatGPTCredentialSource
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,14 +28,13 @@ from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.outbound import open_http
 from a13n_service.resources.providers.tables import ModelProviderOAuthRow, ModelProviderRow
 from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.settings import Providers
-from a13n_service.tenancy.access import require_login_session, workspace_scope
+from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, Verb
 
-_CREDENTIALS = TypeAdapter(OpenAIChatGPTCredentials)
+_CREDENTIALS = TypeAdapter(StoredChatGPTCredentials)
 _PENDING = TypeAdapter(ChatGPTAuthorization)
 
 
@@ -61,12 +54,12 @@ class AuthorizationStart(BaseModel):
     attempt_id: str
     authorization_url: str
     expires_at: datetime
-    method: Literal["manual_callback", "browser_callback"] = "manual_callback"
+    method: Literal["manual_callback"] = "manual_callback"
 
 
 class AuthorizationStatus(BaseModel):
     provider_id: str
-    state: Literal["disconnected", "connected", "refreshing", "reauthentication_required"]
+    state: Literal["disconnected", "connected", "reauthentication_required"]
     subject: str | None = None
     client_id: str | None = None
     email: str | None = None
@@ -99,21 +92,12 @@ def _protect(
     return keys.protect(payload, _location(row, column)).model_dump(mode="json")
 
 
-def _view(row: ModelProviderOAuthRow | None, provider_id: str) -> AuthorizationStatus:
+def _view(row: ModelProviderOAuthRow | None, provider_id: str, keys: KeyRing) -> AuthorizationStatus:
     if row is None:
         return AuthorizationStatus(provider_id=provider_id, state="disconnected")
-    state: Literal["disconnected", "connected", "refreshing", "reauthentication_required"] = "disconnected"
-    interrupted = row.refresh_claim is not None and (
-        row.refresh_started_at is None or datetime.now(UTC) >= row.refresh_started_at + timedelta(minutes=3)
-    )
+    state: Literal["disconnected", "connected", "reauthentication_required"] = "disconnected"
     if row.tokens is not None:
-        state = (
-            "reauthentication_required"
-            if row.refresh_blocked or interrupted
-            else "refreshing"
-            if row.refresh_claim
-            else "connected"
-        )
+        state = "connected" if _credentials(row, keys).plan_usage_granted else "reauthentication_required"
     return AuthorizationStatus(
         provider_id=provider_id,
         state=state,
@@ -122,8 +106,8 @@ def _view(row: ModelProviderOAuthRow | None, provider_id: str) -> AuthorizationS
         email=row.email,
         expires_at=row.expires_at,
         pending=row.pending is not None or row.login_claim is not None,
-        message="The previous token refresh outcome is unknown. Sign in again."
-        if row.refresh_blocked or interrupted
+        message="Sign in again and approve ChatGPT plan usage."
+        if state == "reauthentication_required"
         else "ChatGPT sign-in is completing. Restart authorization if it does not finish."
         if row.login_claim is not None
         else None,
@@ -140,11 +124,13 @@ async def authorized_provider(
     return row
 
 
-async def status(storage: Storage, actor: Principal, workspace_id: str, provider_id: str) -> AuthorizationStatus:
+async def status(
+    storage: Storage, actor: Principal, workspace_id: str, provider_id: str, *, keys: KeyRing
+) -> AuthorizationStatus:
     async with short_session(storage) as session:
         await authorized_provider(session, actor, workspace_id, provider_id, "read")
         row = await session.get(ModelProviderOAuthRow, provider_id)
-        return _view(row, provider_id)
+        return _view(row, provider_id, keys)
 
 
 async def authorize(
@@ -156,39 +142,12 @@ async def authorize(
     *,
     keys: KeyRing,
     settings: Providers,
-    public_origin: str,
 ) -> AuthorizationStart:
     async with transaction(storage) as session:
         provider = await authorized_provider(session, actor, workspace_id, provider_id, "write", lock=True)
         config = Config.model_validate(provider.config)
-        try:
-            selected = Providers.model_validate(
-                {
-                    **settings.model_dump(),
-                    "chatgpt_client_id": config.client_id or settings.chatgpt_client_id,
-                    "chatgpt_redirect_uri": config.redirect_uri or settings.chatgpt_redirect_uri,
-                }
-            )
-            if selected.chatgpt_browser_callback:
-                parts = urlsplit(selected.chatgpt_redirect_uri)
-                if f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}" != public_origin:
-                    raise ValueError("The callback URL must share the Service public URL's origin")
-                require_login_session(actor)
-        except ValueError:
-            raise invalid(
-                "config.redirect_uri",
-                "use a registered callback URL on the Service public origin, or an OSS loopback URL",
-            ) from None
-        client_secret = None
-        if config.token_endpoint_auth_method == "client_secret_basic":
-            if provider.credential is None:
-                raise invalid("credential", "the confidential OAuth client requires its client secret")
-            client_secret = Credential.model_validate_json(
-                keys.reveal(
-                    Envelope.model_validate(provider.credential),
-                    SecretLocation(provider.organization_id, provider.__tablename__, "credential", provider.id),
-                )
-            ).client_secret.get_secret_value()
+        selected_client = config.client_id or settings.chatgpt_client_id
+        redirect_uri = config.redirect_uri or settings.chatgpt_redirect_uri
         row = await session.get(ModelProviderOAuthRow, provider_id, with_for_update=True)
         if row is None:
             row = ModelProviderOAuthRow(
@@ -202,32 +161,24 @@ async def authorize(
         # Only an unregistered host can replace its rejected legacy identifier.
         if row.client_id is None and row.host_id.startswith("host_"):
             row.host_id = uuid4().urn
-        retained_client = selected.chatgpt_client_id is None or row.client_id == selected.chatgpt_client_id
+        retained_client = selected_client is None or row.client_id == selected_client
         reuse_registration = retained_client and not body.new_registration
         credentials = _credentials(row, keys) if row.tokens is not None and reuse_registration else None
-        flow = OpenAIChatGPTOAuthFlow.start(
-            ext_agent_host_id=row.host_id,
-            agent_name="Agent Foundation OSS",
-            redirect_uri=selected.chatgpt_redirect_uri,
-            client_id=selected.chatgpt_client_id,
-            token_endpoint_auth_method=config.token_endpoint_auth_method,
-            client_secret=client_secret,
+        pending = ChatGPTAuthorization.start(
+            host_id=row.host_id,
+            redirect_uri=redirect_uri,
+            client_id=selected_client or (row.client_id if reuse_registration else None),
             credentials=credentials,
         )
-        if credentials is None and row.client_id and reuse_registration:
-            flow = OpenAIChatGPTOAuthFlow(
-                replace(flow.authorization, client_id=row.client_id, subject=row.subject, login_hint=row.email)
-            )
         attempt_id = new_object_id("oauth")
         row.pending_id = attempt_id
-        row.pending = _protect(row, keys, "pending", flow.authorization)
+        row.pending = _protect(row, keys, "pending", pending)
         row.login_claim = None
         audit_row(session, actor, provider, "oauth_authorize")
         return AuthorizationStart(
             attempt_id=attempt_id,
-            authorization_url=flow.authorization_url(),
-            expires_at=flow.authorization.expires_at,
-            method="browser_callback" if selected.chatgpt_browser_callback else "manual_callback",
+            authorization_url=pending.authorization_url(),
+            expires_at=pending.expires_at,
         )
 
 
@@ -239,8 +190,6 @@ async def complete(
     body: AuthorizationCallback,
     *,
     keys: KeyRing,
-    policy: EndpointPolicy,
-    settings: Providers,
 ) -> AuthorizationStatus:
     async with transaction(storage) as session:
         provider = await authorized_provider(session, actor, workspace_id, provider_id, "write", lock=True)
@@ -248,9 +197,8 @@ async def complete(
         if row is None or row.pending_id != body.attempt_id or row.pending is None:
             raise conflict("model_provider", provider_id, "authorization_not_pending")
         pending = _PENDING.validate_json(keys.reveal(Envelope.model_validate(row.pending), _location(row, "pending")))
-        flow = OpenAIChatGPTOAuthFlow(pending)
         try:
-            flow.validate_callback(body.callback_url.get_secret_value())
+            pending.validate_callback(body.callback_url.get_secret_value())
         except UserError:
             raise invalid(
                 "callback_url", "the complete callback URL does not match this authorization attempt"
@@ -259,12 +207,9 @@ async def complete(
         row.pending = None
         row.pending_id = None
         row.login_claim = body.attempt_id
-    # No session survives discovery, token exchange or signing-key lookup.
+    # The official flow exchanges the code without holding a database session.
     try:
-        async with open_http(policy, timeout=settings.model_timeout, max_bytes=settings.response_bytes) as client:
-            credentials = await OpenAIChatGPTOAuthFlow(pending, http_client=client).exchange_callback(
-                body.callback_url.get_secret_value()
-            )
+        credentials = await pending.exchange_callback(body.callback_url.get_secret_value())
     except Exception:
         raise ServiceError(
             "unavailable",
@@ -284,14 +229,14 @@ async def complete(
             ):
                 raise conflict("model_provider", provider_id, "authorization_replaced")
             row.tokens = _protect(row, keys, "tokens", credentials)
-            row.client_id, row.subject, row.email = credentials.client_id, credentials.subject, credentials.email
-            row.expires_at = credentials.expires_at
+            row.client_id = credentials.client_id
+            row.subject, row.email, row.expires_at = credential_metadata(credentials)
             row.login_claim = None
             row.refresh_claim = None
             row.refresh_started_at = None
             row.refresh_blocked = False
             audit_row(session, actor, provider, "oauth_tokens")
-            return _view(row, provider_id)
+            return _view(row, provider_id, keys)
     raise RuntimeError("OAuth credential publication did not complete")
 
 
@@ -302,15 +247,12 @@ async def disconnect(
     provider_id: str,
     *,
     keys: KeyRing,
-    policy: EndpointPolicy,
-    settings: Providers,
 ) -> AuthorizationDisconnect:
     async with transaction(storage) as session:
         provider = await authorized_provider(session, actor, workspace_id, provider_id, "write", lock=True)
         row = await session.get(ModelProviderOAuthRow, provider_id, with_for_update=True)
         if row is None:
             return AuthorizationDisconnect()
-        credentials = _credentials(row, keys) if row.tokens is not None else None
         row.tokens = None
         row.pending = None
         row.pending_id = None
@@ -319,24 +261,16 @@ async def disconnect(
         row.refresh_started_at = None
         row.refresh_blocked = False
         audit_row(session, actor, provider, "oauth_tokens")
-    if credentials is None:
-        return AuthorizationDisconnect()
-    confirmed = False
-    try:
-        async with open_http(policy, timeout=settings.model_timeout, max_bytes=settings.response_bytes) as client:
-            await revoke_chatgpt_credentials(credentials, http_client=client)
-        confirmed = True
-    except Exception:
-        pass
-    return AuthorizationDisconnect(revocation_confirmed=confirmed)
+    return AuthorizationDisconnect()
 
 
-class ChatGPTCredentialSource:
-    """Cross-worker rotating grants: claim/commit, exchange, then fenced publication."""
+class ChatGPTCredentialSource(OpenAIChatGPTCredentialSource):
+    """Encrypted load/save storage; Pydantic AI owns refresh and retries."""
 
     def __init__(self, storage: Storage, keys: KeyRing, provider_id: str, organization_id: str):
         self.storage, self.keys = storage, keys
         self.provider_id, self.organization_id = provider_id, organization_id
+        self._loaded: OpenAIChatGPTCredentials | None = None
 
     async def _row(self, session: AsyncSession, *, lock: bool = False) -> ModelProviderOAuthRow:
         statement = select(ModelProviderOAuthRow).where(
@@ -349,70 +283,23 @@ class ChatGPTCredentialSource:
         return row
 
     async def load(self) -> OpenAIChatGPTCredentials:
-        deadline = monotonic() + 30
-        while True:
-            async with short_session(self.storage) as session:
-                row = await self._row(session)
-                if row.refresh_blocked:
-                    raise ModelAuthenticationError(
-                        "openai-chatgpt", "The previous refresh outcome is unknown. Sign in again."
-                    )
-                if row.refresh_claim is None:
-                    return _credentials(row, self.keys)
-                if row.refresh_started_at is None or datetime.now(UTC) >= row.refresh_started_at + timedelta(minutes=3):
-                    raise ModelAuthenticationError(
-                        "openai-chatgpt", "An interrupted refresh cannot be replayed. Sign in again."
-                    )
-            if monotonic() >= deadline:
-                raise ModelAuthenticationError(
-                    "openai-chatgpt", "Another worker is refreshing this Model Provider. Retry later."
-                )
-            await sleep(0.1)
+        async with short_session(self.storage) as session:
+            current = _credentials(await self._row(session), self.keys)
+        if self._loaded is not None and current.client_id != self._loaded.client_id:
+            raise ModelAuthenticationError("openai-chatgpt", "The ChatGPT registration changed.")
+        self._loaded = current
+        return current
 
-    async def rotate(
-        self, expected: OpenAIChatGPTCredentials, exchange: OpenAIChatGPTRefresh
-    ) -> OpenAIChatGPTCredentials:
-        while True:
-            current = await self.load()
-            require_same_account(expected, current)
-            if current != expected:
-                return current
-            async with transaction(self.storage) as session:
-                row = await self._row(session, lock=True)
-                current = _credentials(row, self.keys)
-                require_same_account(expected, current)
-                if current != expected:
-                    return current
-                if row.refresh_claim is not None:
-                    continue
-                if row.refresh_blocked:
-                    raise ModelAuthenticationError(
-                        "openai-chatgpt", "The previous refresh outcome is unknown. Sign in again."
-                    )
-                claim = new_object_id("grant")
-                row.refresh_claim = claim
-                row.refresh_started_at = datetime.now(UTC)
-            break
-        try:
-            rotated = await exchange(current)
-            require_same_account(current, rotated)
-        except BaseException as error:
-            with CancelScope(shield=True):
-                async with transaction(self.storage) as session:
-                    row = await self._row(session, lock=True)
-                    if row.refresh_claim == claim:
-                        row.refresh_claim = None
-                        row.refresh_started_at = None
-                        row.refresh_blocked = not isinstance(error, RefreshNotDispatched)
-            raise
+    async def save(self, credentials: OpenAIChatGPTCredentials) -> None:
         with CancelScope(shield=True):
             async with transaction(self.storage) as session:
                 row = await self._row(session, lock=True)
-                if row.refresh_claim != claim:
-                    raise ModelAuthenticationError("openai-chatgpt", "The authorization changed during token refresh.")
-                row.tokens = _protect(row, self.keys, "tokens", rotated)
-                row.expires_at = rotated.expires_at
-                row.refresh_claim = None
-                row.refresh_started_at = None
-                row.refresh_blocked = False
-        return rotated
+                if (
+                    self._loaded is None
+                    or _credentials(row, self.keys) != self._loaded
+                    or credentials.client_id != self._loaded.client_id
+                ):
+                    raise ModelAuthenticationError("openai-chatgpt", "ChatGPT authorization changed during refresh.")
+                row.tokens = _protect(row, self.keys, "tokens", credentials)
+                row.subject, row.email, row.expires_at = credential_metadata(credentials)
+            self._loaded = credentials

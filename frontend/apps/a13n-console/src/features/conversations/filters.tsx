@@ -43,6 +43,7 @@ const triggers: Schema["Trigger"][] = [
   "queued",
   "resume",
   "child_result",
+  "tool_result",
   "spawned",
 ];
 const keys = [

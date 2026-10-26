@@ -23,6 +23,7 @@ interface ScrollController {
 export function useTranscriptScroll(
   content: RefObject<HTMLElement | null>,
   level?: string,
+  identity?: string,
 ) {
   const [showJump, setShowJump] = useState(false);
   const controller = useRef<ScrollController | null>(null);
@@ -37,8 +38,18 @@ export function useTranscriptScroll(
       const run = [...element.querySelectorAll<HTMLElement>("[data-run]")].find(
         (run) => run.getBoundingClientRect().bottom > edge,
       );
+      const message =
+        run &&
+        [...run.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+          (item) => item.getBoundingClientRect().bottom > edge,
+        );
       return run
-        ? { id: run.dataset.run, top: run.getBoundingClientRect().top }
+        ? {
+            id: run.dataset.run,
+            message: message?.dataset.messageId,
+            runTop: run.getBoundingClientRect().top,
+            top: (message ?? run).getBoundingClientRect().top,
+          }
         : undefined;
     };
     let anchor = capture();
@@ -117,12 +128,18 @@ export function useTranscriptScroll(
           ...element.querySelectorAll<HTMLElement>("[data-run]"),
         ].find((run) => run.dataset.run === saved.id);
         if (!run) return;
-        const bounds = run.getBoundingClientRect();
+        const message =
+          !changedLevel && saved.message
+            ? [...run.querySelectorAll<HTMLElement>("[data-message-id]")].find(
+                (item) => item.dataset.messageId === saved.message,
+              )
+            : undefined;
+        const bounds = (message ?? run).getBoundingClientRect();
         // Chat can be much shorter than Debug. Keep the same Run in view
         // without restoring an offset beyond its newly rendered content.
         const top = changedLevel
           ? Math.max(
-              saved.top,
+              saved.runTop,
               stage.getBoundingClientRect().top -
                 Math.max(0, bounds.height - stage.clientHeight),
             )
@@ -173,7 +190,7 @@ export function useTranscriptScroll(
         stage.removeEventListener(event, onGestureEnd);
       controller.current = null;
     };
-  }, [content]);
+  }, [content, identity]);
   useLayoutEffect(() => controller.current?.reflow(), [level]);
   useLayoutEffect(() => controller.current?.align());
   const followLatest = useCallback(

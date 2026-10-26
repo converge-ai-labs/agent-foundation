@@ -200,15 +200,15 @@ it("keeps Fast inside settings, distinguishes false from default, and resets on 
   render(<Choices />);
   expect(screen.queryByRole("button", { name: "Fast mode" })).toBeNull();
   await user.click(button("Agent & Model settings"));
-  expect(screen.getByText("On")).toBeTruthy();
+  expect(screen.getByText("Fast", { selector: "span" })).toBeTruthy();
   await user.click(button("Fast mode"));
   expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(button("Agent & Model settings"));
   expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
-  await user.click(button("Use default Fast mode"));
-  expect(screen.getByText("On")).toBeTruthy();
+  await user.click(button("Use model speed"));
+  expect(screen.getByText("Fast", { selector: "span" })).toBeTruthy();
   await user.click(button("Fast mode"));
   await user.click(button("Model"));
   await user.click(button("Other model"));
@@ -216,7 +216,7 @@ it("keeps Fast inside settings, distinguishes false from default, and resets on 
   expect(screen.getByText("No Fast support")).toBeTruthy();
   await user.click(button("Model"));
   await user.click(button(/Agent default/));
-  expect(screen.getByText("On")).toBeTruthy();
+  expect(screen.getByText("Fast", { selector: "span" })).toBeTruthy();
 });
 
 it("keeps unsupported overrides resettable instead of silently changing them", async () => {
@@ -250,7 +250,7 @@ it("keeps unsupported overrides resettable instead of silently changing them", a
     fast: true,
     reasoning_mode: "pro",
   });
-  await user.click(button("Use default Fast mode"));
+  await user.click(button("Use model speed"));
   expect(onControlsChange).toHaveBeenLastCalledWith({
     thinking: "max",
     fast: null,
@@ -279,7 +279,7 @@ it("cannot change selections while submission disables the controls", async () =
     "Low",
     "Use default thinking",
     "Fast mode",
-    "Use default Fast mode",
+    "Use model speed",
   ]) {
     expect((button(name) as HTMLButtonElement).disabled).toBe(true);
     await user.click(button(name));
@@ -329,5 +329,5 @@ it("changes Agent inside settings and clears model controls for the new inherite
   await user.click(button("Agent"));
   await user.click(button(/^Writer/));
   expect(screen.getByText("Model default: High")).toBeTruthy();
-  expect(screen.getByText("On")).toBeTruthy();
+  expect(screen.getByText("Fast", { selector: "span" })).toBeTruthy();
 });

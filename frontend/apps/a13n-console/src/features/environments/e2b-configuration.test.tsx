@@ -55,7 +55,7 @@ function configuration() {
   return JSON.parse(screen.getByTestId("config").textContent ?? "{}");
 }
 
-it("selects Envd and requires a custom template for desktop operations", async () => {
+it("selects automatic desktop preparation and supports opting into a custom template", async () => {
   const user = userEvent.setup();
   render(<Editor />);
   expect(screen.getByText("base", { exact: true })).toBeTruthy();
@@ -63,15 +63,18 @@ it("selects Envd and requires a custom template for desktop operations", async (
   expect(configuration()).toMatchObject({
     execution: "envd_http",
     desktop: true,
-    template: "",
+    template: "auto",
+    desktop_assistance: true,
   });
   expect(
     (
       screen.getByRole("button", {
-        name: "Official default",
+        name: "Automatic desktop",
       }) as HTMLButtonElement
     ).disabled,
-  ).toBe(true);
+  ).toBe(false);
+  expect(screen.queryByRole("textbox", { name: "E2B template" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Custom template" }));
   await user.type(
     screen.getByRole("textbox", { name: "E2B template" }),
     "team-envd",
@@ -82,6 +85,18 @@ it("selects Envd and requires a custom template for desktop operations", async (
     desktop: false,
     desktop_assistance: false,
     template: "team-envd",
+  });
+});
+
+it("returns automatic desktop to the native base when desktop is disabled", async () => {
+  const user = userEvent.setup();
+  render(<Editor template="auto" desktop />);
+  await user.click(screen.getByRole("switch", { name: "Desktop environment" }));
+  expect(configuration()).toMatchObject({
+    template: "base",
+    execution: "native",
+    desktop: false,
+    desktop_assistance: false,
   });
 });
 

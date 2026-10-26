@@ -18,8 +18,8 @@ Choose a ChatGPT, Codex, Grok, or GitHub Copilot subscription, or an API-key con
 | Connection                  | What you provide                               | Where credentials live                                               |
 | --------------------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
 | ChatGPT subscription        | Sign-in and the complete callback URL          | Harness UI data root (`auth.json`)                                   |
-| Codex subscription          | Compatible login                               | Shared Codex account store                                           |
-| Grok subscription           | Compatible login                               | Shared Grok account store                                            |
+| Codex subscription          | Compatible login                               | Host-owned account store; one-time import of an existing login       |
+| Grok subscription           | Compatible login                               | Host-owned account store; one-time import of an existing login       |
 | GitHub Copilot subscription | Device login or an existing Copilot CLI login  | Harness UI data root (`oauth/copilot.json`) or the Copilot CLI store |
 | API key                     | Provider/protocol, model ID, and key reference | An environment variable or Harness UI's local key store              |
 
@@ -44,7 +44,7 @@ See [Model settings](models-and-authentication.md#native-request-settings-and-co
 ## 3. Choose execution permissions
 
 - **Full Control:** commands run with your host account's filesystem and network authority. No Envd runtime is required.
-- **Sandbox:** setup checks local isolation prerequisites before saving. Failure does not fall back to Full Control. Built-in Windows execution supports Full Control only.
+- **Sandbox:** setup checks local isolation prerequisites before saving. Failure does not fall back to Full Control. Windows Sandbox uses experimental native MXC isolation; see [platform requirements](environments-and-projects.md#execution-permissions).
 
 In the TUI, your selection saves configuration without an additional confirmation step. In WebUI, the Workspace step validates your choices automatically. Selecting Sandbox downloads envd if needed, verifies it, and checks isolation; progress and failures are shown alongside the execution choice and in the footer. You can cancel preparation or retry a failed check. Full Control with Direct needs no download. Choose **Save and start chatting** when ready; reviewing generated files is optional. Saving opens an empty conversation without sending a model request.
 

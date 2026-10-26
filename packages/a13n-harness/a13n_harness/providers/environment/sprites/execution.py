@@ -1,21 +1,27 @@
 """Sprites execution implementation."""
 
-import asyncio
-import json
-from urllib.parse import urlencode
-
-from websockets.asyncio.client import connect
-from websockets.exceptions import WebSocketException
+from collections.abc import AsyncIterator
+from typing import BinaryIO
 
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_harness.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
-from a13n_harness.providers.environment.native.configuration import NamedTargetState
+from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.providers.environment.native.environment import NativeExecution
 from a13n_harness.providers.environment.native.errors import failure
-from a13n_harness.providers.environment.sprites.shared import SpritesEnvironmentConfiguration, SpritesReference
+from a13n_harness.providers.environment.native.transfers import (
+    CHUNK_BYTES,
+    SPRITES_UPLOAD_BYTES,
+    file_chunks,
+    remaining_bytes,
+)
+from a13n_harness.providers.environment.sprites.commands import command
+from a13n_harness.providers.environment.sprites.shared import (
+    SpritesEnvironmentConfiguration,
+    SpritesReference,
+    SpritesTargetState,
+)
 
 
-class SpritesExecution(SpritesReference, NativeExecution[SpritesEnvironmentConfiguration, NamedTargetState]):
+class SpritesExecution(SpritesReference, NativeExecution[SpritesEnvironmentConfiguration, SpritesTargetState]):
     async def open(self, *, execution_id: str) -> None:
         self.require_target()
         info = await self.lookup()
@@ -23,63 +29,32 @@ class SpritesExecution(SpritesReference, NativeExecution[SpritesEnvironmentConfi
             raise failure(self.provider_key, "provider_target_missing", Category.MISSING)
         await self.open_operations(self.execute, info.id, execution_id)
 
+    async def read_stream(self, path: str) -> AsyncIterator[bytes]:
+        async with self.transport().stream(
+            "GET",
+            self.path + "/fs/read",
+            params={"path": path, "workingDir": self.config.root},
+        ) as response:
+            async for chunk in response.aiter_bytes(CHUNK_BYTES):
+                yield chunk
+
+    async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None:
+        size = remaining_bytes(source)
+        if size > SPRITES_UPLOAD_BYTES:
+            raise EnvironmentError("Sprites uploads are limited to 16 MiB.", code="environment_too_large")
+        async with self.transport().stream(
+            "PUT",
+            self.path + "/fs/write",
+            params={"path": path, "workingDir": self.config.root, "mode": f"{mode:04o}"},
+            headers={"Content-Type": "application/octet-stream", "Content-Length": str(size)},
+            content=file_chunks(source),
+        ) as response:
+            # Drain only a bounded acknowledgement, never buffer an arbitrary body.
+            total = 0
+            async for chunk in response.aiter_bytes(CHUNK_BYTES):
+                total += len(chunk)
+                if total > CHUNK_BYTES:
+                    raise EnvironmentError("Invalid upload response.", code="environment_provider_failure")
+
     async def execute(self, argv: list[str], timeout: float) -> str:
-        launcher = [self.config.python, "-I", "-c", "import json,os,sys; a=json.load(sys.stdin); os.execvp(a[0],a)"]
-        query = urlencode([*(("cmd", arg) for arg in launcher), ("path", launcher[0]), ("stdin", "true")])
-        url = "wss://api.sprites.dev" + self.path + "/exec?" + query
-        output = bytearray()
-        try:
-            async with asyncio.timeout(timeout):
-                async with connect(
-                    url,
-                    additional_headers={"Authorization": f"Bearer {self.token.get_secret_value()}"},
-                    max_size=1024 * 1024,
-                    close_timeout=1,
-                ) as socket:
-                    await socket.send(b"\x00" + json.dumps(argv).encode())
-                    await socket.send(b"\x04")
-                    async for message in socket:
-                        if isinstance(message, bytes):
-                            if not message:
-                                continue
-                            channel, payload = message[0], message[1:]
-                            if channel == 1:
-                                output.extend(payload)
-                                if len(output) > 24 * 1024 * 1024:
-                                    raise failure(
-                                        self.provider_key,
-                                        "provider_response_invalid",
-                                        Category.UNKNOWN_OUTCOME,
-                                        certainty=Certainty.UNKNOWN,
-                                    )
-                            elif channel == 3:
-                                if len(payload) != 1:
-                                    break
-                                if payload[0] != 0:
-                                    raise failure(
-                                        self.provider_key,
-                                        "provider_command_failed",
-                                        Category.PROVIDER_FAILURE,
-                                        certainty=Certainty.KNOWN,
-                                    )
-                                return output.decode()
-                        else:
-                            event = json.loads(message)
-                            if event.get("type") == "exit":
-                                if type(event["exit_code"]) is not int:
-                                    raise ValueError("Invalid native exit code")
-                                if event["exit_code"] != 0:
-                                    raise failure(
-                                        self.provider_key,
-                                        "provider_command_failed",
-                                        Category.PROVIDER_FAILURE,
-                                        certainty=Certainty.KNOWN,
-                                    )
-                                return output.decode()
-                            if event.get("type") == "error":
-                                break
-        except (WebSocketException, TimeoutError, OSError, ValueError, TypeError, KeyError):
-            pass
-        raise failure(
-            self.provider_key, "provider_unknown_outcome", Category.UNKNOWN_OUTCOME, certainty=Certainty.UNKNOWN
-        )
+        return await command(self, argv, timeout)

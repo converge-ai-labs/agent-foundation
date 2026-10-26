@@ -487,6 +487,7 @@ it("keeps missing, omitted, malformed and unsuccessful question results visible 
     { outcome: "failed" as const },
     { outcome: "denied" as const },
     { outcome: "interrupted" as const },
+    { outcome: "retried" as const },
     { retry: true },
   ]) {
     const { unmount } = render(

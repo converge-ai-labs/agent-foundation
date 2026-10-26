@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -132,6 +133,7 @@ def _descriptor(
     return EnvironmentDescriptor(
         generation=generation,
         backing_identity=backing_identity,
+        environment_case_sensitive=os.name != "nt",
         operation_families=frozenset(families),
         permissions=EnvironmentPermissionSet(operations=frozenset(permissions)),
         limits=limits,

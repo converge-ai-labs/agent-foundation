@@ -3,6 +3,7 @@
 import hashlib
 import json
 from collections.abc import Callable, Sequence
+from contextvars import ContextVar
 from typing import Annotated, Literal
 
 from fastapi import Query
@@ -11,6 +12,10 @@ from pydantic_core import to_jsonable_python
 
 from a13n_service.infra import cursors
 from a13n_service.infra.errors import ServiceError, invalid
+
+# Set only by the in-process MCP adapter, never from caller HTTP headers.
+# Response projections consult this flag; durable writes retain their complete values.
+tool_response: ContextVar[bool] = ContextVar("tool_response", default=False)
 
 type ReadView = Literal["detailed", "compact"]
 View = Annotated[ReadView, Query(description="Use compact for discovery; detailed preserves the original response.")]

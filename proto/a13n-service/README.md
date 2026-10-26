@@ -12,4 +12,4 @@ The documentation site also consumes OpenAPI. When adding or changing an API `su
 
 `make service-contract-check` checks drift without writes. Independent SDK and remote CLI repositories consume these exports separately; this repository does not build or release their clients. Each SDK pins committed inputs to a complete Service SHA rather than importing a mutable working tree.
 
-The `notify-service-contract.yml` workflow notifies the four SDK repositories when either export, `spec/api-conventions.md`, or the three owning chapters above changes on `main`. It sends the immutable source SHA; each SDK owns synchronization, generation, validation and release. No SDK checkout is required by this repository's gates.
+The `notify-service-contract.yml` workflow notifies the four SDK repositories when any of these exports, `spec/api-conventions.md`, or the three owning chapters above changes on `main`. It sends the immutable source SHA; each SDK owns synchronization, generation, validation and release. No SDK checkout is required by this repository's gates.

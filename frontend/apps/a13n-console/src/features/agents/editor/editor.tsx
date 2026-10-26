@@ -1,10 +1,16 @@
 import { Badge } from "a13n-ui";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ApiError } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
+import { ExecutionFields } from "../../../shared/forms";
 import { ErrorToast } from "../../../shared/feedback";
-import { DetailLayout, SaveBar } from "../../../shared/page";
+import {
+  DetailLayout,
+  SaveBar,
+  Section,
+  SectionGroup,
+  Sections,
+} from "../../../shared/page";
 import { ModelIcon, providerBrand } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
 import { useAgentChoices } from "../choices";
@@ -16,13 +22,19 @@ import {
 import { AgentEnvironment } from "../environment";
 import { AgentToolsets } from "../toolsets";
 import { AdvancedSection } from "./advanced";
-import { ConnectionsSection, SkillsSection } from "./capabilities";
+import {
+  ConnectionsSection,
+  SkillsSection,
+  MediaUnderstandingSection,
+} from "./capabilities";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 import { InstructionsSection } from "./instructions";
 import { MemorySection } from "./memory";
 import { ReviewerSection, ReviewerSettings } from "./reviewer";
 import type { ReviewTarget } from "../reviewer";
-import { ModelSection } from "./model";
+import { ConfigurationGroup } from "./configuration-group";
+import { ModelSection, ModelSettings } from "./model";
+import styles from "./editor.module.css";
 import { ToolSearchSection } from "./tool-search";
 
 export interface AgentDraftSummary {
@@ -40,7 +52,9 @@ export interface AgentDraftSummary {
  * agent publishes a new immutable version.
  */
 export function AgentEditor({
+  id,
   agentId,
+  profile,
   initial: incomingInitial,
   version: incomingVersion,
   etag: incomingEtag,
@@ -50,14 +64,18 @@ export function AgentEditor({
   submit,
   discard,
   rail,
-  identity,
   saveLabel,
   unnamed = false,
+  onUnnamed,
   overridden,
   preset: incomingPreset,
 }: {
+  /** Lets a submit button outside the form, such as a page header's, save. */
+  id?: string;
   /** The agent a save publishes a version of; none while creating. */
   agentId?: string;
+  /** Creation's name and avatar, the first row of the form. */
+  profile?: ReactNode;
   initial: AgentConfig;
   /** Omitted while creating: there is no published version yet. */
   version?: number;
@@ -70,11 +88,11 @@ export function AgentEditor({
   preset?: Schema["AgentRevision"];
   discard?: () => void;
   rail?: (summary: AgentDraftSummary) => ReactNode;
-  /** Name and description fields shown while creating. */
-  identity?: ReactNode;
   saveLabel?: string;
-  /** Creation waits for the name the identity fields hold. */
+  /** Creation waits for the name its profile holds. */
   unnamed?: boolean;
+  /** A save was refused for the missing name; the owner points at it. */
+  onUnnamed?: () => void;
   /** Fields a read-only view's configuration changes from its version. */
   overridden?: Iterable<string>;
 }) {
@@ -96,7 +114,7 @@ export function AgentEditor({
   const configurationReadonly = readonly || !!preset;
   const [note, setNote] = useState(""),
     [modelExpanded, setModelExpanded] = useState(false),
-    [advancedExpanded, setAdvancedExpanded] = useState(false),
+    [attempted, setAttempted] = useState(false),
     [validation, setValidation] = useState<Error>(),
     [modelValidation, setModelValidation] = useState<Error>(),
     [toolSearchValidation, setToolSearchValidation] = useState<Error>();
@@ -105,6 +123,8 @@ export function AgentEditor({
     validation?: Error;
   }>();
   const choices = useAgentChoices();
+  const modelId = useId();
+  const [advancedExpanded, setAdvancedExpanded] = useState(readonly);
   const definitions = useModelProviderDefinitions();
   const selectedModel = choices.data?.models.find(
     (item) => item.key === draft.model,
@@ -133,18 +153,10 @@ export function AgentEditor({
       : []),
   ];
   const built = buildDraftConfig(draft, settingsSchema, t);
-  const invalidResponse =
-    error instanceof ApiError && [400, 422].includes(error.status);
   const dirty = creating || draft.dirty;
-  // Saving stays off until these are filled, and the save bar says which.
-  const blocker =
-    unnamed && !draft.model
-      ? t("Name the agent and choose a model to create it.")
-      : unnamed
-        ? t("Name the agent to create it.")
-        : !draft.model
-          ? t("Choose a model to save.")
-          : undefined;
+  // Saving needs a name and a model. The save bar keeps an edit's save off
+  // and says why; creation refuses the save and points at what is missing.
+  const incomplete = unnamed || !draft.model;
   const nextVersion = (version ?? 0) + 1;
   const marked = sectionsOf(overridden ?? []);
   const mark = (section: EditorSection) =>
@@ -154,14 +166,27 @@ export function AgentEditor({
       </Badge>
     );
 
-  function save(event: FormEvent) {
+  function save(event: FormEvent<HTMLFormElement>) {
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
+    // Creation's button stays enabled: a refused save points at what is
+    // missing instead of explaining a disabled button.
+    if (incomplete) {
+      setAttempted(true);
+      if (unnamed) onUnnamed?.();
+      else
+        document
+          .getElementById(modelId)
+          ?.querySelector<HTMLElement>("button")
+          ?.focus();
+      return;
+    }
     if (!built.ok) {
       if (built.stage === "model") {
         setModelValidation(built.error);
         setModelExpanded(true);
       } else if (built.stage === "toolSearch") {
+        setAdvancedExpanded(true);
         setToolSearchValidation(built.error);
       } else if (built.stage === "reviewer") {
         setReviewPanel({ validation: built.error });
@@ -170,6 +195,12 @@ export function AgentEditor({
         setValidation(built.error);
         setAdvancedExpanded(true);
       }
+      return;
+    }
+    if (!event.currentTarget.checkValidity()) {
+      setAdvancedExpanded(true);
+      setModelExpanded(true);
+      event.currentTarget.reportValidity();
       return;
     }
     setModelValidation(undefined);
@@ -192,7 +223,7 @@ export function AgentEditor({
   }
 
   return (
-    <form onSubmit={save}>
+    <form id={id} onSubmit={save} noValidate>
       <DetailLayout
         rail={rail?.({
           modelName: selectedModel?.name ?? draft.model,
@@ -210,109 +241,166 @@ export function AgentEditor({
           dirty,
         })}
       >
-        <fieldset disabled={pending} className="fieldset-reset grid gap-9">
-          {identity}
-          <ModelSection
-            draft={draft}
-            choices={choices}
-            thinkingOptions={thinkingOptions}
-            readOnly={readonly}
-            mark={mark("model")}
-            limited={!!preset}
-            expanded={modelExpanded || (invalidResponse && !!modelValidation)}
-            onExpandedChange={setModelExpanded}
-            validation={modelValidation}
-          />
-          <InstructionsSection
-            draft={draft}
-            readOnly={readonly}
-            mark={mark("instructions")}
-            officialInstructions={
-              preset ? (preset.builtin_instructions ?? "") : undefined
-            }
-          />
-          <SkillsSection
-            draft={draft}
-            choices={choices}
-            readOnly={configurationReadonly}
-            mark={mark("skills")}
-          />
-          <ConnectionsSection
-            draft={draft}
-            choices={choices}
-            readOnly={configurationReadonly}
-            mark={mark("connections")}
-            onReview={(target) => setReviewPanel({ target })}
-            onRequireReviewer={() => {
-              if (!draft.reviewer?.model) setReviewPanel({});
-            }}
-          />
-          <ToolSearchSection
-            draft={draft}
-            choices={choices}
-            readOnly={configurationReadonly}
-            mark={mark("toolSearch")}
-            error={toolSearchValidation}
-          />
-          <MemorySection draft={draft} readOnly={configurationReadonly} />
-          <AgentToolsets
-            value={draft.toolsets}
-            onChange={draft.setToolsets}
-            config={built.ok ? built.config : undefined}
-            agentId={agentId}
-            readOnly={configurationReadonly}
-            mark={mark("toolsets")}
-            onReview={(target) => setReviewPanel({ target })}
-            onRequireReviewer={() => {
-              if (!draft.reviewer?.model) setReviewPanel({});
-            }}
-          />
-          <ReviewerSection
-            draft={draft}
-            choices={choices}
-            readOnly={configurationReadonly}
-            mark={mark("reviewer")}
-            onOpen={() => setReviewPanel({})}
-          />
-          <AgentEnvironment
-            value={draft.environmentTemplateId}
-            onChange={draft.setEnvironmentTemplateId}
-            disabled={pending}
-            readOnly={configurationReadonly}
-          />
-          <AdvancedSection
-            draft={draft}
-            readOnly={configurationReadonly}
-            mark={mark("advanced")}
-            expanded={advancedExpanded || (invalidResponse && !!validation)}
-            onExpandedChange={setAdvancedExpanded}
-            validation={validation}
-          />
+        <fieldset disabled={pending} className="fieldset-reset min-w-0">
+          <Sections>
+            {profile}
+            <InstructionsSection
+              draft={draft}
+              readOnly={readonly}
+              mark={mark("instructions")}
+              officialInstructions={
+                preset ? (preset.builtin_instructions ?? "") : undefined
+              }
+            />
+            <ModelSection
+              id={modelId}
+              draft={draft}
+              choices={choices}
+              readOnly={readonly}
+              mark={mark("model")}
+              error={attempted ? t("Choose a model.") : undefined}
+              settings={
+                <ModelSettings
+                  draft={draft}
+                  thinkingOptions={thinkingOptions}
+                  readOnly={readonly}
+                  limited={!!preset}
+                  expanded={modelExpanded}
+                  onExpandedChange={setModelExpanded}
+                  validation={modelValidation}
+                />
+              }
+            />
+            <SectionGroup
+              title={t("Capabilities")}
+              description={t(
+                "The tools, skills and services the agent can use, and the models that read its media.",
+              )}
+            >
+              <AgentToolsets
+                value={draft.toolsets}
+                onChange={draft.setToolsets}
+                config={built.ok ? built.config : undefined}
+                agentId={agentId}
+                readOnly={configurationReadonly}
+                mark={mark("toolsets")}
+                onReview={(target) => setReviewPanel({ target })}
+                onRequireReviewer={() => {
+                  if (!draft.reviewer?.model) setReviewPanel({});
+                }}
+              />
+              <SkillsSection
+                draft={draft}
+                choices={choices}
+                readOnly={configurationReadonly}
+                mark={mark("skills")}
+              />
+              <ConnectionsSection
+                draft={draft}
+                choices={choices}
+                readOnly={configurationReadonly}
+                mark={mark("connections")}
+                onReview={(target) => setReviewPanel({ target })}
+                onRequireReviewer={() => {
+                  if (!draft.reviewer?.model) setReviewPanel({});
+                }}
+              />
+              <MediaUnderstandingSection
+                draft={draft}
+                readOnly={configurationReadonly}
+              />
+            </SectionGroup>
+            <AgentEnvironment
+              value={draft.environmentTemplateId}
+              onChange={draft.setEnvironmentTemplateId}
+              disabled={pending}
+              readOnly={configurationReadonly}
+            />
+            <ConfigurationGroup
+              title={t("Advanced")}
+              description={t("Memory, tool review and execution options.")}
+              open={advancedExpanded}
+              onOpenChange={setAdvancedExpanded}
+            >
+              <Section
+                title={t("Memory")}
+                description={t("Knowledge available to new sessions.")}
+              >
+                <MemorySection draft={draft} readOnly={configurationReadonly} />
+              </Section>
+              <Section
+                title={t("Auto review")}
+                description={t("Checks tools set to Auto review.")}
+                className={styles.parameterSection}
+              >
+                <ReviewerSection
+                  draft={draft}
+                  choices={choices}
+                  readOnly={configurationReadonly}
+                  mark={mark("reviewer")}
+                  onOpen={() => setReviewPanel({})}
+                />
+              </Section>
+              <Section
+                title={t("Tool discovery")}
+                description={t("Choose how the agent finds tools.")}
+                className={styles.parameterSection}
+              >
+                <ToolSearchSection
+                  draft={draft}
+                  choices={choices}
+                  readOnly={configurationReadonly}
+                  mark={mark("toolSearch")}
+                  error={toolSearchValidation}
+                />
+              </Section>
+              <Section
+                title={t("Execution")}
+                description={t("Control tool runs and incoming messages.")}
+                className={styles.parameterSection}
+              >
+                <ExecutionFields
+                  compact
+                  value={draft.execution}
+                  onChange={draft.setExecution}
+                  readOnly={configurationReadonly}
+                />
+              </Section>
+              <Section
+                title={t("JSON")}
+                description={t("Edit options not shown above.")}
+              >
+                <AdvancedSection
+                  draft={draft}
+                  readOnly={configurationReadonly}
+                  mark={mark("advanced")}
+                  validation={validation}
+                />
+              </Section>
+            </ConfigurationGroup>
+          </Sections>
         </fieldset>
       </DetailLayout>
-      {dirty && !readonly && (
+      {dirty && !readonly && !creating && (
         <SaveBar
-          title={creating ? t("New agent") : t("Unsaved changes")}
+          title={t("Unsaved changes")}
           consequence={
-            blocker ??
-            (creating
-              ? t("Saving creates the agent, ready for a conversation.")
-              : t(
-                  "New work uses v{{version}} by default. Active work and approval continuations keep their original version.",
-                  {
-                    version: nextVersion,
-                  },
-                ))
+            (!draft.model && t("Choose a model to save.")) ||
+            t(
+              "New work uses v{{version}} by default. Active work and approval continuations keep their original version.",
+              {
+                version: nextVersion,
+              },
+            )
           }
-          note={creating ? undefined : note}
-          onNoteChange={creating ? undefined : setNote}
+          note={note}
+          onNoteChange={setNote}
           noteLabel={t("Version note")}
           notePlaceholder={t("Version note (optional)")}
           onDiscard={discard}
-          discardLabel={creating ? t("Cancel") : undefined}
           saveLabel={saveLabel ?? t("Save changes")}
           pending={pending}
-          disabled={!!blocker}
+          disabled={!draft.model}
         />
       )}
       {reviewPanel && (

@@ -15,6 +15,7 @@ For worked examples, start with [common configuration recipes](configuration-rec
 | Default Agent, Environment, plugins, or MCP               | `a13n-harness-ui.yaml` → `defaults` | [Default selections](#default-resource-selections)                               |
 | Theme and output detail                                   | `a13n-harness-ui.yaml` → `display`  | [Display settings](#display-settings)                                            |
 | Questions, CodeAct, built-in children                     | Root `tools` and `subagents`        | [Built-in tools](#built-in-tools-and-subagents)                                  |
+| Subscription accounts and ordered failover groups         | `subscription_groups/*.yaml`        | [Accounts and groups](models-and-authentication.md#account-store-locations)      |
 | Provider, API key reference, endpoint, reasoning, context | `models/*.yaml`                     | [Model fields](models-and-authentication.md#model-file-reference)                |
 | Instructions, Capabilities, visible tools, children       | `agents/*.yaml`                     | [Agent fields](agents-and-subagents.md#agent-file-reference)                     |
 | Local roots and Device bindings                           | `projects/*.yaml`                   | [Project fields](environments-and-projects.md#project-file-reference)            |
@@ -38,16 +39,17 @@ The default root is `~/.a13n-harness-ui/a13n-harness-ui.yaml`. `--config PATH` s
 
 The root file's directory also contains:
 
-| Path                       | Purpose                                               | Detailed reference                                                      |
-| -------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
-| `AGENTS.md`                | Optional global contextual guidance                   | [Guidance](agents-and-subagents.md#instructions-and-guidance)           |
-| `models/*.yaml`            | Reusable Models and credential references             | [Models](models-and-authentication.md#model-file-reference)             |
-| `agents/*.yaml`            | Agent definitions and child rosters                   | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files)   |
-| `subagents/*.md`           | Your lightweight child instructions                   | [Markdown subagents](agents-and-subagents.md#write-a-markdown-subagent) |
-| `projects/*.yaml`          | Local roots, Device selections, and creation defaults | [Projects](environments-and-projects.md#project-file-reference)         |
-| `devices/*.yaml`           | Reusable Device connection and credential references  | [Devices](environments-and-projects.md#add-device-bindings)             |
-| `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                     |
-| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                           |
+| Path                         | Purpose                                                   | Detailed reference                                                          |
+| ---------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `AGENTS.md`                  | Optional global contextual guidance                       | [Guidance](agents-and-subagents.md#instructions-and-guidance)               |
+| `subscription_groups/*.yaml` | Ordered native subscription accounts and selection policy | [Accounts and groups](models-and-authentication.md#account-store-locations) |
+| `models/*.yaml`              | Reusable Models and credential references                 | [Models](models-and-authentication.md#model-file-reference)                 |
+| `agents/*.yaml`              | Agent definitions and child rosters                       | [Create an Agent](agents-and-subagents.md#create-an-agent-from-files)       |
+| `subagents/*.md`             | Your lightweight child instructions                       | [Markdown subagents](agents-and-subagents.md#write-a-markdown-subagent)     |
+| `projects/*.yaml`            | Local roots, Device selections, and creation defaults     | [Projects](environments-and-projects.md#project-file-reference)             |
+| `devices/*.yaml`             | Reusable Device connection and credential references      | [Devices](environments-and-projects.md#add-device-bindings)                 |
+| `extensions/*.yaml`          | Harness Plugins, Environment profiles, Run Extensions     | [Extensions](extensions-and-mcp.md)                                         |
+| `mcp/*.yaml`, `mcp/*.json`   | MCP server definitions                                    | [MCP](mcp.md)                                                               |
 
 Each directory is scanned once, without recursion or ancestor merging. Extensions are case-sensitive: `subagents/` accepts `.md` except `README.md`; other directories accept `.yaml`; `mcp/` also accepts `.json`. Each file defines one resource, except MCP's multi-server `mcpServers` format. See [MCP configuration](mcp.md) for environment and header references.
 
@@ -197,7 +199,7 @@ Choose **Disabled** or set `sidekick: null` to remove the extra instructions. Sa
 
 ### Shell review shortcut
 
-`security.shell_review.enable` defaults to `false`: no automatic permission/reviewer injection. Setup normally initializes it to `true`. Disabled means the shortcut is unused, not that explicit Agent policies are removed.
+`security.shell_review.enable` defaults to `false`: no automatic permission/reviewer injection. [Setup](setup.md#advanced-setup) enables it when shell review is selected; API-key setup requires an explicit reviewer. Disabled means the shortcut is unused, not that explicit Agent policies are removed.
 
 Enabled review applies only to `environment.shell_exec` in roots and children. Explicit shortcut fields override the Agent’s shell rule; other rules remain. Omitted/null fields inherit Agent review settings, then built-in defaults. See the [shell-review recipe](configuration-recipes.md#configure-shell-review) for field values, merging and failures. Changes affect later Run captures.
 
@@ -347,7 +349,7 @@ For a new Thread, the first match wins:
 4. Root YAML defaults.
 5. The built-in Environment fallback.
 
-Lists replace, not merge; `[]` selects none. Existing Threads keep selections until explicitly changed; Project default edits do not reapply. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Temporary overrides stay with their operation, TUI process or browser tab. `/agent` changes the Thread Agent; `/model` remembers a per-Project choice, and `/model default` clears it. Neither writes YAML. Explicit launch `--agent` and noninteractive calls ignore the remembered Model.
+Lists replace, not merge; `[]` selects none. Existing Threads keep selections until explicitly changed. TUI resume explicitly reapplies current MCP defaults (Project, then Agent, then global); other selections and surfaces remain sticky. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Temporary overrides stay with their operation, TUI process or browser tab. `/agent` changes the Thread Agent; `/model` remembers a per-Project choice, and `/model default` clears it. Neither writes YAML. Explicit launch `--agent` and noninteractive calls ignore the remembered Model.
 
 | What changed                                                                  | When it takes effect                                                                             | What stays unchanged                                                                               |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -375,16 +377,16 @@ The data root owns saved conversations, per-Project TUI Model preferences, immut
 
 Changing it opens separate state; it does not migrate old conversations. Relative bootstrap paths resolve from the launch directory. Project roots must be absolute after `~` expansion; a missing root can be saved but cannot be used for a Run until available.
 
-| Input                                                       | Purpose                                                                                    |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `A13N_HARNESS_UI_DATA_ROOT`                                 | Select local data storage                                                                  |
-| Variables named by `authentication.env`                     | Model API keys read from the Harness UI process                                            |
-| Variables named by MCP `environment` / `headers` references | MCP environment and request values                                                         |
-| `CODEX_HOME`                                                | Compatible Codex store location; default `~/.codex`                                        |
-| `COPILOT_HOME`                                              | Copilot CLI store location for account reuse; default `~/.copilot`                         |
-| `GROK_AUTH_PATH`, `GROK_HOME`                               | Compatible Grok file-store location                                                        |
-| `GROK_AUTH`                                                 | Recognized inline Grok mode, unsupported for shared writable login; switch to a file store |
-| `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection                                    |
+| Input                                                       | Purpose                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| `A13N_HARNESS_UI_DATA_ROOT`                                 | Select local data storage                                          |
+| Variables named by `authentication.env`                     | Model API keys read from the Harness UI process                    |
+| Variables named by MCP `environment` / `headers` references | MCP environment and request values                                 |
+| `CODEX_HOME`                                                | One-time Codex migration source; default `~/.codex`                |
+| `COPILOT_HOME`                                              | Copilot CLI store location for account reuse; default `~/.copilot` |
+| `GROK_AUTH_PATH`, `GROK_HOME`                               | One-time Grok migration source                                     |
+| `GROK_AUTH`                                                 | Inline Grok mode is not imported; use native login                 |
+| `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection            |
 
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -86,7 +86,7 @@ class BackendProvider[C: BaseModel, K: BaseModel, E: BaseModel, R](EnvironmentPr
     @asynccontextmanager
     async def _operation(
         self, environment: object, environment_id: str, state: EnvironmentState | None, operation_id: str
-    ) -> AsyncIterator[ManagementBackend]:
+    ) -> AsyncGenerator[ManagementBackend]:
         target = self._target(environment, environment_id, state, operation_id)
         primary: BaseException | None = None
         try:

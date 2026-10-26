@@ -223,3 +223,47 @@ async def test_abandoned_attempt_is_unknown_and_late_terminal_cannot_replace_new
         late = old.model_copy(update={"status": "failed", "completed_at": datetime.now(UTC)})
         assert not await app._store.threads.save_execution(thread.thread_id, late)
         assert (await app._store.threads.get(thread.thread_id)).last_execution == new
+
+
+@pytest.mark.parametrize("typed", [True, False])
+async def test_root_preparation_preserves_safe_harness_errors_only(tmp_path, monkeypatch, typed):
+    from a13n_harness.errors import RunError
+    from a13n_harness_ui import root_run
+
+    configuration = _write_configuration(tmp_path)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    safe_error = RunError(
+        "MCP environment variable TEST_TOKEN is unavailable.",
+        code="runtime_credential_missing",
+        details={"environment_variable": "TEST_TOKEN"},
+        retry_hint="dependency_change",
+    )
+    reports = []
+
+    def reconstruct(self, composition, **kwargs):
+        raise safe_error if typed else RuntimeError("private credential payload")
+
+    def report(error, **kwargs):
+        reports.append(error)
+        return "Diagnostic report: test-report.json"
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
+    monkeypatch.setattr(root_run, "exception_feedback", report)
+    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fail during preparation")
+        operation = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        assert operation.status is RootOperationStatus.failed
+        if typed:
+            assert operation.failure.code == safe_error.code
+            assert operation.failure.message == f"{safe_error}\nDiagnostic report: test-report.json"
+            assert operation.failure.details == safe_error.details
+            assert operation.failure.retry_hint == "dependency_change"
+            assert reports == [safe_error]
+        else:
+            assert operation.failure.code == "root_operation_failed"
+            assert "Unexpected RuntimeError" in operation.failure.message
+            assert "private credential payload" not in operation.failure.message
+            assert len(reports) == 1
+        saved = (await app.get_thread(thread.thread_id)).thread.last_execution
+        assert saved.error_message == operation.failure.message

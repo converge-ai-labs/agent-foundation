@@ -190,6 +190,7 @@ it.each([false, true])(
     expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
     await user.clear(instructions);
     await user.type(instructions, "New supplement.");
+    await user.click(screen.getByRole("button", { name: /Model settings/ }));
     await user.type(
       screen.getByRole("spinbutton", { name: "Max output tokens" }),
       "2048",

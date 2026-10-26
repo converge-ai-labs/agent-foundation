@@ -3,16 +3,25 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 
 from a13n_envd_client import (
     EIPDeviceConnection,
     EIPSession,
     EIPSessionStateError,
 )
-from a13n_envd_client.eip.v1 import EgressPolicy
+from a13n_envd_client.eip.v1 import DeviceDescriptor, EgressPolicy
 
 from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
+
+
+@dataclass(frozen=True)
+class EIPSessionBinding:
+    """A Session and the metadata of the Device connection that opened it."""
+
+    session: EIPSession
+    device_descriptor: DeviceDescriptor
 
 
 class EIPSessionSource(ABC):

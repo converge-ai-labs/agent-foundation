@@ -51,7 +51,7 @@ description: 配置命令和 Streamable HTTP MCP 服务器，并在 Agent 上启
 
 支持字面 token 和环境变量引用。包含凭据的文件保持私有，不要提交到版本控制。Harness UI 在配置和 Run 捕获中保存源位置和摘要，而非字面的 environment/header 值。客户端构造前保持捕获的源文件不变；否则较早的 Run 或子级续接可能报 `mcp_source_changed`。新 Run 使用当前配置。环境变量引用可在不修改源文件的情况下轮换。
 
-编辑后运行 `a13n-harness-ui config validate`；如果修改了默认 MCP 选择，应开始新对话（新的根 Thread）。验证不会连接服务器或检查凭据。
+编辑后运行 `a13n-harness-ui config validate`。在 TUI 中，重新恢复对话（`/resume <id>` 或重启时使用 `--resume <id>`）即可应用当前 MCP 选择，也可以开始新对话。WebUI 和无头运行保留已保存的选择，直到明确修改。验证不会连接服务器或检查凭据。环境变量引用缺失或为空时，Run 会以 `runtime_credential_missing` 失败，并指出需要在 Harness UI 进程环境中设置的变量名。
 
 ## 命令传输
 
@@ -105,7 +105,7 @@ defaults:
   mcp_servers: [mcp-github]
 ```
 
-Agent 的 `mcp_servers: null` 继承根默认值；`[]` 显式不选任何服务器。现有对话保留确切的持久选择。默认情况下，客户端/进程为每次逻辑 Run 重新构造。根生命周期策略可以保留所选客户端，启用的 [MCP Apps](mcp-apps.md) 会自动保留其客户端。客户端状态和待处理 MCP 输入都不会序列化到续接中。选择 Sandbox Environment 模式不会让外部 MCP 命令或远程服务进入沙箱。
+Agent 的 `mcp_servers: null` 继承根默认值；`[]` 显式不选任何服务器。TUI 恢复会话时，依次按当前 Project 默认值、Agent 默认值、全局默认值刷新保存的 MCP 列表，包括显式空列表。这会替换此前针对该对话设置的 MCP 选择；直到 Run 需要时才连接服务器。其他界面保留确切的持久选择。默认情况下，客户端/进程为每次逻辑 Run 重新构造。根生命周期策略可以保留所选客户端，启用的 [MCP Apps](mcp-apps.md) 会自动保留其客户端。客户端状态和待处理 MCP 输入都不会序列化到续接中。选择 Sandbox Environment 模式不会让外部 MCP 命令或远程服务进入沙箱。
 
 ## 连接生命周期与协议
 

@@ -55,7 +55,7 @@ Connections use the registry through `type` too: `mcp` is the built-in Remote MC
 | `setup_url`, `setup_label`                  | where an operator obtains credentials, when the type names a place                                          |
 | `supports_test`                             | whether a resource test makes a non-billable probe ([04](04-resources.md#provider-resources))               |
 
-Model types additionally expose nullable `oauth_scheme`. `openai_chatgpt` declares `openai-chatgpt`, rejects user-supplied access tokens and tenant endpoint overrides, and builds the shared native ChatGPT Responses Model with an explicit Service credential source. Its workspace authorization lifecycle is owned by [Model Provider OAuth](04-resources.md#model-provider-oauth), separate from resource metadata and personal Connections. Calling APIs remain native; ordinary requests collect the required stream through the native Model lifecycle.
+Model types additionally expose nullable `oauth_scheme`. `openai_chatgpt` declares `openai-chatgpt`, rejects user-supplied access tokens and tenant endpoint overrides, and builds the official `OpenAIResponsesModel` with `OpenAIChatGPTProvider` with an explicit Service credential source. Its workspace authorization lifecycle is owned by [Model Provider OAuth](04-resources.md#model-provider-oauth), separate from resource metadata and personal Connections. Calling APIs remain native; ordinary requests collect the required stream through the native Model lifecycle.
 
 Each kind adds its own fields:
 
@@ -142,6 +142,9 @@ class SpanQuery:
     trace_id: str | None = None
     roots: bool = False                # only trace roots: one per attempt
     cursor: str | None = None
+    span_id: str | None = None
+    include_content: bool = True       # false for overview reads
+    metrics_only: bool = False         # smaller projection where supported
 
 class TraceProvider(Protocol):
     type: ClassVar[Literal["langfuse", "logfire"]]
@@ -149,11 +152,17 @@ class TraceProvider(Protocol):
     def otlp_endpoint(self) -> str: ...
     @property
     def otlp_headers(self) -> dict[str, str]: ...
+    @property
+    def query_identity(self) -> str: ...  # opaque configuration/credential identity
     async def query(self, query: SpanQuery) -> SpanPage: ...
+    async def search_traces(self, query: SearchQuery, owner: str) -> TraceSearchPage: ...
 ```
 
+- Whole-window metric searches have one provider-neutral contract. Service owns authorization and validates returned root scope; each adapter owns its backend query strategy and must scope aggregate inputs before computing metrics. Langfuse recollects roots for each request. It batches Metrics API v2 cost-category aggregates across all candidates only for cost sorting or filtering; otherwise it ranks roots first and fetches costs only for the requested page. Logfire pushes aggregation, thresholds, ordering and pagination into Query API SQL. Searches do not cache query results. The caller supplies an opaque scope identity for binding keyset cursors to the query. Both adapters continue after the last sort value and trace/span IDs, with unknown values last. See [whole-window ranking](07-facts-and-delivery.md#whole-window-ranking).
+- Logfire selects and deduplicates roots within the requested root-start window before selecting their trace IDs for span deduplication and cost aggregation. The wider child-span window must not include unrelated traces in deduplication; it still includes selected traces' children started after the root window. Root metadata selectors apply to deduplicated roots, not to their children.
+- `metrics_only` is an optimization hint, not a payload or authorization guarantee: Langfuse omits IO fields; summaries still remove payloads before returning them.
 - A backend reports spans as it stored them. Nothing it returns is trusted for tenancy: callers check every span's correlation attributes themselves.
-- Every read is bounded by `telemetry.trace_query_timeout` and 8 MiB of response. Any backend failure is `unavailable` with dependency `trace:{type}`.
+- Every read is bounded by `telemetry.trace_query_timeout` and 8 MiB of response. A response over that bound is `payload_too_large` with dependency `trace:{type}` and its byte `limit`; a single-span read also names the span. Any other backend failure is `unavailable` with dependency `trace:{type}`.
 - The operator configured the backend, so its own host may be private; cloud metadata addresses stay refused.
 - Fields a backend does not keep are null or empty. Langfuse keeps no span events or links and gives each span a `source_url` to the trace in its UI; Logfire gives none.
 

@@ -184,6 +184,7 @@ def test_real_shared_device_independent_sessions_and_transfers(tmp_path: Path, c
                 device.open_session(working_directory=device_path(tmp_path / "alpha")),
                 device.open_session(working_directory=device_path(tmp_path / "beta")),
             )
+            assert alpha.device_descriptor == beta.device_descriptor == device.descriptor
             assert alpha.session_id != beta.session_id
             assert alpha.generation == beta.generation == device.descriptor.generation
             payload = bytes(range(256)) * 128

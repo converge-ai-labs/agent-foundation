@@ -27,14 +27,15 @@ Stream Protocol 将 Harness 输出转成 AG-UI 1.0 事件，再合并为展示�
 
 从 `a13n_stream_protocol.display` 导入展示类型，而不是从包根导入：
 
-| API                                                                | 用途                                                        |
-| ------------------------------------------------------------------ | ----------------------------------------------------------- |
-| `DisplayFold(run_id, *, attempt=0, full_content=False)`            | 转换原生观测，将事件合并为展示条目                          |
-| `fold.events(source)`                                              | 使用 fold 内不保留日志的 stream observer 转换一个原生源条目 |
-| `fold.fold(events, source=None)`                                   | 累积事件，返回序号和条目引用                                |
-| `fold.export()` / `DisplayFold.restore(snapshot)`                  | 导出独立的 `DisplaySnapshot` 并恢复，包含条目和续接状态     |
-| `fold.export_continuation()`                                       | 单独导出解析状态，不复制展示条目                            |
-| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition` | 验证并序列化检查点内容和续接状态                            |
+| API                                                                     | 用途                                                        |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False, processor=None)` | 转换原生观测，将事件合并为展示条目                          |
+| `fold.events(source)`                                                   | 使用 fold 内不保留日志的 stream observer 转换一个原生源条目 |
+| `fold.fold(events, source=None)`                                        | 累积事件，返回序号和条目引用                                |
+| `fold.export()` / `DisplayFold.restore(snapshot, processor=None)`       | 导出独立的 `DisplaySnapshot` 并恢复，包含条目和续接状态     |
+| `fold.capture_delta()`                                                  | 导出自上次捕获以来变更的条目及其匹配的续接状态              |
+| `fold.export_continuation()`                                            | 单独导出解析状态，不复制展示条目                            |
+| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition`      | 验证并序列化检查点内容和续接状态                            |
 
 默认展示预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断。大型观测载荷只保留名称，不无限复制载荷。`full_content=True` 保留完整展示内容。两种模式都不是恒定内存：保留的条目仍随对话增长。
 
@@ -84,7 +85,7 @@ assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个�
 ## 终结事件
 
 - 已完成输出转换为 `RUN_FINISHED`，包含成功结果和用量。不兼容 JSON 的输出会被省略，在 `rawEvent` 中标记 `result_omitted`，不会任意序列化 Python 对象。
-- 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 和 `toolCallId` 保留原生调用 ID；待处理回答策略仍由 Host 决定。
+- 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 是用于回复的目标调用 ID，`toolCallId` 是用于历史关联的模型调用 ID（直接调用时两者相同）；待处理回答策略仍由 Host 决定。
 - 取消转换为 `RUN_FINISHED`，其 `outcome.type="cancelled"`。
 - 失败转换为 `RUN_ERROR`，包含可安全公开的失败代码、消息和用量。
 - 内联子执行使用 `SUBAGENT_STARTED`、`SUBAGENT_FINISHED` 和 `SUBAGENT_ERROR`；内容携带 `subagentRunId`，不嵌套根执行生命周期。

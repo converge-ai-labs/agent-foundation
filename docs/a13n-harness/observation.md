@@ -3,7 +3,7 @@ title: Observation
 description: Opt-in OpenTelemetry traces and metrics for Runs, models, and tools, with Logfire and Langfuse profiles.
 ---
 
-The Harness exposes an opt-in OpenTelemetry observation layer. The Host owns SDK configuration, resources, sampling, processors, exporters, propagation, flush, and shutdown. The Harness never constructs an exporter or collector client.
+Enable OpenTelemetry to inspect Runs, models and tools. Configure providers and export in your Host, then pass them to Harness.
 
 `HarnessBuilder()` reads the bounded `A13N_HARNESS_*` policy variables directly from `os.environ` at construction time. It never opens `.env` or any other configuration file. A Host process, launcher, container runtime, or development command may load a file and export its values before the Harness starts. The defaults keep observation disabled. Pass `instrumentation=None` to disable observation explicitly regardless of the environment, or pass a `HarnessInstrumentation` value to override the environment with exact providers.
 
@@ -194,7 +194,7 @@ with host_tracer.start_as_current_span("host.work"):
 
 Logfire still requires one `logfire.configure()` call; environment variables configure the call rather than replacing it. `LOGFIRE_SERVICE_NAME` supplies the OpenTelemetry `service.name` without a hard-coded Python value, and `OTEL_SERVICE_NAME` is its standard fallback alias. `LOGFIRE_TOKEN` selects the project, while `LOGFIRE_SEND_TO_LOGFIRE=if-token-present` keeps the same bootstrap safe in processes without a token.
 
-`logfire.configure()` creates the global OpenTelemetry providers and configures Logfire's exporters. This is OpenTelemetry export managed by the Logfire SDK rather than a separately configured generic OTLP endpoint. The default `HarnessBuilder()` then selects those exact providers from the global OpenTelemetry registry. Automatic vendor bootstrap belongs at the executable Host boundary; the Harness only auto-selects its environment policy and the already configured global OTel providers. Do not call `logfire.instrument_pydantic_ai()`; Harness already owns the one Pydantic AI `Instrumentation` Capability.
+`logfire.configure()` creates the global OpenTelemetry providers and Logfire exporters. The default `HarnessBuilder()` selects those providers. Call this bootstrap in the executable Host and leave Pydantic AI instrumentation to Harness; see [Instrumentation ownership](#instrumentation-ownership).
 
 For an alternative OTLP backend instead of Logfire Cloud, configure Logfire with `send_to_logfire=False` and use the standard `OTEL_EXPORTER_OTLP_*` variables. See the [Logfire alternative-backend guide](https://pydantic.dev/docs/logfire/guides/alternative-backends/) and [Logfire configuration reference](https://pydantic.dev/docs/logfire/manage/configuration/).
 

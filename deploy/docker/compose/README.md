@@ -76,6 +76,8 @@ Docker templates have a private `/workspace` and may bind explicitly approved ex
 
 Environment containers run on the host Engine outside this Compose project. Delete them through Console or the API before removing the stack.
 
+The stack sets `stop_grace_period: 30s`, which is shorter than the default 300-second retained-tool shutdown grace. To allow retained calls to finish, set a longer Compose grace period covering HTTP drain, attempt drain, retained-tool completion and cleanup; use the [shutdown budget](../../kubernetes/README.md#shutdown-time) and verify it under load.
+
 ## Environment monitoring
 
 The stack does not install a collector or metrics database. Select **Local Cache** on an environment for temporary Service-managed history. For pull collection, use an operator-installed **vmagent** or **Grafana Alloy** and complete the [collector bootstrap](../../../docs/a13n-service/environment-monitoring.md#bootstrap-an-optional-collector).

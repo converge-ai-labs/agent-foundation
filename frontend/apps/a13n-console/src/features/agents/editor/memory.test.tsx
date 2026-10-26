@@ -106,7 +106,7 @@ it("lists default memories read-only", async () => {
   expect(screen.queryByRole("switch", { name: "Recall for facts" })).toBeNull();
   expect(
     screen
-      .getByRole("switch", { name: "Use memory spaces" })
+      .getByRole("switch", { name: "Memory spaces" })
       .getAttribute("aria-disabled"),
   ).toBe("true");
   expect(screen.queryByRole("button", { name: "Add space" })).toBeNull();
@@ -115,7 +115,7 @@ it("lists default memories read-only", async () => {
 it("edits session memory defaults without changing shared mounts", async () => {
   const { user, draft } = show();
   const mounts = draft().memoryMounts;
-  const memory = screen.getByRole("switch", { name: "Use memory spaces" });
+  const memory = screen.getByRole("switch", { name: "Memory spaces" });
   expect(memory.getAttribute("aria-checked")).toBe("false");
   await user.click(memory);
   expect(draft().memory.enabled).toBe(true);

@@ -112,7 +112,7 @@ Supply `smtp_username` and `smtp_password` together. As an environment variable,
 
 ## Outbound requests
 
-Every request the Service makes to a provider, a remote MCP server, an OAuth server or a webhook endpoint passes one endpoint policy:
+Service-owned HTTP clients apply one endpoint policy to provider, remote MCP, OAuth and webhook requests:
 
 - URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
@@ -169,6 +169,10 @@ http_origins = ["http://host.docker.internal:11434"]
 Other `providers` settings bound provider work: `model_timeout` (each read of one model exchange), `tool_call_seconds` (one connection tool call), `operation_seconds` (authorization steps and resource tests), `discovery_ttl` (cached tool discovery) and `flow_seconds` (how long a browser authorization may take). `providers.return_urls` lists the exact Console URLs a browser authorization may return to, and `providers.mcp_servers` adds [MCP server suggestions](tools.md#mcp-server-suggestions).
 
 ## Execution
+
+`tool_executions` configures retained calls: `max_active` (64 per worker), `foreground_wait_seconds` (5), `delivered_retention_seconds` (3600), and `max_retention_seconds` (86400). Foreground wait supplies the deployment fallback for the [execution policy](agents-and-runs.md#execution-policy); agent, thread and single-run choices can override it. It controls handoff, not an execution deadline. Retention starts after completion; the first delivery acknowledgement starts the shorter reread window without extending the maximum age.
+
+On worker shutdown, attempts drain first. Retained calls then receive `shutdown_grace_seconds` (300) to finish naturally, followed by cancellation and `finalization_seconds` (10) for cleanup and publication. If work still owns resources after that budget, the worker exits; lease reconciliation marks unfinished records lost. Set the deployment's termination grace to cover these phases. Drain old workers before deploying this schema: older workers cannot read the new `tool_result` inbox and run-trigger values.
 
 | Setting                                            | Effect                                                                                                                          |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |

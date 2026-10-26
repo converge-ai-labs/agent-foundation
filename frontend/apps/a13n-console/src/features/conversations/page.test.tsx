@@ -355,7 +355,7 @@ it.each(["inherit", "off", "on"])(
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(
       await screen.findByText(
-        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
+        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1?follow=latest",
       ),
     ).toBeTruthy();
     expect(posts.map(({ path }) => path)).toEqual([
@@ -521,7 +521,7 @@ it.each(["writer", "runner", "forbidden", "pinned", "unavailable"])(
         await user.click(screen.getByRole("button", { name: "Send" }));
       }
       await screen.findByText(
-        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
+        "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1?follow=latest",
       );
       expect(posts).toEqual([
         ...(shouldPrepare ? ["/api/v1/agent-composer"] : []),

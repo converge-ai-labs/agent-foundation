@@ -14,6 +14,8 @@ def isolated_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.setenv("GROK_HOME", str(home / ".grok"))
+    monkeypatch.delenv("GROK_AUTH_PATH", raising=False)
     monkeypatch.setenv("COPILOT_HOME", str(home / ".copilot"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local/share"))
@@ -33,6 +35,21 @@ def no_model_directory_network(monkeypatch: pytest.MonkeyPatch) -> None:
         return model_catalog.bundled_models()
 
     monkeypatch.setattr(model_catalog, "fetch_directory", bundled)
+
+
+@pytest.fixture(autouse=True)
+def no_background_subscription_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
+    from anyio import sleep_forever
+
+    async def idle(self) -> None:
+        await sleep_forever()
+
+    async def unavailable(self, account):
+        raise ValueError("Subscription usage network is disabled in unit tests")
+
+    monkeypatch.setattr(SubscriptionUsage, "poll", idle)
+    monkeypatch.setattr(SubscriptionUsage, "_read_provider", unavailable)
 
 
 @pytest.fixture

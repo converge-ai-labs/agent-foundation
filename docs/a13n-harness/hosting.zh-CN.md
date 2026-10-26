@@ -67,7 +67,7 @@ thread_values = CodeActStateOwner()
 bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
 ```
 
-将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。CodeAct runner 可整体转到后台，嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
+将 `capability` 放入 `AgentDefinition.capabilities`，并向 Run 传入 `bindings`。快速工具直接返回原生结果；支持的慢工具返回执行回执，原始调用继续运行。默认模式为 `inline`。转到后台要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用和完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行；仅添加 runtime 不会使它支持后台执行。CodeAct 的嵌套调用仍等待真实结果。顺序工具的执行屏障持续到实际工作结束。
 
 通过 `RunBindings.tool_execution` 绑定 Harness runtime，即可启用自动后台执行和即时 steering。runtime 管理活动调用，store 保留记录和结果。未绑定时，Run 使用阻塞式通用工具、排队 steering，以及 Environment 的原生 shell 进程控制。启用 `auto` 时在 Run 准备阶段检查绑定；请求即时 steering 时在接收输入前检查绑定。
 
@@ -84,6 +84,10 @@ Agent 通过 `tool_execution_info`、`tool_execution_result`、`tool_execution_w
 ## 每次执行都使用当前权限
 
 每次 Run 都应重新选择当前用户和策略、模型凭据、Provider 状态，并创建当前 Environment 来源。保存的 `HarnessState` 只恢复 Thread 的消息历史和 Capability 状态，不恢复客户端或权限。`RunBindings` 提供当前执行所需的协作对象，也可传入 `model_call_check`。参阅 [Agent 与执行](agents-and-runs.md)及[环境](environments.md)。
+
+从 `a13n_harness` 导入 `RequestContext`，通过 `RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "trace-123"}))` 传入业务请求头。可信工具通过 `ctx.deps.request_context.headers` 读取独立复制的只读映射，名称统一为小写。内联子 Agent 继承该值。Host 负责保存上下文，并在恢复执行或创建独立子 Agent 时重新传入；`HarnessState` 不保存它，新 bindings 默认为空。请求头不会自动进入提示词、工具结果或 shell 环境。模型和 MCP 传输的转发由 Host 显式接入。
+
+设置 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS=false` 可改变模型 Provider 未显式传入 `forward_context_headers` 时的默认值。显式的 `true` 或 `false` 优先于环境变量；未设置环境变量时保持内置默认值 `true`。环境变量接受大小写不敏感的 `true` 和 `false`，忽略首尾空白，其他值会报错。默认值在构造配置时解析。Host 可调用 `a13n_harness.http.forward_context_headers_default()`，为自己的 MCP 集成使用同样的默认值。
 
 ### 发起模型调用前检查
 

@@ -116,21 +116,22 @@ export function describeTool(tool: ToolView) {
     tool.result !== undefined ||
     tool.resultParts !== undefined ||
     tool.resultOmitted;
-  let phase = tool.retry
-    ? "Retry requested"
-    : tool.outcome === "interrupted"
-      ? "Interrupted"
-      : failed
-        ? tool.outcome === "denied"
-          ? "Denied"
-          : "Failed"
-        : hasResult
-          ? "Result received"
-          : tool.stopped
-            ? "No result recorded"
-            : tool.inputComplete
-              ? "Awaiting result"
-              : "Receiving input";
+  let phase =
+    tool.retry || tool.outcome === "retried"
+      ? "Retry requested"
+      : tool.outcome === "interrupted"
+        ? "Interrupted"
+        : failed
+          ? tool.outcome === "denied"
+            ? "Denied"
+            : "Failed"
+          : hasResult
+            ? "Result received"
+            : tool.stopped
+              ? "No result recorded"
+              : tool.inputComplete
+                ? "Awaiting result"
+                : "Receiving input";
   let label = tool.name || "Tool";
   let summary = path;
   let kind:
@@ -382,7 +383,7 @@ export function describeTool(tool: ToolView) {
     hasResult &&
     !tool.retry &&
     !tool.failure &&
-    !["failed", "denied", "interrupted"].includes(tool.outcome ?? "")
+    !["failed", "denied", "interrupted", "retried"].includes(tool.outcome ?? "")
   ) {
     if (executionReceipt) phase = "Execution handed off";
     else if (result.accepted === false) phase = "Not accepted";

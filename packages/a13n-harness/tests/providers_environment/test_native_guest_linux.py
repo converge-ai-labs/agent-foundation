@@ -4,12 +4,16 @@ import asyncio
 import os
 import subprocess
 
+import docker
 import pytest
 from a13n_harness.environment.commands import CommandLimits, CommandRequest, ShellCommand
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.docker.commands import DockerCommands
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
 from a13n_harness.providers.environment.native.commands import NativeCommands
 
 
@@ -38,7 +42,7 @@ def guest_container():
                 container,
                 "sh",
                 "-c",
-                "mkdir -p /home/daytona /home/user /home/sprite && chown 1000:1000 /home/daytona /home/user /home/sprite",
+                "mkdir -p /workspace /home/daytona /home/user /home/sprite && chown 1000:1000 /home/daytona /home/user /home/sprite",
             ],
             check=True,
         )
@@ -68,7 +72,17 @@ def test_default_guest_workspace_is_writable_without_root(key, guest_container):
             assert process.returncode == 0, stderr.decode()
             return stdout.decode()
 
-        commands = NativeCommands(execute, configuration, "generation-fixture", "mount-fixture")
+        client = docker.from_env()
+        raw = DockerCommands(DockerSDKEngine(client), guest_container, DockerEnvironmentConfiguration(user="1000:1000"))
+
+        class Transfer:
+            def read_stream(self, path):
+                return raw.read_stream(path)
+
+            async def write_stream(self, path, source, *, mode):
+                await raw.write_stream(path, source)
+
+        commands = NativeCommands(execute, configuration, "generation-fixture", "mount-fixture", transfer=Transfer())
         files = GuestFiles(commands)
         await files.write_text("/default-proof", key, mode="upsert")
         result = await commands.exec(
@@ -112,5 +126,6 @@ def test_default_guest_workspace_is_writable_without_root(key, guest_container):
             5,
         )
         assert state.strip() in {"Z", "gone"}
+        client.close()
 
     asyncio.run(scenario())

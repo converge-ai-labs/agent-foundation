@@ -198,13 +198,15 @@ tool_search:
     search_name: discover_tools
     describe_name: describe_tool
     call_name: call_tool
+    list_name: list_tools
+    groups_name: list_tool_groups
     max_results: 10
     max_search_bytes: 32768
 ```
 
-`config.mode: proxy` is the default and uses Harness discovery, description, and call tools. Discovery keeps all keyword candidates, ranks exact names first, and defaults to summaries; it automatically expands a small exact match only when it is the sole candidate. Description loads a selected tool's complete schema and instructions. To use native discovery and direct local calls, replace `config` with `{mode: native, strategy: bm25}`. Native `strategy` accepts `bm25`, `regex`, or omitted/null for the provider default. Native mode rejects proxy control names and limits; proxy mode rejects native strategy settings. Both modes retain grouped tool names and local execution.
+`config.mode` may be omitted or set to `proxy`. The model uses fixed `discover_tools`, `describe_tool`, `call_tool`, `list_tools`, and `list_tool_groups` controls. Use `list_tools(detail="full")` and follow `next_offset` to retrieve the complete directory. Discovery and listing never add member schemas to subsequent requests. Migrate old `mode: native` settings to `proxy` and remove `strategy`.
 
-For native mode, select a Model that supports native tool search. Unsupported Models fail before the model request, without fallback. See [native tool search](../a13n-harness/tool-search.md#select-native-tool-search) for execution details.
+A group's `capabilities` selects enabled local Capability keys, for example `capabilities: [dynamic_environment]`. These sources share the proxy and their original execution path with MCP and plugins. See [the fixed proxy](../a13n-harness/tool-search.md#use-the-fixed-proxy).
 
 `config` is optional. Group names start with a letter, contain up to 32 letters, digits, underscores or hyphens, and cannot contain `__`. Descriptions must be nonblank and at most 512 characters. Select exact resource IDs, including distinct IDs for multiple instances of the same plugin. A source belongs to one group only. Different sources in a group must have distinct tool names; collisions fail rather than inventing aliases.
 
@@ -332,6 +334,7 @@ Every Agent YAML uses `schema_version: "1"`, `kind: agent`, a unique `agent-` ID
 | `harness_plugins` | `null`  | Inherit root defaults; `[]` selects none; a list selects exact IDs                                        |
 | `mcp_servers`     | `null`  | Inherit root defaults; `[]` selects none; a list selects exact IDs                                        |
 | `tools`           | `null`  | No additional visibility filter; `[]` exposes no optional contributed tools; a list is an exact allowlist |
+| `tool_search`     | `null`  | Optional [tool search groups](#tool-search-groups) and search configuration                               |
 | `subagents`       | `[]`    | Ordered `agent` or `markdown` references                                                                  |
 
 Plugin/MCP defaults initialize a new Thread's exact selections. Later global defaults do not rewrite those sticky selections. Referenced resources and included children are resolved again for later Runs, while captured executions remain immutable.

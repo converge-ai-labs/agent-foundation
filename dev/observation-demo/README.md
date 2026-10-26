@@ -65,17 +65,27 @@ Pydantic cache, audio, and reasoning categories are inclusive sub-buckets. Langf
 
 The `view` trace should contain:
 
-```text
-harness.run -> Agent -> view tool -> image-understanding Agent -> vision generation
+```mermaid
+flowchart TB
+    Run["harness.run"] --> Agent["Agent"]
+    Agent --> View["view tool"]
+    View --> Media["image-understanding Agent"]
+    Media --> Vision["vision generation"]
 ```
 
 The `subagent` trace should contain:
 
-```text
-parent harness.run -> parent Agent -> delegate tool -> delegation operation -> child harness.run -> child Agent -> child generation
+```mermaid
+flowchart TB
+    Run["parent harness.run"] --> Parent["parent Agent"]
+    Parent --> Delegate["delegate tool"]
+    Delegate --> Operation["delegation operation"]
+    Operation --> ChildRun["child harness.run"]
+    ChildRun --> Child["child Agent"]
+    Child --> Generation["child generation"]
 ```
 
-The view scenario constructs a Direct Local `Environment` through `DirectLocalEnvironmentProvider` and passes it through the run's `environments` mapping. The subagent scenario uses the built-in inline `SubagentCapability()` and the `delegate` tool's `prompt` argument; no custom child-binding manager is required.
+The view scenario creates a Direct Local connector with `DIRECT_LOCAL.execution_connector(...)`, wraps it in a readiness source, and passes that source through the Run's `environments` mapping. The subagent scenario uses the built-in inline `SubagentCapability()` and the `delegate` tool's `prompt` argument; no custom child-binding manager is required.
 
 ## Host boundary
 

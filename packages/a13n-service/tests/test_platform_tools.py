@@ -291,11 +291,13 @@ async def test_composer_discovers_and_calls_message_text_search(service, scripte
             tool = tools[tool_name(operation["operationId"])]
             assert "text_query" in tool["inputSchema"]["properties"]
             assert tool["_meta"]["x-a13n-platform"] == {"group": "execution", "effect": "read"}
-            projection = {"view": "compact", "agent_id": agent["id"]} if resource == "runs" else {}
-            result = await call(http, service, "GET", f"/{resource}", text_query="南京 故障", **projection)
+            filters = {"agent_id": agent["id"]} if resource == "runs" else {}
+            if resource == "runs":
+                assert "view" not in tool["inputSchema"]["properties"]
+            result = await call(http, service, "GET", f"/{resource}", text_query="南京 故障", **filters)
             assert result["status"] == 200, result
             assert [row["id"] for row in result["body"]["items"]] == [matching[field]]
-            missing = await call(http, service, "GET", f"/{resource}", text_query="南京 missing", **projection)
+            missing = await call(http, service, "GET", f"/{resource}", text_query="南京 missing", **filters)
             assert missing["status"] == 200 and missing["body"]["items"] == []
 
 

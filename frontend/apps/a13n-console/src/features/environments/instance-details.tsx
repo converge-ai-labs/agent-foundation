@@ -29,6 +29,7 @@ import { CopyableId, ProviderIcon } from "../../shared/identity";
 import { Panel } from "../../shared/page";
 import { environmentQuery } from "./api";
 import styles from "./environments.module.css";
+import { CreationProgress, DesktopPreview } from "./creation-progress";
 import { Fact } from "./fact";
 import { EnvironmentConnectionEditor } from "./instance-connection";
 import { EnvironmentNameEditor } from "./instance-name";
@@ -219,7 +220,7 @@ export function EnvironmentPanel({
                   subject={name}
                   title={t("Delete environment")}
                   description={t(
-                    "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a conversation while still usable, cannot be deleted.",
+                    "The environment is retired and cannot be used again. A managed environment is destroyed with its files; a registered device keeps running outside the Service. Environments in use by a run, or mounted by a session while still usable, cannot be deleted.",
                   )}
                   danger
                   triggerElement={
@@ -243,12 +244,32 @@ export function EnvironmentPanel({
         ) : (
           value && (
             <>
+              {["e2b", "modal", "daytona", "vercel", "sprites"].includes(
+                provider.data?.type ?? "",
+              ) &&
+                template.data?.config.recipe?.desktop === true && (
+                  <>
+                    {(provider.data?.type === "sprites" ||
+                      template.data.config.recipe?.template === "auto" ||
+                      template.data.config.recipe?.image === "auto" ||
+                      template.data.config.recipe?.snapshot === "auto") && (
+                      <CreationProgress
+                        environment={value}
+                        providerType={provider.data?.type}
+                        etag={detail.data?.etag}
+                      />
+                    )}
+                    {value.status === "ready" &&
+                      !value.failure?.permanent &&
+                      can("run") && <DesktopPreview environment={value} />}
+                  </>
+                )}
               {value.failure?.code === "environment_lost" && (
                 <section className={styles.factGroup} role="status">
                   <h3>{t("Environment lost")}</h3>
                   <p>
                     {t(
-                      "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Conversation history is retained.",
+                      "This sandbox no longer exists at its provider and cannot be resumed. Use a new environment to continue; files from the old sandbox may no longer be recoverable. Session history is retained.",
                     )}
                   </p>
                 </section>

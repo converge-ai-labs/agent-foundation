@@ -60,7 +60,10 @@ async function fetcher(request: Request): Promise<Response> {
   const response = await override?.(request);
   if (response) return response;
   if (path === "/api/auth/logins") return json(null);
-  if (path.startsWith("/api/auth/accounts/"))
+  if (
+    path.startsWith("/api/auth/accounts/") ||
+    path.startsWith("/api/subscriptions/accounts/")
+  )
     return json({
       usable: true,
       availability: "available",
@@ -68,7 +71,7 @@ async function fetcher(request: Request): Promise<Response> {
       account_id: "account-test",
       source: "file",
       expiry: "valid",
-      shared_with_cli: true,
+      shared_with_cli: false,
     });
   if (path === "/api/auth/keys") {
     if (request.method === "PUT") {
@@ -425,6 +428,7 @@ it("resumes the server's active device login without starting another authorizat
     )
       return json({
         session_id: "login-restored",
+        account_id: "acct-codex-default",
         provider: "codex",
         method: "device",
         state: "waiting",

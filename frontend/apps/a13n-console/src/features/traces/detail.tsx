@@ -170,14 +170,17 @@ export function TraceDetail({ traceId }: { traceId: string }) {
       onClose={() => setSelectedId(null)}
     >
       {selected.id === root.id ? (
-        <ObservationPanelBody observation={root} />
+        <ObservationPanelBody key={root.id} observation={root} />
       ) : selectedQuery.error ? (
         <ErrorNotice
           error={selectedQuery.error}
           retry={() => void selectedQuery.refetch()}
         />
       ) : selectedQuery.data ? (
-        <ObservationPanelBody observation={selectedQuery.data} />
+        <ObservationPanelBody
+          key={selected.id}
+          observation={selectedQuery.data}
+        />
       ) : (
         <Loading variant="detail" />
       )}

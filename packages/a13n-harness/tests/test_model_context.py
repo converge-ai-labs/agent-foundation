@@ -4,13 +4,15 @@ import json
 from collections.abc import AsyncIterator
 from copy import deepcopy
 from itertools import pairwise
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
+    DeferredToolCall,
+    DeferredToolRequests,
+    DeferredToolResume,
     HarnessBuilder,
     RunBindings,
 )
@@ -38,6 +40,8 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
     TextContent,
     TextPart,
@@ -383,7 +387,7 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
     assert calls == ["host:before", "host:after"]
 
 
-@pytest.mark.parametrize("placement", ["after", "between", "retry", "rendered_native"])
+@pytest.mark.parametrize("placement", ["after", "between", "retry", "feedback", "retried", "rendered_native"])
 async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement):
     from unittest.mock import AsyncMock
 
@@ -396,6 +400,10 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
     parts = (results[0], notice, results[1]) if placement == "between" else (*results, notice)
     if placement == "retry":
         parts = (*parts, RetryPromptPart("retry"))
+    elif placement == "feedback":
+        parts = (*parts, RetryFeedbackPart("retry", retry=RetryInfo(cause="model_retry")))
+    elif placement == "retried":
+        parts = (ToolReturnPart("first", "retry", "call-1", outcome="retried"), results[1], notice)
     original = ModelRequest(parts=parts)
     projection = ModelContextProjection(
         blocks=(
@@ -557,18 +565,16 @@ async def test_exact_boundaries_skip_projection_without_history_mutation() -> No
     await _assert_exact_coordinator_hooks([committed, suspended])
 
     calls = (
-        SimpleNamespace(tool_call_id="call-1"),
-        SimpleNamespace(tool_call_id="call-2"),
+        ToolCallPart(tool_name="one", args={}, tool_call_id="call-1"),
+        ToolCallPart(tool_name="two", args={}, tool_call_id="call-2"),
     )
-    deferred_resume = SimpleNamespace(
-        requests=SimpleNamespace(calls=calls, approvals=()),
+    requests = DeferredToolRequests(
+        calls=[DeferredToolCall(call, call, f"tool/test/{call.tool_name}") for call in calls],
     )
-    pending_calls = ModelResponse(
-        parts=(
-            ToolCallPart(tool_name="one", args={}, tool_call_id="call-1"),
-            ToolCallPart(tool_name="two", args={}, tool_call_id="call-2"),
-        )
+    deferred_resume = DeferredToolResume(
+        requests, requests.build_results(calls={call.tool_call_id: call.tool_name for call in calls})
     )
+    pending_calls = ModelResponse(parts=calls)
     complete_results = ModelRequest(
         parts=(
             ToolReturnPart(tool_name="one", content="one", tool_call_id="call-1"),

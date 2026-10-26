@@ -5,7 +5,7 @@ connection's authentication; this module only speaks MCP over it.
 """
 
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import replace
@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal, Self, Unpack
 
 import httpx2
 from a13n_harness import AgentContext
+from a13n_harness.http import forward_context_headers_default
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -98,6 +99,7 @@ class OAuthSettings(BaseModel):
 
 class McpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+    forward_context_headers: bool = Field(default_factory=forward_context_headers_default)
 
     url: str = Field(min_length=1, max_length=2048)
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
@@ -162,7 +164,7 @@ class DispatchTransport(ClientTransport):
     @asynccontextmanager
     async def connect_session(
         self, *, transport_options: TransportOptions | None = None, **session_kwargs: Unpack[SessionKwargs]
-    ) -> AsyncIterator[ClientSession]:
+    ) -> AsyncGenerator[ClientSession]:
         options = transport_options or TransportOptions()
         connection_id = self.connection_id
 
@@ -222,7 +224,6 @@ def mcp_capability(
     open_client: Callable[[], Awaitable[Client[ClientTransport]]],
     *,
     tools: tuple[str, ...] | None,
-    defer_loading: bool,
     check: DispatchCheck,
 ) -> MCP[AgentContext]:
     """Fresh native projections borrow one entered client from the worker attempt.
@@ -254,5 +255,5 @@ def mcp_capability(
     return MCP(
         id=connection_id,
         local=DynamicToolset(local, per_run_step=False),
-        defer_loading=defer_loading,
+        defer_loading=False,
     )

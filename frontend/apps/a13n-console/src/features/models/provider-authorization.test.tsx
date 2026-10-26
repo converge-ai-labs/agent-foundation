@@ -72,7 +72,7 @@ afterEach(() => {
   vi.resetAllMocks();
   state.writable = true;
 });
-it("starts workspace authorization, posts the full callback, clears secret input and reports unconfirmed revocation", async () => {
+it("starts workspace authorization, posts the full callback, clears secret input and reports local disconnection", async () => {
   mount();
   const user = userEvent.setup();
   await user.click(
@@ -118,11 +118,11 @@ it("starts workspace authorization, posts the full callback, clears secret input
   });
   expect(sessionStorage.length).toBe(0);
   state.DELETE.mockResolvedValue({
-    data: { local_tokens_cleared: true, revocation_confirmed: false },
+    data: { local_tokens_cleared: true, revocation_confirmed: null },
   });
   await user.click(await screen.findByRole("button", { name: "Disconnect" }));
   await screen.findByText(
-    "Local tokens were cleared. OpenAI revocation was not confirmed.",
+    "Local tokens were cleared. Manage remote access in ChatGPT settings.",
   );
 });
 it("submits callback Enter without saving provider edits and can cancel pending authorization", async () => {
@@ -166,34 +166,4 @@ it("leaves authorization metadata readable but refuses viewer actions", async ()
   });
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(state.POST).not.toHaveBeenCalled();
-});
-
-it("polls hosted authorization without posting a callback and waits for the new login claim to finish", async () => {
-  mount(vi.fn(), "browser_callback");
-  const user = userEvent.setup();
-  await screen.findByText("Not connected");
-  state.GET.mockResolvedValue({
-    data: { state: "connected", pending: true, email: "old@example.test" },
-  });
-  await user.click(
-    screen.getByRole("button", { name: "Continue with ChatGPT" }),
-  );
-  await screen.findByText(
-    "Sign-in completes automatically. Return here after authorizing in the browser.",
-  );
-  await waitFor(() => expect(state.GET.mock.calls.length).toBeGreaterThan(1));
-  expect(screen.getByText("Waiting for sign-in")).toBeTruthy();
-  expect(
-    screen.getByText(
-      "If automatic completion fails, paste the entire callback URL here.",
-    ),
-  ).toBeTruthy();
-  state.GET.mockResolvedValue({
-    data: { state: "connected", pending: false, email: "new@example.test" },
-  });
-  await screen.findByText("new@example.test", {}, { timeout: 4000 });
-  expect(screen.queryByText("Waiting for sign-in")).toBeNull();
-  expect(screen.queryByLabelText("Complete callback URL")).toBeNull();
-  expect(state.POST).toHaveBeenCalledTimes(1);
-  expect(state.POST.mock.calls[0][0]).toContain("/authorize");
 });

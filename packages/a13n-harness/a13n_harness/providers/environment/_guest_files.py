@@ -35,7 +35,7 @@ from a13n_harness.environment.files import (
 )
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.text import apply_unified_diff, iter_lf_lines
-from a13n_harness.providers.environment._guest_commands import FileCommands, decoded_bytes
+from a13n_harness.providers.environment._guest_commands import FileCommands
 
 
 class GuestFiles:
@@ -90,19 +90,22 @@ class GuestFiles:
         native = value.get("path")
         if not isinstance(native, str):
             raise EnvironmentError("Guest path resolution failed.", code="environment_provider_failure")
-        # The guest owns cleanup once extraction starts. An unconfirmed upload can leave only a private ZIP.
-        with BytesIO(archive.content) as source:
-            await self.commands.write_stream(native, source)
-        return await self._mutate(
-            "archive",
-            {
-                "path": path,
-                "staged": staged,
-                "digest": hashlib.sha256(archive.content).hexdigest(),
-                "root": archive.root,
-                "entries": [[name, size] for name, size in archive.entries],
-            },
-        )
+        try:
+            with BytesIO(archive.content) as source:
+                await self.commands.write_stream(native, source)
+            return await self._mutate(
+                "archive",
+                {
+                    "path": path,
+                    "staged": staged,
+                    "digest": hashlib.sha256(archive.content).hexdigest(),
+                    "root": archive.root,
+                    "entries": [[name, size] for name, size in archive.entries],
+                },
+            )
+        except BaseException as error:
+            await self._cleanup_upload_stage(staged, error)
+            raise
 
     async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
         maximum = self.commands.configuration.max_file_bytes
@@ -114,17 +117,9 @@ class GuestFiles:
                 async for chunk in stream:
                     result.extend(chunk)
             return bytes(result)
-        # Keep ranged reads seek-based: the native download API has no range
-        # support, and discarding an arbitrary prefix would amplify transfer I/O.
-        needed = length if length is not None else maximum + 1
-        while len(result) < needed:
-            size = min(65536, needed - len(result))
-            chunk = decoded_bytes(
-                await self.commands.files("read", {"path": path, "offset": offset + len(result), "length": size})
-            )
-            result.extend(chunk)
-            if len(chunk) < size:
-                break
+        if length == 0:
+            return b""
+        result = await self.commands.read_range(path, offset, length if length is not None else maximum + 1)
         if len(result) > maximum:
             raise EnvironmentError("File exceeds the configured limit.", code="environment_too_large")
         return bytes(result)
@@ -189,17 +184,19 @@ class GuestFiles:
         staged = str(PurePosixPath(path).parent / f".a13n-write-{secrets.token_hex(12)}")
         await self._resolve_native_path(staged)
         size = 0
+        digest = hashlib.sha256()
         maximum = self.commands.configuration.max_file_bytes
         with tempfile.TemporaryFile("w+b") as file:
             if mode == "append":
                 try:
-                    previous = await self.read_bytes(path)
+                    async with closing_stream(self.read_bytes_stream(path)) as previous:
+                        async for chunk in previous:
+                            size += len(chunk)
+                            digest.update(chunk)
+                            await asyncio.to_thread(file.write, chunk)
                 except EnvironmentError as error:
-                    if error.code != "environment_not_found":
+                    if error.code != "environment_not_found" or size:
                         raise
-                    previous = b""
-                await asyncio.to_thread(file.write, previous)
-                size = len(previous)
             original_size = size
             async for chunk in stream:
                 if not isinstance(chunk, bytes):
@@ -207,6 +204,7 @@ class GuestFiles:
                 size += len(chunk)
                 if size > maximum:
                     raise EnvironmentError("File exceeds the configured limit.", code="environment_too_large")
+                digest.update(chunk)
                 await asyncio.to_thread(file.write, chunk)
             await asyncio.to_thread(file.seek, 0)
             stage_created = False
@@ -216,7 +214,13 @@ class GuestFiles:
                 await self.commands.write_stream(native, file)
                 await self.commands.files(
                     "publish",
-                    {"path": path, "staged": staged, "mode": "upsert" if mode == "append" else mode},
+                    {
+                        "path": path,
+                        "staged": staged,
+                        "mode": "upsert" if mode == "append" else mode,
+                        "size": size,
+                        "digest": digest.hexdigest(),
+                    },
                     mutation=True,
                 )
             except BaseException as error:
@@ -233,17 +237,23 @@ class GuestFiles:
                 ):
                     # A rejected exclusive creation does not authorize deleting that entry.
                     raise
-                try:
-                    await asyncio.shield(
-                        self.commands.files("remove", {"path": staged, "recursive": False}, mutation=True)
-                    )
-                except EnvironmentError as cleanup_error:
-                    if cleanup_error.code != "environment_not_found":
-                        error.add_note("Guest staged upload cleanup failed.")
-                except Exception:
-                    error.add_note("Guest staged upload cleanup could not be confirmed.")
+                await self._cleanup_upload_stage(staged, error)
                 raise
         return FileWriteResult(path=path, bytes_written=size - original_size, receipt=self.commands.receipt())
+
+    async def _cleanup_upload_stage(self, staged: str, error: BaseException) -> None:
+        try:
+            await asyncio.shield(
+                asyncio.wait_for(
+                    self.commands.files("remove", {"path": staged, "recursive": False}, mutation=True),
+                    5,
+                )
+            )
+        except EnvironmentError as cleanup_error:
+            if cleanup_error.code != "environment_not_found":
+                error.add_note("Guest staged upload cleanup failed.")
+        except Exception:
+            error.add_note("Guest staged upload cleanup could not be confirmed.")
 
     async def write_text(self, path: str, text: str, *, mode: FileWriteMode) -> FileWriteResult:
         if "\x00" in text:

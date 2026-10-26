@@ -1,6 +1,6 @@
 import { Button, Label, SearchPicker, Switch } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -251,7 +251,7 @@ export function NewConversation() {
                     session_id: run.session_id,
                     thread_id: run.thread_id,
                     run_id: run.id,
-                  })
+                  }) + "?follow=latest"
                 : `${basePath}/sessions/${thread.session_id}/threads/${thread.id}`,
             );
           }}
@@ -262,8 +262,21 @@ export function NewConversation() {
 }
 
 export function SessionLayout() {
-  const { sessionId = "", threadId } = useParams(),
-    { basePath } = useWorkspace();
+  const { sessionId = "", threadId, runId } = useParams(),
+    { basePath, workspace } = useWorkspace();
+  const client = useClient(),
+    cache = useQueryClient();
+  useEffect(() => {
+    const queries = conversationQueries(client, workspace.id);
+    if (threadId) {
+      void cache.prefetchQuery(queries.thread(threadId));
+      void cache.prefetchQuery(queries.runs(threadId, { anchor: runId }));
+    }
+    if (runId) {
+      void cache.prefetchQuery(queries.run(runId));
+      void cache.prefetchQuery(queries.items(runId));
+    }
+  }, [client, cache, workspace.id, threadId, runId]);
   const session = useSession(sessionId);
   if (session.isPending) return <Loading variant="detail" />;
   if (!session.data)
@@ -417,7 +430,10 @@ export function ThreadLayout() {
       ) : runId ? (
         <Outlet />
       ) : selected ? (
-        <Navigate to={`runs/${selected}${search}`} replace />
+        <Navigate
+          to={`runs/${selected}?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), follow: "latest" })}`}
+          replace
+        />
       ) : (
         thread.data && (
           <div className={styles.emptyThread}>

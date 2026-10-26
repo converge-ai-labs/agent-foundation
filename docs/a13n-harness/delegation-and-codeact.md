@@ -82,19 +82,11 @@ capability = SubagentCapability(
 
 The operator implements complete `delegate`, `info`, `wait`, `steer`, `cancel`, and `resume` use cases. Harness resolves the exact child, derived Identity, applied context, intersected usage limits, and detached parent correlation before admission. It also supplies the originating tool-call ID and assembled name separately when available. The operator may use that correlation to derive its own idempotency identity and replay scope; Harness does not generate either. The operator then owns child Thread creation, fresh `RunBindings`, Environment association and re-entry, recursive Harness invocation, storage, checkpoints, observation, wake, cancellation, resume, loss, cleanup, and retention.
 
-Harness provides no default async manager, execution store, background task registry, parent-state execution mirror, or shutdown method. Parent Run or Environment closure does not cancel accepted child work or close the operator. `subagent_info` and `wait_subagent` query the Host directly on every call.
+Parent Run or Environment closure does not cancel accepted child work or close the operator. `subagent_info` and `wait_subagent` query the Host directly on every call.
 
 ### Deliberate Boundary
 
-Inline execution is the only built-in child executor. Async support does not provide:
-
-- a process-local scheduler or default storage;
-- a required database or checkpoint protocol;
-- completion callbacks or a wake ledger;
-- cross-process cancellation routing;
-- a parent `HarnessState` copy of Host child status or state.
-
-Implement those semantics behind `SubagentOperator` according to the owning Host. Do not retain a live parent `AgentContext` or entered Environment after admission, and do not turn parent state into a second child store.
+Inline execution is the only built-in child executor. For async execution, implement scheduling, storage/checkpoints, completion delivery, cancellation routing and shutdown behind `SubagentOperator`. Child status stays in that Host store. After admission, retain detached correlation and fresh bindings rather than a live parent `AgentContext` or entered Environment.
 
 ### Deferred Tools in Child Runs
 

@@ -243,7 +243,8 @@ async def test_http_runtime_replaces_stale_connection_on_next_explicit_use(
             assert replacement is not first
             with pytest.raises(EIPClientError):
                 await old_session.readiness()
-            async with runtime.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+            async with runtime.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as binding:
+                session = binding.session
                 # A missing directory is a binding failure, not a lost Device.
                 with pytest.raises(EIPClientError):
                     async with runtime.open_session(
@@ -451,7 +452,8 @@ async def test_websocket_concurrent_scopes_keep_one_carrier_and_independent_proc
                     await processes.release(started.process.handle)
                     await second.close()
                     assert hub._attachments[NATIVE_ID] is attachment
-                    async with hub.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as session:
+                    async with hub.open_session(expected_device_id=NATIVE_ID, required_methods=frozenset()) as binding:
+                        session = binding.session
                         assert (await session.readiness()).ready
                 finally:
                     await asyncio.gather(*(environment.close() for environment in environments))
@@ -527,7 +529,8 @@ async def test_http_checkpoint_attaches_live_session_or_opens_after_close(binary
         restored = http_runtime(endpoint)
         async with restored.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-        ) as session:
+        ) as binding:
+            session = binding.session
             assert (session.session_id == original.session_id) is not closed
             assert (await session.readiness()).ready
             assert recovery.state is not None and recovery.state.descriptor == session.descriptor
@@ -552,7 +555,8 @@ async def test_http_recovery_late_close_fails_without_reopening_or_replaying(bin
         with pytest.raises(EIPClientError):
             async with restored.open_session(
                 expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-            ) as session:
+            ) as binding:
+                session = binding.session
                 assert session.session_id == original.session_id
                 await original.close()
                 async with session.open_writer(
@@ -580,7 +584,8 @@ async def test_http_recovery_after_daemon_restart_opens_new_generation(binary, t
         restored = http_runtime(endpoint)
         async with restored.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
-        ) as session:
+        ) as binding:
+            session = binding.session
             assert session.descriptor.generation != saved.descriptor.generation
             assert session.session_id != saved.descriptor.session_id
             assert (await session.readiness()).ready
@@ -728,7 +733,8 @@ async def test_session_recovery_checks_current_binding_before_attach(
                     pytest.fail("Changed boundary must fail")
             opened.assert_not_awaited()
         else:
-            async with scope as session:
+            async with scope as binding:
+                session = binding.session
                 assert session.session_id != original.session_id
             opened.assert_awaited_once()
         attach.assert_not_awaited()
@@ -765,6 +771,76 @@ async def test_session_recovery_unavailable_carrier_leaves_old_session_alone(
         async with runtime.open_session(
             expected_device_id=NATIVE_ID, required_methods=frozenset(), session_recovery=recovery
         ) as fresh:
-            assert fresh.session_id != original.session_id
+            assert fresh.session.session_id != original.session_id
         assert (await original.readiness()).ready
         assert recovery.state is None
+
+
+@pytest.mark.parametrize("provider", ["docker", "e2b", "daytona", "modal", "vercel"])
+async def test_managed_defaults_reach_real_envd_commands_and_children(
+    binary, tmp_path, http_runtime, monkeypatch, provider
+):
+    """Use each managed adapter, replacing only cloud attachment with a real local daemon."""
+    import importlib
+    from types import SimpleNamespace
+
+    from a13n_harness.environment.commands import CommandEnvironment
+
+    module = importlib.import_module(f"a13n_harness.providers.environment.{provider}.http")
+    port = free_port()
+    async with daemon(binary, tmp_path, "http", f"127.0.0.1:{port}") as (_, workspace):
+        runtime = http_runtime(f"http://127.0.0.1:{port}")
+
+        def session(reference, *, session_recovery=None):
+            return runtime.open_session(
+                expected_device_id=NATIVE_ID,
+                working_directory=str(workspace),
+                required_methods=frozenset({"shell.exec", "process.start"}),
+            )
+
+        monkeypatch.setattr(module, "http_session", session)
+        defaults = {"APP_MODE": "default ' $HOME 中文"}
+        config = SimpleNamespace(environment=defaults)
+        reference = SimpleNamespace(
+            config=config,
+            _configuration=config,
+            environment_id=LOGICAL_ID,
+            state=EnvironmentState(provider_key=provider, state_version="1", state={}),
+            require_target=lambda: None,
+        )
+        script = (
+            "import os,subprocess,sys,json; "
+            "child=subprocess.check_output([sys.executable,'-c',\"import os; print(os.getenv('APP_MODE', '<absent>'))\"],text=True); "
+            "print(json.dumps([os.getenv('APP_MODE','<absent>'),child.strip()]))"
+        )
+        for attempt in range(2):
+            execution = module.http_execution(reference)
+            await execution.open(execution_id=f"attempt-{attempt}")
+            try:
+                shell = execution.operations.shell
+                processes = execution.operations.processes
+                assert shell is not None and processes is not None
+                for overrides, expected in [
+                    (CommandEnvironment(), defaults["APP_MODE"]),
+                    (CommandEnvironment(set={"APP_MODE": "override"}), "override"),
+                    (CommandEnvironment(unset=("APP_MODE",)), "<absent>"),
+                ]:
+                    request = CommandRequest(
+                        command=ArgvCommand(executable=Path(sys.executable).resolve().name, arguments=("-c", script)),
+                        cwd=str(workspace),
+                        environment=overrides,
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096, max_output_bytes=4096, overflow="truncate"
+                        ),
+                    )
+                    result = await shell.exec(request)
+                    assert result.status.exit_code == 0
+                    assert json.loads(result.output.stdout.inline) == [expected, expected]
+                    started = await processes.start(request)
+                    info = await processes.wait(started.process.handle, condition="tree_cleaned", timeout_seconds=5)
+                    assert info.status.exit_code == 0
+                    assert json.loads(info.output.stdout.inline) == [expected, expected]
+                    await processes.release(started.process.handle)
+            finally:
+                await execution.close()
+        assert defaults == {"APP_MODE": "default ' $HOME 中文"}

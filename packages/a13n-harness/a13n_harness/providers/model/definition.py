@@ -21,8 +21,7 @@ from .types import ModelConnection, ProviderConfiguration, ValidatedProviderConf
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.providers import Provider
-
-    from .oauth.chatgpt import OpenAIChatGPTCredentialSource
+    from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
 
 
 _PROBE_TIMEOUT_SECONDS = 10
@@ -132,6 +131,8 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
             reserved = (*reserved, affinity_header)
         validate_header_names(header_names, reserved=reserved)
         normalized = parsed.model_dump(mode="json", by_alias=True, exclude_none=False, exclude_defaults=True)
+        if "forward_context_headers" in parsed.model_fields_set:
+            normalized["forward_context_headers"] = parsed.forward_context_headers
         endpoint = parsed.base_url or (self.endpoint(normalized) if callable(self.endpoint) else self.endpoint)
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 

@@ -116,6 +116,16 @@ The summary request uses the same Agent and complete history. The summary replac
 
 Select `HandoffCapability()` when you also want the `summarize` tool for explicit handoffs. Its default reminder starts at 65% of the context window. Both Capabilities are opt-in; threshold configuration alone enables neither.
 
+## Handoff versus automatic compaction
+
+A continuation summary carries the paths and roles of Skills still needed. Reread them on resume when their full content is no longer available.
+
+Use `summarize` for an explicit handoff or let compaction react to usage. See [Compact a long Thread](#compact-a-long-thread) for thresholds.
+
+Call `summarize` directly as the only tool call in its model response, outside CodeAct and ToolSearch proxy groups. While a retained CodeAct runner is active, automatic compaction waits and Handoff rejects the call. Wait for the runner to finish, inspect its result, then write a fresh summary. Other retained function tools do not block context replacement.
+
+Persist the returned `HarnessState` under your Host's acceptance policy; a summary does not save application storage.
+
 ### Retain called tools
 
 Both `summarize` and automatic compaction retain a bounded set of previously called [ToolSearch](tool-search.md) tools. Only completed target calls enter the working set, including calls through CodeAct and proxy dispatch. Searching alone adds nothing; repeated calls refresh one entry. Ordinary business-tool results are summarized instead of replayed.
@@ -202,11 +212,3 @@ without_image_preparation = spec.with_updates(
 ```
 
 Omitting `image_input` uses defaults; `None` disables preparation. See [Image input policy](models.md#image-input-policy) for limits and custom filters.
-
-## Handoff versus automatic compaction
-
-A continuation summary carries the paths and roles of Skills still needed. Reread them on resume when their full content is no longer available.
-
-Use `summarize` for an explicit handoff or let compaction react to usage. See [Compact a long Thread](#compact-a-long-thread) for thresholds.
-
-Persist the returned `HarnessState` under your Host's acceptance policy; a summary does not save application storage.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from types import TracebackType
 
@@ -29,7 +29,7 @@ def isolated_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 @asynccontextmanager
 async def _http_endpoint(
     *, statuses: tuple[int, ...] = (200,), body: bytes = b"ok"
-) -> AsyncIterator[tuple[str, list[bytes]]]:
+) -> AsyncGenerator[tuple[str, list[bytes]]]:
     requests: list[bytes] = []
 
     async def respond(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:

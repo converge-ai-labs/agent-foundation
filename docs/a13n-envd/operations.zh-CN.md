@@ -37,7 +37,7 @@ Envd 管理一个设备代次及其多个独立会话。运维人员管理守护
 
 因此，busy 响应可能表示输出预留容量不足，而非 CPU 或网络故障。有限输出上限不代表允许驱逐其他保留记录。可以有计划地提高配额、释放不再需要的观测记录，或降低每条流的预留值，同时保持 `spool >= 2 * per_stream` 和 `preview <= per_stream`。
 
-Python Local Envd 通过 Host 启动配置提供自己的预览和文件值默认设置。Docker 环境 provider 不使用 Envd，并有自己的输出限制。请配置相应的[运行时字段](../environments/configuration.md)，不要把会话选择当作守护进程启动配置。
+Python Local Envd 通过 Host 启动配置提供自己的预览和文件值默认设置。Native Docker 执行有自己的输出限制；显式选择的 Docker Envd 执行使用其守护进程配置。请配置相应的[运行时字段](../environments/configuration.md)，不要把会话选择当作守护进程启动配置。
 
 ## 预览、保留字节与完成状态
 

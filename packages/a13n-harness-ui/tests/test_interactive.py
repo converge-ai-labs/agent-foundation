@@ -214,7 +214,11 @@ for arguments in {invocations!r}:
 async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, shell_review: bool = False) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
-    (tmp_path / "codex").mkdir()
+    from datetime import UTC, datetime, timedelta
+
+    from .test_onboarding import _codex_login_file
+
+    _codex_login_file(datetime.now(UTC) + timedelta(days=1))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     selection = SetupSelection(

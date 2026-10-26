@@ -25,7 +25,6 @@ const config = {
     {
       connection_id: "conn_0123456789abcdef0123",
       tools: ["search"],
-      defer_loading: true,
     },
   ],
   plugins: [

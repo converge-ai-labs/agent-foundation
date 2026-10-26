@@ -16,9 +16,12 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
 });
-it.each(["off", "ultrafast"] as const)(
+it.each([
+  ["default", "Standard"],
+  ["ultrafast", "Ultrafast"],
+] as const)(
   "ticks the exact current receipt and paints live context and speed %s without waiting for a saved transcript",
-  async (speed) => {
+  async (speed, label) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const queries = new QueryClient({
@@ -98,7 +101,7 @@ it.each(["off", "ultrafast"] as const)(
       screen.getByRole("button", { name: "Tokens details" }).textContent,
     ).toBe("Tokens 12.3K");
     expect(screen.getByText("0s")).toBeTruthy();
-    expect(screen.queryByText("On")).toBeNull();
+    expect(screen.getByText("Speed").textContent).toBe("Speed —");
     act(() =>
       queries.setQueryData(configurationKey, {
         capture_source: "active_operation",
@@ -110,9 +113,7 @@ it.each(["off", "ultrafast"] as const)(
       await vi.advanceTimersByTimeAsync(2000);
     });
     expect(screen.getByText("2s")).toBeTruthy();
-    expect(
-      screen.getByText(speed === "ultrafast" ? "Ultrafast" : "Off"),
-    ).toBeTruthy();
+    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
     view.rerender(content(400, true));
     expect(screen.getByText("40%")).toBeTruthy();
     expect(screen.getByText("12.3K")).toBeTruthy();
@@ -149,9 +150,7 @@ it.each(["off", "ultrafast"] as const)(
     ).toBeTruthy();
     expect(screen.getByText("13,345")).toBeTruthy();
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-    expect(
-      screen.getByText(speed === "ultrafast" ? "Ultrafast" : "Off"),
-    ).toBeTruthy();
+    expect(screen.getByText("Speed").textContent).toBe(`Speed ${label}`);
     operation.status = "completed";
     operation.completed_at = "2026-01-01T00:00:02Z";
     act(() => {

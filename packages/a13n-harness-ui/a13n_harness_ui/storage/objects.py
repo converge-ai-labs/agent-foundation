@@ -301,8 +301,10 @@ class ImmutableObjectStore:
         fields["logical_digest"] = _canonical_json(digest)
         target = self._path_for(envelope.ref)
         if target.exists():
+            del fields
             return self._read_ref(envelope.ref)
         uncompressed = _canonical_fields(fields)
+        del fields
         if len(uncompressed) > self._settings.max_object_bytes:
             raise StoreIntegrityError(
                 f"Immutable object requires {len(uncompressed)} uncompressed bytes; "
@@ -316,15 +318,19 @@ class ImmutableObjectStore:
                 },
             )
         compressed = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(uncompressed)
+        # Release encoding buffers before verification allocates its own copies.
+        del uncompressed
         stage = self._layout.staging / f"{uuid4().hex}.json.zst.tmp"
         try:
             self._write_stage(stage, compressed)
+            del compressed
             staged = self._read_path(stage)
             if staged != envelope:
                 raise ObjectIntegrityError(
                     "Staged immutable object did not verify to its source envelope.",
                     code="object_staging_mismatch",
                 )
+            del staged
             return self._publish_stage(stage, envelope)
         finally:
             stage.unlink(missing_ok=True)
@@ -434,6 +440,7 @@ class ImmutableObjectStore:
                 "Immutable object content is not in canonical form.",
                 code="object_not_canonical",
             )
+        del canonical, uncompressed
         expected = hashlib.sha256(_canonical_fields(fields, identity=True)).hexdigest()
         if expected != envelope.logical_digest:
             raise ObjectIntegrityError(
@@ -455,10 +462,12 @@ class ImmutableObjectStore:
 
 def _encoded_fields(envelope: ObjectEnvelope) -> dict[str, bytes]:
     """Encode each value once for both the full envelope and its logical identity."""
-    return {
-        key: _canonical_json(value, sort_keys=key != "payload" or envelope.payload_codec_version == "1")
-        for key, value in envelope.model_dump(mode="json").items()
+    fields = {
+        key: _canonical_json(value) for key, value in envelope.model_dump(mode="json", exclude={"payload"}).items()
     }
+    # Encode the validated JsonValue directly to avoid another container-tree copy.
+    fields["payload"] = _canonical_json(envelope.payload, sort_keys=envelope.payload_codec_version == "1")
+    return fields
 
 
 def _canonical_fields(fields: dict[str, bytes], *, identity: bool = False) -> bytes:

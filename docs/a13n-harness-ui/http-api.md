@@ -337,6 +337,12 @@ Use this route map for common operations; consult the live OpenAPI document for 
 
 `GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` reports transient page awareness independently of native sharing.
 
+## Subscription accounts and sharing
+
+For [native accounts and groups](models-and-authentication.md#account-store-locations), use `GET /api/subscriptions` for the catalog and `POST /api/subscriptions/accounts` to create an account. `GET`, `PATCH`, and `DELETE /api/subscriptions/accounts/{account_id}` inspect, rename/enable, or delete that identity. Account actions use `POST` at `/logout`, `/refresh`, and `/reset`; `GET /reset-vouchers` inspects available Codex vouchers. Reset is an explicit redemption, separate from usage refresh. `GET /api/subscriptions/copilot/usage` reads the selected Copilot account's allowance. The provider-oriented `/api/auth/accounts/{provider}` routes remain available.
+
+Sharing management uses instance credentials: `GET /api/shares` lists grants for `scope` and `target_id`, `POST /api/shares` creates a link, `PATCH /api/shares/{share_id}` changes permission, and `DELETE /api/shares/{share_id}` revokes it. Creation returns the link key once; after an unknown response, inspect grants before creating another. Guest keys grant only the shared scope and cannot manage links or instance settings. See [WebUI sharing](webui.md) for permissions and expiry; use OpenAPI for request bodies.
+
 ## Skill catalogs and references
 
 `POST /api/threads/skills-preview` accepts `NewThreadDefaults` and returns a `SkillCatalogView` without creating a Thread. `GET /api/threads/{thread_id}/skills` returns the idle Thread's next-Run catalog or the active Run's pinned catalog. `POST /api/threads/{thread_id}/skills` accepts an `EnvironmentSelectionPatch` to preview Run-only local-root choices without changing the Thread; an active Run still returns its pinned catalog. Items expose `item_id`, `name`, `description`, `source_id`, and `logical_path`; the response includes `catalog_id` and `context_kind`.

@@ -1,3 +1,4 @@
+import { UsagePage } from "../usage/page";
 import { ShareButton } from "../sharing";
 import { ModelsPage } from "../configuration/models";
 import { VoicePage, VoiceIndicator, useVoiceSettings } from "../voice";
@@ -20,9 +21,13 @@ import {
   Sheet,
   SheetPopup,
   SheetTitle,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
 } from "a13n-ui";
 import {
   Archive,
+  ChartBar,
   Waveform,
   Brain,
   House,
@@ -202,6 +207,27 @@ function WorkbenchContent({
       {theme === "dark" ? <Sun /> : <Moon />}
     </Button>
   );
+  const usageEntry = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            render={<Link to="/usage" />}
+          />
+        }
+        aria-label="Usage"
+        aria-current={location.pathname === "/usage" ? "page" : undefined}
+        className={
+          location.pathname === "/usage" ? styles.usageSelected : undefined
+        }
+      >
+        <ChartBar />
+      </TooltipTrigger>
+      <TooltipPopup>Usage</TooltipPopup>
+    </Tooltip>
+  );
   const navigation = (
     <>
       {memoryMode && memoryEnabled ? (
@@ -271,19 +297,22 @@ function WorkbenchContent({
             <Logo alt="" width={28} height={28} />
             <Wordmark />
           </Link>
-          <Button
-            ref={collapseButton}
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Collapse navigation"
-            title="Collapse navigation"
-            onClick={() => {
-              setSidebarCollapsed(true);
-              requestAnimationFrame(() => expandButton.current?.focus());
-            }}
-          >
-            <SidebarSimple />
-          </Button>
+          <div className={styles.headerActions}>
+            {usageEntry}
+            <Button
+              ref={collapseButton}
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Collapse navigation"
+              title="Collapse navigation"
+              onClick={() => {
+                setSidebarCollapsed(true);
+                requestAnimationFrame(() => expandButton.current?.focus());
+              }}
+            >
+              <SidebarSimple />
+            </Button>
+          </div>
         </header>
         {navigation}
       </aside>
@@ -307,6 +336,7 @@ function WorkbenchContent({
         >
           <header className={styles.mobileNavigationHeader}>
             <SheetTitle>Harness UI</SheetTitle>
+            {usageEntry}
           </header>
           {navigation}
         </SheetPopup>
@@ -466,6 +496,7 @@ function WorkbenchContent({
                   />
                 }
               />
+              <Route path="/usage" element={<UsagePage />} />
               <Route path="/archived" element={<ArchivedPage />} />
               <Route element={<SettingsLayout />}>
                 <Route path="/setup" element={<SetupPage />} />

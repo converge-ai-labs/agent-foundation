@@ -7,7 +7,7 @@ deleting need `run`, as anyone who may run an agent can make it write through th
 audited by record ID, never by text.
 """
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -72,7 +72,7 @@ async def open_record_store(
     namespace: str,
     *,
     configuration: RunConfiguration | None = None,
-) -> AsyncIterator[RecordStore]:
+) -> AsyncGenerator[RecordStore]:
     """The provider's store bound to `namespace`, over the host's outbound client; call it through `backend`."""
     definition = runtime.registry.get("memory", provider.type)
     settings = runtime.settings.providers

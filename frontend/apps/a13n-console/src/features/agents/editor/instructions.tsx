@@ -4,9 +4,8 @@ import { useTranslation } from "react-i18next";
 import { TextAreaField } from "../../../shared/forms";
 import { Section } from "../../../shared/page";
 import type { AgentDraft } from "./draft";
-import styles from "./editor.module.css";
 
-/** The role, boundaries, and approach the agent follows on every run. */
+/** Describe its tasks, how it should respond, and what it should avoid. */
 export function InstructionsSection({
   draft,
   readOnly,
@@ -26,7 +25,7 @@ export function InstructionsSection({
       description={
         officialInstructions === undefined
           ? t(
-              "The role, boundaries, and approach the agent follows on every run.",
+              "Describe its tasks, how it should respond, and what it should avoid.",
             )
           : t(
               "Add requirements for this agent. Official instructions also apply.",
@@ -38,16 +37,13 @@ export function InstructionsSection({
         readOnly={readOnly}
         label={t("System instructions")}
         hideLabel
+        placeholder={t(
+          "For example: You review release notes. Check them against the merged changes, flag risky claims, and keep feedback brief.",
+        )}
         value={draft.instructions}
         onChange={draft.setInstructions}
-        rows={10}
+        rows={8}
       />
-      <div className={styles.meta}>
-        <span>{t("Markdown is supported.")}</span>
-        <span>
-          {t("{{count}} characters", { count: draft.instructions.length })}
-        </span>
-      </div>
       {officialInstructions !== undefined && (
         <DisclosureSection title={t("Current official instructions")}>
           <TextAreaField

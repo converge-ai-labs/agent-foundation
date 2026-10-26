@@ -150,11 +150,19 @@ class SessionBackend:
         thread_id = self.thread_id
         if thread_id is None:
             self.status.goal = None
+            self.status.main_account = None
             return
         operation = await self.app.active_root_operation(thread_id)
-        goal = operation.goal if operation is not None else (await self.app.get_thread(thread_id)).thread.goal
+        thread = None if operation is not None else (await self.app.get_thread(thread_id)).thread
         if thread_id == self.thread_id:
-            self.status.goal = goal
+            self.status.goal = operation.goal if operation else thread.goal if thread else None
+            self.status.main_account = (
+                operation.main_account
+                if operation
+                else thread.last_execution.main_account
+                if thread and thread.last_execution
+                else None
+            )
 
     async def _draft_configuration(self) -> ThreadConfiguration:
         projects = await self.app.cwd_project_ids(self.directory)
@@ -179,6 +187,7 @@ class SessionBackend:
             thread.last_execution.status if thread is not None and thread.last_execution is not None else None
         )
         self.status.goal = None if thread is None else thread.goal
+        self.status.main_account = thread.last_execution.main_account if thread and thread.last_execution else None
         agent_id = None if draft is None else draft.agent_source.id
         if thread is not None:
             agent_id = thread.configuration.agent_source.id
@@ -524,20 +533,33 @@ class SessionBackend:
         totals = await self.app.thread_usage(thread_id=selected)
         usage = await self.app.context_usage(selected)
         thread = detail.thread
-        if thread.configuration.project_id not in matches:
+        project_id = thread.configuration.project_id
+        patch = ThreadConfigurationPatch()
+        if project_id not in matches:
             project_id = await self.app.ensure_cwd_project(self.directory)
             source = await self.app.current_configuration()
             assert source is not None
-            local_roots = tuple(root.path for root in source.projects[project_id].roots)
+            patch = ThreadConfigurationPatch(
+                project_id=project_id,
+                local_roots=tuple(root.path for root in source.projects[project_id].roots),
+                default_environment="workspace",
+            )
+        # Keep same-directory recovery available when the saved Agent was removed;
+        # the user must be able to select a replacement with /agent first.
+        if self.request.command is None and thread.configuration.agent_source.id in configuration.agents:
+            # TUI resume follows current MCP defaults, not the creation-time list.
+            # Use the same Project > Agent > global resolver as new sessions.
+            defaults = await self.app.preview_thread_configuration(
+                defaults=NewThreadDefaults(project_id=project_id, agent_id=thread.configuration.agent_source.id)
+            )
+            if defaults.mcp_server_ids != thread.configuration.mcp_server_ids:
+                patch = patch.model_copy(update={"mcp_server_ids": defaults.mcp_server_ids})
+        if patch.model_fields_set:
             thread = await self.app.update_thread_configuration(
                 thread_id=selected,
                 mutation=ThreadConfigurationMutation(
                     expected_version=thread.configuration.version,
-                    patch=ThreadConfigurationPatch(
-                        project_id=project_id,
-                        local_roots=local_roots,
-                        default_environment="workspace",
-                    ),
+                    patch=patch,
                 ),
             )
         if thread.configuration.default_model_id is None:
@@ -876,7 +898,7 @@ class SessionBackend:
                 replay = (
                     subscription.capture_root_stream(observed_run_id)
                     if refresh and observed_run_id is not None
-                    else subscription.root_stream
+                    else subscription.take_root_stream()
                 )
                 if replay is None or replay.summary.run_id != observed_run_id:
                     return False
@@ -969,12 +991,15 @@ class SessionBackend:
                 self.status.execution_status = attached.status.value if attached is not None else "preparing"
                 if admitted is not None:
                     admitted()
-                self.status.goal = (await self.app.get_root_operation(receipt.receipt_id)).goal
+                current_operation = await self.app.get_root_operation(receipt.receipt_id)
+                self.status.goal = current_operation.goal
+                self.status.main_account = current_operation.main_account
                 if self.cancel_requested:
                     await self.app.cancel_root_operation(receipt.receipt_id)
                 operation = await self.app.wait_root_operation(receipt.receipt_id)
                 self.status.execution_status = operation.status.value
                 self.status.goal = operation.goal
+                self.status.main_account = operation.main_account
             finally:
                 pump.cancel()
                 with suppress(asyncio.CancelledError):

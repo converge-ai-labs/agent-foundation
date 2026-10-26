@@ -139,12 +139,9 @@
   container-type: inline-size;
   min-width: 0;
   overflow: hidden;
+  border: 1px solid var(--a13n-border);
   border-radius: 12px;
-  background: var(--a13n-surface);
-}
-/* Inside a disclosure, the disclosure is already the surface. */
-.toolsetCardNested {
-  background: transparent;
+  background: var(--a13n-canvas);
 }
 .toolsetGroup + .toolsetGroup {
   border-top: 1px solid var(--a13n-border);
@@ -154,7 +151,7 @@
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  min-height: 54px;
+  min-height: 48px;
   transition: background-color 150ms ease;
 }
 .toolsetGroupHeader:hover,
@@ -173,7 +170,7 @@
   gap: 12px;
   width: 100%;
   min-width: 0;
-  min-height: 54px;
+  min-height: 48px;
   text-align: left;
   border-radius: 5px;
 }
@@ -232,7 +229,7 @@
   grid-template-columns: var(--toolset-name) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  min-height: 55px;
+  min-height: 48px;
 }
 .toolsetToolName {
   display: flex;
@@ -325,6 +322,10 @@
   margin: 0 0 10px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
+}
+.connectionRemove {
+  flex: none;
+  color: var(--a13n-secondary);
 }
 .connectionName {
   display: flex;
@@ -495,40 +496,85 @@
   border-radius: 12px;
   font-size: var(--a13n-text-xl);
 }
-.railLink {
-  color: var(--a13n-text);
-  text-decoration: underline;
-  text-decoration-color: var(--a13n-border);
-  text-underline-offset: 3px;
+/* Creation ---------------------------------------------------------------- */
+/* As wide as the form's rows read well, so the header's actions end where
+   the fields do. */
+.createPage {
+  --create-gutter: 48px;
+  --sections-sticky-top: 88px;
+  max-width: 1120px;
 }
-.railLink:hover {
-  text-decoration-color: currentColor;
-}
-.railDot {
-  color: var(--a13n-tertiary);
-}
-
-/* Agents list toolbar and creation ---------------------------------------- */
-.creationActions {
+/* The title row sticks; a hairline appears once content passes beneath. */
+.createBar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -12px calc(-1 * var(--create-gutter)) 4px;
+  padding: 12px var(--create-gutter);
+  background: var(--a13n-canvas);
 }
-.splitButton {
-  display: inline-flex;
-  align-items: stretch;
-  flex-shrink: 0;
+.createBar h1 {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--a13n-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--a13n-tracking-title);
+  line-height: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.splitButton > button:first-of-type {
-  border-right-width: 0;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+.createActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
-.splitButton > button:last-of-type {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
+/* The hairline spans the content, like the rows' dividers below it. */
+.createBar::after {
+  content: "";
+  position: absolute;
+  right: var(--create-gutter);
+  bottom: 0;
+  left: var(--create-gutter);
+  height: 1px;
+  background: var(--a13n-border-soft);
+  opacity: 0;
+}
+@supports (animation-timeline: scroll()) {
+  .createBar::after {
+    animation: create-bar-edge linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 64px;
+  }
+}
+@keyframes create-bar-edge {
+  to {
+    opacity: 1;
+  }
+}
+.profile > div:last-child {
+  gap: 20px;
+}
+.profileAvatar {
+  display: grid;
+  gap: 8px;
+}
+.profileAvatar > span {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+@media (width < 768px) {
+  .createPage {
+    --create-gutter: var(--a13n-page-gutter-mobile);
+    --sections-sticky-top: 76px;
+  }
+  .createBar h1 {
+    font-size: var(--a13n-text-xl);
+  }
 }
 
 /* Import dialog ----------------------------------------------------------- */
@@ -692,4 +738,51 @@
   background: var(--a13n-surface);
   font-size: var(--a13n-text-xs);
   line-height: 1.6;
+}
+
+.outlinedDisclosure {
+  min-width: 0;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--a13n-canvas);
+  overflow: hidden;
+}
+.outlinedDisclosure [data-slot="disclosure-surface"] > button {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 0;
+}
+
+.platformTools [data-slot="collapsible-panel"] > div {
+  padding: 0;
+  gap: 0;
+  border-top: 1px solid var(--a13n-border);
+}
+.platformTools .toolsetCard {
+  border: 0;
+  border-radius: 0;
+}
+
+.outlinedDisclosure [data-slot="disclosure-surface"] > button > svg {
+  order: 1;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  rotate: none;
+  transform: rotate(90deg);
+}
+.outlinedDisclosure
+  [data-slot="disclosure-surface"]
+  > button[aria-expanded="true"]
+  > svg {
+  transform: rotate(270deg);
+}
+
+.outlinedDisclosure [data-slot="disclosure-surface"] > button {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
 }
