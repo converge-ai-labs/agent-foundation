@@ -36,9 +36,11 @@ export function closedFence(source: string) {
 
 function Diagram({
   source,
+  header,
   children,
 }: {
   source: string;
+  header: (actions: ReactNode) => ReactNode;
   children: ReactNode;
 }) {
   const [dark, setDark] = useState(() =>
@@ -84,26 +86,28 @@ function Diagram({
   const current = result?.source === source ? result : undefined;
   return (
     <>
-      <div className={styles.diagramActions}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setOriginal(!original)}
-          aria-pressed={original}
-        >
-          <Code />
-          Source
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={!current?.src}
-          onClick={() => setExpanded(true)}
-        >
-          <ArrowsOut />
-          Expand
-        </Button>
-      </div>
+      {header(
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setOriginal(!original)}
+            aria-pressed={original}
+          >
+            <Code />
+            Source
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!current?.src}
+            onClick={() => setExpanded(true)}
+          >
+            <ArrowsOut />
+            Expand
+          </Button>
+        </>,
+      )}
       {!original && current?.src && (
         <div className={styles.diagramCanvas} data-diagram-canvas>
           <img src={current.src} alt="Mermaid diagram" />
@@ -161,37 +165,49 @@ export function MarkdownPre({
     const timer = setTimeout(() => setCopied(false), 2000);
     return () => clearTimeout(timer);
   }, [copied]);
-  return (
-    <div className={styles.codeBlock}>
+  // One header row owns every block action; diagrams add Source and Expand
+  // before Copy instead of stacking a second toolbar above the canvas.
+  const header = (actions?: ReactNode) => (
+    <>
       <div className={styles.codeHeader}>
         <span>{diagram ? "Mermaid" : language || "Text"}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label={diagram ? "Copy diagram source" : "Copy code"}
-          onClick={async () => {
-            try {
-              await copyText(source);
-              setCopied(true);
-              setCopyError(false);
-            } catch {
-              setCopyError(true);
-            }
-          }}
-        >
-          <Copy />
-          {copied ? "Copied" : "Copy"}
-        </Button>
+        <div className={styles.codeActions}>
+          {actions}
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={diagram ? "Copy diagram source" : "Copy code"}
+            onClick={async () => {
+              try {
+                await copyText(source);
+                setCopied(true);
+                setCopyError(false);
+              } catch {
+                setCopyError(true);
+              }
+            }}
+          >
+            <Copy />
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
       </div>
       {copyError && (
         <p className={styles.diagramStatus} role="status">
           Could not copy. Select the source to copy it manually.
         </p>
       )}
+    </>
+  );
+  return (
+    <div className={styles.codeBlock}>
       {diagram && complete ? (
-        <Diagram source={source}>{children}</Diagram>
+        <Diagram source={source} header={header}>
+          {children}
+        </Diagram>
       ) : (
         <>
+          {header()}
           {diagram && (
             <p className={styles.diagramStatus}>
               Waiting for the complete diagram…

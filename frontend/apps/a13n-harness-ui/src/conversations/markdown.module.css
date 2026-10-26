@@ -135,29 +135,36 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-.codeHeader button,
-.diagramActions button {
+.codeHeader button {
   color: var(--a13n-secondary);
   font-weight: 400;
 }
-.diagramActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 6px 8px 0;
+.codeHeader button[aria-pressed="true"] {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
 }
+.codeActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* Diagrams render at their own 1:1 size and only scale down to the column
+   width; a tall flowchart scrolls inside the frame rather than shrinking its
+   labels. Expand shows the whole diagram. */
 .diagramCanvas {
   display: flex;
   justify-content: center;
-  padding: 16px 24px 24px;
+  padding: 20px 24px 24px;
   overflow: auto;
-  max-height: 480px;
+  max-height: 560px;
+  scrollbar-width: thin;
 }
 .diagramCanvas img {
   display: block;
+  flex: none;
   max-width: 100%;
   height: auto;
-  object-fit: contain;
+  align-self: flex-start;
 }
 .markdown .diagramStatus {
   margin: 0;
