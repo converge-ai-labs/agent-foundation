@@ -239,7 +239,7 @@ async def test_download_events_never_list_another_page_or_unknown_frame(browser)
     for frame, guid in (("frame-a", "download-a"), ("frame-b", "download-b"), ("unowned", "unknown")):
         browser._download_started({"frameId": frame, "guid": guid, "suggestedFilename": "fixture.txt"}, None)
         browser._download_progress({"guid": guid, "state": "completed"}, None)
-    assert json.loads(browser.downloads({"one"})) == [
+    assert json.loads(browser.downloads({"one"}))["downloads"] == [
         {"name": "fixture.txt", "state": "completed", "path": "/browser-host/downloads/download-a"}
     ]
     assert "unknown" not in browser.download_records
@@ -368,3 +368,153 @@ async def test_key_release_failure_does_not_skip_remaining_modifiers(browser, fa
         ("keyUp", "Control"),
     ]
     assert [e["modifiers"] for e in events[-3:]] == [10, 2, 0]
+
+
+@pytest.mark.parametrize("event", ["attach", "detach", "swap", "navigate", "within", "destroy"])
+async def test_subframe_events_preserve_unrelated_refs(browser, event):
+    from a13n_harness.capabilities.browser.cdp import Frame, Node
+
+    page = Page("root", "session", revision="revision")
+    browser.pages[page.target] = page
+    page.frames = {key: Frame(key, "session", "" if key == "root" else "root") for key in ("root", "child", "sibling")}
+    page.frame_parents = {"child": "root", "deep": "child", "sibling": "root"}
+    page.frame_sessions["child"] = "child-session"
+    page.elements = {key: Node(index, key, "session") for index, key in enumerate(("root", "child", "deep", "sibling"))}
+    if event == "attach":
+        browser._frame_attached({"frameId": "new", "parentFrameId": "root"}, "session")
+    elif event in {"detach", "swap"}:
+        browser._frame_detached({"frameId": "child", "reason": "swap" if event == "swap" else "remove"}, "session")
+    elif event == "navigate":
+        browser._navigated({"frame": {"id": "child", "parentId": "root", "url": "https://example.test/new"}}, "session")
+    elif event == "within":
+        browser._within_document({"frameId": "child", "url": "https://example.test/#changed"}, "session")
+    else:
+        browser._destroyed({"targetId": "child"}, None)
+    assert page.revision == "revision"
+    assert page.navigation == 0
+    assert browser.reference(page, "root", "revision")[0].frame == "root"
+    assert browser.reference(page, "sibling", "revision")[0].frame == "sibling"
+    if event != "attach":
+        assert "child" not in page.elements and "deep" not in page.elements
+
+
+async def test_download_limits_are_scoped_and_report_omissions(browser):
+    import json
+
+    page_a, page_b = Page("a", "sa"), Page("b", "sb")
+    browser.pages = {"a": page_a, "b": page_b}
+    a, b = CdpBrowserBackend(browser, page_a), CdpBrowserBackend(browser, page_b)
+    b._claim("b-popup")
+    await browser.configure_downloads("/downloads")
+    browser._download_started({"frameId": "a", "guid": "a-first"}, None)
+    browser._download_progress({"guid": "a-first", "state": "completed"}, None)
+    for index in range(101):
+        browser._download_started({"frameId": "b" if index % 2 else "b-popup", "guid": f"b-{index}"}, None)
+        browser._download_progress({"guid": f"b-{index}", "state": "completed"}, None)
+    assert len(json.loads(await a.downloads())["downloads"]) == 1
+    assert json.loads(await a.downloads())["omitted"] == 0
+    report = json.loads(await b.downloads())
+    assert len(report["downloads"]) == 100 and report["omitted"] == 1
+    browser.download_records.clear()
+    for index in range(101):
+        browser._download_started({"frameId": "a", "guid": f"active-{index}"}, None)
+    report = json.loads(await a.downloads())
+    assert len(report["downloads"]) == 100 and report["omitted"] == 1
+    assert all(item["state"] == "inProgress" for item in report["downloads"])
+
+
+async def test_wait_repolls_document_change_but_preserves_errors(browser, monkeypatch):
+    from a13n_harness.capabilities.browser import interaction
+    from a13n_harness.capabilities.browser.actions import ElementCondition, Locator
+
+    page = Page("owned", "session")
+    browser.pages[page.target] = page
+    backend = CdpBrowserBackend(browser, page)
+    condition = ElementCondition(kind="element", target=Locator(kind="locator", name="Ready"))
+    polls = 0
+
+    async def changed(*args):
+        nonlocal polls
+        polls += 1
+        if polls == 1:
+            page.invalidate({"new-frame"})
+            raise BrowserError("Page or frame changed during observation")
+        return True
+
+    monkeypatch.setattr(interaction, "condition_met", changed)
+    assert '"verification": "passed"' in await backend.wait(condition)
+    assert polls == 2
+    monkeypatch.setattr(interaction, "condition_met", AsyncMock(side_effect=BrowserError("ambiguous")))
+    with pytest.raises(BrowserError, match="ambiguous"):
+        await backend.wait(condition)
+
+
+async def test_wait_yields_to_human_takeover(browser, monkeypatch):
+    from a13n_harness.capabilities.browser import BrowserHumanControl, interaction
+    from a13n_harness.capabilities.browser.actions import UrlCondition
+
+    page = Page("owned", "session")
+    browser.pages[page.target] = page
+    backend = CdpBrowserBackend(browser, page)
+    polled = asyncio.Event()
+
+    async def missing(*args):
+        polled.set()
+        return False
+
+    monkeypatch.setattr(interaction, "condition_met", missing)
+    waiting = asyncio.create_task(backend.wait(UrlCondition(kind="url", text="never"), timeout=10))
+    await polled.wait()
+    async with asyncio.timeout(1):
+        await backend.pause()
+    with pytest.raises(BrowserHumanControl):
+        await waiting
+    backend.resume()
+
+
+async def test_new_tab_timeout_reports_unknown_after_open_dispatch(browser):
+    from a13n_harness.capabilities.browser.cdp import Frame
+
+    page = Page("owned", "session")
+    browser.documents = AsyncMock(return_value=[Frame("root", page.session)])
+    opened = False
+
+    async def send(method, params=None, page=None):
+        nonlocal opened
+        if method == "Page.createIsolatedWorld":
+            return {"executionContextId": 1}
+        if method == "Runtime.evaluate":
+            assert "window.open" in params["expression"]
+            opened = True
+        if method == "Target.getTargets":
+            if opened:
+                raise TimeoutError
+            return {"targetInfos": []}
+        return {}
+
+    browser.send = AsyncMock(side_effect=send)
+    with pytest.raises(BrowserError, match="Tab creation did not settle") as caught:
+        await browser.new_tab(page)
+    assert opened and caught.value.dispatch == "unknown"
+
+
+@pytest.mark.parametrize("key,code", [("!", 0), ("'", 0), (".", 0), ("a", 65), ("5", 53), ("é", 0)])
+async def test_text_characters_do_not_alias_unrelated_virtual_keys(browser, key, code):
+    from a13n_harness.capabilities.browser.interaction import press
+
+    browser.dispatch_input = AsyncMock()
+    await press(browser, Page("owned", "session"), key, literal=True)
+    events = [call.args[2] for call in browser.dispatch_input.await_args_list]
+    assert events[0]["text"] == key
+    assert [event["windowsVirtualKeyCode"] for event in events] == [code, code]
+    assert [event["type"] for event in events] == ["keyDown", "keyUp"]
+
+
+async def test_shift_letter_sends_uppercase_text_and_releases_keys(browser):
+    from a13n_harness.capabilities.browser.interaction import press
+
+    browser.dispatch_input = AsyncMock()
+    await press(browser, Page("owned", "session"), "Shift+a")
+    events = [call.args[2] for call in browser.dispatch_input.await_args_list]
+    assert events[1]["text"] == events[1]["key"] == "A"
+    assert [event["key"] for event in events[2:]] == ["A", "Shift"]

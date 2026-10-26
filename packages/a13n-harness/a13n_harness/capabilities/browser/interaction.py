@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from . import BrowserError, BrowserQuery
@@ -13,6 +14,7 @@ from .actions import (
     Check,
     Click,
     Condition,
+    ElementCondition,
     Fill,
     Hover,
     LoadCondition,
@@ -147,8 +149,11 @@ async def press(browser: Chromium, page: Page, chord: str, *, literal: bool = Fa
     }
     if key not in codes and len(key) != 1:
         raise BrowserError("Unsupported browser key.")
-    number = codes.get(key, ord(key.upper()) if len(key) == 1 and key.isascii() else 0)
+    # Character code points are not virtual key codes (for example, '!' is not PageUp).
+    number = codes.get(key, ord(key.upper()) if len(key) == 1 and key.isascii() and key.isalnum() else 0)
     key = " " if key == "Space" else key
+    if "Shift" in held and len(key) == 1 and key.isascii() and key.isalpha():
+        key = key.upper()
     mask = 0
     pressed = []
     try:
@@ -187,7 +192,7 @@ async def press(browser: Chromium, page: Page, chord: str, *, literal: bool = Fa
 
 async def interact(browser: Chromium, page: Page, action: Action, *, revision: str = "") -> str:
     target, temporary, dispatch = "", False, "not_dispatched"
-    initial_epoch = page.epoch
+    initial_navigation = page.navigation
     result: dict = {"dispatch": dispatch, "verification": "unverified"}
     try:
         browser.require_document(page)
@@ -276,7 +281,7 @@ async def interact(browser: Chromium, page: Page, action: Action, *, revision: s
                     raise BrowserError(selected["error"])
                 dispatch = "dispatched"
                 result["selected"] = selected["values"]
-        if target and page.epoch == initial_epoch and not page.dialog:
+        if target in page.elements and page.revision == revision and not page.dialog:
             after = await state(browser, page, target, revision, action.text if isinstance(action, Fill) else None)
             result["state"] = after
             if isinstance(action, Fill):
@@ -296,7 +301,10 @@ async def interact(browser: Chromium, page: Page, action: Action, *, revision: s
         if temporary:
             page.elements.pop(target, None)
     result.update(
-        dispatch=dispatch, url=page.url, navigated=page.epoch != initial_epoch, dialog_pending=page.dialog is not None
+        dispatch=dispatch,
+        url=page.url,
+        navigated=page.navigation != initial_navigation,
+        dialog_pending=page.dialog is not None,
     )
     return json.dumps(result, ensure_ascii=False)
 
@@ -368,7 +376,21 @@ async def condition_met(browser: Chromium, page: Page, condition: Condition, rev
             page.elements.pop(key, None)
 
 
-async def wait(browser: Chromium, page: Page, condition: Condition, *, revision: str = "") -> str:
-    while not await condition_met(browser, page, condition, revision):
+async def wait(
+    browser: Chromium, page: Page, condition: Condition, *, revision: str = "", check_access: Callable[[], None]
+) -> str:
+    while True:
+        check_access()
+        epoch = page.epoch
+        try:
+            met = await condition_met(browser, page, condition, revision)
+        except BrowserError:
+            # Only repeat a read-only poll disrupted by a document event.
+            # A supplied ref cannot be rediscovered after it expires.
+            if page.epoch == epoch or (isinstance(condition, ElementCondition) and isinstance(condition.target, Ref)):
+                raise
+            met = False
+        check_access()
+        if met and page.epoch == epoch:
+            return json.dumps({"verification": "passed", "dispatch": "not_dispatched", "url": page.url})
         await asyncio.sleep(0.1)
-    return json.dumps({"verification": "passed", "dispatch": "not_dispatched", "url": page.url})

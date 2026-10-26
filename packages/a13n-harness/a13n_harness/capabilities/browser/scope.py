@@ -259,7 +259,7 @@ class CdpBrowserBackend:
                 async with self._operation():
                     page = await self._selected_page()
                     async with page.lock:
-                        return await wait(self.browser, page, condition, revision=revision)
+                        return await wait(self.browser, page, condition, revision=revision, check_access=self._check)
         except TimeoutError:
             return '{"verification":"timed_out","dispatch":"not_dispatched"}'
 

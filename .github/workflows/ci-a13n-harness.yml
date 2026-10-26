@@ -99,6 +99,25 @@ jobs:
       - name: Test a13n Harness
         run: uv run --locked python -m pytest -vv ${{ matrix.test_options }} ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
 
+      - name: Set up Chrome for Testing
+        if: matrix.name == 'Linux'
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+
+      - name: Test native Chromium browser workflows
+        if: matrix.name == 'Linux'
+        shell: bash
+        env:
+          BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          "$BROWSER_EXECUTABLE" --version
+          uv run --locked python -m pytest -vv \
+            packages/a13n-harness/tests/test_browser_cdp_native.py \
+            packages/a13n-harness/tests/test_browser_workflows_native.py \
+            --browser-executable="$BROWSER_EXECUTABLE" --junitxml=test-results/browser.xml
+
       - name: Test provider diagnostics without external calls
         if: matrix.name == 'Linux'
         run: uv run --locked python -m pytest scripts/tests/provider_smoke --junitxml=test-results/providers.xml

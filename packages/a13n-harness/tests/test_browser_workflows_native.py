@@ -34,6 +34,7 @@ async def workflow_site():
                 self.send_header("Content-Type", "text/html")
                 if route.path == "/nested":
                     depth = int(parse_qs(route.query).get("depth", ["0"])[0])
+                    mixed = parse_qs(route.query).get("mixed", ["0"])[0]
                     if depth == 3:
                         body = b"""<!doctype html><div id=host></div><script>
                         const root=host.attachShadow({mode:'open'});
@@ -41,12 +42,12 @@ async def workflow_site():
                         root.querySelector('button').onclick=()=>top.postMessage(root.querySelector('input').value,'*');
                         </script>"""
                     else:
-                        host = "localhost" if depth % 2 == 0 else "127.0.0.1"
+                        host = "localhost" if mixed == "1" or depth % 2 == 0 else "127.0.0.1"
                         body = f"""<!doctype html><style>
                         body{{height:1600px}}iframe{{display:block;width:{600 - depth * 100}px;height:300px;
                         margin-top:{500 if depth == 0 else 60}px;border:4px solid;
                         transform:scale({0.8 if depth == 1 else 0.9});transform-origin:top left}}
-                        </style><iframe src="http://{host}:{self.server.server_port}/nested?depth={depth + 1}"></iframe>
+                        </style><iframe src="http://{host}:{self.server.server_port}/nested?depth={depth + 1}&mixed={mixed}"></iframe>
                         <output id=result>Ready</output><script>addEventListener('message',e=>result.textContent=e.data)</script>""".encode()
                 elif route.path == "/frame":
                     label = parse_qs(route.query)["label"][0]
@@ -257,7 +258,7 @@ async def test_frame_dialog_scroll_and_host_file_tools(native_browser, workflow_
         await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": target}})
         async with asyncio.timeout(5):
             while True:
-                downloads = json.loads(await call("browser_files", action="downloads"))
+                downloads = json.loads(await call("browser_files", action="downloads"))["downloads"]
                 if downloads and downloads[0]["state"] == "completed":
                     break
                 await asyncio.sleep(0.025)
@@ -376,6 +377,11 @@ async def test_semantic_observation_and_fill_never_write_to_previous_focus(nativ
         assert '"dispatch": "dispatched"' in await call(
             "browser_act", action={"kind": "fill", "target": {"kind": "ref", "ref": original}, "text": "Ada"}
         )
+        # A reference determines the actual document even when frame_index is omitted.
+        cross = await ref("Cross input")
+        referenced = json.loads(await call("browser_read", kind="forms", ref=cross))
+        assert referenced["frame_index"] == 2
+        assert referenced["items"][0]["name"] == "Cross input"
         await backend.browser.evaluate(
             backend.page,
             """(()=>{
@@ -731,16 +737,18 @@ async def test_direct_popup_download_is_tracked_before_attachment(native_browser
             assert result["dispatch"] == "dispatched", result
             async with asyncio.timeout(5):
                 while True:
-                    downloads = json.loads(await call("browser_files", action="downloads"))
+                    downloads = json.loads(await call("browser_files", action="downloads"))["downloads"]
                     if len(downloads) == count and all(item["state"] == "completed" for item in downloads):
                         break
                     await asyncio.sleep(0.025)
             assert all(Path(item["path"]).read_bytes() == b"synthetic download" for item in downloads)
-            assert json.loads(await other.downloads()) == []
+            assert json.loads(await other.downloads()) == {"downloads": [], "omitted": 0}
         await other.close()
 
 
-async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, workflow_site):
+@pytest.mark.parametrize("background", [False, True])
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, workflow_site, background, mixed):
     endpoint, _ = native_browser
     async with CdpBrowserBackend.connect(endpoint) as backend:
         tools = BrowserUseCapability(backend).get_toolset().tools
@@ -749,16 +757,22 @@ async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, 
             schema = tools[name].function_schema
             return await schema.call(schema.validator.validate_python(kwargs), None)
 
-        await call("browser_navigate", url=workflow_site + "nested")
-        await call(
+        await call("browser_navigate", url=workflow_site + f"nested?mixed={int(mixed)}")
+        waited = await call(
             "browser_wait",
             condition={"kind": "element", "target": {"kind": "locator", "name": "Nested name"}, "state": "visible"},
         )
+        assert json.loads(waited)["verification"] == "passed", waited
+        if background:
+            foreground = await backend.browser.create()
+            backend._claim(foreground.target)
+            await backend.browser.activate(foreground)
+            assert await backend.browser.evaluate(backend.page, "document.hidden") is True
         observation = await call("browser_observe")
         assert 'textbox: "Nested name"' in observation
         frames = list(backend.page.frames.values())
         assert len(frames) == 4
-        assert len({frame.session for frame in frames}) >= 2
+        assert len({frame.session for frame in frames}) == (2 if mixed else 4)
         for value in ("Ada", "Grace", "Lin"):
             result = json.loads(
                 await call(
@@ -775,7 +789,7 @@ async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, 
             )
             assert result["dispatch"] == "dispatched", result
             forms = await call("browser_read", kind="forms", frame_index=3)
-            assert value + "!" in forms
+            assert value + "!" in forms, (forms, result)
             result = json.loads(
                 await call(
                     "browser_act", action={"kind": "click", "target": {"kind": "locator", "name": "Nested submit"}}
@@ -784,3 +798,76 @@ async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, 
             assert result["dispatch"] == "dispatched", result
             await call("browser_wait", condition={"kind": "text", "text": value + "!"})
             assert await backend.browser.evaluate(backend.page, "result.textContent") == value + "!"
+
+
+async def test_background_iframe_churn_preserves_main_frame_actions(native_browser, workflow_site):
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        await backend.navigate(workflow_site)
+        await backend.browser.evaluate(
+            backend.page,
+            """
+            document.body.innerHTML='<button onclick="this.dataset.clicks=+(this.dataset.clicks||0)+1">Stable</button>';
+        """,
+        )
+        observed = await backend.observe()
+        target = next(item.target for item in observed.elements if item.description == "Stable")
+        await backend.browser.evaluate(
+            backend.page,
+            """
+            window.churn=setInterval(()=>{
+                const f=document.createElement('iframe');document.body.append(f);setTimeout(()=>f.remove(),60);
+            },120);
+        """,
+        )
+        try:
+            from a13n_harness.capabilities.browser.actions import Click, Ref
+
+            for _ in range(10):
+                await asyncio.sleep(0.125)
+                result = json.loads(
+                    await backend.interact(
+                        Click(kind="click", target=Ref(kind="ref", ref=target)), revision=observed.revision
+                    )
+                )
+                assert result["dispatch"] == "dispatched" and not result["navigated"], result
+            assert (
+                await backend.browser.evaluate(backend.page, "document.querySelector('button').dataset.clicks") == "10"
+            )
+        finally:
+            await backend.browser.evaluate(backend.page, "clearInterval(churn)")
+
+
+async def test_uncommitted_iframe_download_is_owned(native_browser, workflow_site, tmp_path):
+    from pathlib import Path
+
+    from a13n_harness.capabilities.browser.actions import Click, Locator
+
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        other = CdpBrowserBackend(backend.browser)
+        await backend.browser.configure_downloads(str(tmp_path))
+        await backend.navigate(workflow_site)
+        await backend.browser.evaluate(
+            backend.page,
+            """
+            document.body.innerHTML='<button>Download in frame</button>';
+            document.querySelector('button').onclick=()=>{
+                const f=document.createElement('iframe');f.src='/download';document.body.append(f);
+            };
+        """,
+        )
+        result = json.loads(
+            await backend.interact(Click(kind="click", target=Locator(kind="locator", name="Download in frame")))
+        )
+        assert result["dispatch"] == "dispatched" and not result["navigated"], result
+        async with asyncio.timeout(5):
+            while True:
+                report = json.loads(await backend.downloads())
+                if report["downloads"] and report["downloads"][0]["state"] == "completed":
+                    break
+                await asyncio.sleep(0.025)
+        assert report["omitted"] == 0
+        assert Path(report["downloads"][0]["path"]).read_bytes() == b"synthetic download"
+        assert json.loads(await other.downloads()) == {"downloads": [], "omitted": 0}
+        await other.close()

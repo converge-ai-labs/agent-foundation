@@ -11,7 +11,7 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
-from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
 from a13n_harness.toolsets._instructions import InstructionFunctionToolset
 
 from .actions import Action, Clip, Condition, ElementCondition, Ref, Visual
@@ -179,10 +179,13 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         tools = InstructionFunctionToolset(instructions=self._instructions())
 
         def metadata(name: str, read: bool = False) -> dict[str, object]:
+            effects: set[ToolEffect] = {"read"} if read else {"execute", "external_communication"}
+            if name == "files":
+                effects.add("read")
             return {
                 HARNESS_TOOL_METADATA_KEY: HarnessToolMetadata(
                     tool_id=f"browser.{name}",
-                    effects=frozenset({"read"} if read else {"execute"}),
+                    effects=frozenset(effects),
                     credential_audiences=(),
                     idempotency="read_only" if read else "none",
                     output_policy=ToolOutputPolicy(max_inline_bytes=64 * 1024, max_output_bytes=4 * 1024 * 1024),

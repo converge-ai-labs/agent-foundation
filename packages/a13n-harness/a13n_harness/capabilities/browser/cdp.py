@@ -59,6 +59,15 @@ class Frame:
 
 
 @dataclass(frozen=True)
+class PointerPoint:
+    frame: Frame
+    x: float
+    y: float
+    root_x: float
+    root_y: float
+
+
+@dataclass(frozen=True)
 class Node:
     backend: int
     frame: str
@@ -85,11 +94,20 @@ class Page:
     loaded: asyncio.Event = field(default_factory=asyncio.Event)
     visual: View | None = None
 
-    def invalidate(self) -> None:
+    def invalidate(self, frames: set[str] | None = None) -> None:
         self.epoch += 1
-        self.revision = ""
-        self.elements.clear()
         self.visual = None
+        if frames is None:
+            self.revision = ""
+            self.elements.clear()
+        else:
+            self.elements = {key: node for key, node in self.elements.items() if node.frame not in frames}
+
+    def descendants(self, frame: str) -> set[str]:
+        removed = {frame}
+        while children := {key for key, parent in self.frame_parents.items() if parent in removed} - removed:
+            removed.update(children)
+        return removed
 
 
 class Chromium:
@@ -118,6 +136,7 @@ class Chromium:
         self.attach_locks: dict[str, asyncio.Lock] = {}
         self.download_directory: str | None = None
         self.download_records: dict[str, dict] = {}
+        self.download_omitted: dict[str, int] = {}
         self.download_started: Callable[[dict], None] = lambda item: None
         self.tasks: set[asyncio.Task] = set()
         self.opened: Callable[[dict], None] = lambda target: None
@@ -194,25 +213,23 @@ class Chromium:
             if target in page.frame_sessions:
                 page.frame_sessions.pop(target, None)
                 page.frames.pop(target, None)
-                page.invalidate()
+                page.invalidate(page.descendants(target))
         self.closed(target)
 
     def _frame_attached(self, event: dict, session: str | None) -> None:
         if page := self._page(session):
             page.frame_parents[event["frameId"]] = event["parentFrameId"]
-            page.invalidate()
+            page.invalidate({event["frameId"]})
 
     def _frame_detached(self, event: dict, session: str | None) -> None:
         if page := self._page(session):
+            removed = page.descendants(event["frameId"])
             if event.get("reason") != "swap":
-                removed = {event["frameId"]}
-                while children := {key for key, parent in page.frame_parents.items() if parent in removed} - removed:
-                    removed.update(children)
                 for identity in removed:
                     page.frame_parents.pop(identity, None)
                     page.frames.pop(identity, None)
                     page.frame_sessions.pop(identity, None)
-            page.invalidate()
+            page.invalidate(removed)
 
     def _dialog_opened(self, event: dict, session: str | None) -> None:
         if page := self._page(session):
@@ -231,20 +248,21 @@ class Chromium:
 
     def _download_started(self, event: dict, session: str | None) -> None:
         frame = event["frameId"]
-        page = next((page for page in self.pages.values() if frame in page.frames), None)
+        page = next((page for page in self.pages.values() if frame in page.frames or frame in page.frame_parents), None)
         # A direct attachment popup can download and close before attachment.
         # Chromium uses its page target ID for the root frame; ownership is
         # already known from targetCreated's exact opener ancestry.
         target = page.target if page is not None else frame
         if page is None and target not in self.owners:
             return
-        if len(self.download_records) >= 100:
-            completed = next(
-                (key for key, item in self.download_records.items() if item["state"] != "inProgress"), None
-            )
-            if completed:
-                self.download_records.pop(completed)
-            else:
+        owner = self.owners.get(target)
+        targets = owner._download_targets if owner is not None else {target}
+        scoped = {key: item for key, item in self.download_records.items() if item["page"] in targets}
+        if len(scoped) >= 100:
+            completed = next((key for key, item in scoped.items() if item["state"] != "inProgress"), None)
+            omitted_target = self.download_records.pop(completed)["page"] if completed else target
+            self.download_omitted[omitted_target] = self.download_omitted.get(omitted_target, 0) + 1
+            if completed is None:
                 return
         self.download_records[event["guid"]] = {**event, "page": target, "state": "inProgress"}
         self.download_started(self.download_records[event["guid"]])
@@ -275,7 +293,10 @@ class Chromium:
                         else None,
                     }
                 )
-        return json.dumps(records, ensure_ascii=False)
+        return json.dumps(
+            {"downloads": records, "omitted": sum(self.download_omitted.get(target, 0) for target in targets)},
+            ensure_ascii=False,
+        )
 
     def _loaded(self, event: dict, session: str | None) -> None:
         if (page := self._page(session)) and session == page.session:
@@ -347,16 +368,21 @@ class Chromium:
             if session == page.session and not frame.get("parentId"):
                 page.url = frame["url"] + frame.get("urlFragment", "")
                 page.navigation += 1
-            page.invalidate()
+                page.invalidate()
+            else:
+                page.invalidate(page.descendants(frame["id"]))
 
     def _within_document(self, event: dict, session: str | None) -> None:
         if page := self._page(session):
             if session == page.session and (
-                not page.frames or not page.frames.get(event.get("frameId", ""), Frame("", "")).parent
+                not page.frames
+                or event.get("frameId") in {key for key, frame in page.frames.items() if not frame.parent}
             ):
                 page.url = event["url"]
                 page.navigation += 1
-            page.invalidate()
+                page.invalidate()
+            else:
+                page.invalidate(page.descendants(event["frameId"]))
 
     async def attach(self, target: str, url: str = "about:blank") -> Page:
         async with self.attach_locks.setdefault(target, asyncio.Lock()):
@@ -599,6 +625,7 @@ class Chromium:
                     },
                     frame,
                 )
+            frame_index = next(index for index, item in enumerate(frames) if item.identity == frame.identity)
             next_frame = None
         else:
             if not 0 <= frame_index < len(frames):
@@ -683,41 +710,52 @@ class Chromium:
             frame,
         )
 
-    async def point(self, page: Page, frame: Frame, x: float, y: float, *, scroll: bool = False) -> tuple[float, float]:
+    async def point(self, page: Page, frame: Frame, x: float, y: float, *, scroll: bool = False) -> PointerPoint:
         seen = set()
+        input_point: tuple[Frame, float, float] | None = None
         while frame.parent:
             if frame.identity in seen or frame.parent not in page.frames:
                 raise BrowserError("Frame ancestry changed. Observe again.")
             seen.add(frame.identity)
             parent = page.frames[frame.parent]
+            if input_point is None and parent.session != frame.session:
+                # Input coordinates belong to this renderer's root viewport.
+                # Continue through every ancestor to verify clipping and coverage.
+                input_point = frame, x, y
             owner = await self.send("DOM.getFrameOwner", {"frameId": frame.identity}, parent)
             backend = owner["backendNodeId"]
             resolved = await self.send("DOM.resolveNode", {"backendNodeId": backend}, parent)
             identity = resolved["object"]["objectId"]
             try:
                 if scroll:
-                    settled = await self.send(
+                    await self.send(
                         "Runtime.callFunctionOn",
                         {
                             "objectId": identity,
-                            "awaitPromise": True,
-                            "returnByValue": True,
-                            "functionDeclaration": """async function(){
-                                this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
-                                let previous='',stable=0;
-                                const deadline=performance.now()+500;
-                                while(performance.now()<deadline){
-                                    await new Promise(resolve=>setTimeout(resolve,20));
-                                    const r=this.getBoundingClientRect();
-                                    const current=[r.x,r.y,r.width,r.height].join(',');
-                                    stable=current===previous?stable+1:0;previous=current;
-                                    if(stable>=2)return true;
-                                }return false;
-                            }""",
+                            "functionDeclaration": "function(){this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});}",
                         },
                         parent,
                     )
-                    if settled.get("result", {}).get("value") is not True:
+                    # Poll from the Host: renderer timers are throttled in background tabs.
+                    previous, stable = None, 0
+                    deadline = asyncio.get_running_loop().time() + 0.5
+                    while asyncio.get_running_loop().time() < deadline:
+                        await asyncio.sleep(0.02)
+                        measured = await self.send(
+                            "Runtime.callFunctionOn",
+                            {
+                                "objectId": identity,
+                                "returnByValue": True,
+                                "functionDeclaration": "function(){const r=this.getBoundingClientRect();return [r.x,r.y,r.width,r.height];}",
+                            },
+                            parent,
+                        )
+                        current = measured.get("result", {}).get("value")
+                        stable = stable + 1 if current is not None and current == previous else 0
+                        previous = current
+                        if stable >= 2:
+                            break
+                    else:
                         raise BrowserError("Iframe geometry did not settle. Observe again; no click sent.")
                 result = await self.send(
                     "Runtime.callFunctionOn",
@@ -746,11 +784,12 @@ class Chromium:
             finally:
                 await self.send("Runtime.releaseObject", {"objectId": identity}, parent)
             frame = parent
-        return x, y
+        input_frame, input_x, input_y = input_point or (frame, x, y)
+        return PointerPoint(input_frame, input_x, input_y, x, y)
 
-    async def dispatch_input(self, page: Page, method: str, params: dict) -> bool:
+    async def dispatch_input(self, page: Page, method: str, params: dict, *, frame: Frame | None = None) -> bool:
         """A modal may pause the command reply after input has already been delivered."""
-        operation = asyncio.create_task(self.send(method, params, page))
+        operation = asyncio.create_task(self.send(method, params, frame or page))
         dialog = asyncio.create_task(page.dialog_opened.wait())
         retained = False
         try:
@@ -850,10 +889,13 @@ class Chromium:
                     raise BrowserError("Fill requires an enabled, writable text field with focus. No text inserted.")
                 await self.send("Input.insertText", {"text": fill}, page)
             else:
-                x, y = await self.point(page, frame, point["x"], point["y"], scroll=True)
+                position = await self.point(page, frame, point["x"], point["y"], scroll=True)
                 self.reference(page, target, revision)
                 await self.dispatch_input(
-                    page, "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "button": "none"}
+                    page,
+                    "Input.dispatchMouseEvent",
+                    {"type": "mouseMoved", "x": position.x, "y": position.y, "button": "none"},
+                    frame=position.frame,
                 )
                 if hover:
                     return
@@ -881,16 +923,26 @@ class Chromium:
                     raise BrowserError(
                         "Target moved, detached or became covered after hover. Observe again; no click sent."
                     )
-                current_x, current_y = await self.point(page, frame, point["x"], point["y"])
+                current = await self.point(page, frame, point["x"], point["y"])
                 self.reference(page, target, revision)
-                if abs(current_x - x) > 1 or abs(current_y - y) > 1:
+                if (
+                    current.frame.session != position.frame.session
+                    or abs(current.root_x - position.root_x) > 1
+                    or abs(current.root_y - position.root_y) > 1
+                    or abs(current.x - position.x) > 1
+                    or abs(current.y - position.y) > 1
+                ):
                     raise BrowserError("Iframe moved after hover. Observe again; no click sent.")
-                params = {"x": x, "y": y, "button": button, "clickCount": count}
+                params = {"x": position.x, "y": position.y, "button": button, "clickCount": count}
                 try:
-                    await self.dispatch_input(page, "Input.dispatchMouseEvent", {"type": "mousePressed", **params})
+                    await self.dispatch_input(
+                        page, "Input.dispatchMouseEvent", {"type": "mousePressed", **params}, frame=position.frame
+                    )
                 finally:
                     # Finish even when mousedown navigates, opens a modal, fails or is cancelled.
-                    await self.dispatch_input(page, "Input.dispatchMouseEvent", {"type": "mouseReleased", **params})
+                    await self.dispatch_input(
+                        page, "Input.dispatchMouseEvent", {"type": "mouseReleased", **params}, frame=position.frame
+                    )
 
     async def scroll(self, page: Page, *, x: int, y: int, target: str = "", revision: str = "") -> str:
         self.require_document(page)
@@ -1006,7 +1058,8 @@ class Chromium:
                     await asyncio.sleep(0.025)
         except TimeoutError as exc:
             raise BrowserError(
-                "Tab creation did not settle. List tabs before retrying; the tab may already be open."
+                "Tab creation did not settle. List tabs before retrying; the tab may already be open.",
+                dispatch="unknown",
             ) from exc
 
     async def close_target(self, target: str) -> None:

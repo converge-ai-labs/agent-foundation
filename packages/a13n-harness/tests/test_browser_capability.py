@@ -292,3 +292,17 @@ async def test_element_and_tab_refs_never_alias_later_targets():
     assert "[t2] selected" in listing and "[t3]" in listing
     with pytest.raises(ModelRetry):
         await call("browser_tabs", action="close", tab="t1")
+
+
+async def test_browser_tool_effects_cover_network_and_host_upload_reads():
+    from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
+
+    tools = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset().tools
+    assert len(tools) == 9
+    for name in ("navigate", "act", "files", "tabs", "dialog"):
+        metadata = tools[f"browser_{name}"].metadata[HARNESS_TOOL_METADATA_KEY]
+        assert {"execute", "external_communication"} <= metadata.effects
+        assert metadata.idempotency == "none"
+    assert "read" in tools["browser_files"].metadata[HARNESS_TOOL_METADATA_KEY].effects
+    for name in ("observe", "read", "wait", "screenshot"):
+        assert tools[f"browser_{name}"].metadata[HARNESS_TOOL_METADATA_KEY].effects == {"read"}
