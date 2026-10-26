@@ -154,6 +154,14 @@
     display: none;
   }
   .strip {
-    justify-content: space-between;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .strip::-webkit-scrollbar {
+    display: none;
+  }
+  .strip > * {
+    flex-shrink: 0;
   }
 }

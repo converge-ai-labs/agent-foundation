@@ -130,8 +130,10 @@
 }
 @media (max-width: 700px) {
   .profileButton {
-    max-width: 112px;
     padding-inline: 4px;
+  }
+  .profileName {
+    display: none;
   }
 }
 .sidebarFooter {

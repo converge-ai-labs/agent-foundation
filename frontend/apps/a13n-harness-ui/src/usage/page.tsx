@@ -101,7 +101,7 @@ export function UsagePage() {
       label: filters.project_id ?? "No project",
     });
   const threadOptions = [
-    { value: "all", label: "All threads" },
+    { value: "all", label: "All conversations" },
     ...options(data?.threads),
   ];
   if (
@@ -281,7 +281,7 @@ export function UsagePage() {
                 onValueChange={(value) => change({ group_by: value })}
                 options={[
                   { value: "project", label: "Projects" },
-                  { value: "thread", label: "Threads" },
+                  { value: "thread", label: "Conversations" },
                   { value: "model", label: "Models" },
                 ]}
               />
