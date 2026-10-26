@@ -47,9 +47,7 @@ export function CreateWorkspace({
   });
   return (
     <ModalFrame
-      onOpenChange={(value) => {
-        if (!create.isPending) setOpen(value);
-      }}
+      onOpenChange={setOpen}
       trigger={
         <Button variant="default" type="button">
           {<PlusIcon size={14} />}

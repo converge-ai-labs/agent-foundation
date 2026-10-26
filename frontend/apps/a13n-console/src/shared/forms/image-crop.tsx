@@ -5,18 +5,20 @@ import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../feedback";
 import { cropImage, loadImage, type ImageCrop } from "./image";
 import styles from "./image-crop.module.css";
+import { useMountedModal } from "../dialogs";
 
 export function ImageCropDialog({
   url,
   finalFocus,
   onChange,
-  close,
+  close: onClosed,
 }: {
   url: string;
   finalFocus: RefObject<HTMLElement | null>;
   onChange: (file: File) => void | Promise<void>;
   close: () => void;
 }) {
+  const { close, modalProps } = useMountedModal(onClosed);
   const { t } = useTranslation();
   const [image, setImage] = useState<HTMLImageElement>();
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -60,17 +62,11 @@ export function ImageCropDialog({
   };
   return (
     <ModalFrame
-      open
+      {...modalProps}
       title={t("Crop image")}
       description={t("Scroll to zoom. Drag the image to position it.")}
       closeLabel={t("Close")}
       finalFocus={finalFocus}
-      onOpenChange={(open, details) => {
-        if (!open) {
-          if (processing) details.cancel();
-          else close();
-        }
-      }}
       footer={
         <>
           <Button

@@ -1,5 +1,3 @@
-import type { ModalFrame } from "a13n-ui";
-import type { ComponentProps } from "react";
 import { useRef, useState } from "react";
 
 export type ResourceEditorControl = {
@@ -38,20 +36,9 @@ export function useResourceEditorState({
     setLocalOpen(value);
     if (!value) onClose?.();
   };
-  const onOpenChange: ComponentProps<typeof ModalFrame>["onOpenChange"] = (
-    value,
-    details,
-  ) => {
-    if (
-      !value &&
-      details.reason === "outside-press" &&
-      details.event.target instanceof Node &&
-      finalFocus?.current?.contains(details.event.target)
-    ) {
-      details.cancel();
-      return;
-    }
-    setOpen(value);
+  return {
+    open,
+    setOpen,
+    modalProps: { open, finalFocus, onOpenChange: setOpen },
   };
-  return { open, setOpen, modalProps: { open, finalFocus, onOpenChange } };
 }

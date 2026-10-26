@@ -32,6 +32,7 @@ import {
 import type { AgentDraft } from "./draft";
 import styles from "./editor.module.css";
 import { ModelIcon, providerBrand } from "../../models/model-icon";
+import { useMountedModal } from "../../../shared/dialogs";
 
 const risks = [
   { value: "low", label: "Low risk" },
@@ -182,7 +183,7 @@ export function ReviewerSettings({
   readOnly,
   settingsSchemas,
   onApply,
-  onClose,
+  onClose: onClosed,
   validation,
 }: {
   initial: AgentDraft["reviewer"];
@@ -194,6 +195,7 @@ export function ReviewerSettings({
   onClose: () => void;
   validation?: Error;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const { t } = useTranslation();
   const [value, setValue] = useState<Reviewer>(() => ({
     ...initial,
@@ -266,12 +268,7 @@ export function ReviewerSettings({
     }
   }
   return (
-    <Sheet
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
+    <Sheet {...modalProps}>
       <SheetPopup
         className="w-full sm:max-w-xl"
         closeProps={{ "aria-label": t("Close") }}

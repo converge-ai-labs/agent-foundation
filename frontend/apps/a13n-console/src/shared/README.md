@@ -66,6 +66,7 @@ Overlays and the state behind them.
 - `Confirm` — destructive confirmation: it names the resource and labels the action with its verb.
 - `ConflictNotice` — concurrency recovery: a saved resource moved underneath the draft (412), or a create could not be confirmed. One explanation and the two ways out — reconcile with the server, or continue with the draft.
 - `useResourceRows` / `useResourceEditorState` — the pair that opens a row's editor as a modal and returns focus to the row that opened it.
+- `useMountedModal` — keeps a conditional editor mounted through its exit transition; pass `modalProps` to the overlay and use `close` for Cancel or completion. The owner removes it only after the transition finishes.
 - `ResourceModalTitle` — a name, an optional `ResourceKeyChip`, and the reference popover, for editor titles. Pass `icon` to frame a brand mark beside the name, the way a creation step does.
 - `BrandTitle` — brand mark plus title, used by the second step of a catalog-first creation flow.
 - `CatalogTiles` / `CatalogTile` — the tile grid for a small, fixed catalog.

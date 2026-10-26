@@ -73,13 +73,6 @@ export function AddModel({
   return (
     <ModalFrame
       {...modalProps}
-      onOpenChange={(value, details) => {
-        if (!value && (model.save.isPending || providerDraft.save.isPending)) {
-          details.cancel();
-          return;
-        }
-        modalProps.onOpenChange(value, details);
-      }}
       trigger={
         controlledOpen === undefined ? (
           <ResourceEditorButton createLabel="Add model" />

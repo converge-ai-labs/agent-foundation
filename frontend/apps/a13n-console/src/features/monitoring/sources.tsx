@@ -19,7 +19,7 @@ import {
   ResourceTable,
   Toolbar,
 } from "../../shared/collection";
-import { Confirm } from "../../shared/dialogs";
+import { useMountedModal, Confirm } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import {
   FormActions,
@@ -171,7 +171,8 @@ export function DataSourcesPage() {
   );
 }
 
-function NewSourceEditor({ onClose }: { onClose: () => void }) {
+function NewSourceEditor({ onClose: onClosed }: { onClose: () => void }) {
+  const { modalProps } = useMountedModal(onClosed);
   const client = useClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation();
@@ -179,19 +180,16 @@ function NewSourceEditor({ onClose }: { onClose: () => void }) {
     monitoringApi(client, workspace.id).deploymentPreset(),
   );
   const [manual, setManual] = useState(false);
-  if (manual || preset.data !== undefined)
+  if (modalProps.open && (manual || preset.data !== undefined))
     return (
       <SourceEditor
         preset={manual ? undefined : (preset.data ?? undefined)}
-        onClose={onClose}
+        onClose={onClosed}
       />
     );
   return (
     <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+      {...modalProps}
       title={t("Add data source")}
       closeLabel={t("Close")}
       size="lg"
@@ -299,12 +297,13 @@ function CredentialEditor({
 function SourceEditor({
   source,
   preset: initialPreset,
-  onClose,
+  onClose: onClosed,
 }: {
   source?: Source;
   preset?: Schema["DeploymentPreset"];
   onClose: () => void;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     cache = useQueryClient(),
@@ -425,10 +424,7 @@ function SourceEditor({
   });
   return (
     <ModalFrame
-      open
-      onOpenChange={(value) => {
-        if (!value && !save.isPending) onClose();
-      }}
+      {...modalProps}
       title={source?.name ?? t("Add data source")}
       description={
         source?.builtin

@@ -8,17 +8,18 @@ import { data, rowTag, type Schema } from "../../shared/api";
 import { ApiError } from "../../service-client";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
-import { ConflictNotice } from "../../shared/dialogs";
+import { useMountedModal, ConflictNotice } from "../../shared/dialogs";
 import { conversationKeys } from "./api";
 import styles from "./session-list.module.css";
 
 export function SessionEditor({
   session,
-  onClose,
+  onClose: onClosed,
 }: {
   session: Schema["SessionView"];
   onClose: () => void;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const { t } = useTranslation();
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -82,11 +83,7 @@ export function SessionEditor({
   const pending = save.isPending || reload.isPending;
   return (
     <ModalFrame
-      open
-      onOpenChange={(open, details) => {
-        if (pending) details.cancel();
-        else if (!open) onClose();
-      }}
+      {...modalProps}
       title={t("Edit session details")}
       description={t(
         "Give this session a recognizable name and record where it started.",

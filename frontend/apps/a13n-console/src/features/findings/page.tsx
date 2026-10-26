@@ -38,6 +38,7 @@ import { Page, Section, useTabParam } from "../../shared/page";
 import { RefreshButton } from "../../shared/time-range";
 import { useTraceBackend } from "../traces/backend";
 import styles from "./findings.module.css";
+import { useMountedModal } from "../../shared/dialogs";
 
 export const categoryLabels = {
   unclear_request: "Unclear request",
@@ -383,6 +384,11 @@ function AnalysisHistory({
     { t } = useTranslation(),
     page = useCursor();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  function selectAnalysis(id: string) {
+    setSelectedId(id);
+    setDetailsOpen(true);
+  }
   const query = useQuery({
     queryKey: ["finding-analyses", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
@@ -432,7 +438,7 @@ function AnalysisHistory({
           <ResourceTable
             items={query.data.items}
             caption={t("Analysis history")}
-            onRowActivate={(item) => setSelectedId(item.id)}
+            onRowActivate={(item) => selectAnalysis(item.id)}
             columns={[
               {
                 label: t("Scope"),
@@ -441,7 +447,7 @@ function AnalysisHistory({
                   <button
                     type="button"
                     className={styles.rowTitle}
-                    onClick={() => setSelectedId(item.id)}
+                    onClick={() => selectAnalysis(item.id)}
                   >
                     {agentName(item.agent_id)}
                   </button>
@@ -481,15 +487,16 @@ function AnalysisHistory({
       </CollectionFooter>
       {selected && (
         <ModalFrame
-          open
-          onOpenChange={(open) => {
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          onOpenChangeComplete={(open) => {
             if (!open) setSelectedId(null);
           }}
           title={t("Analysis details")}
           closeLabel={t("Close")}
           footer={
             <>
-              <Button variant="outline" onClick={() => setSelectedId(null)}>
+              <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                 {t("Close")}
               </Button>
               <Button render={<Link to={runPath(selected)} />}>
@@ -583,13 +590,18 @@ function AnalysisHistory({
 
 function AnalyzeDialog({
   traceId,
-  onClose,
+  onClose: onClosed,
   onCreated,
 }: {
   traceId?: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const [created, setCreated] = useState(false);
+  const { close: onClose, modalProps } = useMountedModal(() => {
+    if (created) onCreated();
+    else onClosed();
+  });
   const { t } = useTranslation(),
     client = useClient(),
     cache = useQueryClient(),
@@ -633,7 +645,8 @@ function AnalyzeDialog({
         queryKey: ["finding-analyses", workspace.id],
       });
       void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
-      onCreated();
+      setCreated(true);
+      onClose();
     },
   });
   const disabled =
@@ -645,10 +658,7 @@ function AnalyzeDialog({
     !backend.data?.type;
   return (
     <ModalFrame
-      open
-      onOpenChange={(value) => {
-        if (!value && !mutation.isPending) onClose();
-      }}
+      {...modalProps}
       title={t("Analyze traces")}
       closeLabel={t("Close")}
       description={t(

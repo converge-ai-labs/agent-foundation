@@ -88,7 +88,7 @@ it("rejects oversized sources before loading and reports corrupt media inside th
   ).toBe(true);
 });
 
-it("blocks repeated confirmation and dismissal while preparation is pending", async () => {
+it("allows dismissal while image preparation finishes without duplicate confirmation", async () => {
   let finish!: (file: File) => void;
   cropImage.mockReturnValue(
     new Promise<File>((resolve) => {
@@ -104,11 +104,10 @@ it("blocks repeated confirmation and dismissal while preparation is pending", as
     (screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
+  expect(save.hasAttribute("disabled")).toBe(true);
   await user.keyboard("{Escape}");
-  expect(screen.getByRole("dialog", { name: "Crop image" })).toBeTruthy();
-  await user.click(save);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(cropImage).toHaveBeenCalledOnce();
   finish(preparedImage);
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(onChange).toHaveBeenCalledOnce();
+  await waitFor(() => expect(onChange).toHaveBeenCalledOnce());
 });

@@ -122,7 +122,7 @@ function AddConnectorProvider() {
   // Closing discards the step and the draft, whoever asked for it.
   function change(value: boolean) {
     setOpen(value);
-    if (!value) setGeneration((current) => current + 1);
+    if (value) setGeneration((current) => current + 1);
   }
   return (
     <AddProviderDialog<Definition>

@@ -28,6 +28,7 @@ const PromQLEditor = lazy(() =>
   })),
 );
 import styles from "./monitoring.module.css";
+import { useMountedModal } from "../../shared/dialogs";
 
 export function newPanel(panels: Panel[], title: string): Panel {
   return {
@@ -60,7 +61,7 @@ export function PanelEditor({
   target,
   range,
   onApply,
-  onClose,
+  onClose: onClosed,
 }: {
   panel: Panel;
   /** The panel is not on the dashboard yet. */
@@ -70,6 +71,11 @@ export function PanelEditor({
   onApply: (panel: Panel) => void;
   onClose: () => void;
 }) {
+  const [applied, setApplied] = useState(false);
+  const { close: onClose, modalProps } = useMountedModal(() => {
+    if (applied) onApply(draft);
+    else onClosed();
+  });
   const { t } = useTranslation(),
     client = useClient(),
     { workspace, can } = useWorkspace();
@@ -100,10 +106,7 @@ export function PanelEditor({
     );
   return (
     <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+      {...modalProps}
       size="lg"
       title={adding ? t("Add panel") : t("Edit panel")}
       closeLabel={t("Close")}
@@ -112,7 +115,10 @@ export function PanelEditor({
         className={styles.fields}
         onSubmit={(event) => {
           event.preventDefault();
-          if (valid) onApply(draft);
+          if (valid) {
+            setApplied(true);
+            onClose();
+          }
         }}
       >
         <FormField label={t("Title")}>

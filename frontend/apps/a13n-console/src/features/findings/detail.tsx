@@ -375,8 +375,7 @@ function AssessmentEditor({
     <ModalFrame
       open={editing}
       onOpenChange={(open) => {
-        if (pending) return;
-        if (open) {
+        if (open && !pending) {
           setBaseline(finding);
           setAssessment(finding.assessment);
           setNote(finding.assessment_note);

@@ -60,10 +60,8 @@ export function EnvironmentConnectionDelete({
     <ModalFrame
       open={open}
       onOpenChange={(value) => {
-        if (!deletion.isPending) {
-          setOpen(value);
-          deletion.reset();
-        }
+        setOpen(value);
+        if (!deletion.isPending) deletion.reset();
       }}
       title={t("Delete connection")}
       description={provider.name}

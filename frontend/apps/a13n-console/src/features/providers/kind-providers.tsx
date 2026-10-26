@@ -182,10 +182,10 @@ function AddKindProvider({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [generation, setGeneration] = useState(0);
-  // Closing discards the step and the draft, whoever asked for it.
+  // Start a fresh draft on reopen so closing can finish its exit animation.
   function change(value: boolean) {
     setOpen(value);
-    if (!value) setGeneration((current) => current + 1);
+    if (value) setGeneration((current) => current + 1);
   }
   return (
     <AddProviderDialog<Definition>

@@ -42,7 +42,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
 import { allPages, data, rowTag } from "../../shared/api";
 import { Empty } from "../../shared/collection";
-import { Confirm, ConflictNotice } from "../../shared/dialogs";
+import { useMountedModal, Confirm, ConflictNotice } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { Page, PageActions, SaveBar } from "../../shared/page";
@@ -713,25 +713,30 @@ function DashboardGrid({
 }
 function CreateDashboard({
   api,
-  onClose,
+  onClose: onClosed,
   onCreated,
 }: {
   api: ReturnType<typeof monitoringApi>;
   onClose: () => void;
   onCreated: (dashboard: Dashboard) => void;
 }) {
+  const [created, setCreated] = useState<Dashboard>();
+  const { close: onClose, modalProps } = useMountedModal(() => {
+    if (created) onCreated(created);
+    else onClosed();
+  });
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const create = useMutation({
     mutationFn: () => api.create({ name, config: { panels: [] } }),
-    onSuccess: (result) => onCreated(result.value),
+    onSuccess: (result) => {
+      setCreated(result.value);
+      onClose();
+    },
   });
   return (
     <ModalFrame
-      open
-      onOpenChange={(value) => {
-        if (!value && !create.isPending) onClose();
-      }}
+      {...modalProps}
       title={t("New dashboard")}
       closeLabel={t("Close")}
     >

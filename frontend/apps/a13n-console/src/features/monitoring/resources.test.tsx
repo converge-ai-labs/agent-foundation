@@ -323,7 +323,9 @@ it("reveals a device token once without putting it in React Query caches", async
     ),
   ).not.toContain("test-only-attachment-token");
   await user.click(screen.getByRole("button", { name: "Done" }));
-  expect(screen.queryByText("test-only-attachment-token")).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByText("test-only-attachment-token")).toBeNull(),
+  );
 });
 
 it("rejects an empty credential replacement and allows keeping saved credentials", async () => {

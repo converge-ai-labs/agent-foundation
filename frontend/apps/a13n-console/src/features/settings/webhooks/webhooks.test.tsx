@@ -231,7 +231,7 @@ it("keeps the one-time secret visible across the first list refresh and out of c
   ).toBe("");
 });
 
-it("blocks dismissal and duplicate submission until creation settles", async () => {
+it("allows outside dismissal during creation without duplicate submission", async () => {
   const user = userEvent.setup();
   let finish!: (response: Response) => void;
   fetcher.mockImplementation(
@@ -244,11 +244,21 @@ it("blocks dismissal and duplicate submission until creation settles", async () 
   await user.click(screen.getByRole("button", { name: "Add Webhook" }));
   await fillCreation(user);
   await user.click(screen.getByRole("button", { name: "Create Webhook" }));
-  await user.keyboard("{Escape}");
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Create Webhook" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await user.click(document.querySelector('[data-slot="dialog-viewport"]')!);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(mutations("POST")).toHaveLength(1);
   finish(json({ ...subscription, signing_secret: "whsec_pending" }, 201));
-  expect(await screen.findByText("Webhook created")).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      cache.getQueryData(webhookKeys("ws_test").subscription(subscription.id)),
+    ).toBeDefined(),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 it("requires reviewing saved subscriptions after an unconfirmed create, even when that read fails", async () => {

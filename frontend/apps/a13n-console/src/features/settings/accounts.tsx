@@ -403,9 +403,9 @@ function AccountEditor({
   return (
     <ModalFrame
       onOpenChange={(value) => {
+        setOpen(value);
         if (!mutation.isPending) {
           if (value) load(account);
-          setOpen(value);
           mutation.reset();
         }
       }}

@@ -119,10 +119,7 @@ export function ForkRun({
   return (
     <ModalFrame
       open={open}
-      onOpenChange={(next, details) => {
-        if (mutation.isPending) details.cancel();
-        else setOpen(next);
-      }}
+      onOpenChange={setOpen}
       trigger={
         <Button
           type="button"

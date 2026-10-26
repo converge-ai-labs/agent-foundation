@@ -115,7 +115,7 @@ export function AddProvider({
       open={open}
       onOpenChange={(value) => {
         onOpenChange(value);
-        if (!value) setGeneration((current) => current + 1);
+        if (value) setGeneration((current) => current + 1);
       }}
     />
   );
