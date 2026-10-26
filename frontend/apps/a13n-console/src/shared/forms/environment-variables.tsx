@@ -1,4 +1,4 @@
-import { Button, Input } from "a13n-ui";
+import { Button, Input, ReadOnlyField } from "a13n-ui";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import styles from "./environment-variables.module.css";
@@ -30,6 +30,24 @@ export function EnvironmentVariables({
     );
     setNextId(Object.keys(value).length);
   }
+  if (readOnly) {
+    return (
+      <ReadOnlyField label={t("Environment variables")}>
+        {Object.keys(value).length ? (
+          <dl className={styles.readOnlyVariables}>
+            {Object.entries(value).map(([name, value]) => (
+              <div key={name}>
+                <dt>{name}</dt>
+                <dd>{value || t("Empty")}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : (
+          t("None")
+        )}
+      </ReadOnlyField>
+    );
+  }
   function update(next: Row[]) {
     setRows(next);
     const mapping = Object.fromEntries(
@@ -40,7 +58,6 @@ export function EnvironmentVariables({
   }
   return (
     <fieldset
-      disabled={readOnly}
       className={styles.environmentVariables}
       aria-describedby={`${id}-help`}
     >

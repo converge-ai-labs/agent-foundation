@@ -41,3 +41,21 @@
     grid-column: 1 / -1;
   }
 }
+
+.readOnlyVariables {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.readOnlyVariables > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.readOnlyVariables dt {
+  color: var(--a13n-secondary);
+  font-family: var(--font-mono);
+}
+.readOnlyVariables dd {
+  margin: 0;
+}
