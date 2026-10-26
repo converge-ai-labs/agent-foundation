@@ -3,7 +3,7 @@ import { BrowserRouter } from "react-router";
 import { GuestApp } from "./guest-app";
 import { DebugProvider } from "./shell/debug";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Logo, Wordmark } from "a13n-ui";
 import {
   ApiError,
   createTransport,
@@ -222,7 +222,10 @@ function OwnerApp() {
                   ) : (
                     <main className={styles.access}>
                       <div className={styles.accessCard}>
-                        <span className={styles.brandMark}>a13n</span>
+                        <div className={styles.accessBrand}>
+                          <Logo alt="" width={28} height={28} />
+                          <Wordmark />
+                        </div>
                         <h1>Log in to Harness UI</h1>
                         <p>
                           Use the instance API key printed by your server, not a

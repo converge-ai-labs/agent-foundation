@@ -99,13 +99,18 @@
   gap: 16px;
   width: 100%;
 }
-/* Current state leads a row description, ahead of its explanation. */
+/* A row's current state sits beside its action, like a select's value. */
+.state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
 .status {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--a13n-text);
+  color: var(--a13n-secondary);
   font-size: 13px;
-  font-weight: 500;
+  white-space: nowrap;
 }
 .message {
   margin: 0;
@@ -116,7 +121,7 @@
   composes: details from "./workbench.module.css";
 }
 .details p {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: 13px;
   line-height: 20px;

@@ -65,16 +65,12 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-.brandMark {
-  display: inline-flex;
+/* The access card carries the same brand lockup as the sidebar. */
+.accessBrand {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--a13n-text);
-  color: var(--a13n-canvas);
-  border-radius: 8px;
-  font-size: 13px;
-  width: 28px;
-  height: 28px;
+  gap: 8px;
+  font-size: 20px;
 }
 .sidebarCaption {
   font-size: 12px;
@@ -509,8 +505,10 @@ a.resourceRow:hover {
   outline: 2px solid var(--a13n-signal);
   outline-offset: 2px;
 }
+/* Opened content sits close to its summary; the parent's gap separates the
+   disclosure from its siblings, so the last child adds no trailing space. */
 .details[open] > summary {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 .details > summary small {
   margin-left: 12px;
@@ -518,8 +516,8 @@ a.resourceRow:hover {
   font-size: 12px;
   font-weight: 400;
 }
-.details > :not(summary) {
-  margin-bottom: 16px;
+.details > :not(summary):not(:last-child) {
+  margin-bottom: 12px;
 }
 .details pre {
   font-size: 12px;
@@ -838,8 +836,9 @@ a.resourceRow:hover {
 .configurationForm > .stack {
   gap: 24px;
 }
+/* Full-width fields inside a grouped card keep the 16px row rhythm. */
 .fieldGroup {
-  padding-block: 20px;
+  padding-block: 16px;
 }
 .selectionOptions {
   display: grid;

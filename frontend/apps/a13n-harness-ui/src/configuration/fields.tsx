@@ -480,15 +480,17 @@ export function ResourceFields({
                     }
                   />
                 </SettingsRow>
-                <FormField label="Live instructions">
-                  <Textarea
-                    value={text(["live", "instructions"])}
-                    onChange={(event) =>
-                      set(["live", "instructions"], event.target.value)
-                    }
-                    rows={3}
-                  />
-                </FormField>
+                <div className={styles.fieldGroup}>
+                  <FormField label="Live instructions">
+                    <Textarea
+                      value={text(["live", "instructions"])}
+                      onChange={(event) =>
+                        set(["live", "instructions"], event.target.value)
+                      }
+                      rows={3}
+                    />
+                  </FormField>
+                </div>
               </SettingsSection>
             </details>
             <details className={layout.disclosure}>

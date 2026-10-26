@@ -466,14 +466,11 @@ export function NotificationSettings({
           description="Task results and requests for your input on this browser."
         />
       )}
-      <SettingsSection
-        title="This browser"
-        description="Previews may appear on your lock screen."
-      >
+      <SettingsSection>
         <SettingsRow
           label="Enable browser notifications"
           controlId="desktop-notifications"
-          description="Task results and requests for your input across all conversations."
+          description="Alerts from every conversation in this browser. Previews may appear on your lock screen."
         >
           <Switch
             id="desktop-notifications"
@@ -484,53 +481,54 @@ export function NotificationSettings({
         <SettingsRow
           label="Browser permission"
           description={
-            <>
-              <span className={styles.status}>
-                {permissionLabels[notifications.permission]}
-              </span>
-              {notifications.permission !== "granted" && (
-                <PermissionDescription permission={notifications.permission} />
-              )}
-            </>
+            notifications.permission !== "granted" && (
+              <PermissionDescription permission={notifications.permission} />
+            )
           }
         >
-          {notifications.enabled && notifications.permission === "default" && (
-            <Button
-              variant="outline"
-              onClick={() => void notifications.request()}
-              loading={notifications.requesting}
-            >
-              Allow notifications
-            </Button>
-          )}
+          <div className={styles.state}>
+            <span className={styles.status}>
+              {permissionLabels[notifications.permission]}
+            </span>
+            {notifications.enabled &&
+              notifications.permission === "default" && (
+                <Button
+                  variant="outline"
+                  onClick={() => void notifications.request()}
+                  loading={notifications.requesting}
+                >
+                  Allow notifications
+                </Button>
+              )}
+          </div>
         </SettingsRow>
         <SettingsRow
           label="Background delivery"
           description={
-            <>
-              <span className={styles.status}>
-                {backgroundLabels[notifications.background]}
-              </span>
-              {notifications.background === "enabled"
-                ? "Connected. Alerts stay active for six hours after your last visit on this device."
-                : notifications.permission !== "granted"
-                  ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
-                  : "Without working push delivery, only in-app notices are available while WebUI is open."}
-            </>
+            notifications.background === "enabled"
+              ? "Alerts stay active for six hours after your last visit on this device."
+              : notifications.permission !== "granted"
+                ? "Needs notification permission. In-app notices remain available."
+                : "Without working push delivery, only in-app notices are available while WebUI is open."
           }
         >
-          {pushReady && (
-            <Button
-              onClick={() => void notifications.request()}
-              loading={notifications.requesting}
-              variant={
-                notifications.background === "enabled" ? "outline" : "default"
-              }
-              aria-label={backgroundLabel}
-            >
-              {pushSubscriptionId() ? "Reconnect" : "Enable"}
-            </Button>
-          )}
+          <div className={styles.state}>
+            <span className={styles.status}>
+              {backgroundLabels[notifications.background]}
+            </span>
+            {pushReady && (
+              <Button
+                onClick={() => void notifications.request()}
+                loading={notifications.requesting}
+                variant={
+                  notifications.background === "enabled" ? "outline" : "default"
+                }
+                aria-label={backgroundLabel}
+              >
+                {pushSubscriptionId() ? "Reconnect" : "Enable"}
+              </Button>
+            )}
+          </div>
         </SettingsRow>
         <SettingsRow
           label="Test notification"

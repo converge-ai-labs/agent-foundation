@@ -1,0 +1,41 @@
+/* Harness UI keeps one compact control scale at every width: 13px labels and
+   the desktop control heights. Shared primitives otherwise grow to 16px text
+   and taller boxes below 640px, which mixes two scales on one phone screen
+   next to the app's own 32px chrome. Coarse pointers keep their enlarged hit
+   areas from the primitives, and text entry stays at 16px so iOS does not
+   zoom on focus. Unlayered rules here beat the primitives' utilities. */
+@media (max-width: 639px) {
+  [data-slot="button"],
+  [data-slot="select-trigger"],
+  [data-slot="toggle"] {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  [data-slot="label"],
+  [data-slot="field-label"] {
+    font-size: var(--text-sm);
+    line-height: 1rem;
+  }
+  [data-slot="button"][class~="sm:h-8"] {
+    height: 2rem;
+  }
+  [data-slot="button"][class~="sm:h-7"] {
+    height: 1.75rem;
+  }
+  [data-slot="button"][class~="sm:size-8"] {
+    width: 2rem;
+    height: 2rem;
+  }
+  [data-slot="button"][class~="sm:size-7"] {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  [data-slot="select-trigger"] {
+    min-height: 2rem;
+  }
+  [data-slot="button"] svg:not([class*="size-"]),
+  [data-slot="select-trigger"] svg:not([class*="size-"]) {
+    width: 1rem;
+    height: 1rem;
+  }
+}
