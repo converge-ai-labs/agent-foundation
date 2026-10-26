@@ -21,7 +21,7 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
-from pydantic import JsonValue, RootModel
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, field_validator
 from pydantic_ai.agent.spec import AgentSpec
 
 
@@ -549,53 +549,53 @@ def test_catalog_require_rejects_unselected_key() -> None:
     assert exc_info.value.code == "plugin_factory_missing"
 
 
-def test_authoring_descriptions_are_optional_detached_and_do_not_construct_plugins() -> None:
-    from a13n_harness.plugin_factories import HarnessPluginDescription
+class _DeclaredConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    class Described(_Factory):
-        def describe(self):
-            return HarnessPluginDescription(
-                display_name="Recorder",
-                description="Record run events.",
-                config_schema={"type": "object", "properties": {"count": {"type": "integer"}}},
-            )
+    name: str
+    count: int = Field(default=1, ge=1)
 
-        def validate_configuration(self, configuration):
-            raise AssertionError("catalog must not validate configuration")
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("secret validation detail")
+        return value.strip()
 
-        def create_plugin(self, context):
-            raise AssertionError("catalog must not construct plugins")
 
-    catalog = build_harness_plugin_factory_catalog(explicit_factories=[Described()])
-    description = catalog.describe("test.plugin")
-    assert description.display_name == "Recorder"
-    assert description.config_schema is not None
-    description.config_schema.clear()
-    assert catalog.describe("test.plugin").config_schema == {
-        "type": "object",
-        "properties": {"count": {"type": "integer"}},
+class _DeclaredFactory(HarnessPluginFactory):
+    configuration_model = _DeclaredConfiguration
+
+    @classmethod
+    def plugin_key(cls) -> str:
+        return "test.declared"
+
+    def create_plugin(self, context):
+        return _HarnessPlugin(context.plugin_id, str(context.configuration["name"]))
+
+
+def test_declared_model_validates_and_normalizes_configuration() -> None:
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[_DeclaredFactory()])
+    assert catalog.validate_configuration("test.declared", {"name": "  recorder  "}) == {
+        "name": "recorder",
+        "count": 1,
     }
-    legacy = build_harness_plugin_factory_catalog(explicit_factories=[_Factory()])
-    assert legacy.describe("test.plugin") == HarnessPluginDescription()
+    assert _DeclaredFactory().configuration_model.model_json_schema()["properties"]["count"]["minimum"] == 1
 
 
 @pytest.mark.parametrize(
-    "schema",
-    [
-        {"type": "array"},
-        {"type": "object", "properties": {"value": {"$ref": "https://private/schema"}}},
-        {"type": "object", "properties": {"value": {"type": "invalid"}}},
-    ],
+    "configuration", [{}, {"name": " "}, {"name": "valid", "count": 0}, {"name": "valid", "token": "secret"}]
 )
-def test_invalid_authoring_metadata_fails_with_safe_diagnostics(schema) -> None:
-    from a13n_harness.plugin_factories import HarnessPluginDescription
-
-    class Described(_Factory):
-        def describe(self):
-            return HarnessPluginDescription(config_schema=schema)
-
+def test_declared_model_rejections_keep_sanitized_diagnostics(configuration) -> None:
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[_DeclaredFactory()])
     with pytest.raises(PluginError) as caught:
-        build_harness_plugin_factory_catalog(explicit_factories=[Described()])
-    assert caught.value.code == "plugin_factory_description_invalid"
-    assert caught.value.details == {"plugin_key": "test.plugin"}
-    assert "https://private" not in "".join(traceback.format_exception(caught.value))
+        catalog.validate_configuration("test.declared", configuration)
+    assert caught.value.code == "plugin_factory_configuration_invalid"
+    assert caught.value.details == {"plugin_key": "test.declared"}
+    assert "secret" not in "".join(traceback.format_exception(caught.value))
+
+
+def test_legacy_factory_keeps_custom_validation_without_declaring_a_model() -> None:
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[_Factory()])
+    assert catalog["test.plugin"].configuration_model is None
+    assert catalog.validate_configuration("test.plugin", {"name": "legacy"}) == {"name": "legacy"}

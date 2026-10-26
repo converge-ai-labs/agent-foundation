@@ -1074,11 +1074,9 @@ def test_computer_coordinate_space_is_explicit_validated_and_preserved_in_overri
 
 
 async def test_plugin_catalog_is_authorized_and_exposes_only_public_metadata(service, monkeypatch) -> None:
-    from a13n_harness.plugin_factories import HarnessPluginDescription
-
     class Described(_Factory):
-        def describe(self):
-            return HarnessPluginDescription(display_name="Audit", config_schema=_Settings.model_json_schema())
+        configuration_model = _Settings
+        display_name = "Audit"
 
         def validate_configuration(self, configuration):
             raise AssertionError("listing must not validate or run a plugin")

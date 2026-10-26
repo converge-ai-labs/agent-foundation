@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableSequence
+from collections.abc import MutableSequence
 from typing import Any
 
 from a13n_harness import (
@@ -12,7 +12,6 @@ from a13n_harness import (
     PluginOrdering,
 )
 from a13n_harness.plugin_factories import (
-    HarnessPluginDescription,
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
 )
@@ -20,7 +19,7 @@ from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from a13n_plugin_examples.records import ObservedRunStatus, RunObservation
 
@@ -104,23 +103,13 @@ class RunRecorderPlugin(AbstractHarnessPlugin):
 class RunRecorderPluginFactory(HarnessPluginFactory):
     """Create recorder plugins from the Harness-owned build envelope."""
 
+    configuration_model = RunRecorderConfiguration
+    display_name = "Run recorder"
+    description = "Record each run's outcome in memory, optionally including model request counts."
+
     @classmethod
     def plugin_key(cls) -> str:
         return PLUGIN_KEY
-
-    def describe(self) -> HarnessPluginDescription:
-        return HarnessPluginDescription(
-            display_name="Run recorder",
-            description="Record each run's outcome in memory, optionally including model request counts.",
-            config_schema=RunRecorderConfiguration.model_json_schema(),
-        )
-
-    def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
-        try:
-            return RunRecorderConfiguration.model_validate(dict(configuration))
-        except ValidationError as exc:
-            # The catalog replaces this cause with a stable, sanitized public error.
-            raise ValueError("Invalid example.run-recorder configuration.") from exc
 
     def create_plugin(
         self,

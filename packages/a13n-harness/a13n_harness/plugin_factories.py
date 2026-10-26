@@ -7,10 +7,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import cast
+from typing import ClassVar, cast
 
-from jsonschema import Draft202012Validator
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, JsonValue
 
 from a13n_harness.errors import PluginError
 from a13n_harness.plugin_configuration import (
@@ -23,38 +22,6 @@ from a13n_harness.plugins import AbstractHarnessPlugin
 HARNESS_PLUGIN_ENTRY_POINT_GROUP = "a13n_harness.plugins"
 _MAX_PLUGIN_KEY_LENGTH = 200
 _MAX_DIAGNOSTIC_VALUE_LENGTH = 200
-
-
-class HarnessPluginDescription(BaseModel):
-    """Optional public authoring metadata; never contains credentials or installation paths."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    display_name: str = Field(default="", max_length=128)
-    description: str = Field(default="", max_length=4096)
-    config_schema: dict[str, JsonValue] | None = None
-
-    @field_validator("config_schema")
-    @classmethod
-    def _schema(cls, value: dict[str, JsonValue] | None) -> dict[str, JsonValue] | None:
-        if value is None:
-            return None
-        detached = dict(_detach_json_object(value, field_name="plugin configuration schema"))
-        if detached.get("type") != "object":
-            raise ValueError("Plugin configuration schemas must describe an object")
-        Draft202012Validator.check_schema(detached)
-        pending: list[JsonValue] = [detached]
-        while pending:
-            item = pending.pop()
-            if isinstance(item, dict):
-                for key in ("$ref", "$dynamicRef"):
-                    reference = item.get(key)
-                    if reference is not None and (not isinstance(reference, str) or not reference.startswith("#")):
-                        raise ValueError("Plugin configuration schemas must be self-contained")
-                pending.extend(item.values())
-            elif isinstance(item, list):
-                pending.extend(item)
-        return detached
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,21 +75,24 @@ class HarnessPluginFactoryContext:
 class HarnessPluginFactory(ABC):
     """Trusted package boundary that validates configuration and creates plugins."""
 
+    configuration_model: ClassVar[type[BaseModel] | None] = None
+    display_name: ClassVar[str] = ""
+    description: ClassVar[str] = ""
+
     @classmethod
     @abstractmethod
     def plugin_key(cls) -> str:
         """Return the stable configuration-facing factory key."""
 
-    def describe(self) -> HarnessPluginDescription:
-        """Return static, credential-free metadata without I/O or configuration validation.
-
-        Existing factories need not implement this: Hosts can show the key and a JSON editor.
-        """
-        return HarnessPluginDescription()
-
-    @abstractmethod
     def validate_configuration(self, configuration: Mapping[str, JsonValue]) -> BaseModel:
-        """Validate and normalize credential-free plugin configuration without I/O."""
+        """Validate using the declared model; legacy factories may override this method.
+
+        The same model supplies editor schemas through ``model_json_schema()``.
+        Keep validation and schema generation free of I/O and credentials.
+        """
+        if self.configuration_model is None:
+            raise NotImplementedError("Declare configuration_model or implement validate_configuration")
+        return self.configuration_model.model_validate(dict(configuration))
 
     @abstractmethod
     def create_plugin(
@@ -135,7 +105,7 @@ class HarnessPluginFactory(ABC):
 class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
     """Immutable snapshot of selected Harness plugin factories."""
 
-    __slots__ = ("_descriptions", "_factories", "_registrations")
+    __slots__ = ("_factories", "_registrations")
 
     def __init__(
         self,
@@ -150,7 +120,6 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
             )
         self._registrations = registrations
         self._factories = MappingProxyType(factories)
-        self._descriptions = {key: _describe_factory(key, factory) for key, factory in factories.items()}
 
     def __getitem__(self, plugin_key: str) -> HarnessPluginFactory:
         return self._factories[plugin_key]
@@ -166,11 +135,6 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
         """Return registrations in selected-then-explicit order."""
 
         return self._registrations
-
-    def describe(self, plugin_key: str) -> HarnessPluginDescription:
-        """A detached copy of metadata captured when this process loaded its catalog."""
-        self.require(plugin_key)
-        return self._descriptions[plugin_key].model_copy(deep=True)
 
     def require(self, plugin_key: str) -> HarnessPluginFactory:
         """Return one selected factory or fail with a stable plugin error."""
@@ -261,20 +225,6 @@ class HarnessPluginFactoryCatalog(Mapping[str, HarnessPluginFactory]):
                 details=details,
             )
         return plugin
-
-
-def _describe_factory(plugin_key: str, factory: HarnessPluginFactory) -> HarnessPluginDescription:
-    try:
-        description = factory.describe()
-        if not isinstance(description, HarnessPluginDescription):
-            raise TypeError("Plugin descriptions must be HarnessPluginDescription values")
-        return HarnessPluginDescription.model_validate(description.model_dump(mode="json"))
-    except Exception:
-        raise PluginError(
-            "Harness plugin factory description is invalid.",
-            code="plugin_factory_description_invalid",
-            details={"plugin_key": plugin_key},
-        ) from None
 
 
 def discover_harness_plugin_factory_references() -> tuple[HarnessPluginFactoryReference, ...]:
