@@ -9,9 +9,6 @@
 .page > button {
   align-self: flex-start;
 }
-.search {
-  width: min(100%, 360px);
-}
 .rows {
   display: grid;
   gap: 12px;

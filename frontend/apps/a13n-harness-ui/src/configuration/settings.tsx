@@ -10,7 +10,7 @@ import {
   useTransport,
 } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, Panel, SearchField } from "../shell/ui";
 import {
   SourceDocument,
   SourcesPage,
@@ -440,14 +440,11 @@ export function InstalledCatalog({
   return (
     <div className={styles.stack}>
       <ErrorNotice error={catalog.error} retry={() => void catalog.refetch()} />
-      <div className={styles.search}>
-        <TextField
-          type="search"
-          label="Search installed plugins"
-          value={search}
-          onChange={setSearch}
-        />
-      </div>
+      <SearchField
+        label="Search installed plugins"
+        value={search}
+        onChange={setSearch}
+      />
       {catalog.isPending && <Skeleton className="h-32 w-full" />}
       <div className={styles.resourceList}>
         {items?.map((item) => (

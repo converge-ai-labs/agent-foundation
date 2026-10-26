@@ -21,7 +21,7 @@
   font-size: 13px;
 }
 .search {
-  max-width: 300px;
+  width: min(100%, 320px);
 }
 .rows {
   display: grid;

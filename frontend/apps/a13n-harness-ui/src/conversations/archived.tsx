@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Archive } from "@phosphor-icons/react";
-import { Button, FormField, Input } from "a13n-ui";
-import { PageHeader, ErrorNotice } from "../shell/ui";
+import { Button } from "a13n-ui";
+import { PageHeader, ErrorNotice, SearchField } from "../shell/ui";
 import { useThreads } from "./queries";
 import { ThreadRow } from "./thread-row";
 import styles from "./archived.module.css";
@@ -25,16 +25,11 @@ export function ArchivedPage() {
         title="Archived conversations"
         description="Conversations you've put away. Their history is kept, and you can restore them to the sidebar at any time."
       />
-      <div className={styles.search}>
-        <FormField label="Search archived conversations" hideLabel>
-          <Input
-            type="search"
-            placeholder="Search archived conversations…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </FormField>
-      </div>
+      <SearchField
+        label="Search archived conversations"
+        value={query}
+        onChange={setQuery}
+      />
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       {list.isPending && <p role="status">Loading archived conversations…</p>}
       {list.isSuccess && !rows.length && (

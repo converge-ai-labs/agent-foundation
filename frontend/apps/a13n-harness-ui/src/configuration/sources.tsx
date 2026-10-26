@@ -13,7 +13,14 @@ import {
 import { Plus, ArrowLeft, DotsThree, Trash } from "@phosphor-icons/react";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import {
+  ErrorNotice,
+  PageHeader,
+  Panel,
+  SearchField,
+  TextField,
+} from "../shell/ui";
+import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
 import { ResourceFields } from "./fields";
@@ -75,7 +82,7 @@ export function NewResourceButton({
     >
       <Plus />
       {label ??
-        `Add ${resourceKinds.find((item) => item.value === kind)!.label.toLowerCase()}`}
+        `Add ${inlineLabel(resourceKinds.find((item) => item.value === kind)!.label)}`}
     </Button>
   );
 }
@@ -196,14 +203,11 @@ export function SourcesPage({
           void selectors.refetch();
         }}
       />
-      <div className={styles.search}>
-        <TextField
-          type="search"
-          label={`Search ${title.toLowerCase()}`}
-          value={search}
-          onChange={setSearch}
-        />
-      </div>
+      <SearchField
+        label={`Search ${inlineLabel(title)}`}
+        value={search}
+        onChange={setSearch}
+      />
       {sources.isPending && <p role="status">Loading resources…</p>}
       <DraftLinks kinds={kinds} search={search} />
       <div className={styles.resourceList}>
@@ -260,7 +264,7 @@ export function SourcesPage({
         kinds &&
         !sources.data.sources.some((source) =>
           kinds.includes(source.resource_kind as ResourceKind),
-        ) && <p>No {title.toLowerCase()} yet. Add one to get started.</p>}
+        ) && <p>No {inlineLabel(title)} yet. Add one to get started.</p>}
       {sources.data && !kinds && !sources.data.sources.length && (
         <Panel title="No saved configuration">
           <p>
@@ -476,14 +480,11 @@ export function SourceDocument({
     !!draft &&
     !!writable &&
     (source.data?.content_available || isNew || draft.replacement);
-  const resourceLabel =
-    resourceKinds
-      .find(
-        (item) =>
-          item.value === readDocument(draft?.content ?? "")?.get("kind"),
-      )
-      ?.label.toLowerCase() ??
-    (path.endsWith(".md") ? "subagent" : "configuration");
+  const resourceLabel = inlineLabel(
+    resourceKinds.find(
+      (item) => item.value === readDocument(draft?.content ?? "")?.get("kind"),
+    )?.label ?? (path.endsWith(".md") ? "subagent" : "configuration"),
+  );
   return (
     <div className={styles.sourceDocument}>
       {!embedded && (

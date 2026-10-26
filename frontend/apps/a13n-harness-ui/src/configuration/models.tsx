@@ -11,7 +11,7 @@ import {
 } from "a13n-ui";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, SearchField, TextField } from "../shell/ui";
 import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
@@ -119,27 +119,21 @@ export function ModelsPage() {
   });
   return (
     <>
-      <div className={management.collectionHeader}>
-        <PageHeader
-          title="Models"
-          actions={
-            <AddModelButton onSaved={() => void queries.invalidateQueries()} />
-          }
-        />
-      </div>
+      <PageHeader
+        title="Models"
+        actions={
+          <AddModelButton
+            variant="default"
+            onSaved={() => void queries.invalidateQueries()}
+          />
+        }
+      />
       <ErrorNotice
         error={
           selectors.error || sources.error || clone.error || setDefault.error
         }
       />
-      <div className={management.collectionSearch}>
-        <TextField
-          label="Search models"
-          type="search"
-          value={search}
-          onChange={setSearch}
-        />
-      </div>
+      <SearchField label="Search models" value={search} onChange={setSearch} />
       <DraftLinks kinds={["model"]} search={search} />
       <div className={management.modelList}>
         {(selectors.data?.models ?? [])
@@ -331,11 +325,17 @@ function ModelCredentialSummary({ path }: { path: string }) {
 }
 
 /** Add a Model without discarding the Agent draft or selecting an unsaved ID. */
-export function AddModelButton({ onSaved }: { onSaved: (id: string) => void }) {
+export function AddModelButton({
+  onSaved,
+  variant = "outline",
+}: {
+  onSaved: (id: string) => void;
+  variant?: "default" | "outline";
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button variant={variant} onClick={() => setOpen(true)}>
         <Plus aria-hidden="true" />
         Add model
       </Button>

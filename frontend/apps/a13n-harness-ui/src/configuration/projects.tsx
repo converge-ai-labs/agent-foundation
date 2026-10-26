@@ -10,7 +10,7 @@ import {
   useTransport,
 } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, Panel, SearchField } from "../shell/ui";
 import { Preflight } from "../setup/setup";
 import styles from "../shell/workbench.module.css";
 import { EnvironmentsSummary } from "./environments";
@@ -31,14 +31,11 @@ export function ProjectsPage() {
         error={projects.error}
         retry={() => void projects.refetch()}
       />
-      <div className={styles.search}>
-        <TextField
-          type="search"
-          label="Find projects"
-          value={search}
-          onChange={setSearch}
-        />
-      </div>
+      <SearchField
+        label="Search projects"
+        value={search}
+        onChange={setSearch}
+      />
       <DraftLinks kinds={["project"]} search={search} />
       {projects.isPending && <p role="status">Loading projects…</p>}
       <div className={styles.cardGrid}>

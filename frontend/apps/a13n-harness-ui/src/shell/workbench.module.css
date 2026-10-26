@@ -212,6 +212,14 @@
   justify-content: space-between;
   gap: 24px;
 }
+/* Every title sits on a 32px row, so header actions center on it and page
+   content starts at the same offset whether or not a header has actions. */
+.pageHeader > div > :is(h1, h2) {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin-bottom: 4px;
+}
 .pageHeader p {
   max-width: 660px;
   color: var(--a13n-secondary);

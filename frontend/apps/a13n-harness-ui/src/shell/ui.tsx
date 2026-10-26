@@ -69,6 +69,30 @@ export function ErrorNotice({
     </div>
   );
 }
+/** A compact list filter: the label is announced, the placeholder shows it. */
+export function SearchField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <Input
+      type="search"
+      aria-label={label}
+      placeholder={placeholder ?? `${label}…`}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      autoComplete="off"
+      className={styles.search}
+    />
+  );
+}
 export function TextField({
   label,
   value,

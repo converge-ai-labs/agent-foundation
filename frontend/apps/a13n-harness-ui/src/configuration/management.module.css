@@ -182,14 +182,6 @@
   align-items: flex-start;
   padding-block: 16px;
 }
-.collectionHeader > header {
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
-}
-.collectionSearch {
-  max-width: 320px;
-}
 .subagentInfo {
   display: grid;
   gap: 4px;

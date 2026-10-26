@@ -28,6 +28,7 @@ import {
   PauseIcon,
   PencilSimpleIcon,
   PlayIcon,
+  PlusIcon,
   TicketIcon,
   TrashIcon,
   WalletIcon,
@@ -401,6 +402,7 @@ export function SubscriptionAccounts({
             setCreating(true);
           }}
         >
+          <PlusIcon aria-hidden="true" />
           Add account
         </Button>
       </header>
@@ -815,6 +817,7 @@ export function AccountGroups() {
           </p>
         </div>
         <Button onClick={() => setParams({ tab: "groups", group: "new" })}>
+          <PlusIcon aria-hidden="true" />
           Add group
         </Button>
       </header>
