@@ -104,7 +104,7 @@ export function DialogPopup({
             <DialogPrimitive.Close
               aria-label="Close"
               className="absolute end-4 top-5"
-              render={<Button size="icon" variant="ghost" />}
+              render={<Button size="icon" variant="ghost" tooltip={false} />}
               {...closeProps}
             >
               <XIcon />

@@ -108,7 +108,7 @@ export function SheetPopup({
             <SheetPrimitive.Close
               aria-label="Close"
               className="absolute end-2 top-2"
-              render={<Button size="icon" variant="ghost" />}
+              render={<Button size="icon" variant="ghost" tooltip={false} />}
               {...closeProps}
             >
               <XIcon />

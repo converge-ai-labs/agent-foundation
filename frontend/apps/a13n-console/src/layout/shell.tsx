@@ -169,6 +169,7 @@ function WorkspaceNavigation({
                 variant="ghost"
                 size="icon-sm"
                 className="ml-auto md:hidden"
+                tooltip={false}
                 aria-label={t("Close navigation")}
                 onClick={close}
               >
