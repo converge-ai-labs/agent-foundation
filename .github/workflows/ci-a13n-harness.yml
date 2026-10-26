@@ -106,6 +106,23 @@ jobs:
         with:
           chrome-version: stable
 
+      - name: Allow the test browser to create sandbox namespaces
+        if: matrix.name == 'Linux'
+        shell: bash
+        env:
+          BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          # Ubuntu 24.04 restricts user namespaces for downloaded Chrome builds.
+          # Allow only this executable; keep Chromium's sandbox and the global policy.
+          sudo tee /etc/apparmor.d/harness-chrome-testing >/dev/null <<EOF
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile harness-chrome-testing "$BROWSER_EXECUTABLE" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/harness-chrome-testing
+
       - name: Test native Chromium browser workflows
         if: matrix.name == 'Linux'
         shell: bash
