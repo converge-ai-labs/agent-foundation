@@ -433,6 +433,11 @@ class Chromium:
         tree = (await self.send("Page.getFrameTree", page=page))["frameTree"]
         infos = (await self.send("Target.getTargets"))["targetInfos"]
         iframe_targets = {info["targetId"] for info in infos if info["type"] == "iframe"}
+        target_parents = {
+            info["targetId"]: info["parentFrameId"]
+            for info in infos
+            if info["type"] == "iframe" and info.get("parentFrameId")
+        }
         frames: dict[str, Frame] = {}
 
         async def visit(node: dict, inherited_session: str, parent: str = "") -> None:
@@ -460,11 +465,12 @@ class Chromium:
 
         await visit(tree, page.session)
         # Chromium omits out-of-process children from the parent's frame tree.
-        # Only attach iframe targets linked by this page's frameAttached ancestry.
+        # Target ancestry also covers frames loaded before their parent session attached.
+        # Only follow exact parent IDs already reached from this page's frame tree.
         for _ in range(32):
             pending = [
                 (key, parent)
-                for key, parent in page.frame_parents.items()
+                for key, parent in (page.frame_parents | target_parents).items()
                 if key not in frames and parent in frames and key in iframe_targets
             ]
             if not pending or len(frames) >= 32:

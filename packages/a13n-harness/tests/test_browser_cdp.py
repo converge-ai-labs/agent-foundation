@@ -61,6 +61,36 @@ async def test_standalone_backend_supplies_capability_tools_without_ui(browser):
     browser.client.send_raw.assert_any_await("Runtime.releaseObject", {"objectId": "node-one"}, page.session)
 
 
+async def test_documents_follow_exact_nested_target_ancestry_without_attach_events(browser):
+    page = Page("owned", "session-root")
+    # Deliberately reverse the nesting order and share URLs with unrelated targets.
+    infos = [
+        {"targetId": target, "type": "iframe", "parentFrameId": parent, "url": "https://same.example/"}
+        for target, parent in (("deep", "child"), ("foreign", "other-root"), ("child", "root"))
+    ]
+    infos.append({"targetId": "unlinked", "type": "iframe", "url": "https://same.example/"})
+
+    async def send(method, params, session):
+        if method == "Target.getTargets":
+            return {"targetInfos": infos}
+        if method == "Target.attachToTarget":
+            assert params["targetId"] in {"child", "deep"}
+            return {"sessionId": "session-" + params["targetId"]}
+        if method == "Page.getFrameTree":
+            return {"frameTree": {"frame": {"id": session.removeprefix("session-"), "url": "https://same.example/"}}}
+        return {}
+
+    browser.client.send_raw.side_effect = send
+    assert not page.frame_parents
+    frames = await browser.documents(page)
+    assert [(frame.identity, frame.parent, frame.session) for frame in frames] == [
+        ("root", "", "session-root"),
+        ("child", "root", "session-child"),
+        ("deep", "child", "session-deep"),
+    ]
+    assert set(page.frame_sessions) == {"child", "deep"}
+
+
 async def test_direct_connection_closes_only_its_page_on_exception(monkeypatch, browser):
     page = Page("owned", "session")
     browser.pages = {page.target: page, "existing": Page("existing", "other-session")}

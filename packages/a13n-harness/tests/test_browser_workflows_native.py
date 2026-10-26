@@ -32,7 +32,23 @@ async def workflow_site():
             else:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html")
-                if route.path == "/frame":
+                if route.path == "/nested":
+                    depth = int(parse_qs(route.query).get("depth", ["0"])[0])
+                    if depth == 3:
+                        body = b"""<!doctype html><div id=host></div><script>
+                        const root=host.attachShadow({mode:'open'});
+                        root.innerHTML='<input aria-label="Nested name"><button>Nested submit</button>';
+                        root.querySelector('button').onclick=()=>top.postMessage(root.querySelector('input').value,'*');
+                        </script>"""
+                    else:
+                        host = "localhost" if depth % 2 == 0 else "127.0.0.1"
+                        body = f"""<!doctype html><style>
+                        body{{height:1600px}}iframe{{display:block;width:{600 - depth * 100}px;height:300px;
+                        margin-top:{500 if depth == 0 else 60}px;border:4px solid;
+                        transform:scale({0.8 if depth == 1 else 0.9});transform-origin:top left}}
+                        </style><iframe src="http://{host}:{self.server.server_port}/nested?depth={depth + 1}"></iframe>
+                        <output id=result>Ready</output><script>addEventListener('message',e=>result.textContent=e.data)</script>""".encode()
+                elif route.path == "/frame":
                     label = parse_qs(route.query)["label"][0]
                     body = f'''<!doctype html><button onclick="parent.postMessage('{label} clicked','*')">{label} button</button><input aria-label="{label} input"><button onclick="alert('{label} frame alert')">{label} alert</button><input type="file" aria-label="{label} upload" onchange="parent.postMessage(this.files[0].name,'*')">'''.encode()
                 else:
@@ -722,3 +738,49 @@ async def test_direct_popup_download_is_tracked_before_attachment(native_browser
             assert all(Path(item["path"]).read_bytes() == b"synthetic download" for item in downloads)
             assert json.loads(await other.downloads()) == []
         await other.close()
+
+
+async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, workflow_site):
+    endpoint, _ = native_browser
+    async with CdpBrowserBackend.connect(endpoint) as backend:
+        tools = BrowserUseCapability(backend).get_toolset().tools
+
+        async def call(name, **kwargs):
+            schema = tools[name].function_schema
+            return await schema.call(schema.validator.validate_python(kwargs), None)
+
+        await call("browser_navigate", url=workflow_site + "nested")
+        await call(
+            "browser_wait",
+            condition={"kind": "element", "target": {"kind": "locator", "name": "Nested name"}, "state": "visible"},
+        )
+        observation = await call("browser_observe")
+        assert 'textbox: "Nested name"' in observation
+        frames = list(backend.page.frames.values())
+        assert len(frames) == 4
+        assert len({frame.session for frame in frames}) >= 2
+        for value in ("Ada", "Grace", "Lin"):
+            result = json.loads(
+                await call(
+                    "browser_act",
+                    action={"kind": "fill", "target": {"kind": "locator", "name": "Nested name"}, "text": value},
+                )
+            )
+            assert result["verification"] == "passed", result
+            result = json.loads(
+                await call(
+                    "browser_act",
+                    action={"kind": "type", "target": {"kind": "locator", "name": "Nested name"}, "text": "!"},
+                )
+            )
+            assert result["dispatch"] == "dispatched", result
+            forms = await call("browser_read", kind="forms", frame_index=3)
+            assert value + "!" in forms
+            result = json.loads(
+                await call(
+                    "browser_act", action={"kind": "click", "target": {"kind": "locator", "name": "Nested submit"}}
+                )
+            )
+            assert result["dispatch"] == "dispatched", result
+            await call("browser_wait", condition={"kind": "text", "text": value + "!"})
+            assert await backend.browser.evaluate(backend.page, "result.textContent") == value + "!"
