@@ -120,8 +120,8 @@ export function MemoryPage(props: {
                 : "No organization history yet"}
             </h2>
             <p>
-              Current files are available on the right. Opening this page does
-              not start organization.
+              Organization runs appear here. Opening this page does not start
+              one.
             </p>
           </div>
         )}

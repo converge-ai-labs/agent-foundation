@@ -137,7 +137,9 @@ export function DraftLinks({
 export function SourcesPage({
   kinds,
   title = "Configuration files",
-  description,
+  description = kinds
+    ? undefined
+    : "The YAML and Markdown files behind every setting.",
   headingLevel = 1,
 }: {
   kinds?: ResourceKind[];
@@ -251,13 +253,17 @@ export function SourcesPage({
               {source.resource_kind === "agent" &&
                 source.resource_ids.includes(
                   root.configuration?.defaults?.agent,
-                ) && <span>Default</span>}
-              {!kinds && (
-                <span>{source.resource_kind.replaceAll("_", " ")}</span>
+                ) && <span className={styles.tag}>Default</span>}
+              {!source.writable && (
+                <span className={styles.tag}>Read only</span>
               )}
-              {!source.writable && <small>Read only</small>}
               {source.writable && !source.content_available && (
-                <small>Replacement only</small>
+                <span className={styles.tag}>Replacement only</span>
+              )}
+              {!kinds && (
+                <span className={styles.kind}>
+                  {source.resource_kind.replaceAll("_", " ")}
+                </span>
               )}
             </Link>
           ))}

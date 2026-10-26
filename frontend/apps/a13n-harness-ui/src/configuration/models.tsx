@@ -127,6 +127,7 @@ export function ModelsPage() {
     <>
       <PageHeader
         title="Models"
+        description="Provider models your agents run on, with their credentials."
         actions={
           <AddModelButton
             variant="default"
@@ -209,7 +210,9 @@ export function ModelsPage() {
                     )}
                   </div>
                 </div>
-                {source && !source.writable && <span>Read only</span>}
+                {source && !source.writable && (
+                  <span className={styles.tag}>Read only</span>
+                )}
                 <Menu>
                   <MenuTrigger
                     render={

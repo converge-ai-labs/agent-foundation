@@ -366,6 +366,27 @@ a.resourceRow:hover {
 .resourceRow strong {
   font-weight: 500;
 }
+/* Trailing row metadata: a muted kind label and neutral status tags. */
+.kind {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 999px;
+  background: var(--a13n-canvas);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
 .notice {
   display: flex;
   flex-direction: column;
