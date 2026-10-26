@@ -244,7 +244,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       (configured.project_id ?? null) !== (pending.selection.project ?? null)
     )
       throw new Error(
-        "The first conversation already exists with different choices. Inspect its Agent, Project, and execution environment before continuing; this setup has not changed that conversation.",
+        "The first conversation already exists with different choices. Inspect its agent, project, and execution environment before continuing; this setup has not changed that conversation.",
       );
     finishWizard(scope);
     navigate(`/threads/${encodeURIComponent(draft.threadId)}?compose=1`, {
@@ -334,11 +334,6 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                   ? "Choose a shell review model"
                   : "Decide where your agent works"}
             </h2>
-            {draft.step === 0 && (
-              <p>
-                <Link to="/settings/runtime">Set up envd first →</Link>
-              </p>
-            )}
             <ErrorNotice error={error} />
             {!storageAvailable && (
               <p role="alert">
@@ -397,7 +392,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     <details className={styles.advanced}>
                       <summary>Agent options</summary>
                       <div className={styles.stack}>
-                        <label>
+                        <label className={styles.check}>
                           <input
                             type="checkbox"
                             checked={selection.tool_capabilities == null}
@@ -409,9 +404,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Enable recommended native tools on the new Agent
+                          Enable recommended native tools on the new agent
                         </label>
-                        <label>
+                        <label className={styles.check}>
                           <input
                             type="checkbox"
                             checked={
@@ -590,7 +585,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     {!apiKey && (
                       <details className={styles.advanced}>
                         <summary>Shell review</summary>
-                        <label>
+                        <label className={styles.check}>
                           <input
                             type="checkbox"
                             checked={selection.shell_review ?? true}
@@ -616,7 +611,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                       <strong>{selection.model?.route}</strong>
                       <span>
                         {sandbox ? "Sandbox" : "Full Control"} ·{" "}
-                        {selection.project_path || "Without a Project"}
+                        {selection.project_path || "Without a project"}
                       </span>
                     </div>
                     {currentPreview && (
@@ -653,9 +648,14 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               {phase || preparationStatus}
             </p>
           )}
-          <Button variant="ghost" disabled={busy} onClick={close}>
+          <button
+            type="button"
+            className={styles.later}
+            disabled={busy}
+            onClick={close}
+          >
             Set up later
-          </Button>
+          </button>
           <div>
             <span className={styles.stepCount}>
               Step {draft.step + 1} of {steps.length}

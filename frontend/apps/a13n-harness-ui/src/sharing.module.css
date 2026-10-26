@@ -66,31 +66,8 @@
 .actions > button {
   flex-shrink: 0;
 }
-/* Secondary actions are text actions whose labels sit flush with the panel
-   edges, so they align with the controls above instead of floating inside a
-   ghost button's padding. */
 .textAction {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: var(--a13n-text);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: none;
-  cursor: pointer;
-}
-.textAction:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.textAction:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  composes: textAction from "./shell/workbench.module.css";
 }
 .manage summary {
   cursor: pointer;
