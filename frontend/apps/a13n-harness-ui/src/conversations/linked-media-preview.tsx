@@ -62,10 +62,16 @@ export function LinkedMediaPreview({ path }: { path: string }) {
     <figure
       ref={container}
       className={styles.linkedPreview}
+      data-state={!current ? "loading" : current.error ? "error" : "ready"}
       aria-label={`Media preview: ${path.split(/[\\/]/).at(-1)}`}
     >
-      {!current && <p role="status">Loading media preview…</p>}
+      {!current && (
+        <p role="status" className={styles.srOnly}>
+          Loading media preview…
+        </p>
+      )}
       <ErrorNotice
+        inline
         error={current?.error}
         retry={() => setAttempt((value) => value + 1)}
       />

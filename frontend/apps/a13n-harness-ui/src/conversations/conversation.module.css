@@ -1265,12 +1265,6 @@
   color: var(--a13n-secondary);
 }
 
-.markdown ul {
-  list-style: disc;
-}
-.markdown ol {
-  list-style: decimal;
-}
 .form h3 {
   font-weight: 500;
   margin-bottom: 8px;
@@ -1278,12 +1272,6 @@
 .form > section + section {
   padding-top: 16px;
   border-top: 1px solid var(--a13n-border);
-}
-
-.markdown p,
-.markdown li {
-  font-size: 14px;
-  line-height: 1.75;
 }
 
 .sectionHeading,

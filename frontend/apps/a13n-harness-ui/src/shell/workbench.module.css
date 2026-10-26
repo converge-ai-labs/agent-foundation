@@ -423,6 +423,31 @@ a.resourceRow:hover {
 .errorMessage > svg {
   margin-top: 1px;
 }
+.errorInline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 4px;
+  max-width: 640px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.errorInline .errorMessage {
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+}
+.errorInline .errorMessage > svg {
+  margin-top: 0;
+}
+.errorInline > button {
+  flex-shrink: 0;
+  height: 24px;
+  padding-inline: 6px;
+  color: var(--a13n-text-supporting);
+}
 .details {
   border-top: 1px solid var(--a13n-border);
   padding-top: 16px;

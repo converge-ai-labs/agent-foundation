@@ -43,16 +43,22 @@ export function Panel({
 export function ErrorNotice({
   error,
   retry,
+  inline = false,
 }: {
   error: unknown;
   retry?: () => void;
+  /** One quiet line for secondary content, without the notice frame. */
+  inline?: boolean;
 }) {
   const connectionNotice = useContext(ConnectionNoticeContext);
   if (!error || (connectionNotice && isConnectionError(error))) return null;
   return (
-    <div role="alert" className={styles.errorNotice}>
+    <div
+      role="alert"
+      className={inline ? styles.errorInline : styles.errorNotice}
+    >
       <div className={styles.errorMessage}>
-        <WarningCircleIcon size={18} aria-hidden="true" />
+        <WarningCircleIcon size={inline ? 14 : 18} aria-hidden="true" />
         <span>{error instanceof Error ? error.message : String(error)}</span>
       </div>
       {retry && (

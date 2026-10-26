@@ -16,7 +16,15 @@
   line-height: inherit;
   color: inherit;
 }
+/* Only resolved media earns a frame. Loading stays invisible and an
+   unavailable preview is one quiet line under the link, never a box. */
 .linkedPreview {
+  margin: 0;
+}
+.linkedPreview[data-state="error"] {
+  margin: 2px 0 10px;
+}
+.linkedPreview[data-state="ready"] {
   margin: 12px 0 18px;
   max-width: 640px;
   padding: 12px;
@@ -28,10 +36,30 @@
 .linkedPreview video {
   max-height: 360px;
 }
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .markdown ul,
 .markdown ol {
   padding-left: 24px;
   margin-block: 12px;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ul ul {
+  list-style: circle;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown li::marker {
+  color: var(--a13n-secondary);
 }
 .markdown li {
   margin: 4px 0;
