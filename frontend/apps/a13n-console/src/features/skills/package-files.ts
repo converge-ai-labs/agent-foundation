@@ -3,6 +3,23 @@ import type { Schema } from "../../shared/api";
 
 export const previewLimit = 1024 * 1024;
 
+/** Resolve a relative document link only when it names a file in this package. */
+export function linkedPackageFile(
+  current: string,
+  href: string,
+  files: readonly Schema["SkillFile"][],
+): string | undefined {
+  if (/^(?:[a-z][a-z\d+.-]*:|\/|#)/i.test(href)) return;
+  try {
+    const path = decodeURIComponent(
+      new URL(href, `https://package.invalid/${current}`).pathname.slice(1),
+    );
+    return files.find((file) => file.path === path)?.path;
+  } catch {
+    return;
+  }
+}
+
 /** Manifest paths are below `root`, the archive directory that holds SKILL.md. */
 export function readTextFile(
   archive: Uint8Array,

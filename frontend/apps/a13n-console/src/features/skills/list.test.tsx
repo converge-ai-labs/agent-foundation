@@ -16,7 +16,11 @@ vi.mock("../../auth/context", () => ({
   useClient: () => ({ http, workspace: () => http }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => false }),
+  useWorkspace: () => ({
+    workspace: { id: "ws_test" },
+    basePath: "/workspace/test",
+    can: () => false,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -201,8 +205,10 @@ it("shows builtin skills in an empty workspace and filters the complete builtin 
   await screen.findByText("platform-operations");
   expect(await screen.findByText("No workspace skills yet")).toBeTruthy();
   expect(
-    screen.queryByRole("link", { name: /platform-operations/ }),
-  ).toBeNull();
+    screen
+      .getByRole("link", { name: /platform-operations/ })
+      .getAttribute("href"),
+  ).toBe("/workspace/test/skills/builtin/platform-operations");
   await user.click(screen.getByRole("combobox", { name: "Source" }));
   await user.click(
     await screen.findByRole("option", { name: "Built-in skills" }),

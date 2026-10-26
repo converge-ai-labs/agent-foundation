@@ -3477,5 +3477,7 @@
   "Memory configuration": "Memory configuration",
   "This session has already been created. Retry with the same memory settings.": "This session has already been created. Retry with the same memory settings.",
   "Uses the first agent's memory settings when this session starts.": "Uses the first agent's memory settings when this session starts.",
-  "Configure this session without changing the agent's defaults.": "Configure this session without changing the agent's defaults."
+  "Configure this session without changing the agent's defaults.": "Configure this session without changing the agent's defaults.",
+  "Built-in skill": "Built-in skill",
+  "Read-only. Updated with Service releases.": "Read-only. Updated with Service releases."
 }

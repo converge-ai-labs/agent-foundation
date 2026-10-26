@@ -76,6 +76,11 @@ const SkillDetail = lazy(() =>
     default: module.SkillDetail,
   })),
 );
+const BuiltinSkillDetail = lazy(() =>
+  import("./features/skills/builtin-detail").then((module) => ({
+    default: module.BuiltinSkillDetail,
+  })),
+);
 const MemorySpacesPage = lazy(() =>
   import("./features/memories/spaces").then((module) => ({
     default: module.MemorySpacesPage,
@@ -332,6 +337,10 @@ function AppContent() {
                       />
                       <Route path="skills" element={<SkillsPage />} />
                       <Route path="skills/:skillId" element={<SkillDetail />} />
+                      <Route
+                        path="skills/builtin/:name"
+                        element={<BuiltinSkillDetail />}
+                      />
                       <Route
                         path="memory-spaces"
                         element={<MemorySpacesPage />}

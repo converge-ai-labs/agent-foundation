@@ -234,14 +234,31 @@ export function FileBody({ children }: { children: ReactNode }) {
 export function FileText({
   text,
   preview,
+  onOpenLink,
 }: {
   text: string;
   preview: boolean;
+  /** Return true when the owning file browser handles a document link. */
+  onOpenLink?: (href: string) => boolean;
 }) {
   const { t } = useTranslation();
   if (!text) return <FileNotice>{t("This file is empty.")}</FileNotice>;
   return preview ? (
-    <div className={styles.markdown}>
+    <div
+      className={styles.markdown}
+      onClick={
+        onOpenLink
+          ? (event) => {
+              const link =
+                event.target instanceof Element
+                  ? event.target.closest("a")
+                  : null;
+              const href = link?.getAttribute("href");
+              if (href && onOpenLink(href)) event.preventDefault();
+            }
+          : undefined
+      }
+    >
       <MarkdownContent text={markdownBody(text)} />
     </div>
   ) : (

@@ -2936,6 +2936,48 @@
         "title": "BuiltinSkillCatalog",
         "type": "object"
       },
+      "BuiltinSkillDetail": {
+        "description": "The current process's bundled package, without a workspace resource or revision.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "name": {
+            "$ref": "#/components/schemas/BuiltinSkillName"
+          },
+          "package_digest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Package Digest",
+            "type": "string"
+          },
+          "package_size": {
+            "title": "Package Size",
+            "type": "integer"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "root",
+          "files",
+          "package_digest",
+          "package_size"
+        ],
+        "title": "BuiltinSkillDetail",
+        "type": "object"
+      },
       "BuiltinSkillName": {
         "const": "platform-operations",
         "type": "string"
@@ -26264,6 +26306,159 @@
           "agents"
         ],
         "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/builtin-skills/{name}": {
+      "get": {
+        "description": "The current deployment's bundled skill and its package file manifest.",
+        "operationId": "get_builtin_skill",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuiltinSkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Builtin Skill",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/builtin-skills/{name}/content": {
+      "get": {
+        "description": "Optionally require the manifest's digest; a changed package returns conflict.",
+        "operationId": "read_builtin_skill_archive",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "package_digest",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Package Digest"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The current builtin skill package as a zip archive"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Read Builtin Skill Archive",
+        "tags": [
+          "agents"
+        ]
       }
     },
     "/api/v1/connections": {

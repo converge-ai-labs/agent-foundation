@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_vali
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.resources.builtin_skills import BuiltinSkill
 from a13n_service.resources.uploads.schemas import Digest, UploadId
 
 SkillName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
@@ -56,6 +57,15 @@ class SkillFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     path: str
     size: int
+
+
+class BuiltinSkillDetail(BuiltinSkill):
+    """The current process's bundled package, without a workspace resource or revision."""
+
+    root: str
+    files: tuple[SkillFile, ...]
+    package_digest: Digest
+    package_size: int
 
 
 class SkillManifest(BaseModel):

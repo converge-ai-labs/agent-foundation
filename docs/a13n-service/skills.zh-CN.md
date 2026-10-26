@@ -11,6 +11,8 @@ Skill 通过 [ID](resources.md#common-conventions)（`sk_…`）标识，用于 
 
 **Skills** 页面也会显示随 Service 发布的内置技能。在 Agent 的 **Skills** 区域勾选 **platform-operations** 并保存版本；对应 API 字段为 `builtin_skills: ["platform-operations"]`。`GET /api/v1/builtin-skills` 返回名称和描述。这些条目没有工作空间资源 ID、版本或导入、编辑操作，勾选也不会授予平台工具或文件权限。
 
+点击内置技能可打开只读文件详情，默认展示 `SKILL.md`。你可以查看参考文档和当前部署的能力清单，切换 Markdown 预览与源码，或下载 ZIP。内容反映当前 Service 部署，随部署更新，不提供独立的版本历史。
+
 用户 Agent（包括 Agent Composer 的副本）需要主环境。内置技能和导入技能使用相同的 `skill_sync` 策略，声明的名称不能重复。共享模式下，说明位于 `/workspace/.agents/skills/platform-operations/SKILL.md`；隔离模式使用下文的包摘要目录。包中包含 `schemas/agent-config.json` 和 `instance/catalog.json`，文档使用相对引用。内置 Agent 继续使用 Host 上的只读文件，无需用户环境。已有的用户 Agent 如果启用了内置技能，需要选择会话环境或配置默认环境模板；缺少主环境时，运行会在调用模型前失败。
 
 ## 软件包格式

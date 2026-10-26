@@ -443,6 +443,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/builtin-skills/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Builtin Skill
+     * @description The current deployment's bundled skill and its package file manifest.
+     */
+    get: operations["get_builtin_skill"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/builtin-skills/{name}/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Builtin Skill Archive
+     * @description Optionally require the manifest's digest; a changed package returns conflict.
+     */
+    get: operations["read_builtin_skill_archive"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connections": {
     parameters: {
       query?: never;
@@ -5361,6 +5401,23 @@ export interface components {
     BuiltinSkillCatalog: {
       /** Items */
       items: components["schemas"]["BuiltinSkill"][];
+    };
+    /**
+     * BuiltinSkillDetail
+     * @description The current process's bundled package, without a workspace resource or revision.
+     */
+    BuiltinSkillDetail: {
+      /** Description */
+      description: string;
+      /** Files */
+      files: components["schemas"]["SkillFile"][];
+      name: components["schemas"]["BuiltinSkillName"];
+      /** Package Digest */
+      package_digest: string;
+      /** Package Size */
+      package_size: number;
+      /** Root */
+      root: string;
     };
     /** @constant */
     BuiltinSkillName: "platform-operations";
@@ -13380,6 +13437,62 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["BuiltinSkillCatalog"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_builtin_skill: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BuiltinSkillDetail"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_builtin_skill_archive: {
+    parameters: {
+      query?: {
+        package_digest?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The current builtin skill package as a zip archive */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/zip": Binary;
         };
       };
       400: components["responses"]["Error"];
