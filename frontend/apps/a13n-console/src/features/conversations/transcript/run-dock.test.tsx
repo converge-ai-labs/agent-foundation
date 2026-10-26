@@ -1,3 +1,4 @@
+import { conversationKeys } from "../api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -12,7 +13,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
 import type { Schema } from "../../../shared/api";
 import type { Resubmission } from "../resubmit";
-import { fixtureRun, fixtureThread } from "./fixture";
+import { fixtureRun, fixtureSession, fixtureThread } from "./fixture";
 import type { ComponentProps } from "react";
 import { RunDock, ThreadDock } from "./run-dock";
 import { useRun } from "../queries";
@@ -108,6 +109,8 @@ it("replaces a racing user takeover panel with the Agent assistance card without
     fetch: async (input, init) => {
       const req = new Request(input, init),
         path = new URL(req.url).pathname;
+      if (path.endsWith("/sessions/session"))
+        return Response.json(fixtureSession({ id: "session" }));
       if (req.method === "POST") {
         posts.push(path);
         waitingRun = fixtureRun({
@@ -176,6 +179,10 @@ it("replaces a racing user takeover panel with the Agent assistance card without
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  cache.setQueryData(
+    conversationKeys("workspace").session("session"),
+    fixtureSession({ id: "session" }),
+  );
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
@@ -211,6 +218,7 @@ function mount({
   resubmit,
   question = false,
   search = "",
+  consoleStarted = true,
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
@@ -220,6 +228,7 @@ function mount({
   resubmit?: Resubmission;
   question?: boolean;
   search?: string;
+  consoleStarted?: boolean;
 } = {}) {
   const posts: { path: string; body: unknown; key: string | null }[] = [];
   const reads: string[] = [];
@@ -271,6 +280,13 @@ function mount({
     fetch: async (input, init) => {
       const req = new Request(input, init),
         path = new URL(req.url).pathname;
+      if (path.endsWith("/sessions/session"))
+        return Response.json(
+          fixtureSession({
+            id: "session",
+            labels: consoleStarted ? { "a13n.console": "debug" } : {},
+          }),
+        );
       if (req.method === "POST") {
         const text = await req.text();
         posts.push({
@@ -332,6 +348,13 @@ function mount({
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  cache.setQueryData(
+    conversationKeys("workspace").session("session"),
+    fixtureSession({
+      id: "session",
+      labels: consoleStarted ? { "a13n.console": "debug" } : {},
+    }),
+  );
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
@@ -416,7 +439,7 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
     if (status === "waiting")
       await screen.findByText("Waiting for the application");
     if (status === "running")
-      expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
     fireEvent.click(
       await screen.findByRole("button", { name: /Queued messages/ }),
     );
@@ -653,3 +676,29 @@ function TestDock(props: ComponentProps<typeof RunDock>) {
     </ThreadDock>
   );
 }
+
+it.each(["completed", "failed", "waiting", "running"] as const)(
+  "keeps external %s sessions observable without execution controls",
+  async (status) => {
+    const posts = mount({ status, consoleStarted: false });
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Queued messages/ }),
+    );
+    await screen.findByText("Queued test");
+    if (status === "waiting")
+      await screen.findByText("Waiting for the application");
+    for (const name of [
+      "Stop",
+      "Resubmit",
+      "Continue without feedback",
+      "Get control",
+      "Take control",
+      "Execution policy",
+      "Queued message actions",
+      "Create branch",
+    ])
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    expect(posts).toHaveLength(0);
+  },
+);

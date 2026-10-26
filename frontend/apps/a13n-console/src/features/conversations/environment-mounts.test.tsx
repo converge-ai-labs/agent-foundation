@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { ThreadEnvironmentMounts } from "./environment-mounts";
-import { fixtureThread } from "./transcript/fixture";
+import { fixtureSession, fixtureThread } from "./transcript/fixture";
 
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -37,17 +37,19 @@ beforeEach(() => {
   mocks.POST.mockReset();
   mocks.PATCH.mockReset();
   mocks.GET.mockImplementation(async (path: string) => ({
-    data: path.endsWith("/threads/{thread_id}")
-      ? mocks.thread
-      : path.endsWith("/threads/{thread_id}/environments")
-        ? { items: mocks.mounts }
-        : {
-            items: [
-              { id: "env_device", name: "Laptop", template_id: null },
-              { id: "env_sandbox", name: "Sandbox", template_id: "tpl_1" },
-            ],
-            next_cursor: null,
-          },
+    data: path.endsWith("/sessions/{session_id}")
+      ? fixtureSession()
+      : path.endsWith("/threads/{thread_id}")
+        ? mocks.thread
+        : path.endsWith("/threads/{thread_id}/environments")
+          ? { items: mocks.mounts }
+          : {
+              items: [
+                { id: "env_device", name: "Laptop", template_id: null },
+                { id: "env_sandbox", name: "Sandbox", template_id: "tpl_1" },
+              ],
+              next_cursor: null,
+            },
   }));
 });
 function show() {
@@ -303,7 +305,9 @@ it("checks actual desktop support without changing mount permissions", async () 
   const user = userEvent.setup();
   await screen.findByText("Not checked", { exact: false });
   expect(mocks.POST).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Check desktop" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Check desktop" }),
+  );
   await screen.findByText(
     "This environment does not provide desktop operations.",
   );

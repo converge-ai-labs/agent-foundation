@@ -19,7 +19,7 @@ import { useViewLevel } from "./debug/view";
 import { HistoryTranscript } from "./history";
 import { RunEntry } from "./run-entry";
 import { RunDock, ThreadDock, type PendingMessage } from "./run-dock";
-import { isInteractive } from "./run-actions";
+import { useInteractiveThread } from "./run-actions";
 import { useTranscriptScroll } from "./use-transcript-scroll";
 import { UserMessage } from "./user-message";
 import { inputText } from "../input";
@@ -260,6 +260,7 @@ function RunBody({
 }) {
   const { t } = useTranslation();
   const { can, workspace } = useWorkspace();
+  const interactive = useInteractiveThread(thread);
   const client = useClient();
   const threads = useQuery({
     ...conversationQueries(client, workspace.id).threads(thread.session_id),
@@ -284,7 +285,7 @@ function RunBody({
   }, [submitting, runIds]);
   const resubmission =
     stopped &&
-    isInteractive(thread) &&
+    interactive &&
     can("run") &&
     (thread.current_run_id ?? thread.last_run_id) === run.id
       ? runResubmission(run)

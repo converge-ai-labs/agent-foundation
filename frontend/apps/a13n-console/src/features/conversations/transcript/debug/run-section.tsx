@@ -29,7 +29,7 @@ import { RunAgentDialog } from "../../run-agent";
 import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { RequestContent, requestLabel } from "../user-message";
-import { isInteractive } from "../run-actions";
+import { useInteractiveThread } from "../run-actions";
 import {
   childThreadOf,
   childThreadPath,
@@ -74,6 +74,7 @@ export function DebugRunSection({
 }) {
   const { t } = useTranslation();
   const { can, basePath } = useWorkspace();
+  const interactive = useInteractiveThread(thread);
   const [open, toggleOpen] = useRunOpen(run.id);
   const [configuring, setConfiguring] = useState(false);
   const active = isActiveRun(run.status) || run.status === "waiting";
@@ -90,7 +91,7 @@ export function DebugRunSection({
     child: child && {
       path: childThreadPath(basePath, child),
     },
-    answerable: isInteractive(thread) && can("run"),
+    answerable: interactive && can("run"),
     jumpToDock,
   };
   const outcome = runOutcome(run);

@@ -3,14 +3,32 @@ import { useLocation, useNavigate } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, type Schema } from "../../../shared/api";
-import { conversationKeys, invalidateConversation, runPath } from "../api";
+import {
+  conversationKeys,
+  invalidateConversation,
+  isConsoleSession,
+  runPath,
+} from "../api";
+import { useSession } from "../queries";
 
-/**
- * A child Thread is driven by the parent Run that delegated to it; every other
- * Thread takes messages, answers and interrupts from here.
- */
-export function isInteractive(thread: Schema["ThreadView"]) {
-  return thread.origin !== "child" && thread.purpose !== "memory_organization";
+/** Only Console-started sessions accept human execution controls here. */
+export function isInteractive(
+  thread: Schema["ThreadView"] | undefined,
+  session: Pick<Schema["SessionView"], "id" | "labels"> | undefined,
+) {
+  return (
+    !!thread &&
+    session?.id === thread.session_id &&
+    isConsoleSession(session) &&
+    thread.origin !== "child" &&
+    thread.purpose !== "memory_organization"
+  );
+}
+
+/** Share the cached Session read and withhold controls until its source is known. */
+export function useInteractiveThread(thread?: Schema["ThreadView"]) {
+  const session = useSession(thread?.session_id);
+  return isInteractive(thread, session.data);
 }
 
 /** Where an accepted command lands: the Run it started, when it started one. */

@@ -29,7 +29,7 @@ import { ThreadInbox } from "./inbox";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
 import {
-  isInteractive,
+  useInteractiveThread,
   useInterruptRun,
   useRunAcceptance,
 } from "./run-actions";
@@ -117,7 +117,7 @@ export function RunDock({
     !thread.current_run_id && current && last?.status === "waiting"
       ? last
       : null;
-  const interactive = isInteractive(thread);
+  const interactive = useInteractiveThread(thread);
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [guidance, setGuidance] = useState<{
@@ -135,7 +135,7 @@ export function RunDock({
   const entry = steerStatus.data ?? steer;
   const { accepted, refresh } = useRunAcceptance(run, thread);
   const interrupt = useInterruptRun(run, refresh);
-  const canStop = active && can("run");
+  const canStop = interactive && active && can("run");
   const stop = canStop && (
     <Button
       size="icon-sm"
@@ -349,7 +349,7 @@ export function RunDock({
                 }}
               />
             )}
-            {!interactive && (
+            {!interactive && thread.origin === "child" && (
               <div className={styles.dockNotice}>
                 <LockSimpleIcon size={13} aria-hidden="true" />
                 <span>

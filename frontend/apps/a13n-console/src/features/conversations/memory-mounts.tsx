@@ -13,7 +13,7 @@ import {
   conversationQueries,
   invalidateConversation,
 } from "./api";
-import { isInteractive } from "./transcript/run-actions";
+import { useInteractiveThread } from "./transcript/run-actions";
 
 /**
  * The memories a Thread mounts for its later Runs. A mount's access and recall
@@ -32,6 +32,7 @@ export function ThreadMemoryMounts({
   const thread = useQuery(
     conversationQueries(client, workspace.id).thread(threadId),
   );
+  const interactive = useInteractiveThread(thread.data);
   const path = { thread_id: threadId };
   const mounts = useQuery({
     // Mount edits change the Thread, so they refresh with it.
@@ -95,7 +96,7 @@ export function ThreadMemoryMounts({
         }),
     onSuccess: () => void changed(),
   });
-  const editable = can("run") && !!thread.data && isInteractive(thread.data);
+  const editable = can("run") && !!thread.data && interactive;
   return (
     <section className="flex flex-col gap-3" aria-label={t("Memories")}>
       <div className="flex items-center justify-between gap-2">
