@@ -151,7 +151,10 @@ class CompactionInput(BaseModel):
         # Remove structured output requirements, preserving ordinary tools,
         # instructions, native configuration and tool_choice for cache reuse.
         parameters = replace(
-            deepcopy(parameters),
+            parameters,
+            # Host-only tool metadata may hold live callbacks and resources.
+            # Serialize provider definitions, never copy or retain those owners.
+            function_tools=[replace(tool, metadata=None) for tool in parameters.function_tools],
             output_mode="text",
             output_object=None,
             output_tools=[],

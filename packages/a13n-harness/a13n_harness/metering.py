@@ -32,7 +32,7 @@ from a13n_harness._usage_pricing import (
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import StateError
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
-from a13n_harness.model_calls import _check_model_call
+from a13n_harness.model_calls import ModelCall, ModelCallCheck, _check_model_call
 from a13n_harness.models.self_healing import SelfHealingModel
 from a13n_harness.pricing import AbstractModelCostCapability, CatalogModelCostCapability
 from a13n_harness.providers.usage import ProviderUsage, UsageMeasure
@@ -62,6 +62,7 @@ class ModelUsageBinding:
     source: str = "agent"
     tool_id: str | None = None
     tool_call_id: str | None = None
+    model_call_check: ModelCallCheck | None = None
 
     @classmethod
     def standalone(cls, *, source: str) -> ModelUsageBinding:
@@ -182,17 +183,25 @@ class MeteredModel(WrapperModel):
         call_id = f"call_{uuid4().hex}"
         binding.ledger.reserve(call_id, continuation=previous is not None)
         try:
-            if binding.owner is None:
-                return call_id, previous, None
+            owner, ledger = binding.owner, binding.ledger
+            instance = owner.instance if owner is not None else ledger.instance
             budget = await _check_model_call(
-                binding.owner,
-                self.request_context,
-                call_id=call_id,
-                model_run_id=self.model_run_id,
-                source=binding.source,
-                tool_id=binding.tool_id,
-                tool_call_id=binding.tool_call_id,
-                continuation_of=continuation if previous is not None else None,
+                owner.model_call_check if owner is not None else binding.model_call_check,
+                ModelCall(
+                    call_id=call_id,
+                    harness_run_id=owner.run_id if owner is not None else ledger.run_id,
+                    model_run_id=self.model_run_id,
+                    agent_instance_id=instance.agent_instance_id,
+                    parent_agent_instance_id=instance.parent_agent_instance_id,
+                    delegation_id=instance.delegation_id,
+                    model_id=self.request_context.model_id,
+                    model_name=self.request_context.model.model_name,
+                    provider_name=self.request_context.model.system,
+                    source=binding.source,
+                    tool_id=binding.tool_id,
+                    tool_call_id=binding.tool_call_id,
+                    continuation_of=continuation if previous is not None else None,
+                ),
             )
             return call_id, previous, budget
         except BaseException:

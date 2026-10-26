@@ -70,6 +70,7 @@ This starter document shows the main root settings. Optional integrations are de
 ```yaml
 schema_version: "1"
 max_goal_iterations: 10
+background_compaction: true
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -121,6 +122,14 @@ webui:
   allowed_origins: []
   sidekick: {}
 ```
+
+### Background compaction
+
+`background_compaction` defaults to `true`. Agents with the `compaction` Capability can summarize older history while the foreground Run continues, when the Model can verify enough context capacity. Otherwise, the Run waits for the summary. Only root Threads use this mode; inline and asynchronous subagents retain synchronous compaction.
+
+Completed summaries are saved before use. The current Run applies a ready summary at a safe model boundary, or a later Run restores it together with its current input. Completion alone does not rewrite an idle conversation. App restart restores completed work and never replays an interrupted summary request.
+
+Set `background_compaction: false` to use synchronous compaction for later Runs. Already saved summaries remain available. Model context budgets and explicit compaction thresholds are unchanged.
 
 ### File memory
 

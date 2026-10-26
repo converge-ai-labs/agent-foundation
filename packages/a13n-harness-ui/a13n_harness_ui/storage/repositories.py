@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import ColumnElement, and_, case, func, or_, select, true, update
+from sqlalchemy import ColumnElement, and_, case, delete, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
@@ -33,6 +33,7 @@ from .database import DatabaseSessions, short_session, transaction
 from .models import (
     AcceptedConfigurationRecord,
     ChildExecutionRecord,
+    CompactionRecord,
     ConfigurationSourceRecord,
     CoordinatorRecord,
     CoordinatorWorkerRecord,
@@ -692,6 +693,7 @@ class ThreadRepository:
         excerpt: ConversationExcerpt | None = None,
         activity_changed: bool = True,
         updated_at: datetime | None = None,
+        clear_compaction: bool = False,
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
         serialized = read_model.model_dump_json()
@@ -708,6 +710,8 @@ class ThreadRepository:
                     None if expected is None else expected.logical_digest,
                     None if actual is None else actual.logical_digest,
                 )
+            if clear_compaction:
+                await session.execute(delete(CompactionRecord).where(CompactionRecord.thread_id == thread_id))
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest

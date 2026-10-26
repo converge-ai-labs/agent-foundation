@@ -70,6 +70,7 @@ Harness UI 跳过缺失或无效的 Agent Capability，保留有效条目，不�
 ```yaml
 schema_version: "1"
 max_goal_iterations: 10
+background_compaction: true
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -121,6 +122,14 @@ webui:
   allowed_origins: []
   sidekick: {}
 ```
+
+### 后台压缩
+
+`background_compaction` 默认为 `true`。启用 `compaction` Capability 的 Agent 可以在前台 Run 继续执行时总结旧历史，前提是 Model 能验证上下文容量足够。否则 Run 会等待摘要。仅根 Thread 使用此模式；内联和异步 subagent 均保持同步压缩。
+
+摘要先保存，再使用。当前 Run 会在安全的模型调用边界应用已完成摘要，或由后续 Run 将其与当前输入一起恢复。摘要完成不会改写空闲对话的检查点。App 重启会恢复已完成结果，不会重放中断的摘要请求。
+
+将 `background_compaction` 设为 `false`，后续 Run 就会使用同步压缩。已保存的摘要仍可交付。Model 上下文预算和显式压缩阈值不变。
 
 ### 文件记忆
 

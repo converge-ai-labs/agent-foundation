@@ -93,6 +93,34 @@ def _user_values(messages):
     ]
 
 
+async def test_input_snapshots_provider_tool_definitions_without_host_metadata():
+    from pydantic_ai.tools import ToolDefinition
+
+    # Host metadata can own resources that cannot be copied or serialized.
+    tool = ToolDefinition(
+        name="read",
+        parameters_json_schema={"type": "object"},
+        metadata={"owner": asyncio.get_running_loop()},
+    )
+    previous = _previous()
+    input = CompactionInput.create(
+        operation_id="compaction-test",
+        thread_id=previous.thread_id,
+        run_id="run-test",
+        model_name="test",
+        provider_name="function",
+        messages=previous.message_history,
+        parameters=ModelRequestParameters(function_tools=[tool]),
+    )
+    frozen = input.model_dump_json()
+    tool.parameters_json_schema["description"] = "later mutation"
+    restored = CompactionInput.model_validate_json(frozen).parameters.function_tools[0]
+    assert restored.name == "read"
+    assert restored.parameters_json_schema == {"type": "object"}
+    assert restored.metadata is None
+    assert tool.metadata is not None
+
+
 async def test_input_roundtrip_detaches_native_values_and_result_preserves_delta():
     previous = _previous()
     messages = list(previous.message_history)
