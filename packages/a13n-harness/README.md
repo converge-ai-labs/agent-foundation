@@ -32,6 +32,7 @@ from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import BrowserUseCapability
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 
+
 async def inspect_page(cdp_url: str) -> str:
     executable = HarnessBuilder().build(
         AgentSpec(model="openai-responses:gpt-5"),
