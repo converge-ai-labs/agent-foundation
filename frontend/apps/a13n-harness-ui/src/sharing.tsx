@@ -157,7 +157,9 @@ function ShareContents({
           readOnly={!!created || !(threadId && projectId)}
           disabled={create.isPending}
           options={[
-            ...(threadId ? [{ value: "thread", label: "Thread" }] : []),
+            ...(threadId
+              ? [{ value: "thread", label: "This conversation" }]
+              : []),
             ...(projectId
               ? [{ value: "project", label: `Project · ${projectName}` }]
               : []),
@@ -191,9 +193,9 @@ function ShareContents({
         </div>
         {!created && permission === "prompt" && (
           <p className={styles.authority}>
-            For trusted people: prompts use the Agent’s tools and Environment
+            For trusted people: prompts use the agent’s tools and environment
             permissions.
-            {scope === "project" ? " Guests can also create Threads." : ""}
+            {scope === "project" ? " Guests can also start conversations." : ""}
           </p>
         )}
         {created && (
@@ -258,12 +260,17 @@ function ShareContents({
       )}
       {created && (
         <div className={styles.secondaryActions}>
-          <a href={link} target="_blank" rel="noreferrer">
+          <a
+            className={styles.textAction}
+            href={link}
+            target="_blank"
+            rel="noreferrer"
+          >
             Preview as guest <ArrowUpRight size={14} aria-hidden />
           </a>
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
+            type="button"
+            className={styles.textAction}
             onClick={() => {
               setCreated(null);
               setCopied(false);
@@ -272,7 +279,7 @@ function ShareContents({
             }}
           >
             Create another link
-          </Button>
+          </button>
         </div>
       )}
       <details className={styles.manage}>
@@ -283,8 +290,8 @@ function ShareContents({
         {grants.isPending && <p>Loading links…</p>}
         {grants.data?.length === 0 && (
           <p className={styles.hint}>
-            No active links for this {scope === "thread" ? "Thread" : "Project"}
-            .
+            No active links for this{" "}
+            {scope === "thread" ? "conversation" : "project"}.
           </p>
         )}
         {grants.data?.map((grant) => (
@@ -365,7 +372,7 @@ function GrantRow({
       </Button>
       {permission === "prompt" && grant.permission !== "prompt" && (
         <p className={styles.authority}>
-          Prompts use this Agent’s tools and Environment with its existing
+          Prompts use this agent’s tools and environment with its existing
           authority. Save only for people you trust.
         </p>
       )}

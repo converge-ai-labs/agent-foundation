@@ -275,7 +275,7 @@ function GuestShell({
           </span>
           <div>
             <h1>{access.title}</h1>
-            <p>Shared {project ? "Project" : "Thread"}</p>
+            <p>Shared {project ? "project" : "conversation"}</p>
           </div>
         </div>
         <div className={styles.access}>
@@ -297,7 +297,7 @@ function GuestShell({
               (p) => p.participant_id !== live.presence?.participant_id,
             )}
             ownId={live.presence?.participant_id}
-            threadTitle="this Thread"
+            threadTitle="this conversation"
           />
           <Button
             variant="ghost"
@@ -317,7 +317,7 @@ function GuestShell({
             aria-label="Project conversations"
           >
             <div className={styles.sidebarTop}>
-              <h2>Threads</h2>
+              <h2>Conversations</h2>
               {canPrompt && (
                 <Button
                   variant="ghost"
@@ -343,8 +343,8 @@ function GuestShell({
             />
             {create.isError && (
               <p className={styles.hint}>
-                Check the list before trying again; a Thread may have been
-                created.
+                Check the list before trying again; the conversation may have
+                been created.
               </p>
             )}
             <nav className={`${styles.threadList} a13n-scrollbar`}>
@@ -376,7 +376,9 @@ function GuestShell({
               )}
               {list.data?.pages[0]?.total === 0 && (
                 <p className={styles.hint}>
-                  {search ? "No matching conversations." : "No Threads yet."}
+                  {search
+                    ? "No matching conversations."
+                    : "No conversations yet."}
                 </p>
               )}
               {list.hasNextPage && (
@@ -408,11 +410,11 @@ function GuestShell({
                 project ? (
                   <div className={styles.welcome}>
                     <Folder size={32} style={{ margin: "auto" }} />
-                    <h2>Shared Project</h2>
+                    <h2>Shared project</h2>
                     <p>
-                      Choose a Thread to catch up
+                      Choose a conversation to catch up
                       {canPrompt
-                        ? ", or start a new one with the Project’s Agent."
+                        ? ", or start a new one with the project’s agent."
                         : " and follow along as the work unfolds."}
                     </p>
                     {canPrompt && (

@@ -36,8 +36,10 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
+  white-space: nowrap;
 }
 .linkIcon {
   display: grid;
@@ -64,15 +66,31 @@
 .actions > button {
   flex-shrink: 0;
 }
-.secondaryActions a {
+/* Secondary actions are text actions whose labels sit flush with the panel
+   edges, so they align with the controls above instead of floating inside a
+   ghost button's padding. */
+.textAction {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--a13n-text);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
 }
-.secondaryActions a:hover {
+.textAction:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.textAction:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .manage summary {
   cursor: pointer;
@@ -108,8 +126,8 @@
   background: var(--a13n-canvas);
 }
 .header {
-  min-height: 72px;
-  padding: 14px 28px;
+  min-height: 56px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -148,17 +166,14 @@
 }
 .access {
   display: flex;
-  gap: 14px;
+  flex-shrink: 0;
+  gap: 12px;
   align-items: center;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
 .badge {
-  background: var(--a13n-surface);
-  color: var(--a13n-text);
-  padding: 5px 9px;
-  border-radius: 6px;
-  white-space: nowrap;
+  composes: tag from "./shell/workbench.module.css";
 }
 .body {
   display: flex;
@@ -166,12 +181,12 @@
   min-height: 0;
 }
 .sidebar {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
   background: var(--a13n-surface);
   border-radius: 0 12px 0 0;
 }
@@ -180,6 +195,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding-left: 8px;
 }
 .sidebarTop h2 {
   margin: 0;
@@ -190,26 +206,34 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
+.threadList > .hint {
+  padding: 0 8px;
+}
+/* Shared conversations use the main sidebar's navigation row geometry. */
 .thread,
 .activeThread {
-  display: grid;
-  gap: 5px;
-  text-decoration: none;
-  padding: 11px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-}
-.thread:hover {
-  background: var(--a13n-hover);
+  composes: row from "./shell/navigation-row.module.css";
+  justify-content: space-between;
 }
 .activeThread {
   background: var(--a13n-selected);
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.thread span,
+.activeThread span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .thread small,
 .activeThread small {
-  font-size: 11px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
   color: var(--a13n-secondary);
 }
 .conversation {
@@ -217,6 +241,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
 .welcome {
   margin: auto;
@@ -257,14 +282,17 @@
 }
 @media (max-width: 700px) {
   .header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    padding: 12px 16px;
+    padding: 8px 12px;
     gap: 8px;
   }
+  .identity {
+    gap: 8px;
+  }
+  .mobileToggle + .mark {
+    display: none;
+  }
   .access {
-    gap: 10px;
-    padding-left: 44px;
+    gap: 8px;
   }
   .conversation {
     padding: 0 12px;
@@ -297,6 +325,16 @@
   }
   .secondaryActions {
     flex-wrap: wrap;
+  }
+}
+
+/* Phones keep "Anyone with the link" on one line beside its permission. */
+@media (max-width: 480px) {
+  .linkIcon {
+    display: none;
+  }
+  .permissionControl button {
+    min-width: 0;
   }
 }
 
