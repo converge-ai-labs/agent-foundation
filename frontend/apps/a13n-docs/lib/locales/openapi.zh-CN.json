@@ -565,5 +565,9 @@
   "List Plugins": "列出插件",
   "The plugins loaded by this Control process, without constructing or executing instances.": "列出当前 Control 进程已加载的插件，不创建或执行插件实例。",
   "List Builtin Skills": "列出内置 skill",
-  "The skills bundled with this Service release, separately from workspace skill resources.": "列出当前 Service 版本提供的内置 skill，与工作区 skill 资源分开。"
+  "The skills bundled with this Service release, separately from workspace skill resources.": "列出当前 Service 版本提供的内置 skill，与工作区 skill 资源分开。",
+  "Delete Connector Provider": "删除 connector provider",
+  "Delete Memory Provider": "删除记忆 provider",
+  "Delete Model Provider": "删除模型 provider",
+  "Delete Web Provider": "删除 Web provider"
 }
