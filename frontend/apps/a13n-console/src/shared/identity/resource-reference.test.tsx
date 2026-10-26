@@ -1,3 +1,4 @@
+import { TooltipProvider } from "a13n-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,7 +15,9 @@ it("reveals the resource ID and key on hover and copies each value", async () =>
   const write = vi.spyOn(navigator.clipboard, "writeText");
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ResourceReference id="agt_123" resourceKey="support-agent" />
+      <TooltipProvider>
+        <ResourceReference id="agt_123" resourceKey="support-agent" />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 
@@ -24,7 +27,11 @@ it("reveals the resource ID and key on hover and copies each value", async () =>
   expect(await screen.findByText("agt_123")).toBeTruthy();
   expect(screen.getByText("support-agent")).toBeTruthy();
 
-  await user.click(screen.getByRole("button", { name: "Copy resource key" }));
+  const key = screen.getByRole("button", { name: "Copy resource key" });
+  expect(key.textContent).toBe("Key");
+  await user.hover(key);
+  expect(await screen.findByText("Click to copy")).toBeTruthy();
+  await user.click(key);
   expect(write).toHaveBeenCalledWith("support-agent");
 });
 
@@ -78,7 +85,7 @@ it("keeps reference interactions inside the popover without activating its table
   const value = await screen.findByText("sess_reference");
   await user.click(value);
   await user.dblClick(value);
-  await user.click(screen.getByText("Session ID"));
+  expect(write).not.toHaveBeenCalled();
   await user.click(value.closest('[data-slot="popover-popup"]')!);
   expect(activate).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Copy resource ID" }));

@@ -158,22 +158,25 @@
 }
 .row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-height: 30px;
-  padding: 2px 0 2px 8px;
+  padding: 2px 0;
 }
 .row + .row {
   border-top: 1px solid var(--a13n-border-soft);
 }
 .label {
+  height: 28px;
+  padding: 0 6px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-2xs);
   font-weight: 500;
   white-space: nowrap;
 }
 .row code {
+  user-select: text;
   min-width: 0;
   color: var(--a13n-text);
   font-family: inherit;

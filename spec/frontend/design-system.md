@@ -140,6 +140,8 @@ The sidebar is a tinted column without a border: workspace switcher at the top, 
 
 Popovers and menus use the elevated surface, a 10px radius, and the overlay elevation; dialogs use the floating elevation; neither draws a border. Toasts appear at the top center for isolated action results. Inline error notices stay beside the form or collection that owns the failure and offer a recovery action when one exists. Full error pages are reserved for views that cannot function.
 
+Tooltips use a compact dark rounded surface with light text in both themes, with a slightly lighter surface in dark mode. Short labels retain their natural width; longer help text wraps within 320px and the available viewport. Hover opens after 150ms, closes after 80ms, and uses a 100ms opacity transition with reduced-motion support. Resource-reference popovers retain selectable values; each left-hand ID or Key label copies its corresponding value and shows a “Click to copy” tooltip. Their hover path remains connected to the reference marker, with a short closing delay.
+
 ## Scrolling and Long Content
 
 `ScrollArea` and the `a13n-scrollbar` utility share size, thumb, and hover tokens. Textareas bound their own height; dialogs scroll their body under a fixed header and sticky footer; bounded lists scroll inside their surface. Nothing important hides behind a fixed control.
