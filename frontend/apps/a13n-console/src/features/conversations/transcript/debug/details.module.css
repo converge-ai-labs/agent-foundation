@@ -8,7 +8,7 @@
 .details {
   container-type: inline-size;
   display: grid;
-  gap: 22px;
+  gap: 16px;
   min-width: 0;
   padding-bottom: 8px;
 }
@@ -55,7 +55,7 @@
 }
 .list {
   display: grid;
-  gap: 10px;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -137,9 +137,7 @@
 }
 
 .execution {
-  padding: 16px;
-  border-radius: 12px;
-  background: var(--a13n-surface);
+  padding: 0;
 }
 .execution [data-slot="execution-fields"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -270,5 +268,39 @@
   }
   .usage :is(th, td):last-child {
     padding-right: 14px;
+  }
+}
+
+/* Detail groups share the outlined body used by Run options. */
+.details
+  > .section
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  margin-top: 6px;
+  margin-bottom: 2px;
+  padding: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.details > .section > .list {
+  padding: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.list > li + li {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+@container (max-width: 480px) {
+  .item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+  .item .meta {
+    grid-column: 1 / -1;
+    margin-left: 0;
   }
 }

@@ -28,7 +28,7 @@ export function DisclosureSection({
         >
           <CaretRightIcon
             aria-hidden="true"
-            className="size-3.5 text-muted-foreground transition-transform group-aria-expanded/disclosure-trigger:rotate-90"
+            className="size-3.5 text-muted-foreground transition-transform duration-150 ease-out motion-reduce:transition-none group-aria-expanded/disclosure-trigger:rotate-90"
           />
           <span className="min-w-0 flex-1">{title}</span>{" "}
           {summary && (

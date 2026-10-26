@@ -291,7 +291,7 @@ function RunDetails({ selected }: { selected: Run }) {
           </Button>
         )}
       </Section>
-      <DisclosureSection title={<>{t("Raw metadata")}</>}>
+      <DisclosureSection className={styles.section} title={t("Raw metadata")}>
         <JsonView value={run} />
       </DisclosureSection>
     </div>
