@@ -11,7 +11,7 @@ import {
   ModalFrame,
   SegmentedControl,
 } from "a13n-ui";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -55,12 +55,23 @@ function duration(seconds: number, t: TFunction) {
 export function ScheduleEditor({
   schedule,
   onSaved,
+  trigger,
+  open: controlledOpen,
+  onOpenChange,
 }: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: ReactElement | false;
   schedule?: Schedule;
   onSaved?: (schedule: Schedule) => void;
 }) {
   const { t } = useTranslation(),
-    [open, setOpen] = useState(false);
+    [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (value: boolean) => {
+    setLocalOpen(value);
+    onOpenChange?.(value);
+  };
   return (
     <ModalFrame
       open={open}
@@ -75,10 +86,18 @@ export function ScheduleEditor({
           : "Preview the timing, then choose whether to enable the schedule on creation.",
       )}
       trigger={
-        <Button variant={schedule ? "outline" : "default"} type="button">
-          {schedule ? <PencilSimpleIcon size={14} /> : <PlusIcon size={14} />}
-          {t(schedule ? "Edit schedule" : "Create schedule")}
-        </Button>
+        trigger === false
+          ? undefined
+          : (trigger ?? (
+              <Button variant={schedule ? "outline" : "default"} type="button">
+                {schedule ? (
+                  <PencilSimpleIcon size={14} />
+                ) : (
+                  <PlusIcon size={14} />
+                )}
+                {t(schedule ? "Edit schedule" : "Create schedule")}
+              </Button>
+            ))
       }
     >
       {open && (

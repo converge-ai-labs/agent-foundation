@@ -3423,5 +3423,7 @@
   "Conversation setup": "Conversation setup",
   "Agent, environment and memories for the new conversation.": "Agent, environment and memories for the new conversation.",
   "Settings modified": "Settings modified",
-  "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter to send"
+  "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter to send",
+  "More schedule actions": "More schedule actions",
+  "Execution permissions": "Execution permissions"
 }

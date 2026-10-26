@@ -3423,5 +3423,7 @@
   "Conversation setup": "会话设置",
   "Agent, environment and memories for the new conversation.": "为新会话选择智能体、环境和记忆。",
   "Settings modified": "设置已修改",
-  "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter 发送"
+  "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter 发送",
+  "More schedule actions": "更多定时任务操作",
+  "Execution permissions": "执行权限"
 }

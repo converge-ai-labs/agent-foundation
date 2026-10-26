@@ -99,23 +99,25 @@
   gap: 4px;
   min-width: 0;
 }
-/* Text flow, so status and edit follow the last line of a wrapped name. */
+/* Centre status and edit controls on the title; wrap without squeezing them. */
 .detailTitleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   min-width: 0;
 }
 .detailTitleRow h1 {
-  display: inline;
+  min-width: 0;
   margin: 0;
   font-size: var(--a13n-text-2xl);
   font-weight: 600;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
   overflow-wrap: break-word;
-  vertical-align: middle;
 }
 .detailTitleRow > :not(h1) {
-  margin-left: 8px;
-  vertical-align: middle;
+  flex: none;
 }
 .subtitle {
   display: flex;
