@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.capabilities.browser import BrowserError, BrowserHumanControl, BrowserObservation
+from a13n_harness.capabilities.browser.actions import Press
 from a13n_harness.capabilities.browser.cdp import Chromium, Page
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 
@@ -82,7 +83,7 @@ async def test_scopes_overlap_but_same_scope_operations_serialize(scoped_browser
     entered, release = asyncio.Event(), asyncio.Event()
     visited = []
 
-    async def observe(page):
+    async def observe(page, query=None):
         visited.append(page.target)
         if page.target == "one":
             entered.set()
@@ -137,7 +138,7 @@ async def test_pause_drains_blocks_reads_and_resume_invalidates(scoped_browser):
     backend = CdpBrowserBackend(browser, browser.pages["one"])
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def observe(page):
+    async def observe(page, query=None):
         entered.set()
         await release.wait()
         page.revision = "before-takeover"
@@ -162,8 +163,7 @@ async def test_pause_drains_blocks_reads_and_resume_invalidates(scoped_browser):
     assert not waiter.done()
     backend.resume()
     await waiter
-    with pytest.raises(BrowserError, match="Observe"):
-        await backend.act("press", value="Enter")
+    assert "Observe" in await backend.interact(Press(kind="press", key="Enter"))
 
 
 async def test_disconnect_wakes_empty_scope_and_preserves_remote_tabs(scoped_browser):
@@ -204,8 +204,7 @@ async def test_exact_target_reattachment_requires_fresh_observation(scoped_brows
     await backend.attach("one")
     assert backend.targets == {"one"}
     assert backend.page.requires_observation
-    with pytest.raises(BrowserError, match="Observe"):
-        await backend.act("press", value="Enter")
+    assert "Observe" in await backend.interact(Press(kind="press", key="Enter"))
 
 
 async def test_failed_cleanup_retains_membership_for_retry(scoped_browser):
@@ -225,3 +224,22 @@ async def test_failed_cleanup_retains_membership_for_retry(scoped_browser):
     browser.client.send_raw.side_effect = original
     await backend.close()
     assert "one" not in infos
+
+
+@pytest.mark.parametrize("operation", ["navigate", "wait"])
+async def test_readiness_deadline_includes_scope_admission(scoped_browser, operation):
+    import json
+
+    from a13n_harness.capabilities.browser.actions import LoadCondition
+
+    browser, _ = scoped_browser
+    scope = CdpBrowserBackend(browser, browser.pages["one"])
+    async with scope._lock:
+        async with asyncio.timeout(1):
+            result = (
+                await scope.navigate("about:blank", timeout=0.01)
+                if operation == "navigate"
+                else await scope.wait(LoadCondition(kind="load"), timeout=0.01)
+            )
+    assert json.loads(result) == {"verification": "timed_out", "dispatch": "not_dispatched"}
+    browser.client.send_raw.assert_not_awaited()

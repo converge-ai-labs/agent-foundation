@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from . import BrowserAction, BrowserError, BrowserHumanControl, BrowserObservation, BrowserTab, BrowserTabAction
+from . import (
+    BrowserError,
+    BrowserHumanControl,
+    BrowserObservation,
+    BrowserQuery,
+    BrowserScreenshot,
+    BrowserTab,
+    BrowserTabAction,
+)
+from .actions import Action, Clip, Condition
 from .cdp import Chromium, Page
 
 
@@ -169,11 +179,9 @@ class CdpBrowserBackend:
                 for target in remaining:
                     attempted.add(target)
                     try:
-                        await self.browser.send("Target.closeTarget", {"targetId": target})
+                        await self.browser.close_target(target)
                     except BrowserError as exc:
                         errors.append(exc)
-                    else:
-                        self.browser._destroyed({"targetId": target}, None)
             if errors:
                 raise BrowserError("Some scoped tabs could not be closed; the Host may retry cleanup.") from errors[0]
             self.browser.scopes.discard(self)
@@ -194,23 +202,74 @@ class CdpBrowserBackend:
             finally:
                 await browser.close()
 
-    async def observe(self) -> BrowserObservation:
+    async def observe(self, query: BrowserQuery | None = None) -> BrowserObservation:
         async with self._operation():
             page = await self._selected_page()
             async with page.lock:
-                return await self.browser.observe(page)
+                return await self.browser.observe(page, query)
 
-    async def screenshot(self) -> bytes:
+    async def read(
+        self,
+        kind: Literal["text", "links", "tables", "forms"],
+        *,
+        target: str = "",
+        revision: str = "",
+        frame_index: int = 0,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> str:
         async with self._operation():
             page = await self._selected_page()
             async with page.lock:
-                return await self.browser.screenshot(page)
+                return await self.browser.read(
+                    page, kind, target=target, revision=revision, frame_index=frame_index, offset=offset, limit=limit
+                )
 
-    async def act(self, action: BrowserAction, *, target: str = "", value: str = "", revision: str = "") -> str:
+    async def screenshot(self, *, full_page: bool = False, clip: Clip | None = None) -> BrowserScreenshot:
+        from .visual import capture
+
         async with self._operation():
             page = await self._selected_page()
             async with page.lock:
-                return await self.browser.act(page, action, target=target, value=value, revision=revision)
+                return await capture(self.browser, page, full_page=full_page, clip=clip)
+
+    async def navigate(
+        self, url: str = "", *, action: Literal["goto", "back", "forward", "reload"] = "goto", timeout: float = 25
+    ) -> str:
+        loop = asyncio.get_running_loop()
+        end = loop.time() + timeout
+        try:
+            async with asyncio.timeout_at(end) as admission:
+                async with self._operation():
+                    page = await self._selected_page()
+                    async with page.lock:
+                        if page.requires_observation:
+                            raise BrowserError("Observe after handback before continuing.")
+                        # The page operation owns dispatch-aware timeout reporting.
+                        admission.reschedule(None)
+                        return await self.browser.navigate(page, url, action=action, timeout=end - loop.time())
+        except TimeoutError:
+            return '{"verification":"timed_out","dispatch":"not_dispatched"}'
+
+    async def wait(self, condition: Condition, *, revision: str = "", timeout: float = 10) -> str:
+        from .interaction import wait
+
+        try:
+            async with asyncio.timeout(timeout):
+                async with self._operation():
+                    page = await self._selected_page()
+                    async with page.lock:
+                        return await wait(self.browser, page, condition, revision=revision)
+        except TimeoutError:
+            return '{"verification":"timed_out","dispatch":"not_dispatched"}'
+
+    async def interact(self, action: Action, *, revision: str = "") -> str:
+        from .interaction import interact
+
+        async with self._operation():
+            page = await self._selected_page()
+            async with page.lock:
+                return await interact(self.browser, page, action, revision=revision)
 
     async def tabs(self, action: BrowserTabAction, *, target: str = "", url: str = "") -> tuple[BrowserTab, ...]:
         async with self._operation():
@@ -233,15 +292,21 @@ class CdpBrowserBackend:
                     raise BrowserError("Tab creation was interrupted. List tabs after handback; do not replay it.")
                 self._check()
                 if url:
-                    await self.browser.navigate(page, url)
+                    result = json.loads(await self.browser.navigate(page, url))
+                    if result["verification"] != "passed":
+                        raise BrowserError(
+                            "Tab opened, but navigation did not finish: "
+                            + result.get("error", "unknown outcome")
+                            + " List tabs before continuing; do not repeat tab creation.",
+                            dispatch="unknown",
+                        )
                 infos = await self._refresh()
             elif action == "select":
                 self._selected = target
                 await self._selected_page()
                 self.invalidate()
             elif action == "close":
-                await self.browser.send("Target.closeTarget", {"targetId": target})
-                self.browser._destroyed({"targetId": target}, None)
+                await self.browser.close_target(target)
                 infos = await self._refresh()
             return tuple(
                 BrowserTab(
@@ -249,12 +314,6 @@ class CdpBrowserBackend:
                 )
                 for info in infos
             )
-
-    async def scroll(self, *, x: int, y: int, target: str = "", revision: str = "") -> str:
-        async with self._operation():
-            page = await self._selected_page()
-            async with page.lock:
-                return await self.browser.scroll(page, x=x, y=y, target=target, revision=revision)
 
     async def dialog(self, action: Literal["inspect", "accept", "dismiss"], *, text: str = "") -> str:
         async with self._operation():

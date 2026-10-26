@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import secrets
 from collections.abc import Callable
@@ -18,14 +17,15 @@ from a13n_logging import get_logger
 from websockets.exceptions import ConnectionClosed
 
 from a13n_harness.capabilities.browser import (
-    BrowserAction,
     BrowserElement,
     BrowserError,
     BrowserObservation,
+    BrowserQuery,
 )
 
 if TYPE_CHECKING:
     from .scope import CdpBrowserBackend
+    from .visual import View
 
 _LOGGER = get_logger(__name__)
 
@@ -78,15 +78,18 @@ class Page:
     dialog: dict | None = None
     dialog_opened: asyncio.Event = field(default_factory=asyncio.Event)
     epoch: int = 0
+    navigation: int = 0
     deferred_objects: list[tuple[Frame, str]] = field(default_factory=list)
     requires_observation: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     loaded: asyncio.Event = field(default_factory=asyncio.Event)
+    visual: View | None = None
 
     def invalidate(self) -> None:
         self.epoch += 1
         self.revision = ""
         self.elements.clear()
+        self.visual = None
 
 
 class Chromium:
@@ -153,10 +156,12 @@ class Chromium:
                     # send_raw may fail before it starts awaiting this future.
                     future.exception()
             self.client.pending_requests.clear()
-            raise BrowserError("Browser connection closed; observe before retrying an uncertain action.") from exc
+            raise BrowserError(
+                "Browser connection closed; observe before retrying an uncertain action.", dispatch="unknown"
+            ) from exc
         except (TimeoutError, RuntimeError, ConnectionError) as exc:
             raise BrowserError(
-                "Browser operation failed; its outcome may be uncertain. Observe before retrying."
+                "Browser operation failed; its outcome may be uncertain. Observe before retrying.", dispatch="unknown"
             ) from exc
         finally:
             for identity, future in tuple(self.client.pending_requests.items()):
@@ -225,8 +230,13 @@ class Chromium:
             page.invalidate()
 
     def _download_started(self, event: dict, session: str | None) -> None:
-        page = next((page for page in self.pages.values() if event["frameId"] in page.frames), None)
-        if page is None:
+        frame = event["frameId"]
+        page = next((page for page in self.pages.values() if frame in page.frames), None)
+        # A direct attachment popup can download and close before attachment.
+        # Chromium uses its page target ID for the root frame; ownership is
+        # already known from targetCreated's exact opener ancestry.
+        target = page.target if page is not None else frame
+        if page is None and target not in self.owners:
             return
         if len(self.download_records) >= 100:
             completed = next(
@@ -236,7 +246,7 @@ class Chromium:
                 self.download_records.pop(completed)
             else:
                 return
-        self.download_records[event["guid"]] = {**event, "page": page.target, "state": "inProgress"}
+        self.download_records[event["guid"]] = {**event, "page": target, "state": "inProgress"}
         self.download_started(self.download_records[event["guid"]])
 
     def _download_progress(self, event: dict, session: str | None) -> None:
@@ -268,32 +278,75 @@ class Chromium:
         return json.dumps(records, ensure_ascii=False)
 
     def _loaded(self, event: dict, session: str | None) -> None:
-        if page := self._page(session):
+        if (page := self._page(session)) and session == page.session:
             page.loaded.set()
 
-    async def navigate(self, page: Page, url: str, *, wait: bool = True) -> None:
-        page.loaded.clear()
-        page.invalidate()
-        result = await self.send("Page.navigate", {"url": url}, page)
-        if result.get("errorText"):
-            raise BrowserError("Navigation failed: " + result["errorText"])
-        page.url = url
-        if wait and "loaderId" in result:
-            try:
-                async with asyncio.timeout(25):
-                    await page.loaded.wait()
-            except TimeoutError as exc:
-                raise BrowserError("Navigation did not settle. Observe before retrying.") from exc
+    async def navigate(
+        self,
+        page: Page,
+        url: str = "",
+        *,
+        wait: bool = True,
+        action: Literal["goto", "back", "forward", "reload"] = "goto",
+        timeout: float = 25,
+    ) -> str:
+        self.require_document(page)
+        dispatch = "not_dispatched"
+        outcome = {"verification": "unverified"}
+        try:
+            async with asyncio.timeout(timeout):
+                method, params = "Page.navigate", {"url": url}
+                navigation = page.navigation
+                if action in {"back", "forward"}:
+                    history = await self.send("Page.getNavigationHistory", page=page)
+                    index = history["currentIndex"] + (-1 if action == "back" else 1)
+                    if not 0 <= index < len(history["entries"]):
+                        raise BrowserError("No history entry in that direction.")
+                    entry = history["entries"][index]
+                    method, params = "Page.navigateToHistoryEntry", {"entryId": entry["id"]}
+                elif action == "reload":
+                    method, params = "Page.reload", {}
+                page.loaded.clear()
+                page.invalidate()
+                dispatch = "unknown"
+                result = await self.send(method, params, page)
+                dispatch = "dispatched"
+                if result.get("errorText"):
+                    outcome["error"] = "Navigation failed: " + result["errorText"]
+                    outcome["verification"] = "failed"
+                elif wait:
+                    if action in {"back", "forward"}:
+                        # History may restore from BFCache (no DOMContentLoaded event)
+                        # or redirect. Require a main-frame commit, then DOM readiness.
+                        while page.navigation == navigation:
+                            await asyncio.sleep(0.025)
+                        while await self.evaluate(page, "document.readyState") == "loading":
+                            await asyncio.sleep(0.05)
+                    elif action == "reload" or "loaderId" in result:
+                        await page.loaded.wait()
+                    page.url = await self.evaluate(page, "location.href")
+                    outcome["title"] = await self.evaluate(page, "document.title")
+                    outcome["verification"] = "passed"
+                    outcome["load_state"] = "domcontentloaded"
+        except TimeoutError:
+            outcome.update(verification="timed_out", error="Navigation deadline reached. Observe before retrying.")
+        except BrowserError as exc:
+            outcome["error"] = str(exc)
+        return json.dumps({"dispatch": dispatch, **outcome, "url": page.url}, ensure_ascii=False)
 
     def _navigated(self, event: dict, session: str | None) -> None:
         page = self._page(session)
         frame = event["frame"]
         if page is not None:
             page.frames[frame["id"]] = Frame(
-                frame["id"], session or page.session, frame.get("parentId", ""), frame["url"]
+                frame["id"],
+                session or page.session,
+                frame.get("parentId", ""),
+                frame["url"] + frame.get("urlFragment", ""),
             )
             if session == page.session and not frame.get("parentId"):
-                page.url = frame["url"]
+                page.url = frame["url"] + frame.get("urlFragment", "")
+                page.navigation += 1
             page.invalidate()
 
     def _within_document(self, event: dict, session: str | None) -> None:
@@ -302,6 +355,7 @@ class Chromium:
                 not page.frames or not page.frames.get(event.get("frameId", ""), Frame("", "")).parent
             ):
                 page.url = event["url"]
+                page.navigation += 1
             page.invalidate()
 
     async def attach(self, target: str, url: str = "about:blank") -> Page:
@@ -391,11 +445,13 @@ class Chromium:
                 if identity not in page.frame_sessions:
                     attached = await self.send("Target.attachToTarget", {"targetId": identity, "flatten": True})
                     page.frame_sessions[identity] = attached["sessionId"]
-                    child = Frame(identity, attached["sessionId"], parent, info.get("url", ""))
+                    child = Frame(
+                        identity, attached["sessionId"], parent, info.get("url", "") + info.get("urlFragment", "")
+                    )
                     await self.send("Page.enable", page=child)
                     await self.send("Runtime.enable", page=child)
                 session = page.frame_sessions[identity]
-            frame = Frame(identity, session, parent, info.get("url", ""))
+            frame = Frame(identity, session, parent, info.get("url", "") + info.get("urlFragment", ""))
             if parent:
                 page.frame_parents[identity] = parent
             frames[identity] = frame
@@ -433,63 +489,149 @@ class Chromium:
                 "A JavaScript dialog is pending. Use browser_dialog or human takeover before continuing."
             )
 
-    async def observe(self, page: Page) -> BrowserObservation:
-        page.invalidate()
+    async def semantic(self, page: Page, query: BrowserQuery):
+        from .snapshot import Document, documents, rows
+
+        root = self.reference(page, query.target, query.revision)[0] if query.target else None
+        epoch = page.epoch
+        frames = await self.documents(page)
+        if root:
+            frames = tuple(frame for frame in frames if frame.identity == root.frame)
+        snapshots = {}
+        entries = []
+        for frame in frames:
+            if frame.session not in snapshots:
+                snapshots[frame.session] = documents(
+                    await self.send(
+                        "DOMSnapshot.captureSnapshot",
+                        {"computedStyles": ["display", "visibility"]},
+                        frame,
+                    )
+                )
+            ax = await self.send("Accessibility.getFullAXTree", {"frameId": frame.identity}, frame)
+            dom = snapshots[frame.session].get(frame.identity, Document())
+            entries.extend(
+                (frame, row) for row in rows(ax["nodes"], dom, root.backend if root else 0) if row.matches(query)
+            )
+        if page.epoch != epoch:
+            raise BrowserError("Page or frame changed during observation. Observe again.")
+        return frames, entries
+
+    async def observe(self, page: Page, query: BrowserQuery | None = None) -> BrowserObservation:
+        query = query or BrowserQuery()
+        if not 1 <= query.limit <= 1000 or query.offset < 0:
+            raise BrowserError("Observation requires offset >= 0 and limit between 1 and 1000.")
         if page.dialog:
             page.requires_observation = False
             page.revision = secrets.token_hex(12)
             return BrowserObservation(await self.dialog(page, "inspect"), page.revision, ())
+        frames, entries = await self.semantic(page, query)
+        if not page.revision:
+            page.revision = secrets.token_hex(12)
+        previous = {node: key for key, node in page.elements.items()}
+        current = {query.target: page.elements[query.target]} if query.target else {}
+        lines, elements = [f"URL: {page.url}"], []
+        size, emitted, last_frame = len(lines[0]), 0, ""
+        for frame, row in entries[query.offset : query.offset + query.limit]:
+            line = row.text()
+            if size + len(line) > 24000:
+                break
+            if frame.identity != last_frame:
+                lines.append(f"Frame: {frame.url}")
+                last_frame = frame.identity
+            if row.backend:
+                node = Node(row.backend, frame.identity, frame.session)
+                key = previous.get(node) or secrets.token_hex(8)
+                current[key] = node
+                elements.append(BrowserElement(key, row.name[:240], len(lines)))
+            lines.append(line)
+            size += len(line) + 1
+            emitted += 1
+        next_offset = query.offset + emitted
+        lines.append(
+            f"Rows: {emitted} of {len(entries)}; offset={query.offset}."
+            + (
+                f" More: browser_observe with offset={next_offset}, or narrow role/name/text/ref."
+                if next_offset < len(entries)
+                else ""
+            )
+        )
+        if len(frames) >= 32:
+            lines.append("Frame coverage is limited to 32 documents.")
+        page.elements = current
+        page.requires_observation = False
+        return BrowserObservation("\n".join(lines), page.revision, tuple(elements))
+
+    async def read(
+        self,
+        page: Page,
+        kind: Literal["text", "links", "tables", "forms"],
+        *,
+        target: str = "",
+        revision: str = "",
+        frame_index: int = 0,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> str:
+        from .snapshot import READ_DOCUMENT
+
+        self.require_document(page)
+        if kind not in {"text", "links", "tables", "forms"} or offset < 0 or not 1 <= limit <= 500:
+            raise BrowserError("Invalid read kind, offset or limit.")
         epoch = page.epoch
         frames = await self.documents(page)
-        lines, elements = [f"URL: {page.url}"], []
-        count = 0
-        for frame in frames[:32]:
-            if count >= 1200:
-                break
-            nodes = (
-                await self.send(
-                    "Accessibility.getFullAXTree",
-                    {"frameId": frame.identity} if frame.identity != page.target else {},
+        arguments = [{"value": value} for value in (kind, offset, limit)]
+        if target:
+            async with self.node(page, target, revision) as (_, frame, identity):
+                response = await self.send(
+                    "Runtime.callFunctionOn",
+                    {
+                        "objectId": identity,
+                        "functionDeclaration": READ_DOCUMENT,
+                        "arguments": arguments,
+                        "returnByValue": True,
+                    },
                     frame,
                 )
-            )["nodes"]
-            lines.append(f"Frame: {frame.url}")
-            for node in nodes:
-                count += 1
-                if count > 1200:
-                    break
-                if node.get("ignored"):
-                    continue
-                role = node.get("role", {}).get("value", "")
-                name = str(node.get("name", {}).get("value", ""))[:300]
-                lines.append(f"{role}: {name}")
-                if role in {
-                    "button",
-                    "link",
-                    "textbox",
-                    "combobox",
-                    "checkbox",
-                    "switch",
-                    "radio",
-                    "menuitem",
-                    "slider",
-                    "tab",
-                    "region",
-                    "listbox",
-                    "grid",
-                }:
-                    if backend := node.get("backendDOMNodeId"):
-                        key = secrets.token_hex(8)
-                        page.elements[key] = Node(backend, frame.identity, frame.session)
-                        elements.append(BrowserElement(key, name[:240]))
-        if len(frames) >= 32 or count >= 1200:
-            lines.append("Observation is limited to 32 frames and 1200 accessibility nodes.")
+            next_frame = None
+        else:
+            if not 0 <= frame_index < len(frames):
+                raise BrowserError("Frame index is unavailable. Observe again.")
+            frame = frames[frame_index]
+            world = await self.send(
+                "Page.createIsolatedWorld",
+                {
+                    "frameId": frame.identity,
+                    "worldName": "a13n-read",
+                },
+                frame,
+            )
+            response = await self.send(
+                "Runtime.evaluate",
+                {
+                    "expression": f"({READ_DOCUMENT}).call(document,{json.dumps(kind)},{offset},{limit})",
+                    "contextId": world["executionContextId"],
+                    "returnByValue": True,
+                },
+                frame,
+            )
+            next_frame = frame_index + 1 if frame_index + 1 < len(frames) else None
         if page.epoch != epoch:
-            page.invalidate()
-            raise BrowserError("Page or frame changed during observation. Observe again.")
-        page.revision = secrets.token_hex(12)
-        page.requires_observation = False
-        return BrowserObservation("\n".join(lines)[:24000], page.revision, tuple(elements))
+            raise BrowserError("Page changed during read. Read again.")
+        result = response.get("result", {}).get("value")
+        if not isinstance(result, dict):
+            raise BrowserError("The rendered document could not be read. Observe again.")
+        return json.dumps(
+            {
+                "url": frame.url,
+                "frame_index": frame_index,
+                "kind": kind,
+                **result,
+                "next_frame": next_frame,
+                "frame_limit_reached": len(frames) >= 32,
+            },
+            ensure_ascii=False,
+        )
 
     def reference(self, page: Page, target: str, revision: str) -> tuple[Node, Frame]:
         self.require_document(page)
@@ -507,6 +649,7 @@ class Chromium:
         result = await self.send("DOM.resolveNode", {"backendNodeId": node.backend}, frame)
         identity = result["object"]["objectId"]
         try:
+            self.reference(page, target, revision)
             yield node, frame, identity
         finally:
             if page.dialog:
@@ -534,7 +677,7 @@ class Chromium:
             frame,
         )
 
-    async def point(self, page: Page, frame: Frame, x: float, y: float) -> tuple[float, float]:
+    async def point(self, page: Page, frame: Frame, x: float, y: float, *, scroll: bool = False) -> tuple[float, float]:
         seen = set()
         while frame.parent:
             if frame.identity in seen or frame.parent not in page.frames:
@@ -543,11 +686,33 @@ class Chromium:
             parent = page.frames[frame.parent]
             owner = await self.send("DOM.getFrameOwner", {"frameId": frame.identity}, parent)
             backend = owner["backendNodeId"]
-            await self.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend}, parent)
-            await self.settle_rendering(parent)
             resolved = await self.send("DOM.resolveNode", {"backendNodeId": backend}, parent)
             identity = resolved["object"]["objectId"]
             try:
+                if scroll:
+                    settled = await self.send(
+                        "Runtime.callFunctionOn",
+                        {
+                            "objectId": identity,
+                            "awaitPromise": True,
+                            "returnByValue": True,
+                            "functionDeclaration": """async function(){
+                                this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
+                                let previous='',stable=0;
+                                const deadline=performance.now()+500;
+                                while(performance.now()<deadline){
+                                    await new Promise(resolve=>setTimeout(resolve,20));
+                                    const r=this.getBoundingClientRect();
+                                    const current=[r.x,r.y,r.width,r.height].join(',');
+                                    stable=current===previous?stable+1:0;previous=current;
+                                    if(stable>=2)return true;
+                                }return false;
+                            }""",
+                        },
+                        parent,
+                    )
+                    if settled.get("result", {}).get("value") is not True:
+                        raise BrowserError("Iframe geometry did not settle. Observe again; no click sent.")
                 result = await self.send(
                     "Runtime.callFunctionOn",
                     {
@@ -596,9 +761,26 @@ class Chromium:
                 operation.cancel()
             await asyncio.gather(dialog, *(() if retained else (operation,)), return_exceptions=True)
 
-    async def element(self, page: Page, target: str, revision: str, *, fill: str | None = None) -> None:
-        async with self.node(page, target, revision) as (node, frame, identity):
-            await self.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": node.backend}, frame)
+    async def element(
+        self,
+        page: Page,
+        target: str,
+        revision: str,
+        *,
+        fill: str | None = None,
+        hover: bool = False,
+        button: str = "left",
+        count: int = 1,
+    ) -> None:
+        async with self.node(page, target, revision) as (_, frame, identity):
+            await self.send(
+                "Runtime.callFunctionOn",
+                {
+                    "objectId": identity,
+                    "functionDeclaration": "function(){this.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});}",
+                },
+                frame,
+            )
             if fill is None:
                 await self.settle_rendering(frame)
             checked = await self.send(
@@ -606,54 +788,103 @@ class Chromium:
                 {
                     "objectId": identity,
                     "returnByValue": True,
-                    "functionDeclaration": """function(){if(!this.isConnected||this.disabled)return null;
-                const r=this.getBoundingClientRect();if(!r.width||!r.height)return null;
-                const x=r.left+r.width/2,y=r.top+r.height/2;
-                let hit=this.ownerDocument.elementFromPoint(x,y);
-                while(hit?.shadowRoot){const inner=hit.shadowRoot.elementFromPoint(x,y);if(!inner||inner===hit)break;hit=inner;}
-                for(let node=hit;node;node=node.parentElement||node.getRootNode()?.host){if(node===this)return {x,y,type:this.type};}
-                return null;}""",
+                    "functionDeclaration": """function(){if(!this.isConnected||this.matches(':disabled'))return null;
+                for(let n=this;n;n=n.parentElement||n.getRootNode()?.host){if(n.inert)return null;}
+                const doc=this.ownerDocument, win=doc.defaultView;
+                if(getComputedStyle(this).visibility!=='visible')return null;
+                for(const r of this.getClientRects()){
+                    const left=Math.max(0,r.left),right=Math.min(win.innerWidth,r.right);
+                    const top=Math.max(0,r.top),bottom=Math.min(win.innerHeight,r.bottom);
+                    if(right<=left||bottom<=top)continue;
+                    for(const [fx,fy] of [[.5,.5],[.2,.5],[.8,.5],[.5,.2],[.5,.8]]){
+                        const x=left+(right-left)*fx,y=top+(bottom-top)*fy;
+                        let hit=doc.elementFromPoint(x,y);
+                        while(hit?.shadowRoot){const inner=hit.shadowRoot.elementFromPoint(x,y);if(!inner||inner===hit)break;hit=inner;}
+                        for(let n=hit;n;n=n.parentElement||n.getRootNode()?.host){if(n===this)return {x,y,type:this.type};}
+                    }
+                }return null;}""",
                 },
                 frame,
             )
             point = checked.get("result", {}).get("value")
             if not point:
                 raise BrowserError("Element is detached, hidden, disabled or covered. Observe again.")
+            self.reference(page, target, revision)
             if fill is not None:
                 if point.get("type") == "file":
-                    raise BrowserError("Use browser_upload to select files.")
-                await self.send(
+                    raise BrowserError("Use browser_files(action='upload') to select files.")
+                focused = await self.send(
                     "Runtime.callFunctionOn",
                     {
                         "objectId": identity,
+                        "returnByValue": True,
                         "functionDeclaration": """function(){
-                            this.focus();
+                            if(!this.isConnected||this.matches(':disabled')||this.readOnly)return false;
+                            for(let n=this;n;n=n.parentElement||n.getRootNode()?.host){if(n.inert)return false;}
+                            if(!this.isContentEditable && this.tagName!=='TEXTAREA' &&
+                                !(this.tagName==='INPUT'&&['text','search','tel','url','email','password','number'].includes(this.type)))return false;
+                            this.focus({preventScroll:true});
+                            let active=this.ownerDocument.activeElement;
+                            while(active?.shadowRoot?.activeElement)active=active.shadowRoot.activeElement;
+                            if(active!==this)return false;
                             if(this.isContentEditable){
                                 const range=this.ownerDocument.createRange();
                                 range.selectNodeContents(this);
                                 const selection=this.ownerDocument.getSelection();
                                 selection.removeAllRanges();
                                 selection.addRange(range);
-                            }else{this.select?.();}
+                            }else{this.select();}
+                            return true;
                         }""",
                     },
                     frame,
                 )
+                self.reference(page, target, revision)
+                if focused.get("result", {}).get("value") is not True:
+                    raise BrowserError("Fill requires an enabled, writable text field with focus. No text inserted.")
                 await self.send("Input.insertText", {"text": fill}, page)
             else:
-                x, y = await self.point(page, frame, point["x"], point["y"])
-                for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
-                    await self.dispatch_input(
-                        page,
-                        "Input.dispatchMouseEvent",
-                        {
-                            "type": kind,
-                            "x": x,
-                            "y": y,
-                            "button": "left" if kind != "mouseMoved" else "none",
-                            **({"clickCount": 1} if kind != "mouseMoved" else {}),
-                        },
+                x, y = await self.point(page, frame, point["x"], point["y"], scroll=True)
+                self.reference(page, target, revision)
+                await self.dispatch_input(
+                    page, "Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y, "button": "none"}
+                )
+                if hover:
+                    return
+                self.reference(page, target, revision)
+                # Hover handlers can replace or move a node without navigating.
+                checked = await self.send(
+                    "Runtime.callFunctionOn",
+                    {
+                        "objectId": identity,
+                        "returnByValue": True,
+                        "functionDeclaration": """function(x,y){
+                        if(!this.isConnected||this.matches(':disabled'))return false;
+                        for(let n=this;n;n=n.parentElement||n.getRootNode()?.host){if(n.inert)return false;}
+                        let hit=this.ownerDocument.elementFromPoint(x,y);
+                        while(hit?.shadowRoot){const inner=hit.shadowRoot.elementFromPoint(x,y);if(!inner||inner===hit)break;hit=inner;}
+                        for(let n=hit;n;n=n.parentElement||n.getRootNode()?.host){if(n===this)return true;}
+                        return false;
+                     }""",
+                        "arguments": [{"value": point["x"]}, {"value": point["y"]}],
+                    },
+                    frame,
+                )
+                self.reference(page, target, revision)
+                if checked.get("result", {}).get("value") is not True:
+                    raise BrowserError(
+                        "Target moved, detached or became covered after hover. Observe again; no click sent."
                     )
+                current_x, current_y = await self.point(page, frame, point["x"], point["y"])
+                self.reference(page, target, revision)
+                if abs(current_x - x) > 1 or abs(current_y - y) > 1:
+                    raise BrowserError("Iframe moved after hover. Observe again; no click sent.")
+                params = {"x": x, "y": y, "button": button, "clickCount": count}
+                try:
+                    await self.dispatch_input(page, "Input.dispatchMouseEvent", {"type": "mousePressed", **params})
+                finally:
+                    # Finish even when mousedown navigates, opens a modal, fails or is cancelled.
+                    await self.dispatch_input(page, "Input.dispatchMouseEvent", {"type": "mouseReleased", **params})
 
     async def scroll(self, page: Page, *, x: int, y: int, target: str = "", revision: str = "") -> str:
         self.require_document(page)
@@ -719,7 +950,7 @@ class Chromium:
                 {
                     "objectId": identity,
                     "returnByValue": True,
-                    "functionDeclaration": "function(){return this.isConnected&&this.type==='file'&&!this.disabled&&!this.webkitdirectory?{multiple:this.multiple}:null;}",
+                    "functionDeclaration": "function(){return this.isConnected&&this.type==='file'&&!this.matches(':disabled')&&!this.closest('[inert]')&&!this.webkitdirectory?{multiple:this.multiple}:null;}",
                 },
                 frame,
             )
@@ -728,6 +959,7 @@ class Chromium:
                 raise BrowserError(
                     "Select an enabled file input supporting this number of files. Directory uploads require takeover."
                 )
+            self.reference(page, target, revision)
             await self.send("DOM.setFileInputFiles", {"backendNodeId": node.backend, "files": list(paths)}, frame)
         return "Host files selected. Observe the form before submitting."
 
@@ -771,14 +1003,18 @@ class Chromium:
                 "Tab creation did not settle. List tabs before retrying; the tab may already be open."
             ) from exc
 
-    async def screenshot(self, page: Page) -> bytes:
-        self.require_document(page)
-        result = await self.send("Page.captureScreenshot", {"format": "jpeg", "quality": 75}, page)
-        return base64.b64decode(result["data"], validate=True)
+    async def close_target(self, target: str) -> None:
+        await self.send("Target.closeTarget", {"targetId": target})
+        try:
+            async with asyncio.timeout(5):
+                while any(item["targetId"] == target for item in (await self.send("Target.getTargets"))["targetInfos"]):
+                    await asyncio.sleep(0.025)
+        except TimeoutError as exc:
+            raise BrowserError("Tab close has not settled. List tabs before retrying.", dispatch="unknown") from exc
+        self._destroyed({"targetId": target}, None)
 
     async def close_page(self, page: Page) -> None:
-        await self.send("Target.closeTarget", {"targetId": page.target})
-        self._destroyed({"targetId": page.target}, None)
+        await self.close_target(page.target)
 
     async def close_browser(self) -> None:
         """Explicit process-owner operation; disconnecting never calls this."""
@@ -796,103 +1032,6 @@ class Chromium:
                 {"type": "keyUp", "key": key, "code": code, "windowsVirtualKeyCode": number, "modifiers": 0},
                 page,
             )
-
-    async def act(
-        self, page: Page, action: BrowserAction, *, target: str = "", value: str = "", revision: str = ""
-    ) -> str:
-        self.require_document(page)
-        if page.requires_observation:
-            raise BrowserError("Observe after handback before continuing.")
-        if action == "navigate":
-            await self.navigate(page, value)
-        elif action in {"click", "fill"}:
-            await self.element(page, target, revision, fill=value if action == "fill" else None)
-        elif action == "press":
-            codes = {
-                "Enter": 13,
-                "Tab": 9,
-                "Escape": 27,
-                "Backspace": 8,
-                "ArrowDown": 40,
-                "ArrowUp": 38,
-                "Space": 32,
-            }
-            if value not in codes:
-                raise BrowserError("Unsupported browser key.")
-            for kind in ("keyDown", "keyUp"):
-                pending_dialog = await self.dispatch_input(
-                    page,
-                    "Input.dispatchKeyEvent",
-                    {
-                        "type": kind,
-                        "key": " " if value == "Space" else value,
-                        "windowsVirtualKeyCode": codes[value],
-                        "text": "\r" if value == "Enter" and kind == "keyDown" else "",
-                    },
-                )
-                if pending_dialog:
-                    if kind == "keyDown":
-                        self.background(
-                            self.send(
-                                "Input.dispatchKeyEvent",
-                                {"type": "keyUp", "key": value, "windowsVirtualKeyCode": codes[value]},
-                                page,
-                            )
-                        )
-                    break
-        elif action == "wait":
-            try:
-                async with asyncio.timeout(10):
-                    if target:
-                        async with self.node(page, target, revision) as (_, frame, identity):
-                            while True:
-                                self.reference(page, target, revision)
-                                response = await self.send(
-                                    "Runtime.callFunctionOn",
-                                    {
-                                        "objectId": identity,
-                                        "returnByValue": True,
-                                        "functionDeclaration": """function(state){const r=this.getBoundingClientRect();
-                                    const visible=this.isConnected&&r.width>0&&r.height>0&&getComputedStyle(this).visibility!=='hidden';
-                                    return state==='hidden'?!visible:state==='enabled'?visible&&!this.disabled:visible;}""",
-                                        "arguments": [{"value": value}],
-                                    },
-                                    frame,
-                                )
-                                if response.get("result", {}).get("value"):
-                                    break
-                                await asyncio.sleep(0.1)
-                    else:
-                        while True:
-                            found = False
-                            for frame in await self.documents(page):
-                                world = await self.send(
-                                    "Page.createIsolatedWorld",
-                                    {"frameId": frame.identity, "worldName": "a13n-wait"},
-                                    frame,
-                                )
-                                response = await self.send(
-                                    "Runtime.evaluate",
-                                    {
-                                        "expression": f"document.body?.innerText.includes({json.dumps(value)}) || false",
-                                        "returnByValue": True,
-                                        "contextId": world["executionContextId"],
-                                    },
-                                    frame,
-                                )
-                                if response.get("result", {}).get("value"):
-                                    found = True
-                                    break
-                            if found:
-                                break
-                            await asyncio.sleep(0.1)
-            except TimeoutError as exc:
-                raise BrowserError("Timed out waiting for the page condition. Observe before continuing.") from exc
-        if page.dialog:
-            return (
-                f"Browser {action} dispatched. JavaScript dialog pending; use browser_dialog, then observe the outcome."
-            )
-        return f"Browser {action} completed. Observe to verify the result."
 
     async def close(self) -> None:
         """Disconnect this client; tabs and the browser process remain Host-owned."""

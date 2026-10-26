@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_harness.capabilities import BrowserUseCapability
 from a13n_harness.capabilities.browser import BrowserBackend, BrowserElement, BrowserError, BrowserObservation
+from a13n_harness.capabilities.browser.actions import Click, Press, Ref
 from pydantic_ai.exceptions import ModelRetry
 
 pytestmark = pytest.mark.anyio
@@ -13,31 +14,36 @@ async def test_native_tools_keep_compact_refs_local_and_invalidate_after_navigat
     backend.observe.return_value = BrowserObservation(
         "Page", "revision-a", (BrowserElement("opaque-target", "button Continue"),)
     )
-    backend.act.return_value = "done"
+    backend.interact.return_value = "done"
     owner = BrowserUseCapability(backend)
     tools = owner.get_toolset().tools
 
     async def call(name, **kwargs):
-        return await tools[name].function_schema.call(kwargs, None)
+        schema = tools[name].function_schema
+        return await schema.call(schema.validator.validate_python(kwargs), None)
 
     assert "[e1] button Continue" in await call("browser_observe")
-    await call("browser_click", ref="e1")
-    backend.act.assert_awaited_with("click", target="opaque-target", revision="revision-a")
+    await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
+    backend.interact.assert_awaited_with(Click(kind="click", target=Ref(ref="opaque-target")), revision="revision-a")
     await call("browser_navigate", url="https://example.com")
     with pytest.raises(ModelRetry):
-        await call("browser_click", ref="e1")
+        await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
     another = BrowserUseCapability(backend).get_toolset().tools
     with pytest.raises(ModelRetry):
-        await another["browser_click"].function_schema.call({"ref": "e1"}, None)
+        await another["browser_act"].function_schema.call({"action": Click(kind="click", target=Ref(ref="e1"))}, None)
 
 
 async def test_human_takeover_errors_are_tool_results_and_do_not_crash_the_run():
     backend = AsyncMock(spec=BrowserBackend)
     backend.observe.side_effect = BrowserError("Human control. Wait for handback.")
     backend.screenshot.side_effect = BrowserError("Human control. Wait for handback.")
-    backend.act.side_effect = BrowserError("Human control. Wait for handback.")
+    backend.interact.side_effect = BrowserError("Human control. Wait for handback.")
     tools = BrowserUseCapability(backend).get_toolset().tools
-    for name, args in [("browser_observe", {}), ("browser_screenshot", {}), ("browser_press", {"key": "Enter"})]:
+    for name, args in [
+        ("browser_observe", {}),
+        ("browser_screenshot", {}),
+        ("browser_act", {"action": Press(kind="press", key="Enter")}),
+    ]:
         assert "Human control" in await tools[name].function_schema.call(args, None)
 
 
@@ -49,7 +55,7 @@ async def test_browser_tools_compose_in_the_native_harness_model_loop():
     backend.observe.return_value = BrowserObservation(
         "Page", "revision-a", (BrowserElement("continue-target", "button Continue"),)
     )
-    backend.act.return_value = "Clicked. Observe to verify."
+    backend.interact.return_value = "Clicked. Observe to verify."
     calls = 0
 
     async def model(messages, info):
@@ -60,7 +66,13 @@ async def test_browser_tools_compose_in_the_native_harness_model_loop():
             yield {0: DeltaToolCall(name="browser_observe", json_args="{}", tool_call_id="observe")}
             return
         if calls == 2:
-            yield {0: DeltaToolCall(name="browser_click", json_args='{"ref":"e1"}', tool_call_id="click")}
+            yield {
+                0: DeltaToolCall(
+                    name="browser_act",
+                    json_args='{"action":{"kind":"click","target":{"kind":"ref","ref":"e1"}}}',
+                    tool_call_id="click",
+                )
+            }
             return
         yield "Done"
 
@@ -72,7 +84,9 @@ async def test_browser_tools_compose_in_the_native_harness_model_loop():
     )
     result = await executable.run("Click Continue", bindings=RunBindings.embedded(browser_backend=backend))
     assert result.output_or_raise() == "Done"
-    backend.act.assert_awaited_once_with("click", target="continue-target", revision="revision-a")
+    backend.interact.assert_awaited_once_with(
+        Click(kind="click", target=Ref(ref="continue-target")), revision="revision-a"
+    )
 
 
 async def test_restrictive_host_policy_cannot_be_bypassed_by_browser_traffic():
@@ -95,18 +109,20 @@ async def test_human_control_waits_without_polling_or_replaying_the_pending_acti
 
     released = asyncio.Event()
     backend = AsyncMock(spec=BrowserBackend)
-    backend.act.side_effect = BrowserHumanControl("Human control")
+    backend.interact.side_effect = BrowserHumanControl("Human control")
     backend.wait_for_handback.side_effect = released.wait
     backend.observe.return_value = BrowserObservation("Signed in", "new-revision", ())
     tools = BrowserUseCapability(backend).get_toolset().tools
-    pending = asyncio.create_task(tools["browser_press"].function_schema.call({"key": "Enter"}, None))
+    pending = asyncio.create_task(
+        tools["browser_act"].function_schema.call({"action": Press(kind="press", key="Enter")}, None)
+    )
     await asyncio.sleep(0)
     assert not pending.done()
-    backend.act.assert_awaited_once()
+    backend.interact.assert_awaited_once()
     backend.observe.assert_not_awaited()
     released.set()
     assert "fresh browser_observe" in await pending
-    backend.act.assert_awaited_once()  # No silent replay of the pre-takeover action.
+    backend.interact.assert_awaited_once()  # No silent replay of the pre-takeover action.
     assert "Signed in" in await tools["browser_observe"].function_schema.call({}, None)
 
 
@@ -119,14 +135,15 @@ async def test_tab_references_are_run_local_and_switching_clears_element_referen
     tools = BrowserUseCapability(backend).get_toolset().tools
 
     async def call(name, **kwargs):
-        return await tools[name].function_schema.call(kwargs, None)
+        schema = tools[name].function_schema
+        return await schema.call(schema.validator.validate_python(kwargs), None)
 
     await call("browser_observe")
     assert "[t1] selected" in await call("browser_tabs")
     await call("browser_tabs", action="select", tab="t1")
     backend.tabs.assert_awaited_with("select", target="target-a", url="")
     with pytest.raises(ModelRetry):
-        await call("browser_click", ref="e1")
+        await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
     with pytest.raises(ModelRetry):
         await call("browser_tabs", action="close", tab="t2")
 
@@ -141,19 +158,25 @@ async def test_reused_definition_resolves_each_run_backend_and_resets_references
     second = AsyncMock(spec=BrowserBackend)
     for backend, label in ((first, "first"), (second, "second")):
         backend.observe.return_value = BrowserObservation(label, label, (BrowserElement(label, "Continue"),))
-        backend.act.return_value = "done"
+        backend.interact.return_value = "done"
     calls = 0
 
     async def model(messages, info):
         nonlocal calls
         calls += 1
         if calls == 5:
-            second.act.assert_not_awaited()
+            second.interact.assert_not_awaited()
             assert "Unknown browser reference" in str(messages)
         if calls in (1, 5):
             yield {0: DeltaToolCall(name="browser_observe", json_args="{}", tool_call_id=str(calls))}
         elif calls in (2, 4, 6):
-            yield {0: DeltaToolCall(name="browser_click", json_args='{"ref":"e1"}', tool_call_id=str(calls))}
+            yield {
+                0: DeltaToolCall(
+                    name="browser_act",
+                    json_args='{"action":{"kind":"click","target":{"kind":"ref","ref":"e1"}}}',
+                    tool_call_id=str(calls),
+                )
+            }
         else:
             yield "done"
 
@@ -166,8 +189,8 @@ async def test_reused_definition_resolves_each_run_backend_and_resets_references
     assert (
         await executable.run("second", bindings=RunBindings.embedded(browser_backend=second))
     ).output_or_raise() == "done"
-    first.act.assert_awaited_once_with("click", target="first", revision="first")
-    second.act.assert_awaited_once_with("click", target="second", revision="second")
+    first.interact.assert_awaited_once_with(Click(kind="click", target=Ref(ref="first")), revision="first")
+    second.interact.assert_awaited_once_with(Click(kind="click", target=Ref(ref="second")), revision="second")
     assert owner._references == {}
 
 
@@ -210,3 +233,35 @@ async def test_browser_binding_requires_definition_and_definition_requires_bindi
         await executable.run(
             "go", bindings=RunBindings.embedded(capabilities=(BrowserUseCapability(AsyncMock(spec=BrowserBackend)),))
         )
+
+
+async def test_element_and_tab_refs_never_alias_later_targets():
+    from a13n_harness.capabilities.browser import BrowserTab
+
+    backend = AsyncMock(spec=BrowserBackend)
+    backend.observe.side_effect = [
+        BrowserObservation("First", "r1", (BrowserElement("first", "Submit"),)),
+        BrowserObservation("Second", "r2", (BrowserElement("second", "Delete"),)),
+    ]
+    backend.tabs.side_effect = [
+        (BrowserTab("a", "A", "about:blank", True), BrowserTab("b", "B", "about:blank", False)),
+        (BrowserTab("b", "B", "about:blank", True), BrowserTab("c", "C", "about:blank", False)),
+    ]
+    tools = BrowserUseCapability(backend).get_toolset().tools
+
+    async def call(name, **kwargs):
+        schema = tools[name].function_schema
+        return await schema.call(schema.validator.validate_python(kwargs), None)
+
+    assert "[e1]" in await call("browser_observe")
+    assert "[e2]" in await call("browser_observe")
+    with pytest.raises(ModelRetry):
+        await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e1"}})
+    await call("browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": "e2"}})
+    backend.interact.assert_awaited_once_with(Click(kind="click", target=Ref(ref="second")), revision="r2")
+    assert "[t1]" in await call("browser_tabs")
+    listing = await call("browser_tabs")
+    assert "[t1]" not in listing
+    assert "[t2] selected" in listing and "[t3]" in listing
+    with pytest.raises(ModelRetry):
+        await call("browser_tabs", action="close", tab="t1")

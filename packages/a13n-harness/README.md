@@ -53,7 +53,19 @@ For a long-lived Host, connect once with `Chromium.connect(cdp_url)` from `a13n_
 
 Before human input, await `scope.pause()` for every scope on the controlled browser and prevent new scope admission. After revoking viewer input, call `scope.resume()`. Pending tools return a fresh-observation instruction without replaying their original action. `scope.retire()` revokes access; `await scope.close()` also closes owned tabs; `await runtime.close()` disconnects without destroying Chromium. Run completion performs none of these Host lifecycle operations.
 
-Browser tools include iframe-aware observation and interaction, tabs, scroll, JavaScript dialogs, Host file upload, tracked downloads, and screenshots. Browser access is outside the Agent Environment's sandbox and cannot enforce restrictive `allowed_hosts`. The Host must authorize the captured Run rather than relying on its Thread's defaults. See the [browser contract](../../spec/a13n-harness/23-browser-use.md).
+The model receives nine tools: `browser_observe`, `browser_read`, `browser_navigate`, `browser_act`, `browser_wait`, `browser_tabs`, `browser_files`, `browser_dialog`, and `browser_screenshot`.
+
+A typical task navigates, observes a focused region, acts on an `eN` reference or a unique semantic locator, and reads or waits to verify the outcome. `browser_act` takes one action at a time, including fill/type, click/hover, key chords, check, native select, and scroll. For example, its arguments can be:
+
+```json
+{"action": {"kind": "fill", "target": {"kind": "locator", "role": "textbox", "name": "Email"}, "text": "ada@example.com"}}
+```
+
+Observation filters and pagination keep large pages manageable; reading text, links, tables, or forms preserves the existing refs. Both support same-process and out-of-process frames. State values distinguish disabled, readonly, checked, selected, and expanded controls; password values are redacted. Inspect `dispatch` separately from `verification`: input delivery alone does not establish that a form submitted or a purchase succeeded.
+
+Screenshots return JPEG content plus an `sN` identifier and CSS dimensions. For visual-only controls, click or hover accepts normalized coordinates in the latest viewport/clip screenshot; the reference is consumed once and checked for stale page/viewport state. Prefer semantic targets for moving content. Full-page screenshots are for observation. Use `browser_files` for Host-path uploads and scoped download status, and `browser_dialog` for JavaScript prompts.
+
+Browser access is outside the Agent Environment's sandbox and cannot enforce restrictive `allowed_hosts`. The Host must authorize the captured Run rather than relying on its Thread's defaults. See the [browser contract](../../spec/a13n-harness/23-browser-use.md).
 
 Run the opt-in native fixtures with an already installed Chromium executable:
 

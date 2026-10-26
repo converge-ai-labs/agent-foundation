@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 from a13n_harness.capabilities import BrowserUseCapability
+from a13n_harness.capabilities.browser.actions import Fill, Press, Ref
 from a13n_harness.capabilities.browser.cdp import Chromium
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 
@@ -116,27 +117,30 @@ async def test_url_only_capability_works_and_disconnect_preserves_existing_brows
             target = backend.page.target
             tools = BrowserUseCapability(backend).get_toolset().tools
 
-            async def call(name, **kwargs):
-                return await tools[name].function_schema.call(kwargs, None)
+            async def call(name, /, **kwargs):
+                schema = tools[name].function_schema
+                return await schema.call(schema.validator.validate_python(kwargs), None)
 
             url = f"http://127.0.0.1:{server.sockets[0].getsockname()[1]}"
-            assert "completed" in await call("browser_navigate", url=url)
+            assert '"verification": "passed"' in await call("browser_navigate", url=url)
             assert "Harness CDP fixture" in await call("browser_observe")
-            observation = await backend.observe()
-            field = next(
-                index for index, element in enumerate(observation.elements, 1) if element.description == "Message"
+            observation = await call("browser_observe", role="textbox", name="Message")
+            field = next(line.strip().split("]")[0][1:] for line in observation.splitlines() if "[e" in line)
+            assert '"dispatch": "dispatched"' in await call(
+                "browser_act", action={"kind": "fill", "target": {"kind": "ref", "ref": field}, "text": "Harness only"}
             )
-            # Refresh the model-facing compact references after the direct observation.
-            await call("browser_observe")
-            assert "completed" in await call("browser_fill", ref=f"e{field}", text="Harness only")
             assert (
                 await backend.browser.evaluate(backend.page, "document.querySelector('input').value") == "Harness only"
             )
-            observation = await call("browser_observe")
-            submit = next(line.split("]")[0][1:] for line in observation.splitlines() if line.endswith("] Submit"))
-            assert "completed" in await call("browser_click", ref=submit)
-            assert "completed" in await call("browser_wait", text="clicked")
-            assert (await backend.screenshot()).startswith(b"\xff\xd8")
+            observation = await call("browser_observe", role="button", name="Submit")
+            submit = next(line.strip().split("]")[0][1:] for line in observation.splitlines() if "[e" in line)
+            assert '"dispatch": "dispatched"' in await call(
+                "browser_act", action={"kind": "click", "target": {"kind": "ref", "ref": submit}}
+            )
+            assert '"verification": "passed"' in await call(
+                "browser_wait", condition={"kind": "text", "text": "clicked"}
+            )
+            assert (await backend.screenshot()).data.startswith(b"\xff\xd8")
         targets = await existing.send("Target.getTargets")
         identities = {info["targetId"] for info in targets["targetInfos"]}
         assert target not in identities and other.target in identities
@@ -162,11 +166,13 @@ async def test_url_only_capability_works_and_disconnect_preserves_existing_brows
 async def test_fill_replaces_existing_text(native_browser, markup, value_expression):
     endpoint, _ = native_browser
     async with CdpBrowserBackend.connect(endpoint) as backend:
-        await backend.act("navigate", value="data:text/html," + markup)
+        await backend.navigate("data:text/html," + markup)
         for text in ("replacement", ""):
             observation = await backend.observe()
             element = next(item for item in observation.elements if item.description == "Editor")
-            await backend.act("fill", target=element.target, value=text, revision=observation.revision)
+            await backend.interact(
+                Fill(kind="fill", target=Ref(ref=element.target), text=text), revision=observation.revision
+            )
             assert await backend.browser.evaluate(backend.page, value_expression) == text
 
 
@@ -232,8 +238,7 @@ async def test_scopes_survive_runs_reconcile_popups_and_reattach(native_browser)
         replacement = await Chromium.connect(endpoint)
         restored = CdpBrowserBackend(replacement)
         await restored.attach(left_target)
-        with pytest.raises(BrowserError, match="Observe"):
-            await restored.act("press", value="Enter")
+        assert "Observe" in await restored.interact(Press(kind="press", key="Enter"))
         assert "Left action" in (await restored.observe()).text
         await restored.close()
         ids = {item["targetId"] for item in (await replacement.send("Target.getTargets"))["targetInfos"]}
