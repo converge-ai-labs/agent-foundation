@@ -2,7 +2,8 @@
   /* Same column as the composer (see conversation.module.css). */
   width: min(760px, 100% - 84px);
   margin: 4px auto 0;
-  padding-inline: 8px;
+  /* Metric text starts on the composer content line (13px inset + 8px). */
+  padding-inline: 13px;
   flex-shrink: 0;
   min-width: 0;
 }
@@ -16,7 +17,7 @@
   font-variant-numeric: tabular-nums;
 }
 .metric {
-  padding: 5px 6px;
+  padding: 5px 8px;
   min-height: 28px;
   border: 0;
   border-radius: 6px;

@@ -263,14 +263,18 @@ function WorkbenchContent({
       </nav>
       <div className={styles.sidebarFooter}>
         <div className={styles.footerRow}>
-          <Button variant="ghost" size="sm" onClick={openPeople}>
+          <button
+            type="button"
+            className={styles.peopleButton}
+            onClick={openPeople}
+          >
             <Users />
             <span>
               {disconnected
                 ? "People"
                 : `${live.presence?.participants.length ?? 0} online`}
             </span>
-          </Button>
+          </button>
           <span className={styles.footerIcons}>
             {themeToggle}
             <Tooltip>

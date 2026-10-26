@@ -309,6 +309,7 @@
   white-space: nowrap;
 }
 .threadRow {
+  position: relative;
   display: flex;
   align-items: flex-start;
   min-height: 32px;
@@ -377,6 +378,25 @@
   .threadActions,
   .groupActions {
     opacity: 0;
+  }
+  /* With a fine pointer the row menu floats over the title end only while
+     the row is hovered or focused, so idle titles use the full row width. */
+  .threadRow:not(:has(.threadDisclosure)) {
+    padding-inline-end: 0;
+  }
+  .threadActions {
+    position: absolute;
+    top: 0;
+    inset-inline-end: 0;
+  }
+  .threadRow:has(.threadDisclosure) .threadActions {
+    inset-inline-end: 28px;
+  }
+  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
+    padding-inline-end: 36px;
+  }
+  .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadStar {
+    display: none;
   }
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
@@ -884,7 +904,9 @@
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
   border-radius: 18px;
-  padding: 10px 10px 8px 14px;
+  /* 1px border + 12px padding = 13px content inset, shared with the work
+     strip and metrics row so their controls start on the same line. */
+  padding: 10px 12px 8px;
   background: var(--a13n-canvas);
   box-shadow:
     0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent),
@@ -908,7 +930,7 @@
   }
   .composer {
     border-radius: 16px;
-    padding: 8px 8px 6px 12px;
+    padding: 8px 12px 6px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1048,7 +1070,7 @@
 @container composer (max-width: 480px) {
   .composerBody {
     --composer-font-size: 16px;
-    --composer-content-height: 56px;
+    --composer-content-height: 44px;
   }
   .composerHeader {
     align-items: center;

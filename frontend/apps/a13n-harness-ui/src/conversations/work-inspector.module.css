@@ -7,7 +7,8 @@
   /* Same column as the composer (see conversation.module.css). */
   width: min(760px, 100% - 84px);
   margin: 0 auto 6px;
-  padding-inline: 4px;
+  /* Controls start on the composer content inset (border + padding). */
+  padding-inline: 13px;
   color: var(--a13n-secondary);
   min-width: 0;
 }

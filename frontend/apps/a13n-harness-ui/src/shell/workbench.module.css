@@ -138,13 +138,19 @@
 }
 .sidebarFooter {
   margin-top: auto;
-  padding: 12px 8px 0;
+  padding-top: 12px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
+/* The footer shares the navigation icon and label columns. */
 .sidebarFooter small {
   display: block;
-  padding: 2px 8px 0;
+  padding: 0 8px 0 34px;
+  line-height: 16px;
+}
+.peopleButton {
+  composes: row from "./navigation-row.module.css";
+  flex: 0 1 auto;
 }
 .footerRow {
   display: flex;

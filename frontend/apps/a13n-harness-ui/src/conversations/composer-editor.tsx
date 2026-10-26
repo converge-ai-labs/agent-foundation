@@ -188,17 +188,17 @@ export function ComposerEditor({
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
             fontSize: "var(--composer-font-size, 14px)",
-            minHeight: "var(--composer-content-height, 64px)",
+            minHeight: "var(--composer-content-height, 48px)",
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "var(--composer-content-height, 64px)",
-            padding: "8px 2px",
+            minHeight: "var(--composer-content-height, 48px)",
+            padding: "8px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
             maxHeight:
-              "max(64px, min(280px, calc(var(--visible-height, 100dvh) * 0.35), calc(var(--visible-height, 100dvh) - 300px)))",
+              "max(48px, min(280px, calc(var(--visible-height, 100dvh) * 0.35), calc(var(--visible-height, 100dvh) - 300px)))",
             overflow: "auto",
             fontFamily: "inherit",
           },
