@@ -6,6 +6,10 @@ import {
   Button,
   Checkbox,
   ModalFrame,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
   FormField,
   Input,
   Label,
@@ -120,4 +124,24 @@ it("exposes a named search field and preserves native editing and description se
   expect(input.getAttribute("aria-describedby")).toBe("search-help");
   await user.type(input, "research");
   expect(ref.current?.value).toBe("research");
+});
+
+it("keeps familiar menu triggers accessible without a redundant tooltip", async () => {
+  const user = userEvent.setup();
+  render(
+    <Menu>
+      <MenuTrigger
+        render={<Button size="icon-sm" aria-label="Agent actions" />}
+      >
+        ⋮
+      </MenuTrigger>
+      <MenuPopup>
+        <MenuItem>Edit</MenuItem>
+      </MenuPopup>
+    </Menu>,
+  );
+  const trigger = screen.getByRole("button", { name: "Agent actions" });
+  expect(trigger.hasAttribute("data-base-ui-tooltip-trigger")).toBe(false);
+  await user.click(trigger);
+  expect(await screen.findByRole("menuitem", { name: "Edit" })).toBeTruthy();
 });

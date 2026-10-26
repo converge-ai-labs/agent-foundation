@@ -53,6 +53,8 @@ export interface ButtonProps extends useRender.ComponentProps<"button"> {
   variant?: VariantProps<typeof buttonVariants>["variant"];
   size?: VariantProps<typeof buttonVariants>["size"];
   loading?: boolean;
+  /** Disable redundant hints on familiar controls while retaining their accessible name. */
+  tooltip?: boolean;
 }
 
 export function Button({
@@ -62,6 +64,7 @@ export function Button({
   render,
   children,
   loading = false,
+  tooltip = true,
   disabled: disabledProp,
   ...props
 }: ButtonProps): React.ReactElement {
@@ -96,9 +99,15 @@ export function Button({
     props: mergeProps<"button">(defaultProps, props),
     render,
   });
-  // An icon-only button shows its accessible name as a tooltip.
+  // Menu triggers already communicate their action through familiar menu affordances.
   const label = props["aria-label"];
-  if (!size?.startsWith("icon") || !label) return element;
+  if (
+    !tooltip ||
+    props["aria-haspopup"] === "menu" ||
+    !size?.startsWith("icon") ||
+    !label
+  )
+    return element;
   return (
     <Tooltip
       onOpenChange={(_open, details) => {

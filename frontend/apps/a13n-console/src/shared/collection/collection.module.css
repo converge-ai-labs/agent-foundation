@@ -34,7 +34,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 10px 12px;
-    padding: 12px 0;
+    padding: 16px;
   }
   :where(.table) > tbody > tr > td {
     display: flex;
@@ -49,6 +49,10 @@
     height: auto;
     min-width: 0;
     padding: 0;
+  }
+  .frame .table > tbody > tr > td > div {
+    max-width: 100%;
+    min-width: 0;
   }
   /* Leaves room for the 44px menu cell and the gap on the first line. */
   :where(.table) > tbody > tr > td:first-child {
@@ -159,8 +163,7 @@ tr:focus-within .rowMenu,
 }
 
 /* Collection footer ------------------------------------------------------ */
-/* The footer measures itself like the table frame above it, so the count
-   follows the rows: inset with table cells, flush with stacked rows. */
+/* Keep the count and pagination aligned with the row content at every width. */
 .footer {
   container-type: inline-size;
   display: flex;
@@ -180,14 +183,6 @@ tr:focus-within .rowMenu,
   justify-content: flex-end;
   gap: 8px;
   padding-right: 16px;
-}
-@container (width < 560px) {
-  .footer p {
-    padding-left: 0;
-  }
-  .pagination {
-    padding-right: 0;
-  }
 }
 
 /* Surface rows ----------------------------------------------------------- */
