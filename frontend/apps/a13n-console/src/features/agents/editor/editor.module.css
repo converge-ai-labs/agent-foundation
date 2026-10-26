@@ -70,7 +70,7 @@
   min-width: 0;
 }
 .modelParameter > label {
-  font-weight: 400;
+  font-weight: 500;
 }
 @media (width < 480px) {
   .modelParameter {
@@ -188,7 +188,7 @@
 }
 .advancedBody label {
   font-size: var(--a13n-text-sm);
-  font-weight: 400;
+  font-weight: 500;
   line-height: 20px;
 }
 .advancedBody h3 {
@@ -258,7 +258,7 @@
   line-height: 18px;
 }
 .advancedBody > section > header h3 {
-  font-weight: 600;
+  font-weight: 500;
 }
 .advancedBody [data-slot="field-description"] {
   font-size: var(--a13n-text-xs);

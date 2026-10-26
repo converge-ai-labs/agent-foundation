@@ -10,7 +10,8 @@ import { Confirm, ConflictNotice } from "../../../shared/dialogs";
 import { ErrorNotice } from "../../../shared/feedback";
 import { CopyableId } from "../../../shared/identity";
 import { TextAreaField } from "../../../shared/forms";
-import { SaveBar, Section } from "../../../shared/page";
+import { FormSection } from "../../../shared/forms";
+import { SaveBar } from "../../../shared/page";
 import {
   invalidateMemories,
   isStale,
@@ -94,14 +95,14 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
   const dirty = !!edit && !sameDraft(draft, memoryDraft(memory));
   return (
     <form
-      className="grid gap-9"
+      className="grid gap-6"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
       }}
     >
-      <fieldset disabled={save.isPending} className="fieldset-reset grid gap-9">
-        <Section title={t("General")}>
+      <fieldset disabled={save.isPending} className="fieldset-reset grid gap-6">
+        <FormSection title={t("General")}>
           <div className="grid gap-4">
             <FormField label={t("Name")} readOnly={readOnly}>
               <Input
@@ -119,16 +120,16 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
               onChange={(description) => change({ description })}
             />
           </div>
-        </Section>
-        <Section
+        </FormSection>
+        <FormSection
           title={t("Storage")}
           description={t(
             "Where the memory keeps its content. It never changes.",
           )}
         >
           <MemoryStorage memory={memory} />
-        </Section>
-        <Section
+        </FormSection>
+        <FormSection
           title={t("Memory instructions")}
           description={t(
             "Tell agents how to use this memory. Changes apply to future runs.",
@@ -142,9 +143,9 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
             onChange={(guide) => change({ guide })}
             inherited={memory.inherited_guide}
           />
-        </Section>
+        </FormSection>
         {file && (
-          <Section
+          <FormSection
             title={t("Always loaded files")}
             description={t(
               "Their full content leads the memory's context in every run. Only people who may configure the memory choose them, so an agent cannot pin its own writes.",
@@ -156,7 +157,7 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
               files={files.data?.map((entry) => entry.path)}
               onChange={(alwaysLoad) => change({ alwaysLoad })}
             />
-          </Section>
+          </FormSection>
         )}
       </fieldset>
       {isStale(save.error) ? (
@@ -176,7 +177,7 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
       )}
       <ErrorNotice error={reload.error} />
       {can("write") && (
-        <Section
+        <FormSection
           title={t("Delete memory")}
           description={t(
             file
@@ -221,7 +222,7 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
               }}
             />
           </div>
-        </Section>
+        </FormSection>
       )}
       {dirty && !readOnly && (
         <SaveBar

@@ -48,12 +48,12 @@ State that the user has to read.
 
 Fields and form chrome that several features share.
 
-- `FormActions` — the Cancel and submit pair at the end of a form. `variant="outline"` keeps a secondary submit row from competing with the screen's one filled primary; `leading` carries an action that belongs to the form but not to its outcome, such as Check connection; `dismiss` turns the footer into the single Close a read-only dialog offers.
+- `FormActions` — the Cancel and submit pair at the end of a form. `variant="outline"` keeps a secondary submit row from competing with the screen's one filled primary; `leading` carries a control at the left, such as Enabled; `beforeCancel` holds a secondary action immediately before Cancel, such as provider deletion; `dismiss` turns the footer into the single Close a read-only dialog offers.
 - `TextAreaField` — long-form text on the soft surface textarea; `code` switches to the monospace family, `maxLength` and `disabled` pass through, and read-only mode renders a `ReadOnlyField` whose content retains the soft surface.
 - `JsonView`, `CodeBlock` — bounded, scrollable code surfaces.
 - `SchemaFields`, `withSchemaValues` — fields generated from a JSON schema. A field is named by the property that holds it; a referenced schema's type name is never used as a label.
 - `HeaderFields`, `serializeHeaders` — extra HTTP header rows.
-- `FormSection` — hairline-separated groups inside a single form, with an optional `actions` slot beside the group heading. `divider={false}` separates a group by whitespace alone.
+- `FormSection` — configuration groups with a heading outside one outlined field body and an optional `actions` slot beside the heading. Peer groups are separated by whitespace. Single-value fields use aligned label/control columns; `formSectionStyles.fieldRows` reuses that layout in an unbordered nested editor. Repeated column editors can retain their table-like layout with `data-field-layout="stacked"`.
 - `DateTimeField`, `ImagePicker`, `FileUpload` — the non-text controls.
 - `ProviderEnabled`, `ProviderKeyLink` — provider editors. The enable switch is a settings row, so it sits in the editor's group beside the credential row.
 - `useSuggestedName` — a name that follows selections until the user edits it.

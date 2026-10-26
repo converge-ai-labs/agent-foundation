@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { EnvironmentConnectionDelete } from "./environment-connection-delete";
+import { ProviderDelete } from "./provider-delete";
 import { ProviderForm } from "./kind-providers";
 
 const state = vi.hoisted(() => ({
@@ -92,12 +93,12 @@ it("blocks deletion for disabled templates and historical environments", async (
       onDeleted={vi.fn()}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Delete connection" }));
+  await user.click(screen.getByRole("button", { name: "Delete" }));
   const dialog = await screen.findByRole("dialog");
   await within(dialog).findByText("Old template");
   expect(within(dialog).getByText("Old desktop")).toBeTruthy();
   const button = within(dialog).getByRole<HTMLButtonElement>("button", {
-    name: "Delete connection",
+    name: "Delete provider",
   });
   expect(button.disabled).toBe(true);
   await user.click(button);
@@ -118,10 +119,10 @@ it("deletes an unused connection with its ETag and refreshes the picker", async 
     />,
   );
   const invalidate = vi.spyOn(cache, "invalidateQueries");
-  await user.click(screen.getByRole("button", { name: "Delete connection" }));
+  await user.click(screen.getByRole("button", { name: "Delete" }));
   const dialog = await screen.findByRole("dialog");
   const button = within(dialog).getByRole<HTMLButtonElement>("button", {
-    name: "Delete connection",
+    name: "Delete provider",
   });
   await waitFor(() => expect(button.disabled).toBe(false));
   await user.click(button);
@@ -152,10 +153,10 @@ it("refreshes references when a new reference races with confirmation", async ()
       onDeleted={deleted}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Delete connection" }));
+  await user.click(screen.getByRole("button", { name: "Delete" }));
   const dialog = await screen.findByRole("dialog");
   const button = within(dialog).getByRole<HTMLButtonElement>("button", {
-    name: "Delete connection",
+    name: "Delete provider",
   });
   await waitFor(() => expect(button.disabled).toBe(false));
   await user.click(button);
@@ -251,3 +252,40 @@ it("preserves the saved credential when editing an authenticated connection", as
   );
   await waitFor(() => expect(close).toHaveBeenCalledOnce());
 });
+
+it.each(["model", "web", "connector", "memory"] as const)(
+  "confirms %s provider deletion before sending its version",
+  async (kind) => {
+    state.DELETE.mockResolvedValue({
+      response: new Response(null, { status: 204 }),
+    });
+    const user = userEvent.setup();
+    const deleted = vi.fn();
+    mount(
+      <ProviderDelete
+        kind={kind}
+        provider={provider}
+        etag='"eprov_test:2"'
+        onDeleted={deleted}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    let dialog = await screen.findByRole("dialog");
+    expect(state.DELETE).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(state.DELETE).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    dialog = await screen.findByRole("dialog");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete provider" }),
+    );
+    await waitFor(() => expect(deleted).toHaveBeenCalledOnce());
+    expect(state.DELETE).toHaveBeenCalledWith(
+      `/api/v1/${kind}-providers/{provider_id}`,
+      {
+        params: { path: { provider_id: provider.id } },
+        headers: { "If-Match": '\"eprov_test:2\"' },
+      },
+    );
+  },
+);

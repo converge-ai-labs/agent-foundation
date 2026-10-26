@@ -134,7 +134,7 @@
 .section h3 {
   margin: 0;
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
 }
 .stats {
   display: grid;
@@ -170,7 +170,7 @@
 }
 .stats strong {
   font-size: var(--a13n-text-xl);
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--a13n-tracking-heading);
   line-height: 1.2;

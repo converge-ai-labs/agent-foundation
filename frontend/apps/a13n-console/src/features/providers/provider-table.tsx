@@ -114,7 +114,7 @@ export function ProviderTable<T extends { id: string }>({
       {notice}
       <ResourceTable
         items={items}
-        caption={t(category === "environments" ? "Connections" : "Providers")}
+        caption={t("Providers")}
         onRowActivate={onRowActivate}
         canActivateRow={canActivateRow}
         rowMenu={
@@ -135,7 +135,7 @@ export function ProviderTable<T extends { id: string }>({
         }
         columns={[
           {
-            label: t(category === "environments" ? "Connection" : "Provider"),
+            label: t("Provider"),
             tone: "primary",
             render: (item) => {
               const value = row(item);
@@ -165,12 +165,8 @@ export function ProviderTable<T extends { id: string }>({
       <CollectionFooter
         count={
           page?.previous || nextCursor
-            ? category === "environments"
-              ? t("{{count}} connections on this page", { count: items.length })
-              : t("{{count}} providers on this page", { count: items.length })
-            : category === "environments"
-              ? t("{{count}} connections", { count: items.length })
-              : t("{{count}} providers", { count: items.length })
+            ? t("{{count}} providers on this page", { count: items.length })
+            : t("{{count}} providers", { count: items.length })
         }
       >
         {page && <Pagination page={page} next={nextCursor} />}

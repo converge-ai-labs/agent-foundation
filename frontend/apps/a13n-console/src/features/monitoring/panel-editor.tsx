@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import { FormActions, FormSection } from "../../shared/forms";
 import {
   monitoringApi,
   type Panel,
@@ -121,51 +121,55 @@ export function PanelEditor({
           }
         }}
       >
-        <FormField label={t("Title")}>
-          <Input
-            required
-            maxLength={128}
-            value={draft.title}
-            onChange={(e) => update({ title: e.target.value })}
-          />
-        </FormField>
-        <div className={styles.row}>
-          <ChoiceField
-            label={t("Visualization")}
-            value={draft.visualization ?? "timeseries"}
-            options={[
-              { value: "timeseries", label: t("Time series") },
-              { value: "stat", label: t("Statistic") },
-            ]}
-            onValueChange={(value) =>
-              update({
-                visualization: value === "stat" ? "stat" : "timeseries",
-              })
-            }
-          />
-          <ChoiceField
-            label={t("Unit")}
-            value={draft.unit ?? "auto"}
-            options={unitOptions(t)}
-            onValueChange={(value) => update({ unit: value as Panel["unit"] })}
-          />
-          <ChoiceField
-            label={t("Legend")}
-            value={draft.legend === false ? "off" : "on"}
-            options={[
-              { value: "on", label: t("On") },
-              { value: "off", label: t("Off") },
-            ]}
-            onValueChange={(value) => update({ legend: value === "on" })}
-          />
-        </div>
-        <FormField label={t("Description (optional)")}>
-          <Input
-            maxLength={2048}
-            value={draft.description ?? ""}
-            onChange={(e) => update({ description: e.target.value })}
-          />
-        </FormField>
+        <FormSection title={t("Appearance")}>
+          <FormField label={t("Title")}>
+            <Input
+              required
+              maxLength={128}
+              value={draft.title}
+              onChange={(e) => update({ title: e.target.value })}
+            />
+          </FormField>
+          <div className={styles.row}>
+            <ChoiceField
+              label={t("Visualization")}
+              value={draft.visualization ?? "timeseries"}
+              options={[
+                { value: "timeseries", label: t("Time series") },
+                { value: "stat", label: t("Statistic") },
+              ]}
+              onValueChange={(value) =>
+                update({
+                  visualization: value === "stat" ? "stat" : "timeseries",
+                })
+              }
+            />
+            <ChoiceField
+              label={t("Unit")}
+              value={draft.unit ?? "auto"}
+              options={unitOptions(t)}
+              onValueChange={(value) =>
+                update({ unit: value as Panel["unit"] })
+              }
+            />
+            <ChoiceField
+              label={t("Legend")}
+              value={draft.legend === false ? "off" : "on"}
+              options={[
+                { value: "on", label: t("On") },
+                { value: "off", label: t("Off") },
+              ]}
+              onValueChange={(value) => update({ legend: value === "on" })}
+            />
+          </div>
+          <FormField label={t("Description (optional)")}>
+            <Input
+              maxLength={2048}
+              value={draft.description ?? ""}
+              onChange={(e) => update({ description: e.target.value })}
+            />
+          </FormField>
+        </FormSection>
         <DisclosureSection title={t("Panel position and size")}>
           <div className={styles.row}>
             {(["x", "y", "w", "h"] as const).map((key) => (

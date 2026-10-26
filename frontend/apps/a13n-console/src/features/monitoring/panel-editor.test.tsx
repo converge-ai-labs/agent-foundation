@@ -118,6 +118,7 @@ it("retains the remaining PromQL editor when an earlier query is removed", async
   expect(screen.getByLabelText("PromQL expression A")).toBe(second);
   expect(second.textContent).toBe("rate(foo[5m])");
   await user.click(screen.getByRole("button", { name: "Apply panel" }));
+  await waitFor(() => expect(apply).toHaveBeenCalledOnce());
   expect(apply.mock.calls[0][0].queries).toEqual([
     { kind: "promql", source_id: "mds_test", expression: "rate(foo[5m])" },
   ]);

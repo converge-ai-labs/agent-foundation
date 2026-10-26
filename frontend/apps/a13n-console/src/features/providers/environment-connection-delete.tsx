@@ -63,13 +63,13 @@ export function EnvironmentConnectionDelete({
         setOpen(value);
         if (!deletion.isPending) deletion.reset();
       }}
-      title={t("Delete connection")}
+      title={t("Delete provider")}
       description={provider.name}
       closeLabel={t("Close")}
       size="md"
       trigger={
-        <Button type="button" variant="ghost" disabled={disabled}>
-          {t("Delete connection")}
+        <Button type="button" variant="destructive" disabled={disabled}>
+          {t("Delete")}
         </Button>
       }
       footer={
@@ -89,7 +89,7 @@ export function EnvironmentConnectionDelete({
             disabled={blocked || refs.isFetching || !!refs.error}
             onClick={() => deletion.mutate()}
           >
-            {t("Delete connection")}
+            {t("Delete provider")}
           </Button>
         </>
       }
@@ -102,8 +102,8 @@ export function EnvironmentConnectionDelete({
             <p>
               {t(
                 blocked
-                  ? "This connection is in use and cannot be deleted. Disabled templates and historical environments also count as references."
-                  : "This connection has no references. Deleting it permanently removes its configuration and saved credentials.",
+                  ? "This provider is in use and cannot be deleted. Disabled templates and historical environments also count as references."
+                  : "This provider has no references. Deleting it permanently removes its configuration and saved credentials.",
               )}
             </p>
             <ReferenceList

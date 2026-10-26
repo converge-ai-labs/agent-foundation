@@ -16,7 +16,7 @@ export {
 } from "./header-fields";
 export { ImagePicker } from "./image-picker";
 export { fieldLabel } from "./labels";
-export { ProviderEnabled } from "./provider-enabled";
+export { EnabledField } from "./enabled-field";
 export { ProviderKeyLink } from "./provider-key-link";
 export { SchemaFields, withSchemaValues } from "./schema-fields";
 export { SecretReveal } from "./secret-reveal";

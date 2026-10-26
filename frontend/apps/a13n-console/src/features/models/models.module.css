@@ -357,11 +357,6 @@
 .modelConfigurationForm .modelDetails {
   gap: 24px;
 }
-.fieldGroup {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
 .sectionHeading {
   display: flex;
   align-items: center;
@@ -371,37 +366,20 @@
 .sectionHeading h3 {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
-}
-.modelConfigurationForm [data-a13n-form-actions] {
-  align-items: center;
-}
-.modelConfigurationForm [data-a13n-form-actions] > :first-child {
-  flex: 0 1 auto;
-}
-.inlineStatus {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  white-space: nowrap;
-  font-size: 13px;
   font-weight: 500;
-  color: var(--a13n-text);
 }
 .editorIdentity {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: 16px;
 }
-.fieldGroupBody,
 .modelConfigurationForm .advancedGroup,
 .modelConfigurationForm .pricingEditor {
   padding: 16px;
   border: 1px solid var(--a13n-border-soft);
   border-radius: 12px;
 }
-.fieldGroupBody .chosenRow {
+.modelDetails .chosenRow {
   padding: 0;
   background: transparent;
 }
@@ -412,7 +390,7 @@
   font-size: 13px;
   font-weight: 500;
 }
-.fieldGroupBody .chosenActions :is(button, a) {
+.modelDetails .chosenActions :is(button, a) {
   font-size: 13px;
 }
 .capabilityItem {
@@ -457,17 +435,10 @@
   font-size: 12px;
 }
 @media (max-width: 480px) {
-  .modelConfigurationForm [data-a13n-form-actions] button:not([role="switch"]) {
-    padding-inline: 10px;
-    font-size: 13px;
-  }
   .editorIdentity {
     grid-template-columns: minmax(0, 1fr);
   }
-  .fieldGroupBody {
-    padding: 14px;
-  }
-  .fieldGroupBody .chosenActions {
+  .modelDetails .chosenActions {
     width: 100%;
     margin: 0;
     justify-content: flex-end;
@@ -485,7 +456,7 @@
   > [data-slot="disclosure-surface"]
   > [data-slot="collapsible-trigger"] {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .pricingScroll {
   container-type: inline-size;

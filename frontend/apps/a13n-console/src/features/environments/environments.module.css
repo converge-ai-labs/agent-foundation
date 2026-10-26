@@ -196,12 +196,6 @@
 .creationForm {
   max-width: 680px;
 }
-.creationForm .templateFields > section {
-  padding-block: 26px;
-}
-.creationForm .templateFields > section:first-child {
-  padding-top: 0;
-}
 .runtimeGroups {
   display: grid;
   gap: 16px;

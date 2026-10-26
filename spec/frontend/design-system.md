@@ -23,7 +23,7 @@ Product layouts, navigation, conversation rendering, protocol state, data fetchi
 
 ## Principles
 
-1. **Surfaces, not outlines.** Grouping uses a soft 3–4% fill (`--a13n-surface`) on the canvas, or whitespace alone. Outlines are reserved for text inputs and selection triggers. Sections, cards, tables, rails, and dialogs never draw a border around themselves; nested borders and resting shadows do not accumulate.
+1. **Quiet grouping.** Collections and secondary content use a soft 3–4% fill (`--a13n-surface`) or whitespace. Console configuration groups use a canvas background and one subtle outline, with their heading outside. Nested borders and resting shadows do not accumulate; tables, rails and dialogs keep their own surface treatment.
 2. **One anatomy per screen type.** Every list page, detail page, editor, dialog, and settings page follows the shared anatomy below. A reader who has used one resource can use all of them.
 3. **Names before identifiers.** People recognize resources by name, icon, and status. Identifiers are secondary, sans-serif, muted, and copyable; they never lead a row or a title.
 4. **The primary action is obvious, once.** Each page has at most one filled primary button, aligned with its heading. Everything else is outline, ghost, or lives in a menu.
@@ -54,13 +54,13 @@ Neutrals are cool rather than warm. Each elevation step is a 1px hairline ring p
 
 ## Typography
 
-Interface text uses the system sans-serif family at 13px; prose and message content use 14px with 1.6 line height. One scale serves every screen: 11, 12, 13, 14, 15, 17, and 24px (`--a13n-text-2xs` through `--a13n-text-2xl`), with no half-pixel sizes; hierarchy comes from these steps, weight, and color. Weights are 600 for page, dialog, and section titles, 500 for labels, names, and header cells, and 400 for everything else. Titles tighten their tracking slightly.
+Interface text uses the system sans-serif family at 13px; prose and message content use 14px with 1.6 line height. One scale serves every screen: 11, 12, 13, 14, 15, 17, and 24px (`--a13n-text-2xs` through `--a13n-text-2xl`), with no half-pixel sizes; hierarchy comes from these steps, weight, and color. Console uses weight 500 for page, dialog, and section titles, labels, names, header cells and emphasized content, and 400 for regular text. Emphasis stays one step above body text rather than using heavy bold. Titles tighten their tracking slightly.
 
 | Element                    | Size / weight | Color     |
 | -------------------------- | ------------- | --------- |
-| Page title                 | 24px / 600    | text      |
-| Dialog title               | 17px / 600    | text      |
-| Section title              | 15px / 600    | text      |
+| Page title                 | 24px / 500    | text      |
+| Dialog title               | 17px / 500    | text      |
+| Section title              | 15px / 500    | text      |
 | Row name                   | 14px / 500    | text      |
 | Field label                | 13px / 500    | text      |
 | Body, table cells          | 13px / 400    | text      |
@@ -92,13 +92,13 @@ Choose English casing for its context and keep peer controls consistent: status 
 
 **Editor with drafts.** Edits accumulate in a draft. A floating save bar appears at the bottom center with a pulse dot, "Unsaved changes", a one-line consequence, an optional note field, Discard, and the primary Save. Autosaved settings show an inline status beside the control instead.
 
-**Settings page.** A contextual layout with its own left navigation (Back to workspace, search, grouped entries). Content is one column up to 1040px whose forms and groups stop at 680px while collections use the full width, so the left edge never moves between sections: 24px title, then groups on a surface with rows (name and explanation at the left, control at the right, hairline between rows). Groups are separated by whitespace and titled outside the surface.
+**Settings page.** A contextual layout with its own left navigation (Back to workspace, search, grouped entries). Content is one column up to 1040px whose forms and groups stop at 680px while collections use the full width, so the left edge never moves between sections: 24px title, then outlined configuration groups with rows (name and explanation at the left, control at the right, hairline between rows). Groups are separated by whitespace and titled outside the surface.
 
 Disclosure panels and their carets use synchronized 150ms ease-out transitions and disable motion when reduced motion is requested.
 
 **Dialog.** 520px for standard forms, 640px for complex ones and 880px for reports that compare many figures, such as usage tables; vertically stable across steps. Header: 17px title, 13px description. Creation flows start with a catalog (tiles or a searchable list) and continue with a step whose title carries the chosen brand. Fields use 16px gaps; advanced groups use a disclosure; the footer is sticky with Cancel and the primary action. Destructive confirmations name the resource and label the action with its verb. All Console modals, including forms and confirmations, dismiss when the user clicks outside the topmost modal; a backdrop click never activates the obscured page or submits a form. Pending work does not block dismissal or get canceled by it. Dialogs and modal sheets share a 120ms ease-out opacity transition for entry and exit, without scale or slide motion, and disable transitions for reduced-motion preferences. Conditionally mounted editors remain present until the exit completes; closing does not remount or clear their visible content mid-transition.
 
-**Provider editors.** Adding a provider is a catalog step followed by a connect step: the credential first with a link to where it is issued, the required configuration, the name, and optional settings behind an Advanced settings disclosure. Editing a provider is one calm dialog: a brand-marked title with the definition name and scope as the description, the name field, one soft settings group (Enabled, the credential row, read-only connection facts), the optional disclosure, and a footer whose leading slot holds Check connection beside Cancel and the primary action. The credential row states what is stored (Saved, Not configured) and only reveals inputs on Replace or Add; backing out reads as keeping the saved key. No section headings, no provider type row, no hairlines between blocks.
+**Provider editors.** Adding a provider is a catalog step followed by a setup step with Basic information, Credentials and Configuration groups. Credentials include a link to where they are issued; configuration contains non-secret settings, with optional settings disclosed in place. Empty groups are omitted, including for credential-free providers. Editing uses the same grouping below a brand-marked title. The credential row states what is stored (Saved, Not configured) and only reveals inputs on Replace or Add; backing out keeps the saved key. Check connection has its own feedback row above the footer. Enabled sits at the lower left, opposite the red Delete action, Cancel and Save. Delete opens a confirmation for every provider kind; referenced providers show an actionable refusal, and environment providers include a bounded reference preview. OAuth authorization remains distinct from saved configuration and retains its own progress and recovery actions.
 
 **Empty state.** Centered on a surface: a 40px icon tile, 15px title, 13px explanation, and the primary action. When the empty state offers that action, the page header does not repeat it; the screen still offers it exactly once. Search results with no matches use a shorter inline message and keep the toolbar.
 
@@ -111,6 +111,8 @@ One `ResourceTable` serves every resource list. The list is part of the page: th
 Selection lists inside pickers use the same row anatomy with a checkbox in place of the tile, sorted with selected items first.
 
 ## Forms and Fields
+
+Console configuration follows the decisions a person makes: identity, connection or storage, behavior, then optional advanced controls. A group has a 15px medium-to-semibold heading outside one 12px-radius outline, 16px field spacing and insets, and 24px between peer groups. Narrow screens use 14px insets and stack controls that cannot retain readable labels. Short forms with one or two related inputs do not require an extra group title. Row-based settings and field-based editors share this treatment; nested groups do not add another frame. Save and Cancel stay together at the right, with staged Enabled at the left when present. Connection checks and their results sit above that outcome row. Opening a group does not change the draft.
 
 Labels sit above controls at 13px medium; descriptions sit below the control at 12px secondary; validation replaces the description in the danger color and names the fix. Optional fields say "(optional)" in the label; required fields carry no asterisk. Inputs are 32px tall (36px below the `sm` breakpoint) with an 8px radius and a hairline border. Controls that share a row share a height: page header and toolbar controls are 32px, section actions and footer controls 28px, and extra-small icon buttons 24px. Textareas for long content (instructions, prompts, JSON) use a soft surface with no border, grow to a bounded height, and scroll internally. Selects and pickers show the current value with one trailing chevron. Read-only values use `ReadOnlyField`; long-form text retains the soft surface and padding, while short values have no box. A read-only model reads as its picker option: brand mark, name and key.
 
@@ -157,3 +159,7 @@ Applications load the shared stylesheet once and opt into base typography with `
 ## Development Showcase and Validation
 
 The showcase in `a13n-ui/dev` demonstrates foundations, primitive states, settings, and collection compositions through its own Vite entry. Package checks type-check sources, exercise interaction contracts, and build the showcase. Application builds verify consumption through workspace exports. Visual changes are verified on the rendered page in both themes and at a narrow width before handoff.
+
+### Configuration field layout
+
+Console configuration groups use a left label column and a right control/value column for single-value fields, including names, endpoints, selectors and read-only values. Supporting descriptions and validation messages align below the right control. Long-form text and JSON retain their writing width. Field labels, read-only labels and settings-row labels use medium (500) weight; values remain regular and supporting prose uses the muted 12px text style. Narrow dialogs retain compact label/control rows where usable without clipping controls or actions.

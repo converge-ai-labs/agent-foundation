@@ -31,7 +31,7 @@
 .markdown h1,
 .markdown h2,
 .markdown h3 {
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.4;
   margin: 28px 0 10px;
 }
@@ -47,7 +47,7 @@
   font-size: 15px;
 }
 .markdown strong {
-  font-weight: 600;
+  font-weight: 500;
 }
 .markdown h4,
 .markdown h5,

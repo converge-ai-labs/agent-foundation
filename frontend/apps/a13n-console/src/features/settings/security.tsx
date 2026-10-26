@@ -68,6 +68,7 @@ export function Security() {
   return (
     <div className={settings.sections}>
       <SettingsSection
+        variant="outlined"
         title={t("Email address")}
         description={t(
           "Verify a new address before it becomes your sign-in email.",
@@ -194,7 +195,7 @@ export function Security() {
           </p>
         )}
       </SettingsSection>
-      <SettingsSection title={t("Password")}>
+      <SettingsSection variant="outlined" title={t("Password")}>
         <SettingsRow label={t("Use a strong, unique password.")}>
           <ModalFrame
             onOpenChange={togglePassword}

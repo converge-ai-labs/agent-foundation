@@ -82,11 +82,13 @@ async def usable_row[R: _Switchable](
     *,
     verb: Verb,
     authority: ExecutionAuthority | None,
+    key_share: bool = False,
 ) -> R:
     """An enabled row of the workspace the actor may `verb`, read in the caller's session."""
-    row = await session.scalar(
-        select(row_type).where(row_type.id == row_id, row_type.workspace_id == scope.workspace_id)
-    )
+    query = select(row_type).where(row_type.id == row_id, row_type.workspace_id == scope.workspace_id)
+    if key_share:
+        query = query.with_for_update(read=True, key_share=True)
+    row = await session.scalar(query)
     if row is None:
         raise not_found(row_type.KIND, row_id)
     authorize(actor, scope, verb, authority=authority)

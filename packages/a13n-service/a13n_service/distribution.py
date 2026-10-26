@@ -100,6 +100,7 @@ from a13n_service.runs.memories.organization_tables import SpaceOrganizationRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.space_routes import router as space_execution_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
+from a13n_service.runs.provider_routes import router as provider_deletion_router
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.routes import router as schedules_router
@@ -392,6 +393,7 @@ OSS = Distribution(
         member_router,
         providers_router,
         environment_provider_lifecycle_router,
+        provider_deletion_router,
         models_router,
         agents_router,
         uploads_router,

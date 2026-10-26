@@ -70,7 +70,7 @@
 }
 .panelHeader h3 {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   margin: 0;
   flex: 1;
   overflow: hidden;
@@ -412,8 +412,9 @@
 }
 .query {
   padding: 16px;
+  border: 1px solid var(--a13n-border);
   border-radius: 12px;
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
   display: flex;
   flex-direction: column;
   gap: 12px;

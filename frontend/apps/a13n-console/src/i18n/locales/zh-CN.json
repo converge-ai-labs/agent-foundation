@@ -3429,5 +3429,17 @@
   "Click to copy": "点击复制",
   "Basic information": "基本信息",
   "Model connection": "模型连接",
-  "Declare the inputs this model supports and its context limit.": "声明此模型支持的输入类型及上下文上限。"
+  "Declare the inputs this model supports and its context limit.": "声明此模型支持的输入类型及上下文上限。",
+  "Model and instructions": "模型与指令",
+  "Invocation": "调用",
+  "Delete provider": "删除提供商",
+  "This provider is in use and cannot be deleted. Disabled templates and historical environments also count as references.": "此提供商正被引用，无法删除。已停用的模板和历史环境记录也会计入引用。",
+  "This provider has no references. Deleting it permanently removes its configuration and saved credentials.": "此提供商没有引用。删除后，其配置和已保存的凭据将被永久移除。",
+  "View and edit providers, or delete unused ones. Your template draft stays here.": "查看、编辑提供商，或删除未被引用的提供商。关闭后可继续编辑当前模板。",
+  "No enabled provider for this runtime yet. Open Manage providers to add one; your template draft stays here.": "此运行时尚无已启用的提供商。打开“管理提供商”添加一个；模板草稿将保留。",
+  "Requires a desktop image and the Docker provider’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.": "需要桌面镜像，并在 Docker 提供商中配置 Envd HTTP 通路。开启后使用 EIP 执行并检查桌面就绪；Agent 工具和挂载权限需单独配置。",
+  "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your provider must support Envd HTTP; Agent tools and mount permissions are separate.": "提供 Linux 桌面，可截图、点击和输入。已自动配置桌面镜像和执行方式。所选提供商需支持 Envd HTTP；Agent 工具和挂载权限需另行开启。",
+  "Local directories run on the worker. Docker providers use the engine and network access configured by your administrator.": "本地目录运行在 Worker 所在机器。Docker 提供商使用管理员配置的引擎和网络通路。",
+  "This provider is still referenced and cannot be deleted. Remove its references or disable it instead.": "此 Provider 仍被引用，无法删除。请先移除引用，或将其停用。",
+  "Deleting this provider permanently removes its configuration and saved credentials. Providers that are still referenced cannot be deleted.": "删除此 Provider 将永久移除其配置和已保存的凭据。仍被引用的 Provider 无法删除。"
 }

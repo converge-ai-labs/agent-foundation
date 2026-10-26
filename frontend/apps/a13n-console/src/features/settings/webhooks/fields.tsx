@@ -43,34 +43,35 @@ export function SubscriptionFields({
   ) => onChange({ ...draft, [key]: value });
   return (
     <>
-      <FormField label={t("Name")}>
-        <Input
-          autoFocus
-          required
-          maxLength={128}
-          value={draft.name}
-          onChange={(event) => set("name", event.target.value)}
-          placeholder={t("For example, Run outcomes")}
-        />
-      </FormField>
-      <FormField
-        label={t("Endpoint URL")}
-        description={t(
-          "Use an HTTP(S) address allowed by this Service's outbound policy.",
-        )}
-      >
-        <Input
-          type="url"
-          required
-          maxLength={2048}
-          value={draft.url}
-          onChange={(event) => set("url", event.target.value)}
-          placeholder="https://your-app.example.com/hooks/a13n"
-        />
-      </FormField>
+      <FormSection title={t("Basic information")}>
+        <FormField label={t("Name")}>
+          <Input
+            autoFocus
+            required
+            maxLength={128}
+            value={draft.name}
+            onChange={(event) => set("name", event.target.value)}
+            placeholder={t("For example, Run outcomes")}
+          />
+        </FormField>
+        <FormField
+          label={t("Endpoint URL")}
+          description={t(
+            "Use an HTTP(S) address allowed by this Service's outbound policy.",
+          )}
+        >
+          <Input
+            type="url"
+            required
+            maxLength={2048}
+            value={draft.url}
+            onChange={(event) => set("url", event.target.value)}
+            placeholder="https://your-app.example.com/hooks/a13n"
+          />
+        </FormField>
+      </FormSection>
       <FormSection
         title={t("Events")}
-        divider={false}
         actions={
           <div className={styles.presets}>
             {[
@@ -210,7 +211,7 @@ export function SubscriptionFields({
           />
         </FormField>
       </DisclosureSection>
-      <SettingsSection>
+      <SettingsSection variant="outlined">
         <SettingsRow
           label={t(editing ? "Enabled" : "Enable after creation")}
           description={t(

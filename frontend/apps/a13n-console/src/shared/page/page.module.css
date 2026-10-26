@@ -41,7 +41,7 @@
 .titleRow h1 {
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
 }
@@ -111,7 +111,7 @@
   min-width: 0;
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
   overflow-wrap: break-word;
@@ -238,7 +238,7 @@
 .sectionHeader h2 {
   margin: 0;
   font-size: var(--a13n-text-lg);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
   line-height: 20px;
 }
@@ -278,7 +278,7 @@
 .subsection > .sectionHeader h3 {
   margin: 0;
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 20px;
 }
 .subsection > .sectionHeader p {

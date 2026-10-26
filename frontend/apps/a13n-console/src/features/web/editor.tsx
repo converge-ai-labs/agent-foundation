@@ -1,3 +1,4 @@
+import { ProviderDelete } from "../providers/provider-delete";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { useState } from "react";
@@ -18,7 +19,7 @@ import { credentialMode } from "../../shared/provider-authentication";
 import { useCredentialSection } from "../../shared/use-credential-section";
 import {
   FormActions,
-  ProviderEnabled,
+  EnabledField,
   ProviderKeyLink,
   SchemaFields,
   withSchemaValues,
@@ -383,9 +384,8 @@ export function WebProviderForm({
   return (
     <ProviderEditor onSubmit={submit}>
       <ProviderName value={name} onChange={setName} />
-      <ProviderGroup>
-        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        {section.visible && (
+      {section.visible && (
+        <ProviderGroup title="Credentials">
           <CredentialRow
             label={t(credentialLabel(section.schema))}
             configured={section.removable}
@@ -409,10 +409,26 @@ export function WebProviderForm({
               />
             )}
           </CredentialRow>
-        )}
-      </ProviderGroup>
+        </ProviderGroup>
+      )}
       {notices}
       <FormActions
+        beforeCancel={
+          <ProviderDelete
+            kind="web"
+            provider={original.value}
+            etag={original.etag}
+            disabled={save.isPending}
+            onDeleted={() => onCancel?.()}
+          />
+        }
+        leading={
+          <EnabledField
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            disabled={save.isPending}
+          />
+        }
         onCancel={onCancel}
         label={t("Save changes")}
         pending={save.isPending}

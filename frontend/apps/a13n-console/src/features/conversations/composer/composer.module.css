@@ -167,11 +167,6 @@ fieldset:disabled .chip {
   gap: 22px;
   min-width: 0;
 }
-.settingsMain {
-  display: grid;
-  gap: 18px;
-  min-width: 0;
-}
 .instructionsRow {
   display: flex;
   align-items: center;

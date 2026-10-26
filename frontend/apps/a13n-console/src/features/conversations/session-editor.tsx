@@ -7,7 +7,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { data, rowTag, type Schema } from "../../shared/api";
 import { ApiError } from "../../service-client";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import { FormActions, FormSection } from "../../shared/forms";
 import { useMountedModal, ConflictNotice } from "../../shared/dialogs";
 import { conversationKeys } from "./api";
 import styles from "./session-list.module.css";
@@ -107,7 +107,7 @@ export function SessionEditor({
               placeholder={t("What is this session about?")}
             />
           </FormField>
-          <div className={styles.originFields}>
+          <FormSection title={t("Source")}>
             <FormField
               label={t("Source application")}
               description={t(
@@ -138,7 +138,7 @@ export function SessionEditor({
                 onChange={(event) => setExternalId(event.target.value)}
               />
             </FormField>
-          </div>
+          </FormSection>
         </fieldset>
         {conflict ? (
           <ConflictNotice

@@ -8,10 +8,10 @@ import {
   DisclosureSection,
   FormField,
   Input,
-  Switch,
 } from "a13n-ui";
-import { useId, type ReactNode } from "react";
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
+import { EnabledField, FormSection } from "../../shared/forms";
 import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
 import type { ModelDraft } from "./model-form";
@@ -165,7 +165,7 @@ export function ModelFields({
   );
   const details = (
     <div className={styles.modelDetails}>
-      <ModelFieldGroup title={t("Basic information")}>
+      <FormSection title={t("Basic information")}>
         <div
           className={compact ? styles.identityFields : styles.editorIdentity}
         >
@@ -182,15 +182,15 @@ export function ModelFields({
             />
           </FormField>
         </div>
-      </ModelFieldGroup>
+      </FormSection>
       {(!compact || !model.manual) && (
-        <ModelFieldGroup title={t("Model connection")}>
+        <FormSection title={t("Model connection")}>
           {onChangeModel ? (
             <ModelSelection model={model} onChange={onChangeModel} />
           ) : (
             <ModelAddress model={model} />
           )}
-        </ModelFieldGroup>
+        </FormSection>
       )}
       <ModelInformation
         value={draft.characteristics}
@@ -286,35 +286,13 @@ function ModelKeyField({ model }: { model: ModelDraft }) {
   );
 }
 
-function ModelFieldGroup({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <section className={styles.fieldGroup} aria-labelledby={id}>
-      <div className={styles.sectionHeading}>
-        <h3 id={id}>{title}</h3>
-      </div>
-      <div className={styles.fieldGroupBody}>{children}</div>
-    </section>
-  );
-}
-
 /** Whether agents can select the model. */
 export function ModelStatus({ model }: { model: ModelDraft }) {
-  const { t } = useTranslation();
   return (
-    <label className={styles.inlineStatus}>
-      <Switch
-        disabled={model.save.isPending}
-        checked={model.draft.enabled}
-        onCheckedChange={(value) => model.change("enabled", value)}
-      />
-      {t("Enabled")}
-    </label>
+    <EnabledField
+      disabled={model.save.isPending}
+      checked={model.draft.enabled}
+      onCheckedChange={(value) => model.change("enabled", value)}
+    />
   );
 }

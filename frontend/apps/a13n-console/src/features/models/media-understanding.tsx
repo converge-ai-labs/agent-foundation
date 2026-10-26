@@ -69,7 +69,7 @@ export function MediaUnderstandingDefaults() {
       {!value ? (
         <InlineLoading />
       ) : (
-        <SettingsSection>
+        <SettingsSection variant="outlined">
           <MediaUnderstandingFields
             value={value}
             inherit={{ label: t("Not configured"), icon: null }}

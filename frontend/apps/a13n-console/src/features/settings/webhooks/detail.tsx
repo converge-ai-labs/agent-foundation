@@ -113,7 +113,7 @@ function WebhookConfiguration({
   });
   return (
     <div className={shared.stack}>
-      <SettingsSection title={t("Subscription scope")}>
+      <SettingsSection variant="outlined" title={t("Subscription scope")}>
         <SettingsRow label={t("Events")}>
           <div className={styles.events}>
             {subscription.kinds.map((kind) => (
@@ -141,7 +141,7 @@ function WebhookConfiguration({
           <CopyableId value={subscription.id} />
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection title={t("Signature verification")}>
+      <SettingsSection variant="outlined" title={t("Signature verification")}>
         <SettingsRow
           label={t("Signing secret configured")}
           description={t(
@@ -151,7 +151,7 @@ function WebhookConfiguration({
           <span className={styles.note}>HMAC-SHA256</span>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection title={t("Manage")}>
+      <SettingsSection variant="outlined" title={t("Manage")}>
         <SettingsRow
           label={t(
             subscription.enabled

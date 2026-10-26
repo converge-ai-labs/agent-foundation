@@ -18,6 +18,7 @@ import { useWorkspace } from "../../../layout/workspace";
 import { allPages, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import {
+  FormSection,
   ExecutionFields,
   executionOverride,
   jsonObject,
@@ -359,7 +360,7 @@ export function RunOptionsDialog({
     >
       <div className={styles.settingsPanel}>
         <ErrorNotice error={choices.error} />
-        <div className={styles.settingsMain}>
+        <FormSection title={t("Model and instructions")}>
           <ModelOptions
             options={options}
             models={choices.data?.models}
@@ -401,7 +402,7 @@ export function RunOptionsDialog({
               rows={4}
             />
           )}
-        </div>
+        </FormSection>
         <div className={styles.settingsDisclosures}>
           <DisclosureSection
             className={styles.settingsGroup}

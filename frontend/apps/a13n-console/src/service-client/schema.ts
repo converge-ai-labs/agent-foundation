@@ -643,7 +643,8 @@ export interface paths {
     get: operations["get_connector_provider"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete Connector Provider */
+    delete: operations["delete_connector_provider"];
     options?: never;
     head?: never;
     /**
@@ -1602,7 +1603,8 @@ export interface paths {
     get: operations["get_memory_provider"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete Memory Provider */
+    delete: operations["delete_memory_provider"];
     options?: never;
     head?: never;
     /**
@@ -1913,7 +1915,8 @@ export interface paths {
     get: operations["get_model_provider"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete Model Provider */
+    delete: operations["delete_model_provider"];
     options?: never;
     head?: never;
     /**
@@ -3955,7 +3958,8 @@ export interface paths {
     get: operations["get_web_provider"];
     put?: never;
     post?: never;
-    delete?: never;
+    /** Delete Web Provider */
+    delete: operations["delete_web_provider"];
     options?: never;
     head?: never;
     /**
@@ -13583,6 +13587,33 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  delete_connector_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   update_connector_provider: {
     parameters: {
       query?: never;
@@ -15894,6 +15925,33 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  delete_memory_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   update_memory_provider: {
     parameters: {
       query?: never;
@@ -16733,6 +16791,33 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["Provider"];
         };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_model_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];
@@ -21240,6 +21325,33 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["Provider"];
         };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_web_provider: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];

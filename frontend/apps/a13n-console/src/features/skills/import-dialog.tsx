@@ -1,3 +1,4 @@
+import { FormSection } from "../../shared/forms";
 import {
   Button,
   DisclosureSection,
@@ -181,115 +182,118 @@ function ImportForm({
           />
         </FormField>
       )}
-      <div className={styles.sourceField}>
-        <span>{t("Source")}</span>
-        <SegmentedControl
-          label={t("Source")}
-          value={kind}
-          onValueChange={(value) => {
-            setKind(value);
-            publish.reset();
-          }}
-          options={[
-            {
-              value: "zip_upload",
-              label: (
-                <>
-                  <SourceIcon kind="zip" />
-                  {t("ZIP file")}
-                </>
-              ),
-              disabled: busy,
-            },
-            {
-              value: "github",
-              label: (
-                <>
-                  <SourceIcon kind="github" />
-                  GitHub
-                </>
-              ),
-              disabled: busy,
-            },
-          ]}
-        />
-      </div>
-      {kind === "zip_upload" ? (
-        <div className={shared.stack}>
-          <FileDrop
-            label={t("Skill package")}
-            hint={t("Drop a skill ZIP here, or choose a file.")}
-            accept={[".zip", "application/zip"]}
-            file={upload?.file}
-            disabled={busy}
-            onSelect={(file) => {
-              setUpload(file ? { file, key: crypto.randomUUID() } : undefined);
-              setReceipt(undefined);
-              stage.reset();
+      <FormSection title={t("Source")}>
+        <div className={styles.sourceField}>
+          <SegmentedControl
+            label={t("Source")}
+            value={kind}
+            onValueChange={(value) => {
+              setKind(value);
+              publish.reset();
             }}
+            options={[
+              {
+                value: "zip_upload",
+                label: (
+                  <>
+                    <SourceIcon kind="zip" />
+                    {t("ZIP file")}
+                  </>
+                ),
+                disabled: busy,
+              },
+              {
+                value: "github",
+                label: (
+                  <>
+                    <SourceIcon kind="github" />
+                    GitHub
+                  </>
+                ),
+                disabled: busy,
+              },
+            ]}
           />
-          {upload && !receipt && (
-            <Button
-              variant="outline"
-              loading={stage.isPending}
-              onClick={() => stage.mutate()}
-              type="button"
-            >
-              {t("Validate package")}
-            </Button>
-          )}
-          {receipt && <Receipt receipt={receipt} version={version} />}
-          <ErrorNotice error={stage.error} />
         </div>
-      ) : (
-        <div className={shared.stack}>
-          <FormField className="min-w-0 w-full" label={t("Repository URL")}>
-            <Input
-              required={true}
-              type="url"
-              value={repository}
-              onChange={(event) => setRepository(event.target.value)}
-              placeholder="https://github.com/owner/repository"
+        {kind === "zip_upload" ? (
+          <div className={shared.stack}>
+            <FileDrop
+              label={t("Skill package")}
+              hint={t("Drop a skill ZIP here, or choose a file.")}
+              accept={[".zip", "application/zip"]}
+              file={upload?.file}
+              disabled={busy}
+              onSelect={(file) => {
+                setUpload(
+                  file ? { file, key: crypto.randomUUID() } : undefined,
+                );
+                setReceipt(undefined);
+                stage.reset();
+              }}
             />
-          </FormField>
-          <DisclosureSection title={t("Advanced settings")}>
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Git ref")}
-              description={t(
-                "Use a branch, tag, or commit. Leave empty for the default branch.",
-              )}
-            >
+            {upload && !receipt && (
+              <Button
+                variant="outline"
+                loading={stage.isPending}
+                onClick={() => stage.mutate()}
+                type="button"
+              >
+                {t("Validate package")}
+              </Button>
+            )}
+            {receipt && <Receipt receipt={receipt} version={version} />}
+            <ErrorNotice error={stage.error} />
+          </div>
+        ) : (
+          <div className={shared.stack}>
+            <FormField className="min-w-0 w-full" label={t("Repository URL")}>
               <Input
-                value={ref}
-                onChange={(event) => setRef(event.target.value)}
-                placeholder={t("Default branch")}
+                required={true}
+                type="url"
+                value={repository}
+                onChange={(event) => setRepository(event.target.value)}
+                placeholder="https://github.com/owner/repository"
               />
             </FormField>
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Subdirectory")}
-              description={t(
-                "Path to the skill inside the repository. Leave empty for the repository root.",
-              )}
-            >
-              <Input
-                value={subdirectory}
-                onChange={(event) => setSubdirectory(event.target.value)}
-              />
-            </FormField>
-            <FormField
-              className="min-w-0 w-full"
-              label={t("Expected commit SHA (optional)")}
-            >
-              <Input
-                value={commit}
-                onChange={(event) => setCommit(event.target.value)}
-              />
-            </FormField>
-          </DisclosureSection>
-        </div>
-      )}
+            <DisclosureSection title={t("Advanced settings")}>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Git ref")}
+                description={t(
+                  "Use a branch, tag, or commit. Leave empty for the default branch.",
+                )}
+              >
+                <Input
+                  value={ref}
+                  onChange={(event) => setRef(event.target.value)}
+                  placeholder={t("Default branch")}
+                />
+              </FormField>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Subdirectory")}
+                description={t(
+                  "Path to the skill inside the repository. Leave empty for the repository root.",
+                )}
+              >
+                <Input
+                  value={subdirectory}
+                  onChange={(event) => setSubdirectory(event.target.value)}
+                />
+              </FormField>
+              <FormField
+                className="min-w-0 w-full"
+                label={t("Expected commit SHA (optional)")}
+              >
+                <Input
+                  value={commit}
+                  onChange={(event) => setCommit(event.target.value)}
+                />
+              </FormField>
+            </DisclosureSection>
+          </div>
+        )}
+      </FormSection>
       <ErrorNotice error={publish.error} />
       <FormActions
         pending={publish.isPending}

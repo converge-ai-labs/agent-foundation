@@ -49,12 +49,6 @@
   padding: 0;
   border: 0;
 }
-.group {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  min-width: 0;
-}
 
 /* Connection facts: what the saved provider answers for, never editable. */
 .fact {
@@ -103,7 +97,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
-  padding-block: 16px;
+  padding-block: 0;
 }
 /* Backing out of a replacement reads like helper text, not a second Cancel. */
 .credentialKeep {
@@ -164,7 +158,7 @@
 }
 .referenceSection h3 {
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
 }
 .referenceList {
   list-style: none;

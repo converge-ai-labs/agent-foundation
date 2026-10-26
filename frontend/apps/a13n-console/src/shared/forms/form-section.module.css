@@ -1,7 +1,7 @@
 .form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0;
+  gap: 24px;
   min-width: 0;
 }
 .form > [data-a13n-form-actions] {
@@ -11,17 +11,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  padding-block: 20px;
+  padding-block: 0;
   min-width: 0;
-}
-.section:first-child {
-  padding-top: 0;
-}
-.section + .section {
-  border-top: 1px solid var(--a13n-border-soft);
-}
-.section[data-divider="none"] {
-  border-top: 0;
 }
 /* Actions sit beside the heading and drop below it, left-aligned, when the
    two no longer fit on one line. */
@@ -34,7 +25,7 @@
   min-width: 0;
 }
 .heading > :first-child {
-  flex: 1 1 240px;
+  flex: 1 1 160px;
   min-width: 0;
 }
 .headingActions {
@@ -46,7 +37,7 @@
 }
 .heading h3 {
   margin: 0;
-  font-size: var(--a13n-text-md);
+  font-size: var(--a13n-text-lg);
   font-weight: 500;
 }
 .heading p {
@@ -60,4 +51,88 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--a13n-canvas);
+}
+@media (width < 480px) {
+  .fields {
+    padding: 14px;
+  }
+}
+
+.fields > [data-slot="settings-row"] {
+  padding-block: 0;
+}
+
+.section :global([data-slot="button"]) {
+  font-size: var(--a13n-text-sm);
+}
+
+/* Compact single-value fields share a label column. Long-form text keeps the
+   full writing width, and hidden labels never reserve an empty column. */
+.fieldRows
+  :global(
+    [data-slot="field"]:not([data-field-layout="stacked"]):not(
+        :has(> textarea, > .sr-only)
+      )
+  ),
+.fieldRows :global([data-slot="read-only-field"]:not(:has(> .sr-only))) {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(100px, 0.32fr) minmax(0, 1fr);
+  align-items: start;
+  column-gap: 20px;
+  row-gap: 6px;
+}
+.fieldRows
+  :global(
+    [data-slot="field"]:not([data-field-layout="stacked"]):not(
+        :has(> textarea, > .sr-only)
+      )
+      > *
+  ),
+.fieldRows :global([data-slot="read-only-field"]:not(:has(> .sr-only)) > *) {
+  min-width: 0;
+  grid-column: 2;
+}
+.fieldRows
+  :global(
+    [data-slot="field"]:not([data-field-layout="stacked"])
+      > [data-slot="field-label"]
+  ),
+.fieldRows
+  :global(
+    [data-slot="field"]:not([data-field-layout="stacked"])
+      > [data-slot="field-label-row"]
+  ),
+.fieldRows
+  :global([data-slot="read-only-field"] > [data-slot="read-only-label"]) {
+  grid-column: 1;
+  grid-row: 1;
+  padding-top: 7px;
+}
+.fieldRows :global([data-slot="field-label-row"]) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.fieldRows :global([data-slot="schema-fields"]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.fieldRows :global([data-slot="schema-fields"] > *) {
+  grid-column: 1 / -1;
+}
+@media (width < 480px) {
+  .fieldRows
+    :global(
+      [data-slot="field"]:not([data-field-layout="stacked"]):not(
+          :has(> textarea, > .sr-only)
+        )
+    ),
+  .fieldRows :global([data-slot="read-only-field"]:not(:has(> .sr-only))) {
+    grid-template-columns: 88px minmax(0, 1fr);
+    column-gap: 12px;
+  }
 }

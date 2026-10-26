@@ -1,3 +1,4 @@
+import { FormSection } from "../../shared/forms";
 import { PlusIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -130,24 +131,26 @@ function CreateForm({
           )}
         </p>
       </div>
-      <FormField label={t("Name")} disabled={create.isPending}>
-        <Input
-          required
-          value={draft.name}
-          maxLength={128}
-          onChange={(event) => {
-            setDraft({ ...draft, name: event.target.value });
-          }}
+      <FormSection title={t("Basic information")}>
+        <FormField label={t("Name")} disabled={create.isPending}>
+          <Input
+            required
+            value={draft.name}
+            maxLength={128}
+            onChange={(event) => {
+              setDraft({ ...draft, name: event.target.value });
+            }}
+          />
+        </FormField>
+        <TextAreaField
+          label={t("Description")}
+          rows={2}
+          value={draft.description}
+          onChange={(description) => setDraft({ ...draft, description })}
         />
-      </FormField>
-      <TextAreaField
-        label={t("Description")}
-        rows={2}
-        value={draft.description}
-        onChange={(description) => setDraft({ ...draft, description })}
-      />
+      </FormSection>
       {record && (
-        <>
+        <FormSection title={t("Storage")}>
           <ErrorNotice
             error={providers.error}
             retry={() => void providers.refetch()}
@@ -210,24 +213,26 @@ function CreateForm({
               </Alert>
             )}
           </DisclosureSection>
-        </>
+        </FormSection>
       )}
-      <GuideField
-        kind={kind}
-        value={draft.guide}
-        onChange={(guide) => setDraft({ ...draft, guide })}
-      />
-      {!record && (
-        <div className="grid gap-2">
-          <span className="text-[13px] font-medium">
-            {t("Always loaded files")}
-          </span>
-          <AlwaysLoadField
-            value={draft.alwaysLoad}
-            onChange={(alwaysLoad) => setDraft({ ...draft, alwaysLoad })}
-          />
-        </div>
-      )}
+      <FormSection title={t("Memory instructions")}>
+        <GuideField
+          kind={kind}
+          value={draft.guide}
+          onChange={(guide) => setDraft({ ...draft, guide })}
+        />
+        {!record && (
+          <div className="grid gap-2">
+            <span className="text-[13px] font-medium">
+              {t("Always loaded files")}
+            </span>
+            <AlwaysLoadField
+              value={draft.alwaysLoad}
+              onChange={(alwaysLoad) => setDraft({ ...draft, alwaysLoad })}
+            />
+          </div>
+        )}
+      </FormSection>
       <ErrorNotice error={create.error} />
       <FormActions
         onCancel={onCancel}

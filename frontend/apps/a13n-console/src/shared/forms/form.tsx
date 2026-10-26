@@ -91,6 +91,7 @@ export function FormActions({
   disabled = false,
   variant = "default",
   leading,
+  beforeCancel,
   cancelLabel,
   dismiss = false,
 }: {
@@ -106,6 +107,8 @@ export function FormActions({
   variant?: "default" | "outline";
   /** Actions that belong to the form but not to its outcome, at the left. */
   leading?: ReactNode;
+  /** Destructive or secondary actions immediately before Cancel. */
+  beforeCancel?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -116,6 +119,7 @@ export function FormActions({
     >
       {leading && <div className={styles.formActionsLeading}>{leading}</div>}
       <div className={styles.formActionsPrimary}>
+        {beforeCancel}
         {onCancel && (
           <Button
             variant="outline"

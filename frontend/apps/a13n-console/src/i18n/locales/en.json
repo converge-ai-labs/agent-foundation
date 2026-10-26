@@ -3429,5 +3429,17 @@
   "Click to copy": "Click to copy",
   "Basic information": "Basic information",
   "Model connection": "Model connection",
-  "Declare the inputs this model supports and its context limit.": "Declare the inputs this model supports and its context limit."
+  "Declare the inputs this model supports and its context limit.": "Declare the inputs this model supports and its context limit.",
+  "Model and instructions": "Model and instructions",
+  "Invocation": "Invocation",
+  "Delete provider": "Delete provider",
+  "This provider is in use and cannot be deleted. Disabled templates and historical environments also count as references.": "This provider is in use and cannot be deleted. Disabled templates and historical environments also count as references.",
+  "This provider has no references. Deleting it permanently removes its configuration and saved credentials.": "This provider has no references. Deleting it permanently removes its configuration and saved credentials.",
+  "View and edit providers, or delete unused ones. Your template draft stays here.": "View and edit providers, or delete unused ones. Your template draft stays here.",
+  "No enabled provider for this runtime yet. Open Manage providers to add one; your template draft stays here.": "No enabled provider for this runtime yet. Open Manage providers to add one; your template draft stays here.",
+  "Requires a desktop image and the Docker provider’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.": "Requires a desktop image and the Docker provider’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.",
+  "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your provider must support Envd HTTP; Agent tools and mount permissions are separate.": "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your provider must support Envd HTTP; Agent tools and mount permissions are separate.",
+  "Local directories run on the worker. Docker providers use the engine and network access configured by your administrator.": "Local directories run on the worker. Docker providers use the engine and network access configured by your administrator.",
+  "Deleting this provider permanently removes its configuration and saved credentials. Providers that are still referenced cannot be deleted.": "Deleting this provider permanently removes its configuration and saved credentials. Providers that are still referenced cannot be deleted.",
+  "This provider is still referenced and cannot be deleted. Remove its references or disable it instead.": "This provider is still referenced and cannot be deleted. Remove its references or disable it instead."
 }
