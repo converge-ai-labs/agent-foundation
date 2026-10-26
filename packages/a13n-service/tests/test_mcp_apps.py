@@ -109,7 +109,7 @@ async def test_app_ready_waits_for_commit_and_opens_before_run_ends(
                     await task
 
 
-@pytest.mark.parametrize("app_run", [False, "paged", "legacy", "save_failed"], indirect=True)
+@pytest.mark.parametrize("app_run", [False, "paged", "save_failed"], indirect=True)
 async def test_saved_app_readiness_uses_committed_references(service, app_run, monkeypatch):
     from a13n_service.runs.contents import ContentObject
     from a13n_service.runs.stream import SessionHub
@@ -143,16 +143,6 @@ async def app_run(service, scripted_model, runs_kit, request, monkeypatch):
             return await save_item(self, item, save)
 
         monkeypatch.setattr(Contents, "item", failed_original)
-    if mode == "legacy":
-        save_app = Contents.app
-
-        def legacy_app(self, identifier, data, *, binding=None):
-            # Format-4 writers included private authorization in the original, not its reference.
-            assert binding is not None
-            legacy = {**json.loads(data), **binding.model_dump(mode="json")}
-            return save_app(self, identifier, json.dumps(legacy).encode())
-
-        monkeypatch.setattr(Contents, "app", legacy_app)
     server = FastMCP("App counter")
     calls = SimpleNamespace(show=0, increment=0, resource=0, html="<p>First version</p>", slow=False, failed=False)
 
@@ -467,15 +457,18 @@ async def test_app_operations_read_only_committed_database_binding(service, app_
     assert reads == []
 
 
-@pytest.mark.parametrize("app_run", ["legacy"], indirect=True)
-async def test_legacy_app_reference_loads_authorization_from_original(service, app_run, monkeypatch):
+async def test_app_without_authorization_binding_is_rejected_without_object_reads(service, app_run, monkeypatch):
     from a13n_service.runs import runs
 
     runtime = service.runtime
     ref = await runs.content_ref(
         runtime, admin(service), service.tenant.workspace_id, app_run.run_id, app_run.reference["app_id"], purpose="app"
     )
-    assert ref.app is None
+
+    async def unbound_ref(*args, **kwargs):
+        return ref.model_copy(update={"app": None})
+
+    monkeypatch.setattr(runs, "content_ref", unbound_ref)
     reads = []
     get = runtime.objects.get
 
@@ -485,15 +478,12 @@ async def test_legacy_app_reference_loads_authorization_from_original(service, a
 
     monkeypatch.setattr(runtime.objects, "get", counted_get)
     opened = await service.client.post(app_run.path + "/open")
-    assert opened.status_code == 200, opened.text
-    assert opened.json()["result"]["_meta"]["private_app_value"] == "original-private-value"
+    assert opened.status_code == 404, opened.text
     called = await service.client.post(app_run.path + "/tools/call", json={"name": "increment"})
-    assert called.status_code == 200, called.text
+    assert called.status_code == 404, called.text
     resource = await service.client.post(app_run.path + "/resources/read", json={"uri": URI})
-    assert resource.status_code == 200, resource.text
-    denied = await service.client.post(app_run.path + "/tools/call", json={"name": "reset"})
-    assert denied.status_code == 403, denied.text
-    assert reads == [ref.key] * 4
+    assert resource.status_code == 404, resource.text
+    assert reads == []
 
 
 async def test_control_rejects_wrong_run_hidden_tools_permissions_and_disabled_connection(service, runs_kit, app_run):

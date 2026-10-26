@@ -35,7 +35,7 @@ class AppBinding(BaseModel):
 
 
 class SavedApp(AppOriginal, AppBinding):
-    """An original with its binding, also the legacy object-storage format."""
+    """An original combined with its separately committed authorization binding."""
 
 
 class AppResource(BaseModel):

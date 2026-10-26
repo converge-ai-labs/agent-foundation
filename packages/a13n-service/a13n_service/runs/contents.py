@@ -108,7 +108,7 @@ class Contents:
 
     def __init__(self, items: Sequence[Item] = (), refs: Sequence[ContentObject] = ()) -> None:
         self.refs = {ref.id: ref for ref in refs}
-        self.pending_apps: dict[str, tuple[bytes, AppBinding | None]] = {}
+        self.pending_apps: dict[str, tuple[bytes, AppBinding]] = {}
         self.unavailable_apps: set[str] = set()
         self.pending_app_bytes = 0
         self.app_items = {item.id: app_ids(item) for item in items}
@@ -121,10 +121,10 @@ class Contents:
             for field, ref in item.content_refs.items()
         }
 
-    def app(self, identifier: str, data: bytes, *, binding: AppBinding | None = None) -> bool:
+    def app(self, identifier: str, data: bytes, *, binding: AppBinding) -> bool:
         if (
             len(data) > MAX_APP_BYTES
-            or (binding is not None and len(binding.model_dump_json().encode()) > MAX_APP_BINDING_BYTES)
+            or len(binding.model_dump_json().encode()) > MAX_APP_BINDING_BYTES
             or self.pending_app_bytes + len(data) > MAX_PENDING_APP_BYTES
             or len(self.pending_apps) >= MAX_PENDING_APPS
         ):

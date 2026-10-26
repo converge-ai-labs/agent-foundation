@@ -573,19 +573,6 @@ class SessionHub:
             for ref in refs.values()
             if ref.purpose == "app" and ref.app is not None and ref.app.run_id == run_id
         }
-        if any(ref.purpose == "app" and ref.app is None for ref in refs.values()):
-            # Legacy references have no private binding. Read only public display metadata, never originals.
-            for item in items:
-                values = item.content.get("mcp_apps", [])
-                public = item.content_refs.get("mcp_apps")
-                if public is not None and not public.truncated:
-                    saved = refs[public.id]
-                    values = decode(await self._object(saved), saved)
-                if isinstance(values, list):
-                    for value in values:
-                        app = AppReference.model_validate(value)
-                        if app.app_id in refs and refs[app.app_id].purpose == "app" and not app.unavailable:
-                            apps[app.app_id] = app
         return _Base(
             snapshot,
             attempt,

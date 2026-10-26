@@ -46,11 +46,11 @@ from a13n_service.runs.usage import UsageReport, ingest
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
-# Format 2 adds the private search retention ledger; 3 adds Session hints; 4 adds private App originals;
-# 5 separates App authorization bindings from original presentation data.
+# Format 2 adds the private search retention ledger; 3 adds Session hints;
+# 4 adds private App originals with separate authorization bindings.
 # New workers read older formats; old workers skip newer checkpoints. Upgrade readers first.
-FORMAT = 5
-READABLE_FORMATS = (1, 2, 3, 4, 5)
+FORMAT = 4
+READABLE_FORMATS = (1, 2, 3, 4)
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -116,7 +116,7 @@ class PageRef(_Frozen):
 class RunState(_Frozen):
     model_config = ConfigDict(extra="allow", frozen=True)
 
-    format: Literal[1, 2, 3, 4, 5] = FORMAT
+    format: Literal[1, 2, 3, 4] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)

@@ -50,15 +50,14 @@ logger = get_logger(__name__)
 
 async def _reference(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> ContentObject:
     ref = await runs.content_ref(runtime, actor, workspace_id, run_id, app_id, purpose="app")
-    if ref.truncated or ref.media_type != "application/json" or ref.size_bytes > MAX_APP_BYTES:
+    if ref.app is None or ref.truncated or ref.media_type != "application/json" or ref.size_bytes > MAX_APP_BYTES:
         raise not_found("mcp_app", app_id)
     return ref
 
 
 async def _original(runtime: Runtime, ref: ContentObject) -> SavedApp:
+    assert ref.app is not None
     value = decode(await checkpoints.load(runtime.objects, ref), ref)
-    if ref.app is None:
-        return SavedApp.model_validate(value)
     original = AppOriginal.model_validate(value)
     if original.reference != ref.app.reference:
         raise not_found("mcp_app", ref.id)
@@ -81,8 +80,8 @@ async def original(runtime: Runtime, actor: Principal, workspace_id: str, run_id
 
 async def _binding(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, app_id: str) -> AppBinding:
     ref = await _reference(runtime, actor, workspace_id, run_id, app_id)
-    # Older committed references keep their authorization facts in the original object.
-    saved = ref.app if ref.app is not None else await _original(runtime, ref)
+    saved = ref.app
+    assert saved is not None
     _check_binding(saved, run_id, app_id)
     return saved
 
