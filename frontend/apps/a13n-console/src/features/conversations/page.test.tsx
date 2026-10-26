@@ -329,7 +329,10 @@ it.each(["inherit", "off", "on"])(
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Options" }));
+    await user.click(screen.getByRole("button", { name: "Run options" }));
+    await user.click(
+      screen.getByRole("button", { name: "Conversation setup" }),
+    );
     await user.click(screen.getByRole("combobox", { name: "Environment" }));
     await user.click(
       await screen.findByRole("option", {
@@ -493,8 +496,10 @@ it.each(["writer", "runner", "forbidden", "pinned", "unavailable"])(
     const user = userEvent.setup();
     await screen.findByText("Agent Composer");
     if (scenario === "pinned") {
-      await user.click(screen.getByRole("button", { name: "Options" }));
-      await user.click(screen.getByRole("button", { name: "Advanced" }));
+      await user.click(screen.getByRole("button", { name: "Run options" }));
+      await user.click(
+        screen.getByRole("button", { name: "Advanced overrides" }),
+      );
       await user.type(
         screen.getByRole("textbox", { name: "Pinned agent revision ID" }),
         "apr_old",

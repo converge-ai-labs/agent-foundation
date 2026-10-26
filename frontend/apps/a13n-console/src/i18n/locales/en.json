@@ -3412,5 +3412,14 @@
   "Installing Envd and desktop dependencies": "Installing Envd and desktop dependencies",
   "Install Envd, desktop dependencies and human control on each new sandbox.": "Install Envd, desktop dependencies and human control on each new sandbox.",
   "Earlier runs": "Earlier runs",
-  "Later runs": "Later runs"
+  "Later runs": "Later runs",
+  "Changes apply to the next run only. Unchanged settings are inherited.": "Changes apply to the next run only. Unchanged settings are inherited.",
+  "Replace the agent's instructions for this run.": "Replace the agent's instructions for this run.",
+  "Advanced overrides": "Advanced overrides",
+  "Overrides (JSON)": "Overrides (JSON)",
+  "Model parameters, tools, skills and other agent overrides. Model, instructions and media use the controls above.": "Model parameters, tools, skills and other agent overrides. Model, instructions and media use the controls above.",
+  "Conversation setup": "Conversation setup",
+  "Agent, environment and memories for the new conversation.": "Agent, environment and memories for the new conversation.",
+  "Settings modified": "Settings modified",
+  "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter to send"
 }

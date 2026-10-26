@@ -171,6 +171,7 @@ export function Composer({
           unstyled
           className={styles.messageInput}
           aria-label={t("Message")}
+          aria-keyshortcuts="Meta+Enter Control+Enter"
           placeholder={
             placeholder ??
             (agentName
@@ -190,7 +191,9 @@ export function Composer({
             }
             if (
               event.key !== "Enter" ||
+              !(event.metaKey || event.ctrlKey) ||
               event.shiftKey ||
+              event.altKey ||
               event.nativeEvent.isComposing
             )
               return;
@@ -251,7 +254,7 @@ export function Composer({
       </fieldset>
       <div className={styles.send}>
         <span className={styles.hint}>
-          {stopMode ? t("Esc stops") : t("Enter to send")}
+          {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
         </span>
         {stopMode ? (
           <Button

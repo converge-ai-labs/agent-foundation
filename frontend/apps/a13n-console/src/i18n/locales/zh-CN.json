@@ -445,7 +445,7 @@
   "Edit panel": "编辑面板",
   "Apply panel": "应用面板",
   "Drag panel": "拖动面板",
-  "Restore defaults": "恢复默认配置",
+  "Restore defaults": "恢复默认",
   "Configure queries and preview their results before applying.": "配置查询并预览结果，然后应用到面板。",
   "Title": "标题",
   "Visualization": "可视化",
@@ -3412,5 +3412,14 @@
   "Installing Envd and desktop dependencies": "正在安装 Envd 和桌面依赖",
   "Install Envd, desktop dependencies and human control on each new sandbox.": "在每个新沙箱内安装 Envd、桌面依赖和人工接管服务。",
   "Earlier runs": "更早的运行",
-  "Later runs": "更晚的运行"
+  "Later runs": "更晚的运行",
+  "Changes apply to the next run only. Unchanged settings are inherited.": "仅对下一次运行生效，未修改的设置沿用默认配置。",
+  "Replace the agent's instructions for this run.": "仅在本次运行中替换智能体的指令。",
+  "Advanced overrides": "高级覆盖",
+  "Overrides (JSON)": "覆盖配置（JSON）",
+  "Model parameters, tools, skills and other agent overrides. Model, instructions and media use the controls above.": "模型参数、工具、技能及其他智能体覆盖项。模型、指令和多模态理解使用上方控件设置。",
+  "Conversation setup": "会话设置",
+  "Agent, environment and memories for the new conversation.": "为新会话选择智能体、环境和记忆。",
+  "Settings modified": "设置已修改",
+  "⌘ / Ctrl + Enter to send": "⌘ / Ctrl + Enter 发送"
 }

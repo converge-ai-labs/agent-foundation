@@ -6,9 +6,14 @@
   border: 0;
   min-width: 0;
 }
+/* Keep the legend in the grid instead of the native fieldset border slot,
+   so enclosing settings rows can own their padding. */
 .environmentVariables legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin: 0;
   font-weight: 500;
-  margin-bottom: 8px;
 }
 .environmentVariables p {
   color: var(--a13n-secondary);

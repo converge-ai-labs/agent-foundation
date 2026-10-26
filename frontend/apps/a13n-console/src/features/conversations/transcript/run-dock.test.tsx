@@ -329,6 +329,15 @@ function mount({
         return Response.json(current);
       }
       reads.push(path);
+      if (
+        [
+          "/agents",
+          "/models",
+          "/model-providers",
+          "/provider-types/model",
+        ].some((suffix) => path.endsWith(suffix))
+      )
+        return Response.json({ items: [], next_cursor: null });
       if (path.endsWith("/inbox"))
         return Response.json({
           items: [entry("inb_queued", "Queued test")],
@@ -618,6 +627,7 @@ it("keeps retry identity until the message or execution policy changes", async (
   expect(posts[0].key).toBeTruthy();
   expect(posts[1]).toEqual(posts[0]);
 
+  await user.click(screen.getByRole("button", { name: "Run options" }));
   await user.click(screen.getByRole("button", { name: "Execution policy" }));
   fireEvent.change(
     screen.getByRole("spinbutton", { name: "Foreground wait (seconds)" }),
@@ -640,6 +650,21 @@ it("keeps retry identity until the message or execution policy changes", async (
 it("sends execution overrides once with next_run and returns the next message to inheritance", async () => {
   const posts = mount();
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Run options" }));
+  expect(
+    screen.queryByRole("button", { name: "Conversation setup" }),
+  ).toBeNull();
+  await user.click(
+    screen.getByRole("switch", { name: "Override instructions" }),
+  );
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Instructions override" }),
+    { target: { value: "Answer briefly." } },
+  );
+  await user.click(screen.getByRole("button", { name: "Advanced overrides" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Overrides (JSON)" }), {
+    target: { value: '{"model_settings":{"thinking":"high"},"skills":[]}' },
+  });
   await user.click(screen.getByRole("button", { name: "Execution policy" }));
   screen.getByRole("combobox", { name: "Tool execution" }).focus();
   await user.keyboard("[ArrowDown]");
@@ -658,9 +683,23 @@ it("sends execution overrides once with next_run and returns the next message to
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0].body).toMatchObject({
     delivery: "next_run",
-    options: { execution: { tools: { mode: "inline" }, steering: "boundary" } },
+    options: {
+      execution: { tools: { mode: "inline" }, steering: "boundary" },
+      overrides: {
+        instructions: "Answer briefly.",
+        model_settings: { thinking: "high" },
+        skills: [],
+      },
+    },
   });
+  await user.click(screen.getByRole("button", { name: "Run options" }));
   await user.click(screen.getByRole("button", { name: "Execution policy" }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Override instructions" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(screen.queryByRole("img", { name: "Settings modified" })).toBeNull();
   expect(
     screen.getByRole("combobox", { name: "Tool execution" }).textContent,
   ).toBe("Inherit");
@@ -693,7 +732,7 @@ it.each(["completed", "failed", "waiting", "running"] as const)(
       "Continue without feedback",
       "Get control",
       "Take control",
-      "Execution policy",
+      "Run options",
       "Queued message actions",
       "Create branch",
     ])

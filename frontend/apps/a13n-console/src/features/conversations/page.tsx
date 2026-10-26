@@ -198,7 +198,9 @@ export function NewConversation() {
             (memory !== null && !validSpaceSelection(memory))
           }
           agentName={selected?.name}
-          options={<RunOptions options={options} showAgent={false} />}
+          options={
+            <RunOptions options={options} showAgent={false} agentId={agentId} />
+          }
           submit={async (payload) => {
             const { environment, ...choice } = options.build();
             if (!selected) return;
