@@ -91,6 +91,12 @@ A revision's `config` holds:
 
 Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, or saving fails with `invalid_argument` on that field, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore keeps its configuration and its skill and subagent pins; the models, connections, providers and templates it names are live and are resolved again at each use.
 
+### Context compaction
+
+Long conversations compact older context into a summary. Ordinary threads generate that summary in the background while the current request has verified context headroom. The summary can apply during the same run or when the thread next runs. Recent messages and tool results remain in order. Inline and asynchronous subagents compact synchronously.
+
+When context cannot safely fit, the run waits for pending compaction or uses synchronous compaction. Background failure also uses synchronous recovery when needed. Oversized background inputs use the synchronous path. All summary requests count toward the originating run's `max_usage.requests`; background usage can arrive after that run finishes. Interrupting the run does not cancel its background summary. Archiving the thread retires it, and a fork does not inherit pending compaction.
+
 ### Tool permissions
 
 Every built-in tool, connection tool and client tool has a permission:

@@ -42,7 +42,13 @@ Late ingestion is not lease-fenced: an expired or sealed attempt can still repor
 
 Individual record delivery is append-only: checkpoint and terminal reconciliation insert each fact once, compare its digest, and log and skip oversized (over 65536 bytes) or conflicting records without overwriting the first fact.
 
-`runs.usage_at_seal` is the total visible to the sealing transaction (`requests`, `input_tokens`, `output_tokens` of model records); it is not corrected by later arrivals. `max_usage.requests` counts model records ([05](05-runs.md#execute)).
+`runs.usage_at_seal` is the total visible to the sealing transaction (`requests`, `input_tokens`, `output_tokens` of model records); it is not corrected by later arrivals.
+
+### Model request admission
+
+`max_usage.requests` covers every model generation attributed to the Run, including compaction and inline children. Before dispatch, a short transaction locks the Run and records `model_dispatches(call_id, run_id, run_attempt_id, admitted_at)` together with the admission policy check. The call ID is unique and its attribution is immutable. Admission counts recorded model generations plus admitted calls without a matching model contribution. Usage delivery replaces occupancy by call ID without a second debit; reservations are not usage facts and never appear in usage totals.
+
+Concurrent foreground and background calls, including work from an older Attempt, share this durable ceiling. A refused transaction leaves no occupancy. After admission, an absent report or lost owner retains occupancy because the provider outcome is unknown. Continuation polling reserves no new generation; a provider that starts a new generation is counted when its contribution arrives. The Service adds no cumulative token ceiling.
 
 `GET /usage` (`read`) sums model records per model, including late arrivals, and names each by its key in `model`: `requests`, input, output, cache-read and cache-write tokens, and `cost`, the sum of each record's own priced cost (null when no record of that model was priced). Over completed records with a `first_chunk_at` before `request_ended_at`, `average_time_to_first_chunk_seconds` is the mean wait from `request_started_at` to the first chunk and is null without such a record. Independently, `output_tokens_per_second` divides output tokens from completed records with `request_started_at` before `request_ended_at` by their summed full request durations, including the wait before the first chunk. It includes non-streaming requests and is null without a positive-duration completed record. Output tokens include provider-reported thinking/reasoning tokens; detail counters that are subsets of output are never added again. Tool execution and gaps between requests are excluded. `runs` repeats those per-model sums for each matching Run with records, as `run_id`, `thread_id`, `run_number` and `models`, in Run creation order. `run_number` is the one-based chronological position among all Runs in the Thread, including Runs without matching usage; one statement computes both groupings, so the Run rows add up to the totals. It filters by `run_id`, `thread_id`, `session_id`, `ingested_after` and `ingested_before`. `model` is null for unattributed records. A crash before a provider report reaches the Service can leave an unknown charge; ingestion preserves received facts, not discovery of every billable operation.
 
@@ -64,6 +70,28 @@ The overview returns `usage`, `runs` and `daily`. `timezone` is an IANA timezone
 
 Agent rows carry `agent_id`, `name`, `usage` and `runs`; attribution uses the owning Service Run's Agent, without additional subagent rollups. Model rows carry `model` (the model key), `name` and `usage`; null model/name identify unattributed consumption. Both collections use the standard `items`, `next_cursor`, `limit` and query-bound `cursor` contract. Order is known cost descending, then Agent ID or model key ascending, with unknown cost last. Empty consumption on a Run-only Agent has known zero cost. Pagination is a live view; later consumption can change ordering, and reloading starts from the first page.
 
+## Background compaction facts
+
+```text
+compactions
+  id  organization_id  workspace_id  thread_id  run_id  attempt_id
+  owner_token_hash  lease_expires_at  input_digest  input_ref NULL  result_ref NULL
+  status IN ('running', 'ready', 'failed')  error_code NULL
+  created_at  completed_at NULL
+  disposition NULL IN ('applied', 'skipped', 'archived', 'expired')  settled_at NULL
+  UNIQUE (thread_id) WHERE settled_at IS NULL
+```
+
+Each operation belongs to one Thread and its originating Run and Attempt. Identity and input digest are immutable. A reserved operation is not exposed until its input reference commits. Ready publication stores the immutable result reference; failed generation retains its input and error for Harness recovery. Terminal generation status never changes. Settlement separately records the checkpoint's applied/skipped disposition or administrative retirement. Settled rows remain as identity tombstones.
+
+The input and result own self-contained immutable payloads under a compaction prefix, independent of Run checkpoint cleanup. Hydrated binary media is encoded in those payloads, so retiring the source Run's unreferenced objects cannot break delayed application. Publication occurs outside transactions and starts only with more than `objects.timeout` remaining on the confirmed owner lease. Reads verify committed digests and sizes.
+
+Applied/skipped settlement uses the exact checkpoint transaction described in [05](05-runs.md#background-compaction). Archive settles under the Thread lock. Expired owner leases become failed observations without generation replay. A bounded control sweep retires completed, unsettled operations after seven days only when the Thread has no active Run, rechecking under its lock. Retirement fences late publication and preserves canonical history.
+
+Settlement queues idempotent `checkpoint_cleanup` deliveries for the input and result keys. Deletion waits until the owner lease and bounded upload window have passed; an upload racing settlement queues cleanup again. Only live generation tasks remain in process memory. Database rows and object references own observations and retention.
+
+Compaction usage has source `compaction` and remains attributed to the original Run, Attempt, model and dispatch-time price snapshot, including reports after parent seal. Its independent reporter closes with generation. Late delivery updates current usage totals without changing `usage_at_seal`.
+
 ## Objects
 
 The object store holds immutable bytes under owner-named keys: lowercase slash-separated segments of at most 1024 characters. Its contract, on both the local and S3 backends, is write, read, prefix listing and delete. Every write uses a key no other write uses, ending in 128 random bits or the ID of the row that owns the bytes, so a write is a plain put: repeating an uncertain write stores the same bytes again, and two writers never meet at one key. There is no conditional write and no object catalog table; only committed references make bytes reachable. A committed reference names a key, digest and size, and a read that finds missing or different bytes is `unavailable` (dependency `objects`).
@@ -78,6 +106,7 @@ The object store holds immutable bytes under owner-named keys: lowercase slash-s
 | `orgs/{org}/runs/{run}/subagents/{attempt}/{random}`        | The state of an inline subagent that ended in a run, saved by that attempt |
 | `orgs/{org}/uploads/{upload}`                               | Upload bytes ([04](04-resources.md#uploads-and-assets))                    |
 | `orgs/{org}/images/{owner}/{random}`                        | Organization, workspace and agent images ([03](03-tenancy.md#images))      |
+| `compactions/{workspace}/{operation_hash}/{kind}.json`      | A background compaction operation's independent payloads                   |
 | `users/{user}/images/{random}`                              | User avatars                                                               |
 
 Run objects are compressed with zstd at `worker.compression_level`; a reference's digest and size describe the stored bytes. Publication writes the bytes outside any database session, then commits the reference. A checkpoint writes its state, tail and new pages concurrently and finishes every write before reporting a failure, so failure sealing cannot race a still-running write. A failed publication leaves unused objects.
@@ -93,7 +122,7 @@ This adds at most one small outbox row per checkpoint that replaces a reclaimabl
 
 A run normally holds one state and one tail object, its pages, and the content and subagent objects its checkpoint references, plus replaced objects awaiting reclamation. Objects in a sealed run's keep set are never deleted: every sealed run keeps its final state, whatever its outcome, because continuation and fork start from it. A successor that inherits a saved object references it under the key of the run that saved it, whose frozen references keep it.
 
-There is no other object reclamation: no age-based upload expiry, orphan inventory or physical purge of history, assets or images. Unused uploads, the bytes of an upload that lost a concurrent request key, and replaced images stay stored; upload limits still apply.
+Beyond Run objects and [background compaction payloads](#background-compaction-facts), there is no other object reclamation: no age-based upload expiry, orphan inventory or physical purge of history, assets or images. Unused uploads, the bytes of an upload that lost a concurrent request key, and replaced images stay stored; upload limits still apply.
 
 ## Checkpoints and display
 
@@ -283,7 +312,7 @@ An unsettled claim becomes claimable again when its lease expires, with its atte
 | `email`        | Identity flows that send a one-use link ([03](03-tenancy.md#identity-mail))                   | Sends over SMTP, then settles delivered; a failure raises                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `memory_purge` | Deleting a record memory, keyed by the memory ([11](11-memory.md#namespace-purge))            | Opens the provider's store on the namespace and purges it, then settles delivered; a store error raises `Undelivered` with its code, and an unregistered provider type is dead (`type_unavailable`)                                                                                                                                                                                                                                                                                                                                                                                               |
 
-| `checkpoint_cleanup` | Checkpoint replacement, takeover and seal | Deletes retired references or scans orphan objects as described in [object reclamation](#objects); continued scans persist progress and defer, failures use the shared retry policy. |
+| `checkpoint_cleanup` | Checkpoint replacement, takeover, seal and compaction settlement | Deletes retired references or scans orphan objects as described in [object reclamation](#objects); continued scans persist progress and defer, failures use the shared retry policy. |
 
 Identity mail is staged only when `auth.mail.smtp_host` is set; otherwise the flow logs that mail is not configured and stages nothing. The mail content is encrypted for its outbox row and never logged.
 

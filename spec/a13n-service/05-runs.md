@@ -370,6 +370,18 @@ Output larger than `worker.output_bytes` fails the run with `payload_too_large`.
 
 When a worker drains for shutdown, each attempt yields at its next model boundary (`yield_reason = handoff`), where the in-flight request can simply be sent again; the drain waits up to `worker.drain_seconds`. A wait for mounts yields at once and a wait for children returns early, so the attempt reaches its next boundary. A yielded run is immediately due and spends no attempt.
 
+## Background compaction
+
+Ordinary conversation Threads use Harness background compaction. Inline and asynchronous child agents compact synchronously. Service supplies the `CompactionOperator`; Harness owns prefix capture, complete suffix preservation, generation retries, capacity checks, synchronous fallback, result application and runtime restoration under its [compaction contract](../a13n-harness/09-context-and-memory.md#background-execution-and-result-application).
+
+Admission freezes the originating model selection, request context and Run configuration, and persists the input under the current Attempt's authority before starting generation. The worker opens independent model clients and a separate usage scope. Each summary dispatch rechecks current principal and workspace authority against the originating Run's accepted ceiling, model/provider eligibility and the shared [request budget](07-facts-and-delivery.md#model-request-admission). Original outbound restrictions apply to both endpoint access and native media. An input exceeding `objects.max_bytes` declines background admission and enters Harness's synchronous fallback for that Run.
+
+Generation has its own secret owner lease. Parent completion, cancellation, handoff and cancellation of a foreground waiter leave it running. Archive fences the operation and stops generation on its next owner check. Owner loss produces a retained failed observation; another worker never replays that background request. Publication retries reuse the generated result. The result becomes visible only after its object reference and ready status commit in PostgreSQL.
+
+An active Run observes completion at eligible Harness boundaries. A subsequent Run loads its selected checkpoint and any ready result together as `previous_state` and `compaction_result`; Service never rewrites a sealed checkpoint to apply a summary. A fork consults only its destination Thread's operation, so it cannot inherit the source Thread's pending work.
+
+Before publishing a checkpoint, Service derives the applied or skipped disposition from that exact frozen state through `compaction_disposition`. Checkpoint pointer publication, operation settlement and cleanup intent share one lease-fenced transaction. Rollback preserves the operation for redelivery. A failed or cancelled Run without a matching committed checkpoint does not acknowledge it. Generation status and checkpoint disposition remain independent [durable facts](07-facts-and-delivery.md#background-compaction-facts).
+
 ## Retained tool executions
 
 Harness owns the actual invocation, coroutine and native process handle. Each worker holds one Harness tool execution runtime across its attempts; Service supplies durable storage, independent owner leases, Thread-wide ordering and completion delivery. Releasing the foreground wait returns an execution receipt while the original invocation continues. Completing or handing off a Run does not finish its retained tools, and later Runs may execute on any worker.

@@ -75,6 +75,7 @@ from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
 from a13n_service.runs.checkpoints import CLEANUP, clean
 from a13n_service.runs.children import child_results
+from a13n_service.runs.compactions import sweep as compaction_sweep
 from a13n_service.runs.desktop_assistance.maintenance import sweep as desktop_assistance_sweep
 from a13n_service.runs.desktop_assistance.routes import router as desktop_assistance_router
 from a13n_service.runs.desktop_assistance.tables import (
@@ -109,7 +110,9 @@ from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
     AttemptRow,
+    CompactionRow,
     InboxEntryRow,
+    ModelDispatchRow,
     PendingAnswerRow,
     RunItemPageRow,
     RunRow,
@@ -271,6 +274,15 @@ def _recover_connection_operations(runtime: Runtime) -> Sweep:
     )
 
 
+def _reconcile_compactions(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="reconcile_compactions",
+        every=runtime.settings.control.scan_seconds,
+        run=partial(compaction_sweep, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=60,
+    )
+
+
 def _deliver_outbox(runtime: Runtime) -> Sweep:
     settings = runtime.settings
     control = settings.control
@@ -385,6 +397,8 @@ OSS = Distribution(
         PendingAnswerRow,
         RunItemPageRow,
         AttemptRow,
+        CompactionRow,
+        ModelDispatchRow,
         UsageRecordRow,
     ),
     routers=(
@@ -425,6 +439,7 @@ OSS = Distribution(
         _advance_threads,
         organization_sweep,
         _expire_leases,
+        _reconcile_compactions,
         _reconcile_tool_executions,
         _prune_tool_results,
         desktop_assistance_sweep,

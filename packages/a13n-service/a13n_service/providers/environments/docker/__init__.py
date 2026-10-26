@@ -28,7 +28,7 @@ from .definition import DOCKER as BASE_DOCKER
 
 _MOUNTS = DockerRecipe.model_fields["mounts"]
 # Reviewed Envd-owned sandbox release; independent of the Service version.
-DEFAULT_SANDBOX_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:0.3.0"
+DEFAULT_SANDBOX_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:0.5.1"
 
 
 def default_image() -> str:

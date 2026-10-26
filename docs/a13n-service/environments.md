@@ -101,12 +101,14 @@ Leave `recipe.image` unset to use the Service-reviewed `ghcr.io/converge-ai-labs
 
 | Service build                                         | Image tag |
 | ----------------------------------------------------- | --------- |
-| Stable or RC                                          | `0.3.0`   |
+| Stable or RC                                          | `0.5.1`   |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`     |
 
 Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. A Docker recipe defaults to `pull_policy: if_missing`: the Engine uses local images and pulls missing ones. Set `never` to require a local image. The automatically provisioned template stores the reviewed sandbox image explicitly, so later Service upgrades do not silently change it.
 
 Each instance saves its resolved image before its first create; upgrades and interrupted creates keep that image. Legacy instances without a saved image keep the historical `a13n-docker-environment:dev`; recreate them to migrate before removing that old image. Create a new environment to use a changed image or template.
+
+This Service dependency line uses EIP 0.3. Upgrade custom Envd endpoints and images to the compatible 0.5 line before upgrading workers. Recreate existing environments to replace their frozen older image recipes; changing the default does not upgrade an existing instance.
 
 ## Instances
 
