@@ -84,6 +84,8 @@ Status is a 6px dot and a 12px medium label. Settled states (success and neutral
 
 On narrow Console list pages, the title and primary action share the first row and the description spans beneath them. Header and toolbar controls retain 32px height and 13px labels, with compact icons and preserved touch hit areas. Filters wrap as a group; small screens use balanced rows rather than a wide picker forcing each remaining filter onto its own line.
 
+Choose English casing for its context and keep peer controls consistent: status labels and filter options share their translated spelling; action labels and field headings generally use sentence case; inline phrases remain natural within their sentence. Preserve proper names, standard acronyms (API, ID, URL), and exact protocol identifiers.
+
 **Detail page.** Back link → identity header (44px avatar or brand tile, 24px name, status pill, edit affordance, key chip with copy, one-line description) with primary actions at the right → underline tabs → content up to 1280px, optionally with a 256px sticky summary rail at the right. Sections are titled at 15px with a 13px description and separated by 32px; a section that lists items uses surface rows; a section that edits values uses fields.
 
 **Editor with drafts.** Edits accumulate in a draft. A floating save bar appears at the bottom center with a pulse dot, "Unsaved changes", a one-line consequence, an optional note field, Discard, and the primary Save. Autosaved settings show an inline status beside the control instead.

@@ -23,10 +23,13 @@ const variants: Record<string, StatusPillVariant> = {
 /** Maps a domain state to a semantic pill; the label always names the state. */
 export function StatePill({ state, label }: { state: string; label?: string }) {
   const { t } = useTranslation();
+  const fallback = state.replaceAll("_", " ");
   return (
     <StatusPill variant={variants[state] ?? "neutral"} data-state={state}>
       {label ??
-        t(`state.${state}`, { defaultValue: state.replaceAll("_", " ") })}
+        t(`state.${state}`, {
+          defaultValue: fallback.charAt(0).toUpperCase() + fallback.slice(1),
+        })}
     </StatusPill>
   );
 }
