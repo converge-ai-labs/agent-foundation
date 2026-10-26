@@ -494,3 +494,131 @@ async def test_viewer_connect_rechecks_stop_after_socket_open(browsers, monkeypa
         release.set()
         await operation
         await stopping
+
+
+@pytest.mark.parametrize("human", [False, True])
+async def test_last_tab_close_keeps_binding_reusable(browsers, human):
+    item = browsers.bindings["thread-a"]
+    scope = item.scope
+    backend = browsers.backend("thread-a", item.identity)
+    if human:
+        await browsers.control("thread-a", item.identity, human=True)
+        await browsers.runtime.close_target(item.page.target)
+        assert browsers.human_thread == "thread-a" and not browsers.released.is_set()
+        await browsers.control("thread-a", item.identity, human=False)
+    else:
+        assert await backend.tabs("close", target=item.page.target) == ()
+    assert browsers.binding("thread-a") == item.identity
+    assert item.status == "ready" and not item.closed.is_set()
+    assert await backend.tabs("list") == ()
+    with pytest.raises(BrowserError, match="No tabs remain"):
+        await backend.observe()
+    await browsers.start("thread-a", item.identity, explicit=True)
+    assert item.scope is scope
+    page = Page("new", "new-session")
+
+    async def create(**kwargs):
+        browsers.runtime.pages[page.target] = page
+        return page
+
+    browsers.runtime.create = AsyncMock(side_effect=create)
+    await backend.tabs("new")
+    assert item.scope is scope and item.page is page
+    assert browsers.owners[page.target] == "thread-a"
+
+
+async def test_takeover_focus_failure_rolls_back_all_scopes(browsers):
+    item = browsers.bindings["thread-a"]
+    browsers.focus.side_effect = BrowserError("focus failed")
+    with pytest.raises(BrowserError, match="focus failed"):
+        await browsers.control("thread-a", item.identity, human=True)
+    assert not browsers.human_thread and browsers.released.is_set()
+    assert not browsers.control_token and not browsers.tickets
+    for thread, binding in browsers.bindings.items():
+        await browsers.backend(thread, binding.identity).observe()
+    browsers.desktop.settle_input.assert_awaited()
+
+
+async def test_cancelled_takeover_drains_before_resuming(browsers):
+    item = browsers.bindings["thread-b"]
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def observe(page, query):
+        entered.set()
+        await finish.wait()
+
+    browsers.runtime.observe.side_effect = observe
+    operation = asyncio.create_task(browsers.backend("thread-b", item.identity).observe())
+    await entered.wait()
+    takeover = asyncio.create_task(browsers.control("thread-a", browsers.binding("thread-a"), human=True))
+    while not item.scope._paused:
+        await asyncio.sleep(0)
+    takeover.cancel()
+    await asyncio.sleep(0)
+    assert not takeover.done() and not browsers.released.is_set()
+    finish.set()
+    await operation
+    with pytest.raises(asyncio.CancelledError):
+        await takeover
+    assert browsers.released.is_set() and not browsers.human_thread
+    assert not item.scope._paused
+    await browsers.backend("thread-b", item.identity).observe()
+
+
+async def test_takeover_input_failure_requires_explicit_restart(browsers):
+    browsers.desktop.settle_input.side_effect = RuntimeError("display gone")
+    with pytest.raises(RuntimeError, match="display gone"):
+        await browsers.control("thread-a", browsers.binding("thread-a"), human=True)
+    assert browsers.runtime_failed and browsers.released.is_set()
+    assert not browsers.human_thread and not browsers.control_token
+    assert all(item.status == "failed" for item in browsers.bindings.values())
+
+
+async def test_empty_binding_can_view_and_hand_back_without_replacement(browsers):
+    item = browsers.bindings["thread-a"]
+    browsers.runtime._destroyed({"targetId": item.page.target}, None)
+    control = await browsers.control("thread-a", item.identity, human=True)
+    access = await browsers.access(
+        "thread-a",
+        BrowserAccessRequest(
+            session_id=item.identity,
+            control_token=control.control_token,
+        ),
+    )
+    assert access.control
+    browsers.focus.assert_not_awaited()
+    with pytest.raises(HarnessUiError, match="Open a tab"):
+        await browsers.resize(
+            "thread-a",
+            BrowserViewportRequest(
+                session_id=item.identity,
+                control_token=control.control_token,
+                preset="phone",
+            ),
+        )
+    await browsers.control("thread-a", item.identity, human=False)
+    assert browsers.released.is_set() and item.status == "ready"
+
+
+async def test_pause_failure_waits_for_other_scope_before_retiring(browsers):
+    item = browsers.bindings["thread-b"]
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def observe(page, query):
+        entered.set()
+        await finish.wait()
+
+    browsers.runtime.observe.side_effect = observe
+    browsers.bindings["thread-a"].scope.pause = AsyncMock(side_effect=BrowserError("scope closed"))
+    operation = asyncio.create_task(browsers.backend("thread-b", item.identity).observe())
+    await entered.wait()
+    takeover = asyncio.create_task(browsers.control("thread-a", browsers.binding("thread-a"), human=True))
+    while not item.scope._paused:
+        await asyncio.sleep(0)
+    assert not takeover.done() and not browsers.released.is_set()
+    finish.set()
+    await operation
+    with pytest.raises(BrowserError, match="scope closed"):
+        await takeover
+    assert browsers.runtime_failed and browsers.released.is_set()
+    assert all(item.status == "failed" for item in browsers.bindings.values())

@@ -1187,7 +1187,7 @@ def create_webui(
         openapi_extra=_body(BrowserAccessRequest),
     )
     async def browser_access(thread_id: str, request: Request) -> BrowserAccess:
-        return await app().browsers().access(thread_id, await _document(request, BrowserAccessRequest))
+        return await app().browser_access(thread_id, await _document(request, BrowserAccessRequest))
 
     @server.websocket("/api/threads/{thread_id}/browser/connect")
     async def connect_browser(

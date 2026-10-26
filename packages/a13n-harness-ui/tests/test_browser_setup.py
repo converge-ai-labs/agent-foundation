@@ -321,7 +321,7 @@ async def test_settings_check_uses_draft_paths_without_publishing_or_launching(t
 
     checked = AsyncMock(return_value=module.BrowserSetup(platform="linux", supported=True, ready=False))
     monkeypatch.setattr(app_module, "inspect_browser", checked)
-    async with shared_server(tmp_path) as (_, _, client):
+    async with shared_server(tmp_path, share_computer=True) as (_, _, client):
         configuration = tmp_path / "a13n-harness-ui.yaml"
         saved = configuration.read_text()
         body = {"executable": "/draft/chrome", "vnc_executable": "/draft/x11vnc"}
@@ -333,7 +333,7 @@ async def test_settings_check_uses_draft_paths_without_publishing_or_launching(t
             "/api/browser/check", json=body, headers={"Authorization": "Bearer owner-test-key"}
         )
         assert response.status_code == 200 and response.json()["ready"] is False
-        checked.assert_awaited_once_with(BrowserConfiguration(**body))
+        checked.assert_awaited_once_with(BrowserConfiguration(**body), no_sandbox=False)
         assert configuration.read_text() == saved
         checked.reset_mock()
         invalid = await client.post(
@@ -341,3 +341,43 @@ async def test_settings_check_uses_draft_paths_without_publishing_or_launching(t
         )
         assert invalid.status_code == 400
         checked.assert_not_awaited()
+
+
+@pytest.mark.parametrize("no_sandbox", [False, True])
+async def test_root_preparation_and_start_share_explicit_sandbox_policy(host, monkeypatch, tmp_path, no_sandbox):
+    from a13n_harness_ui.browser import Binding, HostBrowsers
+    from a13n_harness_ui.errors import HarnessUiError
+
+    monkeypatch.setattr(module.os, "geteuid", lambda: 0)
+    setup = await module.inspect_browser(host, no_sandbox=no_sandbox)
+    assert setup.ready is no_sandbox
+    if not no_sandbox:
+        assert "non-root" in setup.message and "--browser-no-sandbox" in setup.message
+        browsers = HostBrowsers(root=tmp_path, available=True, authorize=AsyncMock(), configuration=host)
+        binding = browsers.bindings["a"] = Binding()
+        with pytest.raises(HarnessUiError, match=r"non-root.*--browser-no-sandbox"):
+            await browsers.start("a", binding.identity, explicit=True)
+        assert browsers.process is None and browsers.desktop is None
+
+
+async def test_disabled_sharing_blocks_browser_discovery_before_probing(tmp_path, monkeypatch):
+    from a13n_harness_ui import app as app_module
+    from a13n_harness_ui.errors import HarnessUiError
+
+    from .test_app import _settings, _write_configuration
+
+    scan, check = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(app_module, "scan_browsers", scan)
+    monkeypatch.setattr(app_module, "inspect_browser", check)
+    async with app_module.open_harness_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=_write_configuration(tmp_path),
+        host_mode="webui",
+        share_computer=False,
+    ) as app:
+        with pytest.raises(HarnessUiError, match="sharing"):
+            await app.scan_browser_executables()
+        with pytest.raises(HarnessUiError, match="sharing"):
+            await app.check_browser_configuration(BrowserConfiguration())
+    scan.assert_not_awaited()
+    check.assert_not_awaited()

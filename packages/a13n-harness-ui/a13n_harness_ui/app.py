@@ -38,6 +38,8 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
 from a13n_harness_ui.browser import (
+    BrowserAccess,
+    BrowserAccessRequest,
     BrowserCommand,
     BrowserControl,
     BrowserState,
@@ -105,7 +107,6 @@ from a13n_harness_ui.environment_monitoring import (
 )
 from a13n_harness_ui.environment_profiles import (
     BUILT_IN_ENVIRONMENT_PROFILES,
-    FULL_CONTROL_PROFILE_ID,
     LocalProfileId,
     built_in_environment_profile,
 )
@@ -1828,11 +1829,16 @@ class HarnessUiApp:
 
     async def scan_browser_executables(self) -> BrowserScan:
         async with self._operation():
+            self.browsers()
             return await scan_browsers()
 
     async def check_browser_configuration(self, configuration: BrowserConfiguration) -> BrowserSetup:
         async with self._operation():
-            return await inspect_browser(configuration)
+            return await inspect_browser(configuration, no_sandbox=self.browsers().no_sandbox)
+
+    async def browser_access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
+        async with self._operation():
+            return await self.browsers().access(thread_id, request)
 
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():
@@ -3513,8 +3519,8 @@ async def open_harness_ui_app(
                     raise HarnessUiError(
                         "Browser requires an active root conversation.", code="browser_thread_unavailable"
                     )
-                if thread.configuration.environment_profile_id != FULL_CONTROL_PROFILE_ID:
-                    raise HarnessUiError("Host browser requires Full Control.", code="browser_full_control_required")
+                # Agent Environment authority is captured by RootRunAdmission.
+                # Next-Run defaults do not revoke or expand the current Run.
 
             browsers = HostBrowsers(
                 root=settings.storage.data_root / "browsers",

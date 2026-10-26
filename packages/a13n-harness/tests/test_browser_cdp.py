@@ -631,3 +631,29 @@ async def test_capture_stops_own_screencast_on_failure(browser, failure):
             await capture(browser, page)
     assert browser.client.send_raw.call_args_list[-1].args == ("Page.stopScreencast", {}, "session")
     assert page.visual is None
+
+
+async def test_resize_corrects_delayed_window_manager_decorations(browser):
+    page = Page("page", "session")
+    bounds = {"windowState": "maximized", "width": 1280, "height": 880}
+    decoration = {"width": 0, "height": 80}
+    sizes = []
+
+    async def set_bounds(identity, values):
+        bounds.update(values)
+        if "width" in values:
+            sizes.append((values["width"], values["height"]))
+            # The WM applies borders only after the first resize from maximized.
+            decoration.update(width=8, height=84)
+
+    browser.window = AsyncMock(side_effect=lambda page: {"windowId": 1, "bounds": dict(bounds)})
+    browser.window_bounds = AsyncMock(side_effect=set_bounds)
+    browser.evaluate = AsyncMock(
+        side_effect=lambda page, expression: {
+            "width": bounds["width"] - decoration["width"],
+            "height": bounds["height"] - decoration["height"],
+        }
+    )
+    await browser.resize_window(page, 768, 1024)
+    assert sizes == [(768, 1104), (776, 1108)]
+    assert await browser.evaluate(page, "size") == {"width": 768, "height": 1024}

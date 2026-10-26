@@ -205,7 +205,9 @@ async def probe(path: str, argument: str) -> str:
             await process.wait()
 
 
-async def inspect_browser(configuration: BrowserConfiguration | None = None) -> BrowserSetup:
+async def inspect_browser(
+    configuration: BrowserConfiguration | None = None, *, no_sandbox: bool = False
+) -> BrowserSetup:
     configuration = configuration or BrowserConfiguration()
     platform = host_platform()
     supported = platform == "linux"
@@ -265,6 +267,21 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
             purpose="Streams the private browser desktop and accepts human keyboard and pointer input.",
         ),
     ]
+    sandbox_blocked = supported and os.geteuid() == 0 and not no_sandbox
+    sandbox_guidance = (
+        "Chromium cannot run as root with its sandbox enabled. Restart Harness UI as a non-root user, "
+        "or explicitly opt out with webui --browser-no-sandbox "
+        "(A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1)."
+    )
+    if sandbox_blocked:
+        requirements.append(
+            BrowserRequirement(
+                name="Chromium sandbox",
+                installed=False,
+                purpose="Chromium's sandbox requires a non-root Host account.",
+                detail=sandbox_guidance,
+            )
+        )
     if vnc:
         requirements.append(
             BrowserRequirement(
@@ -349,6 +366,8 @@ async def inspect_browser(configuration: BrowserConfiguration | None = None) -> 
             )
     if not supported:
         message = "The remote desktop currently requires a Linux Host. Browser detection is available on this platform."
+    elif sandbox_blocked:
+        message = sandbox_guidance
     elif ready:
         message = "Browser and VNC executables are ready. Harness manages their startup and cleanup."
     else:

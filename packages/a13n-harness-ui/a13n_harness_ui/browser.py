@@ -102,8 +102,8 @@ def failure(message: str, code: str = "operation_failed") -> HarnessUiError:
     return HostBrowserError(message, code="browser_" + code)
 
 
-async def require_browser(configuration: BrowserConfiguration) -> BrowserSetup:
-    setup = await inspect_browser(configuration)
+async def require_browser(configuration: BrowserConfiguration, *, no_sandbox: bool = False) -> BrowserSetup:
+    setup = await inspect_browser(configuration, no_sandbox=no_sandbox)
     if not setup.ready or setup.browser is None:
         raise failure(setup.message, "runtime_not_ready")
     return setup
@@ -198,13 +198,13 @@ class HostBrowsers:
 
     async def setup(self, thread_id: str) -> BrowserSetup:
         await self.authorize(thread_id)
-        result = await inspect_browser(self.configuration)
+        result = await inspect_browser(self.configuration, no_sandbox=self.no_sandbox)
         await self.authorize(thread_id)
         return result
 
     async def enable(self, thread_id: str) -> BrowserState:
         await self.authorize(thread_id)
-        await require_browser(self.configuration)
+        await require_browser(self.configuration, no_sandbox=self.no_sandbox)
         self.bindings.setdefault(thread_id, Binding())
         return self.state(thread_id)
 
@@ -250,7 +250,7 @@ class HostBrowsers:
         ):
             return
         await self.close_runtime()
-        preparation = await require_browser(self.configuration)
+        preparation = await require_browser(self.configuration, no_sandbox=self.no_sandbox)
         assert preparation.browser is not None and preparation.vnc is not None
         self.desktop = VncDesktop(preparation.vnc)
         try:
@@ -406,31 +406,13 @@ class HostBrowsers:
             self.failed("The browser runtime window closed. Start the browser to continue.")
             return
         self.human_tabs.pop(target, None)
-        self.retire_empty_bindings()
-
-    def retire_empty_bindings(self) -> None:
-        # The runtime removes scope membership before invoking page_closed.
-        for owner, item in self.bindings.items():
-            pending = (owner, item.identity) in self.human_tabs.values()
-            if item.status == "ready" and item.scope and not item.scope.targets and not pending:
-                item.scope.retire()
-                item.closed.set()
-                item.status = "stopped"
-                self.revoke_viewers(owner)
-                if self.human_thread == owner and self.runtime:
-                    self.control_token = ""
-
-                    async def settle(thread: str = owner) -> None:
-                        async with self.control_lock:
-                            if self.human_thread == thread:
-                                await self.release()
-
-                    self.runtime.background(settle())
+        # Closing a tab changes membership, not the binding or input authority.
+        # Empty scopes remain usable until explicit Stop/Reset or runtime failure.
 
     async def start(self, thread_id: str, binding: str, *, explicit: bool = False) -> BrowserState:
         await self.authorize(thread_id)
         existing = self.checked(thread_id, binding)
-        if existing.status == "ready" and existing.page is not None:
+        if existing.status == "ready":
             return self.state(thread_id)
         async with self.control_lock, self.lifecycle:
             item = self.checked(thread_id, binding)
@@ -462,9 +444,7 @@ class HostBrowsers:
                 item.status = "ready"
             except Exception as exc:
                 item.status, item.error = "failed", str(exc)
-                raise failure(
-                    "Chromium startup failed. Check the executable and shared profile.", "runtime_unavailable"
-                ) from exc
+                raise failure(f"Chromium startup failed: {exc}", "runtime_unavailable") from exc
             return self.state(thread_id)
 
     async def stop(self, thread_id: str, binding: str) -> BrowserState:
@@ -493,7 +473,9 @@ class HostBrowsers:
             item = self.require_control(thread_id, request.session_id, request.control_token)
             if not self.desktop or not self.desktop.desktop.xrandr:
                 raise failure("Desktop resizing is unavailable on this Host.", "resize_unavailable")
-            assert self.runtime and item.page
+            if item.page is None:
+                raise failure("Open a tab before resizing the browser.", "not_ready")
+            assert self.runtime
             async with item.page.lock:
                 self.require_control(thread_id, request.session_id, request.control_token)
                 item.viewport = request.preset
@@ -555,9 +537,6 @@ class HostBrowsers:
                     ):
                         await item.scope.attach(target, select=False)
                 self.human_tabs.clear()
-                # A human may close the original tab before the replacement is
-                # admitted. Reconcile empty bindings after exact-target adoption.
-                self.retire_empty_bindings()
             if previous:
                 await self.sync_selected_tab(previous)
                 await self.release_keys(previous)
@@ -581,23 +560,41 @@ class HostBrowsers:
                 self.released.clear()
                 # Existing per-target operations settle; newly admitted ones see
                 # the barrier. Ordinary Agent work has no browser-wide queue.
-                await asyncio.gather(
+                drain = asyncio.gather(
                     *(
                         candidate.scope.pause()
                         for candidate in self.bindings.values()
                         if candidate.status == "ready" and candidate.scope
-                    )
+                    ),
+                    *tuple(self.operations),
+                    return_exceptions=True,
                 )
-                await asyncio.gather(*tuple(self.operations), return_exceptions=True)
-                self.checked(thread_id, binding)
-                await self.revoke()
-                assert item.page is not None
-                await self.focus(item.page)
-                self.control_token = secrets.token_urlsafe(24)
-                if self.runtime:
-                    for page in self.runtime.pages.values():
-                        page.invalidate()
-                        page.requires_observation = True
+                try:
+                    results = await asyncio.shield(drain)
+                    for result in results:
+                        if isinstance(result, BaseException):
+                            raise result
+                    self.checked(thread_id, binding)
+                    await self.revoke()
+                    if item.page is not None:
+                        await self.focus(item.page)
+                    self.control_token = secrets.token_urlsafe(24)
+                    if self.runtime:
+                        for page in self.runtime.pages.values():
+                            page.invalidate()
+                            page.requires_observation = True
+                except BaseException:
+                    try:
+                        # Cancellation must not cancel completion futures or
+                        # resume a scope whose pause is still draining.
+                        results = await asyncio.shield(drain)
+                        if any(isinstance(result, BaseException) for result in results):
+                            self.failed("Browser takeover failed. Start the browser again.")
+                        if not self.runtime_failed:
+                            await self.release()
+                    except BaseException:
+                        self.failed("Browser takeover cleanup failed. Start the browser again.")
+                    raise
             else:
                 if self.human_thread and self.human_thread != thread_id:
                     raise failure("Hand back control in its owning Thread.", "control_conflict")
@@ -614,7 +611,7 @@ class HostBrowsers:
         await self.authorize(thread_id)
         async with self.control_lock:
             item = self.checked(thread_id, request.session_id)
-            if item.status != "ready" or item.page is None or self.desktop is None:
+            if item.status != "ready" or self.desktop is None:
                 raise failure("Start the browser before viewing.", "not_ready")
             controlling = (
                 self.human_thread == thread_id
@@ -623,7 +620,7 @@ class HostBrowsers:
             )
             if request.control_token and not controlling:
                 raise failure("Human input authority has been revoked.", "control_conflict")
-            if not self.human_thread or controlling:
+            if item.page is not None and (not self.human_thread or controlling):
                 await self.focus(item.page)
             now = time.monotonic()
             self.tickets = {key: value for key, value in self.tickets.items() if value[4] > now}

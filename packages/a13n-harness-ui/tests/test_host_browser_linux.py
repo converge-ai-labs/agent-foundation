@@ -278,7 +278,9 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         await browsers.close()
 
 
-async def test_thread_tabs_concurrent_actions_and_human_selection(tmp_path, site, browser_configuration, request):
+async def test_thread_tabs_concurrent_actions_and_human_selection(
+    tmp_path, site, browser_configuration, request, monkeypatch
+):
     browsers = HostBrowsers(
         root=tmp_path / "browser",
         available=True,
@@ -337,9 +339,28 @@ async def test_thread_tabs_concurrent_actions_and_human_selection(tmp_path, site
         # input still belongs to B rather than whichever window has native focus.
         observed_b = await two.observe()
         field_b = next(item.target for item in observed_b.elements if item.description == "Message")
-        await two.interact(
-            Fill(kind="fill", target=Ref(kind="ref", ref=field_b), text="B still working"), revision=observed_b.revision
-        )
+        original_send = runtime.send
+        viewer_accesses = 0
+
+        async def send(method, params=None, page=None):
+            nonlocal viewer_accesses
+            if method.startswith("Input."):
+                # Opening A's read-only viewer during B's dispatch changes the
+                # native foreground, but must not redirect page-targeted input.
+                access = await browsers.access("a", BrowserAccessRequest(session_id=a.session_id))
+                assert not access.control
+                viewer_accesses += 1
+            return await original_send(method, params, page)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(runtime, "send", send)
+            result = await two.interact(
+                Fill(kind="fill", target=Ref(kind="ref", ref=field_b), text="B still working"),
+                revision=observed_b.revision,
+            )
+        assert json.loads(result)["verification"] == "passed"
+        assert viewer_accesses > 0
+        assert await runtime.evaluate(first, "document.querySelector('input').value") == ""
         assert await runtime.evaluate(second, "document.querySelector('input').value") == "B still working"
         observed_b = await two.observe()
         button = next(item.target for item in observed_b.elements if item.description == "Sign in")
@@ -366,7 +387,12 @@ async def test_thread_tabs_concurrent_actions_and_human_selection(tmp_path, site
         assert len(await one.tabs("list")) == 1
         assert browsers.bindings["b"].page is second
         await one.tabs("close", target=first.target)
-        assert browsers.state("a").status == "stopped"
+        assert browsers.state("a").status == "ready"
+        assert await one.tabs("list") == ()
+        scope = browsers.bindings["a"].scope
+        await one.tabs("new", url=site)
+        assert browsers.bindings["a"].scope is scope
+        assert browsers.state("a").session_id == a.session_id
         assert await runtime.evaluate(second, "document.querySelector('input').value") == "B still working"
     finally:
         await browsers.close()
@@ -463,7 +489,8 @@ async def test_saved_password_autofill_after_restart_without_model_secret_values
             tools = BrowserUseCapability(backend).get_toolset().tools
 
             async def call(name, _tools=tools, **kwargs):
-                return await _tools[name].function_schema.call(kwargs, None)
+                schema = _tools[name].function_schema
+                return await schema.call(schema.validator.validate_python(kwargs), None)
 
             await call("browser_navigate", url=site)
             snapshot = await call("browser_observe")

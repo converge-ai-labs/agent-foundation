@@ -284,3 +284,68 @@ async def test_management_state_is_published_before_execution_and_after_partial_
         assert head is not None and head.state is not None
         saved = await app._store.objects.read_model(head.state, StoredEnvironmentState)
         assert saved.state == observed
+
+
+@pytest.mark.parametrize("sandbox_default", [False, True])
+async def test_captured_full_control_browser_survives_next_run_default_changes(tmp_path, sandbox_default):
+    import asyncio
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness.capabilities.browser.cdp import Chromium, Page
+    from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
+
+    from .test_app import _reconstructed
+
+    entered, proceed = asyncio.Event(), asyncio.Event()
+    used = []
+
+    class Reconstructor:
+        def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+            capability = next(cap for cap in root_capabilities if isinstance(cap, BrowserUseCapability))
+
+            async def model(messages, info):
+                used.append(await capability.backend.tabs("list"))
+                entered.set()
+                await proceed.wait()
+                used.append(await capability.backend.tabs("list"))
+                yield "done"
+
+            return _reconstructed(model, root_capabilities)
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=_write_configuration(tmp_path),
+        host_mode="webui",
+        share_computer=True,
+    ) as app:
+        app._root_runs._executor._agents = Reconstructor()
+        thread = await app.create_thread(
+            defaults=NewThreadDefaults(
+                environment_profile_id="environment-sandbox" if sandbox_default else "environment-native"
+            )
+        )
+        host = app.browsers()
+        runtime = host.runtime = Chromium(Mock())
+        page = Page("tab", "session")
+        runtime.pages[page.target] = page
+        runtime.send = AsyncMock(return_value={"targetInfos": [{"type": "page", "targetId": "tab"}]})
+        runtime.close = AsyncMock()
+        host.bindings[thread.thread_id] = Binding(status="ready", scope=CdpBrowserBackend(runtime, page))
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id,
+            prompt="Use browser",
+            environment=EnvironmentSelectionPatch(environment_profile_id="environment-native"),
+        )
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            await app.update_thread_configuration(
+                thread_id=thread.thread_id,
+                mutation=ThreadConfigurationMutation(
+                    expected_version=thread.configuration.version,
+                    patch=ThreadConfigurationPatch(environment_profile_id="environment-sandbox"),
+                ),
+            )
+        finally:
+            proceed.set()
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        assert len(used) == 2 and used[0][0].target == used[1][0].target == "tab"
