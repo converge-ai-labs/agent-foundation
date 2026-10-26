@@ -59,6 +59,11 @@
   display: flex;
   flex-direction: column;
 }
+.center > .page {
+  /* Reserve the gutter on both edges so centered content stays on the
+     workarea axis whether or not the page scrolls. */
+  scrollbar-gutter: stable both-edges;
+}
 .page[hidden] {
   display: none;
 }

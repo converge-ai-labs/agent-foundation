@@ -540,6 +540,7 @@
   font-size: 13px;
 }
 .page {
+  container: conversation-page / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -877,8 +878,9 @@
 .composer {
   container: composer / inline-size;
   flex-shrink: 0;
-  max-width: 760px;
-  width: 100%;
+  /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
+     each side. */
+  width: min(760px, 100% - 84px);
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
   border-radius: 18px;
@@ -1585,7 +1587,10 @@
   container-name: conversation-reader;
 }
 .readerFrame .reading {
-  padding-inline-start: 36px;
+  /* Symmetric insets keep the transcript on the composer's axis; the input
+     timeline rail lives in the start inset. */
+  padding-inline: 36px;
+  scrollbar-gutter: stable both-edges;
 }
 .turn {
   margin-bottom: 28px;
@@ -1658,7 +1663,13 @@
 }
 @container conversation-reader (max-width: 600px) {
   .readerFrame .reading {
-    padding-inline-start: 0;
+    padding-inline: 0;
     padding-block-start: 36px;
+  }
+}
+
+@container conversation-page (max-width: 600px) {
+  .composer {
+    width: 100%;
   }
 }

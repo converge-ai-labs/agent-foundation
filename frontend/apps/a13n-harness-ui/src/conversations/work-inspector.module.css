@@ -4,10 +4,10 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-  max-width: 760px;
-  width: 100%;
+  /* Same column as the composer (see conversation.module.css). */
+  width: min(760px, 100% - 84px);
   margin: 0 auto 6px;
-  padding-inline: 5px;
+  padding-inline: 4px;
   color: var(--a13n-secondary);
   min-width: 0;
 }
@@ -163,5 +163,11 @@
   }
   .strip > * {
     flex-shrink: 0;
+  }
+}
+
+@container conversation-page (max-width: 600px) {
+  .strip {
+    width: 100%;
   }
 }

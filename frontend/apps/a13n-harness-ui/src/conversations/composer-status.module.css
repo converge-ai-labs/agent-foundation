@@ -1,6 +1,6 @@
 .bar {
-  width: 100%;
-  max-width: 760px;
+  /* Same column as the composer (see conversation.module.css). */
+  width: min(760px, 100% - 84px);
   margin: 4px auto 0;
   padding-inline: 8px;
   flex-shrink: 0;
@@ -146,15 +146,20 @@ button.metric:hover,
 .numbers .scope {
   margin: 2px 0 0;
 }
-@media (max-width: 639px) {
-  /* One scrollable line on phones instead of a wrapped two-row block. */
-  .metrics {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
-  }
-  .metrics::-webkit-scrollbar {
-    display: none;
+/* One quiet line at every width; overflow scrolls under a fade. */
+/* One scrollable line on phones instead of a wrapped two-row block. */
+.metrics {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+}
+.metrics::-webkit-scrollbar {
+  display: none;
+}
+
+@container conversation-page (max-width: 600px) {
+  .bar {
+    width: 100%;
   }
 }
