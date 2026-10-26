@@ -278,7 +278,7 @@ export function ProviderConfiguration({
               selected === "standard"
                 ? "Run commands and work with files. The standard image and execution method are configured automatically."
                 : selected === "desktop"
-                  ? "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your connection must support Envd HTTP; Agent tools and mount permissions are separate."
+                  ? "Use a Linux desktop for screenshots, clicks and typing. The desktop image and execution method are configured automatically. Your provider must support Envd HTTP; Agent tools and mount permissions are separate."
                   : "Choose your own image and advanced settings. Switching to a built-in environment restores its default advanced settings; CPU, memory, mounts and environment variables are kept.",
             )}
           </p>
@@ -618,7 +618,7 @@ export function ProviderConfiguration({
                 <SettingsRow
                   label={t("Desktop capability")}
                   description={t(
-                    "Requires a desktop image and the Docker connection’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.",
+                    "Requires a desktop image and the Docker provider’s Envd HTTP route. Enabling this selects EIP execution and checks desktop readiness. Agent tools and mount permissions are configured separately.",
                   )}
                   controlId={desktopId}
                   stackOnNarrow={false}

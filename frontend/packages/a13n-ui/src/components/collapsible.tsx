@@ -30,7 +30,7 @@ export function CollapsiblePanel({
   return (
     <CollapsiblePrimitive.Panel
       className={cn(
-        "h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0",
+        "h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-150 ease-out motion-reduce:transition-none data-ending-style:h-0 data-starting-style:h-0",
         className,
       )}
       data-slot="collapsible-panel"

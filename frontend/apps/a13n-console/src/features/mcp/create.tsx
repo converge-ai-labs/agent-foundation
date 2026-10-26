@@ -1,3 +1,4 @@
+import { FormSection } from "../../shared/forms";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useRef, useState } from "react";
@@ -123,7 +124,9 @@ export function CreateMCP({
   return oauthConnection ? (
     <div className={styles.stack}>
       {preset?.requirements && (
-        <p className={styles.muted}>{t(preset.requirements)}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {t(preset.requirements)}
+        </p>
       )}
       {preset?.documentation_url && (
         <ProviderKeyLink href={preset.documentation_url} label="Setup guide" />
@@ -142,80 +145,86 @@ export function CreateMCP({
         connect.mutate();
       }}
     >
-      <FormField label={t("Connection name")}>
-        <Input
-          required
-          value={name}
-          disabled={started}
-          maxLength={128}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </FormField>
-      <FormField label={t("MCP endpoint URL")}>
-        <Input
-          required
-          type="url"
-          value={endpoint}
-          disabled={started}
-          onChange={(event) => setEndpoint(event.target.value)}
-          placeholder="https://example.com/mcp"
-        />
-      </FormField>
-      {preset ? (
-        <ReadOnlyField
-          label={t("Authentication")}
-          description={
-            preset.documentation_url ? (
-              <ProviderKeyLink
-                href={preset.documentation_url}
-                label="Setup guide"
-              />
-            ) : undefined
-          }
-        >
-          {t(`auth.${mode}`)}
-        </ReadOnlyField>
-      ) : (
-        <ChoiceField
-          placeholder={t("Select authentication")}
-          label={t("Authentication")}
-          value={mode}
-          disabled={started}
-          onValueChange={(value) => {
-            if (
-              value === "none" ||
-              value === "oauth" ||
-              value === "bearer" ||
-              value === "headers"
-            )
-              setMode(value);
-          }}
-          options={(["oauth", "bearer", "headers", "none"] as const).map(
-            (value) => ({ value, label: t(`auth.${value}`) }),
-          )}
-        />
-      )}
-      {!created.current?.credential_configured &&
-        (mode === "headers" ? (
-          <HeaderFields
-            rows={headerRows}
-            onChange={setHeaderRows}
+      <FormSection title={t("Connection")}>
+        <FormField label={t("Connection name")}>
+          <Input
+            required
+            value={name}
             disabled={started}
-            maxRows={16}
+            maxLength={128}
+            onChange={(event) => setName(event.target.value)}
           />
+        </FormField>
+        <FormField label={t("MCP endpoint URL")}>
+          <Input
+            required
+            type="url"
+            value={endpoint}
+            disabled={started}
+            onChange={(event) => setEndpoint(event.target.value)}
+            placeholder="https://example.com/mcp"
+          />
+        </FormField>
+      </FormSection>
+      <FormSection title={t("Authentication")}>
+        {preset ? (
+          <ReadOnlyField
+            label={t("Authentication")}
+            description={
+              preset.documentation_url ? (
+                <ProviderKeyLink
+                  href={preset.documentation_url}
+                  label="Setup guide"
+                />
+              ) : undefined
+            }
+          >
+            {t(`auth.${mode}`)}
+          </ReadOnlyField>
         ) : (
-          <MCPCredentialFields
-            mode={mode}
-            names={[]}
-            bearer={bearer}
-            onBearer={setBearer}
-            headers={{}}
-            onHeaders={() => {}}
+          <ChoiceField
+            placeholder={t("Select authentication")}
+            label={t("Authentication")}
+            value={mode}
+            disabled={started}
+            onValueChange={(value) => {
+              if (
+                value === "none" ||
+                value === "oauth" ||
+                value === "bearer" ||
+                value === "headers"
+              )
+                setMode(value);
+            }}
+            options={(["oauth", "bearer", "headers", "none"] as const).map(
+              (value) => ({ value, label: t(`auth.${value}`) }),
+            )}
           />
-        ))}
-      {preset?.requirements && (
-        <p className={styles.muted}>{t(preset.requirements)}</p>
-      )}
+        )}
+        {!created.current?.credential_configured &&
+          (mode === "headers" ? (
+            <HeaderFields
+              rows={headerRows}
+              onChange={setHeaderRows}
+              disabled={started}
+              maxRows={16}
+            />
+          ) : (
+            <MCPCredentialFields
+              mode={mode}
+              names={[]}
+              bearer={bearer}
+              onBearer={setBearer}
+              headers={{}}
+              onHeaders={() => {}}
+            />
+          ))}
+        {preset?.requirements && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {t(preset.requirements)}
+          </p>
+        )}
+      </FormSection>
       <ErrorNotice error={connect.error} />
       <FormActions
         onCancel={onCancel}

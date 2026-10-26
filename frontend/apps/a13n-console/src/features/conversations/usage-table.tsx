@@ -193,25 +193,26 @@ function Figures({
   const waited = usage?.average_time_to_first_chunk_seconds;
   return (
     <>
-      <td data-number>
+      <td data-number data-label={t("Input")}>
         <Tokens value={totals.inputTokens} />
       </td>
-      <td data-number>
+      <td data-number data-label={t("Cached input")}>
         <Tokens value={totals.cachedTokens} />
       </td>
-      <td data-number>
+      <td data-number data-label={t("Cache hit rate")}>
         <CacheRate rate={totals.cacheRate} />
       </td>
-      <td data-number>
+      <td data-number data-label={t("Output")}>
         <Tokens value={totals.outputTokens} />
       </td>
-      <td data-number>
+      <td data-number data-label={t("TTFT")}>
         {usage && formatDuration(waited == null ? null : waited * 1000)}
       </td>
-      <td data-number>
+      <td data-number data-label={t("Output speed")}>
         {usage && formatSpeed(t, usage.output_tokens_per_second)}
       </td>
       <td
+        data-label={t("Spend")}
         data-number
         title={
           totals.cost === null

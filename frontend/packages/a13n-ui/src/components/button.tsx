@@ -9,7 +9,7 @@ import { Spinner } from "./spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 
 export const buttonVariants = cva(
-  "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg border font-medium text-base outline-none transition-[color,background-color,border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 data-loading:select-none data-loading:text-transparent sm:text-sm [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0",
+  "relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg border font-medium text-base outline-none transition-[color,background-color,border-color,box-shadow] duration-150 ease-out motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 focus-visible:ring-1 focus-visible:ring-ring/80 focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 data-loading:select-none data-loading:text-transparent sm:text-sm [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:-mx-0.5 [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
@@ -53,6 +53,8 @@ export interface ButtonProps extends useRender.ComponentProps<"button"> {
   variant?: VariantProps<typeof buttonVariants>["variant"];
   size?: VariantProps<typeof buttonVariants>["size"];
   loading?: boolean;
+  /** Disable redundant hints on familiar controls while retaining their accessible name. */
+  tooltip?: boolean;
 }
 
 export function Button({
@@ -62,6 +64,7 @@ export function Button({
   render,
   children,
   loading = false,
+  tooltip = true,
   disabled: disabledProp,
   ...props
 }: ButtonProps): React.ReactElement {
@@ -96,9 +99,15 @@ export function Button({
     props: mergeProps<"button">(defaultProps, props),
     render,
   });
-  // An icon-only button shows its accessible name as a tooltip.
+  // Menu triggers already communicate their action through familiar menu affordances.
   const label = props["aria-label"];
-  if (!size?.startsWith("icon") || !label) return element;
+  if (
+    !tooltip ||
+    props["aria-haspopup"] === "menu" ||
+    !size?.startsWith("icon") ||
+    !label
+  )
+    return element;
   return (
     <Tooltip
       onOpenChange={(_open, details) => {

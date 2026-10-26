@@ -10,7 +10,7 @@ import {
 } from "../../shared/page/page-actions";
 import styles from "./environments.module.css";
 
-/** Manage connections without discarding the surrounding template draft. */
+/** Manage providers without discarding the surrounding template draft. */
 export function TemplateConnection({
   definition,
   providers,
@@ -31,8 +31,8 @@ export function TemplateConnection({
     <div className={styles.connectionBlock}>
       <div className={styles.connectionRow}>
         <ChoiceField
-          label={t("Connection")}
-          placeholder={t("Select a connection")}
+          label={t("Provider")}
+          placeholder={t("Select a provider")}
           value={value}
           onValueChange={onChange}
           options={choices.map((item) => ({
@@ -45,12 +45,12 @@ export function TemplateConnection({
           onOpenChange={setManaging}
           trigger={
             <Button type="button" variant="outline">
-              {t("Manage connections")}
+              {t("Manage providers")}
             </Button>
           }
-          title={t("Manage connections")}
+          title={t("Manage providers")}
           description={t(
-            "View and edit connections, or delete unused ones. Your template draft stays here.",
+            "View and edit providers, or delete unused ones. Your template draft stays here.",
           )}
           closeLabel={t("Close")}
           size="lg"
@@ -69,7 +69,7 @@ export function TemplateConnection({
       {!choices.length && (
         <p className={styles.panelNote}>
           {t(
-            "No enabled connection for this runtime yet. Open Manage connections to add one; your template draft stays here.",
+            "No enabled provider for this runtime yet. Open Manage providers to add one; your template draft stays here.",
           )}
         </p>
       )}

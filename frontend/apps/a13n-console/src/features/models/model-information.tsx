@@ -4,8 +4,9 @@ import {
   FilmStripIcon,
   FilePdfIcon,
   ArrowsOutSimpleIcon,
+  YoutubeLogoIcon,
 } from "@phosphor-icons/react";
-import { Input, SettingsRow, SettingsSection, Switch } from "a13n-ui";
+import { Input, SettingsSection, Switch } from "a13n-ui";
 import styles from "./models.module.css";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
@@ -101,10 +102,20 @@ export function ModelInformation({
 }) {
   const { t } = useTranslation();
   return (
-    <SettingsSection title={t("Capabilities")} variant="plain">
+    <SettingsSection
+      title={t("Capabilities")}
+      description={t(
+        "Declare the inputs this model supports and its context limit.",
+      )}
+      variant="plain"
+    >
       <div className={styles.capabilityGrid}>
-        {inputCapabilities.map(({ capability, label }) => (
-          <SettingsRow key={capability} label={t(label)} stackOnNarrow={false}>
+        {inputCapabilities.map(({ capability, label, Icon }) => (
+          <div key={capability} className={styles.capabilityItem}>
+            <span>
+              <Icon size={16} aria-hidden="true" />
+              {t(label)}
+            </span>
             <Switch
               aria-label={t(label)}
               checked={value.capabilities?.includes(capability) ?? false}
@@ -117,9 +128,13 @@ export function ModelInformation({
                 })
               }
             />
-          </SettingsRow>
+          </div>
         ))}
-        <SettingsRow label={t("YouTube URLs")} stackOnNarrow={false}>
+        <div className={styles.capabilityItem}>
+          <span>
+            <YoutubeLogoIcon size={16} aria-hidden="true" />
+            {t("YouTube URLs")}
+          </span>
           <Switch
             aria-label={t("YouTube URLs")}
             checked={value.url_input?.video?.includes("youtube") ?? false}
@@ -133,26 +148,30 @@ export function ModelInformation({
               })
             }
           />
-        </SettingsRow>
+        </div>
+        <div className={styles.capabilityItem}>
+          <div className={styles.contextLabel}>
+            <span>{t("Context window")}</span>
+            <small>{t("Tokens")}</small>
+          </div>
+          <Input
+            className={styles.contextInput}
+            type="number"
+            min={1}
+            step={1}
+            aria-label={t("Context window")}
+            placeholder={t("Unknown")}
+            value={value.context_window_tokens ?? ""}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                context_window_tokens:
+                  event.target.value === "" ? null : Number(event.target.value),
+              })
+            }
+          />
+        </div>
       </div>
-      <SettingsRow label={t("Context window")} description={t("Tokens")}>
-        <Input
-          className="w-40"
-          type="number"
-          min={1}
-          step={1}
-          aria-label={t("Context window")}
-          placeholder={t("Unknown")}
-          value={value.context_window_tokens ?? ""}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              context_window_tokens:
-                event.target.value === "" ? null : Number(event.target.value),
-            })
-          }
-        />
-      </SettingsRow>
     </SettingsSection>
   );
 }

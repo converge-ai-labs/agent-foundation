@@ -1,4 +1,4 @@
-import { Button, ModalFrame } from "a13n-ui";
+import { Button } from "a13n-ui";
 import {
   GitBranchIcon,
   LockSimpleIcon,
@@ -12,7 +12,6 @@ import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../../shared/api";
 import { useIdempotency } from "../../../shared/idempotency";
-import { ExecutionFields, executionOverride } from "../../../shared/forms";
 import { ErrorNotice, ErrorToast } from "../../../shared/feedback";
 import {
   conversationQueries,
@@ -21,7 +20,7 @@ import {
   type ViewLevel,
 } from "../api";
 import { ForkRun } from "../fork-run";
-import { Composer } from "../composer";
+import { Composer, RunOptions, useRunOptions } from "../composer";
 import { useRun } from "../queries";
 import type { Resubmission } from "../resubmit";
 import { DesktopAssistance } from "./desktop-assistance";
@@ -29,7 +28,7 @@ import { ThreadInbox } from "./inbox";
 import { ContinueWithoutFeedback } from "./continuation";
 import { PendingRequests, RunFeedback } from "./pending-request";
 import {
-  isInteractive,
+  useInteractiveThread,
   useInterruptRun,
   useRunAcceptance,
 } from "./run-actions";
@@ -101,8 +100,7 @@ export function RunDock({
     { workspace, can, basePath } = useWorkspace();
   // The Thread's latest Run: the active one, else the one sealed last.
   const idempotency = useIdempotency();
-  const [execution, setExecution] = useState<Schema["ExecutionOverride"]>({});
-  const [executionOpen, setExecutionOpen] = useState(false);
+  const options = useRunOptions();
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
   const following = new URLSearchParams(search).get("follow") === "latest";
@@ -117,7 +115,7 @@ export function RunDock({
     !thread.current_run_id && current && last?.status === "waiting"
       ? last
       : null;
-  const interactive = isInteractive(thread);
+  const interactive = useInteractiveThread(thread);
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [guidance, setGuidance] = useState<{
@@ -135,7 +133,7 @@ export function RunDock({
   const entry = steerStatus.data ?? steer;
   const { accepted, refresh } = useRunAcceptance(run, thread);
   const interrupt = useInterruptRun(run, refresh);
-  const canStop = active && can("run");
+  const canStop = interactive && active && can("run");
   const stop = canStop && (
     <Button
       size="icon-sm"
@@ -258,31 +256,12 @@ export function RunDock({
                 options={
                   !active &&
                   !resubmit && (
-                    <ModalFrame
-                      open={executionOpen}
-                      onOpenChange={setExecutionOpen}
-                      title={t("Run execution policy")}
-                      description={t("Changes apply to the next run only.")}
-                      closeLabel={t("Close")}
-                      trigger={
-                        <Button type="button" variant="ghost" size="sm">
-                          {t("Execution policy")}
-                        </Button>
-                      }
-                      footer={
-                        <Button
-                          type="button"
-                          onClick={() => setExecutionOpen(false)}
-                        >
-                          {t("Apply")}
-                        </Button>
-                      }
-                    >
-                      <ExecutionFields
-                        value={execution}
-                        onChange={setExecution}
-                      />
-                    </ModalFrame>
+                    <RunOptions
+                      options={options}
+                      showAgent={false}
+                      newThread={false}
+                      agentId={run.agent_id}
+                    />
                   )
                 }
                 stop={canStop ? () => interrupt.mutate() : undefined}
@@ -290,16 +269,19 @@ export function RunDock({
                 submit={async (payload) => {
                   if (!active) onSubmissionChange?.({ payload });
                   try {
-                    const policy =
-                      !active && !resubmit
-                        ? executionOverride(execution)
-                        : undefined;
+                    const nextOptions =
+                      !active && !resubmit ? options.build() : undefined;
                     const body: Schema["Message"] = {
                       kind: "message",
                       delivery: active ? "steer" : "next_run",
                       payload,
                       agent_id: run.agent_id,
-                      ...(policy ? { options: { execution: policy } } : {}),
+                      ...(nextOptions?.options
+                        ? { options: nextOptions.options }
+                        : {}),
+                      ...(nextOptions?.agent_revision_id
+                        ? { agent_revision_id: nextOptions.agent_revision_id }
+                        : {}),
                       ...(resubmit && {
                         agent_revision_id: resubmit.agent_revision_id,
                         options: resubmit.options,
@@ -326,7 +308,7 @@ export function RunDock({
                         }),
                     );
                     idempotency.reset();
-                    if (!active) setExecution({});
+                    if (!active) options.reset();
                     if (resubmit) onResubmitted?.();
                     if (receipt.run) {
                       if (!active)
@@ -349,7 +331,7 @@ export function RunDock({
                 }}
               />
             )}
-            {!interactive && (
+            {!interactive && thread.origin === "child" && (
               <div className={styles.dockNotice}>
                 <LockSimpleIcon size={13} aria-hidden="true" />
                 <span>

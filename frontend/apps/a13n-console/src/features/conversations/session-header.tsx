@@ -37,6 +37,7 @@ import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
 import { sessionTitle } from "./session-identity";
+import { isInteractive } from "./transcript/run-actions";
 import styles from "./conversations.module.css";
 
 /**
@@ -186,7 +187,7 @@ export function SessionHeader({
           <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
         </MenuTrigger>
         <MenuPopup align="end">
-          {can("run") && session.data && (
+          {can("run") && isConsoleSession(session.data) && session.data && (
             <MenuItem onClick={() => setEditing(true)}>
               <PencilSimpleIcon size={14} aria-hidden="true" />
               {t("Edit session details")}
@@ -210,12 +211,15 @@ export function SessionHeader({
               {t("Environments and memory")}
             </MenuItem>
           )}
-          {thread && can("run") && !thread.archived_at && (
-            <MenuItem onClick={() => setExecution(true)}>
-              <SlidersHorizontalIcon size={14} aria-hidden="true" />
-              {t("Execution policy")}
-            </MenuItem>
-          )}
+          {thread &&
+            isInteractive(thread, session.data) &&
+            can("run") &&
+            !thread.archived_at && (
+              <MenuItem onClick={() => setExecution(true)}>
+                <SlidersHorizontalIcon size={14} aria-hidden="true" />
+                {t("Execution policy")}
+              </MenuItem>
+            )}
           {can("read") && (
             <MenuItem
               render={
@@ -241,14 +245,14 @@ export function SessionHeader({
           onOpenChange={setMounts}
         />
       )}
-      {execution && thread && (
+      {execution && thread && isInteractive(thread, session.data) && (
         <ThreadExecutionDialog
           key={thread.id}
           thread={thread}
           onClose={() => setExecution(false)}
         />
       )}
-      {editing && session.data && (
+      {editing && session.data && isConsoleSession(session.data) && (
         <SessionEditor
           session={session.data}
           onClose={() => setEditing(false)}

@@ -16,7 +16,8 @@ import { ifMatch, representation, type Schema } from "../../shared/api";
 import { Confirm, ConflictNotice } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/forms";
-import { SaveBar, Section } from "../../shared/page";
+import { FormSection } from "../../shared/forms";
+import { SaveBar } from "../../shared/page";
 import { workspaceModelsQuery } from "../models/api";
 import { isStale, memoryQueries } from "./api";
 import { AlwaysLoadField, GuideField } from "./fields";
@@ -99,14 +100,14 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
   const dirty = !!edit && Object.keys(spaceUpdate(space, draft)).length > 0;
   return (
     <form
-      className="grid max-w-[680px] gap-9"
+      className="grid max-w-[680px] gap-6"
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
       }}
     >
-      <fieldset disabled={save.isPending} className="fieldset-reset grid gap-9">
-        <Section title={t("General")}>
+      <fieldset disabled={save.isPending} className="fieldset-reset grid gap-6">
+        <FormSection title={t("General")}>
           <div className="grid gap-4">
             <FormField label={t("Name")} readOnly={readOnly}>
               <Input
@@ -140,8 +141,8 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
               />
             </div>
           </div>
-        </Section>
-        <Section
+        </FormSection>
+        <FormSection
           title={t("Organization")}
           description={t(
             "An organizer reads all session notes and curates shared knowledge using only this space's memory tools.",
@@ -279,8 +280,8 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
               retry={() => void models.refetch()}
             />
           </div>
-        </Section>
-        <Section
+        </FormSection>
+        <FormSection
           title={t("Memory instructions")}
           description={t(
             "Tell agents what to keep in this space. Session folder boundaries are enforced separately.",
@@ -294,8 +295,8 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
             readOnly={readOnly}
             inherited={backing.data?.value.inherited_guide}
           />
-        </Section>
-        <Section
+        </FormSection>
+        <FormSection
           title={t("Always loaded files")}
           description={t(
             "Only files inside a run's visible folders are loaded. Shared knowledge belongs under global/.",
@@ -307,7 +308,7 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
             readOnly={readOnly}
             files={files.data?.map((file) => file.path)}
           />
-        </Section>
+        </FormSection>
       </fieldset>
       {isStale(save.error) ? (
         <ConflictNotice
@@ -326,7 +327,7 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
       )}
       <ErrorNotice error={reload.error} />
       {!readOnly && (
-        <Section
+        <FormSection
           title={t("Delete space")}
           description={t(
             "Remove this space from sessions and agent defaults first. Active organization must finish before deletion.",
@@ -356,7 +357,7 @@ export function SpaceConfiguration({ resource }: { resource: SpaceResource }) {
               }}
             />
           </div>
-        </Section>
+        </FormSection>
       )}
       {dirty && !readOnly && (
         <SaveBar

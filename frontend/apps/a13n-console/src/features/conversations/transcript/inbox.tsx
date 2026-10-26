@@ -39,7 +39,7 @@ import { JsonView } from "../../../shared/forms";
 import { conversationQueries, invalidateConversation, runPath } from "../api";
 import { MessageAuthor } from "../message-author";
 import { entryResubmission } from "../resubmit";
-import { isInteractive } from "./run-actions";
+import { useInteractiveThread } from "./run-actions";
 import { InputContent } from "./user-message";
 import styles from "./cards.module.css";
 
@@ -67,6 +67,7 @@ export function ThreadInbox({
     { workspace, can, basePath } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate();
+  const interactive = useInteractiveThread(thread);
   const [state, setState] = useState<keyof typeof VIEWS>("queued");
   const query = useQuery({
     ...conversationQueries(client, workspace.id).inbox(thread.id, VIEWS[state]),
@@ -141,7 +142,7 @@ export function ThreadInbox({
   });
   if (!can("read")) return null;
   const items = query.data ?? [];
-  const editable = isInteractive(thread) && can("run");
+  const editable = interactive && can("run");
   const next = items.find((item) => item.kind === "message");
   const nextMessage = next && entryResubmission(next);
   // The bottom queue appears only when there is something to inspect. Keep

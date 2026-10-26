@@ -165,7 +165,7 @@ it.each([
       userEvent.setup({ advanceTimers: vi.advanceTimersByTime }),
     );
     await user.click(screen.getByRole("button", { name: "Details" }));
-    await screen.findByText("ready");
+    await screen.findByText("Ready");
     await lifecycle(user, action === "stop" ? "Stop" : "Delete");
     await user.click(
       screen.getByRole("button", {
@@ -186,16 +186,16 @@ it.each([
         "/api/v1/environments/{environment_id}",
         request,
       );
-    await screen.findByText(phase);
-    expect(screen.getByText("pending")).toBeTruthy();
+    await screen.findByText(new RegExp(`^${phase}$`, "i"));
+    expect(screen.getByText("Pending")).toBeTruthy();
     expect(screen.getByText("envoper_test")).toBeTruthy();
     current =
       outcome === "failed"
         ? { ...current, failure, version: 3 }
         : { ...current, status: outcome, operation_id: null, version: 3 };
-    expect(screen.queryByText(outcome)).toBeNull();
+    expect(screen.queryByText(new RegExp(`^${outcome}$`, "i"))).toBeNull();
     await act(() => vi.advanceTimersByTimeAsync(2000));
-    await screen.findByText(outcome);
+    await screen.findByText(new RegExp(`^${outcome}$`, "i"));
     cache.clear();
   },
 );
@@ -358,7 +358,7 @@ it("shows why a lost sandbox cannot be used, and that deleting it is allowed whi
   await user.click(screen.getByRole("button", { name: "Details" }));
   expect(await screen.findByText(lost.failure!.message)).toBeTruthy();
   expect(screen.getAllByText("Environment lost").length).toBeGreaterThan(0);
-  expect(screen.queryByText("ready")).toBeNull();
+  expect(screen.queryByText("Ready")).toBeNull();
   expect(
     screen.getByText(
       /This sandbox no longer exists at its provider and cannot be resumed/,

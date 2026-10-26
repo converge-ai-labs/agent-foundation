@@ -213,7 +213,7 @@ export function ProviderConnection({
               }
             />
           </FormField>
-          <p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
             {t(
               "Configure your gateway to route by this header. Sending it does not guarantee provider pinning; connection tests do not verify affinity.",
             )}

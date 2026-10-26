@@ -1,3 +1,4 @@
+import { FormSection } from "../../shared/forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -19,7 +20,7 @@ import {
   ResourceTable,
   Toolbar,
 } from "../../shared/collection";
-import { Confirm } from "../../shared/dialogs";
+import { useMountedModal, Confirm } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import {
   FormActions,
@@ -171,7 +172,8 @@ export function DataSourcesPage() {
   );
 }
 
-function NewSourceEditor({ onClose }: { onClose: () => void }) {
+function NewSourceEditor({ onClose: onClosed }: { onClose: () => void }) {
+  const { modalProps } = useMountedModal(onClosed);
   const client = useClient(),
     { workspace } = useWorkspace(),
     { t } = useTranslation();
@@ -179,19 +181,16 @@ function NewSourceEditor({ onClose }: { onClose: () => void }) {
     monitoringApi(client, workspace.id).deploymentPreset(),
   );
   const [manual, setManual] = useState(false);
-  if (manual || preset.data !== undefined)
+  if (modalProps.open && (manual || preset.data !== undefined))
     return (
       <SourceEditor
         preset={manual ? undefined : (preset.data ?? undefined)}
-        onClose={onClose}
+        onClose={onClosed}
       />
     );
   return (
     <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+      {...modalProps}
       title={t("Add data source")}
       closeLabel={t("Close")}
       size="lg"
@@ -299,12 +298,13 @@ function CredentialEditor({
 function SourceEditor({
   source,
   preset: initialPreset,
-  onClose,
+  onClose: onClosed,
 }: {
   source?: Source;
   preset?: Schema["DeploymentPreset"];
   onClose: () => void;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     cache = useQueryClient(),
@@ -425,10 +425,7 @@ function SourceEditor({
   });
   return (
     <ModalFrame
-      open
-      onOpenChange={(value) => {
-        if (!value && !save.isPending) onClose();
-      }}
+      {...modalProps}
       title={source?.name ?? t("Add data source")}
       description={
         source?.builtin
@@ -453,70 +450,76 @@ function SourceEditor({
               )}
             </p>
           )}
-          <FormField label={t("Name")}>
-            <Input
-              required
-              maxLength={128}
-              readOnly={readonly}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </FormField>
-          <ChoiceField
-            label={t("Status")}
-            readOnly={readonly}
-            value={enabled ? "yes" : "no"}
-            options={[
-              { value: "yes", label: t("Enabled") },
-              { value: "no", label: t("Disabled") },
-            ]}
-            onValueChange={(value) => setEnabled(value === "yes")}
-          />
-          <ChoiceField
-            label={t("Collection")}
-            readOnly={readonly}
-            value={collection}
-            options={[
-              { value: "native", label: t("Native OTLP push") },
-              {
-                value: "pull",
-                label: t("Collector pull"),
-                disabled: !capabilities.data?.collectors.some(
-                  (item) => item.available,
-                ),
-              },
-              {
-                value: "proxy",
-                label: t("Service proxy"),
-                disabled: !capabilities.data?.proxy,
-              },
-              { value: "external", label: t("External collection") },
-            ]}
-            onValueChange={(value) => setCollection(value as typeof collection)}
-          />
-          <ErrorNotice error={capabilities.error} />
-          {collection === "pull" && (
-            <>
-              <ChoiceField
-                label={t("Collector")}
-                value={collector}
+          <FormSection title={t("Basic information")}>
+            <FormField label={t("Name")}>
+              <Input
+                required
+                maxLength={128}
                 readOnly={readonly}
-                options={["vmagent", "alloy"].map((value) => ({
-                  value,
-                  label: value,
-                  disabled: !capabilities.data?.collectors.find(
-                    (item) => item.kind === value,
-                  )?.available,
-                }))}
-                onValueChange={(value) =>
-                  setCollector(value === "alloy" ? "alloy" : "vmagent")
-                }
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
-              <small>{t("Export is configured on the collector.")}</small>
-            </>
-          )}
+            </FormField>
+            <ChoiceField
+              label={t("Status")}
+              readOnly={readonly}
+              value={enabled ? "yes" : "no"}
+              options={[
+                { value: "yes", label: t("Enabled") },
+                { value: "no", label: t("Disabled") },
+              ]}
+              onValueChange={(value) => setEnabled(value === "yes")}
+            />
+          </FormSection>
+          <FormSection title={t("Collection")}>
+            <ChoiceField
+              label={t("Collection")}
+              readOnly={readonly}
+              value={collection}
+              options={[
+                { value: "native", label: t("Native OTLP push") },
+                {
+                  value: "pull",
+                  label: t("Collector pull"),
+                  disabled: !capabilities.data?.collectors.some(
+                    (item) => item.available,
+                  ),
+                },
+                {
+                  value: "proxy",
+                  label: t("Service proxy"),
+                  disabled: !capabilities.data?.proxy,
+                },
+                { value: "external", label: t("External collection") },
+              ]}
+              onValueChange={(value) =>
+                setCollection(value as typeof collection)
+              }
+            />
+            <ErrorNotice error={capabilities.error} />
+            {collection === "pull" && (
+              <>
+                <ChoiceField
+                  label={t("Collector")}
+                  value={collector}
+                  readOnly={readonly}
+                  options={["vmagent", "alloy"].map((value) => ({
+                    value,
+                    label: value,
+                    disabled: !capabilities.data?.collectors.find(
+                      (item) => item.kind === value,
+                    )?.available,
+                  }))}
+                  onValueChange={(value) =>
+                    setCollector(value === "alloy" ? "alloy" : "vmagent")
+                  }
+                />
+                <small>{t("Export is configured on the collector.")}</small>
+              </>
+            )}
+          </FormSection>
           {exporting && (
-            <>
+            <FormSection title={t("Export")}>
               <FormField
                 label={t("OTLP endpoint")}
                 description={
@@ -569,70 +572,72 @@ function SourceEditor({
                   onChange={setExportCredential}
                 />
               )}
-            </>
+            </FormSection>
           )}
-          <FormField
-            label={t("Prometheus query endpoint")}
-            description={
-              readonly ? undefined : t("Base URL before /api/v1/query.")
-            }
-          >
-            <Input
-              type="url"
-              required={collection === "external"}
-              readOnly={readonly}
-              value={queryUrl}
-              onChange={(e) => {
-                setQueryUrl(e.target.value);
-                setUseDeploymentCredential(false);
-              }}
-            />
-          </FormField>
-          {queryUrl && (
-            <>
-              <DisclosureSection title={t("Scope labels")}>
-                <TextAreaField
-                  label={t("Scope labels JSON")}
-                  readOnly={readonly}
-                  value={labels}
-                  onChange={setLabels}
-                  code
-                />
-              </DisclosureSection>
-              {!readonly && preset?.has_query_credentials && (
-                <ChoiceField
-                  label={t("Use deployment query credentials")}
-                  value={useDeploymentCredential ? "yes" : "no"}
-                  options={[
-                    { value: "no", label: t("No") },
-                    {
-                      value: "yes",
-                      label: t("Yes"),
-                      disabled: !deploymentCredentialAvailable,
-                    },
-                  ]}
-                  onValueChange={(value) =>
-                    setUseDeploymentCredential(value === "yes")
-                  }
-                />
-              )}
-              {useDeploymentCredential && (
-                <small>
-                  {t(
-                    "The server saves a credential snapshot. Later deployment changes do not update this source.",
-                  )}
-                </small>
-              )}
-              {!readonly && !useDeploymentCredential && (
-                <CredentialEditor
-                  label={t("Query credentials")}
-                  saved={source?.has_query_credentials ?? false}
-                  value={queryCredential}
-                  onChange={setQueryCredential}
-                />
-              )}
-            </>
-          )}
+          <FormSection title={t("Query")}>
+            <FormField
+              label={t("Prometheus query endpoint")}
+              description={
+                readonly ? undefined : t("Base URL before /api/v1/query.")
+              }
+            >
+              <Input
+                type="url"
+                required={collection === "external"}
+                readOnly={readonly}
+                value={queryUrl}
+                onChange={(e) => {
+                  setQueryUrl(e.target.value);
+                  setUseDeploymentCredential(false);
+                }}
+              />
+            </FormField>
+            {queryUrl && (
+              <>
+                <DisclosureSection title={t("Scope labels")}>
+                  <TextAreaField
+                    label={t("Scope labels JSON")}
+                    readOnly={readonly}
+                    value={labels}
+                    onChange={setLabels}
+                    code
+                  />
+                </DisclosureSection>
+                {!readonly && preset?.has_query_credentials && (
+                  <ChoiceField
+                    label={t("Use deployment query credentials")}
+                    value={useDeploymentCredential ? "yes" : "no"}
+                    options={[
+                      { value: "no", label: t("No") },
+                      {
+                        value: "yes",
+                        label: t("Yes"),
+                        disabled: !deploymentCredentialAvailable,
+                      },
+                    ]}
+                    onValueChange={(value) =>
+                      setUseDeploymentCredential(value === "yes")
+                    }
+                  />
+                )}
+                {useDeploymentCredential && (
+                  <small>
+                    {t(
+                      "The server saves a credential snapshot. Later deployment changes do not update this source.",
+                    )}
+                  </small>
+                )}
+                {!readonly && !useDeploymentCredential && (
+                  <CredentialEditor
+                    label={t("Query credentials")}
+                    saved={source?.has_query_credentials ?? false}
+                    value={queryCredential}
+                    onChange={setQueryCredential}
+                  />
+                )}
+              </>
+            )}
+          </FormSection>
           {readonly && !source?.builtin && (
             <div className={styles.row}>
               <ReadOnlyField label={t("Export credentials")}>

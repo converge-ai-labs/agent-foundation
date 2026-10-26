@@ -2,9 +2,15 @@
 .frame {
   container-type: inline-size;
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--a13n-radius-group);
 }
 .table {
   width: 100%;
+}
+.table thead {
+  background: var(--a13n-surface);
 }
 /* Keep room for the identity without crowding every supporting column. */
 :where(.table[data-fit]) > thead > tr > th:first-child,
@@ -34,7 +40,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 10px 12px;
-    padding: 12px 0;
+    padding: 16px;
   }
   :where(.table) > tbody > tr > td {
     display: flex;
@@ -49,6 +55,10 @@
     height: auto;
     min-width: 0;
     padding: 0;
+  }
+  .frame .table > tbody > tr > td > div {
+    max-width: 100%;
+    min-width: 0;
   }
   /* Leaves room for the 44px menu cell and the gap on the first line. */
   :where(.table) > tbody > tr > td:first-child {
@@ -132,6 +142,7 @@ tr:focus-within .rowMenu,
 
 /* Toolbar ---------------------------------------------------------------- */
 .toolbar {
+  composes: compact from "../controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -158,8 +169,7 @@ tr:focus-within .rowMenu,
 }
 
 /* Collection footer ------------------------------------------------------ */
-/* The footer measures itself like the table frame above it, so the count
-   follows the rows: inset with table cells, flush with stacked rows. */
+/* Keep the count and pagination aligned with the row content at every width. */
 .footer {
   container-type: inline-size;
   display: flex;
@@ -179,14 +189,6 @@ tr:focus-within .rowMenu,
   justify-content: flex-end;
   gap: 8px;
   padding-right: 16px;
-}
-@container (width < 560px) {
-  .footer p {
-    padding-left: 0;
-  }
-  .pagination {
-    padding-right: 0;
-  }
 }
 
 /* Surface rows ----------------------------------------------------------- */
@@ -324,10 +326,14 @@ tr:focus-within .rowMenu,
   color: var(--a13n-secondary);
 }
 @media (max-width: 760px) {
+  .toolbar,
+  .toolbarFilters,
+  .toolbarTrailing {
+    gap: 6px;
+  }
   .toolbarSearch {
     flex-basis: 140px;
     min-width: 0;
-    max-width: none;
   }
   .toolbarTrailing {
     margin-left: 0;

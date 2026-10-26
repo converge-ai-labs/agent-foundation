@@ -112,7 +112,7 @@ export function SchemaFields({
     const index =
       matching >= 0 ? matching : Math.min(selected, variants.length - 1);
     return (
-      <div className={styles.schemaFields}>
+      <div data-slot="schema-fields" className={styles.schemaFields}>
         <ChoiceField
           label={t("Authentication method")}
           value={String(index)}
@@ -147,7 +147,7 @@ export function SchemaFields({
     onChange(draft);
   }
   return (
-    <div className={styles.schemaFields}>
+    <div data-slot="schema-fields" className={styles.schemaFields}>
       {Object.entries(properties).map(([key, definition], index) => {
         const field = fieldSchema(definition, schema),
           // A title is prose the console writes in sentence case; a bare key is

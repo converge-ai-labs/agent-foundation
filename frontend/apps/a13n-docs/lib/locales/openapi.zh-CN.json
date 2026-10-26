@@ -571,5 +571,9 @@
   "Read Builtin Skill Archive": "读取内置 skill 压缩包",
   "The current builtin skill package as a zip archive": "当前内置 skill 包的 ZIP 压缩文件",
   "The current deployment's bundled skill and its package file manifest.": "当前部署提供的内置 skill 及其包内文件清单。",
-  "The current process's bundled package, without a workspace resource or revision.": "当前进程提供的内置包，不对应工作区资源或修订版本。"
+  "The current process's bundled package, without a workspace resource or revision.": "当前进程提供的内置包，不对应工作区资源或修订版本。",
+  "Delete Connector Provider": "删除 connector provider",
+  "Delete Memory Provider": "删除记忆 provider",
+  "Delete Model Provider": "删除模型 provider",
+  "Delete Web Provider": "删除 Web provider"
 }

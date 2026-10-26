@@ -62,7 +62,7 @@ it("requires a model, validates advanced settings, and applies without publishin
     model: "review-model",
     model_settings: { temperature: 0.2 },
   });
-  expect(onClose).toHaveBeenCalledOnce();
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
 });
 
 it("keeps existing wildcard rules while editing one tool and discards cancelled edits", async () => {

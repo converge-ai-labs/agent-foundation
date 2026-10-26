@@ -29,7 +29,11 @@ import type { Schema } from "../../shared/api";
 import { ResourceReference } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
-import { conversationQueries, type SessionFilters } from "./api";
+import {
+  conversationQueries,
+  isConsoleSession,
+  type SessionFilters,
+} from "./api";
 import {
   SessionFilterBar,
   readSessionFilters,
@@ -204,7 +208,7 @@ function SessionResults({
                   <ArrowRightIcon aria-hidden="true" />
                   {t("Inspect execution")}
                 </MenuItem>
-                {can("run") && (
+                {can("run") && isConsoleSession(session) && (
                   <MenuItem
                     render={<Link to={`${path(session.id)}?view=chat`} />}
                   >
@@ -212,7 +216,7 @@ function SessionResults({
                     {t("Continue thread")}
                   </MenuItem>
                 )}
-                {can("run") && (
+                {can("run") && isConsoleSession(session) && (
                   <MenuItem onClick={() => setEditing(session)}>
                     <PencilSimpleIcon aria-hidden="true" />
                     {t("Edit session details")}

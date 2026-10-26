@@ -1,3 +1,4 @@
+import { ProviderDelete } from "./provider-delete";
 import { PlusIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,7 +17,7 @@ import {
 import { ErrorNotice } from "../../shared/feedback";
 import {
   FormActions,
-  ProviderEnabled,
+  EnabledField,
   ProviderKeyLink,
   SchemaFields,
   jsonObject,
@@ -38,7 +39,6 @@ import {
   ProviderConnectFields,
   ProviderConfigurationFields,
 } from "./connect-fields";
-import { EnvironmentConnectionDelete } from "./environment-connection-delete";
 import { providerKeyLink } from "./key-urls";
 import {
   ProviderEditor,
@@ -46,6 +46,7 @@ import {
   ProviderName,
   ProviderReadOnly,
 } from "./provider-editor";
+import { hasFields } from "./schemas";
 import { ProviderFacts } from "./provider-facts";
 import { ProviderTable } from "./provider-table";
 import providerStyles from "./providers.module.css";
@@ -81,7 +82,7 @@ function schema(value: unknown): Record<string, unknown> {
     : {};
 }
 
-/** Workspace providers; environment connections also support configuration edits and safe deletion. */
+/** Workspace providers; environment providers also support configuration edits and safe deletion. */
 export function KindProviders({
   kind,
   notice,
@@ -182,20 +183,20 @@ function AddKindProvider({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [generation, setGeneration] = useState(0);
-  // Closing discards the step and the draft, whoever asked for it.
+  // Start a fresh draft on reopen so closing can finish its exit animation.
   function change(value: boolean) {
     setOpen(value);
-    if (!value) setGeneration((current) => current + 1);
+    if (value) setGeneration((current) => current + 1);
   }
   return (
     <AddProviderDialog<Definition>
       key={generation}
-      title={kind === "environment" ? t("Add connection") : undefined}
+      title={kind === "environment" ? t("Add provider") : undefined}
       trigger={
         kind === "environment" ? (
           <Button type="button">
             <PlusIcon aria-hidden="true" />
-            {t("Add connection")}
+            {t("Add provider")}
           </Button>
         ) : undefined
       }
@@ -215,9 +216,7 @@ function AddKindProvider({
         <CatalogStep backLabel={t("All providers")} onBack={back}>
           <ProviderForm
             kind={kind}
-            createLabel={
-              kind === "environment" ? t("Add connection") : undefined
-            }
+            createLabel={kind === "environment" ? t("Add provider") : undefined}
             definition={definition}
             definitions={definitions}
             close={() => change(false)}
@@ -416,11 +415,6 @@ export function ProviderForm({
           configuration={configuration}
           onConfigurationChange={setConfiguration}
           name={name}
-          nameDescription={
-            kind === "environment"
-              ? "How this connection is listed across the console."
-              : undefined
-          }
           onNameChange={setName}
           keyLink={providerKeyLink(definition)}
           advancedOpen={advancedOpen}
@@ -442,18 +436,9 @@ export function ProviderForm({
         save.mutate();
       }}
     >
-      <ProviderName
-        value={name}
-        onChange={setName}
-        description={
-          kind === "environment"
-            ? "How this connection is listed across the console."
-            : undefined
-        }
-      />
-      <ProviderGroup>
-        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        {section.visible && (
+      <ProviderName value={name} onChange={setName} />
+      {section.visible && (
+        <ProviderGroup title="Credentials">
           <CredentialRow
             label={t(credentialLabel(section.schema))}
             configured={section.removable}
@@ -477,54 +462,65 @@ export function ProviderForm({
               />
             )}
           </CredentialRow>
-        )}
-        {definition?.supports_test && testDescription && (
-          <ConnectionTest
-            action={async () =>
-              providerTestResult(await api.testProvider(basis.value.id))
-            }
-            description={testDescription}
-            dirty={
-              save.isPending ||
-              configChanged ||
-              name !== basis.value.name ||
-              enabled !== basis.value.enabled ||
-              Object.keys(section.credential).length > 0 ||
-              section.removing
-            }
-            retry={() => void reload()}
-          />
-        )}
-        {kind === "environment" ? (
-          <ProviderConfigurationFields
-            schema={configSchema}
-            value={configuration}
-            onChange={setConfiguration}
-            advancedOpen={advancedOpen}
-            onAdvancedOpenChange={setAdvancedOpen}
-          />
-        ) : (
-          <ProviderFacts
-            hideDefaults
-            configuration={configuration}
-            schema={configSchema}
-          />
-        )}
-      </ProviderGroup>
+        </ProviderGroup>
+      )}
+      {definition?.supports_test && testDescription && (
+        <ConnectionTest
+          action={async () =>
+            providerTestResult(await api.testProvider(basis.value.id))
+          }
+          description={testDescription}
+          dirty={
+            save.isPending ||
+            configChanged ||
+            name !== basis.value.name ||
+            enabled !== basis.value.enabled ||
+            Object.keys(section.credential).length > 0 ||
+            section.removing
+          }
+          retry={() => void reload()}
+        />
+      )}
+      {kind === "environment" ? (
+        hasFields(configSchema) && (
+          <ProviderGroup>
+            <ProviderConfigurationFields
+              schema={configSchema}
+              value={configuration}
+              onChange={setConfiguration}
+              advancedOpen={advancedOpen}
+              onAdvancedOpenChange={setAdvancedOpen}
+            />
+          </ProviderGroup>
+        )
+      ) : (
+        <ProviderFacts
+          grouped
+          hideDefaults
+          configuration={configuration}
+          schema={configSchema}
+        />
+      )}
       <ErrorNotice error={save.error} retry={() => void reload()} />
       <FormActions
+        beforeCancel={
+          <ProviderDelete
+            kind={kind}
+            provider={basis.value}
+            etag={basis.etag}
+            disabled={save.isPending}
+            onDeleted={close}
+          />
+        }
         pending={save.isPending}
         onCancel={close}
         label={t("Save changes")}
         leading={
-          kind === "environment" ? (
-            <EnvironmentConnectionDelete
-              provider={basis.value}
-              etag={basis.etag}
-              disabled={save.isPending}
-              onDeleted={close}
-            />
-          ) : undefined
+          <EnabledField
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            disabled={save.isPending}
+          />
         }
       />
     </ProviderEditor>

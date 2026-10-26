@@ -149,13 +149,11 @@ it("does not infer health from empty findings and blocks analysis when trace que
   const user = mount();
   await screen.findByText("No findings in this view");
   expect(
-    screen.getByText(/No findings does not mean every trace was analyzed/),
+    screen.getByText(/Try another filter or analyze traces to look for issues/),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Analyze traces" }));
   expect(
-    await screen.findByText(
-      /Configure a trace query provider before starting an analysis/,
-    ),
+    await screen.findByText(/Connect a trace provider to start analysis/),
   ).toBeTruthy();
   expect(
     (
@@ -382,7 +380,7 @@ it("switches collections without stacking tables and preserves analysis evidence
     within(details).getByText("Check unsupported success claims."),
   ).toBeTruthy();
   expect(screen.queryByText(/Coverage not reported/)).toBeNull();
-  expect(screen.getByText(/Selection capped/)).toBeTruthy();
+  expect(screen.getByText(/Trace limit reached/)).toBeTruthy();
   expect(
     screen
       .getByRole("link", { name: "Open analysis run" })
@@ -390,7 +388,12 @@ it("switches collections without stacking tables and preserves analysis evidence
   ).toBe(
     "/workspace/ws_test/sessions/sess_analysis/threads/thread_analysis/runs/run_analysis",
   );
-  expect(screen.getByText(/See the analysis run's final reply/)).toBeTruthy();
+  expect(
+    screen.getByText(/Open the analysis run for the full report/),
+  ).toBeTruthy();
+  await user.click(
+    within(details).getByRole("button", { name: /Selected traces/ }),
+  );
   expect(
     screen.getByRole("link", { name: "a".repeat(32) }).getAttribute("href"),
   ).toBe("/workspace/ws_test/traces/" + "a".repeat(32));

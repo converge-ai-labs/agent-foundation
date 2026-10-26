@@ -1,12 +1,10 @@
 import {
   memo,
   useEffect,
-  useRef,
   useState,
   type ComponentProps,
   type ReactElement,
   type ReactNode,
-  type RefObject,
 } from "react";
 import {
   Dialog,
@@ -55,7 +53,6 @@ export function ModalFrame({
   // A menu that opened this dialog stays hidden until the dialog has left,
   // then closes, so it never shows through the backdrop or comes back.
   const menu = useMenuActions();
-  const popup = useRef<HTMLDivElement>(null);
   const [present, setPresent] = useState(open);
   useEffect(() => {
     if (open) setPresent(true);
@@ -65,15 +62,6 @@ export function ModalFrame({
       {...props}
       open={open}
       onOpenChange={(nextOpen, details) => {
-        // A click beside a form is a slip, not a decision to drop its input.
-        if (
-          !nextOpen &&
-          details.reason === "outside-press" &&
-          popup.current?.querySelector("form")
-        ) {
-          details.cancel();
-          return;
-        }
         onOpenChange?.(nextOpen, details);
         if (!details.isCanceled) setUncontrolledOpen(nextOpen);
       }}
@@ -91,7 +79,6 @@ export function ModalFrame({
         />
       )}
       <ModalSurface
-        popupRef={popup}
         open={open}
         title={title}
         description={description}
@@ -112,7 +99,6 @@ export function ModalFrame({
 // Callers may clear their form or conditional children as soon as open becomes false.
 const ModalSurface = memo(
   function ModalSurface({
-    popupRef,
     title,
     description,
     closeLabel,
@@ -123,7 +109,6 @@ const ModalSurface = memo(
     footer,
     placement,
   }: {
-    popupRef: RefObject<HTMLDivElement | null>;
     open: boolean;
     title: ReactNode;
     description?: ReactNode;
@@ -137,7 +122,6 @@ const ModalSurface = memo(
   }) {
     return (
       <DialogPopup
-        ref={popupRef}
         data-a13n-modal
         data-size={size}
         className={cn(

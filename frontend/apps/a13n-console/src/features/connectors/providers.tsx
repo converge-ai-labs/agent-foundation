@@ -1,3 +1,4 @@
+import { ProviderDelete } from "../providers/provider-delete";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DisclosureSection } from "a13n-ui";
 import { useState } from "react";
@@ -15,7 +16,8 @@ import {
 import { ErrorNotice } from "../../shared/feedback";
 import {
   FormActions,
-  ProviderEnabled,
+  FormSection,
+  EnabledField,
   ProviderKeyLink,
   SchemaFields,
   jsonObject,
@@ -24,7 +26,6 @@ import {
 } from "../../shared/forms";
 import { useCredentialSection } from "../../shared/use-credential-section";
 import { CallbackUrlField } from "../connections/callback-url";
-import styles from "../../shared/shared.module.css";
 import {
   AddProviderDialog,
   ConnectionTest,
@@ -122,7 +123,7 @@ function AddConnectorProvider() {
   // Closing discards the step and the draft, whoever asked for it.
   function change(value: boolean) {
     setOpen(value);
-    if (!value) setGeneration((current) => current + 1);
+    if (value) setGeneration((current) => current + 1);
   }
   return (
     <AddProviderDialog<Definition>
@@ -228,22 +229,24 @@ function EditConnectorProvider({
 function OAuthCallbackSetup() {
   const { t } = useTranslation();
   return (
-    <DisclosureSection title={t("OAuth callback setup")}>
-      <CallbackUrlField
-        description={t(
-          "For OAuth, open that project's Settings → OAuth user verification and set its callback URL to this exact address.",
-        )}
-      />
-      <p className={styles.muted}>
-        {t(
-          "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
-        )}
-      </p>
-      <ProviderKeyLink
-        href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
-        label="Open setup guide"
-      />
-    </DisclosureSection>
+    <FormSection title={t("Authorization")}>
+      <DisclosureSection title={t("OAuth callback setup")}>
+        <CallbackUrlField
+          description={t(
+            "For OAuth, open that project's Settings → OAuth user verification and set its callback URL to this exact address.",
+          )}
+        />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {t(
+            "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
+          )}
+        </p>
+        <ProviderKeyLink
+          href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
+          label="Open setup guide"
+        />
+      </DisclosureSection>
+    </FormSection>
   );
 }
 
@@ -365,9 +368,8 @@ function ProviderForm({
   return (
     <ProviderEditor onSubmit={submit}>
       <ProviderName value={name} onChange={setName} />
-      <ProviderGroup>
-        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        {section.visible && (
+      {section.visible && (
+        <ProviderGroup title="Credentials">
           <CredentialRow
             label={t(credentialLabel(section.schema))}
             configured={section.removable}
@@ -391,42 +393,57 @@ function ProviderForm({
               />
             )}
           </CredentialRow>
-        )}
-        <ProviderFacts
-          configuration={configuration}
-          schema={definition?.configuration_schema}
-          only={["endpoint"]}
-        />
-      </ProviderGroup>
+        </ProviderGroup>
+      )}
+      <ProviderFacts
+        grouped
+        configuration={configuration}
+        schema={definition?.configuration_schema}
+        only={["endpoint"]}
+      />
       {type === "composio" && <OAuthCallbackSetup />}
       <ErrorNotice error={save.error} retry={() => void reload()} />
+      <ConnectionTest
+        placement="footer"
+        description="May consume quota or incur cost."
+        retry={() => void reload()}
+        dirty={
+          save.isPending ||
+          name !== basis.name ||
+          enabled !== basis.enabled ||
+          Object.keys(section.credential).length > 0 ||
+          section.removing
+        }
+        action={async () => {
+          const result = providerTestResult(await test.mutateAsync());
+          return result.success
+            ? {
+                ...result,
+                message: t(
+                  "OAuth callback configuration and upstream account credentials were not tested.",
+                ),
+              }
+            : result;
+        }}
+      />
       <FormActions
+        beforeCancel={
+          <ProviderDelete
+            kind="connector"
+            provider={basis}
+            etag={rowTag(basis)}
+            disabled={save.isPending}
+            onDeleted={close}
+          />
+        }
         pending={save.isPending}
         onCancel={close}
         label={t("Save changes")}
         leading={
-          <ConnectionTest
-            placement="footer"
-            description="May consume quota or incur cost."
-            retry={() => void reload()}
-            dirty={
-              save.isPending ||
-              name !== basis.name ||
-              enabled !== basis.enabled ||
-              Object.keys(section.credential).length > 0 ||
-              section.removing
-            }
-            action={async () => {
-              const result = providerTestResult(await test.mutateAsync());
-              return result.success
-                ? {
-                    ...result,
-                    message: t(
-                      "OAuth callback configuration and upstream account credentials were not tested.",
-                    ),
-                  }
-                : result;
-            }}
+          <EnabledField
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            disabled={save.isPending}
           />
         }
       />

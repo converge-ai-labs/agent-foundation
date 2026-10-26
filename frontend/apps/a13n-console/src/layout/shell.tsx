@@ -95,6 +95,7 @@ export function Shell() {
     );
   return (
     <SidebarProvider
+      mobileBreakpoint="lg"
       style={
         {
           "--sidebar-width": collapsed ? "3.25rem" : "14.5rem",
@@ -159,7 +160,7 @@ function WorkspaceNavigation({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="ml-auto hidden md:inline-flex"
+                className="ml-auto hidden lg:inline-flex"
                 aria-label={t("Collapse navigation")}
                 onClick={() => onCollapsedChange(true)}
               >
@@ -168,7 +169,8 @@ function WorkspaceNavigation({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="ml-auto md:hidden"
+                className="ml-auto lg:hidden"
+                tooltip={false}
                 aria-label={t("Close navigation")}
                 onClick={close}
               >
@@ -259,7 +261,7 @@ function WorkspaceNavigation({
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="h-dvh min-w-0">
-        <div className="flex shrink-0 px-(--a13n-page-gutter-mobile) pt-4 md:hidden">
+        <div className="flex shrink-0 px-(--console-page-gutter) pt-4 lg:hidden">
           <Button
             variant="ghost"
             size="icon-sm"

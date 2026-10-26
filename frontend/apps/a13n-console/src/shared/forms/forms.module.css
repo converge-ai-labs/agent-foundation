@@ -6,17 +6,15 @@
   flex-wrap: wrap;
   margin-top: 12px;
 }
-/* A form whose footer also carries an action that is not its outcome. The
-   leading cell shrinks and wraps its own text so the outcome stays at the
-   right, level with the leading cell's first line, however much it grows. */
+/* Staged status stays at the left; outcome actions keep their own row together. */
 .formActions[data-leading] {
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
 }
 .formActionsLeading {
   display: flex;
-  flex: 1 1 180px;
+  flex: 0 1 auto;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
@@ -35,6 +33,14 @@
   align-items: center;
   flex: none;
   gap: 8px;
+}
+.formActions :global([data-slot="button"]) {
+  font-size: var(--a13n-text-sm);
+}
+@media (width < 480px) {
+  .formActions :global([data-slot="button"]) {
+    padding-inline: 10px;
+  }
 }
 .textValue {
   padding: 12px;
@@ -168,4 +174,13 @@
 /* Portaled menus opt in separately from their compact form's controls. */
 .compactChoicePopup [data-slot="select-item"] {
   font-size: var(--a13n-text-sm);
+}
+
+.inlineStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  color: var(--a13n-text);
 }

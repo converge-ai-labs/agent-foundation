@@ -360,3 +360,42 @@ it("retains a saved nested credential when only ordinary fields change", async (
   await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
   expect(http.PATCH.mock.calls[0][1].body).not.toHaveProperty("credential");
 });
+
+it("omits empty credential and configuration groups when editing DuckDuckGo", async () => {
+  const keyless = {
+    ...provider,
+    type: "duckduckgo",
+    name: "DuckDuckGo",
+    config: {},
+    credential_configured: false,
+  };
+  const keylessDefinition = {
+    ...definition,
+    type: "duckduckgo",
+    display_name: "DuckDuckGo",
+    authentication: { mode: "forbidden" },
+    credential_schema: null,
+    configuration_schema: { type: "object", properties: {} },
+  };
+  http.GET.mockImplementation(async (path: string) =>
+    response(
+      path === "/api/v1/provider-types/{kind}"
+        ? { items: [keylessDefinition] }
+        : path.endsWith("{provider_id}")
+          ? keyless
+          : { items: [keyless], next_cursor: null },
+    ),
+  );
+  setup(
+    <WebProviderEditor
+      providerId={keyless.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
+  await screen.findByRole("textbox", { name: "Name" });
+  expect(screen.queryByText("Connection")).toBeNull();
+  expect(screen.queryByText("Credentials")).toBeNull();
+  expect(screen.queryByText("Configuration")).toBeNull();
+  expect(screen.getByRole("switch", { name: "Enabled" })).toBeTruthy();
+});

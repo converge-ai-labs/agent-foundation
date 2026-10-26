@@ -45,10 +45,8 @@ export function Confirm({
   return (
     <ModalFrame
       onOpenChange={(value) => {
-        if (!mutation.isPending) {
-          setOpen(value);
-          mutation.reset();
-        }
+        setOpen(value);
+        if (!mutation.isPending) mutation.reset();
       }}
       trigger={
         triggerElement ?? (

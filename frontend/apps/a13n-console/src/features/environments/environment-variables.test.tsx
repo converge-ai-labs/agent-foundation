@@ -107,14 +107,10 @@ it("preserves defaults when applying a Docker preset without forcing custom mode
     environment,
   });
 });
-it("disables editing for readers", () => {
+it("presents static values without editing controls for readers", () => {
   render(<Editor readOnly />);
-  expect(
-    screen
-      .getByRole("textbox", { name: "Variable name 1" })
-      .matches(":disabled"),
-  ).toBe(true);
-  expect(
-    screen.getByRole("button", { name: "Add variable" }).matches(":disabled"),
-  ).toBe(true);
+  expect(screen.getByText("APP_MODE")).toBeTruthy();
+  expect(screen.getByText("agent")).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Variable name 1" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add variable" })).toBeNull();
 });

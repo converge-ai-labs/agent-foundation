@@ -7,8 +7,19 @@ import { cn } from "../lib/utils";
 export const TooltipCreateHandle: typeof TooltipPrimitive.createHandle =
   TooltipPrimitive.createHandle;
 
-export const TooltipProvider: typeof TooltipPrimitive.Provider =
-  TooltipPrimitive.Provider;
+export function TooltipProvider({
+  delay = 150,
+  closeDelay = 80,
+  ...props
+}: TooltipPrimitive.Provider.Props): React.ReactElement {
+  return (
+    <TooltipPrimitive.Provider
+      delay={delay}
+      closeDelay={closeDelay}
+      {...props}
+    />
+  );
+}
 
 export const Tooltip: typeof TooltipPrimitive.Root = TooltipPrimitive.Root;
 
@@ -39,25 +50,20 @@ export function TooltipPopup({
       <TooltipPrimitive.Positioner
         align={align}
         anchor={anchor}
-        className="z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
+        className="z-50 max-w-(--available-width)"
         data-slot="tooltip-positioner"
         side={side}
         sideOffset={sideOffset}
       >
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) text-balance rounded-[10px] border-0 bg-popover not-dark:bg-clip-padding text-popover-foreground text-xs shadow-overlay transition-[width,height,scale,opacity] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0",
+            "w-max max-w-[min(320px,var(--available-width))] rounded-xl border border-white/10 bg-neutral-800 px-3 py-1.5 text-xs leading-5 text-neutral-50 shadow-md dark:bg-neutral-700 transition-opacity duration-100 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0 motion-reduce:transition-none",
             className,
           )}
           data-slot="tooltip-popup"
           {...props}
         >
-          <TooltipPrimitive.Viewport
-            className="relative size-full overflow-clip px-(--viewport-inline-padding) py-1 [--viewport-inline-padding:--spacing(2)] data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:truncate **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity"
-            data-slot="tooltip-viewport"
-          >
-            {children}
-          </TooltipPrimitive.Viewport>
+          {children}
         </TooltipPrimitive.Popup>
       </TooltipPrimitive.Positioner>
     </TooltipPrimitive.Portal>

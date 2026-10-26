@@ -297,8 +297,8 @@ function CreateKey({
   return (
     <ModalFrame
       onOpenChange={(value) => {
+        setOpen(value);
         if (!create.isPending) {
-          setOpen(value);
           create.reset();
           setName("");
           setExpires("never");

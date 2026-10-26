@@ -28,7 +28,7 @@ Local and Docker provisioning default off; enable them in [Service settings](con
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
-In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Configuration changes keep an omitted credential. Replace it by providing a new value, or remove it with `null`; the new authentication mode must permit the saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
+In Console, **Manage providers** beside the template's **Provider** selector opens the provider list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a provider to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete provider**. Configuration changes keep an omitted credential. Replace it by providing a new value, or remove it with `null`; the new authentication mode must permit the saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused provider can be permanently deleted. This removes only the saved provider and credentials, not a Docker engine or native resource.
 
 ![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.webp)
 
@@ -68,7 +68,7 @@ Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine
 
 ## Templates
 
-In Console, choose **Environments → Templates → Create template** to open the creation page. Name the template, choose a runtime, then select an enabled provider connection or open **Manage connections** to add one. Use the **Cloud / Own infrastructure** tabs to show one category at a time. Switching back restores the previous runtime selection. These groups do not change provider behavior. Configure the environment and its idle policy, then save. Switching runtimes preserves each runtime's draft configuration. A connection added here is saved independently, even if you cancel template creation. Saving the template does not start an environment.
+In Console, choose **Environments → Templates → Create template** to open the creation page. Name the template, choose a runtime, then select an enabled provider or open **Manage providers** to add one. Use the **Cloud / Own infrastructure** tabs to show one category at a time. Switching back restores the previous runtime selection. These groups do not change provider behavior. Configure the environment and its idle policy, then save. Switching runtimes preserves each runtime's draft configuration. A provider added here is saved independently, even if you cancel template creation. Saving the template does not start an environment.
 
 A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`. This example uses a Docker provider; replace `eprov_...` with its ID.
 
@@ -215,8 +215,8 @@ Give an agent a graphical desktop to inspect screens, click controls and type. S
 
 ### Create a Docker desktop
 
-1. Open **Workspace settings → Providers → Environment** and configure a Docker connection. Enable **Environment operation channel** and set **Host access address** to an address the Workers can reach. Docker Engine access and this HTTP route are separate connections.
-2. Open **Environments → Templates → Create template**. Choose Docker, select the connection, and choose **Desktop environment**. The preset selects the desktop image, HTTP EIP execution and desktop readiness requirement. Save the template.
+1. Open **Workspace settings → Providers → Environment** and configure a Docker provider. Enable **Environment operation channel** and set **Host access address** to an address the Workers can reach. Docker Engine access and this HTTP route are separate connections.
+2. Open **Environments → Templates → Create template**. Choose Docker, select the provider, and choose **Desktop environment**. The preset selects the desktop image, HTTP EIP execution and desktop readiness requirement. Save the template.
 3. Select that template as the agent's default environment, or create an instance from it and add it to the conversation.
 4. Once the environment is running, use **Check desktop** in **Environments and memory** to inspect readiness. Then enable the permissions below.
 
@@ -224,12 +224,12 @@ Use loopback or an explicitly trusted private link for the plain-HTTP operation 
 
 ### Automatic Vercel desktops
 
-1. Add a Vercel environment connection, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
-2. Create a Vercel environment template, choose that connection and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
+1. Add a Vercel environment provider, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
+2. Create a Vercel environment template, choose that provider and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
 3. Create an instance from the template. The first creation builds a desktop snapshot and can take several minutes. Console shows its current phase and elapsed time. You can leave the page and return to **Environment instances** while creation continues.
 4. When ready, open the desktop preview. Runs using this environment can use Computer operations and Console human control. If creation fails, correct the reported configuration or permissions and use **Retry creation** when available.
 
-Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
+Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
 
 ### Enable observation and interaction
 
@@ -291,8 +291,8 @@ Deploy this update to Service control and worker roles together before enabling 
 
 ### Automatic Sprites desktops
 
-1. Add a Fly.io Sprites connection with your organization and API token. The token must allow creation with ownership labels, execution, deletion and URL settings. A name/quantity-restricted token may reject labels; use a suitable Sprites token rather than removing the ownership checks.
-2. Create a template, select that connection and enable **Desktop environment**. No local binary, prebuilt image or template ID is required.
+1. Add a Fly.io Sprites provider with your organization and API token. The token must allow creation with ownership labels, execution, deletion and URL settings. A name/quantity-restricted token may reject labels; use a suitable Sprites token rather than removing the ownership checks.
+2. Create a template, select that provider and enable **Desktop environment**. No local binary, prebuilt image or template ID is required.
 3. Create an instance. **Every new Sprite** installs Envd, desktop dependencies and Chrome, which can take several minutes. Console displays allocation, installation and desktop checks with elapsed time. You can leave the page; return to Environment instances to inspect progress or retry a confirmed failure.
 4. When ready, choose **View desktop** for a read-only snapshot. Interactive control is available from a conversation using that environment.
 

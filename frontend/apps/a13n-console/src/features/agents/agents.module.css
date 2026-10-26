@@ -521,7 +521,7 @@
   margin: 0;
   overflow: hidden;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
   text-overflow: ellipsis;

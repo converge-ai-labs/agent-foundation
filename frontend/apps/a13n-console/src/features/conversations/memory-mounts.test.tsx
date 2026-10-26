@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { MemoryMountRows } from "../memories/mounts";
 import { ThreadMemoryMounts } from "./memory-mounts";
-import { fixtureThread } from "./transcript/fixture";
+import { fixtureSession, fixtureThread } from "./transcript/fixture";
 
 const mocks = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -48,29 +48,31 @@ beforeEach(() => {
   mocks.PATCH.mockReset().mockResolvedValue({ data: {} });
   mocks.DELETE.mockReset().mockResolvedValue({});
   mocks.GET.mockImplementation(async (path: string) => ({
-    data: path.endsWith("/threads/{thread_id}")
-      ? mocks.thread
-      : path.endsWith("/threads/{thread_id}/memories")
-        ? { items: mocks.mounts }
-        : {
-            items: [
-              {
-                id: "mem_book",
+    data: path.endsWith("/sessions/{session_id}")
+      ? fixtureSession()
+      : path.endsWith("/threads/{thread_id}")
+        ? mocks.thread
+        : path.endsWith("/threads/{thread_id}/memories")
+          ? { items: mocks.mounts }
+          : {
+              items: [
+                {
+                  id: "mem_book",
 
-                name: "Handbook",
-                kind: "file",
-              },
-              {
-                id: "mem_prefs",
+                  name: "Handbook",
+                  kind: "file",
+                },
+                {
+                  id: "mem_prefs",
 
-                name: "Preferences",
-                kind: "file",
-              },
-              { id: "mem_facts", name: "Facts", kind: "record" },
-              { id: "mem_team", name: "Team", kind: "record" },
-            ],
-            next_cursor: null,
-          },
+                  name: "Preferences",
+                  kind: "file",
+                },
+                { id: "mem_facts", name: "Facts", kind: "record" },
+                { id: "mem_team", name: "Team", kind: "record" },
+              ],
+              next_cursor: null,
+            },
   }));
 });
 

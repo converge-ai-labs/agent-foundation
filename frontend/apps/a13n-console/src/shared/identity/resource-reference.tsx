@@ -26,14 +26,15 @@ export function ResourceReference({
         aria-label={t("Show resource reference")}
         openOnHover
         delay={100}
-        closeDelay={120}
+        closeDelay={200}
       >
         <HashStraightIcon aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup
         className={styles.popup}
         align="start"
-        sideOffset={5}
+        sideOffset={0}
+        alignOffset={-8}
         tooltipStyle
       >
         {id && (
@@ -74,9 +75,8 @@ function ReferenceRow({
 }) {
   return (
     <div className={styles.row}>
-      <span className={styles.label}>{label}</span>
+      <CopyButton value={value} text={label} copyLabel={copyLabel} />
       <code title={value}>{value}</code>
-      <CopyButton value={value} iconOnly copyLabel={copyLabel} />
     </div>
   );
 }

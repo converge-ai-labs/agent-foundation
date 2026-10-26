@@ -168,7 +168,11 @@ export function NewConversation() {
           agentName={selected?.name}
           options={
             <>
-              <RunOptions options={options} showAgent={false} />
+              <RunOptions
+                options={options}
+                showAgent={false}
+                agentId={agentId}
+              />
               {can("run") && (
                 <SessionMemoryControl
                   value={memory}

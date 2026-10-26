@@ -185,7 +185,7 @@ a.agentLink:focus-visible {
 .startHeader h1 {
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 1.2;
 }
@@ -361,8 +361,9 @@ a.agentLink:focus-visible {
     display: none;
   }
   .agentFilter {
-    flex: 1 1 60%;
-    width: auto;
+    flex: 1 1 128px;
+    width: 128px;
+    min-width: 0;
   }
   /* Clear joins the Agent row instead of wrapping alone under the menus. */
   .agentFilter ~ * {
@@ -385,5 +386,13 @@ a.agentLink:focus-visible {
 .threadMounts h3 {
   margin: 0;
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
+}
+
+@media (max-width: 420px) {
+  .agentFilter,
+  .agentFilter ~ :not(.clearFilters) {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+  }
 }

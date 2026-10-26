@@ -290,8 +290,8 @@ export function InvitationEditor({
   return (
     <ModalFrame
       onOpenChange={(value) => {
+        setOpen(value);
         if (!mutation.isPending) {
-          setOpen(value);
           mutation.reset();
         }
       }}

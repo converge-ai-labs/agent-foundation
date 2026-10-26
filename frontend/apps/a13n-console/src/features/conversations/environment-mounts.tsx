@@ -14,7 +14,7 @@ import { ComputerCheck } from "./computer-check";
 import { MountComputerPermissions } from "./mount-computer-permissions";
 import { EnvironmentReference } from "../environments/reference";
 import { conversationQueries, invalidateConversation } from "./api";
-import { isInteractive } from "./transcript/run-actions";
+import { useInteractiveThread } from "./transcript/run-actions";
 
 /** The environments a Thread mounts for its later Runs. */
 export function ThreadEnvironmentMounts({
@@ -29,6 +29,7 @@ export function ThreadEnvironmentMounts({
   const thread = useQuery(
     conversationQueries(client, workspace.id).thread(threadId),
   );
+  const interactive = useInteractiveThread(thread.data);
   const mounts = useQuery(
     conversationQueries(client, workspace.id).environments(threadId),
   );
@@ -36,7 +37,7 @@ export function ThreadEnvironmentMounts({
     <section className="flex flex-col gap-3" aria-label={t("Environments")}>
       <div className="flex items-center justify-between gap-2">
         <h3>{t("Environments")}</h3>
-        {can("run") && thread.data && isInteractive(thread.data) && (
+        {can("run") && thread.data && interactive && (
           <ModalFrame
             open={open}
             onOpenChange={setOpen}
@@ -77,13 +78,13 @@ export function ThreadEnvironmentMounts({
                   <MountComputerPermissions
                     thread={thread.data}
                     mount={mount}
-                    editable={can("run") && isInteractive(thread.data)}
+                    editable={can("run") && interactive}
                   />
                 )}
                 <ComputerCheck
                   key={mount.environment_id}
                   environmentId={mount.environment_id}
-                  canCheck={can("run")}
+                  canCheck={can("run") && interactive}
                 />
               </div>
             </ListRow>

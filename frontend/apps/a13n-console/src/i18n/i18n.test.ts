@@ -82,3 +82,21 @@ test("distinguishes Session, Thread and Run in Chinese product labels", async ()
   expect(i18n.t("Run")).toBe("运行");
   expect(i18n.t("{{count}} runs", { count: 2 })).toBe("2 次运行");
 });
+
+test("English state and trigger labels consistently start with a capital letter", () => {
+  const labels = Object.entries(en).filter(([key]) =>
+    /^(state|trigger)\./.test(key),
+  );
+  expect(labels.length).toBeGreaterThan(0);
+  for (const [key, label] of labels) expect(label, key).toMatch(/^[A-Z]/);
+});
+
+test("keeps inline phrases and protocol identifiers intact while normalizing peer labels", () => {
+  expect(en["wrote the reply"]).toBe("wrote the reply");
+  expect(en["and {{count}} more"]).toBe("and {{count}} more");
+  expect(en["Api Key"]).toBe("API key");
+  expect(en["Api Version"]).toBe("API version");
+  const signature =
+    "Verify X-A13n-Webhook-Signature with this secret and deduplicate by X-A13n-Delivery-Id.";
+  expect(en[signature]).toBe(signature);
+});

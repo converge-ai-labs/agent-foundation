@@ -284,6 +284,8 @@ it("opens the run details in a dialog, on demand, starting with usage", async ()
     within(attempts.closest("li")!).getByText("state.succeeded"),
   ).toBeTruthy();
   expect(within(dialog).getByText("Overview")).toBeTruthy();
+  expect(within(dialog).queryByText("Continued run")).toBeNull();
+  await user.click(within(dialog).getByRole("button", { name: "Lineage" }));
   expect(await within(dialog).findByText("Continued run")).toBeTruthy();
 });
 

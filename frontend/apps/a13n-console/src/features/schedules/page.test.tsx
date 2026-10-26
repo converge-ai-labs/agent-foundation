@@ -329,7 +329,10 @@ it("explains an empty one-time preview and clears the message when timing change
     });
   });
   await user.click(
-    await screen.findByRole("button", { name: "Edit schedule" }),
+    await screen.findByRole("button", { name: "More schedule actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit schedule" }),
   );
   await user.click(screen.getByRole("button", { name: "Preview next times" }));
   const message =
@@ -862,7 +865,10 @@ it("allows another writer to stop a schedule without offering creator-only actio
     return Response.json({ ...schedule, state: "enabled", pause_reason: null });
   });
   expect(await screen.findByRole("button", { name: "Pause" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "More schedule actions" }),
+  );
+  expect(await screen.findByRole("menuitem", { name: "Archive" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Run once" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Edit schedule" })).toBeNull();
 });
@@ -974,7 +980,10 @@ it("keeps an open draft's original ETag after live configuration changes", async
     return Response.json({ ...schedule, version });
   });
   await user.click(
-    await screen.findByRole("button", { name: "Edit schedule" }),
+    await screen.findByRole("button", { name: "More schedule actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit schedule" }),
   );
   const dialog = screen.getByRole("dialog");
   expect(
@@ -1079,7 +1088,10 @@ it("keeps completed one-time history visible while only offering archive", async
   expect(await screen.findByText("Scheduling finished")).toBeTruthy();
   expect(await screen.findByText("No input submitted")).toBeTruthy();
   expect(screen.getByText("Pending or unfinished work")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Archive" })).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "More schedule actions" }),
+  );
+  expect(await screen.findByRole("menuitem", { name: "Archive" })).toBeTruthy();
   for (const name of ["Enable", "Pause", "Edit schedule", "Run once"])
     expect(screen.queryByRole("button", { name })).toBeNull();
 });
@@ -1106,7 +1118,10 @@ it("preserves an unchanged one-time instant when editing metadata after its time
     return Response.json(once);
   });
   await user.click(
-    await screen.findByRole("button", { name: "Edit schedule" }),
+    await screen.findByRole("button", { name: "More schedule actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit schedule" }),
   );
   const dialog = screen.getByRole("dialog");
   await user.type(within(dialog).getByLabelText("Name"), " edited");

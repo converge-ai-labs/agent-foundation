@@ -20,6 +20,7 @@ import {
   type ViewLevel,
 } from "./api";
 import { runRequest } from "./request";
+import { useInteractiveThread } from "./transcript/run-actions";
 import styles from "./fork.module.css";
 
 /** One Run boundary, shared by Chat, Debug and the historical-run dock. */
@@ -47,7 +48,8 @@ export function ForkRun({
   const [fresh, setFresh] = useState(false);
   const idempotency = useIdempotency();
   const agent = useAgent(open ? run.agent_id : undefined);
-  const allowed = can("run");
+  const interactive = useInteractiveThread(thread);
+  const allowed = can("run") && interactive;
   const sealed = !!run.sealed_at && !isActiveRun(run.status);
   const reason = !allowed
     ? t("Run permission is required to create a branch.")
@@ -113,14 +115,11 @@ export function ForkRun({
       navigate(`${path}?${params}`);
     },
   });
-  if (thread.purpose === "memory_organization") return null;
+  if (!interactive) return null;
   return (
     <ModalFrame
       open={open}
-      onOpenChange={(next, details) => {
-        if (mutation.isPending) details.cancel();
-        else setOpen(next);
-      }}
+      onOpenChange={setOpen}
       trigger={
         <Button
           type="button"

@@ -1,14 +1,20 @@
-import { Button, DisclosureSection, FormField, Input } from "a13n-ui";
+import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { BrandTitle, CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, ProviderKeyLink, SchemaFields } from "../../shared/forms";
+import {
+  FormActions,
+  FormSection,
+  ProviderKeyLink,
+  SchemaFields,
+} from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
 import {
   AddProviderDialog,
   ProviderCatalog,
+  ProviderName,
   credentialHint,
   providerKeyLink,
 } from "../providers";
@@ -115,7 +121,7 @@ export function AddProvider({
       open={open}
       onOpenChange={(value) => {
         onOpenChange(value);
-        if (!value) setGeneration((current) => current + 1);
+        if (value) setGeneration((current) => current + 1);
       }}
     />
   );
@@ -216,46 +222,38 @@ export function ProviderConnectForm({
           save.mutate();
         }}
       >
-        {!definition.oauth_scheme && (
-          <>
-            {credential}
-            {configuration}
-          </>
+        <ProviderName value={draft.name} onChange={draft.setName} />
+        {!definition.oauth_scheme && credential && (
+          <FormSection title={t("Credentials")}>{credential}</FormSection>
         )}
-        <FormField
-          label={t("Name")}
-          description={t("How this provider is listed across the console.")}
-        >
-          <Input
-            required
-            value={draft.name}
-            maxLength={128}
-            onChange={(event) => draft.setName(event.target.value)}
-          />
-        </FormField>
-        {definition.oauth_scheme ? (
-          <DisclosureSection
-            title={t("Advanced settings")}
-            open={draft.advancedOpen}
-            onOpenChange={draft.setAdvancedOpen}
-          >
-            {configuration}
-            {credential}
-          </DisclosureSection>
-        ) : (
-          <ProviderConnection
-            type={type}
-            schema={definition.configuration_schema}
-            configuration={draft.configuration}
-            onChange={draft.setConfiguration}
-            headers={draft.headers}
-            onHeadersChange={draft.setHeaders}
-            open={draft.advancedOpen}
-            onOpenChange={draft.setAdvancedOpen}
-            onBaseUrlChange={draft.changeBaseUrl}
-            onSuggestedApi={draft.setSuggestedApi}
-          />
-        )}
+        <FormSection title={t("Configuration")}>
+          {definition.oauth_scheme ? (
+            <DisclosureSection
+              title={t("Advanced settings")}
+              open={draft.advancedOpen}
+              onOpenChange={draft.setAdvancedOpen}
+            >
+              {configuration}
+              {credential}
+            </DisclosureSection>
+          ) : (
+            <>
+              {configuration}
+              <ProviderConnection
+                type={type}
+                schema={definition.configuration_schema}
+                configuration={draft.configuration}
+                onChange={draft.setConfiguration}
+                headers={draft.headers}
+                onHeadersChange={draft.setHeaders}
+                open={draft.advancedOpen}
+                onOpenChange={draft.setAdvancedOpen}
+                onBaseUrlChange={draft.changeBaseUrl}
+                onSuggestedApi={draft.setSuggestedApi}
+              />
+            </>
+          )}
+        </FormSection>
         <ErrorNotice error={save.error} />
         <FormActions
           pending={save.isPending}

@@ -2,7 +2,7 @@
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 48px 64px;
+  padding: 32px var(--console-page-gutter) 64px;
 }
 .back {
   display: inline-flex;
@@ -41,7 +41,7 @@
 .titleRow h1 {
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
 }
@@ -61,6 +61,7 @@
   line-height: 20px;
 }
 .actions {
+  composes: compact from "../controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -98,23 +99,25 @@
   gap: 4px;
   min-width: 0;
 }
-/* Text flow, so status and edit follow the last line of a wrapped name. */
+/* Centre status and edit controls on the title; wrap without squeezing them. */
 .detailTitleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   min-width: 0;
 }
 .detailTitleRow h1 {
-  display: inline;
+  min-width: 0;
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
   overflow-wrap: break-word;
-  vertical-align: middle;
 }
 .detailTitleRow > :not(h1) {
-  margin-left: 8px;
-  vertical-align: middle;
+  flex: none;
 }
 .subtitle {
   display: flex;
@@ -235,7 +238,7 @@
 .sectionHeader h2 {
   margin: 0;
   font-size: var(--a13n-text-lg);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
   line-height: 20px;
 }
@@ -275,7 +278,7 @@
 .subsection > .sectionHeader h3 {
   margin: 0;
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 20px;
 }
 .subsection > .sectionHeader p {
@@ -402,7 +405,7 @@
 }
 @media (width < 768px) {
   .page {
-    padding: 24px var(--a13n-page-gutter-mobile) 40px;
+    padding-block: 16px 40px;
   }
   .header {
     flex-direction: column;
@@ -413,11 +416,33 @@
     flex-basis: auto;
     width: 100%;
   }
+  .page > .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 12px;
+  }
+  .page > .header > :first-child {
+    display: contents;
+  }
+  .page > .header .titleRow {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .page > .header .description {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .page > .header > .actions {
+    grid-column: 2;
+    grid-row: 1;
+  }
   .actions {
     justify-content: flex-start;
+    gap: 6px;
   }
   .toolbar {
-    margin-top: 16px;
+    margin-top: 14px;
   }
   .detailPage {
     padding: 20px var(--a13n-page-gutter-mobile) 140px;

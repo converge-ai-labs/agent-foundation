@@ -30,7 +30,7 @@
 .metrics dd {
   margin-top: 10px;
   font-size: 28px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.1;
   letter-spacing: var(--a13n-tracking-title);
   font-variant-numeric: tabular-nums;
@@ -86,7 +86,7 @@
 }
 .sectionHeading h2 {
   font-size: var(--a13n-text-lg);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
 }
 .chartReadout {

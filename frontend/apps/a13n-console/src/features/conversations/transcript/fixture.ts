@@ -76,6 +76,25 @@ export function fixtureRunAgent(): Schema["RunAgent"] {
   };
 }
 
+/** Session source is independent of editable display metadata. */
+export function fixtureSession(
+  overrides: Partial<Schema["SessionView"]> = {},
+): Schema["SessionView"] {
+  return {
+    id: "ses_1",
+    workspace_id: "ws_1",
+    labels: { "a13n.console": "debug" },
+    title: null,
+    origin: null,
+    created_by_id: "usr_1",
+    last_run_id: "run_2",
+    version: 1,
+    created_at: START,
+    updated_at: at(12),
+    ...overrides,
+  };
+}
+
 export function fixtureThread(
   overrides: Partial<Schema["ThreadView"]> = {},
 ): Schema["ThreadView"] {

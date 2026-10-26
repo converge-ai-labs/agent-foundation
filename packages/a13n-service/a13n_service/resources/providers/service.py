@@ -254,7 +254,18 @@ async def resolve_provider[R: ProviderRow](
     authority: ExecutionAuthority | None = None,
 ) -> ResolvedProvider:
     """An enabled provider of the workspace, read in the caller's short session."""
-    return _resolved(await usable_row(session, actor, row_type, scope, provider_id, verb=verb, authority=authority))
+    return _resolved(
+        await usable_row(
+            session,
+            actor,
+            row_type,
+            scope,
+            provider_id,
+            verb=verb,
+            authority=authority,
+            key_share=row_type.PROVIDER_KIND == "web",
+        )
+    )
 
 
 async def read_provider[R: ProviderRow](session: AsyncSession, row_type: type[R], provider_id: str) -> ResolvedProvider:

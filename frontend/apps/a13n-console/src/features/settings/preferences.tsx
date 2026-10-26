@@ -21,7 +21,7 @@ export function Preferences() {
   );
   return (
     <div className={styles.sections}>
-      <SettingsSection title={t("Appearance")}>
+      <SettingsSection variant="outlined" title={t("Appearance")}>
         <SettingsRow label={t("Color theme")}>
           <div className={styles.control}>
             <ChoiceField
@@ -41,7 +41,7 @@ export function Preferences() {
           </div>
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection title={t("Language and region")}>
+      <SettingsSection variant="outlined" title={t("Language and region")}>
         <SettingsRow
           label={t("Display language")}
           description={t("Used for navigation, dates, and controls.")}

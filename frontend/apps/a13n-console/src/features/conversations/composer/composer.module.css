@@ -125,8 +125,7 @@ fieldset:disabled .chip {
 }
 
 /* Dialogs ---------------------------------------------------------------- */
-.attach,
-.optionFields {
+.attach {
   display: grid;
   gap: 16px;
   min-width: 0;
@@ -144,13 +143,6 @@ fieldset:disabled .chip {
   flex: none;
   color: var(--a13n-muted);
 }
-.optionSwitch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--a13n-text-sm);
-  font-weight: 500;
-}
 @media (max-width: 720px) {
   .hint {
     display: none;
@@ -161,6 +153,121 @@ fieldset:disabled .chip {
   .chip {
     transition: none;
   }
+}
+
+.modifiedDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--a13n-text);
+}
+.settingsPanel {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.instructionsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.instructionsLabel {
+  display: grid;
+  gap: 5px;
+  cursor: pointer;
+}
+.settingsHint {
+  color: var(--a13n-muted);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  margin: 0;
+}
+.settingsDisclosures {
+  display: grid;
+  gap: 4px;
+}
+.settingsFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.settingsActions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .settingsPanel {
+    gap: 18px;
+  }
+  .settingsFooter {
+    gap: 6px;
+  }
+  .settingsFooter button {
+    padding-inline: 10px;
+    font-size: var(--a13n-text-xs);
+  }
+}
+
+/* Like Agent details, the heading sits outside the outlined collection.
+   Each field has one inset; nested disclosures do not stack more frames. */
+.settingsGroup
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  gap: 0;
+  padding: 0;
+  margin-top: 6px;
+  margin-bottom: 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.settingsGroup
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div
+  > *,
+.settingsGroup [data-slot="execution-fields"] > * {
+  padding: 14px;
+}
+.settingsGroup
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div
+  > *
+  + *,
+.settingsGroup [data-slot="execution-fields"] > * + * {
+  border-top: 1px solid var(--a13n-border);
+}
+.settingsGroup
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div
+  > [data-slot="execution-fields"] {
+  padding: 0;
+  gap: 0;
+}
+.settingsPanel
+  :is(
+    [data-slot="label"],
+    [data-slot="field-label"],
+    [data-slot="button"],
+    [data-slot="input-control"],
+    [data-slot="textarea-control"],
+    [data-slot="select-trigger"],
+    [data-slot="select-button"],
+    legend
+  ) {
+  font-size: var(--a13n-text-sm);
+}
+.settingsPanel [data-slot="field-description"] {
+  font-size: var(--a13n-text-xs);
+  line-height: 1.5;
 }
 
 .memoryPopup {

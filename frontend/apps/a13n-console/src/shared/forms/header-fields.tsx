@@ -59,6 +59,7 @@ export function HeaderFields({
           {/* The first row names the columns; later rows keep their names for
               assistive technology only. */}
           <FormField
+            data-field-layout="stacked"
             className="min-w-0 max-sm:col-span-2"
             label={
               <>
@@ -81,6 +82,7 @@ export function HeaderFields({
             />
           </FormField>
           <FormField
+            data-field-layout="stacked"
             className="min-w-0"
             label={
               <>

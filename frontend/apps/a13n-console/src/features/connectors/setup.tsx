@@ -144,7 +144,7 @@ export function ConnectionSetup({
   );
   return (
     <div className={styles.stack}>
-      <p className={styles.muted}>
+      <p className="text-xs leading-relaxed text-muted-foreground">
         {t("Authorize the external account with your provider.")}
       </p>
       {definition.isPending ? (

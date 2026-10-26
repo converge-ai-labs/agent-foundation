@@ -161,6 +161,7 @@ export function Panel({
             type="button"
             variant="ghost"
             size="icon-sm"
+            tooltip={false}
             aria-label={t("Close")}
             onClick={onClose}
           >

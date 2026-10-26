@@ -1,6 +1,6 @@
 import { SettingsRow } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { fieldLabel } from "../../shared/forms";
+import { fieldLabel, FormSection } from "../../shared/forms";
 import { CopyButton } from "../../shared/identity";
 import { schemaProperties } from "./schemas";
 import styles from "./providers.module.css";
@@ -25,6 +25,7 @@ export function ProviderFacts({
   schema,
   only,
   hideDefaults = false,
+  grouped = false,
 }: {
   configuration: Record<string, unknown>;
   schema?: Record<string, unknown> | null;
@@ -32,6 +33,7 @@ export function ProviderFacts({
   only?: readonly string[];
   /** Drops values the service chose for you, leaving what was decided here. */
   hideDefaults?: boolean;
+  grouped?: boolean;
 }) {
   const { t } = useTranslation();
   const properties = schemaProperties(schema) as Record<
@@ -43,7 +45,7 @@ export function ProviderFacts({
     if (value === null || value === undefined || value === "") return false;
     return !hideDefaults || value !== properties[key]?.default;
   });
-  return (
+  const content = (
     <>
       {rows.map(([key, value]) => {
         const title = properties[key]?.title;
@@ -75,5 +77,12 @@ export function ProviderFacts({
         );
       })}
     </>
+  );
+  return grouped ? (
+    rows.length ? (
+      <FormSection title={t("Configuration")}>{content}</FormSection>
+    ) : null
+  ) : (
+    content
   );
 }

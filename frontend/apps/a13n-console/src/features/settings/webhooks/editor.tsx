@@ -47,7 +47,6 @@ export function WebhookEditor({
     setLocalOpen(value);
     onOpenChange?.(value);
   };
-  const [pending, setPending] = useState(false);
   const [secret, setSecret] = useState("");
   const [created, setCreated] = useState<Subscription>();
   function close() {
@@ -60,11 +59,7 @@ export function WebhookEditor({
       size="lg"
       finalFocus={finalFocus}
       open={open}
-      onOpenChange={(value, details) => {
-        if (pending) {
-          details.cancel();
-          return;
-        }
+      onOpenChange={(value) => {
         if (value) setOpen(true);
         else close();
       }}
@@ -122,7 +117,6 @@ export function WebhookEditor({
           <WebhookForm
             subscription={subscription}
             scheduleId={scheduleId}
-            onPendingChange={setPending}
             onSecret={setSecret}
             onCancel={close}
             onSaved={(saved) => {
@@ -147,7 +141,6 @@ function WebhookForm({
   onSaved,
   onExisting,
   onSecret,
-  onPendingChange,
   onCancel,
 }: {
   subscription?: Subscription;
@@ -155,7 +148,6 @@ function WebhookForm({
   onSaved: (value: Subscription) => void;
   onExisting: (value: Subscription) => void;
   onSecret: (secret: string) => void;
-  onPendingChange: (pending: boolean) => void;
   onCancel: () => void;
 }) {
   const client = useClient(),
@@ -200,7 +192,6 @@ function WebhookForm({
   const save = useMutation({
     gcTime: 0,
     retry: false,
-    onMutate: () => onPendingChange(true),
     mutationFn: async () => {
       if (basis) {
         return data(
@@ -232,7 +223,6 @@ function WebhookForm({
         reconcile.mutate();
       }
     },
-    onSettled: () => onPendingChange(false),
   });
   const stale = save.error instanceof ApiError && save.error.status === 412;
   return (

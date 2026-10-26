@@ -11,7 +11,7 @@ export function SettingsSection({
   title?: ReactNode;
   description?: ReactNode;
   children: ReactNode;
-  variant?: "grouped" | "plain";
+  variant?: "grouped" | "outlined" | "plain";
 }) {
   const id = useId();
   return (
@@ -28,7 +28,14 @@ export function SettingsSection({
             {title}
           </h3>
           {description && (
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p
+              className={cn(
+                "mt-1 text-muted-foreground",
+                variant === "outlined" ? "text-xs leading-relaxed" : "text-sm",
+              )}
+            >
+              {description}
+            </p>
           )}
         </div>
       )}
@@ -37,7 +44,9 @@ export function SettingsSection({
           "[&>form]:py-5",
           variant === "grouped"
             ? "rounded-[12px] bg-muted px-4 py-0.5 [&>*+*]:border-border/75 [&>*+*]:border-t"
-            : "",
+            : variant === "outlined"
+              ? "rounded-[12px] border border-border bg-background px-4 [&>*+*]:border-border/75 [&>*+*]:border-t"
+              : "",
         )}
         data-slot="settings-section-content"
       >
@@ -61,6 +70,7 @@ export function SettingsRow({
 }) {
   return (
     <div
+      data-slot="settings-row"
       className={cn(
         "flex min-w-0 items-center justify-between gap-6 py-4",
         stackOnNarrow &&
@@ -69,9 +79,11 @@ export function SettingsRow({
     >
       <div className="min-w-0 wrap-anywhere">
         {controlId ? (
-          <label htmlFor={controlId}>{label}</label>
+          <label data-slot="settings-row-label" htmlFor={controlId}>
+            {label}
+          </label>
         ) : (
-          <span>{label}</span>
+          <span data-slot="settings-row-label">{label}</span>
         )}
         {description && (
           <p

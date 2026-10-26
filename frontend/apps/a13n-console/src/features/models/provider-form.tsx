@@ -1,10 +1,12 @@
+import { ProviderDelete } from "../providers/provider-delete";
 import { DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import {
   FormActions,
-  ProviderEnabled,
+  FormSection,
+  EnabledField,
   ProviderKeyLink,
   SchemaFields,
 } from "../../shared/forms";
@@ -12,7 +14,6 @@ import {
   ConnectionTest,
   CredentialRow,
   ProviderEditor,
-  ProviderFacts,
   ProviderGroup,
   ProviderName,
   providerKeyLink,
@@ -25,7 +26,7 @@ import {
 import { ProviderAuthorization } from "./provider-authorization";
 import { useProviderDraft } from "./provider-draft";
 
-/** The name, one settings group, then the advanced disclosure. */
+/** Identity, connection and optional advanced settings share one staged draft. */
 export function ProviderForm({
   resource,
   definitions,
@@ -79,19 +80,9 @@ export function ProviderForm({
       }}
     >
       <ProviderName value={draft.name} onChange={draft.setName} />
-      {!definition?.oauth_scheme && configuration}
-      <ProviderGroup>
-        <ProviderEnabled
-          checked={draft.enabled}
-          onCheckedChange={draft.setEnabled}
-        />
-        {!definition?.oauth_scheme && credential}
-        <ProviderFacts
-          configuration={draft.configuration}
-          schema={definition?.configuration_schema}
-          only={["base_url"]}
-        />
-      </ProviderGroup>
+      {!definition?.oauth_scheme && credential && (
+        <ProviderGroup title="Credentials">{credential}</ProviderGroup>
+      )}
       {definition?.oauth_scheme && original && (
         <ProviderAuthorization
           provider={original.value}
@@ -104,48 +95,64 @@ export function ProviderForm({
         />
       )}
       {definition?.oauth_scheme && (
-        <DisclosureSection
-          title={t("Advanced settings")}
-          open={draft.advancedOpen}
-          onOpenChange={draft.setAdvancedOpen}
-        >
-          {configuration}
-          {credential && <ProviderGroup>{credential}</ProviderGroup>}
-        </DisclosureSection>
+        <FormSection title={t("Configuration")}>
+          <DisclosureSection
+            title={t("Advanced settings")}
+            open={draft.advancedOpen}
+            onOpenChange={draft.setAdvancedOpen}
+          >
+            {configuration}
+            {credential}
+          </DisclosureSection>
+        </FormSection>
       )}
       {definition && !definition.oauth_scheme && (
-        <ProviderConnection
-          type={type}
-          schema={definition.configuration_schema}
-          configuration={draft.configuration}
-          onChange={draft.setConfiguration}
-          headers={draft.headers}
-          onHeadersChange={draft.setHeaders}
-          open={draft.advancedOpen}
-          onOpenChange={draft.setAdvancedOpen}
-          onBaseUrlChange={draft.changeBaseUrl}
-          onSuggestedApi={draft.setSuggestedApi}
-        />
+        <FormSection title={t("Configuration")}>
+          {configuration}
+          <ProviderConnection
+            type={type}
+            schema={definition.configuration_schema}
+            configuration={draft.configuration}
+            onChange={draft.setConfiguration}
+            headers={draft.headers}
+            onHeadersChange={draft.setHeaders}
+            open={draft.advancedOpen}
+            onOpenChange={draft.setAdvancedOpen}
+            onBaseUrlChange={draft.changeBaseUrl}
+            onSuggestedApi={draft.setSuggestedApi}
+          />
+        </FormSection>
       )}
       <ErrorNotice error={save.error} retry={() => void reload()} />
+      {original && definition?.supports_test && (
+        <ConnectionTest
+          placement="footer"
+          action={async () =>
+            providerTestResult(await draft.api.testProvider(original.value.id))
+          }
+          description="May consume quota or incur cost."
+          dirty={draft.changed}
+        />
+      )}
       <FormActions
+        beforeCancel={
+          <ProviderDelete
+            kind="model"
+            provider={resource.value}
+            etag={resource.etag}
+            disabled={save.isPending}
+            onDeleted={close}
+          />
+        }
         pending={save.isPending}
         label={t("Save changes")}
         onCancel={close}
         leading={
-          original &&
-          definition?.supports_test && (
-            <ConnectionTest
-              placement="footer"
-              action={async () =>
-                providerTestResult(
-                  await draft.api.testProvider(original.value.id),
-                )
-              }
-              description="May consume quota or incur cost."
-              dirty={draft.changed}
-            />
-          )
+          <EnabledField
+            checked={draft.enabled}
+            onCheckedChange={draft.setEnabled}
+            disabled={save.isPending}
+          />
         }
       />
     </ProviderEditor>

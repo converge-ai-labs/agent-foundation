@@ -349,7 +349,7 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
   const queue = screen.getByText("Thread inbox");
   const dock = queue.closest("[data-thread-dock]");
   expect(dock).not.toBeNull();
-  await user.click(list.getByRole("button", { name: "Load earlier runs" }));
+  await user.click(list.getByRole("button", { name: "Earlier runs" }));
   const selected = await list.findByRole("button", { name: /^Run 4/ });
   const rows = list.getAllByRole("button");
   panel.scrollTop = 90;
@@ -453,3 +453,18 @@ it("ignores a late item response after selecting another Run", async () => {
   expect(screen.getByText("Message run_3")).toBeTruthy();
   expect(screen.queryByText("Loading run…")).toBeNull();
 });
+
+it.each(["chat", "debug"])(
+  "keeps an external session read-only in explicit %s view",
+  async (level) => {
+    labels = {};
+    show(`/?view=${level}`);
+    await screen.findByText(
+      level === "debug" ? "Run failed" : "Build an agent",
+    );
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resubmit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Create branch/ })).toBeNull();
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+  },
+);
