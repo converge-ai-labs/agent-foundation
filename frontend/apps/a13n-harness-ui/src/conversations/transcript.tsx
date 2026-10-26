@@ -37,6 +37,7 @@ import type { Schema } from "../transport/client";
 import type { DisplayBlock, FocusDisplay } from "./stream";
 import { InputContent, type InputPart } from "./input-content";
 import { inputSource, type LocalInput } from "./local-input";
+import { DebugData } from "../shell/debug";
 import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
@@ -525,6 +526,7 @@ export const SavedEntry = memo(function SavedEntry({
         threadId={threadId}
         continuation={continuation}
       />
+      <DebugData label={`Transcript entry ${entry.position}`} value={entry} />
     </article>
   );
 });

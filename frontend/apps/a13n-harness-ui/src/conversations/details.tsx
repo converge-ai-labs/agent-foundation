@@ -17,6 +17,7 @@ import { sourceText } from "./tool-presentation";
 import { useChildControlState } from "./child-controls";
 import styles from "./conversation.module.css";
 import { useThreadUsage, useContextUsage } from "./usage";
+import { DebugData, DebugId } from "../shell/debug";
 import { UsageDetails } from "./usage-details";
 
 export function ConversationDetails({
@@ -602,6 +603,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
       <section>
         <h3>Context</h3>
         <p>Last reported request footprint, not a live token counter.</p>
+        <DebugId label="Thread" value={threadId} />
         <dl className={styles.detailGrid}>
           <div>
             <dt>Request tokens</dt>
@@ -625,6 +627,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
             <dd>{context.data?.thinking_summary ?? "Not reported"}</dd>
           </div>
         </dl>
+        <DebugData label="Context usage data" value={context.data ?? null} />
       </section>
       <section>
         <h3>Observed usage</h3>

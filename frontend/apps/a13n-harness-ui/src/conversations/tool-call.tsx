@@ -36,6 +36,7 @@ import { SyntaxCode, codeLanguage } from "./syntax-code";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { RetainedImagePreview } from "./image-preview";
 import { copyText } from "../platform";
+import { DebugData, DebugId } from "../shell/debug";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
@@ -253,6 +254,20 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       : [info.args];
   return (
     <div className={styles.details} data-tool-details>
+      <DebugId label="Tool call" value={tool.toolCallId ?? tool.id} />
+      <DebugData
+        label="Tool call data"
+        value={{
+          id: tool.id,
+          tool_call_id: tool.toolCallId,
+          subagent_run_id: tool.subagentRunId,
+          name: tool.name,
+          input: tool.input,
+          result: tool.result,
+          outcome: tool.outcome,
+          failure: tool.failure,
+        }}
+      />
       {info.errorText && (
         <p role="status" className={styles.error}>
           {info.errorText}
