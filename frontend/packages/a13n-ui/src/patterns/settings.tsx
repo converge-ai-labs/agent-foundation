@@ -8,7 +8,7 @@ export function SettingsSection({
   children,
   variant = "grouped",
 }: {
-  title?: string;
+  title?: ReactNode;
   description?: ReactNode;
   children: ReactNode;
   variant?: "grouped" | "plain";

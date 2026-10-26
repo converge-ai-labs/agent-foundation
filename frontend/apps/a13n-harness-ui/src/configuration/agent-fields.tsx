@@ -1,4 +1,17 @@
 import type { ReactNode } from "react";
+import {
+  Wrench,
+  TreeStructure,
+  ListChecks,
+  PuzzlePiece,
+  Books,
+  Globe,
+  ShieldCheck,
+  Stack,
+  ArrowCounterClockwise,
+  Trash,
+} from "@phosphor-icons/react";
+import management from "./management.module.css";
 import { Link } from "react-router";
 import { useRootConfiguration } from "./root-configuration";
 import { useQuery } from "@tanstack/react-query";
@@ -124,11 +137,21 @@ export function AgentFields({
   return (
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
-      <SettingsSection title="Tools & capabilities">
+      <SettingsSection
+        title={
+          <span className={management.sectionTitle}>
+            <Wrench aria-hidden="true" weight="duotone" />
+            Tools & capabilities
+          </span>
+        }
+      >
         <AgentNativeTools source={source} onChange={onChange} />
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
-          <h3>Tasks & notes</h3>
-          <div className={styles.actions}>
+          <h4 className={management.subsectionTitle}>
+            <ListChecks aria-hidden="true" />
+            Tasks & notes
+          </h4>
+          <div className={management.checkboxRow}>
             <label className={styles.check}>
               <input
                 type="checkbox"
@@ -150,19 +173,38 @@ export function AgentFields({
               Notes
             </label>
           </div>
-          <h3>Capabilities</h3>
+          <h4 className={management.subsectionTitle}>
+            <PuzzlePiece aria-hidden="true" />
+            Capabilities
+          </h4>
           {capabilities.map(
             (item, index) =>
               !nativeToolKind(item) &&
               item.capability !== "working_state" && (
-                <div className={styles.stack} key={index}>
-                  <div className={styles.actions}>
-                    <span>{item.capability.replaceAll("_", " ")}</span>
+                <div className={management.capability} key={index}>
+                  <div className={management.capabilityHeader}>
+                    <span className={management.inlineLabel}>
+                      {item.capability === "skills" ? (
+                        <Books aria-hidden="true" />
+                      ) : item.capability === "web" ? (
+                        <Globe aria-hidden="true" />
+                      ) : (
+                        <PuzzlePiece aria-hidden="true" />
+                      )}
+                      {item.capability.replaceAll("_", " ")}
+                    </span>
                     <Button
                       variant="ghost"
                       aria-label={`${["file_context", "user_interaction", "codeact"].includes(item.capability) ? "Reset capability" : "Remove capability"} ${item.capability}`}
                       onClick={() => remove("capabilities", index)}
                     >
+                      {["file_context", "user_interaction", "codeact"].includes(
+                        item.capability,
+                      ) ? (
+                        <ArrowCounterClockwise aria-hidden="true" />
+                      ) : (
+                        <Trash aria-hidden="true" />
+                      )}
                       {["file_context", "user_interaction", "codeact"].includes(
                         item.capability,
                       )
@@ -212,21 +254,33 @@ export function AgentFields({
         </div>
         {connections}
       </SettingsSection>
-      <SettingsSection title="Delegation">
+      <SettingsSection
+        title={
+          <span className={management.sectionTitle}>
+            <TreeStructure aria-hidden="true" weight="duotone" />
+            Delegation
+          </span>
+        }
+      >
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
           {children.map((item, index) => (
-            <div className={styles.actions} key={index}>
-              <span>{item.agent ? agentName(item.agent) : item.markdown}</span>
-              <small>
-                {item.agent
-                  ? `Agent · ${selectors.data?.models?.find((model) => model.model_id === selectors.data?.agents.find((agent) => agent.agent_id === item.agent)?.model_id)?.name ?? "No model selected"}`
-                  : "Markdown · inherits this Agent's model"}
-              </small>
+            <div className={management.capabilityHeader} key={index}>
+              <div className={management.subagentInfo}>
+                <span>
+                  {item.agent ? agentName(item.agent) : item.markdown}
+                </span>
+                <small>
+                  {item.agent
+                    ? `Agent · ${selectors.data?.models?.find((model) => model.model_id === selectors.data?.agents.find((agent) => agent.agent_id === item.agent)?.model_id)?.name ?? "No model selected"}`
+                    : "Markdown · inherits this Agent's model"}
+                </small>
+              </div>
               <Button
                 variant="ghost"
                 aria-label={`Remove subagent ${item.agent ?? item.markdown}`}
                 onClick={() => remove("subagents", index)}
               >
+                <Trash aria-hidden="true" />
                 Remove
               </Button>
             </div>
@@ -289,7 +343,12 @@ export function AgentFields({
         </div>
       </SettingsSection>
       <details className={styles.details}>
-        <summary>Tool restrictions</summary>
+        <summary>
+          <span className={management.inlineLabel}>
+            <ShieldCheck aria-hidden="true" />
+            Tool restrictions
+          </span>
+        </summary>
         <div className={styles.stack}>
           <label className={styles.check}>
             <input
@@ -339,7 +398,12 @@ export function AgentFields({
         </div>
       </details>
       <details className={styles.details}>
-        <summary>Saved tool groups</summary>
+        <summary>
+          <span className={management.inlineLabel}>
+            <Stack aria-hidden="true" />
+            Saved tool groups
+          </span>
+        </summary>
         <p>
           Saved configuration, not unsaved edits. Edit groups in Advanced
           configuration.
@@ -406,7 +470,12 @@ function CapabilityOptions({
   if (item.capability === "web")
     return (
       <details className={styles.details}>
-        <summary>Web options</summary>
+        <summary>
+          <span className={management.inlineLabel}>
+            <Globe aria-hidden="true" />
+            Web options
+          </span>
+        </summary>
         <div className={styles.stack}>
           <ChoiceField
             label="Web search"

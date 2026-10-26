@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { Lightning } from "@phosphor-icons/react";
+import management from "./management.module.css";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -117,9 +119,12 @@ export function AgentNativeTools({
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
   return (
-    <div>
-      <h3>Model-native tools</h3>
-      <div className={`${styles.stack} ${styles.fieldGroup}`}>
+    <div className={styles.fieldGroup}>
+      <h4 className={management.subsectionTitle}>
+        <Lightning aria-hidden="true" />
+        Model-native tools
+      </h4>
+      <div className={management.nativeOptions}>
         <ErrorNotice error={saved.error || options.error} />
         {!raw?.model ? (
           <p>Select a saved Model to see its native tool choices.</p>
@@ -129,7 +134,7 @@ export function AgentNativeTools({
           <p>No native tool choices for this model.</p>
         ) : (
           tools.map((tool) => (
-            <div key={tool.value}>
+            <div key={tool.value} className={management.nativeOption}>
               <label className={styles.check}>
                 <input
                   type="checkbox"
@@ -141,8 +146,14 @@ export function AgentNativeTools({
                     )
                   }
                 />{" "}
-                {tool.label}
-                {tool.recommended ? " · Recommended" : ""}
+                <span>
+                  {tool.label}
+                  {tool.recommended && (
+                    <span className={management.recommendation}>
+                      Recommended
+                    </span>
+                  )}
+                </span>
               </label>
               <small>
                 {tool.description}

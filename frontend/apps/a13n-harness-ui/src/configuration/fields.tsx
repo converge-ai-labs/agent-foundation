@@ -1,4 +1,6 @@
 import { useLocation } from "react-router";
+import { PlugsConnected, Robot } from "@phosphor-icons/react";
+import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
 import {
@@ -202,7 +204,14 @@ export function ResourceFields({
       />
       {kind && kind !== "agent" && <div>{field("Name", ["name"])}</div>}
       {kind === "model" && (
-        <SettingsSection title="Model connection">
+        <SettingsSection
+          title={
+            <span className={management.sectionTitle}>
+              <PlugsConnected aria-hidden="true" weight="duotone" />
+              Model connection
+            </span>
+          }
+        >
           <div className={styles.fieldGroup}>
             <ModelFields
               source={source}
@@ -214,17 +223,26 @@ export function ResourceFields({
       )}
       {kind === "agent" && (
         <>
-          <SettingsSection title="Basics">
+          <SettingsSection
+            title={
+              <span className={management.sectionTitle}>
+                <Robot aria-hidden="true" weight="duotone" />
+                Basics
+              </span>
+            }
+          >
             <div className={`${styles.fieldGroup} ${styles.stack}`}>
               {field("Name", ["name"])}
-              <ResourceChoice
-                label="Model"
-                value={text(["model"])}
-                loading={selectors.isPending || sources.isPending}
-                onValueChange={(value) => set(["model"], value || undefined)}
-                options={[{ value: "", label: "Not connected" }, ...models]}
-              />
-              <AddModelButton onSaved={(id) => set(["model"], id)} />
+              <div className={management.modelPickerRow}>
+                <ResourceChoice
+                  label="Model"
+                  value={text(["model"])}
+                  loading={selectors.isPending || sources.isPending}
+                  onValueChange={(value) => set(["model"], value || undefined)}
+                  options={[{ value: "", label: "Not connected" }, ...models]}
+                />
+                <AddModelButton onSaved={(id) => set(["model"], id)} />
+              </div>
               <FormField label="Additional instructions">
                 <Textarea
                   value={text(["instructions"])}

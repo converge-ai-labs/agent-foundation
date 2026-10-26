@@ -16,7 +16,17 @@ import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
 import { readDocument, updateDocument } from "./documents";
-import { DotsThree } from "@phosphor-icons/react";
+import {
+  DotsThree,
+  Cpu,
+  Key,
+  Robot,
+  Plus,
+  Copy,
+  Image,
+  SlidersHorizontal,
+} from "@phosphor-icons/react";
+import management from "./management.module.css";
 import styles from "../shell/workbench.module.css";
 
 export function ModelsPage() {
@@ -109,25 +119,29 @@ export function ModelsPage() {
   });
   return (
     <>
-      <PageHeader
-        title="Models"
-        actions={
-          <AddModelButton onSaved={() => void queries.invalidateQueries()} />
-        }
-      />
+      <div className={management.collectionHeader}>
+        <PageHeader
+          title="Models"
+          actions={
+            <AddModelButton onSaved={() => void queries.invalidateQueries()} />
+          }
+        />
+      </div>
       <ErrorNotice
         error={
           selectors.error || sources.error || clone.error || setDefault.error
         }
       />
-      <TextField
-        label="Search models"
-        type="search"
-        value={search}
-        onChange={setSearch}
-      />
+      <div className={management.collectionSearch}>
+        <TextField
+          label="Search models"
+          type="search"
+          value={search}
+          onChange={setSearch}
+        />
+      </div>
       <DraftLinks kinds={["model"]} search={search} />
-      <div className={styles.resourceList}>
+      <div className={management.modelList}>
         {(selectors.data?.models ?? [])
           .filter((model) =>
             `${model.name} ${model.route} ${model.model_id}`
@@ -141,44 +155,59 @@ export function ModelsPage() {
                 item.resource_ids.includes(model.model_id),
             );
             return (
-              <div key={model.model_id} className={styles.resourceRow}>
-                <div>
-                  {source ? (
-                    <Link
-                      to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
-                    >
+              <div
+                key={model.model_id}
+                className={`${styles.resourceRow} ${management.modelRow}`}
+              >
+                <div className={management.resourceIdentity}>
+                  <span className={management.resourceIcon}>
+                    <Cpu aria-hidden="true" weight="duotone" />
+                  </span>
+                  <div className={management.resourceInfo}>
+                    {source ? (
+                      <Link
+                        to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
+                      >
+                        <strong>{model.name}</strong>
+                      </Link>
+                    ) : (
                       <strong>{model.name}</strong>
-                    </Link>
-                  ) : (
-                    <strong>{model.name}</strong>
-                  )}
-                  <small>{model.route}</small>
-                  {source?.content_available && (
-                    <ModelCredentialSummary path={source.relative_path} />
-                  )}
-                  <small>
-                    {selectors.data?.agents
-                      .filter((agent) => agent.model_id === model.model_id)
-                      .map((agent) => agent.name)
-                      .join(", ") || "No agents using this model"}
-                  </small>
-                  {mediaKinds.some(
-                    (kind) =>
-                      selectors.data?.media_understanding?.[kind] ===
-                      model.model_id,
-                  ) && (
-                    <small>
-                      Default:{" "}
-                      {mediaKinds
-                        .filter(
-                          (kind) =>
-                            selectors.data?.media_understanding?.[kind] ===
-                            model.model_id,
-                        )
-                        .map((kind) => mediaLabels[kind])
-                        .join(", ")}
-                    </small>
-                  )}
+                    )}
+                    <small>{model.route}</small>
+                    <div className={management.resourceMeta}>
+                      {source?.content_available && (
+                        <ModelCredentialSummary path={source.relative_path} />
+                      )}
+                      <small className={management.metadata}>
+                        <Robot aria-hidden="true" />
+                        <span>
+                          {selectors.data?.agents
+                            .filter(
+                              (agent) => agent.model_id === model.model_id,
+                            )
+                            .map((agent) => agent.name)
+                            .join(", ") || "No agents using this model"}
+                        </span>
+                      </small>
+                    </div>
+                    {mediaKinds.some(
+                      (kind) =>
+                        selectors.data?.media_understanding?.[kind] ===
+                        model.model_id,
+                    ) && (
+                      <small>
+                        Default:{" "}
+                        {mediaKinds
+                          .filter(
+                            (kind) =>
+                              selectors.data?.media_understanding?.[kind] ===
+                              model.model_id,
+                          )
+                          .map((kind) => mediaLabels[kind])
+                          .join(", ")}
+                      </small>
+                    )}
+                  </div>
                 </div>
                 {source && !source.writable && <span>Read only</span>}
                 <Menu>
@@ -205,6 +234,7 @@ export function ModelsPage() {
                             })
                           }
                         >
+                          <Copy aria-hidden="true" />
                           Clone model
                         </MenuItem>
                       )}
@@ -220,6 +250,7 @@ export function ModelsPage() {
                           setDefault.mutate({ kind, modelId: model.model_id })
                         }
                       >
+                        <Image aria-hidden="true" />
                         {selectors.data?.media_understanding?.[kind] ===
                         model.model_id
                           ? "Clear"
@@ -241,7 +272,12 @@ export function ModelsPage() {
       )}
       {root && (
         <details className={styles.details}>
-          <summary>Media understanding defaults</summary>
+          <summary>
+            <span className={management.inlineLabel}>
+              <SlidersHorizontal aria-hidden="true" />
+              Media understanding defaults
+            </span>
+          </summary>
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
@@ -277,14 +313,19 @@ function ModelCredentialSummary({ path }: { path: string }) {
     return <small>Credential status unavailable</small>;
   if (auth?.kind !== "api_key") return null;
   return (
-    <small>
-      {auth.env
-        ? `Environment · ${auth.env}`
-        : keys.data
-          ? keys.data.some((key) => key.credential_ref === auth.credential_ref)
-            ? "API key saved"
-            : "API key missing"
-          : "API key reference"}
+    <small className={management.metadata}>
+      <Key aria-hidden="true" />
+      <span>
+        {auth.env
+          ? `Environment · ${auth.env}`
+          : keys.data
+            ? keys.data.some(
+                (key) => key.credential_ref === auth.credential_ref,
+              )
+              ? "API key saved"
+              : "API key missing"
+            : "API key reference"}
+      </span>
     </small>
   );
 }
@@ -295,6 +336,7 @@ export function AddModelButton({ onSaved }: { onSaved: (id: string) => void }) {
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
+        <Plus aria-hidden="true" />
         Add model
       </Button>
       {open && (

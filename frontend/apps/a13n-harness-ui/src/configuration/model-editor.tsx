@@ -1,4 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  Key,
+  SlidersHorizontal,
+  ArrowCounterClockwise,
+} from "@phosphor-icons/react";
+import management from "./management.module.css";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
@@ -108,8 +114,9 @@ function CredentialField({
   return (
     <fieldset disabled={save.isPending} className={styles.stack}>
       {!expanded ? (
-        <div className={styles.actions}>
-          <span>
+        <div className={management.credentialSummary}>
+          <span className={management.inlineLabel}>
+            <Key aria-hidden="true" />
             {selected === "env" && value?.kind === "api_key"
               ? `Environment · ${value.env}`
               : keys.data?.some((key) => key.credential_ref === selected)
@@ -686,7 +693,12 @@ function LoadedModelEditor({
       {selected && matches && value && (
         <>
           <details className={styles.details}>
-            <summary>Model defaults</summary>
+            <summary>
+              <span className={management.inlineLabel}>
+                <SlidersHorizontal aria-hidden="true" />
+                Model defaults
+              </span>
+            </summary>
             <div className={styles.stack}>
               <small>
                 {[
@@ -867,64 +879,74 @@ function LoadedModelEditor({
             </div>
           </details>
           <details className={styles.details}>
-            <summary>Advanced connection options</summary>
-            {selected?.supports_session_affinity && (
-              <ChoiceField
-                label="Gateway session affinity"
-                value={
-                  customAffinity ||
-                  (affinityHeader &&
-                    !choices.session_affinity_presets?.some(
-                      (preset) => preset.header === affinityHeader,
-                    ))
-                    ? "custom"
-                    : affinityHeader
-                }
-                options={[
-                  { value: "", label: "None" },
-                  { value: "custom", label: "Custom header" },
-                  ...(choices.session_affinity_presets ?? []).map((preset) => ({
-                    value: preset.header,
-                    label: preset.label,
-                  })),
-                ]}
-                onValueChange={(header) => {
-                  setCustomAffinity(header === "custom");
-                  if (header === "custom") return;
-                  const config = { ...value.model_configuration };
-                  if (header) config.session_affinity_header = header;
-                  else delete config.session_affinity_header;
-                  update({ model_configuration: config });
-                }}
-              />
-            )}
-            {selected?.supports_session_affinity &&
-              (customAffinity ||
-                (affinityHeader &&
-                  !choices.session_affinity_presets?.some(
-                    (preset) => preset.header === affinityHeader,
-                  ))) && (
-                <TextField
-                  label="Session affinity header"
-                  value={String(
-                    value.model_configuration?.session_affinity_header ?? "",
-                  )}
-                  onChange={(header) => {
+            <summary>
+              <span className={management.inlineLabel}>
+                <SlidersHorizontal aria-hidden="true" />
+                Advanced connection options
+              </span>
+            </summary>
+            <div className={styles.stack}>
+              {selected?.supports_session_affinity && (
+                <ChoiceField
+                  label="Gateway session affinity"
+                  value={
+                    customAffinity ||
+                    (affinityHeader &&
+                      !choices.session_affinity_presets?.some(
+                        (preset) => preset.header === affinityHeader,
+                      ))
+                      ? "custom"
+                      : affinityHeader
+                  }
+                  options={[
+                    { value: "", label: "None" },
+                    { value: "custom", label: "Custom header" },
+                    ...(choices.session_affinity_presets ?? []).map(
+                      (preset) => ({
+                        value: preset.header,
+                        label: preset.label,
+                      }),
+                    ),
+                  ]}
+                  onValueChange={(header) => {
+                    setCustomAffinity(header === "custom");
+                    if (header === "custom") return;
                     const config = { ...value.model_configuration };
                     if (header) config.session_affinity_header = header;
                     else delete config.session_affinity_header;
                     update({ model_configuration: config });
                   }}
-                  description="Optional header for compatible gateways. Subscriptions use native affinity."
                 />
               )}
-            <Button
-              variant="outline"
-              loading={prepare.isPending}
-              onClick={() => prepare.mutate(true)}
-            >
-              Restore recommended defaults
-            </Button>
+              {selected?.supports_session_affinity &&
+                (customAffinity ||
+                  (affinityHeader &&
+                    !choices.session_affinity_presets?.some(
+                      (preset) => preset.header === affinityHeader,
+                    ))) && (
+                  <TextField
+                    label="Session affinity header"
+                    value={String(
+                      value.model_configuration?.session_affinity_header ?? "",
+                    )}
+                    onChange={(header) => {
+                      const config = { ...value.model_configuration };
+                      if (header) config.session_affinity_header = header;
+                      else delete config.session_affinity_header;
+                      update({ model_configuration: config });
+                    }}
+                    description="Optional header for compatible gateways. Subscriptions use native affinity."
+                  />
+                )}
+              <Button
+                variant="outline"
+                loading={prepare.isPending}
+                onClick={() => prepare.mutate(true)}
+              >
+                <ArrowCounterClockwise aria-hidden="true" />
+                Restore recommended defaults
+              </Button>
+            </div>
           </details>
         </>
       )}

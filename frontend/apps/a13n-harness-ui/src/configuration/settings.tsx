@@ -27,14 +27,24 @@ import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
 import environmentStyles from "./environments-page.module.css";
 
+import {
+  SlidersHorizontal,
+  Robot,
+  Cpu,
+  Desktop,
+  Key,
+  PlugsConnected,
+  FileCode,
+} from "@phosphor-icons/react";
+
 const sections = [
-  { path: "/settings", label: "General" },
-  { path: "/settings/agents", label: "Agents" },
-  { path: "/settings/models", label: "Models" },
-  { path: "/settings/environments", label: "Environments" },
-  { path: "/settings/accounts", label: "Accounts & API keys" },
-  { path: "/settings/connections", label: "Connections" },
-  { path: "/settings/resources", label: "Configuration files" },
+  { path: "/settings", label: "General", icon: SlidersHorizontal },
+  { path: "/settings/agents", label: "Agents", icon: Robot },
+  { path: "/settings/models", label: "Models", icon: Cpu },
+  { path: "/settings/environments", label: "Environments", icon: Desktop },
+  { path: "/settings/accounts", label: "Accounts & API keys", icon: Key },
+  { path: "/settings/connections", label: "Connections", icon: PlugsConnected },
+  { path: "/settings/resources", label: "Configuration files", icon: FileCode },
 ];
 export function SettingsLayout() {
   const location = useLocation();
@@ -77,7 +87,7 @@ export function SettingsLayout() {
             Projects
           </Link>
         )}
-        {sections.map(({ path, label }) => {
+        {sections.map(({ path, label, icon: Icon }) => {
           const active =
             location.pathname === "/settings/source"
               ? sourceSection === path
@@ -91,6 +101,11 @@ export function SettingsLayout() {
               aria-current={active ? "page" : undefined}
               className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? layout.utilityLink : ""}`}
             >
+              <Icon
+                aria-hidden="true"
+                size={18}
+                weight={active ? "duotone" : "regular"}
+              />
               {label}
             </Link>
           );
