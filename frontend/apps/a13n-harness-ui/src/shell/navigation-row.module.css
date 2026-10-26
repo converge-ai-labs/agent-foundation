@@ -2,9 +2,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
+  min-height: 32px;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 6px 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -16,6 +16,9 @@
   text-align: start;
   text-decoration: none;
   cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
 }
 .row > svg {
   width: 18px;
@@ -24,6 +27,12 @@
 }
 .row:hover {
   background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: none;
+  }
 }
 .row:focus-visible {
   outline: 2px solid var(--ring);

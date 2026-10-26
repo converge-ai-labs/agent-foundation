@@ -5,12 +5,18 @@ import { createRoot } from "react-dom/client";
 import { BrowserApp } from "./app";
 import { InstallProvider } from "./shell/install";
 import { readPreference } from "./shell/preferences";
+import { desktopPlatform, isDesktop } from "./platform";
 
 // Apply the same theme to startup and authenticated content, before first paint.
 document.documentElement.classList.toggle(
   "dark",
   readPreference("theme", "light") === "dark",
 );
+
+// Desktop shells own the window chrome; styles key off these attributes.
+if (isDesktop()) {
+  document.documentElement.dataset.desktop = desktopPlatform() ?? "";
+}
 
 document.querySelector<HTMLLinkElement>("#a13n-favicon")!.href = a13nLogoUrl;
 
