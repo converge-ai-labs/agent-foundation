@@ -1972,6 +1972,15 @@ class HarnessUiApp:
                 get_logger(__name__).warning("Read model maintenance failed", extra={"error_type": type(exc).__name__})
             await sleep(30)
 
+    async def _prune_compactions_periodically(self) -> None:
+        while True:
+            try:
+                if self._compaction is not None:
+                    await self._compaction.prune(self._settings.storage.compaction_retention_seconds)
+            except Exception as exc:
+                get_logger(__name__).warning("Compaction pruning failed", extra={"error_type": type(exc).__name__})
+            await sleep(3600)
+
     async def _prune_thread_files_periodically(self) -> None:
         while True:
             await sleep(3600)
@@ -3646,6 +3655,7 @@ async def open_harness_ui_app(
                     app._logins = LoginSessions(background, app._account, app.subscription_accounts)
                     background.start_soon(app.subscription_usage.poll)
                     background.start_soon(app._prune_thread_files_periodically)
+                    background.start_soon(app._prune_compactions_periodically)
                     background.start_soon(app._maintain_read_models)
                     if host_mode == "webui":
                         background.start_soon(environment_monitoring.run)

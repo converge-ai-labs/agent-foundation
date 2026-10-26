@@ -129,7 +129,9 @@ webui:
 
 Completed summaries are saved before use. The current Run applies a ready summary at a safe model boundary, or a later Run restores it together with its current input. Completion alone does not rewrite an idle conversation. App restart restores completed work and never replays an interrupted summary request.
 
-Set `background_compaction: false` to use synchronous compaction for later Runs. Already saved summaries remain available. Model context budgets and explicit compaction thresholds are unchanged.
+Processed summaries and cleared operations are marked together with their saved checkpoint, then removed by automatic cleanup. Cleanup runs at startup and hourly. Unused operations expire after seven days; active Runs and background requests are protected. Expiry preserves conversation history, and later Runs can generate a new summary when needed. Embedded Apps can change the age threshold through `StorageSettings.compaction_retention_seconds`.
+
+Set `background_compaction: false` to use synchronous compaction for later Runs. Already saved, unexpired summaries remain available. Model context budgets and explicit compaction thresholds are unchanged.
 
 ### File memory
 

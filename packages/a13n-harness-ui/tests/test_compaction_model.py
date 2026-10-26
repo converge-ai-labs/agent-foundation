@@ -285,7 +285,7 @@ async def test_foreground_fallback_honors_shared_budget_after_background_consump
         assert not calls
         assert any(isinstance(m, ModelResponse) and m.parts == messages[1].parts for m in retained.message_history)
         assert await compaction_disposition(retained, basis=input.basis) is None
-        await owner.acknowledge(retained)
+        assert await repository.settlement(retained) is None
         assert await repository.get(state.thread_id) == failed
         assert budget.used == 1 and budget.pending == 0
         await owner.close()

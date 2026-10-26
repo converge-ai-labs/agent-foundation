@@ -300,3 +300,74 @@ async def test_app_recovers_failed_background_in_next_run_and_commits_retirement
     if restart:
         async with open_harness_ui_app(settings, configuration_path=root) as app:
             await recover(app, thread.thread_id)
+
+
+async def test_app_prunes_expired_compactions_on_startup(tmp_path: Path, monkeypatch):
+    from a13n_harness.compaction import CompactionOperation
+    from a13n_harness_ui.compaction import BackgroundCompaction
+    from a13n_harness_ui.storage import open_local_store
+
+    from .test_background_compaction import _input
+    from .test_compaction_retention import _age
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    input = _input()
+    async with open_local_store(settings.storage) as store:
+        await store.compactions.admit(CompactionOperation(input=input, status="failed", error_code="old"))
+        await _age(store.database, input.basis.operation_id)
+    pruned = asyncio.Event()
+    prune = BackgroundCompaction.prune
+
+    async def observe(self, retention_seconds):
+        assert retention_seconds == 604800
+        await prune(self, retention_seconds)
+        pruned.set()
+
+    monkeypatch.setattr(BackgroundCompaction, "prune", observe)
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        await asyncio.wait_for(pruned.wait(), 5)
+        assert await app._store.compactions.get(input.basis.thread_id) is None
+        assert await app._store.compactions.prune() == 0
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_root_run_blocks_expiration_even_when_background_is_disabled(tmp_path: Path, monkeypatch, enabled):
+    from a13n_harness.compaction import CompactionOperation
+    from a13n_harness_ui.compaction import BackgroundCompaction
+
+    from .test_background_compaction import _input
+    from .test_compaction_retention import _age
+
+    root = _write_configuration(tmp_path)
+    root.write_text(root.read_text() + f"background_compaction: {str(enabled).lower()}\n")
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def foreground(messages, info):
+        started.set()
+        await release.wait()
+        yield "done"
+
+    async def resolve(self, model_id, *, thread_id):
+        return FunctionModel(stream_function=foreground)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="input")
+        await asyncio.wait_for(started.wait(), 5)
+        input = _input()
+        input = input.model_copy(update={"basis": input.basis.model_copy(update={"thread_id": thread.thread_id})})
+        operation = await app._store.compactions.admit(
+            CompactionOperation(input=input, status="failed", error_code="old")
+        )
+        await _age(app._store.database, input.basis.operation_id)
+        janitor = BackgroundCompaction(app._store.compactions, app._store.layout.root)
+        await janitor.prune(604800)
+        assert await app._store.compactions.get(thread.thread_id) == operation
+        release.set()
+        completed = await app.wait_root_operation(receipt.receipt_id)
+        assert completed.status is RootOperationStatus.completed
+        await janitor.prune(604800)
+        assert await app._store.compactions.get(thread.thread_id) is None
+        await janitor.close()

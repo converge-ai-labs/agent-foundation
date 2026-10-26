@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .metadata import Base
@@ -65,15 +65,28 @@ class ResourceIndexRecord(Base):
 
 
 class CompactionRecord(Base):
-    """One unacknowledged Harness compaction operation per root Thread."""
+    """Generation outcomes and independent Host settlement, awaiting pruning."""
 
     __tablename__ = "compaction"
-    __table_args__ = (CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            "(settled_at IS NULL AND disposition IS NULL) OR "
+            "(settled_at IS NOT NULL AND disposition IS NOT NULL "
+            "AND disposition IN ('applied', 'skipped', 'cleared', 'expired'))",
+            name="settlement",
+        ),
+        Index("uq_compaction_unsettled_thread", "thread_id", unique=True, sqlite_where=text("settled_at IS NULL")),
+        Index("ix_compaction_retention", "settled_at", "created_at", "operation_id"),
+    )
 
-    thread_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
-    operation_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    operation_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     payload: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    settled_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class PlannedRestartRecord(Base):

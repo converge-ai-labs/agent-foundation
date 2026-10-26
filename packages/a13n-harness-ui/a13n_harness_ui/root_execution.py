@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial
@@ -334,6 +334,20 @@ class RootRunExecutor:
         )
 
     async def execute(
+        self,
+        admission: RootRunAdmission,
+        *,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        goal: GoalView | None = None,
+        on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
+        on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
+    ) -> RootRunOutcome:
+        async with self._compaction.use(admission.thread.thread_id) if self._compaction is not None else nullcontext():
+            return await self._execute(
+                admission, on_stream=on_stream, goal=goal, on_goal=on_goal, on_main_account=on_main_account
+            )
+
+    async def _execute(
         self,
         admission: RootRunAdmission,
         *,
@@ -922,6 +936,7 @@ class RootRunExecutor:
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             async with checkpoint_lock(self._store.layout.root, thread.thread_id):
                 published_ref = await publish_continuation(self._store.objects, continuation)
+                settlement = await self._store.compactions.settlement(state)
                 selected = await self._store.threads.select_continuation(
                     thread_id=thread.thread_id,
                     expected=thread.continuation,
@@ -930,6 +945,7 @@ class RootRunExecutor:
                     completed_run_id=completed_run_id,
                     excerpt=excerpt,
                     activity_changed=activity_changed,
+                    compaction_settlement=settlement,
                 )
                 # Only this Run's previous successful checkpoint is replaceable.
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.
@@ -943,8 +959,6 @@ class RootRunExecutor:
                         )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
-        if self._compaction is not None:
-            await self._compaction.acknowledge(state)
         await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
         # execution checkpoint. Missing indexes rebuild on the next inspection.

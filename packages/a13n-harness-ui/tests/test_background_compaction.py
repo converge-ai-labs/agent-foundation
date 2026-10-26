@@ -8,8 +8,9 @@ from a13n_harness import HarnessState
 from a13n_harness.compaction import CompactionInput, CompactionOperation
 from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.settings import StorageSettings
-from a13n_harness_ui.storage.compaction import CompactionRepository
-from a13n_harness_ui.storage.database import open_database
+from a13n_harness_ui.storage.compaction import CompactionRepository, settle_compaction
+from a13n_harness_ui.storage.database import open_database, short_session, transaction
+from a13n_harness_ui.storage.models import CompactionRecord
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 
@@ -150,7 +151,8 @@ async def test_clear_fences_late_completion(tmp_path: Path) -> None:
         input = _input()
         await owner.bind(request).submit(input)
         await started.wait()
-        await repository.retire(input.basis.thread_id, input.basis.operation_id)
+        async with transaction(database.sessions) as session:
+            await settle_compaction(session, input.basis.thread_id, clear=True)
         finish.set()
         await asyncio.gather(*owner._tasks.values())
         assert await repository.get(input.basis.thread_id) is None
@@ -179,7 +181,7 @@ async def test_close_before_worker_starts_releases_owner(tmp_path: Path) -> None
         owner = BackgroundCompaction(repository, tmp_path)
         input = _input()
         # Direct admission returns without yielding after registering the worker.
-        await owner._submit(input, _summary)
+        await owner._admit(input, _summary)
         await owner.close()
         assert not owner._tasks
         assert not owner._owners
@@ -209,7 +211,8 @@ async def test_publication_retry_retains_summary_without_exposure(
         input = _input()
         await owner.bind(request).submit(input)
         await asyncio.gather(*owner._tasks.values())
-        assert owner._operations[input.basis.thread_id].status == "running"
+        persisted = await repository.get(input.basis.thread_id)
+        assert persisted is not None and persisted.status == "running"
         assert owner._pending[input.basis.operation_id].status == "ready"
         assert calls == 1
         with pytest.raises(RuntimeError, match="could not be persisted"):
@@ -272,7 +275,7 @@ async def test_concurrent_owners_admit_one_generation(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("outcome", ["ready", "stale", "failed"])
-async def test_selected_native_marker_reconciles_lost_ack(tmp_path: Path, outcome: str, monkeypatch) -> None:
+async def test_native_marker_prepares_settlement_without_consuming_result(tmp_path: Path, outcome: str) -> None:
     from a13n_harness import AgentSpec, HarnessBuilder
     from a13n_harness.capabilities.context import CompactionCapability
     from a13n_harness.compaction import compaction_disposition
@@ -317,15 +320,17 @@ async def test_selected_native_marker_reconciles_lost_ack(tmp_path: Path, outcom
         )
         # Generated/merged state alone is not selected checkpoint authority.
         assert await repository.get(state.thread_id) == ready
-        retire = repository.retire
-
-        async def unavailable(*args):
-            raise OSError("ack unavailable")
-
-        monkeypatch.setattr(repository, "retire", unavailable)
-        await owner.acknowledge(result.state)
+        settlement = await repository.settlement(result.state)
+        assert settlement is not None
+        assert settlement.operation_id == input.basis.operation_id
+        assert settlement.disposition == ("applied" if outcome == "ready" else "skipped")
         assert await repository.get(state.thread_id) == ready
-        monkeypatch.setattr(repository, "retire", retire)
+        async with transaction(database.sessions) as session:
+            await settle_compaction(session, state.thread_id, settlement=settlement)
+        async with short_session(database.sessions) as session:
+            row = await session.get(CompactionRecord, input.basis.operation_id)
+            assert row is not None and row.settled_at is not None
+            assert row.disposition == settlement.disposition
         assert await owner.restore(result.state) is None
         assert await repository.get(state.thread_id) is None
         await owner.close()
