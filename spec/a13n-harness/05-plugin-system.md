@@ -182,11 +182,14 @@ class HarnessPluginFactoryContext:
 
 
 class HarnessPluginFactory(ABC):
+    configuration_model: ClassVar[type[BaseModel] | None] = None
+    display_name: ClassVar[str] = ""
+    description: ClassVar[str] = ""
+
     @classmethod
     @abstractmethod
     def plugin_key(cls) -> str: ...
 
-    @abstractmethod
     def validate_configuration(
         self,
         configuration: Mapping[str, JsonValue],
@@ -232,6 +235,8 @@ Discovery and catalog construction evaluate the interpreter's current package-me
 Installed metadata is availability, not authorization. The explicit catalog API imports only caller-selected keys. Automatic Builder configuration selects only distinct keys referenced by enabled entries, in first-enabled-entry order. Disabled entries are not authorization and cannot cause target import. An Agent definition, API request, model value, state payload, plugin configuration object, or database row cannot provide an arbitrary `module:object` target.
 
 `HarnessPluginFactoryCatalog.validate_configuration()` detaches one finite JSON object, invokes the selected factory's synchronous side-effect-free typed validator, requires a `BaseModel`, and returns its normalized finite JSON object. This is the trust boundary used by Hosts that accept or persist plugin configuration: unknown fields, unsupported behavior, and credential literals are rejected by the package-owned schema before the configuration becomes accepted state. `create_plugin()` validates and detaches the complete `HarnessPluginFactoryContext`, requires the context key to select that catalog factory, calls it exactly once, and requires an `AbstractHarnessPlugin` whose exact `plugin_id` equals the requested context ID. It does not bind, order, or globally register the result. Catalog failures use stable `PluginError` codes: `plugin_factory_key_invalid`, `plugin_factory_missing`, `plugin_factory_duplicate`, `plugin_factory_target_invalid`, `plugin_factory_load_failed`, `plugin_factory_context_invalid`, `plugin_factory_configuration_invalid`, `plugin_factory_failed`, and `plugin_factory_result_invalid`. Safe details contain only bounded keys, IDs, and distribution fields, never configuration or extension values, object representations, credentials, raw exception text, or private installation paths. These catalog errors suppress standard chaining of raw validation, target, metadata, constructor, and factory exceptions; callers receive the stable stage code rather than a traceback path to untrusted content.
+
+`HarnessPluginFactory.configuration_model` optionally declares the package-owned Pydantic model. The default `validate_configuration()` calls that model's `model_validate()`; a factory must either declare a model or override the validator. Existing custom validators remain supported. New factories put field validation and normalization in the model so the declared model is the single source for accepted configuration and editor schemas. Hosts derive schemas with `configuration_model.model_json_schema(mode="validation")`, matching the Provider definition convention. Optional `display_name` and `description` class attributes supply static, public, credential-free text; their defaults are empty. No separate schema or description method is registered. Catalog construction does not generate editor schemas or validate configuration. A Host may fall back to JSON editing for absent or unrepresentable schemas without affecting plugin loading or authoritative backend validation. Model validation and schema generation perform no external I/O.
 
 A factory owns its configuration semantics. Validation performs no external I/O, resolves no credential, and returns only normalized serializable configuration. Construction receives that normalized value and must return a plugin suitable for ordinary Agent binding and concurrent executable use. Mutable per-Agent or per-run state still follows `for_agent()` and `for_run()`; package construction does not weaken those lifecycle requirements.
 

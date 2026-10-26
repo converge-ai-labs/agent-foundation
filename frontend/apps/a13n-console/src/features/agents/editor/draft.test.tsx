@@ -369,3 +369,63 @@ it("publishes sparse execution defaults and removes them when reset to inherit",
   const inherited = buildDraftConfig(draft.current, undefined, asIs);
   expect(inherited.ok && inherited.config.execution).toBeUndefined();
 });
+
+it("saves plugin edits and updates only the renamed or removed discovery memberships", () => {
+  const plugin = {
+    instance_name: "audit",
+    plugin_key: "test.audit",
+    config: { nested: { retained: true } },
+  };
+  const other = {
+    instance_name: "other",
+    plugin_key: "test.audit",
+    config: {},
+  };
+  const draft = draftFor({
+    plugins: [plugin, other],
+    tool_search: {
+      groups: {
+        lookup: {
+          description: "Lookup",
+          plugins: ["audit", "other"],
+          capabilities: ["environment"],
+        },
+      },
+      config: { mode: "proxy" },
+    },
+  });
+  expect(draft.current.dirty).toBe(false);
+  act(() =>
+    draft.current.applyPlugin({ ...plugin, instance_name: "renamed" }, "audit"),
+  );
+  expect(draft.current.dirty).toBe(true);
+  let built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built).toMatchObject({
+    ok: true,
+    config: {
+      plugins: [{ ...plugin, instance_name: "renamed" }, other],
+      tool_search: {
+        groups: {
+          lookup: {
+            plugins: ["renamed", "other"],
+            capabilities: ["environment"],
+          },
+        },
+      },
+    },
+  });
+  act(() => draft.current.removePlugin("renamed"));
+  built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built).toMatchObject({
+    ok: true,
+    config: {
+      plugins: [other],
+      tool_search: {
+        groups: {
+          lookup: { plugins: ["other"], capabilities: ["environment"] },
+        },
+      },
+    },
+  });
+  expect(draft.current.initial.plugins).toEqual([plugin, other]);
+});

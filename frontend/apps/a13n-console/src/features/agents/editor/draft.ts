@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { replacePluginReferences, type Plugin } from "../plugins";
 import { toolSearchConfig, toolSearchDraft } from "../tool-search";
 import { validSpaceSelection } from "../../memories/space-form";
 import { isRecord } from "../../../service-client";
@@ -72,6 +73,7 @@ export function useAgentDraft(initial: AgentConfig) {
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
+    [plugins, setPlugins] = useState(initial.plugins ?? []),
     [toolSearch, setToolSearch] = useState(
       toolSearchDraft(initial.tool_search),
     ),
@@ -79,6 +81,7 @@ export function useAgentDraft(initial: AgentConfig) {
     [memory, setMemory] = useState(initial.memory ?? {}),
     [execution, setExecution] = useState(initial.execution ?? {});
   const dirty =
+    JSON.stringify(plugins) !== JSON.stringify(initial.plugins ?? []) ||
     JSON.stringify(execution) !== JSON.stringify(initial.execution ?? {}) ||
     JSON.stringify(toolSearch) !==
       JSON.stringify(toolSearchDraft(initial.tool_search)) ||
@@ -132,6 +135,26 @@ export function useAgentDraft(initial: AgentConfig) {
     setSkills,
     connections,
     setConnections,
+    plugins,
+    applyPlugin: (plugin: Plugin, previous?: string) => {
+      setPlugins((current) =>
+        previous
+          ? current.map((item) =>
+              item.instance_name === previous ? plugin : item,
+            )
+          : [...current, plugin],
+      );
+      if (previous && previous !== plugin.instance_name)
+        setToolSearch((current) =>
+          replacePluginReferences(current, previous, plugin.instance_name),
+        );
+    },
+    removePlugin: (name: string) => {
+      setPlugins((current) =>
+        current.filter((item) => item.instance_name !== name),
+      );
+      setToolSearch((current) => replacePluginReferences(current, name));
+    },
     toolSearch,
     setToolSearch,
     memoryMounts,
@@ -241,6 +264,7 @@ export function buildDraftConfig(
             ? { media_understanding: draft.mediaUnderstanding }
             : {}),
           connection_tools: draft.connections,
+          plugins: draft.plugins,
           tool_search: proxy,
           memory_mounts: draft.memoryMounts,
           memory: draft.memory,

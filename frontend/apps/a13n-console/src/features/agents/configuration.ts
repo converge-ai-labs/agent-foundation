@@ -12,6 +12,7 @@ const sectionFields = {
   instructions: ["instructions"],
   skills: ["skills"],
   connections: ["connection_tools"],
+  plugins: ["plugins"],
   toolSearch: ["tool_search"],
   memory: ["memory_mounts", "memory"],
   toolsets: ["toolsets"],
@@ -20,23 +21,15 @@ const sectionFields = {
   execution: ["execution"],
 } as const;
 export type EditorSection = keyof typeof sectionFields | "advanced";
-/** Shown by no section and kept verbatim by a save. */
-const retainedFields = ["plugins"];
-const commonFields = new Set<string>([
-  ...Object.values(sectionFields).flat(),
-  ...retainedFields,
-]);
+const commonFields = new Set<string>([...Object.values(sectionFields).flat()]);
 export function initialConfig(): AgentConfig {
   return { model: "", instructions: "" };
 }
-/** The advanced JSON; a read-only view also lists the fields a save retains. */
-export function advancedConfig(config: AgentConfig, readOnly = false) {
+/** Configuration not represented by a dedicated editor section. */
+export function advancedConfig(config: AgentConfig) {
   return JSON.stringify(
     Object.fromEntries(
-      Object.entries(config).filter(
-        ([key]) =>
-          !commonFields.has(key) || (readOnly && retainedFields.includes(key)),
-      ),
+      Object.entries(config).filter(([key]) => !commonFields.has(key)),
     ),
     null,
     2,
@@ -65,6 +58,7 @@ export function buildConfig(
     | "instructions"
     | "skills"
     | "connection_tools"
+    | "plugins"
     | "tool_search"
     | "memory_mounts"
     | "memory"
@@ -79,11 +73,10 @@ export function buildConfig(
   for (const key of Object.keys(extra))
     if (commonFields.has(key))
       throw new Error(`Edit ${key} through its dedicated field.`);
-  // Plugins are retained verbatim; only the exposed advanced slice is replaced.
   const value = {
     ...extra,
     ...common,
-    plugins: original.plugins,
+    plugins: common.plugins ?? original.plugins,
   };
   if (!validateAgentConfig(value)) throw new Error(schemaErrors());
   return value;

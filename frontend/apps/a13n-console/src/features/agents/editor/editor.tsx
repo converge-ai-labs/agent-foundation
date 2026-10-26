@@ -36,6 +36,7 @@ import { ConfigurationGroup } from "./configuration-group";
 import { ModelSection, ModelSettings } from "./model";
 import styles from "./editor.module.css";
 import { ToolSearchSection } from "./tool-search";
+import { PluginsSection } from "./plugins";
 
 export interface AgentDraftSummary {
   modelName?: string;
@@ -300,6 +301,13 @@ export function AgentEditor({
                 onRequireReviewer={() => {
                   if (!draft.reviewer?.model) setReviewPanel({});
                 }}
+              />
+              <PluginsSection
+                draft={draft}
+                readOnly={configurationReadonly}
+                pending={pending}
+                mark={mark("plugins")}
+                error={error}
               />
               <MediaUnderstandingSection
                 draft={draft}

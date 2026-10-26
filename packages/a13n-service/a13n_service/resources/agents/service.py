@@ -20,6 +20,8 @@ from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources import revisions
 from a13n_service.resources.agents import instructions, preset_edits, read_views, toolsets
+from a13n_service.resources.agents.plugins import PluginCatalog
+from a13n_service.resources.agents.plugins import catalog as describe_plugins
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentConfig,
@@ -470,6 +472,14 @@ async def toolset_catalog(
     return toolsets.catalog(
         frozenset(operation for definition in registry.web.values() for operation in web_operations(definition))
     )
+
+
+async def plugin_catalog(
+    storage: Storage, actor: Principal, workspace_id: str, *, plugins: HarnessPluginFactoryCatalog
+) -> PluginCatalog:
+    async with short_session(storage) as session:
+        await workspace_scope(session, actor, workspace_id, "read")
+    return describe_plugins(plugins)
 
 
 async def validate_override(
