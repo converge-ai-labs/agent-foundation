@@ -6,11 +6,19 @@
   flex-direction: column;
 }
 .header {
-  display: flex;
+  /* Equal side tracks keep the title on the true page center whatever the
+     widths of the back link and the settings link. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 28px 40px;
   gap: 20px;
+}
+.header > :last-child {
+  justify-self: end;
+}
+.header > :first-child {
+  justify-self: start;
 }
 .header a,
 .header span {

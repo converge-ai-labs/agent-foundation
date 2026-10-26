@@ -411,7 +411,7 @@ export function ResourceFields({
                   />
                 </SettingsRow>
                 {scalar(
-                  "Live Codex Model",
+                  "Codex model",
                   ["live", "model"],
                   (selectors.data?.models ?? [])
                     .filter((model) => model.route.startsWith("openai-codex:"))
@@ -419,7 +419,7 @@ export function ResourceFields({
                       value: model.model_id,
                       label: model.name,
                     })),
-                  "Choose a Codex Model",
+                  "Choose a Codex model",
                 )}
                 <SettingsRow label="Voice">
                   <ChoiceField

@@ -190,7 +190,7 @@ export function VoicePage() {
         )}
         {!settings.isPending && !settings.data?.enabled && !settings.error && (
           <p className={styles.hint}>
-            Choose a Codex Model and enable{" "}
+            Choose a Codex model and enable{" "}
             <Link to="/settings#live">Live in Settings</Link>.
           </p>
         )}
