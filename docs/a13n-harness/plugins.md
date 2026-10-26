@@ -162,6 +162,24 @@ class AuditPluginFactory(HarnessPluginFactory):
 
 Validate configuration in `validate_configuration()` before creating a fresh plugin. Keep factory construction free of I/O and mutable Run data in `for_run()`.
 
+### Describe Configuration for Editors
+
+Optionally implement `describe()` on the factory to supply public authoring metadata:
+
+```python
+from a13n_harness.plugin_factories import HarnessPluginDescription
+
+
+def describe(self) -> HarnessPluginDescription:
+    return HarnessPluginDescription(
+        display_name="Audit",
+        description="Record run metadata.",
+        config_schema=AuditConfiguration.model_json_schema(),
+    )
+```
+
+Keep descriptions static and free of credentials. Use a self-contained JSON Schema describing an object; references must be local fragments. Existing factories can omit this method: editors show the plugin key and a JSON editor. `validate_configuration()` still decides which configuration is accepted.
+
 ### Select Configured Plugins
 
 The Harness plugin document is a data schema, not a required file format:

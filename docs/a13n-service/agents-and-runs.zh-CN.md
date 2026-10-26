@@ -580,3 +580,11 @@ API 使用 `GET …/traces/search`，提供明确的 `started_after`、`started_
 对于预期行为和误判以外的发现项，**交给 Composer 审阅**会打开引用发现项和对应版本的对话，Composer 通过只读平台查询读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
 
 Finding Agent 只启用 `execution` 组中的六个[平台工具](tools.md#platform-tools)，均为允许：它读取所选 trace、其 span 和 span 内容、run 实际执行的配置和发现项，唯一的写入操作是提交发现项。它的发现项只引用已读取的所选 trace，并以其运行作为来源。自定义 Agent 可以选择相同的工具，写入默认需要询问用户。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。
+
+## 在 Console 中配置插件
+
+打开智能体配置，在「能力 → 插件」中点击「添加插件」。列表显示当前部署已启用的插件。选择插件，为实例设置唯一名称并编辑配置。简单 Schema 提供表单，也可切换为 JSON；其他 Schema 使用 JSON 编辑器。同一插件可以添加多个实例。
+
+添加、修改和移除操作先保留在草稿中，保存智能体后生效。保存会校验配置，但不运行插件，并按普通流程创建修订版本。重命名或移除实例时，也会更新工具发现分组对它的引用。预设配置只读。已保存的插件不可用时，仍可查看原有 JSON；请联系管理员恢复插件，或在保存前移除该实例。
+
+插件目录来自 Control 的 `GET /plugins`。管理员需在 Control 和 Worker 上安装一致的插件包并配置 `plugins.keys`；该列表不能证明 Worker 上的插件可用。

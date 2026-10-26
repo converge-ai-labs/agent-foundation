@@ -547,3 +547,55 @@ def test_catalog_require_rejects_unselected_key() -> None:
         catalog.require("missing.plugin")
 
     assert exc_info.value.code == "plugin_factory_missing"
+
+
+def test_authoring_descriptions_are_optional_detached_and_do_not_construct_plugins() -> None:
+    from a13n_harness.plugin_factories import HarnessPluginDescription
+
+    class Described(_Factory):
+        def describe(self):
+            return HarnessPluginDescription(
+                display_name="Recorder",
+                description="Record run events.",
+                config_schema={"type": "object", "properties": {"count": {"type": "integer"}}},
+            )
+
+        def validate_configuration(self, configuration):
+            raise AssertionError("catalog must not validate configuration")
+
+        def create_plugin(self, context):
+            raise AssertionError("catalog must not construct plugins")
+
+    catalog = build_harness_plugin_factory_catalog(explicit_factories=[Described()])
+    description = catalog.describe("test.plugin")
+    assert description.display_name == "Recorder"
+    assert description.config_schema is not None
+    description.config_schema.clear()
+    assert catalog.describe("test.plugin").config_schema == {
+        "type": "object",
+        "properties": {"count": {"type": "integer"}},
+    }
+    legacy = build_harness_plugin_factory_catalog(explicit_factories=[_Factory()])
+    assert legacy.describe("test.plugin") == HarnessPluginDescription()
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "array"},
+        {"type": "object", "properties": {"value": {"$ref": "https://private/schema"}}},
+        {"type": "object", "properties": {"value": {"type": "invalid"}}},
+    ],
+)
+def test_invalid_authoring_metadata_fails_with_safe_diagnostics(schema) -> None:
+    from a13n_harness.plugin_factories import HarnessPluginDescription
+
+    class Described(_Factory):
+        def describe(self):
+            return HarnessPluginDescription(config_schema=schema)
+
+    with pytest.raises(PluginError) as caught:
+        build_harness_plugin_factory_catalog(explicit_factories=[Described()])
+    assert caught.value.code == "plugin_factory_description_invalid"
+    assert caught.value.details == {"plugin_key": "test.plugin"}
+    assert "https://private" not in "".join(traceback.format_exception(caught.value))

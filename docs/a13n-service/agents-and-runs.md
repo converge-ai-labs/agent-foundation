@@ -580,3 +580,11 @@ Selection scans at most 100 roots and selects at most 20 matching traces. Execut
 For findings other than expected or false positive, **Review with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only platform queries. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
 
 Finding Agent enables only six `execution` [platform tools](tools.md#platform-tools), each allowed: it reads the selected traces, their spans and span content, the run's executed configuration and a finding, and its only write submits a finding. Its findings cite only selected traces that it read, and name its run as their source. Custom agents can select the same tools; their writes default to asking. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.
+
+## Configure Plugins in Console
+
+Open an Agent's configuration and find **Capabilities → Plugins**. **Add plugin** lists plugins enabled in this deployment. Choose one, give the instance a unique name, and edit its settings. Simple schemas provide a form; JSON remains available and is the fallback for other schemas. Several instances may use the same plugin.
+
+Adding, editing, or removing an instance changes only the draft until you save the Agent. Saving validates the configuration without executing the plugin and creates an ordinary Agent revision. Renaming or removing an instance also updates its tool-discovery group references. Presets are read-only. If a saved plugin becomes unavailable, its JSON remains visible; ask an administrator to restore it or remove the instance before saving.
+
+The catalog comes from Control's `GET /plugins` endpoint. Administrators install packages and set `plugins.keys` consistently on Control and workers; this list does not confirm worker availability.

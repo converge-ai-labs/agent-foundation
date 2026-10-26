@@ -168,7 +168,9 @@ class TraceProvider(Protocol):
 
 ## Installed Harness plugins
 
-`plugins.keys` installs Harness plugin factories by entry-point key; nothing else is imported, and a key without an installed factory fails startup. Agents select instances of installed plugins by `plugin_key` with their own configuration, and revision validation asks the factory to accept that configuration ([04](04-resources.md#validation)). There is no route listing installed plugins.
+`plugins.keys` installs Harness plugin factories by entry-point key; nothing else is imported, and a key without an installed factory fails startup. Agents select instances of installed plugins by `plugin_key` with their own configuration, and revision validation asks the factory to accept that configuration ([04](04-resources.md#validation)). `GET /plugins` returns the current Control process's loaded catalog, sorted by key, to principals with workspace read access. It is explicitly admitted to MCP. Each item includes `plugin_key`, a display name (falling back to the key), description, optional configuration JSON Schema, and optional distribution name/version; it excludes import targets and installation paths. Listing performs no factory configuration validation or plugin construction. The snapshot is not a worker fleet health report: operators must keep Control and workers' installed packages and `plugins.keys` consistent.
+
+Console exposes this catalog in the Agent editor's Plugins section. Users add named instances, edit schema-backed scalar forms or JSON, and remove instances in the draft; saving uses ordinary immutable Agent revision validation. The same plugin key may have multiple unique instance names. Renaming or removing an instance updates only its tool-discovery group references. Presets are read-only. Missing catalog entries preserve saved JSON for inspection and explicit removal, while catalog failures offer retry without declaring entries missing. Plugin installation, deployment enablement, credentials, and per-instance enable switches are outside this editor.
 
 ## What a provider may and may not do
 

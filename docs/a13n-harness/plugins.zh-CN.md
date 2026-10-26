@@ -162,6 +162,12 @@ class AuditPluginFactory(HarnessPluginFactory):
 
 在 `validate_configuration()` 验证配置，再创建新插件。工厂构造不执行 I/O，可变 Run 数据放入 `for_run()`。
 
+### 为配置编辑器提供描述
+
+插件工厂可实现 `describe()`，返回 `HarnessPluginDescription`，其中包含 `display_name`、`description` 和可选的 `config_schema`。配置 Schema 可由配置模型的 `model_json_schema()` 生成，须描述对象，且引用只能使用本地片段。描述应为静态内容，不含凭证，也不执行外部调用。
+
+旧工厂无需实现此方法，编辑器会显示插件标识并使用 JSON 编辑器。最终配置仍由 `validate_configuration()` 校验。
+
 ### 通过配置选择插件
 
 Harness 插件文档定义的是数据结构，不要求使用特定文件格式：

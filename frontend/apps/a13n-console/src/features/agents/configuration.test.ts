@@ -139,11 +139,9 @@ test("session memory stays in its dedicated section when viewing and saving conf
     memory_mounts: [],
   };
   expect(sectionsOf(["memory", "memory_mounts"])).toEqual(new Set(["memory"]));
-  for (const readOnly of [false, true]) {
-    const advanced = JSON.parse(advancedConfig(original, readOnly));
-    expect(advanced).not.toHaveProperty("memory");
-    expect(advanced).not.toHaveProperty("memory_mounts");
-  }
+  const advanced = JSON.parse(advancedConfig(original));
+  expect(advanced).not.toHaveProperty("memory");
+  expect(advanced).not.toHaveProperty("memory_mounts");
   expect(
     buildConfig(
       original,

@@ -14564,6 +14564,22 @@
         ],
         "type": "string"
       },
+      "PluginCatalog": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PluginType"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PluginCatalog",
+        "type": "object"
+      },
       "PluginSelection": {
         "additionalProperties": false,
         "description": "One instance of a Harness plugin factory the deployment installed.",
@@ -14591,6 +14607,68 @@
           "plugin_key"
         ],
         "title": "PluginSelection",
+        "type": "object"
+      },
+      "PluginType": {
+        "properties": {
+          "config_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Schema"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "distribution_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Name"
+          },
+          "distribution_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Version"
+          },
+          "plugin_key": {
+            "title": "Plugin Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_key",
+          "display_name",
+          "description",
+          "config_schema",
+          "distribution_name",
+          "distribution_version"
+        ],
+        "title": "PluginType",
         "type": "object"
       },
       "Position": {
@@ -38416,6 +38494,65 @@
         "tags": [
           "tenancy"
         ]
+      }
+    },
+    "/api/v1/plugins": {
+      "get": {
+        "description": "The plugins loaded by this Control process, without constructing or executing instances.",
+        "operationId": "list_plugins",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Plugins",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/provider-types/{kind}": {

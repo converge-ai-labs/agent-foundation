@@ -2248,6 +2248,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/plugins": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Plugins
+     * @description The plugins loaded by this Control process, without constructing or executing instances.
+     */
+    get: operations["list_plugins"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/provider-types/{kind}": {
     parameters: {
       query?: never;
@@ -9218,6 +9238,11 @@ export interface components {
       | "providers"
       | "execution"
       | "schedules";
+    /** PluginCatalog */
+    PluginCatalog: {
+      /** Items */
+      items: components["schemas"]["PluginType"][];
+    };
     /**
      * PluginSelection
      * @description One instance of a Harness plugin factory the deployment installed.
@@ -9229,6 +9254,23 @@ export interface components {
       };
       /** Instance Name */
       instance_name: string;
+      /** Plugin Key */
+      plugin_key: string;
+    };
+    /** PluginType */
+    PluginType: {
+      /** Config Schema */
+      config_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Description */
+      description: string;
+      /** Display Name */
+      display_name: string;
+      /** Distribution Name */
+      distribution_name: string | null;
+      /** Distribution Version */
+      distribution_version: string | null;
       /** Plugin Key */
       plugin_key: string;
     };
@@ -17556,6 +17598,31 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Workspace"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_plugins: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PluginCatalog"];
         };
       };
       400: components["responses"]["Error"];
