@@ -2,7 +2,12 @@
 :root {
   --font-weight-semibold: 500;
   --font-weight-bold: 500;
+  --accent: color-mix(in srgb, var(--foreground) 2%, transparent);
   --console-page-gutter: clamp(20px, calc(4.375vw - 8px), 48px);
+}
+
+:root.dark {
+  --accent: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
 @layer base {
