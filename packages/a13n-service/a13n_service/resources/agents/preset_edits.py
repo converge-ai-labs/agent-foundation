@@ -26,10 +26,10 @@ def require_editable(head: AgentRow, if_match: str | None) -> None:
         revisions.require_open(head, if_match)
 
 
-async def prepare_edit(session: AsyncSession, head: AgentRow | None, config: AgentConfig) -> tuple[AgentConfig, bool]:
-    """Validate against the selected default and say whether that default has the same instruction format."""
+async def validate_edit(session: AsyncSession, head: AgentRow | None, config: AgentConfig) -> None:
+    """Validate managed edits against the selected default."""
     if head is None or not head.builtin:
-        return config, True
+        return
     if not editable(head):
         raise conflict(head.KIND, head.id, "builtin")
     base = await session.get_one(AgentRevisionRow, head.default_revision_id)
@@ -42,7 +42,3 @@ async def prepare_edit(session: AsyncSession, head: AgentRow | None, config: Age
             name
         ) != previous.model_settings.get(name):
             raise invalid(f"model_settings.{name}", "managed preset setting is read-only")
-    if not base.uses_builtin_instructions and config.instructions == previous.instructions:
-        # An unchanged legacy instruction is official text, not a new user supplement.
-        config = config.model_copy(update={"instructions": ""})
-    return config, base.uses_builtin_instructions

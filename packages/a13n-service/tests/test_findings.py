@@ -530,20 +530,16 @@ async def test_composer_reads_durable_finding_without_changing_the_target(servic
 
 
 async def test_final_findings_migration_backfills_composer_and_preserves_other_heads(
-    service, scripted_model, runs_kit, database, monkeypatch
+    service, scripted_model, runs_kit, database
 ):
     from a13n_service.distribution import OSS
     from a13n_service.migrations.runner import migration_connection, upgrade
-    from a13n_service.resources.agents import preset_edits
     from alembic import command
     from alembic.script import ScriptDirectory
 
     await runs_kit.create_model(service, scripted_model)
-    # This test exercises the earlier identity migration with pre-capability revision rows.
-    with monkeypatch.context() as legacy:
-        legacy.setattr(preset_edits, "EDITABLE_KINDS", frozenset())
-        composer = (await service.client.post("/api/v1/agent-composer")).json()
-        finder = (await service.client.post("/api/v1/finding-agent")).json()
+    composer = (await service.client.post("/api/v1/agent-composer")).json()
+    finder = (await service.client.post("/api/v1/finding-agent")).json()
     # Drain maintenance before synchronous DDL can block the event loop while waiting for its locks.
     await service.runtime.tasks.close(timeout=service.runtime.settings.server.shutdown_timeout)
     with migration_connection(database, OSS) as config:

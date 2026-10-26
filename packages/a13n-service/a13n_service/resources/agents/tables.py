@@ -11,7 +11,6 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
-    false,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -77,5 +76,3 @@ class AgentRevisionRow(RevisionColumns):
     HEAD_KEY = "agent_id"
     ID_PREFIX = "apr"
     agent_id: Mapped[str]
-    # Older revisions contain complete instructions; new managed revisions use Host guidance.
-    uses_builtin_instructions: Mapped[bool] = mapped_column(default=False, server_default=false())

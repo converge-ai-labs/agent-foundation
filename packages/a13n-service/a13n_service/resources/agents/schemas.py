@@ -426,7 +426,6 @@ class AgentRevision(BaseModel):
     agent_id: str
     number: int
     config: AgentConfig
-    uses_builtin_instructions: bool = False
     builtin_instructions: Instructions | None = Field(
         default=None,
         description="Current deployment guidance for this builtin Agent, not a revision or Run snapshot.",

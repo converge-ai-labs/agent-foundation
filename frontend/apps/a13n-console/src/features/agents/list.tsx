@@ -208,11 +208,7 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
                 <ExportAgent
                   agent={agent}
                   config={revision.config}
-                  builtinInstructions={
-                    revision.uses_builtin_instructions
-                      ? revision.builtin_instructions
-                      : undefined
-                  }
+                  builtinInstructions={revision.builtin_instructions}
                   version={revision.number}
                   trigger={
                     <MenuItem closeOnClick={false}>

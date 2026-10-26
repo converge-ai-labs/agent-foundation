@@ -77,7 +77,7 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
 
 在“版本 → 设为默认”中切换或回退。后续准备保留选定版本，即使模型不可用也不会自动替换，请显式选择新模型。受保护配置的更新只生成候选版本，保留用户补充且不替换默认版本。其他配置、名称等元信息、头像和归档仍受保护；可复制为自定义 Agent 后自由修改。
 
-API 客户端复用校验和创建修订版本接口：先读取选定的默认版本和原始 head ETag，保留完整 `config`，仅修改允许的模型、参数和 `config.instructions` 中的用户补充。版本响应用 `uses_builtin_instructions=true` 标识新格式，`builtin_instructions` 只读展示当前官方指令。旧版本的标记为 false，继续保留并使用原有完整指令。准备操作会提供使用当前官方指令的候选版本；选择它或保存编辑即可采用新格式，初始补充为空。复制和导出会将当前官方指令与用户补充合并，得到独立的自定义 Agent。
+API 客户端复用校验和创建修订版本接口：先读取选定的默认版本和原始 head ETag，保留完整 `config`，仅修改允许的模型、参数和 `config.instructions` 中的用户补充。版本响应的 `builtin_instructions` 只读展示当前官方指令。Composer 始终将保存的指令视为用户补充，由 Worker 提供官方指令。复制和导出会将当前官方指令与用户补充合并，得到独立的自定义 Agent。
 
 ## 在自己的 agent 中使用工具集
 

@@ -68,10 +68,10 @@ async def prepare(
             config = configuration(held.model).model_copy(
                 update={
                     "model_settings": held.model_settings,
-                    "instructions": held.instructions if current.uses_builtin_instructions else "",
+                    "instructions": held.instructions,
                 }
             )
-            if current.uses_builtin_instructions and config == held:
+            if config == held:
                 return agent_view(head)
             config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
             # A rollback keeps its selected revision. Do not recreate the same update on every preparation.
@@ -79,7 +79,6 @@ async def prepare(
                 select(AgentRevisionRow.id)
                 .where(
                     AgentRevisionRow.agent_id == head.id,
-                    AgentRevisionRow.uses_builtin_instructions,
                     AgentRevisionRow.digest == revisions.config_digest(config.model_dump(mode="json")),
                 )
                 .limit(1)
@@ -93,8 +92,6 @@ async def prepare(
                     actor=actor,
                     note="Official preset update",
                     make_default=False,
-                    reuse_default=current.uses_builtin_instructions,
-                    uses_builtin_instructions=True,
                 )
                 if created:
                     audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})

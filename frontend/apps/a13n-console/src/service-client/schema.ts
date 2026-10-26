@@ -4750,11 +4750,6 @@ export interface components {
       note: string | null;
       /** Number */
       number: number;
-      /**
-       * Uses Builtin Instructions
-       * @default false
-       */
-      uses_builtin_instructions?: boolean;
     };
     /** AgentRevisionCreate */
     AgentRevisionCreate: {

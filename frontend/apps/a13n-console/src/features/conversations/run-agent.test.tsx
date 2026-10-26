@@ -41,11 +41,14 @@ beforeEach(() => {
       if (url.pathname.endsWith("/runs/run_2/agent"))
         return Response.json({
           ...executed,
-          revision: {
-            ...executed.revision,
-            uses_builtin_instructions: builtin,
-          },
           config: { ...executed.config, instructions: "Only this run." },
+        });
+      if (url.pathname.includes("/agents/"))
+        return Response.json({
+          id: "ap_test",
+          name: "Agent",
+          source: builtin ? "builtin" : "custom",
+          preset_kind: builtin ? "composer" : null,
         });
       return Response.json({ items: [], next_cursor: null });
     },

@@ -47,7 +47,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 - `POST …/archive` 阻止 agent 的新运行（`422 disabled`）；已接收的运行会完成。`POST …/unarchive` 取消归档。
 - 列表可按 `label`、`q`（名称或描述）、`archived`、`source`（`custom` 或 `builtin`）以及 `skill_id`、`skill_revision_id` 筛选，后两者保留包含引用该 skill 的修订版本的 agent。
 
-内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。你可以编辑它们的模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。修订版本保存用户补充；只读的官方指令由当前 Worker 在每次执行尝试时提供，包括恢复和等待后的继续执行。旧版本继续使用已保存的完整指令，直到选择新候选版本或保存编辑。其他配置、名称等元信息、头像和归档仍受保护。可以在版本历史中选择以前的默认版本；准备操作会保留这一选择，受保护配置的更新只生成候选版本，官方指令更新不需要新版本。需要自由修改所有配置时，可复制为自定义 Agent。
+内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。你可以编辑它们的模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。修订版本保存用户补充；只读的官方指令由当前 Worker 在每次执行尝试时提供，包括恢复和等待后的继续执行。其他配置、名称等元信息、头像和归档仍受保护。可以在版本历史中选择以前的默认版本；准备操作会保留这一选择，受保护配置的更新只生成候选版本，官方指令更新不需要新版本。需要自由修改所有配置时，可复制为自定义 Agent。
 
 ### Agent 配置
 

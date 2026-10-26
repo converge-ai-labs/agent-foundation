@@ -91,8 +91,7 @@ async def resolve_host(
     authority: ExecutionAuthority,
 ) -> HostPlan:
     parts: dict[str, _Parts] = {}
-    # Read the immutable format marker and server-owned identity together for the whole inline graph.
-    # Custom copies and legacy full-instruction revisions never acquire a preset capability.
+    # Resolve server-owned preset identities for the whole inline graph. Custom copies receive no guidance.
     builtin = dict(
         (
             await session.execute(
@@ -101,7 +100,6 @@ async def resolve_host(
                 .where(
                     AgentRevisionRow.workspace_id == scope.workspace_id,
                     AgentRevisionRow.id.in_({node.revision_id for node in agent.agents()}),
-                    AgentRevisionRow.uses_builtin_instructions,
                     AgentRow.source == "builtin",
                 )
             )

@@ -77,7 +77,7 @@ Open Composer's Agent page to change its model, thinking effort, output token li
 
 Use **Versions → Set as default** to switch or roll back. Later preparation preserves the selected version even when its model becomes unavailable; select a replacement explicitly. Protected configuration updates appear as candidate versions without replacing your default or supplement. Other configuration, identity, avatar and archiving remain protected. Duplicate Composer to freely change those fields.
 
-API clients reuse validation and revision creation: read the selected default and original head ETag, keep the complete `config`, and change only the allowed model/settings and `config.instructions` supplement. Revision responses identify this format with `uses_builtin_instructions=true` and show current official text in read-only `builtin_instructions`. Legacy revisions have the marker false and retain their complete original instructions. Preparation offers a candidate using current official guidance; selecting it or saving an edit adopts that format with an initially empty supplement. Duplication and export combine current official text with your supplement into an independent custom Agent.
+API clients reuse validation and revision creation: read the selected default and original head ETag, keep the complete `config`, and change only the allowed model/settings and `config.instructions` supplement. Revision responses show current official text in read-only `builtin_instructions`. Composer always treats saved instructions as your supplement and receives official guidance from the Worker. Duplication and export combine current official text with your supplement into an independent custom Agent.
 
 ## Use the toolset in your own agents
 

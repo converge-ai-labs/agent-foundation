@@ -176,48 +176,6 @@ def test_revisions_downgrade_to_an_empty_schema_and_upgrade_again(empty_database
     check(empty_database, OSS)
 
 
-@pytest.mark.anyio
-async def test_builtin_instruction_migration_preserves_old_config_and_refuses_lossy_downgrade(
-    database, service, scripted_model, runs_kit, monkeypatch
-):
-    from a13n_service.resources.agents import composer, preset_edits
-
-    await runs_kit.pause_sweeps(service)
-    await runs_kit.create_model(service, scripted_model)
-    # Reproduce an old builtin revision whose instructions contain its complete prompt.
-    with monkeypatch.context() as legacy:
-        legacy.setattr(preset_edits, "EDITABLE_KINDS", frozenset())
-        definition = composer.configuration
-        legacy.setattr(
-            composer,
-            "configuration",
-            lambda model: definition(model).model_copy(update={"instructions": "Historical complete instructions."}),
-        )
-        created = await service.client.post(f"{service.api}/agent-composer")
-    assert created.status_code == 200, created.text
-    query = "SELECT id, config::text, digest FROM agent_revisions ORDER BY id"
-    original = rows(database, query)
-    with migration_connection(database, OSS) as config:
-        command.downgrade(config, "82c26d512c94")
-    assert rows(database, query) == original
-    upgrade(database, OSS)
-    assert rows(database, query) == original
-    assert rows(database, "SELECT uses_builtin_instructions FROM agent_revisions") == [(False,)]
-    check(database, OSS)
-    # Preparation offers a new capability revision without rewriting or selecting over the old one.
-    prepared = await service.client.post(f"{service.api}/agent-composer")
-    assert prepared.status_code == 200, prepared.text
-    assert prepared.json()["default_revision_id"] == created.json()["default_revision_id"]
-    assert rows(database, "SELECT uses_builtin_instructions FROM agent_revisions ORDER BY number") == [
-        (False,),
-        (True,),
-    ]
-    with pytest.raises(RuntimeError, match="cannot downgrade while revisions use builtin instructions"):
-        with migration_connection(database, OSS) as config:
-            command.downgrade(config, "82c26d512c94")
-    check(database, OSS)
-
-
 @pytest.mark.parametrize("invalid_index", [False, True])
 def test_usage_cursor_migration_retries_after_concurrent_index_build(
     empty_database: Database, invalid_index: bool

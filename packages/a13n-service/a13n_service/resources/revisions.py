@@ -247,15 +247,13 @@ async def publish[R: RevisionColumns](
     actor: Principal,
     note: str | None,
     make_default: bool = True,
-    reuse_default: bool = True,
     **columns: object,
 ) -> tuple[R, bool]:
     """Append `config` as the head's next revision and stamp the head; the new revision becomes the default when
     `make_default` says so or the head has none.
 
     A configuration whose digest equals the current default's is no new revision: publishing it changes nothing
-    and returns the default revision (False). Set `reuse_default=False` when a kind's other execution fields
-    change without changing its config. The caller holds the head's row lock, or inserted the head in this
+    and returns the default revision (False). The caller holds the head's row lock, or inserted the head in this
     transaction, so numbers never race. `columns` carries the kind's own revision columns, such as a skill's
     `package_ref`.
     """
@@ -263,7 +261,7 @@ async def publish[R: RevisionColumns](
     digest = config_digest(value)
     if head.default_revision_id is not None:
         current = await session.get_one(table, head.default_revision_id)
-        if reuse_default and current.digest == digest:
+        if current.digest == digest:
             return current, False
     latest = await session.scalar(
         select(func.coalesce(func.max(table.number), 0)).where(table.__table__.c[table.HEAD_KEY] == head.id)

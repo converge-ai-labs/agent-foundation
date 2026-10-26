@@ -3,14 +3,9 @@
 import json
 
 import pytest
-from a13n_service.infra.db import transaction
 from a13n_service.resources.agents import composer, instructions
 from a13n_service.resources.agents.schemas import AgentConfig
-from a13n_service.resources.agents.service import resolve_agent
-from a13n_service.resources.agents.tables import AgentRevisionRow
-from a13n_service.resources.revisions import publish
 from a13n_service.runs.findings import preset as finding_preset
-from a13n_service.tenancy.authorize import Principal
 
 pytestmark = pytest.mark.anyio
 
@@ -31,7 +26,6 @@ async def test_edit_saves_only_user_instructions_and_keeps_selected_version(
 ):
     model = await runs_kit.create_model(service, scripted_model)
     head, path, original = await prepared(service, endpoint)
-    assert original["uses_builtin_instructions"]
     assert original["config"]["instructions"] == ""
     assert original["builtin_instructions"]
     started = await runs_kit.start_thread(service, head.json(), "Use the original revision")
@@ -51,12 +45,10 @@ async def test_edit_saves_only_user_instructions_and_keeps_selected_version(
     assert edited["id"] != original["id"]
     assert edited["config"] == body["config"]
     assert edited["builtin_instructions"] == original["builtin_instructions"]
-    assert edited["uses_builtin_instructions"]
-    # An accepted run still retains the supplement and format of its original revision.
+    # An accepted run still retains the supplement of its original revision.
     executed = await service.client.get(f"{service.api}/runs/{started['run']['id']}/agent")
     assert executed.status_code == 200, executed.text
     assert executed.json()["config"]["instructions"] == ""
-    assert executed.json()["revision"]["uses_builtin_instructions"]
     # The read never presents today's official text as a snapshot of a historical Run's prompt.
     assert executed.json()["revision"]["builtin_instructions"] is None
     again, _, latest = await prepared(service, endpoint)
@@ -80,7 +72,6 @@ async def test_edit_saves_only_user_instructions_and_keeps_selected_version(
         f"{service.api}/agents/{copy['id']}/revisions/{copy['default_revision_id']}"
     )
     assert copied_revision.json()["config"]["instructions"] == original["builtin_instructions"] + "\n\nBe concise."
-    assert not copied_revision.json()["uses_builtin_instructions"]
     assert copied_revision.json()["builtin_instructions"] is None
     current = await service.client.get(path)
     restored = await service.client.post(
@@ -110,7 +101,7 @@ async def test_builtin_edit_rejects_protected_fields_and_server_metadata(service
             denied = await service.client.post(url, json=payload, headers={"If-Match": head.headers["etag"]})
             assert denied.status_code == 400, denied.text
             assert denied.json()["error"]["code"] == "invalid_argument"
-    for field, value in (("uses_builtin_instructions", False), ("builtin_instructions", "Forged"), ("preset", {})):
+    for field, value in (("builtin_instructions", "Forged"), ("preset", {})):
         forged = await service.client.post(
             f"{path}/revisions",
             json={"config": original["config"], field: value},
@@ -181,7 +172,6 @@ async def test_tool_definition_update_is_only_a_candidate(
     assert candidate["config"]["lazy_environment"] is False
     assert candidate["config"]["model_settings"] == {"max_tokens": 1536}
     assert candidate["config"]["instructions"] == "Keep this."
-    assert candidate["uses_builtin_instructions"]
     again, _, _ = await prepared(service, endpoint)
     assert again.headers["etag"] == refreshed.headers["etag"]
     adopted = await service.client.post(
@@ -190,61 +180,6 @@ async def test_tool_definition_update_is_only_a_candidate(
     assert adopted.status_code == 200, adopted.text
     _, _, current = await prepared(service, endpoint)
     assert current["id"] == candidate["id"]
-
-
-@pytest.mark.parametrize("legacy_text", ["Historical official instructions.", ""])
-async def test_legacy_revisions_remain_immutable_and_can_adopt_capabilities(
-    service, scripted_model, runs_kit, monkeypatch, legacy_text
-):
-    await runs_kit.pause_sweeps(service)
-    await runs_kit.create_model(service, scripted_model)
-    head, path, _ = await prepared(service, "agent-composer")
-    async with transaction(service.runtime.storage) as session:
-        row = await resolve_agent(session, service.tenant.workspace_id, head.json()["id"], lock=True)
-        legacy, _ = await publish(
-            session,
-            row,
-            AgentRevisionRow,
-            composer.configuration("scripted").model_copy(update={"instructions": legacy_text}),
-            actor=Principal(service.tenant.principal_id, "user", ()),
-            note="Legacy",
-            reuse_default=False,
-            uses_builtin_instructions=False,
-        )
-        legacy_id = legacy.id
-    current = await service.client.get(path)
-    old = (await service.client.get(f"{path}/revisions/{legacy_id}")).json()
-    assert not old["uses_builtin_instructions"]
-    monkeypatch.setattr(instructions, "COMPOSER", "New capability policy.")
-    # Even an explicit old revision executed after a deployment retains its complete instructions.
-    accepted = await runs_kit.start_thread(service, current.json(), "Legacy request")
-    scripted_model.say("Done")
-    async with runs_kit.platform_runtime(service) as runtime:
-        await (await runs_kit.attempt(service, runtime=runtime))
-    assert (await runs_kit.get_run(service, accepted["run"]["id"]))["status"] == "completed"
-    prompt = json.dumps((await scripted_model.request())["messages"])
-    assert "New capability policy." not in prompt
-    if legacy_text:
-        assert prompt.count(legacy_text) == 1
-    # A model-only save does not accidentally turn the old official text into a user supplement.
-    changed = await service.client.post(
-        f"{path}/revisions", json={"config": old["config"]}, headers={"If-Match": current.headers["etag"]}
-    )
-    assert changed.status_code == 201, changed.text
-    assert changed.json()["id"] != legacy_id
-    assert changed.json()["uses_builtin_instructions"]
-    assert changed.json()["config"]["instructions"] == ""
-    historical = (await service.client.get(f"{path}/revisions/{legacy_id}")).json()
-    assert historical["config"] == old["config"] and historical["digest"] == old["digest"]
-    assert not historical["uses_builtin_instructions"]
-    restored = await service.client.post(
-        f"{path}/revisions/{legacy_id}/set-default",
-        headers={"If-Match": (await service.client.get(path)).headers["etag"]},
-    )
-    assert restored.status_code == 200, restored.text
-    prepared_again, _, selected = await prepared(service, "agent-composer")
-    assert selected["id"] == legacy_id
-    assert prepared_again.json()["default_revision_id"] == legacy_id
 
 
 async def test_waiting_resume_uses_current_official_guidance_and_frozen_supplement(
@@ -326,5 +261,4 @@ def test_copy_materialization_bounds_and_generic_config_shape():
     assert instructions.materialize(config, "Official").instructions == "Official\n\nUser"
     with pytest.raises(ServiceError):
         instructions.materialize(config, "x" * (256 * 1024))
-    assert "uses_builtin_instructions" not in AgentConfig.model_fields
     assert "preset" not in AgentConfig.model_fields

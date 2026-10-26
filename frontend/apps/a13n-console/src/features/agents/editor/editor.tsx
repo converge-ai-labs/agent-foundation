@@ -106,11 +106,7 @@ export function AgentEditor({
     preset: incomingPreset,
   });
   const creating = version === undefined;
-  const draft = useAgentDraft(
-    preset && !preset.uses_builtin_instructions
-      ? { ...initial, instructions: "" }
-      : initial,
-  );
+  const draft = useAgentDraft(initial);
   const configurationReadonly = readonly || !!preset;
   const [note, setNote] = useState(""),
     [modelExpanded, setModelExpanded] = useState(false),
