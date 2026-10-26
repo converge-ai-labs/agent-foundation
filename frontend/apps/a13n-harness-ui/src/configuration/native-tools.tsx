@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { SettingsSection } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -118,10 +117,8 @@ export function AgentNativeTools({
   const configured = capabilities.map(nativeToolKind).filter(Boolean);
   const tools = options.data?.native_tools ?? [];
   return (
-    <SettingsSection
-      title="Model-native tools"
-      description="Choices come from this Agent's saved Model. Changing the Model never silently replaces existing tools."
-    >
+    <div>
+      <h3>Model-native tools</h3>
       <div className={`${styles.stack} ${styles.fieldGroup}`}>
         <ErrorNotice error={saved.error || options.error} />
         {!raw?.model ? (
@@ -129,10 +126,7 @@ export function AgentNativeTools({
         ) : options.isPending && request ? (
           <p>Loading tool support…</p>
         ) : !tools.length ? (
-          <p>
-            No guided native tools for this connection. Advanced capabilities
-            remain unchanged.
-          </p>
+          <p>No native tool choices for this model.</p>
         ) : (
           tools.map((tool) => (
             <div key={tool.value}>
@@ -168,6 +162,6 @@ export function AgentNativeTools({
             </p>
           )}
       </div>
-    </SettingsSection>
+    </div>
   );
 }

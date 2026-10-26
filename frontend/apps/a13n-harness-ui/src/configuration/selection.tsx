@@ -9,7 +9,9 @@ export function SelectionField({
   value,
   options,
   onChange,
+  inherited,
 }: {
+  inherited?: string;
   label: string;
   value: string[] | null | undefined;
   options: { value: string; label: string }[];
@@ -40,7 +42,9 @@ export function SelectionField({
         description={
           mode === "custom"
             ? `${selected.length} selected · replaces the inherited list`
-            : undefined
+            : mode === "default"
+              ? inherited
+              : undefined
         }
       >
         <ChoiceField

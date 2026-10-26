@@ -28,7 +28,7 @@ Model 资源定义提供方连接、请求设置和工作上下文预算。将�
 1. 选择 **ChatGPT subscription**、**Codex subscription**、**Grok subscription**、**GitHub Copilot subscription** 或 API 连接。订阅保留原生账户存储和传输，不是 API 密钥预设。
 2. 选择 Codex/Grok 账户组、连接订阅账户、选择已保存 API 密钥、保存新密钥，或指定服务器环境变量名。凭据写入独立进行；取消 Model 草稿不会撤销已完成登录或密钥保存。
 3. 选择建议项或输入区分大小写的模型 ID。建议描述已知路由，不代表账户权限；目录获取失败时仍可手动填写 ID。
-4. 选择 **Use this model**，调整提供的推理、速度和工作上下文预算选项。修改已保存 Model 的连接、模型 ID 或基础 URL 时，此按钮显示为 **Apply connection & defaults**，并将模型专属设置重置为经审查的默认值。
+4. 在 **Model defaults** 下调整推理、速度和上下文预算。连接变更自动更新草稿并保留显式设置；需要重置时选择 **Restore recommended defaults**。选择 **Custom budget** 后可输入上下文数值上限。
 5. 保存 Model YAML。只有已保存 Model 出现在对话选择器中；仍可高级编辑 YAML。
 
 选择已保存 Model 后，在 **Agent** 上选择原生工具。改变 Model 不改写 Agent 工具。提供方资源要求和 YAML 示例见[原生工具](native-and-web-tools.md)。
