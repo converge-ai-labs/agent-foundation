@@ -90,11 +90,9 @@ async def test_live_modal_user_takeover_and_handback(service, scripted_model, ru
             row.status = "ready"
             row.operation_id = row.operation_started_at = None
             row.handle = Handle(recipe=recipe.model_dump(mode="json"), state=manager.state).model_dump(mode="json")
-        agent = await runs_kit.create_agent(
-            service, scripted_model, toolsets={"computer": {"enabled": True}}, builtin_skills=["platform-operations"]
-        )
+        agent = await runs_kit.create_agent(service, scripted_model, toolsets={"computer": {"enabled": True}})
         scripted_model.call("computer_observe", {}, call_id="observe_before")
-        runs_kit.lookup(scripted_model, call_id="stale", gate=gate)
+        scripted_model.call("computer_observe", {}, call_id="stale", gate=gate)
         first = await runs_kit.start_thread(
             service,
             agent,

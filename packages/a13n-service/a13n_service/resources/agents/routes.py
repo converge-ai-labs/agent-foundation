@@ -24,6 +24,7 @@ from a13n_service.resources.agents.schemas import (
 )
 from a13n_service.resources.agents.tables import PresetKind
 from a13n_service.resources.agents.toolsets import ToolsetCatalog
+from a13n_service.resources.builtin_skills import BuiltinSkillCatalog
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
 from a13n_service.tenancy.requests import Actor, ImageBody, WorkspaceId
@@ -335,6 +336,12 @@ async def list_toolsets(workspace_id: WorkspaceId, actor: Actor, runtime: Curren
 async def list_plugins(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> PluginCatalog:
     """The plugins loaded by this Control process, without constructing or executing instances."""
     return await service.plugin_catalog(runtime.storage, actor, workspace_id, plugins=runtime.plugins)
+
+
+@router.get("/builtin-skills", response_model=BuiltinSkillCatalog, openapi_extra={"x-a13n-mcp": True})
+async def list_builtin_skills(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> BuiltinSkillCatalog:
+    """The skills bundled with this Service release, separately from workspace skill resources."""
+    return await service.builtin_skill_catalog(runtime.storage, actor, workspace_id, skills=runtime.builtin_skills)
 
 
 @router.get(

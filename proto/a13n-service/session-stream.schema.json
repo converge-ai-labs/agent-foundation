@@ -50,8 +50,7 @@
           "anyOf": [
             {
               "items": {
-                "const": "platform-operations",
-                "type": "string"
+                "$ref": "#/$defs/BuiltinSkillName"
               },
               "type": "array",
               "uniqueItems": true
@@ -467,6 +466,10 @@
       ],
       "title": "AssetPart",
       "type": "object"
+    },
+    "BuiltinSkillName": {
+      "const": "platform-operations",
+      "type": "string"
     },
     "CallResult": {
       "discriminator": {

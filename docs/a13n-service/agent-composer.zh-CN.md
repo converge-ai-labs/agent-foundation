@@ -102,10 +102,12 @@ API 客户端复用校验和创建修订版本接口：先读取选定的默认�
 
 平台组和 skill 默认都不选择。每个工具有自己的 `permission`；`inherit` 时读取直接执行，写入先请求批准。选择工具提供操作能力，选择 skill 提供说明。修改配置后，正在执行的运行保留接收时的授权和工具范围。
 
-`platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`，部署目录位于 `/platform-instance`。
+内置 Agent Composer 的 `platform-operations` skill 通过 Worker 的只读本地 Environment 读取随包发布的说明，不需要用户 Environment 或容器。Agent 配置 schema 位于 `/platform-skills/platform-operations/schemas`，部署目录位于 `/platform-instance`。
 
 启用 `view`、`ls`、`glob` 和 `grep` 来读取 skill。Composer 只启用这四个文件工具。内置文档挂载始终只读；显式挂载的用户 Environment 遵循同一套文件工具权限。
 
 ### Computer 坐标模式
 
 请在[环境的 Computer 配置](environments.md#computer-coordinate-mode)中选择像素或相对坐标模式。
+
+用户 Agent（包括 Composer 的副本）会按照普通[技能同步策略](skills.md#runtime-synchronization)将选中的内置技能写入主环境。运行前请配置默认环境模板或选择会话环境。

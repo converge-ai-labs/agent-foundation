@@ -423,6 +423,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/builtin-skills": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Builtin Skills
+     * @description The skills bundled with this Service release, separately from workspace skill resources.
+     */
+    get: operations["list_builtin_skills"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connections": {
     parameters: {
       query?: never;
@@ -4385,7 +4405,7 @@ export interface components {
        * Builtin Skills
        * @default []
        */
-      builtin_skills?: "platform-operations"[];
+      builtin_skills?: components["schemas"]["BuiltinSkillName"][];
       /**
        * Client Tools
        * @default []
@@ -4467,7 +4487,7 @@ export interface components {
        * Builtin Skills
        * @default []
        */
-      builtin_skills?: "platform-operations"[];
+      builtin_skills?: components["schemas"]["BuiltinSkillName"][];
       /**
        * Client Tools
        * @default []
@@ -4604,7 +4624,7 @@ export interface components {
      */
     "AgentOverride-Input": {
       /** Builtin Skills */
-      builtin_skills?: "platform-operations"[] | null;
+      builtin_skills?: components["schemas"]["BuiltinSkillName"][] | null;
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
       /** Connection Tools */
@@ -4656,7 +4676,7 @@ export interface components {
      */
     "AgentOverride-Output": {
       /** Builtin Skills */
-      builtin_skills?: "platform-operations"[] | null;
+      builtin_skills?: components["schemas"]["BuiltinSkillName"][] | null;
       /** Client Tools */
       client_tools?: components["schemas"]["ClientToolDefinition"][] | null;
       /** Connection Tools */
@@ -5215,6 +5235,19 @@ export interface components {
        */
       password: string;
     };
+    /** BuiltinSkill */
+    BuiltinSkill: {
+      /** Description */
+      description: string;
+      name: components["schemas"]["BuiltinSkillName"];
+    };
+    /** BuiltinSkillCatalog */
+    BuiltinSkillCatalog: {
+      /** Items */
+      items: components["schemas"]["BuiltinSkill"][];
+    };
+    /** @constant */
+    BuiltinSkillName: "platform-operations";
     /** BusyOccurrence */
     BusyOccurrence: {
       /** Entry Id */
@@ -13188,6 +13221,31 @@ export interface operations {
           "application/json": components["schemas"]["SessionProfile"];
         };
       };
+      default: components["responses"]["Error"];
+    };
+  };
+  list_builtin_skills: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BuiltinSkillCatalog"];
+        };
+      };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };

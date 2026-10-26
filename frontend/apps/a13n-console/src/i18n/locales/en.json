@@ -3456,5 +3456,16 @@
   "Run recorder": "Run recorder",
   "Record each run's outcome in memory, optionally including model request counts.": "Record each run's outcome in memory, optionally including model request counts.",
   "Record model requests": "Record model requests",
-  "Include the model request count in each run record.": "Include the model request count in each run record."
+  "Include the model request count in each run record.": "Include the model request count in each run record.",
+  "Built-in skills": "Built-in skills",
+  "Workspace skills": "Workspace skills",
+  "No workspace skills yet": "No workspace skills yet",
+  "Built-in instructions and reusable skill packages for your agents.": "Built-in instructions and reusable skill packages for your agents.",
+  "Included with Service and updated with each release. Select them in an agent's Skills settings.": "Included with Service and updated with each release. Select them in an agent's Skills settings.",
+  "No matching built-in skills.": "No matching built-in skills.",
+  "No built-in skills available.": "No built-in skills available.",
+  "Enable {{name}}": "Enable {{name}}",
+  "These instructions use Service's read-only files. File tools and platform tools keep their own permissions.": "These instructions use Service's read-only files. File tools and platform tools keep their own permissions.",
+  "These instructions are copied into the run's primary environment. Enable file reading and the platform tools the agent needs separately.": "These instructions are copied into the run's primary environment. Enable file reading and the platform tools the agent needs separately.",
+  "Configure workspace resources, manage one-time and recurring schedules, and diagnose executions using the Service MCP tools.": "Configure workspace resources, manage one-time and recurring schedules, and diagnose executions using the Service MCP tools."
 }

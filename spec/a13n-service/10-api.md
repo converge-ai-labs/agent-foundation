@@ -256,6 +256,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/agent-composer`                                   | POST             | [04](04-resources.md#agent-composer)             |
 | `/toolsets`                                         | GET              | [04](04-resources.md#agents)                     |
 | `/toolsets/index`, `/toolsets/definitions`          | GET              | [04](04-resources.md#bounded-resource-discovery) |
+| `/builtin-skills`                                   | GET              | [04](04-resources.md#builtin-operating-skills)   |
 | `/skills`                                           | GET, POST        | [04](04-resources.md#skills)                     |
 | `/skills/validate`                                  | POST             | [04](04-resources.md#skills)                     |
 | `/skills/{skill}`                                   | GET, PATCH       | [04](04-resources.md#skills)                     |

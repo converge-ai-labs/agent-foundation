@@ -36,7 +36,8 @@ async def member(service: SimpleNamespace, stack: AsyncExitStack, role: str) -> 
     return client
 
 
-async def test_authors_follow_initial_queued_and_steering_entries(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_authors_follow_initial_queued_and_steering_entries(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     gate = asyncio.Event()

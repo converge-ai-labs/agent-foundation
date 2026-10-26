@@ -67,7 +67,11 @@ async def validate_config(
         update={
             "plugins": _normalized_plugins(config, plugins),
             "skills": await _pin_skills(
-                session, scope.workspace_id, config.skills, () if held is None else held.skills
+                session,
+                scope.workspace_id,
+                config.skills,
+                () if held is None else held.skills,
+                builtin_names=config.builtin_skills,
             ),
             "subagents": await _pin_subagents(
                 session, scope.workspace_id, config.subagents, {} if held is None else held.subagents
@@ -182,7 +186,12 @@ def _normalized_plugins(config: AgentConfig, plugins: HarnessPluginFactoryCatalo
 
 
 async def _pin_skills(
-    session: AsyncSession, workspace_id: str, skills: Sequence[SkillSelection], held: Collection[SkillSelection]
+    session: AsyncSession,
+    workspace_id: str,
+    skills: Sequence[SkillSelection],
+    held: Collection[SkillSelection],
+    *,
+    builtin_names: Collection[str],
 ) -> tuple[SkillSelection, ...]:
     """Each skill at its selected revision, by default the skill's default revision; archived skills refuse a pin
     that is not `held` already."""
@@ -211,7 +220,10 @@ async def _pin_skills(
         pinned.append(selection)
     await require_pins(session, workspace_id, checked)
     await require_distinct_names(
-        session, workspace_id, {f"skills.{index}": skill.revision_id or "" for index, skill in enumerate(pinned)}
+        session,
+        workspace_id,
+        {f"skills.{index}": skill.revision_id or "" for index, skill in enumerate(pinned)},
+        reserved=builtin_names,
     )
     return tuple(pinned)
 

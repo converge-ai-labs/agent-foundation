@@ -163,8 +163,9 @@ async def test_checkpoint_writer_survives_repeated_native_preemption() -> None:
 
 
 async def test_handoff_keeps_model_cut_when_tool_checkpoint_is_already_queued(
-    service, scripted_model, runs_kit, monkeypatch
+    skill_service, scripted_model, runs_kit, monkeypatch
 ) -> None:
+    service = skill_service
     from a13n_service.infra.db import short_session
     from a13n_service.runs.checkpoints import StatePointer, load_state
     from a13n_service.runs.execute import _Attempt

@@ -111,7 +111,8 @@ async def test_queued_acceptance_uses_new_agent_defaults_and_current_thread_choi
     assert started["run"]["options"]["execution"]["tools"]["mode"] == "auto"
 
 
-async def test_steer_cannot_change_execution_but_next_run_can(service, scripted_model, runs_kit):
+async def test_steer_cannot_change_execution_but_next_run_can(skill_service, scripted_model, runs_kit):
+    service = skill_service
     agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     started = await runs_kit.start_thread(
         service, agent, "first", options={"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
@@ -148,7 +149,8 @@ async def test_steer_cannot_change_execution_but_next_run_can(service, scripted_
 
 @pytest.mark.parametrize("mode", ["inline", "auto"])
 @pytest.mark.parametrize("steering", ["boundary", "immediate"])
-async def test_independent_modes_reach_worker(service, scripted_model, runs_kit, mode, steering, monkeypatch):
+async def test_independent_modes_reach_worker(skill_service, scripted_model, runs_kit, mode, steering, monkeypatch):
+    service = skill_service
     from a13n_harness import HarnessRunStream
     from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
     from a13n_service.infra.db import short_session
@@ -278,7 +280,8 @@ def test_environment_precedence_patch_and_legacy_serialization():
             ExecutionOverride(environment=values)
 
 
-async def test_environment_freezes_at_acceptance_and_thread_map_replacement(service, scripted_model, runs_kit):
+async def test_environment_freezes_at_acceptance_and_thread_map_replacement(skill_service, scripted_model, runs_kit):
+    service = skill_service
     agent = await runs_kit.create_agent(
         service, scripted_model, execution={"environment": {"MODE": "agent", "BASE": "base"}}, **runs_kit.LOOKUP
     )

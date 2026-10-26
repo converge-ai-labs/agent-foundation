@@ -10,7 +10,7 @@ export type AgentConfig = Schema["AgentConfig-Input"];
 const sectionFields = {
   model: ["model", "model_settings", "media_understanding"],
   instructions: ["instructions"],
-  skills: ["skills"],
+  skills: ["skills", "builtin_skills"],
   connections: ["connection_tools"],
   plugins: ["plugins"],
   toolSearch: ["tool_search"],
@@ -57,6 +57,7 @@ export function buildConfig(
     | "media_understanding"
     | "instructions"
     | "skills"
+    | "builtin_skills"
     | "connection_tools"
     | "plugins"
     | "tool_search"

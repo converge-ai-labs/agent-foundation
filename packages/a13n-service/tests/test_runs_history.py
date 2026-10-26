@@ -241,8 +241,9 @@ async def test_sessions_list_most_recently_updated_first_and_refuse_malformed_fi
 
 
 async def test_run_items_page_by_ordinal_across_pages_and_the_tail(
-    service, scripted_model, runs_kit, monkeypatch
+    skill_service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     for number in range(16):
         runs_kit.lookup(scripted_model, call_id=f"call_{number}")

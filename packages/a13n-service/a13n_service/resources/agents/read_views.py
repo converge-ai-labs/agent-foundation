@@ -55,7 +55,7 @@ def config_summary(value: AgentConfig) -> ConfigSummary:
         model=value.model,
         toolsets=sorted(key for key, selection in value.toolsets.items() if selection.enabled),
         connection_count=len(value.connection_tools),
-        skill_count=len(value.skills),
+        skill_count=len(value.skills) + len(value.builtin_skills),
         subagent_count=len(value.subagents),
     )
 

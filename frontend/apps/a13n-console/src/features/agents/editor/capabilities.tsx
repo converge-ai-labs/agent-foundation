@@ -37,6 +37,7 @@ import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import styles from "./editor.module.css";
 import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
+import { BuiltinSkillSelections } from "./builtin-skills";
 import {
   MediaUnderstandingFields,
   useWorkspaceMediaDefault,
@@ -47,11 +48,13 @@ export function SkillsSection({
   draft,
   choices,
   readOnly,
+  hostSkills,
   mark,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
+  hostSkills: boolean;
   /** Says how a read-only view's value differs, beside the title. */
   mark?: ReactNode;
 }) {
@@ -116,6 +119,11 @@ export function SkillsSection({
         )
       }
     >
+      <BuiltinSkillSelections
+        draft={draft}
+        readOnly={readOnly}
+        hostSkills={hostSkills}
+      />
       {draft.skills.length ? (
         <ListRows>
           {draft.skills.map((selection, index) => {
@@ -198,7 +206,10 @@ export function SkillsSection({
         </ListRows>
       ) : (
         // Editable, the title, summary and Add say it all.
-        readOnly && <ListRowsEmpty>{t("No skills attached.")}</ListRowsEmpty>
+        readOnly &&
+        !draft.builtinSkills.length && (
+          <ListRowsEmpty>{t("No skills attached.")}</ListRowsEmpty>
+        )
       )}
     </Section>
   );

@@ -367,9 +367,10 @@ async def test_calls_are_attributed_to_the_model_they_select_whatever_upstream_m
     assert {record.record["model_name"] for record in records} == {"scripted"}
 
 
-async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_tool_review_is_a_call_of_the_reviewer_model(skill_executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """The reviewer's request spends the reviewer model's credential: it is recorded, attributed and priced as that
     model, like the agent's own requests."""
+    executing = skill_executing
     endpoint = {"config": {"base_url": scripted_model.url}, "credential": {"api_key": "sk-scripted"}}
     for key, input_mtok in (("agent", "5"), ("reviewer", "10")):
         account = await provider(executing, name=key, **endpoint)
@@ -411,9 +412,10 @@ async def test_a_tool_review_is_a_call_of_the_reviewer_model(executing, scripted
     assert review.record["tool_call_id"] == "call_find"
 
 
-async def test_a_compaction_is_a_call_of_the_agent_model(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_compaction_is_a_call_of_the_agent_model(skill_executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Compaction asks the agent's own model for a summary: that call is admitted, attributed and priced as the
     agent's model, like the requests it summarizes."""
+    executing = skill_executing
     endpoint = {"config": {"base_url": scripted_model.url}, "credential": {"api_key": "sk-scripted"}}
     account = await provider(executing, name="compacting", **endpoint)
     await post(

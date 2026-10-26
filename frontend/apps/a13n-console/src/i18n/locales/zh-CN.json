@@ -3456,5 +3456,16 @@
   "Run recorder": "运行记录",
   "Record each run's outcome in memory, optionally including model request counts.": "在内存中记录每次运行的结果，可选择记录模型请求次数。",
   "Record model requests": "记录模型请求",
-  "Include the model request count in each run record.": "在每条运行记录中包含模型请求次数。"
+  "Include the model request count in each run record.": "在每条运行记录中包含模型请求次数。",
+  "Built-in skills": "内置技能",
+  "Workspace skills": "工作区技能",
+  "No workspace skills yet": "暂无工作区技能",
+  "Built-in instructions and reusable skill packages for your agents.": "供 Agent 使用的内置操作指引和可复用技能包。",
+  "Included with Service and updated with each release. Select them in an agent's Skills settings.": "由 Service 提供，随版本更新。可在 Agent 的技能设置中选择启用。",
+  "No matching built-in skills.": "没有匹配的内置技能。",
+  "No built-in skills available.": "暂无可用的内置技能。",
+  "Enable {{name}}": "启用 {{name}}",
+  "These instructions use Service's read-only files. File tools and platform tools keep their own permissions.": "这些操作指引使用 Service 的只读文件。文件工具和平台工具仍遵循各自的权限设置。",
+  "These instructions are copied into the run's primary environment. Enable file reading and the platform tools the agent needs separately.": "这些操作指引会复制到运行的主环境中。请另行启用文件读取工具和 Agent 所需的平台工具。",
+  "Configure workspace resources, manage one-time and recurring schedules, and diagnose executions using the Service MCP tools.": "使用 Service MCP 工具配置工作区资源、管理一次性及周期性定时任务，并诊断执行问题。"
 }

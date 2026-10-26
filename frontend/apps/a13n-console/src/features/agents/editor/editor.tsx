@@ -233,7 +233,7 @@ export function AgentEditor({
             />
           ),
           environmentId: draft.environmentTemplateId,
-          skillCount: draft.skills.length,
+          skillCount: draft.skills.length + draft.builtinSkills.length,
           connectionCount: draft.connections.length,
           dirty,
         })}
@@ -289,6 +289,7 @@ export function AgentEditor({
               <SkillsSection
                 draft={draft}
                 choices={choices}
+                hostSkills={!!preset}
                 readOnly={configurationReadonly}
                 mark={mark("skills")}
               />

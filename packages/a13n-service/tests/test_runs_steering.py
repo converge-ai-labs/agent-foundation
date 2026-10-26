@@ -21,7 +21,8 @@ async def _tool_turn(service, scripted_model, runs_kit) -> tuple[dict, str, asyn
     return agent, thread_id, gate
 
 
-async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     agent, thread_id, gate = await _tool_turn(service, scripted_model, runs_kit)
     # One delivery batch holds 1 KiB; the entry queued for a later run alone is larger.
     worker = service.runtime.settings.worker.model_copy(update={"delivery_bytes": 1024})
@@ -45,7 +46,8 @@ async def test_a_steer_joins_past_a_larger_entry_for_a_later_run(service, script
     assert statuses[later.json()["entry"]["id"]] == "assigned"
 
 
-async def test_a_steer_that_cannot_be_read_fails_alone(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_that_cannot_be_read_fails_alone(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     agent, thread_id, gate = await _tool_turn(service, scripted_model, runs_kit)
     running = await runs_kit.attempt(service)
     await scripted_model.request()
@@ -88,8 +90,9 @@ async def test_a_steer_a_recovered_attempt_cannot_read_fails_alone(service, scri
     assert (entry["status"], entry["failure"]["code"]) == ("failed", "invalid_argument"), entry
 
 
-async def test_a_steer_joins_with_the_default_options_or_the_runs_own(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_a_steer_joins_with_the_default_options_or_the_runs_own(skill_service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Acceptance freezes a run's options with their pins resolved; a steer names them as submitted, or none."""
+    service = skill_service
     agent = await runs_kit.delegating(service, scripted_model, "inline", **runs_kit.LOOKUP)
     gate = asyncio.Event()
     for _ in range(3):

@@ -16,6 +16,40 @@ function draftFor(config: Partial<ReturnType<typeof initialConfig>> = {}) {
   return renderHook(() => useAgentDraft(initial)).result;
 }
 
+it("edits builtin skill selections without losing workspace pins or changing tools", () => {
+  const skill = {
+    skill_id: "sk_0123456789abcdef0123",
+    revision_id: "skr_0123456789abcdef0123",
+  };
+  const toolsets = { files: { enabled: false } };
+  const draft = draftFor({
+    skills: [skill],
+    builtin_skills: ["platform-operations"],
+    toolsets,
+  });
+  expect(draft.current.builtinSkills).toEqual(["platform-operations"]);
+  expect(draft.current.advanced).not.toContain("builtin_skills");
+  expect(draft.current.dirty).toBe(false);
+  act(() => draft.current.setBuiltinSkills([]));
+  expect(draft.current.dirty).toBe(true);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { builtin_skills: [], skills: [skill], toolsets },
+  });
+  act(() => draft.current.setBuiltinSkills(["platform-operations"]));
+  expect(draft.current.dirty).toBe(false);
+  expect(buildDraftConfig(draft.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: {
+      builtin_skills: ["platform-operations"],
+      skills: [skill],
+      toolsets,
+    },
+  });
+  act(() => draft.current.setAdvanced('{"builtin_skills": []}'));
+  expect(buildDraftConfig(draft.current, undefined, asIs).ok).toBe(false);
+});
+
 it("seeds media understanding from the saved configuration and publishes edits", () => {
   const draft = draftFor({
     media_understanding: { image: vision, video: null, audio: null },

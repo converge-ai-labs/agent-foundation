@@ -36,7 +36,7 @@ from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import stream_key
 from a13n_service.runs.tables import RunRow
-from a13n_service.settings import Database, ProcessRole, Settings
+from a13n_service.settings import Database, LocalProvisioning, ProcessRole, Provisioning, Settings
 from a13n_service.tenancy import credentials
 from a13n_service.tenancy.bootstrap import BootstrapInput, Bootstrapped, bootstrap
 from argon2 import PasswordHasher
@@ -299,6 +299,52 @@ async def executing(settings: Settings, service_app: Callable[..., FastAPI]) -> 
         yield served
 
 
+@asynccontextmanager
+async def _skill_service(settings: Settings, service_app: Callable[..., FastAPI], role: ProcessRole):
+    """Opt-in real primary environments for tests whose custom agents read builtin skills."""
+    settings = settings.model_copy(
+        update={
+            "provisioning": Provisioning(
+                local=LocalProvisioning(
+                    enabled=True,
+                    root=settings.objects.root.parent / "skill-environments",
+                )
+            ),
+            "worker": settings.worker.model_copy(update={"scan_seconds": 0.05, "authority_seconds": 0.05}),
+            "control": settings.control.model_copy(update={"scan_seconds": 0.05, "stream_refresh_seconds": 0.1}),
+        }
+    )
+    async with _serve(settings, role, service_app) as served:
+        provider = await served.client.post(
+            f"{served.api}/environment-providers",
+            json={"type": "local", "name": "Skill files"},
+        )
+        assert provider.status_code == 201, provider.text
+        template = await served.client.post(
+            f"{served.api}/environment-templates",
+            json={
+                "name": "Skill files",
+                "provider_id": provider.json()["id"],
+                "config": {"recipe": {"root": {"path": str(settings.provisioning.local.root)}}},
+            },
+        )
+        assert template.status_code == 201, template.text
+        served.skill_template_id = template.json()["id"]
+        yield served
+
+
+@pytest.fixture
+async def skill_service(settings: Settings, service_app: Callable[..., FastAPI]) -> AsyncIterator[SimpleNamespace]:
+    async with _skill_service(settings, service_app, "control") as served:
+        yield served
+
+
+@pytest.fixture
+async def skill_executing(settings: Settings, service_app: Callable[..., FastAPI]) -> AsyncIterator[SimpleNamespace]:
+    async with _skill_service(settings, service_app, "all") as served:
+        yield served
+
+
 class ScriptedModel:
     """An OpenAI-compatible Chat Completions endpoint answering each request with the next scripted turn.
 
@@ -424,9 +470,8 @@ QUESTION = {
 }
 
 
-# The builtin platform guide, and the configuration for `lookup`: a server-side tool that needs no environment
-# and changes nothing.
-GUIDE = "/platform-skills/platform-operations/SKILL.md"
+# Custom agents read the builtin guide from their primary environment; use skill_service/skill_executing.
+GUIDE = "/workspace/.agents/skills/platform-operations/SKILL.md"
 LOOKUP: dict[str, Any] = {
     "builtin_skills": ["platform-operations"],
     "toolsets": {"files": {"enabled": True}, "shell": {"enabled": False}},
@@ -464,6 +509,8 @@ async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
 
 
 async def add_agent(service: SimpleNamespace, name: str, model: str, **config: Any) -> dict[str, Any]:
+    if hasattr(service, "skill_template_id"):
+        config.setdefault("default_environment_template_id", service.skill_template_id)
     agent = await service.client.post(
         f"{service.api}/agents", json={"name": name.title(), "config": {"model": model, **config}}
     )

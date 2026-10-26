@@ -89,7 +89,10 @@ def test_configuration_has_canonical_idempotency_digest():
 
 
 @pytest.mark.parametrize("use_regex", [False, True])
-async def test_steering_retains_or_matches_the_accepted_configuration(service, scripted_model, runs_kit, use_regex):
+async def test_steering_retains_or_matches_the_accepted_configuration(
+    skill_service, scripted_model, runs_kit, use_regex
+):
+    service = skill_service
     agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     host = urlsplit(scripted_model.url).hostname
     rule = f"regex:{re.escape(host)}" if use_regex else host

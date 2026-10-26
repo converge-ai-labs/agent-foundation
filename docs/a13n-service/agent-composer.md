@@ -102,10 +102,12 @@ Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Fea
 
 Platform groups and the skill are not selected by default. Each tool keeps its own `permission`; `inherit` lets reads run and asks before writes. Select tools to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
 
-The `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. Find the agent configuration schema under `/platform-skills/platform-operations/schemas` and the deployment catalog under `/platform-instance`.
+For the built-in Agent Composer, the `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. Find the agent configuration schema under `/platform-skills/platform-operations/schemas` and the deployment catalog under `/platform-instance`.
 
 Enable `view`, `ls`, `glob` and `grep` to read the skill. Composer enables only these four file tools. Built-in document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
 
 ### Computer coordinate mode
 
 Choose pixel or relative coordinates in the [environment Computer configuration](environments.md#computer-coordinate-mode).
+
+Custom agents, including copies of Composer, place selected built-in skills in their primary environment using the ordinary [skill synchronization policy](skills.md#runtime-synchronization). Configure a default environment template or select a session environment before running them.

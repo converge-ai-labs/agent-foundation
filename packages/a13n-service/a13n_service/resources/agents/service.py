@@ -4,6 +4,7 @@ Every configuration a revision or a run freezes passes `validation.validate_conf
 definitions and the plugin factories the deployment installed.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
@@ -40,6 +41,7 @@ from a13n_service.resources.agents.schemas import (
 )
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow, PresetKind
 from a13n_service.resources.agents.validation import validate_config
+from a13n_service.resources.builtin_skills import BuiltinPackage, BuiltinSkillCatalog, BuiltinSkillName
 from a13n_service.resources.rows import audit_row, given
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
@@ -480,6 +482,14 @@ async def plugin_catalog(
     async with short_session(storage) as session:
         await workspace_scope(session, actor, workspace_id, "read")
     return describe_plugins(plugins)
+
+
+async def builtin_skill_catalog(
+    storage: Storage, actor: Principal, workspace_id: str, *, skills: Mapping[BuiltinSkillName, BuiltinPackage]
+) -> BuiltinSkillCatalog:
+    async with short_session(storage) as session:
+        await workspace_scope(session, actor, workspace_id, "read")
+    return BuiltinSkillCatalog(items=[skills[name].definition for name in sorted(skills)])
 
 
 async def validate_override(

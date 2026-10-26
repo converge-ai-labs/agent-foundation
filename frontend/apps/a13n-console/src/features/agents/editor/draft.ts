@@ -72,6 +72,7 @@ export function useAgentDraft(initial: AgentConfig) {
     [toolsets, setToolsets] = useState(initial.toolsets ?? {}),
     [reviewer, setReviewer] = useState(initial.reviewer),
     [skills, setSkills] = useState(initial.skills ?? []),
+    [builtinSkills, setBuiltinSkills] = useState(initial.builtin_skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []),
     [plugins, setPlugins] = useState(initial.plugins ?? []),
     [toolSearch, setToolSearch] = useState(
@@ -101,6 +102,8 @@ export function useAgentDraft(initial: AgentConfig) {
     settings !== initialSettingsText ||
     advanced !== advancedConfig(initial) ||
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
+    JSON.stringify([...builtinSkills].sort()) !==
+      JSON.stringify([...(initial.builtin_skills ?? [])].sort()) ||
     JSON.stringify(connections) !==
       JSON.stringify(initial.connection_tools ?? []) ||
     JSON.stringify(memory) !== JSON.stringify(initial.memory ?? {}) ||
@@ -133,6 +136,8 @@ export function useAgentDraft(initial: AgentConfig) {
     setReviewer,
     skills,
     setSkills,
+    builtinSkills,
+    setBuiltinSkills,
     connections,
     setConnections,
     plugins,
@@ -259,6 +264,7 @@ export function buildDraftConfig(
           model: draft.model,
           model_settings: modelSettings,
           skills: draft.skills,
+          builtin_skills: draft.builtinSkills,
           // Absent, not empty, while every kind inherits: the saved configuration stays silent.
           ...(mediaSelected(draft.mediaUnderstanding).length
             ? { media_understanding: draft.mediaUnderstanding }

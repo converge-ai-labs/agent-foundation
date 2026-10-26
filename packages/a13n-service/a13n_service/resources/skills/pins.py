@@ -1,6 +1,6 @@
 """Agent revisions pin exact skill revisions; a pin is validated when it is written."""
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +35,9 @@ async def require_pins(session: AsyncSession, workspace_id: str, pins: Mapping[s
                 raise conflict(SkillRow.KIND, pin.skill_id, "archived")
 
 
-async def require_distinct_names(session: AsyncSession, workspace_id: str, revisions: Mapping[str, str]) -> None:
+async def require_distinct_names(
+    session: AsyncSession, workspace_id: str, revisions: Mapping[str, str], *, reserved: Collection[str] = ()
+) -> None:
     """Pinned revisions, by the field path a failure names, declare distinct SKILL.md names: the model sees each
     skill of an agent by its name."""
     names = dict(
@@ -49,7 +51,7 @@ async def require_distinct_names(session: AsyncSession, workspace_id: str, revis
         .tuples()
         .all()
     )
-    seen: set[str] = set()
+    seen: set[str] = set(reserved)
     for path, revision_id in revisions.items():
         if (name := names.get(revision_id)) is None:
             continue

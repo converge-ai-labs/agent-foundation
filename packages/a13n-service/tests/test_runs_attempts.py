@@ -314,8 +314,11 @@ async def test_a_successor_waits_for_a_worker_that_reads_its_parents_checkpoint(
     assert lease.run_id == successor["id"]
 
 
-async def test_a_cancelled_attempt_still_records_its_usage(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_a_cancelled_attempt_still_records_its_usage(
+    skill_service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
     """Inline child charges persist before the parent's next checkpoint and survive cancellation."""
+    service = skill_service
     charged: set[str] = set()
     both = asyncio.Event()
     ingested = UsageBuffer.ingested_records
@@ -689,8 +692,9 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
 
 @pytest.mark.parametrize("question, failed", [(False, False), (True, False), (False, True)])
 async def test_takeover_keeps_external_answer_without_replaying_local_approval(
-    service, scripted_model, runs_kit, monkeypatch, question, failed
+    skill_service, scripted_model, runs_kit, monkeypatch, question, failed
 ) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     import json
 
     from a13n_service.runs.boundaries import Boundaries
@@ -797,8 +801,9 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
 
 
 async def test_slow_object_deletion_does_not_block_tool_boundaries_or_successor_acceptance(
-    service, scripted_model, runs_kit, monkeypatch
+    skill_service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
+    service = skill_service
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model, **runs_kit.LOOKUP)
     gate, deleting, finish_delete = asyncio.Event(), asyncio.Event(), asyncio.Event()

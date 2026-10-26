@@ -19,7 +19,7 @@ from a13n_service.resources.skills.package import Package, pack, read_package, v
 from a13n_service.runs import skills
 from a13n_service.runs.attempts import LeaseLost
 from a13n_service.runs.skill_cache import Cache
-from a13n_service.runs.skills import PinnedSkill, _PinnedSkills
+from a13n_service.runs.skills import SkillPackage, _SkillPackages
 
 pytestmark = pytest.mark.anyio
 
@@ -58,7 +58,7 @@ async def prove() -> None:
     pass
 
 
-async def published(files: Any, skill: PinnedSkill) -> bool:
+async def published(files: Any, skill: SkillPackage) -> bool:
     return (await skills._published(files, [skill]))[0]
 
 
@@ -67,18 +67,18 @@ async def evict(files: Any, digest: str) -> bool:
     return await Cache()._evict(files, digest)
 
 
-def materializer(monkeypatch: pytest.MonkeyPatch, content: bytes = b"first") -> tuple[_PinnedSkills, PinnedSkill]:
+def materializer(monkeypatch: pytest.MonkeyPatch, content: bytes = b"first") -> tuple[_SkillPackages, SkillPackage]:
     document = b"---\nname: review\ndescription: Review changes\n---\n" + content
     package = Package("review", "Review changes", "", {"SKILL.md": document, "scripts/check.py": content})
     digest = hashlib.sha256(pack(package.files)).hexdigest()
-    pinned = PinnedSkill(f"skr_{digest}", digest, package.name, package.description)
+    pinned = SkillPackage(f"skr_{digest}", digest, package.name, package.description)
 
     async def load(*args: Any) -> tuple[FileArchive, ...]:
         return (FileArchive(pack(package.files), tuple((name, len(data)) for name, data in package.files.items())),)
 
     monkeypatch.setattr(skills, "load_packages", load)
     runtime: Any = SimpleNamespace(storage=None, objects=None)
-    return _PinnedSkills((pinned,), runtime, "ws_test", prove, cache=Cache(), sync=IsolatedSkillSync()), pinned
+    return _SkillPackages((pinned,), runtime, "ws_test", prove, cache=Cache(), sync=IsolatedSkillSync()), pinned
 
 
 async def test_identical_publishers_race_without_rewriting_winner(files, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -247,14 +247,14 @@ async def test_cancelled_move_does_not_remove_candidate_still_being_published(fi
 async def test_hidden_skill_names_need_no_completion_marker(files, monkeypatch, name: str) -> None:  # type: ignore[no-untyped-def]
     package = read_package(pack({"SKILL.md": f"---\nname: '{name}'\ndescription: Test\n---\n".encode()}))
     digest = hashlib.sha256(pack(package.files)).hexdigest()
-    pinned = PinnedSkill("skr_hidden", digest, name, "Test")
+    pinned = SkillPackage("skr_hidden", digest, name, "Test")
 
     async def load(*args: Any) -> tuple[FileArchive, ...]:
         return (FileArchive(pack(package.files), tuple((name, len(data)) for name, data in package.files.items())),)
 
     monkeypatch.setattr(skills, "load_packages", load)
     runtime: Any = SimpleNamespace(storage=None, objects=None)
-    source = _PinnedSkills((pinned,), runtime, "ws_test", prove, cache=Cache(), sync=IsolatedSkillSync())
+    source = _SkillPackages((pinned,), runtime, "ws_test", prove, cache=Cache(), sync=IsolatedSkillSync())
     await source.materialize(files=files)
     assert await published(files, pinned)
     assert await files.read_bytes(f"{pinned.cached_directory}/SKILL.md") == package.files["SKILL.md"]
@@ -420,8 +420,8 @@ async def test_same_archive_reuses_cache_across_revision_ids(files, monkeypatch)
 
     source, pinned = materializer(monkeypatch)
     await source.materialize(files=files)
-    other = _PinnedSkills(
-        (replace(pinned, revision_id="skr_another"),),
+    other = _SkillPackages(
+        (replace(pinned, source="skr_another"),),
         source.runtime,
         "ws_test",
         prove,
@@ -542,7 +542,7 @@ async def test_parallel_packages_settle_before_failure_and_retry_only_missing(fi
         content = f"---\nname: {name}\ndescription: Test\n---\n".encode()
         archives[f"skr_{name}"] = FileArchive(pack({"SKILL.md": content}), (("SKILL.md", len(content)),))
     pins = tuple(
-        PinnedSkill(revision, hashlib.sha256(archive.content).hexdigest(), revision.removeprefix("skr_"), "Test")
+        SkillPackage(revision, hashlib.sha256(archive.content).hexdigest(), revision.removeprefix("skr_"), "Test")
         for revision, archive in archives.items()
     )
     loads = []
@@ -552,7 +552,7 @@ async def test_parallel_packages_settle_before_failure_and_retry_only_missing(fi
         return [archives[revision] for revision in revisions]
 
     monkeypatch.setattr(skills, "load_packages", load)
-    source = _PinnedSkills(
+    source = _SkillPackages(
         pins, SimpleNamespace(storage=None, objects=None), "ws", prove, cache=Cache(), sync=IsolatedSkillSync()
     )
     write = files.write_archive

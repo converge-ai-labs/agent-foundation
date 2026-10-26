@@ -50,7 +50,9 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
               <dt>{t("Capabilities")}</dt>
               <dd>
                 {t("{{skills}} skills · {{connections}} connections", {
-                  skills: file.config.skills?.length ?? 0,
+                  skills:
+                    (file.config.skills?.length ?? 0) +
+                    (file.config.builtin_skills?.length ?? 0),
                   connections: file.config.connection_tools?.length ?? 0,
                 })}
               </dd>

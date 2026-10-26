@@ -20,6 +20,7 @@ from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.tables import AgentSource, PresetKind
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets, platform_tools
+from a13n_service.resources.builtin_skills import BuiltinSkillName
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts, SessionMemorySettings
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
@@ -205,7 +206,7 @@ class AgentConfig(_Frozen):
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
     tool_search: ToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
-    builtin_skills: frozenset[Literal["platform-operations"]] = frozenset()
+    builtin_skills: frozenset[BuiltinSkillName] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     # Offers `ask_user_question`; a question makes the run wait for the next message.
     user_questions: bool = False
@@ -285,7 +286,7 @@ class AgentOverride(_Frozen):
     skill_sync: SkillSync | None = None
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
     tool_search: ToolSearch | None = None
-    builtin_skills: frozenset[Literal["platform-operations"]] | None = None
+    builtin_skills: frozenset[BuiltinSkillName] | None = None
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None

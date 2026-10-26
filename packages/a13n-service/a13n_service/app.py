@@ -48,7 +48,7 @@ from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_chan
 from a13n_service.runs.environments.monitoring.proxy import Proxy
 from a13n_service.runs.environments.monitoring.pull import run as run_collector
 from a13n_service.runs.execute import execute
-from a13n_service.runs.platform_files import open_platform_mounts
+from a13n_service.runs.platform_files import open_platform_files
 from a13n_service.runs.platform_tokens import RunAuthenticator
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import SessionHub
@@ -190,7 +190,7 @@ async def open_runtime(
         )
     )
     registry = _registry(distribution, config)
-    platform_mounts = await stack.enter_async_context(open_platform_mounts(registry, config))
+    platform_files = await stack.enter_async_context(open_platform_files(registry, config))
     objects = await open_objects(stack, config.objects)
     modal_transports = TransportPool()
     modal_transports.start()
@@ -215,7 +215,8 @@ async def open_runtime(
         keys=_key_ring(config.encryption),
         settings=config,
         registry=registry,
-        platform_mounts=platform_mounts,
+        platform_mounts=platform_files.mounts,
+        builtin_skills=platform_files.skills,
         modal_transports=modal_transports,
         metrics_queries=Queries(
             concurrency=config.monitoring.query_concurrency,

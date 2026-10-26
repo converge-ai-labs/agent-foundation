@@ -199,8 +199,7 @@
           "builtin_skills": {
             "default": [],
             "items": {
-              "const": "platform-operations",
-              "type": "string"
+              "$ref": "#/components/schemas/BuiltinSkillName"
             },
             "title": "Builtin Skills",
             "type": "array",
@@ -411,8 +410,7 @@
           "builtin_skills": {
             "default": [],
             "items": {
-              "const": "platform-operations",
-              "type": "string"
+              "$ref": "#/components/schemas/BuiltinSkillName"
             },
             "title": "Builtin Skills",
             "type": "array",
@@ -754,8 +752,7 @@
             "anyOf": [
               {
                 "items": {
-                  "const": "platform-operations",
-                  "type": "string"
+                  "$ref": "#/components/schemas/BuiltinSkillName"
                 },
                 "type": "array",
                 "uniqueItems": true
@@ -1013,8 +1010,7 @@
             "anyOf": [
               {
                 "items": {
-                  "const": "platform-operations",
-                  "type": "string"
+                  "$ref": "#/components/schemas/BuiltinSkillName"
                 },
                 "type": "array",
                 "uniqueItems": true
@@ -2772,6 +2768,43 @@
         ],
         "title": "BootstrapInput",
         "type": "object"
+      },
+      "BuiltinSkill": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/BuiltinSkillName"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "BuiltinSkill",
+        "type": "object"
+      },
+      "BuiltinSkillCatalog": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BuiltinSkill"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BuiltinSkillCatalog",
+        "type": "object"
+      },
+      "BuiltinSkillName": {
+        "const": "platform-operations",
+        "type": "string"
       },
       "BusyOccurrence": {
         "additionalProperties": false,
@@ -25991,6 +26024,65 @@
         "tags": [
           "auth"
         ]
+      }
+    },
+    "/api/v1/builtin-skills": {
+      "get": {
+        "description": "The skills bundled with this Service release, separately from workspace skill resources.",
+        "operationId": "list_builtin_skills",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuiltinSkillCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Builtin Skills",
+        "tags": [
+          "agents"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/connections": {
