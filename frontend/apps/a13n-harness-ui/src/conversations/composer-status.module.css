@@ -1,7 +1,8 @@
 .bar {
   width: 100%;
-  max-width: 860px;
+  max-width: 760px;
   margin: 4px auto 0;
+  padding-inline: 8px;
   flex-shrink: 0;
   min-width: 0;
 }

@@ -1638,10 +1638,10 @@
   overflow: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: 8px 12px;
+  padding: 2px 0 2px 14px;
   margin-block-start: 4px;
-  border-radius: 8px;
-  background: var(--a13n-surface);
+  margin-inline-start: 5px;
+  border-inline-start: 1px solid var(--a13n-border);
 }
 .executionContent:focus-visible {
   outline: 2px solid var(--a13n-focus);

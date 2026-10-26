@@ -164,7 +164,7 @@ export function MarkdownPre({
   return (
     <div className={styles.codeBlock}>
       <div className={styles.codeHeader}>
-        <span>{diagram ? "Mermaid" : language || "Code"}</span>
+        <span>{diagram ? "Mermaid" : language || "Text"}</span>
         <Button
           variant="ghost"
           size="sm"

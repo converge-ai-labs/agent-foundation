@@ -4,9 +4,10 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
-  max-width: 860px;
+  max-width: 760px;
   width: 100%;
   margin: 0 auto 6px;
+  padding-inline: 5px;
   color: var(--a13n-secondary);
   min-width: 0;
 }
