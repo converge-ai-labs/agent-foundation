@@ -46,6 +46,14 @@ from a13n_harness._handoff import (
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
+from a13n_harness.compaction import (
+    CompactionOperator,
+    CompactionPlan,
+    CompactionResult,
+    _validate_result,
+    apply_compaction,
+    compaction_tail,
+)
 from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.files import FileOperator
@@ -58,6 +66,7 @@ from a13n_harness.events import (
     ContextSnapshotPayload,
     emit_harness_event,
 )
+from a13n_harness.filters.image import ImageFilterCapability
 from a13n_harness.model_calls import ModelCallCheckError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -69,6 +78,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
     _requires_exact_boundary,
+    _requires_exact_history,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 from a13n_harness.tools.invocation import disabled_tool_execution
@@ -822,23 +832,56 @@ class CompactionPolicy(BaseModel):
     trigger_tokens: int = Field(gt=0)
 
 
+class _CompactionState(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    applied_operation_id: str | None = None
+    applied_plan_digest: str | None = None
+
+
 @dataclass(init=False)
 class CompactionCapability(AbstractCapability[AgentContext]):
     """Replace long history with a cache-friendly plain-text nested run."""
 
     id = COMPACTION_CAPABILITY_ID
 
-    def __init__(self, policy: CompactionPolicy | None = None) -> None:
+    def __init__(
+        self,
+        policy: CompactionPolicy | None = None,
+        *,
+        background: bool = False,
+        operator: CompactionOperator | None = None,
+        plan: CompactionPlan | None = None,
+        result: CompactionResult | None = None,
+    ) -> None:
         if policy is not None and not isinstance(policy, CompactionPolicy):
             policy = CompactionPolicy.model_validate(policy, strict=True)
+        if not isinstance(background, bool):
+            raise TypeError("background must be a boolean")
+        if background and not isinstance(operator, CompactionOperator):
+            raise DefinitionError(
+                "Background compaction requires a Host operator.", code="compaction_operator_required"
+            )
+        if not background and operator is not None:
+            raise DefinitionError(
+                "A compaction operator requires background mode.", code="compaction_operator_unexpected"
+            )
+        if (plan is None) != (result is None):
+            raise ValueError("Supply both the compaction plan and result.")
         self.policy = policy.model_copy(deep=True) if policy is not None else None
+        self.background = background
+        self.operator = operator
+        self._plan = plan
+        self._result = result
         self._depth = 0
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(
             position="innermost",
-            wraps=(ModelContextCoordinatorCapability,),
-            wrapped_by=(InputCapability, HandoffCapability),
+            wraps=() if self.background or self._plan is not None else (ModelContextCoordinatorCapability,),
+            wrapped_by=(InputCapability, HandoffCapability, ModelContextCoordinatorCapability, ImageFilterCapability)
+            if self.background or self._plan is not None
+            else (InputCapability, HandoffCapability),
         )
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
@@ -850,20 +893,172 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     code="capability_type_mismatch",
                 )
             return existing
-        replacement = CompactionCapability(self.policy)
+        replacement = CompactionCapability(
+            self.policy,
+            background=self.background,
+            operator=self.operator,
+            plan=self._plan,
+            result=self._result,
+        )
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
         return replacement
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
-        prepared = await self._compact_history(ctx, request_context)
-        if prepared is not request_context:
+        if self._plan is not None and self._result is not None:
+            prepared = await self.apply_result(ctx, request_context, self._plan, self._result)
+        elif self.background:
+            prepared = await self._background_history(ctx, request_context)
+        else:
+            prepared = await self._compact_history(ctx, request_context)
+        if prepared is not request_context and not (self.background or self._plan is not None):
             from a13n_harness.tools.discovery import finish_discovery_replacement
 
             ctx.messages[:] = prepared.messages
             await finish_discovery_replacement(ctx)
         return prepared
+
+    async def apply_result(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelRequestContext,
+        plan: CompactionPlan,
+        result: CompactionResult,
+    ) -> ModelRequestContext:
+        """Validate and apply ready work at an ordinary before-model boundary.
+
+        The same entry point serves active and next-Run application. The applied
+        marker is checkpoint provenance, never a Host persistence acknowledgement.
+        """
+        _validate_result(plan, result, ctx.deps.thread_id)
+        state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
+        if state is not None and state.applied_operation_id == plan.operation_id:
+            if state.applied_plan_digest != plan.digest:
+                raise DefinitionError("Compaction operation identity was reused.", code="compaction_result_mismatch")
+            return request
+        if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
+            return request
+        # Validate before discovery retention changes any runtime cache.
+        compaction_tail(plan, ctx.messages)
+        from a13n_harness.tools.discovery import finish_discovery_replacement, retain_discovery
+
+        discovery, names = await retain_discovery(ctx, request)
+        messages = apply_compaction(
+            plan, result, thread_id=ctx.deps.thread_id, messages=ctx.messages, retained_discovery=discovery
+        )
+        replacement = _replace_context_history(ctx, request, messages, names)
+        replacement = await _project_compaction_images(ctx, replacement)
+        if await _compaction_request_fits(ctx, replacement) is False:
+            raise DefinitionError(
+                "Compacted history still exceeds the model window.", code="compaction_capacity_exceeded"
+            )
+        # No suspension between recording transformation provenance and publishing
+        # the canonical history. Event listeners see both, even if they then fail.
+        await ctx.deps.state.write(
+            COMPACTION_CAPABILITY_ID,
+            _CompactionState(
+                applied_operation_id=plan.operation_id,
+                applied_plan_digest=plan.digest,
+            ),
+            version="1",
+        )
+        ctx.messages[:] = messages
+        await finish_discovery_replacement(ctx)
+        await emit_harness_event(
+            ctx.deps.events,
+            kind="context",
+            payload=ContextOperationCompletedPayload(
+                type="compaction_completed",
+                operation_id=plan.operation_id,
+            ),
+        )
+        await ctx.emit(CompactionSummaryEvent(operation_id=plan.operation_id, summary=result.summary))
+        await ctx.emit(ContextRestoredEvent(source="compact", operation_id=plan.operation_id))
+        return replacement
+
+    async def _background_history(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelRequestContext,
+    ) -> ModelRequestContext:
+        assert self.operator is not None
+        if ctx.deps._tool_executions.history_calls or _requires_exact_boundary(ctx, request.messages):
+            return request
+        operation = await self.operator.inspect(ctx.deps.thread_id)
+        if operation is None:
+            snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
+            if snapshot is None or not snapshot[2]:
+                return request
+            limits = ctx.usage_limits
+            if (
+                limits is not None
+                and limits.request_limit is not None
+                and limits.request_limit - ctx.usage.requests < 2
+            ):
+                return request
+            await ctx.deps._steering.resolve_delivered(ctx.messages)
+            # The outgoing request can still acquire native parts. Keep it and
+            # any tool batch crossing it in delta, never inside the fixed prefix.
+            cutoff = len(ctx.messages) - 1
+            while cutoff > 0 and _requires_exact_history(ctx.messages[:cutoff]):
+                cutoff -= 1
+            if cutoff <= 0:
+                return request
+            prefix = ctx.messages[:cutoff]
+            projected = await _project_compaction_images(ctx, _replace_messages(request, prefix))
+            retained = _compaction_replay_prefix(
+                ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
+                prefix,
+            )
+            plan = CompactionPlan.create(
+                operation_id=f"compaction-{token_urlsafe(9)}",
+                thread_id=ctx.deps.thread_id,
+                run_id=ctx.deps.run_id,
+                messages=prefix,
+                summary_messages=projected.messages,
+                retained_requests=retained,
+                model_id=request.model_id,
+                model_name=request.model.model_name,
+                provider_name=request.model.system,
+                parameters=request.model_request_parameters,
+                settings=request.model_settings,
+                request_limit=(limits.request_limit - ctx.usage.requests - 1)
+                if limits is not None and limits.request_limit is not None
+                else None,
+            )
+            operation = await self.operator.submit(plan)
+            await emit_harness_event(
+                ctx.deps.events,
+                kind="context",
+                payload=ContextOperationStartedPayload(
+                    type="compaction_started",
+                    operation_id=operation.plan.operation_id,
+                ),
+            )
+        if operation.plan.thread_id != ctx.deps.thread_id:
+            raise DefinitionError(
+                "Compaction operator returned another Thread's work.", code="compaction_result_mismatch"
+            )
+        if operation.status == "ready":
+            assert operation.result is not None
+            return await self.apply_result(ctx, request, operation.plan, operation.result)
+        if operation.status == "failed":
+            # A terminal record suppresses repeated generation on every turn.
+            if await _compaction_request_fits(ctx, request) is not True:
+                raise DefinitionError(
+                    "Compaction failed with no verified request capacity.", code="compaction_capacity_unavailable"
+                )
+            return request
+        compaction_tail(operation.plan, ctx.messages)
+        if await _compaction_request_fits(ctx, request) is True:
+            return request
+        completed = await self.operator.wait(ctx.deps.thread_id, operation.plan.operation_id)
+        if completed.plan.digest != operation.plan.digest:
+            raise DefinitionError("Compaction wait returned different work.", code="compaction_result_mismatch")
+        if completed.status != "ready" or completed.result is None:
+            raise DefinitionError("Compaction could not free context capacity.", code="compaction_capacity_unavailable")
+        return await self.apply_result(ctx, request, completed.plan, completed.result)
 
     async def _compact_history(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -970,6 +1165,70 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         replacement = _replace_context_history(ctx, request_context, messages, names)
         await ctx.emit(ContextRestoredEvent(source="compact", operation_id=operation_id))
         return replacement
+
+
+def _compaction_replay_prefix(
+    retained: tuple[ModelRequest, ...],
+    prefix: list[ModelMessage],
+) -> tuple[ModelRequest, ...]:
+    """Replay only inputs actually replaced, leaving post-cutoff inputs in delta."""
+
+    def present(request: ModelRequest) -> bool:
+        input_id = (request.metadata or {}).get("a13n.steering-input")
+        for message in prefix:
+            if not isinstance(message, ModelRequest):
+                continue
+            if input_id is not None:
+                if (message.metadata or {}).get("a13n.steering-input") == input_id:
+                    return True
+            elif message.run_id == request.run_id and any(
+                isinstance(part, UserPromptPart)
+                and isinstance(request.parts[0], UserPromptPart)
+                and part.content == request.parts[0].content
+                for part in message.parts
+            ):
+                return True
+        return False
+
+    return tuple(request for request in retained if present(request))
+
+
+async def _project_compaction_images(
+    ctx: RunContext[AgentContext], request: ModelRequestContext
+) -> ModelRequestContext:
+    # Image preparation is request-only. Reproject the new canonical prefix or
+    # replacement rather than persisting cropped/pruned images as history.
+    for capability in ctx.capabilities.values():
+        if isinstance(capability, ImageFilterCapability):
+            return await capability.before_model_request(ctx, request)
+    return request
+
+
+async def _compaction_request_fits(
+    ctx: RunContext[AgentContext],
+    request: ModelRequestContext,
+) -> bool | None:
+    """Use native counting on the actual outgoing request, never lagging usage.
+
+    Unknown counting/window/output reserve conservatively blocks overlap. Native
+    provider limits still govern dispatch when exact counting is unavailable.
+    """
+    window = request.model.context_window
+    if window is None and ctx.deps.model_characteristics is not None:
+        window = ctx.deps.model_characteristics.context_window_tokens
+    reserve = (request.model_settings or {}).get("max_tokens")
+    if window is None or not isinstance(reserve, int) or reserve <= 0:
+        return None
+    try:
+        async with asyncio.timeout(5):
+            usage = await request.model.count_tokens(
+                request.messages,
+                request.model_settings,
+                request.model_request_parameters,
+            )
+    except (NotImplementedError, TimeoutError):
+        return None
+    return usage.input_tokens + reserve <= window
 
 
 def _replace_context_history(

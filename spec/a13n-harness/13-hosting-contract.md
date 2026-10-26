@@ -25,6 +25,8 @@ The Host also owns durable acceptance, durable execution attempts, leases, check
 
 For optional [retained tool execution](07-tool-execution.md#host-held-tool-executions), Harness implements the process-local runtime, storage interface and default memory store. The Host holds the runtime across Runs, binds exact Thread authority, selects retention/persistence and completion delivery, and joins retained scopes before closing shared collaborators. Host-owned lifecycle does not require a second executor. Persistent records do not transfer live invocation ownership to another worker. A Host can bind a per-Thread `CodeActStateOwner` for late explicit-state writes; exported checkpoints remain detached values.
 
+For optional [background compaction](09-context-and-memory.md#background-execution-and-result-application), the Host supplies `CompactionOperator` and fresh model-request authority. Harness owns plan capture, summary generation/retry and result application. The Host owns admission, aggregate usage budgets, independent task lifetime, retained results and notification. Ready results are applied at an active or subsequent Run's model boundary; persistence acknowledgement remains a separate Host action.
+
 ## Definition Mapping
 
 ```mermaid

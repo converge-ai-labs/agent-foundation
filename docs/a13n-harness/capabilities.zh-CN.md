@@ -118,7 +118,7 @@ executable = HarnessBuilder(
 | `DocumentsCapability`          | 文档转换 Toolset                                                     | `RunBindings.document_converter`                     |
 | `WebCapability`                | 搜索、获取和抓取 Toolset                                             | 具有当前客户端和策略的 `WebBinding`                  |
 | `HandoffCapability`            | 显式 `summarize` 工具和续接提醒                                      | 否                                                   |
-| `CompactionCapability`         | provider 用量触发的同 Agent 纯文本压缩，重放保留用户输入             | 否                                                   |
+| `CompactionCapability`         | 用量触发的同步或后台压缩，重放保留的输入                             | 后台：`CompactionOperator`；同步：无需               |
 | `SubagentCapability`           | 明确声明的子 Agent 的内联或异步执行                                  | 异步：定义选择的 `SubagentOperator`；内联：无需      |
 | `CodeActCapability`            | 受限 Python runner 和显式键到 JSON 存储值                            | 明确选定的适用工具，以及用于程序的环境文件           |
 | `ContextualMCP`                | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次                        | Harness 提供的当前 `AgentContext`                    |

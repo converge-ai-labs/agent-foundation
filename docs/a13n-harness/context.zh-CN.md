@@ -116,6 +116,36 @@ flowchart TD
 
 需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
+### 后台压缩
+
+Host 可以独立于前台 Run 执行总结生成：
+
+```python
+from a13n_harness.compaction import CompactionOperator
+
+
+def background_compaction(operator: CompactionOperator) -> CompactionCapability:
+    return CompactionCapability(background=True, operator=operator)
+```
+
+在 operator 中实现 `submit(plan)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。提交总结的 Run 关闭后，后台执行仍应继续。每个 Thread 同时只接纳一个未确认的操作，先保存就绪结果再通知，读取结果不消费结果。使用 `generate_compaction(plan, request)` 执行总结协议与有界瞬态重试。请求回调使用新的 Host 模型调用授权，并统计每次尝试；不要捕获父 Run 的 Agent、资源或可变用量对象。
+
+Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。容量未知或不足时，Harness 等待同一个操作。若合并后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
+
+在后续 Run 中提供已就绪结果时，无需自行合并历史：
+
+```python
+from a13n_harness.compaction import CompactionPlan, CompactionResult
+
+
+def ready_compaction(plan: CompactionPlan, result: CompactionResult) -> CompactionCapability:
+    return CompactionCapability(plan=plan, result=result)
+```
+
+使用这个 Capability 构建 executable，并传入最新保存的 `HarnessState` 运行。Harness 在替换上下文前验证 Thread、操作、plan 摘要及历史前缀一致性，并在 `a13n.compaction` 状态命名空间记录 `applied_operation_id` 和 `applied_plan_digest`。先保存返回状态，再清理 Host 保留的就绪结果。重新交付同一结果时，已保存的标记会阻止重复应用。恢复事件本身不是保存确认。
+
+Plan 包含编码后的原生历史、重放输入、请求参数和 JSON 模型设置，应按机密执行数据保存。凭据和连接策略保留在新的 Host 请求回调中。`apply_compaction` 也提供经过验证的纯历史转换；Capability 额外负责规范历史写回与恢复事件。Service 和 Harness UI 需要各自接入 operator 与持久化流程后才能启用此模式。
+
 ## Handoff 与自动压缩
 
 续接总结保留仍需使用的 Skill 路径与作用。恢复时，若完整内容已不可用，应重新读取。

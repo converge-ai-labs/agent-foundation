@@ -118,7 +118,7 @@ Video input support is built in, not an optional definition Capability. The mode
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `RunBindings.document_converter`                               |
 | `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebBinding` with current client and policy                    |
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
-| `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
+| `CompactionCapability`         | Usage-triggered synchronous or background compaction with retained input replay             | Background: `CompactionOperator`; synchronous: none            |
 | `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Async: definition-selected `SubagentOperator`; inline: none    |
 | `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical Run                       | Current `AgentContext` supplied by the Harness                 |

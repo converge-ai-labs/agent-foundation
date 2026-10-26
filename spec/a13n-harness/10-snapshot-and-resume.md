@@ -23,6 +23,8 @@ flowchart LR
     Host -->|selected state and fresh bindings| Run2[New Harness Run]
 ```
 
+[Background compaction](09-context-and-memory.md#background-execution-and-result-application) records applied transformation provenance in `a13n.compaction`. The Host saves that marker together with its corresponding canonical history before retiring the ready result. Restoring an older checkpoint permits reapplication; restoring the saved marker makes duplicate delivery a no-op. A result never replaces an entire older `HarnessState`, and completion does not mutate an already exported checkpoint.
+
 ## Live Continuation
 
 A Live Run exports native conversation messages and the same portable Capability and Environment state as an ordinary Run. Active export refreshes accepted native history, including sent text that has not received a provider reply. Session teardown settles interrupted history before terminal export. `audio_retention` defaults to native `transcript_only`; opting into input/output audio or `all` changes retained message data, not the semantic event channel.

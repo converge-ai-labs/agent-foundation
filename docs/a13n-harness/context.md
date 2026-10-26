@@ -116,6 +116,36 @@ The summary request uses the same Agent and complete history. The summary replac
 
 Select `HandoffCapability()` when you also want the `summarize` tool for explicit handoffs. Its default reminder starts at 65% of the context window. Both Capabilities are opt-in; threshold configuration alone enables neither.
 
+### Background compaction
+
+A Host can run summary generation independently of the foreground Run:
+
+```python
+from a13n_harness.compaction import CompactionOperator
+
+
+def background_compaction(operator: CompactionOperator) -> CompactionCapability:
+    return CompactionCapability(background=True, operator=operator)
+```
+
+Implement `submit(plan)`, `inspect(thread_id)` and `wait(thread_id, operation_id)` on the operator. Keep execution alive after the submitting Run closes. Admit one unacknowledged operation per Thread, save ready results before notification, and make reads non-consuming. Use `generate_compaction(plan, request)` for the summary protocol and bounded transient retries. The request callback uses fresh Host model authority and accounts for each attempt; it must not capture the parent Run's Agent, resources or mutable usage.
+
+Harness freezes a complete prefix before the outgoing request. When the summary is ready, Harness replaces that prefix and preserves all later native messages, including tool results and steering. It applies at the next eligible model boundary. Concurrent foreground progress requires native token counting, a known context window and an explicit `max_tokens` reserve. When that capacity is unknown or insufficient, Harness waits for the same operation. It rejects a known oversized merged request instead of trimming recent work.
+
+For a ready result supplied on a subsequent Run, no custom history merge is needed:
+
+```python
+from a13n_harness.compaction import CompactionPlan, CompactionResult
+
+
+def ready_compaction(plan: CompactionPlan, result: CompactionResult) -> CompactionCapability:
+    return CompactionCapability(plan=plan, result=result)
+```
+
+Build the executable with this Capability and run it with the latest saved `HarnessState`. Harness validates the Thread, operation, plan digest and unchanged prefix before replacing context. It records `applied_operation_id` and `applied_plan_digest` in the `a13n.compaction` state namespace. Save the returned state before retiring the Host's ready result. Re-delivery with that saved marker is a no-op. A restoration event alone is not a save acknowledgement.
+
+Plans contain encoded native history, replay inputs, request parameters and JSON model settings. Store them as confidential execution data. Keep credentials and connection policy in the fresh Host request callback. `apply_compaction` is also available for a pure validated history transformation; the Capability adds canonical runtime writeback and restoration events. Service and Harness UI require their own operator and persistence integration to enable this mode.
+
 ## Handoff versus automatic compaction
 
 A continuation summary carries the paths and roles of Skills still needed. Reread them on resume when their full content is no longer available.
