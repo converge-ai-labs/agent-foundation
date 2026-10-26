@@ -444,7 +444,7 @@ def test_mismatched_ui_pins_are_blocked_without_writes(tmp_path: Path) -> None:
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.2.0,<0.3.0"),
         ("a13n-service", "a13n-service", "a13n-logging", ">=0.2.0,<0.3.0"),
-        ("a13n-service", "a13n-service", "a13n-envd-client", ">=0.4.1,<0.5.0"),
+        ("a13n-service", "a13n-service", "a13n-envd-client", ">=0.5.1,<0.6.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-envd-client", ">=0.5.1,<0.6.0"),
     ],
 )
@@ -536,7 +536,7 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.1.0", ">=0.13.0,<0.14.0"),
+        ("a13n-service", "0.1.0", ">=0.21.0,<0.22.0"),
         ("a13n-harness-ui", "0.21.0", "==0.21.0"),
     ],
 )
