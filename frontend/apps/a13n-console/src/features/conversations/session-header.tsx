@@ -16,6 +16,7 @@ import {
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
   PencilSimpleIcon,
+  SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
@@ -32,6 +33,7 @@ import { useRunCollapseAll } from "./transcript/debug/collapse";
 import { useThreadRuns } from "./transcript/thread-runs";
 import { SessionUsage } from "./session-usage";
 import { ThreadBranches } from "./thread-branches";
+import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
 import { sessionTitle } from "./session-identity";
@@ -60,20 +62,18 @@ export function SessionHeader({
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
   const agent = useAgent(valid ? run.data?.agent_id : undefined);
-  const { runs } = useThreadRuns(threadId);
+  const { total } = useThreadRuns(threadId);
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
   const [editing, setEditing] = useState(false);
   const title = session.data && sessionTitle(session.data);
+  const [execution, setExecution] = useState(false);
   const debugSession = isConsoleSession(session.data);
   // Delegated children retain their execution breadcrumb beside thread switching.
   const child = thread?.origin === "child";
   // How this session started reads the same at both levels.
   const note = debugSession
-    ? [
-        t("Debug session"),
-        runs.length ? t("{{count}} runs", { count: runs.length }) : null,
-      ]
+    ? [t("Debug session"), total ? t("{{count}} runs", { count: total }) : null]
         .filter(Boolean)
         .join(" · ")
     : run.data?.schedule_origin
@@ -210,6 +210,12 @@ export function SessionHeader({
               {t("Environments and memory")}
             </MenuItem>
           )}
+          {thread && can("run") && !thread.archived_at && (
+            <MenuItem onClick={() => setExecution(true)}>
+              <SlidersHorizontalIcon size={14} aria-hidden="true" />
+              {t("Execution policy")}
+            </MenuItem>
+          )}
           {can("read") && (
             <MenuItem
               render={
@@ -233,6 +239,13 @@ export function SessionHeader({
           thread={thread}
           open={mounts}
           onOpenChange={setMounts}
+        />
+      )}
+      {execution && thread && (
+        <ThreadExecutionDialog
+          key={thread.id}
+          thread={thread}
+          onClose={() => setExecution(false)}
         />
       )}
       {editing && session.data && (

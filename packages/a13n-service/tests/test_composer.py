@@ -45,7 +45,8 @@ async def test_provider_configuration_suspends_and_accepts_only_the_client_resul
     assert waiting.status == "suspended"
     assert waiting.deferred is not None and waiting.state is not None
     assert waiting.deferred.approvals == []
-    [call] = waiting.deferred.calls
+    [entry] = waiting.deferred.calls
+    call = entry.target_call
     assert call.tool_name == "configure_provider" and call.args_as_dict() == arguments
     resumed = await executable.run(
         bindings=RunBindings.embedded(),

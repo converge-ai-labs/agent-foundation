@@ -138,6 +138,9 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
       <p className={styles.scope}>
         Recorded conversation usage · auxiliary models included
       </p>
+      <a href={`/usage?thread_id=${encodeURIComponent(usage.thread_id)}`}>
+        Open analytics
+      </a>
       <dl className={styles.numbers}>
         <dt>Total tokens</dt>
         <dd>

@@ -1,5 +1,9 @@
 import { Button } from "a13n-ui";
-import { ArrowDownIcon, ArrowUpIcon } from "@phosphor-icons/react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ArrowsDownUpIcon,
+} from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
@@ -7,7 +11,7 @@ import { ResourceTable } from "../../shared/collection";
 import { CopyButton, Identifier } from "../../shared/identity";
 import { InlineLoading, Timestamp } from "../../shared/feedback";
 import { UNKNOWN } from "../../shared/unknown";
-import { compareObservations, type ObservationSort } from "./sorting";
+import { type ObservationSort } from "./sorting";
 import { costColumnFormat } from "../../shared/cost";
 import { runPath, traceCorrelation } from "./correlation";
 import { Duration, LevelPill } from "./values";
@@ -17,29 +21,56 @@ export function TraceTable({
   items,
   basePath,
   costs,
-  order,
-  onOrderChange,
+  sort,
+  onSortChange,
 }: {
   /** Trace roots, one per attempt. */
   items: readonly Schema["Span"][];
   basePath: string;
   /** Reported cost per trace; undefined while the costs load. */
   costs: Readonly<Record<string, string | null>> | undefined;
-  order: ObservationSort["direction"];
-  onOrderChange: (order: ObservationSort["direction"]) => void;
+  sort: ObservationSort;
+  onSortChange: (sort: ObservationSort) => void;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const sorted = [...items].sort((a, b) =>
-    compareObservations(a, b, { field: "started", direction: order }),
-  );
   const cost = costColumnFormat(Object.values(costs ?? {}));
   const detailUrl = (id: string) =>
     `${basePath}/traces/${encodeURIComponent(id)}`;
-  const OrderIcon = order === "asc" ? ArrowUpIcon : ArrowDownIcon;
+  const sortHeader = (field: ObservationSort["field"], label: string) => {
+    const active = sort.field === field;
+    const Icon = !active
+      ? ArrowsDownUpIcon
+      : sort.direction === "asc"
+        ? ArrowUpIcon
+        : ArrowDownIcon;
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className={styles.sortButton}
+        title={t("Sorts all matching traces in the selected time range.")}
+        onClick={() =>
+          onSortChange({
+            field,
+            direction: active && sort.direction === "desc" ? "asc" : "desc",
+          })
+        }
+      >
+        {t(label)}
+        <Icon size={12} aria-hidden="true" />
+      </Button>
+    );
+  };
+  const ariaSort = (field: ObservationSort["field"]) =>
+    sort.field !== field
+      ? ("none" as const)
+      : sort.direction === "asc"
+        ? ("ascending" as const)
+        : ("descending" as const);
   return (
     <ResourceTable
-      items={sorted}
+      items={items}
       caption={t("Traces")}
       className={styles.traceTable}
       onRowActivate={(item) => navigate(detailUrl(item.trace_id))}
@@ -77,12 +108,16 @@ export function TraceTable({
           label: t("Duration"),
           align: "right",
           dataColumn: "duration",
+          ariaSort: ariaSort("duration"),
+          header: sortHeader("duration", "Duration"),
           render: (item) => <Duration observation={item} />,
         },
         {
           label: t("Cost"),
           align: "right",
           dataColumn: "cost",
+          ariaSort: ariaSort("cost"),
+          header: sortHeader("cost", "Cost"),
           render: (item) =>
             costs ? (
               <span
@@ -99,19 +134,8 @@ export function TraceTable({
         {
           label: t("Started"),
           dataColumn: "started",
-          ariaSort: order === "asc" ? "ascending" : "descending",
-          header: (
-            <Button
-              variant="ghost"
-              size="sm"
-              className={styles.sortButton}
-              title={t("Sorts the traces on this page only.")}
-              onClick={() => onOrderChange(order === "desc" ? "asc" : "desc")}
-            >
-              {t("Started")}
-              <OrderIcon size={12} aria-hidden="true" />
-            </Button>
-          ),
+          ariaSort: ariaSort("started"),
+          header: sortHeader("started", "Started"),
           render: (item) => <Timestamp value={item.started_at} />,
         },
       ]}

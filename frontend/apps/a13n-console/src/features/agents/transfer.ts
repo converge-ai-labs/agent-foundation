@@ -27,12 +27,20 @@ export interface AgentFile {
 export function agentFile(
   agent: Pick<AgentFile, "name" | "description">,
   config: AgentConfig,
+  builtinInstructions?: string | null,
 ): AgentFile {
   return {
     schema_version: AGENT_FILE_VERSION,
     name: agent.name,
     description: agent.description,
-    config,
+    config: builtinInstructions
+      ? {
+          ...config,
+          instructions:
+            builtinInstructions +
+            (config.instructions ? "\n\n" + config.instructions : ""),
+        }
+      : config,
   };
 }
 

@@ -10,6 +10,18 @@ import httpx2
 # Connector and host transports never honour a delay longer than this.
 MAX_RETRY_AFTER_SECONDS = 3600.0
 OUTBOUND_TLS_VERIFY_ENV = "A13N_OUTBOUND_TLS_VERIFY"
+FORWARD_CONTEXT_HEADERS_ENV = "A13N_HARNESS_FORWARD_CONTEXT_HEADERS"
+
+
+def forward_context_headers_default() -> bool:
+    """Resolve the default for an omitted context-header forwarding parameter."""
+    value = os.environ.get(FORWARD_CONTEXT_HEADERS_ENV)
+    if value is None:
+        return True
+    normalized = value.strip().lower()
+    if normalized not in {"true", "false"}:
+        raise ValueError(f"{FORWARD_CONTEXT_HEADERS_ENV} must be true or false")
+    return normalized == "true"
 
 
 def outbound_tls_verify() -> bool:

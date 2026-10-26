@@ -68,7 +68,12 @@ For each logical run the Host can construct `RunBindings` with:
 - optional model-context middleware;
 - an optional [state store](10-snapshot-and-resume.md#host-state-store) for large content and retained inline child states;
 - fresh run Capabilities required by definition-selected features;
-- bounded non-authoritative metadata.
+- bounded non-authoritative metadata;
+- an optional typed `RequestContext` carrying explicit business request headers.
+
+`RunBindings.request_context` defaults to an empty `RequestContext`. Its headers are a detached read-only string mapping with lower-case, case-insensitively unique names. `AgentContext.request_context` exposes the same value to trusted tools and Capabilities. It is separate from metadata and has no automatic prompt, history, log, tool-result or shell-environment projection. Inline children inherit it. Hosts that schedule independent children supply the inherited context explicitly.
+
+Request context is a runtime binding, outside `HarnessState`. A Host reconstructs it for each execution attempt and defines persistence, resume and new-message semantics. Restoring a checkpoint alone does not restore headers. Shared model Provider `forward_context_headers` uses `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` when omitted, resolved when constructing the configuration rather than at module import. Unset means true; values are case-insensitive `true` or `false` with surrounding whitespace ignored; invalid values raise a configuration error. Explicit booleans take precedence, and Provider normalization preserves an explicit value even when it equals the current default. Hosts can reuse `a13n_harness.http.forward_context_headers_default()` for their transport configuration defaults. Automatic outbound forwarding belongs to explicit Host model and MCP integration, including precedence, target policy and redirect handling; other networking tools receive no implicit headers.
 
 An embedded caller can omit `RunBindings`; Harness creates fresh embedded bindings. Environment selection is independent from the remaining bindings: the caller passes one Host-owned `EnvironmentSource` or `EnvironmentMount` through `environment=`, or a named mapping through `environments=`. Provider keys, specifications, Provider objects, state envelopes, and lifecycle policy are not Harness Run inputs.
 

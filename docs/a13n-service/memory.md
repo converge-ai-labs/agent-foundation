@@ -88,6 +88,8 @@ The agent can continue in the same run: call `memory_file_view`, reconsider the 
 
 Threads **mount** memories under names. Each run freezes the thread's memory mounts when it is accepted, sees each memory's context or recalled records at its start, and changes the memories through the `memory_file_*` and `memory_record_*` tools.
 
+For a standalone file memory, [create it](#create-a-file-memory), [mount it on a thread](#mount-a-memory-on-a-thread), then ask the agent to save and read back a small fact. Inspect the saved file and its author in [Files and history](#files-and-history); restore a revision there when needed. Deleting the memory also deletes its history, so keep a separate backup before deletion.
+
 ## Create a file memory
 
 Creating and changing memories needs `write`:

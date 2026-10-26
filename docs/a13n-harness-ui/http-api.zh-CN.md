@@ -337,6 +337,12 @@ Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `
 
 `GET /api/openapi.json`、`/healthz`、`/readyz` 及静态导航和资源，是 schema 未列出的其他边界。只有 App 启用原生共享时，`features.host_files` 才为 true。共享已启用且可找到 Git 可执行文件时，`features.host_git` 为 true。`features.host_terminal` 报告原生 POSIX 终端可用性。`features.shared_drafts` 报告内存共享输入协议支持情况。`features.page_presence` 报告临时页面在线状态，与原生共享独立。
 
+## 订阅账户与共享
+
+管理[原生账户和分组](models-and-authentication.md#account-store-locations)时，用 `GET /api/subscriptions` 读取目录，`POST /api/subscriptions/accounts` 创建账户。`GET`、`PATCH` 和 `DELETE /api/subscriptions/accounts/{account_id}` 分别查看、重命名/启停或删除该身份。账户操作通过 `/logout`、`/refresh` 和 `/reset` 上的 `POST` 发起；`GET /reset-vouchers` 查看可用 Codex 重置券。重置是显式兑换，与刷新用量分开。`GET /api/subscriptions/copilot/usage` 读取所选 Copilot 账户额度。按提供方访问的 `/api/auth/accounts/{provider}` 路由仍然可用。
+
+共享管理使用实例凭据：`GET /api/shares` 按 `scope` 和 `target_id` 列出授权，`POST /api/shares` 创建链接，`PATCH /api/shares/{share_id}` 修改权限，`DELETE /api/shares/{share_id}` 撤销授权。创建只返回一次链接密钥；响应未知时，先查看已有授权再创建。访客密钥只授予共享范围内的访问，不能管理链接或实例设置。权限与到期规则见 [WebUI 共享](webui.md)，请求体见 OpenAPI。
+
 ## Skill 目录与引用
 
 `POST /api/threads/skills-preview` 接受 `NewThreadDefaults`，返回 `SkillCatalogView`，不创建 Thread。`GET /api/threads/{thread_id}/skills` 返回空闲 Thread 的下次 Run 目录，或活跃 Run 的固定目录。`POST /api/threads/{thread_id}/skills` 接受 `EnvironmentSelectionPatch`，预览仅适用于本次 Run 的本地根目录选择，不修改 Thread；活跃 Run 仍返回固定目录。条目暴露 `item_id`、`name`、`description`、`source_id` 和 `logical_path`；响应包含 `catalog_id` 和 `context_kind`。

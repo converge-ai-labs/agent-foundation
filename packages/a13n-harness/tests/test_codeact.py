@@ -851,6 +851,19 @@ async def test_codeact_failure_metadata_tracks_started_calls_without_replay(star
             assert payload["codeact"]["status"] == "failed"
             assert payload["codeact"]["tool_call_count"] == int(start_tool)
             assert payload["codeact"]["side_effect_uncertain"] is start_tool
+            assert payload["codeact"]["omitted_call_count"] == 0
+            assert payload["codeact"]["calls"] == (
+                [
+                    {
+                        "call_id": payload["codeact"]["execution_id"] + ":1",
+                        "ordinal": 1,
+                        "canonical_tool_name": "record",
+                        "outcome": "completed",
+                    }
+                ]
+                if start_tool
+                else []
+            )
             assert payload["error"]["type"] == "MontyRuntimeError"
             assert "private-value-not-for-diagnostics" not in str(returned.content)
             yield "handled"
@@ -865,6 +878,123 @@ async def test_codeact_failure_metadata_tracks_started_calls_without_replay(star
     assert result.output_or_raise() == "handled"
     assert requests == 2
     assert calls == ([7] if start_tool else [])
+
+
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+@pytest.mark.parametrize(
+    ("failure_phase", "catch_error"),
+    [("arguments", False), ("body", False), ("hook", False), ("body", True)],
+)
+@pytest.mark.parametrize("prior_success", [False, True])
+async def test_codeact_validation_failure_settles_started_calls(
+    tmp_path: Path, runner: str, failure_phase: str, catch_error: bool, prior_success: bool
+) -> None:
+    from pydantic import TypeAdapter
+
+    effects: list[str] = []
+    requests = 0
+
+    def record() -> None:
+        effects.append("record")
+
+    def target(value: int) -> int:
+        effects.append("target")
+        if failure_phase == "body":
+            TypeAdapter(int).validate_python("private-validation-value")
+        return value
+
+    class ValidateResult(AbstractCapability):
+        async def after_tool_execute(self, ctx, *, call, tool_def, args, result):
+            if call.tool_name == "target" and failure_phase == "hook":
+                TypeAdapter(int).validate_python("private-validation-value")
+            return result
+
+    code = "await record()\n" if prior_success else ""
+    code += "await target(value='invalid')" if failure_phase == "arguments" else "await target(value=7)"
+    if catch_error:
+        code = (
+            "try:\n"
+            + "\n".join("    " + line for line in code.splitlines())
+            + "\nexcept RuntimeError as exc:\n    error = str(exc)\nerror"
+        )
+    if runner == "run_code":
+        arguments = {"code": code}
+    else:
+        lines = code.splitlines()
+        if catch_error:
+            lines[-1] = "return " + lines[-1]
+        (tmp_path / "job.codeact.py").write_text(
+            "async def main(inputs):\n" + "\n".join("    " + line for line in lines) + "\n",
+            encoding="utf-8",
+        )
+        arguments = {"path": "/workspace/job.codeact.py"}
+    started_count = int(prior_success) + int(failure_phase != "arguments")
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests == 1:
+            yield {0: DeltaToolCall(name=runner, json_args=json.dumps(arguments), tool_call_id="validation-failure")}
+        else:
+            returned = _tool_returns(messages, runner)[-1]
+            if catch_error:
+                assert returned.outcome == "success"
+                assert returned.content == "Nested tool 'target' failed with ValidationError"
+            else:
+                assert returned.outcome == "failed"
+                payload = json.loads(str(returned.content))
+                assert payload["codeact"]["tool_call_count"] == started_count
+                assert payload["codeact"]["side_effect_uncertain"] is (started_count > 0)
+                assert payload["codeact"]["omitted_call_count"] == 0
+                assert [(call["canonical_tool_name"], call["outcome"]) for call in payload["codeact"]["calls"]] == (
+                    ([("record", "completed")] if prior_success else [])
+                    + ([] if failure_phase == "arguments" else [("target", "failed")])
+                )
+            assert "private-validation-value" not in str(returned.content)
+            yield "handled"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 0}),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            CodeActCapability(),
+            _codeact_tools(record, target, allowed=("record", "target")),
+            ValidateResult(),
+        ),
+    )
+    payloads: list[dict[str, Any]] = []
+    async with executable.stream(
+        "handle validation failure", bindings=RunBindings.embedded(environment=_local_environment(tmp_path))
+    ) as stream:
+        async for item in stream:
+            if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
+                if item.event.kind == "diagnostic":
+                    payloads.append(item.event.payload)
+
+    assert stream.result is not None
+    assert stream.result.output_or_raise() == "handled"
+    assert requests == 2
+    assert effects == (["record"] if prior_success else []) + ([] if failure_phase == "arguments" else ["target"])
+    started = [payload for payload in payloads if payload["type"] == "codeact_tool_call_started"]
+    completed = [payload for payload in payloads if payload["type"] == "codeact_tool_call_completed"]
+    assert len(started) == len(completed) == started_count
+    assert [payload["nested_tool_call_id"] for payload in completed] == [
+        payload["nested_tool_call_id"] for payload in started
+    ]
+    assert [payload["outcome"] for payload in completed] == (["completed"] if prior_success else []) + (
+        [] if failure_phase == "arguments" else ["failed"]
+    )
+    if failure_phase != "arguments":
+        assert completed[-1]["error_type"] == "ValidationError"
+        assert completed[-1]["side_effect_uncertain"] is True
+        assert completed[-1]["duration_ms"] >= 0
+    execution = next(payload for payload in payloads if payload["type"] == "codeact_execution_completed")
+    assert execution["status"] == ("completed" if catch_error else "failed")
+    assert execution["call_count"] == started_count
+    assert execution["side_effect_uncertain"] is (not catch_error and started_count > 0)
+    assert "private-validation-value" not in json.dumps(payloads)
 
 
 async def test_background_runner_keeps_real_nested_values_and_publishes_late_state() -> None:
@@ -1087,3 +1217,133 @@ async def test_inline_session_lease_covers_result_validation_and_busy_restart():
             await state.execute_inline("saved", finish=result, **options)
     finally:
         await state.close()
+
+
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+@pytest.mark.parametrize("failure", ["concurrent", "timeout", "deferred"])
+async def test_codeact_failure_projects_settled_calls(tmp_path: Path, runner: str, failure: str) -> None:
+    import asyncio
+
+    released = asyncio.Event()
+    effects: list[str] = []
+    completion_order: list[str] = []
+    requests = 0
+
+    async def first(value: str) -> str:
+        effects.append(value)
+        if failure == "concurrent":
+            await released.wait()
+        completion_order.append("first")
+        return "private-return-value"
+
+    async def second() -> None:
+        effects.append("second")
+        if failure == "timeout":
+            await asyncio.Event().wait()
+        if failure == "deferred":
+            raise CallDeferred()
+        completion_order.append("second")
+        released.set()
+
+    if failure == "concurrent":
+        code = "import asyncio\nawait asyncio.gather(first(value='private-argument'), second())\n1 / 0"
+    else:
+        code = "await first(value='private-argument')\nawait second()"
+    if runner == "run_code":
+        arguments = {"code": code}
+    else:
+        (tmp_path / "job.codeact.py").write_text(
+            "async def main(inputs):\n" + "\n".join("    " + line for line in code.splitlines()) + "\n",
+            encoding="utf-8",
+        )
+        arguments = {"path": "/workspace/job.codeact.py"}
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests == 1:
+            yield {0: DeltaToolCall(name=runner, json_args=json.dumps(arguments), tool_call_id="failure")}
+        else:
+            returned = _tool_returns(messages, runner)[-1]
+            assert returned.outcome == "failed"
+            text = str(returned.content)
+            metadata = json.loads(text)["codeact"]
+            assert metadata["tool_call_count"] == 2
+            assert metadata["omitted_call_count"] == 0
+            assert metadata["side_effect_uncertain"] is True
+            outcomes = [
+                "completed",
+                {"concurrent": "completed", "timeout": "cancelled", "deferred": "deferred"}[failure],
+            ]
+            assert metadata["calls"] == [
+                {
+                    "call_id": metadata["execution_id"] + f":{ordinal}",
+                    "ordinal": ordinal,
+                    "canonical_tool_name": name,
+                    "outcome": outcome,
+                }
+                for ordinal, name, outcome in zip((1, 2), ("first", "second"), outcomes, strict=True)
+            ]
+            assert len(text.encode("utf-8")) <= 4096
+            assert "private-argument" not in text
+            assert "private-return-value" not in text
+            yield "handled"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 0}),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            CodeActCapability(CodeActConfig(timeout_seconds=0.5 if failure == "timeout" else 10)),
+            _codeact_tools(first, second, allowed=("first", "second")),
+        ),
+    )
+    result = await executable.run(
+        "inspect prior work", bindings=RunBindings.embedded(environment=_local_environment(tmp_path))
+    )
+    assert result.output_or_raise() == "handled"
+    assert requests == 2
+    assert effects == ["private-argument", "second"]
+    assert completion_order == (["second", "first"] if failure == "concurrent" else ["first"])
+
+
+@pytest.mark.parametrize("name", ["tool", "工具", 'quoted"name\n', "long" * 2000])
+def test_codeact_failure_projection_bounds_complete_json_and_omits_whole_calls(name: str) -> None:
+    from a13n_harness.toolsets.codeact import CodeActToolset, _CallRecord, _ExecutionBudget
+    from pydantic_ai.exceptions import ToolFailed
+
+    execution_id = "codeact-" + "a" * 32
+    records = [
+        _CallRecord(
+            call_id=f"{execution_id}:{ordinal}",
+            ordinal=ordinal,
+            canonical_name=name,
+            sandbox_name="private-sandbox-name",
+            outcome="completed",
+            result_bytes=123,
+            error_type="private-error-type",
+        )
+        for ordinal in range(1, 129)
+    ]
+    budget = _ExecutionBudget(CodeActConfig(), started=len(records), records=list(reversed(records)))
+    error = type("\x01" * 1000, (Exception,), {})()
+    with pytest.raises(ToolFailed) as raised:
+        CodeActToolset._fail_execution(error, "\x00" * 5000, execution_id, budget)
+    text = str(raised.value)
+    assert len(text.encode("utf-8")) <= 4096
+    payload = json.loads(text)
+    metadata = payload["codeact"]
+    visible = metadata["calls"]
+    assert metadata["tool_call_count"] == 128
+    assert metadata["omitted_call_count"] == 128 - len(visible)
+    assert metadata["omitted_call_count"] > 0
+    assert metadata["side_effect_uncertain"] is True
+    assert len(payload["error"]["type"].encode("utf-8")) <= 128
+    assert len(payload["error"]["message"].encode("utf-8")) <= 256
+    assert "private-" not in text
+    assert visible == [
+        {"call_id": record.call_id, "ordinal": record.ordinal, "canonical_tool_name": name, "outcome": "completed"}
+        for record in records[: len(visible)]
+    ]
+    assert bool(visible) is (len(name) < 4096)

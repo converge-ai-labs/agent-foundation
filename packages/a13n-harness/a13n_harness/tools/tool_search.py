@@ -12,6 +12,7 @@ from pydantic_ai import ModelRetry, RunContext, ToolDefinition
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.toolsets import ToolsetTool
 
+from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness.context import AgentContext
 
 PROXY_MEMBERSHIP_KEY = "a13n.tool_search.member"
@@ -104,6 +105,11 @@ def proxy_control(definition: ToolDefinition) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def grouped_tool_name(group: str, name: str) -> str:
+    """Keep the group delimiter unambiguous even at underscore boundaries."""
+    return f"{group.replace('_', '_u')}__{name}"
+
+
 def validate_proxy_target(definition: ToolDefinition) -> None:
     """Validate after preparation too: native wrappers can add deferral flags later."""
     if definition.defer_loading:
@@ -115,13 +121,14 @@ def validate_proxy_target(definition: ToolDefinition) -> None:
             f"Tool {definition.name!r} is a provider-native fallback; select native=False, local=True for grouped MCP tools."
         )
     if (
-        definition.kind not in {"function", "unapproved"}
+        definition.kind not in {"function", "unapproved", "external"}
         or definition.tool_kind is not None
         or proxy_control(definition) is not None
         or (definition.metadata or {}).get("a13n.codeact.runner") is True
+        or (definition.metadata or {}).get(HANDOFF_TOOL_METADATA_KEY) is True
     ):
         raise UserError(
-            f"Tool {definition.name!r} is not a local function tool supported by ToolSearch. Leave control, output, external, and provider-native tools directly exposed."
+            f"Tool {definition.name!r} is not a function or external tool supported by ToolSearch. Leave control, output, and provider-native tools directly exposed."
         )
 
 

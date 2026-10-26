@@ -5,7 +5,7 @@ import signal
 
 import pytest
 
-from .api import eventually
+from .api import eventually, expect
 from .scripted import GUIDE, LOOKUP, tool_results, user_texts
 from .stack import DRAIN_SECONDS, LEASE_SECONDS, read_rows
 
@@ -41,16 +41,29 @@ async def test_a_killed_worker_is_replaced_after_its_lease_expires(stack) -> Non
     await model.say("Lost with the worker.", to="[crash]", hold="never")
     doomed = stack.workers[0]
     with stack.only(doomed):
-        receipt = await api.start(agent, "[crash] Read the platform guide")
+        receipt = await api.start(
+            agent, "[crash] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
+        )
         run_id = receipt["run"]["id"]
         await model.arrived("[crash]", status="held")
     await tool_committed(api, run_id)
 
+    thread_path = f"/api/v1/threads/{receipt['thread']['id']}"
+    thread = await api.client.get(thread_path)
+    expect(
+        await api.client.patch(
+            thread_path,
+            json={"execution": {"environment": {"MODE": "later"}}},
+            headers={"if-match": thread.headers["etag"]},
+        ),
+        200,
+    )
     doomed.signal(signal.SIGKILL)
     doomed.wait(5)
     await model.say("Recovered after the crash.", to="[crash]")
     run = await api.sealed(run_id, timeout=LEASE_SECONDS * 5)
     assert (run["status"], run["output"], run["attempts"]) == ("completed", "Recovered after the crash.", 2)
+    assert run["options"]["execution"]["environment"] == {"MODE": "accepted"}
     attempts = await api.attempts(run_id)
     assert [(item["status"], item["start_reason"]) for item in attempts] == [
         ("failed", "initial"),
@@ -101,7 +114,9 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
     await model.call("view", {"file_path": GUIDE}, call_id="call_view", to="[drain]", hold="drain")
     draining, successor = stack.workers
     with stack.only(draining):
-        receipt = await api.start(agent, "[drain] Read the platform guide")
+        receipt = await api.start(
+            agent, "[drain] Read the platform guide", options={"execution": {"environment": {"MODE": "accepted"}}}
+        )
         run_id = receipt["run"]["id"]
         await model.arrived("[drain]", status="held")
 
@@ -111,6 +126,16 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
     # The request starts before its boundary's checkpoint commits, and a drain before that commit yields there.
     await eventually(checkpointed)
     # Shutdown begins while the model request is outstanding; the attempt yields at its next model boundary.
+    thread_path = f"/api/v1/threads/{receipt['thread']['id']}"
+    thread = await api.client.get(thread_path)
+    expect(
+        await api.client.patch(
+            thread_path,
+            json={"execution": {"environment": {"MODE": "later"}}},
+            headers={"if-match": thread.headers["etag"]},
+        ),
+        200,
+    )
     draining.signal(signal.SIGTERM)
     await eventually(lambda: asyncio.sleep(0, not draining.listening()))
     await model.open("drain")
@@ -124,6 +149,7 @@ async def test_a_draining_worker_hands_its_run_to_another(stack) -> None:  # typ
     await model.say("Finished on the other worker.", to="[drain]")
     run = await api.sealed(run_id)
     assert (run["status"], run["output"]) == ("completed", "Finished on the other worker.")
+    assert run["options"]["execution"]["environment"] == {"MODE": "accepted"}
     attempts = await api.attempts(run_id)
     assert [(item["status"], item["start_reason"]) for item in attempts] == [
         ("yielded", "initial"),

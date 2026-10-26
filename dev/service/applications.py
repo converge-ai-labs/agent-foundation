@@ -12,15 +12,6 @@ from dev.service.lifecycle import Application
 
 
 def service_command(checkout: Checkout, *arguments: str) -> tuple[str, ...]:
-    if os.environ.get("MODAL_SDK_TIMINGS") == "1" and arguments[:1] == ("run",):
-        return (
-            sys.executable,
-            "-m",
-            "dev.service.modal_sdk_timings",
-            "--config",
-            str(checkout.settings_file),
-            *arguments,
-        )
     executable = Path(sys.executable).parent / "a13n-service"
     return (str(executable), "--config", str(checkout.settings_file), *arguments)
 

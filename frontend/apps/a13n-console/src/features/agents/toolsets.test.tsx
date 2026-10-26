@@ -223,7 +223,7 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
     within(fetchPermissions).queryByRole("button", { name: /inherit/i }),
   ).toBeNull();
   expect(
-    within(fetchPermissions).getByRole("button", { name: "Automatic review" }),
+    within(fetchPermissions).getByRole("button", { name: "Auto review" }),
   ).toBeTruthy();
   expect(screen.getByText("This tool uses automatic review.")).toBeTruthy();
   await user.hover(
@@ -633,9 +633,7 @@ it("selects platform tools one by one, with writes asking by default", async () 
   // Platform groups stay out of the main list, under the advanced section.
   expect(await screen.findByText("Web")).toBeTruthy();
   expect(screen.queryByText("Execution")).toBeNull();
-  await user.click(
-    screen.getByRole("button", { name: "Advanced / Platform Features" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Platform tools" }));
   await user.click(
     screen.getByRole("checkbox", { name: "Enable Execution tools" }),
   );
@@ -676,7 +674,7 @@ it("selects automatic review and opens a rule for the catalogue execution identi
   });
   const { user, draft } = renderDraft({}, onRequireReviewer, onReview);
   await user.click((await screen.findByText("Web")).closest("button")!);
-  await user.click(screen.getByRole("button", { name: "Automatic review" }));
+  await user.click(screen.getByRole("button", { name: "Auto review" }));
   expect(draft().web.tools.fetch.permission).toBe("review");
   expect(onRequireReviewer).toHaveBeenCalledOnce();
   await user.click(screen.getByRole("button", { name: "Tool review rule" }));

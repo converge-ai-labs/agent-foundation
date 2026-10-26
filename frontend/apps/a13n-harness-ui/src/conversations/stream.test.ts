@@ -446,7 +446,10 @@ it("retains unsaved initial output and only cuts over after replacement history 
   expect(showFocusedOutput(display, "C2", null)).toBe(false);
 });
 
-it("folds native applied edits and failed results by exact ID without guessing proxy identities", () => {
+it.each([
+  { part_kind: "retry-prompt" },
+  { part_kind: "tool-return", outcome: "retried" },
+])("folds native applied edits and failed results by exact ID: %j", (retry) => {
   const display = new FocusDisplay();
   const events = [
     ["TOOL_CALL_START", { toolCallId: "outer", toolCallName: "call" }],
@@ -494,7 +497,7 @@ it("folds native applied edits and failed results by exact ID without guessing p
         value: {
           event: {
             part: {
-              part_kind: "retry-prompt",
+              ...retry,
               tool_call_id: "retry",
               content: "Invalid input",
             },

@@ -13,7 +13,7 @@ from a13n_service.infra.errors import invalid
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.platform import platform_operation
 from a13n_service.providers.traces import Span, SpanPage
-from a13n_service.runs import trace_reads, traces
+from a13n_service.runs import trace_reads, trace_search, traces
 from a13n_service.runs.findings import analysis
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, OriginRun, WorkspaceId
@@ -100,6 +100,28 @@ async def list_traces(
         if view == "compact" or any((status, kind, tool_name))
         else None,
     )
+
+
+@router.get(
+    "/traces/search",
+    response_model=trace_search.TraceSearchPage,
+    openapi_extra=platform_operation("execution", "read"),
+)
+async def search_traces(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    origin: OriginRun,
+    query: Annotated[trace_search.TraceSearch, Query()],
+) -> trace_search.TraceSearchPage:
+    """Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.
+
+    Providers execute each query without a result cache; pages may reflect updates between requests.
+    Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
+    Incomplete queries fail without a partial rank.
+    """
+    await analysis.read_scope(runtime, actor, workspace_id, origin, None)
+    return await trace_search.search(runtime, actor, workspace_id, query)
 
 
 @router.get(
@@ -217,22 +239,19 @@ async def read_span_content(
     actor: Actor,
     origin: OriginRun,
     section: Literal["all", "input", "output", "attributes", "resource_attributes", "events", "links", "usage"] = "all",
-    cursor: str | None = None,
     offset: reads.Offset = 0,
     limit: reads.TextLimit = 4000,
     version: reads.Version = None,
     query: reads.Search = None,
 ) -> trace_reads.SpanContentPage:
-    """Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
-    cursor while continuing fragments with version and next_offset."""
+    """Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the
+    trace has no such span. Continue fragments with version and next_offset."""
     await analysis.read_scope(runtime, actor, workspace_id, origin, trace_id)
     # Full span is needed only internally; projection happens after the original tenancy and redaction checks.
-    page = await traces.list_trace_spans(
-        runtime.storage, runtime.traces, actor, workspace_id, trace_id, limit=100, cursor=cursor
-    )
-    selected = [span for span in page.items if span.id == span_id]
-    if selected:
-        await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
+    span = await traces.find_trace_span(runtime.storage, runtime.traces, actor, workspace_id, trace_id, span_id)
+    if span is None:
+        return trace_reads.SpanContentPage(items=[], next_cursor=None)
+    await analysis.record_read(runtime, actor, workspace_id, origin, trace_id)
     return trace_reads.SpanContentPage(
         items=[
             reads.read_value(
@@ -243,7 +262,6 @@ async def read_span_content(
                 version=version,
                 query=query,
             )
-            for span in selected
         ],
-        next_cursor=None if selected else page.next_cursor,
+        next_cursor=None,
     )

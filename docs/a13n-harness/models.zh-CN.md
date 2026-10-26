@@ -264,6 +264,14 @@ export A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED=false
 
 直接可用的本地登录体验见 [Harness UI 身份验证](../a13n-harness-ui/models-and-authentication.md)。SDK 集成可先参考[身份验证与 HTTP 客户端示例](model-authentication.md)，再查看[模型身份验证契约](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md)和 `a13n_harness.providers.model.oauth` 的公开类型；Harness 不提供产品账号数据库。
 
+## Thinking 签名恢复
+
+当 provider 明确拒绝历史 thinking 签名，例如返回 `` Invalid `signature` in `thinking` block `` 时，Harness 会自动重试当前 Model 请求一次。它删除全部历史 thinking 和 redacted-thinking 部分，保留用户输入、assistant 正文、工具调用、已完成的工具结果及其他内容。重试使用相同的 Model 和请求设置，包括 thinking 配置。
+
+这项恢复会丢弃旧推理状态。它只在命中 provider 拒绝错误且确实有内容可删除时执行。首次请求成功则保留历史；第二次仍被拒绝则正常抛出异常。流式恢复要求 adapter 尚未交出 stream：开头的 SSE error 即使发生在 HTTP 200 之后也可以恢复；`message_start` 已使 stream 建立后出现的错误，即使正文尚未到达，也不能使用这次重试。
+
+清理原地修改传入的内存消息对象，不会回滚。共享历史的后续状态导出会反映清理；图片准备等使用独立消息对象的请求投影只修改本次请求。已保存的快照保持不变，后续持久化由 Host 负责。工具不会重新执行。此行为使用默认自愈 capability；`HarnessBuilder(self_healing_enabled=False)` 可禁用自动安装。
+
 ## 请求设置与上下文策略
 
 `AgentSpec.model_settings` 包含原生 provider 请求设置。`model_characteristics` 描述显式本地上下文和输入策略。更大本地预算不会提高 provider 上限，声明支持图像也不会使端点接受图像。

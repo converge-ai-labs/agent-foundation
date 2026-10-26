@@ -31,6 +31,7 @@ from pydantic_monty import (
     MontyTypingError,
 )
 
+from a13n_harness._handoff import HANDOFF_TOOL_METADATA_KEY
 from a13n_harness._review_context import record_approval_denials
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.executor import is_sandbox_panic
@@ -487,7 +488,11 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                     record.outcome = "completed"
                     return result
             except ValidationError as exc:
-                raise TypeError(_format_validation_error(exc)) from None
+                if nested_started is None:
+                    raise TypeError(_format_validation_error(exc)) from None
+                record.outcome = "failed"
+                record.error_type = type(exc).__name__
+                raise RuntimeError(f"Nested tool {canonical_name!r} failed with ValidationError") from None
             except (ApprovalRequired, CallDeferred) as exc:
                 record.outcome = "deferred"
                 record.error_type = type(exc).__name__
@@ -611,19 +616,41 @@ class CodeActToolset(WrapperToolset[AgentContext]):
 
     @staticmethod
     def _fail_execution(exc: BaseException, message: str, execution_id: str, budget: _ExecutionBudget) -> Any:
-        safe_message = _truncate_utf8(message, _MAX_DIAGNOSTIC_BYTES)
-        payload = {
-            "codeact": {
-                "contract_version": _CODEACT_CONTRACT_VERSION,
-                "status": "failed",
-                "execution_id": execution_id,
-                "tool_call_count": budget.started,
-                "cumulative_bytes": budget.cumulative_bytes,
-                "side_effect_uncertain": budget.started > 0,
-            },
-            "error": {"type": type(exc).__name__, "message": safe_message},
+        calls: list[dict[str, Any]] = []
+        metadata: dict[str, Any] = {
+            "contract_version": _CODEACT_CONTRACT_VERSION,
+            "status": "failed",
+            "execution_id": execution_id,
+            "tool_call_count": budget.started,
+            "cumulative_bytes": budget.cumulative_bytes,
+            "side_effect_uncertain": budget.started > 0,
+            "calls": calls,
+            "omitted_call_count": budget.started,
         }
-        raise ToolFailed(json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) from None
+        # Leave room for call identities even when diagnostic text needs JSON escaping.
+        payload = {
+            "codeact": metadata,
+            "error": {
+                "type": _truncate_utf8(type(exc).__name__, 128),
+                "message": _truncate_utf8(message, 256),
+            },
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        for record in sorted(budget.records, key=lambda record: record.ordinal):
+            calls.append(
+                {
+                    "call_id": record.call_id,
+                    "ordinal": record.ordinal,
+                    "canonical_tool_name": record.canonical_name,
+                    "outcome": record.outcome,
+                }
+            )
+            metadata["omitted_call_count"] = budget.started - len(calls)
+            candidate = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if len(candidate.encode("utf-8")) > _MAX_DIAGNOSTIC_BYTES:
+                break
+            encoded = candidate
+        raise ToolFailed(encoded) from None
 
 
 def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool:
@@ -635,6 +662,7 @@ def is_codeact_tool_eligible(name: str, tool: ToolsetTool[AgentContext]) -> bool
         and definition.tool_kind is None
         and not definition.unless_native
         and (definition.metadata or {}).get("a13n.codeact.runner") is not True
+        and (definition.metadata or {}).get(HANDOFF_TOOL_METADATA_KEY) is not True
     )
 
 

@@ -224,16 +224,27 @@ async def test_chatgpt_resolution_uses_native_provider_without_loading_credentia
     native = object()
     build_provider = Mock(return_value=provider)
     build_model = Mock(return_value=native)
-    monkeypatch.setattr("a13n_harness.providers.model.chatgpt.OpenAIChatGPTProvider", build_provider)
-    monkeypatch.setattr("a13n_harness.models.chatgpt.OpenAIChatGPTResponsesModel", build_model)
+    monkeypatch.setattr("pydantic_ai.providers.openai_chatgpt.OpenAIChatGPTProvider", build_provider)
+    monkeypatch.setattr("pydantic_ai.models.openai.OpenAIResponsesModel", build_model)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
-        subscription_sources={"chatgpt_subscription": ChatGPTSubscriptionSource(source)},
+        subscription_sources={"chatgpt_subscription": ChatGPTSubscriptionSource(lambda: source)},
     )
     assert await resolver.resolve(recipe.model_id, thread_id="thread-test") is native
     build_provider.assert_called_once_with(credential_source=source)
     build_model.assert_called_once_with("gpt-test", provider=provider)
+    assert provider.client.max_retries == 0
     source.load.assert_not_called()
+    # Each Model owns its load/save baseline, including within the same Run.
+    other = Mock()
+    factory = Mock(side_effect=[source, other])
+    resolver = HarnessUiModelResolver(
+        {recipe.model_id: recipe},
+        subscription_sources={"chatgpt_subscription": ChatGPTSubscriptionSource(factory)},
+    )
+    await resolver.resolve(recipe.model_id, thread_id="thread-test")
+    await resolver.fresh().resolve(recipe.model_id, thread_id="thread-test")
+    assert [call.kwargs["credential_source"] for call in build_provider.call_args_list[-2:]] == [source, other]
 
 
 async def test_chatgpt_resolution_rejects_unenforceable_run_host_restrictions() -> None:

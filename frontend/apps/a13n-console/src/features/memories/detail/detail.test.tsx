@@ -469,9 +469,7 @@ it("purges one file's history only for people who may configure the memory", asy
   await user.click(screen.getByRole("button", { name: "Delete history" }));
   const confirm = await screen.findByRole("dialog");
   expect(
-    within(confirm).getByText(
-      /stays in their conversation histories and traces/,
-    ),
+    within(confirm).getByText(/stays in their session histories and traces/),
   ).toBeTruthy();
   await user.click(
     within(confirm).getByRole("button", { name: "Delete file history" }),

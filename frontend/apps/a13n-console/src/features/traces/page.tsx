@@ -39,6 +39,11 @@ import { backendName, useTraceBackend, type TraceBackendType } from "./backend";
 import { TraceTable } from "./list-table";
 import type { ObservationSort } from "./sorting";
 import { useListCosts } from "./list-cost";
+import {
+  MetricFilter,
+  MetricFilterSummary,
+  type NumericRange,
+} from "./range-filter";
 import styles from "./list.module.css";
 
 const DAY = 86_400;
@@ -142,6 +147,12 @@ function TraceBrowser({
     [metadataRows, setMetadataRows] = useState<MetadataRow[]>(() =>
       searchParams.getAll("metadata").map((entry) => metadataRow(entry)),
     );
+  const [sort, setSort] = useState<ObservationSort>({
+    field: "started",
+    direction: "desc",
+  });
+  const [duration, setDuration] = useState<NumericRange>({ min: "", max: "" });
+  const [cost, setCost] = useState<NumericRange>({ min: "", max: "" });
   const appliedMetadata = useMemo(
     () =>
       metadataRows
@@ -173,6 +184,10 @@ function TraceBrowser({
     to: shown.end.toISOString(),
     ...idFilters(typed.id),
     metadata: typed.metadata,
+    sort,
+    duration,
+    cost,
+    refresh: now,
   };
   const page = useCursor(filters);
   const list = useTraceList(filters, page.cursor);
@@ -183,7 +198,27 @@ function TraceBrowser({
   const filtered =
     idQuery !== "" ||
     appliedMetadata.length > 0 ||
+    duration.min !== "" ||
+    duration.max !== "" ||
+    cost.min !== "" ||
+    cost.max !== "" ||
     !("preset" in range && range.preset === DAY);
+  const metricFilters = { duration, cost };
+  const hasMetrics = Boolean(
+    duration.min || duration.max || cost.min || cost.max,
+  );
+  function updateMetrics(value: typeof metricFilters) {
+    setDuration(value.duration);
+    setCost(value.cost);
+  }
+  function clearFilters() {
+    setRange(defaultRange);
+    setNow(Date.now());
+    setIdQuery("");
+    setMetadataRows([]);
+    setDuration({ min: "", max: "" });
+    setCost({ min: "", max: "" });
+  }
   return (
     <Page
       title={t("Traces")}
@@ -204,59 +239,63 @@ function TraceBrowser({
         "Inspect attempt telemetry, model calls, and tool execution.",
       )}
       toolbar={
-        <Toolbar
-          search={idQuery}
-          onSearchChange={setIdQuery}
-          searchLabel={t("Search by ID")}
-          searchPlaceholder={t("Session, thread, or run ID")}
-          filters={
-            <>
-              <TimeRangePicker
-                value={range}
-                presets={timePresets}
-                maxDays={31}
-                minSeconds={0}
-                precision="second"
-                earliest={earliest}
-                resolvePreset={(seconds) => lastSeconds(seconds, Date.now())}
-                onChange={(next) => {
-                  setRange(next);
-                  setNow(Date.now());
-                }}
-              />
-              <MetadataFilter
-                rows={metadataRows}
-                knownKeys={knownKeys}
-                onChange={setMetadataRows}
-              />
-              {filtered && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setRange(defaultRange);
+        <>
+          <Toolbar
+            search={idQuery}
+            onSearchChange={setIdQuery}
+            searchLabel={t("Search by ID")}
+            searchPlaceholder={t("Session, thread, or run ID")}
+            filters={
+              <>
+                <TimeRangePicker
+                  value={range}
+                  presets={timePresets}
+                  maxDays={31}
+                  minSeconds={0}
+                  precision="second"
+                  earliest={earliest}
+                  resolvePreset={(seconds) => lastSeconds(seconds, Date.now())}
+                  onChange={(next) => {
+                    setRange(next);
                     setNow(Date.now());
-                    setIdQuery("");
-                    setMetadataRows([]);
                   }}
-                >
-                  {t("Clear")}
-                </Button>
-              )}
-            </>
-          }
-          trailing={
-            <RefreshButton
-              pending={list.isFetching}
-              onRefresh={() =>
-                "preset" in range ? setNow(Date.now()) : void list.refetch()
-              }
-            />
-          }
-        />
+                />
+                <MetadataFilter
+                  rows={metadataRows}
+                  knownKeys={knownKeys}
+                  onChange={setMetadataRows}
+                />
+                <MetricFilter value={metricFilters} onChange={updateMetrics} />
+                {filtered && !hasMetrics && (
+                  <Button type="button" variant="ghost" onClick={clearFilters}>
+                    {t("Clear")}
+                  </Button>
+                )}
+              </>
+            }
+            trailing={
+              <RefreshButton
+                pending={list.isFetching}
+                onRefresh={() => setNow(Date.now())}
+              />
+            }
+          />
+          <MetricFilterSummary
+            value={metricFilters}
+            onChange={updateMetrics}
+            onClear={clearFilters}
+          />
+        </>
       }
     >
-      <TraceList query={list} page={page} workspaceId={workspace.id} />
+      <TraceList
+        query={list}
+        page={page}
+        workspaceId={workspace.id}
+        sort={sort}
+        onSortChange={setSort}
+        onRefresh={() => setNow(Date.now())}
+      />
     </Page>
   );
 }
@@ -393,34 +432,74 @@ type TraceFilters = {
   run_id: string;
   /** `key:value` selectors, each an exact root span attribute. */
   metadata: string[];
+  sort: ObservationSort;
+  duration: NumericRange;
+  cost: NumericRange;
+  refresh: number;
 };
 /** One page of trace roots; the last page stays shown while the next loads. */
 function useTraceList(filters: TraceFilters, cursor: string | undefined) {
   const client = useClient(),
     { workspace } = useWorkspace();
-  const read = ({ signal }: { signal: AbortSignal }) =>
-    client
-      .workspace(workspace.id)
-      .GET("/api/v1/traces", {
-        params: {
-          query: {
-            started_after: filters.from,
-            started_before: filters.to,
-            session_id: filters.session_id || undefined,
-            thread_id: filters.thread_id || undefined,
-            run_id: filters.run_id || undefined,
-            attribute: filters.metadata.length ? filters.metadata : undefined,
-            cursor,
-            limit: 25,
+  const ranked =
+    filters.sort.field !== "started" ||
+    filters.sort.direction !== "desc" ||
+    Boolean(
+      filters.duration.min ||
+      filters.duration.max ||
+      filters.cost.min ||
+      filters.cost.max,
+    );
+  const read = async ({ signal }: { signal: AbortSignal }) => {
+    const common = {
+      started_after: filters.from,
+      started_before: filters.to,
+      session_id: filters.session_id || undefined,
+      thread_id: filters.thread_id || undefined,
+      run_id: filters.run_id || undefined,
+      attribute: filters.metadata.length ? filters.metadata : undefined,
+      cursor,
+      limit: 25,
+    };
+    if (ranked) {
+      const result = data(
+        await client.workspace(workspace.id).GET("/api/v1/traces/search", {
+          params: {
+            query: {
+              ...common,
+              order_by: filters.sort.field,
+              direction: filters.sort.direction,
+              min_duration_seconds: filters.duration.min || undefined,
+              max_duration_seconds: filters.duration.max || undefined,
+              min_cost_usd: filters.cost.min || undefined,
+              max_cost_usd: filters.cost.max || undefined,
+            },
           },
-        },
+          signal,
+        }),
+      );
+      return {
+        items: result.items.map((item) => item.root),
+        next_cursor: result.next_cursor,
+        costs: Object.fromEntries(
+          result.items.map((item) => [item.root.trace_id, item.cost_usd]),
+        ),
+      };
+    }
+    const result = data(
+      await client.workspace(workspace.id).GET("/api/v1/traces", {
+        params: { query: common },
         signal,
-      })
-      .then(data);
+      }),
+    );
+    return { ...result, costs: undefined };
+  };
   return useQuery({
     queryKey: ["trace-list", workspace.id, filters, cursor],
     queryFn: read,
     placeholderData: keepPreviousData,
+    ...(ranked ? { staleTime: 0, gcTime: 0 } : {}),
+    retry: false,
   });
 }
 
@@ -428,20 +507,29 @@ function TraceList({
   query,
   page,
   workspaceId,
+  sort,
+  onSortChange,
+  onRefresh,
 }: {
   query: ReturnType<typeof useTraceList>;
   page: ReturnType<typeof useCursor>;
   workspaceId: string;
+  sort: ObservationSort;
+  onSortChange: (sort: ObservationSort) => void;
+  onRefresh: () => void;
 }) {
-  const [order, setOrder] = useState<ObservationSort["direction"]>("desc");
   const { basePath } = useWorkspace(),
     { t } = useTranslation();
   const costs = useListCosts(
     workspaceId,
-    query.isSuccess ? query.data.items : [],
+    query.isSuccess && query.data.costs === undefined ? query.data.items : [],
   );
   if (query.isPending) return <Loading variant="table" columns={6} />;
-  if (query.error instanceof ApiError && query.error.status === 503)
+  if (
+    query.error instanceof ApiError &&
+    query.error.status === 503 &&
+    query.error.details.dependency !== "redis"
+  )
     return (
       <Empty
         icon={<PulseIcon aria-hidden="true" />}
@@ -460,11 +548,18 @@ function TraceList({
         }
       />
     );
-  if (query.error || costs.error)
+  if (query.error || (query.data?.costs === undefined && costs.error))
     return (
       <ErrorNotice
         error={query.error ?? costs.error}
         retry={() => {
+          if (
+            query.error instanceof ApiError &&
+            query.error.code === "invalid_cursor"
+          ) {
+            onRefresh();
+            return;
+          }
           void query.refetch();
           void costs.refetch();
         }}
@@ -480,9 +575,11 @@ function TraceList({
         <TraceTable
           items={items}
           basePath={basePath}
-          costs={costs.isSuccess ? costs.data : undefined}
-          order={order}
-          onOrderChange={setOrder}
+          costs={
+            query.data?.costs ?? (costs.isSuccess ? costs.data : undefined)
+          }
+          sort={sort}
+          onSortChange={onSortChange}
         />
       ) : (
         <Empty

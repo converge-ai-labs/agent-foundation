@@ -320,16 +320,40 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
             query = query.where(UsageRecordRow.ingested_at >= where.ingested_after)
         if where.ingested_before is not None:
             query = query.where(UsageRecordRow.ingested_at < where.ingested_before)
+        # Number the complete scoped threads, including Runs with no matching usage.
+        # Joining this projection keeps all labels in the aggregate's single snapshot.
+        numbered = select(
+            RunRow.id,
+            func.row_number()
+            .over(partition_by=RunRow.thread_id, order_by=(RunRow.created_at, RunRow.id))
+            .label("number"),
+        ).where(RunRow.workspace_id == scope.workspace_id)
+        for column, value in ((RunRow.thread_id, where.thread_id), (RunRow.session_id, where.session_id)):
+            if value is not None:
+                numbered = numbered.where(column == value)
+        if where.run_id is not None:
+            numbered = numbered.where(
+                RunRow.thread_id.in_(
+                    select(RunRow.thread_id).where(RunRow.workspace_id == scope.workspace_id, RunRow.id == where.run_id)
+                )
+            )
+        numbers = numbered.cte("run_numbers")
+        query = query.join(numbers, numbers.c.id == RunRow.id).add_columns(
+            func.max(numbers.c.number).label("run_number")
+        )
         rows = (await session.execute(query)).mappings().all()
     models: list[ModelUsage] = []
-    runs: dict[tuple[str, str], list[ModelUsage]] = {}
+    runs: dict[tuple[str, str, int], list[ModelUsage]] = {}
     for row in rows:
         usage = ModelUsage.model_validate(row)
         if row["total"]:
             models.append(usage)
         else:
-            runs.setdefault((row["run_id"], row["thread_id"]), []).append(usage)
+            runs.setdefault((row["run_id"], row["thread_id"], row["run_number"]), []).append(usage)
     return UsageSummary(
         models=models,
-        runs=[RunUsage(run_id=run, thread_id=thread, models=usage) for (run, thread), usage in runs.items()],
+        runs=[
+            RunUsage(run_id=run, thread_id=thread, run_number=number, models=usage)
+            for (run, thread, number), usage in runs.items()
+        ],
     )

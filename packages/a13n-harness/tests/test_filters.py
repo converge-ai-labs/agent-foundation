@@ -18,6 +18,8 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    RetryFeedbackPart,
+    RetryInfo,
     RetryPromptPart,
     TextPart,
     ToolCallPart,
@@ -114,8 +116,14 @@ async def test_message_integrity_filter_persists_the_processed_history() -> None
     assert tool_results(result.state.message_history) == [current]
 
 
-async def test_message_integrity_filter_preserves_model_level_retry_and_final_request() -> None:
-    retry = RetryPromptPart(content="try again")
+@pytest.mark.parametrize(
+    "retry",
+    [
+        RetryPromptPart(content="try again"),
+        RetryFeedbackPart(content="try again", retry=RetryInfo(cause="model_retry")),
+    ],
+)
+async def test_message_integrity_filter_preserves_model_level_retry_and_final_request(retry) -> None:
     orphan = ToolReturnPart(tool_name="lookup", tool_call_id="call-1", content="orphan")
     messages = [
         ModelResponse(parts=[ToolCallPart("lookup", {}, tool_call_id="call-1")]),

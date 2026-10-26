@@ -3,7 +3,7 @@ title: Configure Providers
 description: Configure a Provider's target, backend connection, and credentials separately.
 ---
 
-Configure the target, backend connection, and credentials separately. Keep runtime clients in memory and save `EnvironmentState` to reconnect later.
+Configure the target, backend connection, and credentials separately. Keep runtime clients in memory and save `EnvironmentState` to reconnect later. For live Session continuity, use a separate Host-owned [Session recovery hint](remote-envd.md#state-concurrency-and-recovery).
 
 | Value                                         | Owns                                            | Example                                                  |
 | --------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
@@ -17,9 +17,7 @@ Configure the target, backend connection, and credentials separately. Keep runti
 
 A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 
-The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts, and shell profiles.
-
-The [execution model](index.md#choose-a-backend) defines Native Files & Shell and general Envd execution. The [configuration reference](configuration-reference.md) is generated from current models and still includes pre-migration fields. Choose capabilities by execution path and migrate existing configuration explicitly.
+The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts and shell profiles. Available operations follow the selected [execution path](index.md#choose-a-backend) and its advertised descriptor.
 
 ## Host outbound connections
 
@@ -77,21 +75,27 @@ Service’s `E2BRecipe` adds sandbox timeout, defaulting to 3,600 seconds (30–
 
 `E2BConnectionConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
 
+In Service/Console, enabling desktop without a custom template selects automatic private template preparation (`template="auto"`, `execution="envd_http"`, `desktop_assistance=true`). The first creation builds; later creations reuse within the same connection and credential scope. See [desktop preparation](providers.md#e2b-desktop-preparation).
+
+The first automatic E2B desktop creation usually takes 1–2 minutes and can take longer; later creations reuse the template. The environment inspector shows its actual preparation stage and elapsed time. You can leave the page while creation continues and reopen the inspector from Environment instances. Once ready, choose **View desktop** for a refreshable read-only snapshot; interactive control remains available through a conversation. A creation failure shows its reason and offers **Retry creation** once the previous operation has a confirmed outcome. Saving configuration alone does not start a build.
+
 ### Daytona
 
-`DaytonaEnvironmentConfiguration` selects a snapshot, which sets the sandbox's resources. The root defaults to the writable `/home/daytona`. `DaytonaConnectionConfiguration` supplies organization and target region; `TokenCredential` supplies the API key.
+`DaytonaEnvironmentConfiguration` selects a snapshot, which sets the sandbox's resources. The working directory is `/workspace`. `DaytonaConnectionConfiguration` supplies an optional organization constraint and target region; `TokenCredential` supplies the API key. When organization is omitted, it is discovered from that key. Harness requires a concrete snapshot; Service desktop recipes may omit it to build automatically on first creation and reuse it later.
 
 ### Modal
 
-`ModalEnvironmentConfiguration` selects image, resources and bounded lifetime. `ModalConnectionConfiguration` names the Modal `workspace` and existing deployed App; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
+`ModalEnvironmentConfiguration` selects image, resources and bounded lifetime. `ModalConnectionConfiguration` optionally labels the Modal `workspace` and selects an App (default `a13n-sandboxes`); Service automatic desktops prepare that App and image on first creation; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
 
 ### Vercel Sandbox
 
-`VercelEnvironmentConfiguration` selects runtime, vCPUs, and session lifetime, with root `/vercel/sandbox`. `VercelConnectionConfiguration` names team and project; `TokenCredential` holds the Vercel access token. The adapter uses a named persistent Vercel sandbox with native stop and resume.
+`VercelEnvironmentConfiguration` defaults to native Files & Shell with root `/vercel/sandbox`. Select `execution="envd_http"` and an operator-built `snapshot` for EIP at `/workspace`; `desktop=true` requires this route. Service adds `desktop_assistance=true` for human access. `VercelConnectionConfiguration` names team and project; `TokenCredential` holds the Vercel access token. The provider uses a named persistent sandbox with native stop/resume and bounded session lifetime. See [snapshot preparation](providers.md#vercel-sandbox).
 
 ### Fly.io Sprites
 
 `SpritesEnvironmentConfiguration` selects region and defaults to `/home/sprite`. `SpritesConnectionConfiguration` identifies the organization; `TokenCredential` holds the Sprites token. Do not schedule an explicit stop: the Sprites Provider does not support `stop()`, and Sprites sleep automatically.
+
+Service `desktop=true` automatically selects `execution="envd_http"` and installs the desktop on each new Sprite. Execution attaches through a private TCP tunnel to Envd at `/workspace`; Service enables human control by default. See [automatic Sprites desktops](../a13n-service/environments.md#automatic-sprites-desktops).
 
 ### Runloop
 

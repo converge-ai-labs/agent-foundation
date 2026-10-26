@@ -88,8 +88,9 @@ class Captures:
             if context.run_id != source.run_id:
                 continue
             origin = context._tool_executions.result_origins.get(part.tool_call_id)
-            if origin is None and part.tool_call_id in context._tool_executions.calls:
-                continue  # A background receipt is not the result.
+            if origin is None and part.tool_call_id in context._tool_executions.calls and part.outcome != "failed":
+                # Receipts are not results. Foreground failures have no delivered-result origin.
+                continue
             call_id = origin.tool_call_id if origin is not None else part.tool_call_id
             run_id = origin.run_id if origin is not None else source.run_id
             ref = pending.reference

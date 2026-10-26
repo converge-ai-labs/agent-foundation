@@ -370,7 +370,7 @@ async def test_proxy_usage_limit_admits_one_actual_target_not_a_second_router_ca
 
 
 @pytest.mark.parametrize("resolution", ["approve", "deny", "unresolved"])
-async def test_proxy_preserves_inline_approval_without_leaking_unresolved_nested_calls(resolution: str) -> None:
+async def test_proxy_preserves_inline_approval_and_suspends_unresolved_target(resolution: str) -> None:
     from pydantic_ai.capabilities import HandleDeferredToolCalls
     from pydantic_ai.tools import DeferredToolResults, ToolDenied
 
@@ -392,6 +392,11 @@ async def test_proxy_preserves_inline_approval_without_leaking_unresolved_nested
     if resolution != "unresolved":
         caps += (HandleDeferredToolCalls(handler=handler),)
     result, returns = await _run(caps, [("call_tool", {"group": "crm", "tool": "change", "arguments": {"value": 3}})])
+    if resolution == "unresolved":
+        assert result.status == "suspended" and result.deferred is not None
+        assert result.deferred.approvals[0].target_call.tool_name == "crm__change"
+        assert effects == [] and returns == []
+        return
     assert result.output_or_raise() == "done"
     assert effects == ([3] if resolution == "approve" else [])
     assert returns[-1].outcome == ("success" if resolution == "approve" else "failed")
@@ -758,10 +763,13 @@ def test_proxy_configuration_errors_explain_how_to_fix_the_source() -> None:
         validate_proxy_target(ToolDefinition(name="lookup", defer_loading=True))
     with pytest.raises(UserError, match="native=False, local=True"):
         validate_proxy_target(ToolDefinition(name="lookup", unless_native=True))
+    validate_proxy_target(ToolDefinition(name="lookup", kind="external"))
+    with pytest.raises(UserError, match="Leave control, output, and provider-native tools directly exposed"):
+        validate_proxy_target(ToolDefinition(name="lookup", kind="output"))
 
 
 async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_executing() -> None:
-    from pydantic_ai.messages import RetryPromptPart
+    from pydantic_ai.messages import ToolReturnPart
 
     def value() -> int:
         pytest.fail("An unavailable name must never fall back to another tool")
@@ -776,7 +784,7 @@ async def test_unavailable_proxy_target_tells_agent_to_rediscover_without_execut
         for message in result.all_messages()
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, RetryPromptPart)
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     )
     assert "crm/missing" in retry.content
     assert "Rediscover available tools" in retry.content
@@ -1335,7 +1343,7 @@ async def test_proxy_target_permission_gate_precedes_business_dispatch(codeact: 
         capabilities += (CodeActCapability(),)
         call = ("run_code", {"code": "await call_tool(group='crm', tool='forbidden', arguments={})"})
     result, _ = await _run(capabilities, [call])
-    assert result.status == "completed"
+    assert result.status == ("suspended" if mode == "ask" and not codeact else "completed")
     assert not effects
 
 
@@ -1359,7 +1367,7 @@ async def test_proxy_and_codeact_use_capability_approval_override(codeact: bool,
         capabilities += (CodeActCapability(),)
         call = ("run_code", {"code": "await call_tool(group='crm', tool='change', arguments={})"})
     result, _ = await _run(capabilities, [call])
-    assert result.status == "completed"
+    assert result.status == ("suspended" if mode == "inherit" and not codeact else "completed")
     assert effects == ([False] if mode == "allow" else [])
 
 

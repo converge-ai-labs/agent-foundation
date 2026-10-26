@@ -1,4 +1,5 @@
 import { reasoningModeLabel } from "./reasoning-mode-picker";
+import { speedLabel } from "./speed-label";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
@@ -39,11 +40,13 @@ export function ComposerStatus({
 }) {
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
-  const operation =
-    observed.data ??
-    activity.data?.pages
-      .flatMap((page) => page.rows)
-      .find((row) => row.thread.thread_id === threadId)?.latest_operation;
+  const row = activity.data?.pages
+    .flatMap((page) => page.rows)
+    .find((row) => row.thread.thread_id === threadId);
+  const operation = observed.data ?? row?.latest_operation;
+  const mainAccount = operation
+    ? operation.main_account
+    : row?.thread.last_execution?.main_account;
   // Terminal receipts remain inspectable even after their working state is reset.
   const goal = busy ? (operation?.goal ?? savedGoal) : savedGoal;
   const active =
@@ -68,17 +71,6 @@ export function ComposerStatus({
       captured.receipt_id !== operation?.receipt.receipt_id)
       ? undefined
       : captured?.captured?.agent;
-  const fast = capturedAgent?.fast;
-  const fastLabel =
-    fast === "on"
-      ? "On"
-      : fast === "off"
-        ? "Off"
-        : fast === "ultrafast"
-          ? "Ultrafast"
-          : fast === "default"
-            ? "Default"
-            : "—";
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
@@ -106,6 +98,14 @@ export function ComposerStatus({
   return (
     <div className={styles.bar}>
       <div className={styles.metrics}>
+        {mainAccount && (
+          <span
+            className={styles.metric}
+            title={`${mainAccount.group_id} · ${mainAccount.reason.replaceAll("_", " ")}`}
+          >
+            MAIN <strong>{mainAccount.account_name}</strong>
+          </span>
+        )}
         {goal && (
           <GoalStatus
             goal={goal}
@@ -181,9 +181,9 @@ export function ComposerStatus({
         </span>
         <span
           className={styles.metric}
-          title="Captured Run request setting, not guaranteed provider speed. Changing the toggle only affects the next run."
+          title="Requested speed for this run. Speed changes apply to the next run; actual speed depends on the provider."
         >
-          Fast <strong>{fastLabel}</strong>
+          Speed <strong>{speedLabel(capturedAgent?.fast)}</strong>
         </span>
         {capturedAgent?.reasoning_mode &&
           capturedAgent.reasoning_mode !== "default" && (

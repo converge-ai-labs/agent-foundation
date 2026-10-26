@@ -365,7 +365,8 @@ export class DisplayNormalizer {
             content.value = tool.content;
           else content.truncated = true;
           content.outcome = tool.outcome ?? null;
-          content.retry = tool.part_kind === "retry-prompt";
+          content.retry =
+            tool.part_kind === "retry-prompt" || content.outcome === "retried";
         }
       } else {
         let observed: unknown = event.value;

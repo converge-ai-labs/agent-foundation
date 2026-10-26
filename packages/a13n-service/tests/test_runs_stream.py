@@ -23,7 +23,6 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
-    RetryPromptPart,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -156,7 +155,9 @@ async def test_fragments_merge_and_fold_the_same_display(runtime: Runtime) -> No
             *_tool_call(2, "call-1", '{"q":', '"x"}'),
             *_tool_call(3, "call-2", "{}"),
             FunctionToolResultEvent(ToolReturnPart(tool_name="search", content="found", tool_call_id="call-1")),
-            FunctionToolResultEvent(RetryPromptPart("bad arguments", tool_name="search", tool_call_id="call-2")),
+            FunctionToolResultEvent(
+                ToolReturnPart("search", "bad arguments", tool_call_id="call-2", outcome="retried")
+            ),
             *_text(4, "It ", "is ", "x"),
             # The same part index in a later model response is another part.
             *_tool_call(2, "call-3", '{"r":', "1}"),

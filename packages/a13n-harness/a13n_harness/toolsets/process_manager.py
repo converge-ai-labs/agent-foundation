@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import codecs
 import hashlib
 import re
 import secrets
@@ -30,18 +29,29 @@ from a13n_harness.environment.commands import (
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment, BoundProcessOperations
 from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
-from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime
+from a13n_harness.tool_execution import _OWNED_TOOL_EXECUTION, ToolExecutionRuntime, execution_cleanup
 
 from .events import ShellStatusEvent
-from .output import tool_output_size
+from .shell_control import ShellControl, ShellTarget
+from .shell_observation import (
+    ShellObservation,
+    ShellStream,
+)
+from .shell_observation import (
+    _fit_stream_prefixes as _fit_stream_prefixes,
+)
+from .shell_observation import (
+    _process_observation as _project_observation,
+)
+from .shell_observation import (
+    _project_status as _project_status,
+)
 from .shell_results import (
-    OutputPageProjection,
     ProcessInfoSuccess,
     ProcessInputSuccess,
     ProcessListSuccess,
     ProcessObservationSuccess,
     ProcessSignalSuccess,
-    ProcessStatusProjection,
     ProcessSummaryProjection,
     ShellExecSuccess,
 )
@@ -49,7 +59,6 @@ from .shell_results import (
 _MAX_MODEL_OUTPUT_BYTES = 1024 * 1024
 _DEFAULT_INLINE_BYTES = 64 * 1024
 _MAX_REFERENCE_ENTRIES = 100_000
-_MAX_PROJECTED_OUTPUT_CHARS = 10_500
 _REFERENCE_PATTERN = re.compile(r"^process-([0-9a-f]{4})-([1-9][0-9]*)$")
 _TERMINAL_PHASES = frozenset({"exited", "signaled", "timed_out", "cancelled", "failed"})
 _PROCESS_OBSERVATION_ACTIONS = frozenset(
@@ -96,15 +105,8 @@ class _OwnedProcess:
         self._readers = 0
         self._closed = False
 
-    @asynccontextmanager
-    async def access(
-        self,
-        environment: BoundEnvironment,
-        *,
-        actions: frozenset[EnvironmentAction],
-        alias: str | None,
-        timeout_seconds: float,
-    ) -> AsyncGenerator[tuple[_ProcessController, str, BoundProcessOperations]]:
+    async def call(self, request: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        control = ShellControl.model_validate(request)
         async with self._condition:
             if self._closed:
                 raise EnvironmentError(
@@ -113,15 +115,15 @@ class _OwnedProcess:
                 )
             self._readers += 1
         try:
-            async with environment.retained_process_lease(
+            if control.operation == "describe":
+                return ShellTarget(
+                    resource_id=self.resource_id, identity=self.identity, backing_identity=self.backing_identity
+                ).model_dump(mode="json")
+            async with self.controller._environment.retained_process_dispatch(
                 self.controller._entry(self.process_id).handle,
-                owner=self.controller._environment,
-                backing_identity=self.backing_identity,
-                actions=actions,
-                alias=alias,
-                timeout_seconds=timeout_seconds,
+                actions=control.actions,
             ) as processes:
-                yield self.controller, self.process_id, processes
+                return await self.controller.control(self.process_id, control, processes=processes)
         finally:
             async with self._condition:
                 self._readers -= 1
@@ -249,6 +251,15 @@ class _ProcessController:
     ) -> ShellExecSuccess:
         """Keep the admitted command and observation alive until final capture."""
         self._guard_execution()
+        # Providers may fix their capture buffer at admission. Preserve the bounded
+        # retained result there; model-visible pages are projected separately.
+        request = request.model_copy(
+            update={
+                "output_policy": request.output_policy.model_copy(
+                    update={"max_inline_bytes": min(request.output_policy.max_output_bytes, _MAX_MODEL_OUTPUT_BYTES)}
+                )
+            }
+        )
         admission = asyncio.create_task(
             self._admit(request, alias=alias, expected_mount_id=expected_mount_id, watch=False)
         )
@@ -264,8 +275,32 @@ class _ProcessController:
         try:
             if cancelled:
                 raise asyncio.CancelledError
+            stdout_offset = stderr_offset = 0
             while True:
-                observation = await self._observe(entry, stdout_offset=0, stderr_offset=0, wait_seconds=1)
+                observation = await self._observe_owned(
+                    entry,
+                    stdout_offset=stdout_offset,
+                    stderr_offset=stderr_offset,
+                    wait_seconds=1,
+                    max_inline_bytes=64 * 1024,
+                )
+                stdout = ShellStream.from_read(observation[1].stdout, requested_offset=stdout_offset)
+                stderr = ShellStream.from_read(observation[1].stderr, requested_offset=stderr_offset)
+                stdout_offset = stdout.start_offset + len(stdout.data)
+                stderr_offset = stderr.start_offset + len(stderr.data)
+                runtime.observe_resource(
+                    ShellObservation(
+                        target=ShellTarget(
+                            resource_id=resource.resource_id,
+                            identity=resource.identity,
+                            backing_identity=resource.backing_identity,
+                        ),
+                        status=observation[0].status,
+                        stdin_open=observation[0].stdin_open,
+                        stdout=stdout,
+                        stderr=stderr,
+                    )
+                )
                 info, output = observation
                 if info.status.phase in {"unknown", "missing"}:
                     raise ToolFailed(
@@ -276,28 +311,71 @@ class _ProcessController:
                     and output.stdout.capture.observation_closed
                     and output.stderr.capture.observation_closed
                 ):
-                    return _shell_exec_result(None, observation, bound_output=False)
+                    # Final disclosure is the provider's bounded result, not the last delta.
+                    final = await self._observe_owned(
+                        entry,
+                        stdout_offset=0,
+                        stderr_offset=0,
+                        wait_seconds=0,
+                        max_inline_bytes=_MAX_MODEL_OUTPUT_BYTES,
+                    )
+                    return _shell_exec_result(None, final, bound_output=False)
                 if _is_final(info):
                     # Native exit can precede output producer closure.
                     await asyncio.sleep(0.05)
         except asyncio.CancelledError:
             try:
-                async with asyncio.timeout(5):
-                    if not _is_final(entry.latest):
-                        await self.signal(entry.process_id, "kill")
-                        inspected = await self._environment.processes.wait(
-                            entry.handle, condition="initial_terminal", timeout_seconds=5
-                        )
-                        self._adopt_info(entry, inspected)
-                        if not _is_final(entry.latest):
-                            raise ToolFailed("Shell cancellation could not confirm process termination.")
+                with execution_cleanup():
+                    # Environment operations own their deadlines. A shorter Shell
+                    # timer can interrupt the provider's TERM grace before KILL
+                    # and output cleanup, falsely reporting failed cancellation.
+                    await self._cancel_owned(entry)
             except (EnvironmentError, TimeoutError) as exc:
                 raise ToolFailed(
                     "Shell cancellation could not confirm process termination; inspect the native target."
                 ) from exc
             raise
         finally:
-            await _await_cleanup_shielded(resource.close())
+            with execution_cleanup():
+                await _await_cleanup_shielded(resource.close())
+
+    async def _observe_owned(
+        self,
+        entry: _ProcessEntry,
+        *,
+        stdout_offset: int,
+        stderr_offset: int,
+        wait_seconds: float,
+        max_inline_bytes: int,
+    ) -> tuple[ProcessInfo, ProcessReadOutputResult]:
+        # Retry only read-only transport observations, keeping the original handle
+        # and offsets. Cancellation interrupts backoff and follows native cleanup.
+        retries = 0
+        while True:
+            try:
+                return await self._observe(
+                    entry,
+                    stdout_offset=stdout_offset,
+                    stderr_offset=stderr_offset,
+                    wait_seconds=wait_seconds,
+                    max_inline_bytes=max_inline_bytes,
+                )
+            except EnvironmentError as exc:
+                if exc.code not in {"environment_unavailable", "environment_timeout"} or retries == 3:
+                    raise
+                await asyncio.sleep(0.1 * 2**retries)
+                retries += 1
+
+    async def _cancel_owned(self, entry: _ProcessEntry) -> None:
+        if not _is_final(entry.latest):
+            killed = await self._environment.processes.kill(entry.handle)
+            self._adopt_info(entry, killed.process)
+            inspected = await self._environment.processes.wait(
+                entry.handle, condition="initial_terminal", timeout_seconds=5
+            )
+            self._adopt_info(entry, inspected)
+            if not _is_final(entry.latest):
+                raise ToolFailed("Shell cancellation could not confirm process termination.")
 
     async def _admit(
         self, request: CommandRequest, *, alias: str | None, expected_mount_id: str | None, watch: bool = True
@@ -320,6 +398,38 @@ class _ProcessController:
                 await _await_cleanup_shielded(self._release_observation(entry))
                 raise
             return entry
+
+    async def control(
+        self,
+        process_id: str,
+        control: ShellControl,
+        *,
+        processes: BoundProcessOperations | None = None,
+        alias: str | None = None,
+    ) -> dict[str, JsonValue]:
+        match control.operation:
+            case "inspect":
+                result = await self.info(process_id, alias=alias, limit=1, processes=processes)
+            case "wait":
+                result = await self.wait(
+                    process_id,
+                    stdout_offset=control.stdout_offset,
+                    stderr_offset=control.stderr_offset,
+                    timeout_seconds=control.timeout_seconds,
+                    processes=processes,
+                )
+            case "input":
+                result = await self.write_input(
+                    process_id,
+                    control.data,
+                    close_stdin=control.close_stdin,
+                    processes=processes,
+                )
+            case "signal":
+                result = await self.signal(process_id, control.signal, processes=processes)
+            case _:
+                raise EnvironmentError("Invalid process control.", code="environment_request_invalid")
+        return cast(dict[str, JsonValue], result)
 
     async def wait(
         self,
@@ -485,6 +595,7 @@ class _ProcessController:
         stdout_offset: int,
         stderr_offset: int,
         wait_seconds: float,
+        max_inline_bytes: int = _DEFAULT_INLINE_BYTES,
         processes: BoundProcessOperations | None = None,
     ) -> tuple[ProcessInfo, ProcessReadOutputResult]:
         processes = processes or self._environment.processes
@@ -509,7 +620,7 @@ class _ProcessController:
             stderr_start_offset=stderr_offset,
             wait_seconds=0,
             policy=EnvironmentOutputPolicy(
-                max_inline_bytes=(_MAX_MODEL_OUTPUT_BYTES if _is_final(entry.latest) else _DEFAULT_INLINE_BYTES),
+                max_inline_bytes=(_MAX_MODEL_OUTPUT_BYTES if _is_final(entry.latest) else max_inline_bytes),
                 max_output_bytes=_MAX_MODEL_OUTPUT_BYTES,
                 overflow="truncate",
             ),
@@ -696,16 +807,6 @@ class _ProcessController:
             self._execution_guard()
 
 
-def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
-    return {
-        "phase": status.phase,
-        "termination_reason": status.termination_reason,
-        "exit_code": status.exit_code,
-        "signal": status.signal,
-        "cleanup": status.cleanup,
-    }
-
-
 def _validate_capture(capture: EnvironmentOutputCapture) -> None:
     if not (0 <= capture.available_start <= capture.available_end) or (
         capture.produced_bytes is not None and capture.available_end > capture.produced_bytes
@@ -744,33 +845,6 @@ def _validate_stream(stream: ProcessStreamRead, *, requested_offset: int) -> Non
             )
 
 
-def _project_stream(
-    stream: ProcessStreamRead,
-    *,
-    requested_offset: int,
-    data: bytes,
-    full_page_bytes: int,
-) -> OutputPageProjection:
-    capture = stream.capture
-    start_offset = stream.chunks[0].start_offset if stream.chunks else max(requested_offset, capture.available_start)
-    return {
-        "requested_offset": requested_offset,
-        "start_offset": start_offset,
-        "next_offset": start_offset + len(data),
-        "available_start": capture.available_start,
-        "available_end": capture.available_end,
-        "origin": capture.origin,
-        "coverage": capture.coverage,
-        "observation_closed": capture.observation_closed,
-        "reason": capture.reason,
-        "produced_bytes": capture.produced_bytes,
-        "producer_complete": capture.producer_complete,
-        "content_complete": capture.content_complete and len(data) == full_page_bytes,
-        "omitted_before_bytes": max(0, start_offset - requested_offset),
-        "text": data.decode("utf-8", errors="replace"),
-    }
-
-
 def _process_observation(
     process_id: str,
     observation: tuple[ProcessInfo, ProcessReadOutputResult],
@@ -780,63 +854,16 @@ def _process_observation(
     bound_output: bool = True,
 ) -> ProcessObservationSuccess:
     info, output = observation
-    stdout_full = b"".join(chunk.data for chunk in output.stdout.chunks)
-    stderr_full = b"".join(chunk.data for chunk in output.stderr.chunks)
-    budget = len(stdout_full) + len(stderr_full)
-    while True:
-        stdout_data, stderr_data = _fit_stream_prefixes(stdout_full, stderr_full, budget)
-        result: ProcessObservationSuccess = {
-            "ok": True,
-            "process_id": process_id,
-            "status": _project_status(info.status),
-            "stdin_open": info.stdin_open,
-            "stdout": _project_stream(
-                output.stdout,
-                requested_offset=stdout_offset,
-                data=stdout_data,
-                full_page_bytes=len(stdout_full),
-            ),
-            "stderr": _project_stream(
-                output.stderr,
-                requested_offset=stderr_offset,
-                data=stderr_data,
-                full_page_bytes=len(stderr_full),
-            ),
-        }
-        if not bound_output or tool_output_size(cast(dict[str, JsonValue], result)) <= _MAX_PROJECTED_OUTPUT_CHARS:
-            return result
-        if budget == 0:
-            raise EnvironmentError(
-                "The process result metadata exceeds Harness output bounds.",
-                code="environment_provider_failure",
-            )
-        budget = max(0, int(budget * 0.75) - 1)
-
-
-def _fit_stream_prefixes(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[bytes, bytes]:
-    """Fit fair UTF-8-safe stream prefixes inside one aggregate byte budget."""
-    if max_bytes < 0:
-        raise ValueError("max_bytes must be non-negative")
-    stdout_limit = min(len(stdout), (max_bytes + 1) // 2)
-    stderr_limit = min(len(stderr), max_bytes // 2)
-    remaining = max_bytes - stdout_limit - stderr_limit
-    if remaining:
-        added = min(len(stdout) - stdout_limit, remaining)
-        stdout_limit += added
-        remaining -= added
-    if remaining:
-        stderr_limit += min(len(stderr) - stderr_limit, remaining)
-    return _utf8_safe_prefix(stdout, stdout_limit), _utf8_safe_prefix(stderr, stderr_limit)
-
-
-def _utf8_safe_prefix(data: bytes, limit: int) -> bytes:
-    prefix = data[:limit]
-    if limit >= len(data):
-        return prefix
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    decoder.decode(prefix, final=False)
-    buffered, _ = decoder.getstate()
-    return prefix[: len(prefix) - len(buffered)] if buffered else prefix
+    return _project_observation(
+        process_id,
+        info.status,
+        info.stdin_open,
+        output.stdout,
+        output.stderr,
+        stdout_offset=stdout_offset,
+        stderr_offset=stderr_offset,
+        bound_output=bound_output,
+    )
 
 
 def _shell_exec_result(

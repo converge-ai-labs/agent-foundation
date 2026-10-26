@@ -10,7 +10,7 @@ From the repository root, start this checkout's PostgreSQL and Redis, apply migr
 make dev
 ```
 
-The command returns once all three accept connections and prints the Console URL; `make dev-stop` stops them and `make dev-foreground` runs them attached. It writes this checkout's Service settings to `var/dev/service.toml`, with the Console origin as the Service public URL; no `.env` is required. Use `make dev-reset STATE=seeded` for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
+The command returns once all three accept connections and prints the Console URL; `make dev-stop` stops them and `make dev-foreground` runs them attached. It writes this checkout's Service settings to `var/dev/service.toml`, with the Console origin as the Service public URL; no `.env` is required. Use `make dev-reset STATE=seeded` for fictional accounts and content, or `STATE=empty` for a fresh instance with the local administrator already created and no seeded business content. See [local Service development](../../../dev/service/README.md).
 
 To run only Console against an already running Service:
 
@@ -27,7 +27,10 @@ The local launcher assigns a stable Console port per checkout and passes the mat
 - Sessions with threads, runs, retained and live output, attachments, waiting feedback, steering, interruption, and queued messages.
 - Models and providers, Skills and versions, file Memories with their history and mounts, and Environment providers, templates, and instances.
 - Connectors, and remote MCP connections and tool discovery.
-- Run attempt details and Traces.
+- [Schedules](../../../docs/a13n-service/schedules.md) for recurring work; [Findings](../../../docs/a13n-service/agents-and-runs.md#find-and-improve-execution-issues) for diagnosing and improving agents.
+- [Memory Spaces and standalone file or record memories](../../../docs/a13n-service/memory.md).
+- [Environment dashboards, data sources and Devices](../../../docs/a13n-service/environment-monitoring.md), plus [desktop assistance](../../../docs/a13n-service/environments.md#computer-use).
+- Run attempt details, Traces and [retained tool executions](../../../docs/a13n-service/agents-and-runs.md#retained-tool-executions).
 - Workspace, organization, and personal settings, membership, invitations, API keys, service accounts, sessions, and audit events.
 
 Existing hidden configuration is preserved when editing supported fields.

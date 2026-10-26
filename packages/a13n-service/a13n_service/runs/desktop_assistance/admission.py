@@ -1,11 +1,12 @@
 """Service admission at the Harness operation boundary. SQL never spans provider I/O."""
 
 import hashlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import anyio
 from a13n_harness.environment.models import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentError, EnvironmentState
+from a13n_harness.tool_execution import current_execution, execution_cleanup_active
 from sqlalchemy import exists, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +19,16 @@ from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tool_executions.authority import lock_execution, lock_owner, prove
 
-TARGET_FIELDS = {"e2b": "sandbox_id", "docker": "container_id", "daytona": "target_id", "modal": "target_id"}
+TARGET_FIELDS = {
+    "e2b": "sandbox_id",
+    "docker": "container_id",
+    "daytona": "target_id",
+    "modal": "target_id",
+    "vercel": "backing_id",
+    "sprites": "backing_id",
+}
 
 
 def target_key(state: EnvironmentState | None) -> str | None:
@@ -29,6 +38,7 @@ def target_key(state: EnvironmentState | None) -> str | None:
     native = state.state.get(field) if field else None
     if not isinstance(native, str) or not native:
         return None
+    # Vercel uses its immutable name/creation identity across resumable sessions.
     # Native IDs are globally allocated. Treat ambiguous account aliases conservatively
     # as the same target rather than allowing a second controller through another account.
     return hashlib.sha256(f"{state.provider_key}:{native}".encode()).hexdigest()
@@ -114,13 +124,25 @@ async def admit_mounts(
 @asynccontextmanager
 async def operation(
     runtime: Runtime, lease: Lease, environment_id: str, state: EnvironmentState | None, action: EnvironmentAction
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None]:
+    if execution_cleanup_active() and action in {
+        EnvironmentAction.PROCESS_KILL,
+        EnvironmentAction.PROCESS_WAIT,
+        EnvironmentAction.PROCESS_RELEASE,
+    }:
+        record = current_execution()
+        assert record is not None
+        async with transaction(runtime.storage) as session:
+            await lock_execution(session, lease, record.execution_id, cleanup=True)
+        yield
+        return
     key = target_key(state)
     if key is None:
+        await prove(runtime, lease)
         yield
         return
     async with transaction(runtime.storage) as session:
-        await lock_lease(session, lease)
+        await lock_owner(session, runtime, lease)
         row = await target(session, key, environment_id=environment_id, run_id=lease.run_id)
         assistance = await session.get(DesktopAssistanceRow, row.holder_id) if row.holder_id else None
         from a13n_service.runs.desktop_assistance.execution import admitted_run

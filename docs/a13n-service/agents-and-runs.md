@@ -5,6 +5,8 @@ description: Configure agents, start conversations, and follow, steer, or resume
 
 An **agent** is a named resource whose configuration (a model, instructions, tools and policies) is saved as immutable, numbered **revisions**. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each an independently advancing history; messages you send go to the thread's **inbox**, and each accepted advancement of a thread is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
 
+Jump to your task: [configure an agent](#agents), [start a conversation](#start-a-conversation), [send or steer a message](#submit-a-message), [answer a wait](#waits-approvals-and-questions), [interrupt or fork](#interrupt-fork-and-archive), [inspect results](#results), or [improve an issue](#find-and-improve-execution-issues).
+
 ```mermaid
 stateDiagram-v2
     [*] --> accepted: Message or resume
@@ -45,7 +47,7 @@ The response's `id` (`ap_…`) identifies the agent in paths and references; age
 - `POST …/archive` stops new runs of the agent (`422 disabled`); runs already accepted finish. `POST …/unarchive` reverses it.
 - Lists filter by `label`, `q` (name or description), `archived`, `source` (`custom` or `builtin`), and `skill_id` or `skill_revision_id`, which keep the agents with a revision pinning it.
 
-The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents with `source: "builtin"`, distinguished by `preset_kind`. Their entire configuration is read-only, including models and model settings. Preparation automatically selects a usable model and retains the current one while usable. Metadata, avatar, archiving and default-version changes are protected.
+The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents with `source: "builtin"`, distinguished by `preset_kind`. You can edit their model, thinking effort, output token limit, `temperature`, `top_p` and supplemental instructions. Revisions save your supplement; read-only official instructions come from the current Worker on every execution attempt, including recovery and waiting continuation. Other configuration, metadata, avatar and archiving remain protected. Use version history to select a previous default. Preparation preserves that selection; protected configuration updates appear as candidate versions. Official instruction changes need no new revision. Duplicate the Agent for unrestricted configuration.
 
 ### Agent configuration
 
@@ -292,6 +294,20 @@ Anyone with `run` may withdraw and reorder. A thread holds at most `control.inbo
 
 A resume or a child result continues with the options of the run it follows. In Console, **Run options** sets the model, an instructions override, media understanding, a pinned revision and other configuration for the next run.
 
+## Request context headers
+
+Send business headers shared by model and MCP requests in the message body. Forwarding is enabled by default, so only include values intended for the configured model providers and MCP servers, including third-party endpoints:
+
+```json
+{"options": {"context": {"headers": {"x-trace-id": "trace-123", "x-tenant-id": "acme"}}}}
+```
+
+This field accepts at most 32 case-insensitively unique headers, with printable ASCII values up to 4096 characters and 8 KiB total. Authentication and transport headers are reserved. Values are stored as plain run options, so keep secrets in provider or connection credentials. Inbound HTTP headers are not copied automatically.
+
+Recovery and explicit resume retain the accepted context; inline and async children inherit it. A new message or fork without context starts empty. A steer can omit context or repeat the accepted value; a different value waits for a later run. HTTP reads retain context, while MCP query results omit it before text search and fragmentation. Prompts, history and shell environments receive no automatic copy.
+
+Model request headers and per-connection `mcp_headers` override shared context names. Provider credentials, protocol headers, stored secret headers and automatic affinity remain authoritative. Context headers that conflict with the model provider's protected names are silently skipped for that provider; the stored context remains unchanged. Automatic forwarding requires both the deployment category switch and the target's `config.forward_context_headers`. Category switches default to true. An omitted target parameter uses `A13N_HARNESS_FORWARD_CONTEXT_HEADERS` (unset: true); explicit values win. Model Providers with the parameter omitted inherit the environment, while MCP Connection saves store the resolved value. Set `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` or `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` to disable a category. Trusted tools can still read context. Fetch, download, browser and shell operations receive no automatic forwarding.
+
 ## Caller headers
 
 A thread can pass non-credential context, such as a tenant or conversation ID, to its MCP connections as HTTP headers. Set `mcp_headers` when creating the thread, or change it with `PATCH …/threads/{thread_id}` and the thread's `If-Match`:
@@ -394,6 +410,72 @@ The accompanying input does not replace any required result. Ordinary inbox mess
 
 Every ended run is the history its thread continues, whatever its outcome. After a failed or cancelled run, the next run starts from its last checkpoint, or from where the run started if it failed before one, and tool calls it left unfinished read as interrupted rather than running again. When the history itself caused the failure, for example a model provider rejecting it, fork an earlier run instead.
 
+## Execution policy
+
+Configure tool handoff and steering independently. `inline` waits for tools to finish; `auto` returns a receipt after the foreground wait. `boundary` applies guidance at the next model boundary; `immediate` lets guidance preempt the current foreground wait. Service defaults to `auto`, 5 seconds, and `immediate`.
+
+Each field follows this precedence: **single run → thread → selected agent revision → deployment default**. Omitted or null values inherit. Set agent defaults in `config.execution` when creating an agent or publishing a revision:
+
+```json
+{
+  "execution": {
+    "tools": {"mode": "auto", "foreground_wait_seconds": 5},
+    "steering": "immediate"
+  }
+}
+```
+
+For persistent thread overrides, set `execution` in `POST /threads`, or send this body to `PATCH /threads/{thread_id}` with the thread's `If-Match`:
+
+```json
+{"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
+```
+
+PATCH preserves omitted fields. Use `{"execution":{"tools":{"mode":null}}}` to return only tool mode to inheritance, or `{"execution":null}` to clear all thread overrides. Inherited fields follow the agent selected for each new run.
+
+For one run, submit a message with `options.execution`:
+
+```json
+{
+  "kind": "message",
+  "delivery": "next_run",
+  "agent_id": "agt_example",
+  "payload": {"content": [{"type": "text", "text": "Review this change"}]},
+  "options": {"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 2}}}
+}
+```
+
+The override affects that run only. Service freezes the effective policy when the queued message becomes a run. Recovery, handoff, resume and automatic continuations keep it. A steer may omit the policy or repeat matching fields; changing it returns `execution_policy_immutable`. Use `next_run` for a different policy. Earlier retained calls remain accessible even when a new run uses `inline`. Completion notifications always wait for a boundary.
+
+In Console, open **Execution policy** in the agent configuration for defaults, or in **Session actions** for the current thread. The new-session **Options** dialog and the idle message composer's **Execution policy** control apply to one run. **Details → Execution policy** shows a run's frozen values.
+
+The foreground wait accepts 0–300 seconds and is not an execution deadline. Its deployment fallback is `tool_executions.foreground_wait_seconds`; concurrency, retention and shutdown settings remain deployment-wide.
+
+### Command environment variables
+
+Use `config.execution.environment` on an Agent, `execution.environment` on a Thread, or `options.execution.environment` on one message. For example, `{"execution":{"environment":{"APP_MODE":"staging","EMPTY":""}}}` sets two defaults. Precedence per key is **command → Run → Thread → Agent → frozen Environment recipe**. These are readable configuration values, not secret storage; the same portable names and reserved-name rules as recipe variables apply. Use consistent spelling of names on Windows.
+
+Thread PATCH replaces its entire supplied variable map; null or `{}` clears that layer and restores inheritance. An omitted map leaves it unchanged. An empty string sets an empty value; removing a key does not unset lower defaults. Supported explicit command unsets still remove inherited values.
+
+The Run freezes its Agent/Thread/Run overlay at acceptance, including across recovery and resume. Shell commands, background processes and their ordinary children receive it. Concurrent Runs sharing a sandbox keep separate command environments; the sandbox's global variables and recipe stay unchanged. Inline subagents share their containing Run's defaults; forks and independent child Threads use their own Agent and choices. In Console, edit variables in the same **Execution policy** dialogs described above.
+
+## Retained tool executions
+
+With the default `auto` tool mode, supported tool calls use automatic handoff: after the foreground wait (5 seconds by default), the model receives an `exec-*` receipt and can continue while the same invocation runs on its original worker. A receipt is a reference, not a result. A whole CodeAct invocation and its nested calls stay together; later runs may execute on another worker. Owner loss marks unfinished work `lost`; Service never replays the invocation automatically.
+
+Inspect these calls from **Tool executions** in the existing Console session menu or a run's details. Refresh updates status; **Inspect** opens metadata and **Read result** fetches a bounded fragment. Closing the inspector releases its local result text.
+
+| Endpoint under `/api/v1/threads/{thread_id}`  | Purpose                                                                          |
+| --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /tool-executions`                        | Page through calls; filter by Service `run_id` or `active`.                      |
+| `GET /tool-executions/{execution_id}`         | Inspect status without acknowledging delivery.                                   |
+| `GET /tool-executions/{execution_id}/result`  | Read a result fragment using `offset`, `limit` and `version`.                    |
+| `POST /tool-executions/{execution_id}/cancel` | Request cancellation; HTTP 202 is acceptance, not completed cleanup or rollback. |
+
+References belong to the exact Thread. Result reads acknowledge delivery; the first acknowledgement starts the configured reread window (one hour by default), bounded by the maximum age (24 hours after completion by default). Repeated reads do not extend it. Expired records return 404. Status reads and receipts leave retention unchanged.
+
+Completion hints follow ordinary inbox ordering and capacity rules. Stopping the originating run requests cancellation of its retained calls and prevents late results from restarting the conversation. Stopping a later run does not cancel earlier runs' calls. An Environment remains in use until the retained operation and its cleanup actually finish, even after cancellation is accepted.
+
 ## Results
 
 Read `GET …/runs/{run_id}` and branch on `status`. A completed run has `output` (text or JSON matching `output_spec`); a waiting run has `pending`; a failed run has `failure {code, message}`. The [API reference](api-reference/index.md) lists the run's configuration, lineage, mounts and timestamps.
@@ -415,12 +497,13 @@ A failed run's `failure.code` names the cause, such as `usage_limit_exceeded`, `
 curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| Event    | Data                                                        | Meaning                                                                                                                           |
-| -------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `thread` | `{thread, current_run, last_run, entries}`                  | The current state of one thread: the thread, its active run, the run that ended last, and its pending and assigned inbox entries. |
-| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | The committed items of a run from ordinal `first` on. `complete` is `true` for the final items of a run that ended.               |
-| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | One [AG-UI](https://docs.ag-ui.com) event of an active run, and the display item it changed (`{id, kind, state}` or `null`).      |
-| `gap`    | `{thread_id, run_id}`                                       | Live output of the run was lost. The run sends no more deltas until its next `items` frame.                                       |
+| Event       | Data                                                        | Meaning                                                                                                                                                                |
+| ----------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `thread`    | `{thread, current_run, last_run, entries}`                  | The current state of one thread: the thread, its active run, the run that ended last, and its pending and assigned inbox entries.                                      |
+| `items`     | `{thread_id, run_id, first, items, continuation, complete}` | The committed items of a run from ordinal `first` on. `complete` is `true` for the final items of a run that ended.                                                    |
+| `delta`     | `{thread_id, run_id, attempt, sequence, event, item}`       | One [AG-UI](https://docs.ag-ui.com) event of an active run, and the display item it changed (`{id, kind, state}` or `null`).                                           |
+| `gap`       | `{thread_id, run_id}`                                       | Live output of the run was lost. The run sends no more deltas until its next `items` frame.                                                                            |
+| `app_ready` | `{thread_id, run_id, apps}`                                 | The listed MCP Apps have committed originals and references. Enable their entries only after this event; see [MCP Apps](tools.md#mcp-apps-for-embedding-applications). |
 
 Every connection starts with the current state of the session: one `thread` frame per thread, oldest first, each followed by an `items` frame for its active run and the output that run already streamed. The stream has no cursor, so a reconnect sends no position. To render a session:
 
@@ -463,6 +546,12 @@ With a trace backend configured (`telemetry.trace_backend`, see [logs, metrics a
 
 Queries return only the workspace's spans. Without a backend they answer `503 unavailable`. How much content the spans hold depends on `telemetry.trace_content`. A Finding Agent analysis run reads only the traces its analysis selected, each by `trace_id`: its own requests cannot list traces or an attempt's spans, and each trace it reads is recorded as evidence it may cite.
 
+In **Traces**, select the **Duration**, **Cost** or **Started** column to sort across the entire selected time range. Duration filters use seconds and cost filters use USD; minimum and maximum are inclusive and take effect when you select **Apply**. For example, select the last 24 hours, minimum duration `60` and minimum cost `0.01`, then sort cost descending to find traces lasting at least a minute with at least $0.01 in reported cost.
+
+The API is `GET …/traces/search`, with explicit `started_after`, `started_before`, `order_by=started|duration|cost` and `direction=asc|desc`. Optional filters are `min_duration_seconds`, `max_duration_seconds`, `min_cost_usd` and `max_cost_usd`, alongside the existing ID and root-attribute selectors. Cost sums each span's own reported cost; unreported cost is not zero, and this total is not Service Run billing.
+
+The configured backend executes each search without a result cache. Langfuse reads up to 5,000 matching root summaries, bounded to 8 MiB, on every request. When cost is only displayed, it selects the requested page before querying that page's costs. Cost sorting or filtering requires aggregate costs for all candidate traces before paging. This requires a Langfuse version supporting trace-ID and cost-category grouping in Metrics API v2. Logfire aggregates, filters, sorts and pages through SQL. Follow the returned keyset cursor with unchanged filters. It continues after the last sort value and trace/span IDs, so inserting or deleting earlier records does not shift the next page. Changes to sort values or filter membership can still cause repeats or omissions; pagination does not freeze the results. Searches have a 30-second deadline and fail explicitly on incomplete results or collection limits. Narrow the time range or add an ID filter when needed. Results remain subject to sampling, ingestion delay and retention.
+
 ## Find and improve execution issues
 
 Open **Improve → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. The saved assessment and review note appear in reading mode. Select **Edit assessment**, choose confirmed, expected, insufficient, or false positive, optionally add a **Review note**, then select **Save assessment**. The outcome and note are saved together. Changing the outcome clears the previous rationale; Cancel restores saved values and returns to reading mode. Closing and reopening preserve the assessment and note, and the original diagnosis and evidence stay visible.
@@ -485,7 +574,7 @@ Categories describe the issue, independently of the selected analysis rules, sev
 
 Later analyses of the same agent version receive recent existing findings, including unreviewed and closed findings. Unreviewed findings describe prior diagnoses; reviewed findings also supply your judgment and note. Findings from other versions are excluded. The agent compares issues and evidence, cites an existing finding in its summary for an equivalent diagnosis, and explains material changes when reporting a new finding. This reduces duplicate diagnoses without guaranteeing complete deduplication or merging stored findings. Feedback is bounded and may be shortened; each accepted analysis retains the values it received, so editing a review affects new analyses rather than retries. Use the note to explain why a diagnosis is wrong or why an apparent error is expected. The agent treats feedback as context and may report new evidence that changes the judgment.
 
-Choose **Analyze traces**, select built-in rules and a time range/count. No Agent selection is required; the scope covers workspace traces. Analysis automatically uses the built-in Finding Agent. Preparation automatically selects an available model and keeps the current model while it remains usable; its model and configuration are read-only. Analysis runs on demand through an ordinary Service Run. The deployment needs a configured trace query backend. Rules focus on execution failures, retries/recovery and answer quality; an error that recovered successfully is considered in context. From an ended trace, **Analyze trace** selects that one trace.
+Choose **Analyze traces**, select built-in rules and a time range/count. No Agent selection is required; the scope covers workspace traces. Analysis automatically uses the built-in Finding Agent. Analysis uses its selected default version and model. Edit these on the Finding Agent page. Add optional **Requirements for this analysis** to guide this one analysis without changing the Agent; the requirements are saved in Analysis history. Analysis runs on demand through an ordinary Service Run. The deployment needs a configured trace query backend. Rules focus on execution failures, retries/recovery and answer quality; an error that recovered successfully is considered in context. From an ended trace, **Analyze trace** selects that one trace.
 
 Selection scans at most 100 roots and selects at most 20 matching traces. Execution and recovery rules prioritize failed runs and roots marked error/fatal within this scan, preserving backend order among equally prioritized candidates. Errors visible only in child spans do not affect selection priority. Answer-only analysis keeps backend order. A priority signal is a reason to investigate, not proof of a problem. The **Analysis history** tab lists analysis scopes, Run status and creation time in a table. Open a row to see selected trace count, finding count, distinct evidence-cited trace count, selection limits and trace links. These counts do not establish how many traces were fully analyzed. Open the analysis Run from the dialog to read its final summary and limitations. No findings does not mean that all traces were reviewed or that the Agent is healthy.
 

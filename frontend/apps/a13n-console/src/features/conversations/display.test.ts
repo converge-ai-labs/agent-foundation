@@ -7,7 +7,8 @@ import {
   comparePositions,
   isOmitted,
   readDisplay,
-  readFullDisplay,
+  readRunDisplay,
+  readEarlierDisplay,
   type DisplayItem,
 } from "./display";
 import { SessionDisplays } from "./session-displays";
@@ -286,43 +287,49 @@ it("does not parse a JSON fragment suffix after losing its prefix", () => {
   expect(normalizer.incomplete).toBe(true);
 });
 
-it("retains Host-selected grouping and native failure diagnostics with raw events", () => {
-  const normalizer = new DisplayNormalizer();
-  const items = new Map<string, DisplayItem>();
-  normalizer.apply(items, {
-    ...delta(1),
-    event: {
-      type: "CUSTOM",
-      name: "a13n.pydantic_ai.function_tool_result",
-      value: {
-        event: {
-          part: {
-            part_kind: "retry-prompt",
-            tool_call_id: "t",
-            content: "denied",
+it.each([
+  { part_kind: "retry-prompt" },
+  { part_kind: "tool-return", outcome: "retried" },
+])(
+  "retains Host-selected grouping and native failure diagnostics with raw events: %j",
+  (retry) => {
+    const normalizer = new DisplayNormalizer();
+    const items = new Map<string, DisplayItem>();
+    normalizer.apply(items, {
+      ...delta(1),
+      event: {
+        type: "CUSTOM",
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              ...retry,
+              tool_call_id: "t",
+              content: "denied",
+            },
           },
         },
       },
-    },
-    item: {
-      id: "tool",
-      kind: "tool_call",
-      state: "failed",
+      item: {
+        id: "tool",
+        kind: "tool_call",
+        state: "failed",
+        ordinal: 8,
+        response_group: "saved-answer",
+        failure: { code: "tool_failed", message: "denied" },
+      },
+    });
+    expect(items.get("tool")).toMatchObject({
       ordinal: 8,
-      response_group: "saved-answer",
-      failure: { code: "tool_failed", message: "denied" },
-    },
-  });
-  expect(items.get("tool")).toMatchObject({
-    ordinal: 8,
-    state: "failed",
-    content: {
-      responseGroup: "saved-answer",
-      failure: { code: "tool_failed", message: "denied" },
-      retry: true,
-    },
-  });
-});
+      state: "failed",
+      content: {
+        responseGroup: "saved-answer",
+        failure: { code: "tool_failed", message: "denied" },
+        retry: true,
+      },
+    });
+  },
+);
 
 it("keeps orphan tool arguments incomplete after END even if the suffix is valid JSON", async () => {
   const { presentItem, parseItemValue } = await import("./projection");
@@ -394,7 +401,7 @@ const committed = (complete = false) => ({
   complete,
 });
 
-it("loads all pages of a large Run, keeping the newest read's run and completion", async () => {
+it("shows only the latest window of a large Run before any history request", async () => {
   const requests: URL[] = [];
   const items = Array.from({ length: 867 }, (_, index) => ({
     ...item(),
@@ -421,14 +428,10 @@ it("loads all pages of a large Run, keeping the newest read's run and completion
       );
     },
   });
-  const result = await readFullDisplay(client, "ws_1", "run_2");
-  expect(result.items).toEqual(items);
+  const result = await readRunDisplay(client, "ws_1", "run_2");
+  expect(result.items).toEqual(items.slice(-200));
   expect(result).toMatchObject({ complete: false, immutableBefore: 668 });
-  expect(requests.map((url) => url.search)).toEqual([
-    "",
-    "?after=0&limit=500",
-    "?after=500&limit=167",
-  ]);
+  expect(requests.map((url) => url.search)).toEqual([""]);
   client.close();
 });
 
@@ -447,26 +450,36 @@ it("reuses immutable pages but refreshes a former mutable tail before retaining 
       const url = new URL((input as Request).url);
       requests.push(url);
       const after = url.searchParams.get("after");
+      const before = url.searchParams.get("before");
       return Response.json({
         ...committed(),
         items:
-          after === null
-            ? [items[first - 1]]
-            : items.slice(
-                Number(after),
-                Number(after) + Number(url.searchParams.get("limit")),
-              ),
+          before !== null
+            ? items.slice(0, Number(before) - 1)
+            : after === null
+              ? [items[first - 1]]
+              : items.slice(
+                  Number(after),
+                  Number(after) + Number(url.searchParams.get("limit")),
+                ),
       });
     },
   });
-  const previous = await readFullDisplay(client, "ws_1", "run_2");
+  const initial = await readRunDisplay(client, "ws_1", "run_2");
+  const previous = await readEarlierDisplay(
+    client,
+    "ws_1",
+    "run_2",
+    initial,
+    3,
+  );
   first = 5;
   items[2] = {
     ...items[2]!,
     content: { ...items[2]!.content, text: "Final answer" },
     state: "completed",
   };
-  const next = await readFullDisplay(
+  const next = await readRunDisplay(
     client,
     "ws_1",
     "run_2",
@@ -477,7 +490,7 @@ it("reuses immutable pages but refreshes a former mutable tail before retaining 
   expect(previous.items[2]!.content.text).toBe("Hello");
   expect(requests.map((url) => url.search)).toEqual([
     "",
-    "?after=0&limit=2",
+    "?before=3&limit=200",
     "",
     "?after=2&limit=2",
   ]);
@@ -494,7 +507,7 @@ it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
       fetch: async (input) => {
         requests++;
         const historical = new URL((input as Request).url).searchParams.has(
-          "after",
+          "before",
         );
         return Response.json({
           ...committed(),
@@ -505,9 +518,10 @@ it.each([[], [2], [1, 1]].map((ordinals) => ({ ordinals })))(
         });
       },
     });
-    await expect(readFullDisplay(client, "ws_1", "run_2")).rejects.toThrow(
-      "Run history could not be fully loaded.",
-    );
+    const current = await readRunDisplay(client, "ws_1", "run_2");
+    await expect(
+      readEarlierDisplay(client, "ws_1", "run_2", current, 3),
+    ).rejects.toThrow("Earlier run content could not be loaded.");
     expect(requests).toBe(2);
     client.close();
   },

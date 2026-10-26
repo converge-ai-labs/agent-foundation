@@ -1,16 +1,18 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from a13n_harness.environment.models import EnvironmentState
-from a13n_harness.providers.environment.modal.diagnostics import desktop_operation
 from a13n_harness.providers.environment.modal.provider import MODAL as EXECUTION
 from a13n_harness.providers.environment.modal.shared import ModalConnectionConfiguration, ModalCredential
 from a13n_harness.providers.environment.native.environment import NativeRuntime
 
 from a13n_service.providers.environment._backend_factory import BackendProvider, ManagementBackendFactory
 from a13n_service.providers.environment.definition import management_definition
+from a13n_service.providers.environment.modal_build import ModalDesktopPreparation
 
 from .configuration import ModalRecipe
+from .desktop_build import DesktopBuildAPI, locator, revision, specification
 from .management import ModalManagement
 
 
@@ -31,18 +33,17 @@ class ModalProvider(BackendProvider[ModalConnectionConfiguration, ModalCredentia
     @asynccontextmanager
     async def desktop_session(
         self, environment: object, *, environment_id: str, state: EnvironmentState | None, operation_id: str
-    ) -> AsyncIterator[ModalManagement]:
+    ) -> AsyncGenerator[ModalManagement]:
         """Own one fixed-target connection for a single desktop transition request."""
         # Retain the existing validation, error translation and shielded cleanup.
-        with desktop_operation(operation_id, "session"):
-            async with self._operation(environment, environment_id, state, operation_id) as target:
-                assert isinstance(target, ModalManagement)
-                target.reuse_transport = True
-                try:
-                    yield target
-                except BaseException:
-                    target.discard_transport()
-                    raise
+        async with self._operation(environment, environment_id, state, operation_id) as target:
+            assert isinstance(target, ModalManagement)
+            target.reuse_transport = True
+            try:
+                yield target
+            except BaseException:
+                target.discard_transport()
+                raise
 
 
 async def provider(
@@ -60,4 +61,8 @@ MODAL = management_definition(
     supports_stop=True,
     supports_destroy=True,
     requires_keepalive=True,
+)
+
+MODAL = replace(
+    MODAL, modal_desktop_preparation=ModalDesktopPreparation(specification, revision, locator, DesktopBuildAPI)
 )

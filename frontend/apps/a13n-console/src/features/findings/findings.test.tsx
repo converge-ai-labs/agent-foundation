@@ -176,6 +176,10 @@ it("submits selected rules and a bounded scope through the managed preset and or
     screen.queryByRole("combobox", { name: "Agent to analyze" }),
   ).toBeNull();
   await user.click(screen.getByRole("checkbox", { name: /Answer quality/ }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Requirements for this analysis" }),
+    "Check unsupported success claims.",
+  );
   expect(
     screen.queryByRole("combobox", { name: "Finding Agent model" }),
   ).toBeNull();
@@ -193,6 +197,7 @@ it("submits selected rules and a bounded scope through the managed preset and or
         body: expect.objectContaining({
           max_traces: 10,
           presets: ["execution", "recovery"],
+          instructions: "Check unsupported success claims.",
         }),
         params: { header: { "Idempotency-Key": expect.any(String) } },
       }),
@@ -334,6 +339,9 @@ it("switches collections without stacking tables and preserves analysis evidence
                 thread_id: "thread_analysis",
                 run_id: "run_analysis",
                 run_status: "completed",
+                selection: {
+                  instructions: "Check unsupported success claims.",
+                },
                 selected_traces: [
                   { trace_id: "a".repeat(32), run_id: "run_a" },
                   { trace_id: "b".repeat(32), run_id: "run_b" },
@@ -370,6 +378,9 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(fact("Selected traces")).toBe("2");
   expect(fact("Findings")).toBe("3");
   expect(fact("Evidence-cited traces")).toBe("1");
+  expect(
+    within(details).getByText("Check unsupported success claims."),
+  ).toBeTruthy();
   expect(screen.queryByText(/Coverage not reported/)).toBeNull();
   expect(screen.getByText(/Selection capped/)).toBeTruthy();
   expect(

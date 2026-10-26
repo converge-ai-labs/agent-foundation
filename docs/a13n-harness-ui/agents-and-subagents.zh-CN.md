@@ -334,6 +334,7 @@ Markdown frontmatter 没有 `model` 字段，也不支持 `model: inherit`。从
 | `harness_plugins` | `null` | 继承根默认值；`[]` 不选任何项；列表选择确切 ID                    |
 | `mcp_servers`     | `null` | 继承根默认值；`[]` 不选任何项；列表选择确切 ID                    |
 | `tools`           | `null` | 不增加可见性过滤；`[]` 不公开任何可选集成工具；列表为精确允许列表 |
+| `tool_search`     | `null` | 可选的[工具搜索分组](#tool-search-groups)和搜索配置               |
 | `subagents`       | `[]`   | 有序 `agent` 或 `markdown` 引用                                   |
 
 Plugin/MCP 默认值初始化新 Thread 的确切选择。后续全局默认值不改写持久选择。后续 Run 重新解析引用资源和所含子级，而捕获的执行保持不可变。

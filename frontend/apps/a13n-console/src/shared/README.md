@@ -84,6 +84,12 @@ Text files addressed by path, such as a skill package or a memory.
 
 - `Patch` — unified diff hunks, read by tint and sign.
 
+## `shared/time-range`
+
+- `TimeRangePicker` — preset windows or a custom start and end. Presets stay relative; the caller resolves them when querying. Set `maxDays`, and optionally `earliest`, to match the available data.
+- `RefreshButton` — reload the current view and display its pending state.
+- `presetLabels`, `formatDuration` — shared labels for windows and elapsed time.
+
 ## `shared/identity`
 
 How a resource presents itself.

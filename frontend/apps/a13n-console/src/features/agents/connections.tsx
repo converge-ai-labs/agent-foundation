@@ -1,4 +1,4 @@
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, XIcon } from "@phosphor-icons/react";
 import {
   BrandIcon,
   Button,
@@ -8,7 +8,9 @@ import {
   CollapsibleTrigger,
   Label,
   Spinner,
-  Switch,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
 } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -171,20 +173,6 @@ export function ConnectionGroup({
     <section className={styles.toolsetGroup}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <div className={styles.toolsetGroupHeader}>
-          <Label className={styles.toolsetGroupSwitch}>
-            <Checkbox
-              aria-label={t("Enable {{group}} tools", { group: name })}
-              disabled={editingDisabled}
-              checked={selection.tools == null || selection.tools.length > 0}
-              onCheckedChange={(checked) =>
-                onChange((current) => ({
-                  ...current,
-                  tools: checked === true ? null : [],
-                  permissions: checked === true ? current.permissions : {},
-                }))
-              }
-            />
-          </Label>
           <CollapsibleTrigger
             render={
               <button type="button" className={styles.toolsetGroupTrigger} />
@@ -210,6 +198,25 @@ export function ConnectionGroup({
               aria-hidden="true"
             />
           </CollapsibleTrigger>
+          {!readOnly && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className={styles.connectionRemove}
+                    aria-label={t("Remove {{name}}", { name })}
+                    onClick={onRemove}
+                  />
+                }
+              >
+                <XIcon size={16} aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipPopup>{t("Remove connection")}</TooltipPopup>
+            </Tooltip>
+          )}
         </div>
         <CollapsiblePanel>
           <div className={styles.toolsetGroupBody}>
@@ -253,27 +260,6 @@ export function ConnectionGroup({
                     </Button>
                   )}
                 </p>
-              )}
-              {!readOnly && (
-                <div className={styles.connectionOption}>
-                  <span>
-                    <strong>{t("Remove connection")}</strong>
-                    <small>
-                      {t(
-                        "The agent stops using these tools once you save. Saved tool settings are discarded.",
-                      )}
-                    </small>
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={t("Remove {{name}}", { name })}
-                    onClick={onRemove}
-                  >
-                    {t("Remove")}
-                  </Button>
-                </div>
               )}
             </div>
             {catalog.isPending && connection && (

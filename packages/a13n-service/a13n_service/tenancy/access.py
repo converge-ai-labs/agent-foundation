@@ -8,7 +8,7 @@ caller may see, and runs administrative changes with the `admin` check inside th
 import asyncio
 import re
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Protocol
@@ -365,7 +365,7 @@ async def administering[S: Scoped](
     action: str,
     reading: bool = False,
     require_active: bool = True,
-) -> AsyncIterator[tuple[AsyncSession, S]]:
+) -> AsyncGenerator[tuple[AsyncSession, S]]:
     """A transaction in which the actor currently holds `admin` at an organization or workspace path.
 
     For a change, the check runs inside the changing transaction, after the organization lock, on the actor's

@@ -177,6 +177,15 @@ def test_permissions_compile_from_each_selection() -> None:
         ConnectionSelection.model_validate({"connection_id": GITHUB, "tools": ["issues"], "permissions": {"x": "deny"}})
 
 
+def test_connection_selection_ignores_unknown_fields() -> None:
+    known = {"connection_id": MCP, "tools": ["echo"], "permission": "ask", "permissions": {}}
+    value = {**known, "unknown": {"value": True}}
+    selected = ConnectionSelection.model_validate(value)
+    assert selected.model_dump(mode="json") == known
+    assert config(connection_tools=[value]).connection_tools == (selected,)
+    assert AgentOverride.model_validate({"connection_tools": [value]}).connection_tools == (selected,)
+
+
 def test_output_schemas_inline_their_references() -> None:
     person = {
         "type": "object",

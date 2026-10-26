@@ -74,9 +74,7 @@ function DiscoveredModels({
   });
   const ready =
     !oauth ||
-    (!authorization.data?.pending &&
-      (authorization.data?.state === "connected" ||
-        authorization.data?.state === "refreshing"));
+    (!authorization.data?.pending && authorization.data?.state === "connected");
   const allowed = can("run");
   const models = useQuery({
     queryKey: discoveryKey(workspace.id, model.provider),

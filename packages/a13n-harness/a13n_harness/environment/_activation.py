@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from itertools import count
 
@@ -93,7 +93,7 @@ class _MountExecution:
                 get_logger(__name__).exception("Environment lifecycle observation failed")
 
     @asynccontextmanager
-    async def admit(self, action: EnvironmentAction) -> AsyncIterator[None]:
+    async def admit(self, action: EnvironmentAction) -> AsyncGenerator[None]:
         if self._operation_guard is None:
             yield
         else:

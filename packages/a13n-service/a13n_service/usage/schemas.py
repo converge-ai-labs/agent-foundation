@@ -124,6 +124,7 @@ class ModelUsage(BaseModel):
 class RunUsage(BaseModel):
     run_id: str
     thread_id: str
+    run_number: int = Field(ge=1, description="One-based chronological position among all Runs in the Thread.")
     models: list[ModelUsage]
 
 

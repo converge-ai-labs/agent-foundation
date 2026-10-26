@@ -10,9 +10,9 @@ export interface paths {
     put?: never;
     /**
      * Prepare Composer
-     * @description The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+     * @description The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.
      *
-     *     Refused with `model_required` while the workspace has no model the caller can use.
+     *     Initial preparation requires a usable model; later preparation preserves the selected model and revision.
      */
     post: operations["prepare_composer"];
     delete?: never;
@@ -917,6 +917,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environment-provider-options/vercel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Vercel Provider Options
+     * @description List accessible teams, or projects in a selected team, using an unsaved credential.
+     */
+    post: operations["vercel_provider_options"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-providers": {
     parameters: {
       query?: never;
@@ -1087,6 +1107,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/creation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Environment Creation */
+    get: operations["get_environment_creation"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/desktop-preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Environment Desktop Preview */
+    get: operations["get_environment_desktop_preview"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/metrics-binding": {
     parameters: {
       query?: never;
@@ -1132,6 +1186,23 @@ export interface paths {
     put?: never;
     /** Query Environment Metrics */
     post: operations["query_environment_metrics"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/retry-creation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Retry Environment Creation */
+    post: operations["retry_environment_creation"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3292,7 +3363,7 @@ export interface paths {
     };
     /**
      * List Thread Runs
-     * @description Newest first.
+     * @description Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.
      */
     get: operations["list_thread_runs"];
     put?: never;
@@ -3316,6 +3387,91 @@ export interface paths {
      *     Resumes from `Last-Event-ID` or a run's `position`; the session stream suits clients that do not track them.
      */
     get: operations["thread_stream"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Tool Executions */
+    get: operations["list_tool_executions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Tool Execution */
+    get: operations["get_tool_execution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Tool Execution */
+    post: operations["cancel_tool_execution"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Observe Tool Execution */
+    get: operations["observe_tool_execution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/result": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Tool Execution Result */
+    get: operations["get_tool_execution_result"];
     put?: never;
     post?: never;
     delete?: never;
@@ -3421,6 +3577,30 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/traces/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Search Traces
+     * @description Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.
+     *
+     *     Providers execute each query without a result cache; pages may reflect updates between requests.
+     *     Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
+     *     Incomplete queries fail without a partial rank.
+     */
+    get: operations["search_traces"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/traces/{trace_id}": {
     parameters: {
       query?: never;
@@ -3490,8 +3670,8 @@ export interface paths {
     };
     /**
      * Read Span Content
-     * @description Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's
-     *     cursor while continuing fragments with version and next_offset.
+     * @description Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the
+     *     trace has no such span. Continue fragments with version and next_offset.
      */
     get: operations["read_span_content"];
     put?: never;
@@ -4258,6 +4438,7 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
        * @default
@@ -4339,6 +4520,7 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][];
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Instructions
        * @default
@@ -4607,6 +4789,11 @@ export interface components {
     AgentRevision: {
       /** Agent Id */
       agent_id: string;
+      /**
+       * Builtin Instructions
+       * @description Current deployment guidance for this builtin Agent, not a revision or Run snapshot.
+       */
+      builtin_instructions?: string | null;
       config: components["schemas"]["AgentConfig-Output"];
       /**
        * Created At
@@ -4718,6 +4905,11 @@ export interface components {
     AnalysisCreate: {
       /** Agent Id */
       agent_id?: string | null;
+      /**
+       * Instructions
+       * @default
+       */
+      instructions?: string;
       /**
        * Max Traces
        * @default 10
@@ -5069,9 +5261,9 @@ export interface components {
       /**
        * Method
        * @default manual_callback
-       * @enum {string}
+       * @constant
        */
-      method?: "manual_callback" | "browser_callback";
+      method?: "manual_callback";
     };
     /** AuthorizationStatus */
     AuthorizationStatus: {
@@ -5094,11 +5286,7 @@ export interface components {
        * State
        * @enum {string}
        */
-      state:
-        | "disconnected"
-        | "connected"
-        | "refreshing"
-        | "reauthentication_required";
+      state: "disconnected" | "connected" | "reauthentication_required";
       /** Subject */
       subject?: string | null;
     };
@@ -5541,7 +5729,7 @@ export interface components {
     };
     /**
      * ConnectionSelection
-     * @description An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.
+     * @description An agent's selected tools and permissions.
      */
     ConnectionSelection: {
       /** Connection Id */
@@ -5782,6 +5970,32 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** CreationProgress */
+    CreationProgress: {
+      /** Ended At */
+      ended_at?: string | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /**
+       * Retryable
+       * @default false
+       */
+      retryable?: boolean;
+      /**
+       * Stage
+       * @enum {string}
+       */
+      stage:
+        "preparing" | "building" | "starting" | "ready" | "failed" | "inactive";
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
     };
     /**
      * CredentialMode
@@ -6264,7 +6478,7 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "message" | "child_result";
+      kind: "message" | "child_result" | "tool_result";
       options: components["schemas"]["RunOptions-Output"];
       /** Origin Run Id */
       origin_run_id: string | null;
@@ -6502,6 +6716,10 @@ export interface components {
       /** Token */
       token?: string | null;
     };
+    /** @description Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults. */
+    EnvironmentVariables: {
+      [key: string]: string;
+    };
     /** EnvironmentView */
     EnvironmentView: {
       /**
@@ -6597,6 +6815,89 @@ export interface components {
       span_ids?: string[];
       /** Trace Id */
       trace_id: string;
+    };
+    /** ExecutionObservation */
+    ExecutionObservation: {
+      execution: components["schemas"]["ExecutionView"];
+      shell?: components["schemas"]["ShellPreview"] | null;
+      /**
+       * Source
+       * @enum {string}
+       */
+      source: "live" | "retained" | "unavailable";
+    };
+    /**
+     * ExecutionOverride
+     * @description Sparse choices: null inherits; Thread PATCH distinguishes omission from null.
+     */
+    ExecutionOverride: {
+      environment?: components["schemas"]["EnvironmentVariables"] | null;
+      steering?: components["schemas"]["Steering"] | null;
+      tools?: components["schemas"]["ToolExecutionOverride"] | null;
+    };
+    /** ExecutionPage */
+    ExecutionPage: {
+      /** Items */
+      items: components["schemas"]["ExecutionView"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /**
+     * ExecutionView
+     * @description Run identity is the Service Run; attempt and worker identify the retained owner.
+     */
+    ExecutionView: {
+      /** Attempt Id */
+      attempt_id: string;
+      /** Cancel Requested At */
+      cancel_requested_at: string | null;
+      /** Completed At */
+      completed_at?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Delivery Acknowledged
+       * @default false
+       */
+      delivery_acknowledged?: boolean;
+      /** Error */
+      error?: string | null;
+      /** Execution Id */
+      execution_id: string;
+      /** Expires At */
+      expires_at: string | null;
+      /** First Delivered At */
+      first_delivered_at: string | null;
+      /**
+       * Foreground Released
+       * @default false
+       */
+      foreground_released?: boolean;
+      /**
+       * Result Available
+       * @default false
+       */
+      result_available?: boolean;
+      /** Run Id */
+      run_id: string;
+      /**
+       * Status
+       * @default queued
+       * @enum {string}
+       */
+      status?:
+        "queued" | "running" | "succeeded" | "failed" | "cancelled" | "lost";
+      /** Thread Id */
+      thread_id: string;
+      /** Tool Call Id */
+      tool_call_id: string;
+      /** Tool Name */
+      tool_name: string;
+      /** Worker Id */
+      worker_id: string;
     };
     /** Export */
     Export: {
@@ -7428,6 +7729,8 @@ export interface components {
     McpAuth: "none" | "bearer" | "headers" | "oauth";
     /** McpConfig */
     McpConfig: {
+      /** Forward Context Headers */
+      forward_context_headers?: boolean;
       /**
        * Headers
        * @default []
@@ -8560,6 +8863,7 @@ export interface components {
       delivery?: components["schemas"]["Delivery"];
       /** @default [] */
       environments?: components["schemas"]["InitialMounts"];
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /**
        * Kind
        * @default message
@@ -8881,6 +9185,17 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** OutputPreview */
+    OutputPreview: {
+      /** Observation Closed */
+      observation_closed: boolean;
+      /** Produced Bytes */
+      produced_bytes: number | null;
+      /** Text */
+      text: string;
+      /** Truncated */
+      truncated: boolean;
+    };
     /**
      * OutputSpec
      * @description Plain text without a schema, one structured output, or at least two named variants.
@@ -9179,6 +9494,19 @@ export interface components {
       name: string;
       /** Status */
       status: string;
+    };
+    /** ProcessStatusProjection */
+    ProcessStatusProjection: {
+      /** Cleanup */
+      cleanup: string | null;
+      /** Exit Code */
+      exit_code: number | null;
+      /** Phase */
+      phase: string;
+      /** Signal */
+      signal: string | null;
+      /** Termination Reason */
+      termination_reason: string | null;
     };
     /** Profile */
     Profile: {
@@ -9480,6 +9808,16 @@ export interface components {
       reason: string;
     };
     /**
+     * RequestContext
+     * @description Explicit business headers, frozen in accepted Run options and kept out of model projections.
+     */
+    RequestContext: {
+      /** Headers */
+      headers?: {
+        [key: string]: string;
+      };
+    };
+    /**
      * Resume
      * @description The complete result batch, submitted and stored on the successor without omission defaults.
      */
@@ -9711,6 +10049,16 @@ export interface components {
       truncated?: boolean;
       value: components["schemas"]["JsonValue"];
     };
+    /** RunInputPreview */
+    RunInputPreview: {
+      /**
+       * Text
+       * @description At most 200 Unicode code points of input text, in content order.
+       */
+      text: string;
+      /** Truncated */
+      truncated: boolean;
+    };
     /**
      * RunItems
      * @description Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
@@ -9730,6 +10078,57 @@ export interface components {
         [key: string]: string;
       };
     };
+    /**
+     * RunListItem
+     * @description Run discovery metadata. Full input, results and execution settings belong to the Run detail read.
+     */
+    RunListItem: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Attempts */
+      attempts: number;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Current Attempt Id */
+      current_attempt_id: string | null;
+      /** Id */
+      id: string;
+      input_preview: components["schemas"]["RunInputPreview"];
+      lineage: components["schemas"]["Lineage"];
+      /** Max Attempts */
+      max_attempts: number;
+      /** Parent Run Id */
+      parent_run_id: string | null;
+      /** Principal Id */
+      principal_id: string;
+      /** Sealed At */
+      sealed_at: string | null;
+      /** Session Id */
+      session_id: string;
+      /** Source Entry Id */
+      source_entry_id: string | null;
+      /** Started At */
+      started_at: string | null;
+      status: components["schemas"]["RunStatus"];
+      /** Thread Id */
+      thread_id: string;
+      trigger: components["schemas"]["Trigger"];
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      wait_reason: components["schemas"]["WaitReason"] | null;
+      /** Workspace Id */
+      workspace_id: string;
+    };
     /** RunMetrics */
     RunMetrics: {
       /** Average Duration Seconds */
@@ -9743,6 +10142,8 @@ export interface components {
      */
     "RunOptions-Input": {
       configuration?: components["schemas"]["RunConfiguration-Input"] | null;
+      context?: components["schemas"]["RequestContext"] | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -9756,6 +10157,8 @@ export interface components {
      */
     "RunOptions-Output": {
       configuration?: components["schemas"]["RunConfiguration-Output"] | null;
+      context?: components["schemas"]["RequestContext"] | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -9766,7 +10169,7 @@ export interface components {
     /** RunPage */
     RunPage: {
       /** Items */
-      items: components["schemas"]["RunView"][];
+      items: components["schemas"]["RunListItem"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -9857,19 +10260,17 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
-    /** RunSummaryPage */
-    RunSummaryPage: {
-      /** Items */
-      items: components["schemas"]["RunSummary"][];
-      /** Next Cursor */
-      next_cursor: string | null;
-    };
     /** RunUsage */
     RunUsage: {
       /** Models */
       models: components["schemas"]["ModelUsage"][];
       /** Run Id */
       run_id: string;
+      /**
+       * Run Number
+       * @description One-based chronological position among all Runs in the Thread.
+       */
+      run_number: number;
       /** Thread Id */
       thread_id: string;
     };
@@ -10395,6 +10796,12 @@ export interface components {
        */
       overwrite?: boolean;
     };
+    /** ShellPreview */
+    ShellPreview: {
+      status: components["schemas"]["ProcessStatusProjection"];
+      stderr: components["schemas"]["OutputPreview"];
+      stdout: components["schemas"]["OutputPreview"];
+    };
     /** Skill */
     Skill: {
       /** Archived At */
@@ -10681,7 +11088,7 @@ export interface components {
     };
     /**
      * SpanContentPage
-     * @description A matching span's selected content, or a continuation to keep locating that span.
+     * @description A matching span's selected content, or no items when the trace has no such span.
      */
     SpanContentPage: {
       /** Items */
@@ -10846,6 +11253,8 @@ export interface components {
       | "unsupported"
       | "not_ready"
       | "capacity";
+    /** @enum {string} */
+    Steering: "boundary" | "immediate";
     /**
      * SubagentOverride
      * @description Replaces the fields it sets of an edge; an edge the revision lacks sets at least `agent_id`.
@@ -11197,8 +11606,25 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /**
+     * ThreadRunPage
+     * @description Newest first; first_number is the first item's 1-based chronological position in the thread.
+     */
+    ThreadRunPage: {
+      /** First Number */
+      first_number: number;
+      /** Items */
+      items: components["schemas"]["RunListItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Previous Cursor */
+      previous_cursor: string | null;
+      /** Total */
+      total: number;
+    };
     /** ThreadUpdate */
     ThreadUpdate: {
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -11216,6 +11642,7 @@ export interface components {
       created_at: string;
       /** Current Run Id */
       current_run_id: string | null;
+      execution?: components["schemas"]["ExecutionOverride"] | null;
       /** Id */
       id: string;
       /** Labels */
@@ -11293,6 +11720,13 @@ export interface components {
       supported_permissions: (
         "inherit" | "allow" | "ask" | "deny" | "review"
       )[];
+    };
+    /** ToolExecutionOverride */
+    ToolExecutionOverride: {
+      /** Foreground Wait Seconds */
+      foreground_wait_seconds?: number | null;
+      /** Mode */
+      mode?: ("inline" | "auto") | null;
     };
     /** ToolInfo */
     ToolInfo: {
@@ -11511,8 +11945,36 @@ export interface components {
       /** Type */
       type: ("langfuse" | "logfire") | null;
     };
+    /** TraceSearchItem */
+    TraceSearchItem: {
+      /** Cost Usd */
+      cost_usd: string | null;
+      /** Duration Seconds */
+      duration_seconds: string | null;
+      root: components["schemas"]["Span"];
+    };
+    /** TraceSearchPage */
+    TraceSearchPage: {
+      /**
+       * Collected At
+       * Format: date-time
+       */
+      collected_at: string;
+      /** Items */
+      items: components["schemas"]["TraceSearchItem"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+      /** Total */
+      total: number;
+    };
     /** @enum {string} */
-    Trigger: "input" | "queued" | "resume" | "child_result" | "spawned";
+    Trigger:
+      | "input"
+      | "queued"
+      | "resume"
+      | "child_result"
+      | "tool_result"
+      | "spawned";
     /** TypedQuery */
     TypedQuery: {
       /**
@@ -11738,6 +12200,32 @@ export interface components {
     };
     /** @enum {string} */
     Verb: "read" | "run" | "write" | "admin";
+    /** VercelOption */
+    VercelOption: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /** VercelOptions */
+    VercelOptions: {
+      /** Cursor */
+      cursor?: number | null;
+      /** Items */
+      items: components["schemas"]["VercelOption"][];
+    };
+    /** VercelOptionsRequest */
+    VercelOptionsRequest: {
+      /**
+       * Api Key
+       * Format: password
+       */
+      api_key: string;
+      /** Cursor */
+      cursor?: number | null;
+      /** Team Id */
+      team_id?: string | null;
+    };
     /**
      * VideoInputPolicy
      * @description Base64-after byte budget for both one video and all inline videos in a request.
@@ -13824,6 +14312,35 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  vercel_provider_options: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["VercelOptionsRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VercelOptions"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_environment_providers: {
     parameters: {
       query?: {
@@ -14316,6 +14833,61 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_environment_creation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreationProgress"] | null;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_environment_desktop_preview: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "image/jpeg": unknown;
+          "image/png": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   select_metrics_source: {
     parameters: {
       query?: never;
@@ -14403,6 +14975,35 @@ export interface operations {
           "application/json":
             | components["schemas"]["QueryResult"]
             | components["schemas"]["LocalResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  retry_environment_creation: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
         };
       };
       400: components["responses"]["Error"];
@@ -17143,8 +17744,7 @@ export interface operations {
           | null;
         created_after?: string | null;
         created_before?: string | null;
-        view?: "detailed" | "compact";
-        limit?: number | null;
+        limit?: number;
         cursor?: string | null;
       };
       header?: {
@@ -17162,9 +17762,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json":
-            | components["schemas"]["RunPage"]
-            | components["schemas"]["RunSummaryPage"];
+          "application/json": components["schemas"]["RunPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -17858,9 +18456,7 @@ export interface operations {
     parameters: {
       query?: {
         cursor?: string | null;
-        /** @description Use compact for discovery; detailed preserves the original response. */
-        view?: components["schemas"]["ReadView"];
-        limit?: number | null;
+        limit?: number;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -17879,9 +18475,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json":
-            | components["schemas"]["RunPage"]
-            | components["schemas"]["RunSummaryPage"];
+          "application/json": components["schemas"]["RunPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -19697,10 +20291,9 @@ export interface operations {
   list_thread_runs: {
     parameters: {
       query?: {
-        /** @description Use compact for discovery; detailed preserves the original response. */
-        view?: components["schemas"]["ReadView"];
-        limit?: number | null;
+        limit?: number;
         cursor?: string | null;
+        anchor?: string | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -19719,9 +20312,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json":
-            | components["schemas"]["RunPage"]
-            | components["schemas"]["RunSummaryPage"];
+          "application/json": components["schemas"]["ThreadRunPage"];
         };
       };
       400: components["responses"]["Error"];
@@ -19753,6 +20344,157 @@ export interface operations {
         };
         content: {
           "text/event-stream": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_tool_executions: {
+    parameters: {
+      query?: {
+        run_id?: string | null;
+        active?: boolean | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  cancel_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  observe_tool_execution: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionObservation"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_tool_execution_result: {
+    parameters: {
+      query?: {
+        /** @description Unicode code-point offset; continue with next_offset. */
+        offset?: number;
+        /** @description Maximum Unicode code points in this fragment. */
+        limit?: number;
+        /** @description Content version from the first read; required after offset 0. */
+        version?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        execution_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TextRead"];
         };
       };
       400: components["responses"]["Error"];
@@ -19918,6 +20660,46 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  search_traces: {
+    parameters: {
+      query: {
+        session_id?: string | null;
+        thread_id?: string | null;
+        run_id?: string | null;
+        attribute?: string[];
+        started_after: string;
+        started_before: string;
+        order_by?: "started" | "duration" | "cost";
+        direction?: "asc" | "desc";
+        min_duration_seconds?: number | string | null;
+        max_duration_seconds?: number | string | null;
+        min_cost_usd?: number | string | null;
+        max_cost_usd?: number | string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TraceSearchPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_trace: {
     parameters: {
       query?: {
@@ -20047,7 +20829,6 @@ export interface operations {
           | "events"
           | "links"
           | "usage";
-        cursor?: string | null;
         /** @description Unicode code-point offset; continue with next_offset. */
         offset?: number;
         /** @description Maximum Unicode code points in this fragment. */

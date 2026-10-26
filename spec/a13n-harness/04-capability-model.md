@@ -89,6 +89,11 @@ Two passive process-local publications let independently authored Capabilities d
 
 ```python
 @dataclass(frozen=True, slots=True)
+class RequestContext:
+    headers: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
 class SkillPath:
     name: str
     source_id: str
@@ -142,6 +147,7 @@ class AgentContext:
     plugins: BoundPluginContext
     subagents: SubagentCollection
     metadata: Mapping[str, JsonValue]
+    request_context: RequestContext
     model_context: ModelContextMiddleware | None
     skill_paths: RunSkillPaths
     tool_metadata: ToolRuntimeMetadata

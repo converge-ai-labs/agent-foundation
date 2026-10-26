@@ -96,33 +96,77 @@ For a Grok credential store that exposes only `load()` and `save()`, wrap it onc
 
 Harness UI supplies stronger file-store coordination: cooperating processes share one lock and a durable non-secret grant-fingerprint sidecar. This protects fresh Runs and restarts without storing a second token copy. Other CLI programs that write the same auth file do not take that lock. Harness UI checks for their edits just before it replaces the file, and fails publication instead of overwriting a detected edit.
 
-## ChatGPT sign-in and native Model
+## Build a Copilot Model
 
-The portable integration keeps OAuth, Provider and Model dialect independent of Host storage:
+Use the native `GitHubCopilotOAuthFlow` with your public OAuth client ID: present the challenge from `start()`, then await `wait_for_authorization()`. The Host identifies the authorized GitHub account and stores the complete grant. For an interactive Host workflow, see [Copilot login](../a13n-harness-ui/models-and-authentication.md#github-copilot-subscription).
 
-- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., client_id=None, credentials=None)` creates a bounded PKCE registration or returning authorization. Present `authorization_url()`, then pass the complete callback URL to `validate_callback()` and `exchange_callback()`. Neither function fetches that URL. The Host must consume a valid pending attempt durably before exchange and persist the verified complete credential result before reporting success.
-- `OpenAIChatGPTCredentials` and `OpenAIChatGPTCredentialSource` define the boundary. A source implements `async load()` and `async rotate(expected, exchange)` with same-account arbitration and durable publication. `refresh_chatgpt_credentials` and `revoke_chatgpt_credentials` perform protocol operations, not storage.
-- `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` is a native OpenAI Provider with a fixed public endpoint, request-fresh authentication, coordinated rotation and one 401 replay. An injected client remains caller-owned and must not already have authentication.
-- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` subclasses native Responses rendering and retains its ordinary-request stream collector. It enforces `store=false`, `stream=true`, complete input history, developer instructions, supported tool placement and a natural `response.completed` terminal event. Unsupported Sign in with ChatGPT (SIWC) settings and hosted tools fail explicitly.
-
-These APIs neither discover local account files nor embed Harness UI or Service storage. `discover_chatgpt_models(credential_source=..., http_client=None)` returns account-visible slugs/display names in server order; manual IDs remain valid inputs. ChatGPT plan eligibility and model access remain OpenAI decisions, separate from Codex and API-key authorization.
-
-### Preconfigured client
-
-The default flow registers a client through OpenAI's OSS dynamic registration. That flow, including returning sign-in with an issued client ID, requires `http://127.0.0.1:<port>/auth/callback`; only the port may change. To use a different registered callback, explicitly select a separately provisioned **public** client:
+Given the newly issued native `GitHubCopilotCredentials`, construct a process-local source and Model:
 
 ```python
-flow = OpenAIChatGPTOAuthFlow.start(
-    ext_agent_host_id=host_id,
-    agent_name="My Agent",
-    client_id="approved-public-client",
-    redirect_uri="https://agent.example.com/auth/openai/callback",
+from pydantic_ai.providers.github_copilot import GitHubCopilotCredentials
+from a13n_harness.providers.model.oauth import (
+    CopilotCredentials,
+    ProcessCopilotCredentialSource,
+    build_copilot_model,
+)
+
+
+class MemoryCredentialStore:
+    def __init__(self, credentials: CopilotCredentials):
+        self.credentials = credentials
+
+    async def load(self) -> CopilotCredentials:
+        return self.credentials
+
+    async def save(self, credentials: CopilotCredentials) -> None:
+        self.credentials = credentials
+
+
+def copilot_model(grant: GitHubCopilotCredentials, *, account_id: str, client_id: str, model_name: str):
+    credentials = CopilotCredentials.issued(grant, account_id=account_id, client_id=client_id)
+    source = ProcessCopilotCredentialSource(MemoryCredentialStore(credentials))
+    return build_copilot_model(model_name, credential_source=source), source
+```
+
+Construction performs no credential I/O. Normalize issuance durations once with `issued()`; restore saved absolute expiry values when loading credentials. The process source coordinates rotation in one process. For shared or restart-safe storage, implement `CopilotCredentialSource.load()` and `rotate()` with durable same-grant coordination and publication before use.
+
+Call `await discover_copilot_models(credential_source=source)` explicitly to query the authenticated catalog. It returns first-page IDs that advertise Chat Completions; discovery does not establish model entitlement. Import this helper from the same OAuth module. Authentication failures require explicit recovery, never an automatic interactive login or account switch.
+
+## ChatGPT sign-in and native Model
+
+Use the official integration with Host-owned storage:
+
+```python
+from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.providers.openai_chatgpt import (
+    OpenAIChatGPTOAuthFlow,
+    OpenAIChatGPTProvider,
+)
+
+flow = OpenAIChatGPTOAuthFlow(
+    app_name="My Agent",
+    host_id=host_id,  # Persist uuid.uuid4().urn once per installation.
+    redirect_uri="http://127.0.0.1:1456/auth/callback",
+)
+# Present flow.authorization_url(), receive the callback, and save its credentials.
+# source implements async load() and async save(credentials).
+model = OpenAIResponsesModel(
+    "YOUR_ACCOUNT_MODEL_SLUG",
+    provider=OpenAIChatGPTProvider(credential_source=source),
 )
 ```
 
-The URI must exactly match the client's OpenAI registration, use HTTPS or HTTP `127.0.0.1`, and contain a path but no userinfo, query or fragment. Restore the complete `flow.authorization`, including its `preconfigured_client` flag, from protected Host storage. Reauthorization may pass credentials only for that same client and Host; account switching starts without retained credentials but keeps the explicit `client_id`.
+Import `OpenAIChatGPTCredentials` and `OpenAIChatGPTCredentialSource` from `pydantic_ai.providers.openai_chatgpt`. Persist every credential field together. The provider handles expiry refresh, adopts newer stored tokens before refresh, and retries authentication once after a 401. Its lock belongs to one provider instance; multiple processes can still race to refresh the same grant. A save failure surfaces while rotated credentials remain in provider memory. Start a new Run after resolving a persistence conflict.
 
-This configuration does not grant ChatGPT plan usage. Identity-only website grants are rejected because the integration still requires renewable tokens and `resource.invoke` / `chatgpt.tokens.use.direct`. Hosted/commercial use needs separate OpenAI approval. For a provisioned confidential client, also pass `token_endpoint_auth_method="client_secret_basic"` and `client_secret` read from protected server-side storage. Public clients use `none` and no secret. Pending attempts and renewable credentials keep that authentication method for code exchange, refresh, and revocation. The secret goes only in the server-side HTTP Basic header, never in the authorization URL or form body. Keep the complete pending value and credential set encrypted at rest. See [Service setup](../a13n-service/models.md#self-hosted-callback) for deployment overrides and the browser receiver.
+Harness UI and Service use `providers.model.oauth.chatgpt.ChatGPTAuthorization` to persist public flow attributes and validate pasted callbacks. A valid pending attempt is consumed before exchange. The official flow owns PKCE and token validation. `providers.model.chatgpt.discover_chatgpt_models()` returns account-visible slugs and display names in server order. Manual IDs remain valid inputs; visibility does not establish inference entitlement.
+
+The official Responses profile forces streaming and `store=false`, with a native collector for ordinary requests. Tool serialization, supported settings and stream completion follow the official Model. There is no additional Harness ChatGPT dialect.
+
+### Preconfigured client
+
+Returning sign-in can pass the issued public `client_id` and retained `id_token_hint`. Every callback uses `http://127.0.0.1:<port>/auth/callback`; only the port can vary. Confidential clients and HTTPS hosted callbacks are unsupported. Replace those configurations with a public loopback flow before upgrading. Existing public-client credentials remain readable.
+
+If plan usage was declined, sign in again and approve it; the Host requests consent on that retry. Local logout clears saved tokens but does not revoke OpenAI access or stop an active provider using cached tokens. Manage remote access in ChatGPT settings. See [Service callback configuration](../a13n-service/models.md#self-hosted-callback).
 
 ## Authentication failures
 

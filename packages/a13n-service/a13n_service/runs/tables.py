@@ -194,8 +194,58 @@ class ThreadRow(Stamped, Base):
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     last_run_id: Mapped[str | None] = mapped_column(String(72))
     mcp_headers: Mapped[dict] = mapped_column(JSONB)
+    execution: Mapped[dict | None] = mapped_column(JSONB)
     labels: Mapped[dict] = mapped_column(JSONB)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ToolExecutionRow(Base):
+    """One original invocation; its worker lease and result outlive the originating Run."""
+
+    __tablename__ = "tool_executions"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "thread_id"], ["threads.workspace_id", "threads.id"]),
+        ForeignKeyConstraint(["thread_id", "run_id"], ["runs.thread_id", "runs.id"]),
+        ForeignKeyConstraint(["run_id", "attempt_id"], ["run_attempts.run_id", "run_attempts.id"]),
+        CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'lost')", name="status"),
+        CheckConstraint("(status IN ('queued', 'running')) = (completed_at IS NULL)", name="completed"),
+        CheckConstraint("(completed_at IS NULL) = (expires_at IS NULL)", name="expiry"),
+        Index("ix_tool_executions_thread_created", "thread_id", "created_at", "id"),
+        Index(
+            "ix_tool_executions_owner", "worker_id", "lease_expires_at", postgresql_where=text("completed_at IS NULL")
+        ),
+        Index("ix_tool_executions_expiry", "expires_at", postgresql_where=text("expires_at IS NOT NULL")),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str]
+    workspace_id: Mapped[str]
+    thread_id: Mapped[str]
+    run_id: Mapped[str]
+    attempt_id: Mapped[str]
+    worker_id: Mapped[str]
+    lease_token_hash: Mapped[str]
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str]
+    sequential: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Harness identity and observations; the Service origin IDs above remain separate.
+    record: Mapped[dict] = mapped_column(JSONB)
+    result_ref: Mapped[dict | None] = mapped_column(JSONB)
+    payload_pruned: Mapped[bool] = mapped_column(default=False)
+    environment_mounts: Mapped[list] = mapped_column(JSONB)
+
+
+class ThreadCodeActRow(Base):
+    """Explicit stored values have one shared owner, independent of Run checkpoints."""
+
+    __tablename__ = "thread_codeact"
+    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"), primary_key=True)
+    values: Mapped[dict] = mapped_column(JSONB)
 
 
 class InboxEntryRow(Base):
@@ -241,14 +291,15 @@ class InboxEntryRow(Base):
         ),
         Index("ix_inbox_entries_pending", "thread_id", "position", postgresql_where=text("status = 'pending'")),
         Index("ix_inbox_entries_assigned", "assigned_run_id", postgresql_where=text("status = 'assigned'")),
-        CheckConstraint("kind IN ('message', 'child_result')", name="kind"),
+        CheckConstraint("kind IN ('message', 'child_result', 'tool_result')", name="kind"),
         CheckConstraint("delivery IN ('steer', 'next_run')", name="delivery"),
         CheckConstraint("status IN ('pending', 'assigned', 'consumed', 'failed', 'withdrawn')", name="status"),
         CheckConstraint("position > 0", name="position"),
         CheckConstraint("size >= 0", name="size"),
         CheckConstraint("(kind = 'message') = (agent_id IS NOT NULL)", name="message_agent"),
         CheckConstraint(
-            "(kind = 'child_result') = (child_run_id IS NOT NULL AND origin_run_id IS NOT NULL)", name="child_result"
+            "(kind = 'child_result') = (child_run_id IS NOT NULL) AND (kind <> 'message') = (origin_run_id IS NOT NULL)",
+            name="child_result",
         ),
         CheckConstraint("status NOT IN ('assigned', 'consumed') OR assigned_run_id IS NOT NULL", name="assignment"),
         CheckConstraint("status <> 'pending' OR assigned_run_id IS NULL", name="pending"),
@@ -391,7 +442,9 @@ class RunRow(Stamped, Base):
             postgresql_where=text("status IN ('accepted', 'running')"),
         ),
         CheckConstraint("revision_selection IN ('pinned', 'default', 'inherited')", name="revision_selection"),
-        CheckConstraint("trigger IN ('input', 'queued', 'resume', 'child_result', 'spawned')", name="trigger"),
+        CheckConstraint(
+            "trigger IN ('input', 'queued', 'resume', 'child_result', 'tool_result', 'spawned')", name="trigger"
+        ),
         CheckConstraint("lineage IN ('root', 'continue', 'fork')", name="lineage"),
         CheckConstraint(
             "status IN ('accepted', 'running', 'waiting', 'completed', 'failed', 'cancelled')", name="status"

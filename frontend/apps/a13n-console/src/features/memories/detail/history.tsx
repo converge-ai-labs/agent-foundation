@@ -140,7 +140,7 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
               title={t("Delete file history")}
               subject={path}
               description={t(
-                "Every retained change of this path is deleted, and the file itself stays. Content that runs already read stays in their conversation histories and traces.",
+                "Every retained change of this path is deleted, and the file itself stays. Content that runs already read stays in their session histories and traces.",
               )}
               action={() =>
                 client

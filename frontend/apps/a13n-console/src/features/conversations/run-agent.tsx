@@ -5,6 +5,7 @@ import type { Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { AgentEditor } from "../agents/editor";
 import { AgentLink } from "../agents/link";
+import { editablePreset, useAgent } from "../agents/queries";
 import { ModelKeyLabel } from "../models/model-icon";
 import { useRunAgent } from "./queries";
 import styles from "./run-agent.module.css";
@@ -82,6 +83,7 @@ export function RunAgentDialog({
 function RunAgentConfiguration({ run }: { run: Run }) {
   const { t } = useTranslation();
   const executed = useRunAgent(run.id);
+  const agent = useAgent(run.agent_id);
   if (executed.isPending) return <Loading variant="detail" />;
   if (!executed.data)
     return (
@@ -93,43 +95,50 @@ function RunAgentConfiguration({ run }: { run: Run }) {
   const { revision, config } = executed.data;
   const overridden = overriddenFields(run);
   return (
-    <AgentEditor
-      initial={config}
-      version={revision.number}
-      pending={false}
-      error={undefined}
-      readonly
-      submit={() => {}}
-      overridden={overridden}
-      identity={
-        <dl className={styles.facts}>
-          <div>
-            <dt>{t("Agent")}</dt>
-            <dd>
-              <AgentLink agentId={run.agent_id} />
-            </dd>
-          </div>
-          <div>
-            <dt>{t("Version")}</dt>
-            <dd>
-              <span className={styles.mono}>v{revision.number}</span>
-              <span className={styles.note}>
-                {t(`revisionSelection.${run.revision_selection}`)}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt>{t("Overrides")}</dt>
-            <dd>
-              {overridden.length ? (
-                <span className={styles.mono}>{overridden.join(", ")}</span>
-              ) : (
-                <span className={styles.note}>{t("None")}</span>
-              )}
-            </dd>
-          </div>
-        </dl>
-      }
-    />
+    <div className="grid gap-6">
+      {agent.data && editablePreset(agent.data) && (
+        <p>
+          {t(
+            "This configuration stores your supplemental instructions. Built-in instructions come from the worker version; inspect the model request trace for the text used.",
+          )}
+        </p>
+      )}
+      <dl className={styles.facts}>
+        <div>
+          <dt>{t("Agent")}</dt>
+          <dd>
+            <AgentLink agentId={run.agent_id} />
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Version")}</dt>
+          <dd>
+            <span className={styles.mono}>v{revision.number}</span>
+            <span className={styles.note}>
+              {t(`revisionSelection.${run.revision_selection}`)}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Overrides")}</dt>
+          <dd>
+            {overridden.length ? (
+              <span className={styles.mono}>{overridden.join(", ")}</span>
+            ) : (
+              <span className={styles.note}>{t("None")}</span>
+            )}
+          </dd>
+        </div>
+      </dl>
+      <AgentEditor
+        initial={config}
+        version={revision.number}
+        pending={false}
+        error={undefined}
+        readonly
+        submit={() => {}}
+        overridden={overridden}
+      />
+    </div>
   );
 }

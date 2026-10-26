@@ -234,8 +234,7 @@
       "type": "object"
     },
     "ConnectionSelection": {
-      "additionalProperties": false,
-      "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+      "description": "An agent's selected tools and permissions.",
       "properties": {
         "connection_id": {
           "maxLength": 41,
@@ -314,6 +313,54 @@
         }
       },
       "title": "DelegationContextPolicy",
+      "type": "object"
+    },
+    "EnvironmentVariables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+      "type": "object"
+    },
+    "ExecutionOverride": {
+      "additionalProperties": false,
+      "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
+      "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvironmentVariables"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "steering": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Steering"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ExecutionOverride",
       "type": "object"
     },
     "IsolatedSkillSync": {
@@ -717,6 +764,13 @@
       "title": "SpaceBinding",
       "type": "object"
     },
+    "Steering": {
+      "enum": [
+        "boundary",
+        "immediate"
+      ],
+      "type": "string"
+    },
     "SubagentSelection": {
       "additionalProperties": false,
       "properties": {
@@ -775,6 +829,43 @@
         "agent_id"
       ],
       "title": "SubagentSelection",
+      "type": "object"
+    },
+    "ToolExecutionOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "foreground_wait_seconds": {
+          "anyOf": [
+            {
+              "maximum": 300,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Foreground Wait Seconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "inline",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "ToolExecutionOverride",
       "type": "object"
     },
     "ToolPermissionMode": {
@@ -1178,6 +1269,17 @@
       ],
       "default": null,
       "title": "Default Environment Template Id"
+    },
+    "execution": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExecutionOverride"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "instructions": {
       "default": "",

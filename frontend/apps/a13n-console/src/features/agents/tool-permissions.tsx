@@ -54,7 +54,7 @@ export function ToolPermissions({
     allow: t("Allow"),
     ask: t("Ask"),
     deny: t("Deny"),
-    review: t("Automatic review"),
+    review: t("Auto review"),
   };
   return (
     <div

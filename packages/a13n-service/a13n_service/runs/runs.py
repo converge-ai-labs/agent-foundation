@@ -8,7 +8,6 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra import cursors, reads
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
@@ -28,19 +27,14 @@ from a13n_service.runs.schemas import (
     RunItems,
     RunLabels,
     RunOptions,
-    RunPage,
-    RunQuery,
     RunView,
 )
 from a13n_service.runs.seal import stop
-from a13n_service.runs.search import predicate
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
-# Ancestors per lineage page.
-MAX_LINEAGE = 50
 # The items a default read returns: the newest, and always the whole tail.
 NEWEST_ITEMS = 200
 
@@ -101,82 +95,6 @@ async def agent(storage: Storage, actor: Principal, workspace_id: str, run_id: s
     return RunAgent(revision=revision, config=config)
 
 
-async def list_thread_runs(
-    storage: Storage,
-    actor: Principal,
-    workspace_id: str,
-    thread_id: str,
-    *,
-    limit: int,
-    cursor: str | None,
-    view: reads.ReadView = "detailed",
-) -> RunPage | read_views.RunSummaryPage:
-    """Newest first, so the Console can open a thread at its latest runs."""
-    async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        thread = await get_thread(session, scope.workspace_id, thread_id)
-        rows, next_cursor = await cursors.keyset_page(
-            session,
-            select(RunRow).where(RunRow.thread_id == thread.id),
-            (RunRow.created_at, RunRow.id),
-            kind="thread_runs",
-            owner=thread.id,
-            cursor=cursor,
-            limit=limit,
-            newest_first=True,
-        )
-        return await _run_page(
-            session, await run_views(session, rows), next_cursor, view=view, kind="thread_runs", owner=thread.id
-        )
-
-
-async def list_runs(
-    storage: Storage, actor: Principal, workspace_id: str, filters: RunQuery
-) -> RunPage | read_views.RunSummaryPage:
-    match = predicate(RunRow.search_vector, filters.text_query)
-    async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        query = select(RunRow).where(RunRow.workspace_id == scope.workspace_id)
-        for name in ("agent_id", "session_id", "thread_id", "principal_id", "status"):
-            if (value := getattr(filters, name)) is not None:
-                query = query.where(getattr(RunRow, name) == value)
-        if filters.created_after is not None:
-            query = query.where(RunRow.created_at >= filters.created_after)
-        if filters.created_before is not None:
-            query = query.where(RunRow.created_at < filters.created_before)
-        if match is not None:
-            query = query.where(match)
-        owner = cursors.query_owner(
-            scope.workspace_id, filters.model_dump(mode="json", exclude={"limit", "cursor", "view"})
-        )
-        rows, cursor = await cursors.keyset_page(
-            session,
-            query,
-            (RunRow.created_at, RunRow.id),
-            kind="runs",
-            owner=owner,
-            cursor=filters.cursor,
-            limit=reads.page_limit(filters.view, filters.limit),
-            newest_first=True,
-        )
-        return await _run_page(
-            session, await run_views(session, rows), cursor, view=filters.view, kind="runs", owner=owner
-        )
-
-
-async def _run_page(
-    session: AsyncSession, values: list[RunView], following: str | None, *, view: reads.ReadView, kind: str, owner: str
-) -> RunPage | read_views.RunSummaryPage:
-    if view == "detailed":
-        return RunPage(items=values, next_cursor=following)
-    summaries = await _summaries(session, values)
-    count = reads.fit_count(summaries)
-    if count < len(values):
-        last = values[count - 1]
-        following = cursors.encode(kind, owner, last.created_at.isoformat(), last.id)
-    return read_views.RunSummaryPage(items=summaries[:count], next_cursor=following)
-
-
 async def _summaries(session: AsyncSession, values: Sequence[RunView]) -> list[read_views.RunSummary]:
     ids = {value.agent_id for value in values}
     names = (
@@ -203,41 +121,6 @@ async def get_attempt(
         if attempt is None or attempt.run_id != run.id:
             raise not_found("attempt", attempt_id)
         return AttemptView.model_validate(attempt)
-
-
-async def lineage(
-    storage: Storage,
-    actor: Principal,
-    workspace_id: str,
-    run_id: str,
-    *,
-    cursor: str | None,
-    view: reads.ReadView = "detailed",
-    limit: int = MAX_LINEAGE,
-) -> RunPage | read_views.RunSummaryPage:
-    """The run and its ancestors through `parent_run_id`, across fork origins, nearest first."""
-    async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        start = cursors.id_position(cursor, "lineage", run_id) or run_id
-        chain = [await get_run(session, scope.workspace_id, start)]
-        while chain[-1].parent_run_id is not None and len(chain) < limit:
-            parent = await session.get(RunRow, chain[-1].parent_run_id)
-            assert parent is not None
-            chain.append(parent)
-        older = chain[-1].parent_run_id
-        values = await run_views(session, chain)
-        if view == "compact":
-            summaries = await _summaries(session, values)
-            count = reads.fit_count(summaries)
-            older = chain[count].id if count < len(chain) else older
-            return read_views.RunSummaryPage(
-                items=summaries[:count],
-                next_cursor=cursors.encode("lineage", run_id, older) if older is not None else None,
-            )
-        return RunPage(
-            items=values,
-            next_cursor=cursors.encode("lineage", run_id, older) if older is not None else None,
-        )
 
 
 async def items(
@@ -332,7 +215,9 @@ async def _read(
 
 async def _load(runtime: Runtime, window: _Window) -> tuple[Tail, list[Page]]:
     return await asyncio.gather(
-        checkpoints.load_tail(runtime.objects, window.tail),
+        checkpoints.load_tail(
+            runtime.objects, window.tail if window.tail is not None and window.last >= window.tail.first else None
+        ),
         asyncio.gather(*(checkpoints.load_page(runtime.objects, page) for page in window.pages)),
     )
 

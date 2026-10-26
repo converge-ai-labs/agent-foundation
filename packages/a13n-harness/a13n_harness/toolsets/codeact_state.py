@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from pydantic import JsonValue
-from pydantic_ai import FunctionToolset, ModelRetry, RunContext
+from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool
 
 from a13n_harness.codeact.config import CodeActConfig
 from a13n_harness.codeact.state import (
@@ -34,8 +34,9 @@ class CodeActStateToolset:
         self._initialized = False
 
     def get_toolset(self) -> CodeActPolicyToolset:
+        # Arbitrary JsonValue inputs are incompatible with provider strict schemas.
         return CodeActPolicyToolset(
-            wrapped=FunctionToolset([self.store, self.load, self.forget], id="codeact-state"),
+            wrapped=FunctionToolset([Tool(self.store, strict=False), self.load, self.forget], id="codeact-state"),
             policy=CodeActToolPolicy(default=True),
         )
 

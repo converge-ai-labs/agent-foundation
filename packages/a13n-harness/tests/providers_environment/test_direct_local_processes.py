@@ -6,7 +6,7 @@ import asyncio
 import os
 import shutil
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,7 +36,7 @@ async def _processes(
     max_wall_time_seconds: float = 10,
     inherit_environment: bool = False,
     allowed_environment_keys: tuple[str, ...] | None = ("SYSTEMROOT", "PATH"),
-) -> AsyncIterator[LocalProcessManager]:
+) -> AsyncGenerator[LocalProcessManager]:
     provider = DIRECT_LOCAL
     profiles = []
     if powershell:

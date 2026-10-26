@@ -90,6 +90,7 @@ function StepRow({
   return (
     <>
       <LogLine
+        itemId={entry.id}
         kind={entry.kind}
         depth={depth}
         open={open}
@@ -143,6 +144,7 @@ function StepRow({
  * fixed columns. The line's name opens it; links in it stay ordinary links.
  */
 function LogLine({
+  itemId,
   kind,
   depth,
   open,
@@ -159,6 +161,7 @@ function LogLine({
   popup = false,
   onToggle,
 }: {
+  itemId?: string;
   kind: string;
   depth: number;
   open?: boolean;
@@ -195,6 +198,7 @@ function LogLine({
   return (
     <div
       className={styles.line}
+      data-message-id={itemId}
       data-kind={kind}
       data-tone={tone}
       data-depth={depth}

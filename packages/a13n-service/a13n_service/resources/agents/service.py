@@ -19,7 +19,7 @@ from a13n_service.infra.labels import label_filter
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.providers.registry import Registry, web_operations
 from a13n_service.resources import revisions
-from a13n_service.resources.agents import read_views, toolsets
+from a13n_service.resources.agents import instructions, preset_edits, read_views, toolsets
 from a13n_service.resources.agents.schemas import (
     Agent,
     AgentConfig,
@@ -104,8 +104,12 @@ async def duplicate_agent(
         if revision_id is None:
             raise not_found(AgentRevisionRow.KIND, source.id)
         revision = await _revision(session, source, revision_id)
+        config = AgentConfig.model_validate(revision.config)
         copy = AgentCreate(
-            **body.model_dump(exclude={"revision_id"}), config=AgentConfig.model_validate(revision.config)
+            **body.model_dump(exclude={"revision_id"}),
+            config=instructions.materialize(
+                config, instructions.for_preset(source.preset_kind) if source.builtin else None
+            ),
         )
         head = await insert_head(session, actor, scope, copy, registry=registry, plugins=plugins)
         audit_row(session, actor, head, "duplicate", {"source_revision_id": revision.id})
@@ -138,7 +142,14 @@ async def insert_head(
     config = await validate_config(session, actor, scope, head.id, body.config, registry=registry, plugins=plugins)
     session.add(head)
     await session.flush()
-    await revisions.publish(session, head, AgentRevisionRow, config, actor=actor, note=None)
+    await revisions.publish(
+        session,
+        head,
+        AgentRevisionRow,
+        config,
+        actor=actor,
+        note=None,
+    )
     await session.flush()
     await session.refresh(head)
     return head
@@ -222,16 +233,24 @@ async def create_revision(
     """The new revision, or the default one when the validated configuration equals it."""
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        head = await revisions.open_head(session, AgentRow, scope.workspace_id, agent_id, if_match)
+        head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
+        preset_edits.require_editable(head, if_match)
+        await preset_edits.validate_edit(session, head, body.config)
         config = await validate_config(session, actor, scope, head.id, body.config, registry=registry, plugins=plugins)
         revision, created = await revisions.publish(
-            session, head, AgentRevisionRow, config, actor=actor, note=body.note, make_default=body.make_default
+            session,
+            head,
+            AgentRevisionRow,
+            config,
+            actor=actor,
+            note=body.note,
+            make_default=body.make_default,
         )
         if created:
             audit_row(session, actor, head, "revision.create", {"revision_id": revision.id})
             await session.flush()
             await session.refresh(revision)
-        return AgentRevision.model_validate(revision)
+        return _revision_view(head, revision)
 
 
 async def validate_revision(
@@ -246,10 +265,19 @@ async def validate_revision(
     """Check `body.config` as creating a revision checks it, in a session that writes nothing."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        agent_id = None
+        head = None
         if body.agent_id is not None:
-            agent_id = (await resolve_agent(session, scope.workspace_id, body.agent_id)).id
-        await validate_config(session, actor, scope, agent_id, body.config, registry=registry, plugins=plugins)
+            head = await resolve_agent(session, scope.workspace_id, body.agent_id)
+        await preset_edits.validate_edit(session, head, body.config)
+        await validate_config(
+            session,
+            actor,
+            scope,
+            head.id if head is not None else None,
+            body.config,
+            registry=registry,
+            plugins=plugins,
+        )
 
 
 async def get_agent(storage: Storage, actor: Principal, workspace_id: str, agent_id: str) -> Agent:
@@ -352,7 +380,10 @@ async def list_revisions(
 
 
 def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:
-    return AgentRevision.model_validate(revision)
+    view = AgentRevision.model_validate(revision)
+    return view.model_copy(
+        update={"builtin_instructions": instructions.for_preset(head.preset_kind) if head.builtin else None}
+    )
 
 
 async def set_default(
@@ -369,7 +400,8 @@ async def set_default(
     """Making a revision the default publishes it again, so its configuration is validated again."""
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        head = await revisions.open_head(session, AgentRow, scope.workspace_id, agent_id, if_match)
+        head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
+        preset_edits.require_editable(head, if_match)
         revision = await _revision(session, head, revision_id)
         config = AgentConfig.model_validate(revision.config)
         await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)

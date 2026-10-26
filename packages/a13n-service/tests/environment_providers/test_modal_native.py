@@ -34,6 +34,7 @@ class ModalCloud:
         self.created = 0
         self.calls = []
         self.definitions = []
+        self.environments = []
 
     def __mapping__(self):
         result = {}
@@ -86,6 +87,7 @@ class ModalCloud:
                 metadata=api.ImageMetadata(image_builder_version="2025.06"),
             )
         elif name == "SecretGetOrCreate":
+            self.environments.append(dict(request.env_dict))
             response = api.SecretGetOrCreateResponse(secret_id="st-fixture")
         elif name == "SandboxCreate":
             self.definitions.append(request.definition)
@@ -180,7 +182,13 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
         monkeypatch.setattr(ModalManagement, "desktop_access", access)
         definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["modal"]
         config = definition.validate_environment(
-            {"image": "im-envd", "request_timeout_seconds": 15, "desktop": desktop, "desktop_assistance": desktop}
+            {
+                "image": "im-envd",
+                "request_timeout_seconds": 15,
+                "desktop": desktop,
+                "desktop_assistance": desktop,
+                "environment": {"APP_MODE": "agent-default"},
+            }
         )
         provider = await definition.open_provider(
             configuration={"workspace": "fixture", "app_name": "fixture"},
@@ -228,6 +236,8 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
             assert (root / "data").read_text() == "saved in native snapshot"
             assert ready.await_count == 2
             assert cloud.created == 2
+            assert len(cloud.environments) == 2
+            assert all(item["APP_MODE"] == "agent-default" for item in cloud.environments)
             assert "TaskSnapshotFilesystem" in cloud.calls
             assert "ImageDelete" in cloud.calls
             await provider.close()

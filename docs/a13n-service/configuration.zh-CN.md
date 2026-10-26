@@ -112,7 +112,7 @@ active_key_id = "primary"  # the key itself comes from A13N_ENCRYPTION__KEYS
 
 ## 出站请求
 
-Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点的每次请求都遵循同一端点策略：
+Service 自有 HTTP 客户端对 provider、远程 MCP、OAuth 和 webhook 请求应用同一端点策略：
 
 - URL 使用 `http` 或 `https`，不包含用户信息、片段或类似凭据的查询参数。
 - `providers.require_https = true`（默认值）时，拒绝明文 HTTP，除非源与 `providers.http_origins` 中的条目完全一致。
@@ -169,6 +169,10 @@ http_origins = ["http://host.docker.internal:11434"]
 其他 `providers` 设置限制 provider 工作：`model_timeout`（单次模型交互的每次读取）、`tool_call_seconds`（一次连接工具调用）、`operation_seconds`（授权步骤和资源测试）、`discovery_ttl`（工具发现缓存）和 `flow_seconds`（浏览器授权允许时长）。`providers.return_urls` 列出浏览器授权可返回的精确 Console URL，`providers.mcp_servers` 添加 [MCP 服务器建议](tools.md#mcp-server-suggestions)。
 
 ## 执行
+
+`tool_executions` 配置保留调用：`max_active`（每个 worker 64）、`foreground_wait_seconds`（5）、`delivered_retention_seconds`（3600）和 `max_retention_seconds`（86400）。前台等待提供 [执行策略](agents-and-runs.md#execution-policy) 的部署回退值，智能体、线程和单次运行均可覆盖。它控制交还时机，不是执行截止时间。保留期限从完成后计算；首次交付确认启动较短的重读窗口，不延长最大保留时间。
+
+worker 关闭时先等待 attempt 交接，再给保留调用 `shutdown_grace_seconds`（300）自然完成时间，随后请求取消，并留出 `finalization_seconds`（10）用于清理与发布结果。预算结束后仍持有资源的 worker 会退出，由租约协调将未完成记录标记为 lost。部署的终止宽限期应覆盖这些阶段。部署此 schema 前先排空旧 worker：旧版本无法读取新增的 `tool_result` 收件箱类型和 Run 触发类型。
 
 | 设置                                               | 作用                                                                         |
 | -------------------------------------------------- | ---------------------------------------------------------------------------- |

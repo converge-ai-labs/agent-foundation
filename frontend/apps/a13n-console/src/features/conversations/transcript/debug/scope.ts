@@ -6,7 +6,7 @@ export interface RunScope {
   /** When the Run started, so each line can say how far in it happened. */
   start: number;
   /** Where an asynchronous delegation's child Thread can be opened, if known. */
-  child: { path: string; runs: number } | null;
+  child: { path: string } | null;
   /** The Run is waiting and this Console may answer it. */
   answerable: boolean;
   /** Move the reader to the dock, where a waiting Run is answered. */

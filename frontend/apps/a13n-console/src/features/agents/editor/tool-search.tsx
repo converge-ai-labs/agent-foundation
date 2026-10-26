@@ -1,8 +1,8 @@
+import formStyles from "../../../shared/forms/forms.module.css";
 import { Button, Checkbox, ChoiceField, FormField, Input } from "a13n-ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
-import { Section } from "../../../shared/page";
 import type { useAgentChoices } from "../choices";
 import { displayName } from "../connections";
 import { useToolsetCatalog } from "../toolsets";
@@ -84,21 +84,17 @@ export function ToolSearchSection({
         ) === true;
   }
   return (
-    <Section
-      title={t("Tool discovery")}
-      description={t(
-        "Group selected tools and choose how the model discovers them.",
-      )}
-      actions={mark}
-    >
-      <div className="grid gap-4">
+    <>
+      {mark}
+      <div data-slot="tool-discovery-fields" className="grid gap-4">
         <ChoiceField
-          label={t("Discovery mode")}
+          popupClassName={formStyles.compactChoicePopup}
+          label={t("Mode")}
           readOnly={readOnly}
           value={value.mode}
           options={[
-            { value: "direct", label: t("Source defaults") },
-            { value: "proxy", label: t("Grouped proxy search") },
+            { value: "direct", label: t("Default") },
+            { value: "proxy", label: t("Search groups") },
           ]}
           onValueChange={(mode) =>
             draft.setToolSearch((current) => ({
@@ -108,8 +104,8 @@ export function ToolSearchSection({
           }
           description={t(
             value.mode === "proxy"
-              ? "Discover and list selected tools, then execute through a stable proxy. Other tools remain directly callable."
-              : "Tools are directly callable by default.",
+              ? "Search groups to find tools when needed."
+              : "Use each source’s tool settings.",
           )}
         />
         {value.mode !== "direct" && (
@@ -206,48 +202,50 @@ export function ToolSearchSection({
                 </fieldset>
               </div>
             ))}
-            {!groups.length && (
-              <p className="text-muted-foreground">
-                {t("Add a group and select its tool sources.")}
-              </p>
-            )}
-            {!readOnly && (
-              <div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    let name = "tools";
-                    for (
-                      let index = 2;
-                      groups.some((group) => group.name === name);
-                      index++
-                    )
-                      name = `tools${index}`;
-                    draft.setToolSearch((current) => ({
-                      ...current,
-                      groups: [
-                        ...current.groups,
-                        {
-                          name,
-                          description: "",
-                          connections: [],
-                          plugins: [],
-                          platform: false,
-                        },
-                      ],
-                    }));
-                  }}
-                >
-                  {t("Add group")}
-                </Button>
+            {(!readOnly || !groups.length) && (
+              <div className={styles.searchFooter}>
+                {!groups.length && (
+                  <p>{t("Add a group and select its tool sources.")}</p>
+                )}
+                {!readOnly && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        let name = "tools";
+                        for (
+                          let index = 2;
+                          groups.some((group) => group.name === name);
+                          index++
+                        )
+                          name = `tools${index}`;
+                        draft.setToolSearch((current) => ({
+                          ...current,
+                          groups: [
+                            ...current.groups,
+                            {
+                              name,
+                              description: "",
+                              connections: [],
+                              plugins: [],
+                              platform: false,
+                            },
+                          ],
+                        }));
+                      }}
+                    >
+                      {t("Add group")}
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </>
         )}
         <ErrorNotice error={error} />
       </div>
-    </Section>
+    </>
   );
 }

@@ -414,6 +414,81 @@
       "title": "AgentReviewer",
       "type": "object"
     },
+    "AppReady": {
+      "description": "App originals and references are committed; opening still checks access and fetches current HTML.",
+      "properties": {
+        "apps": {
+          "items": {
+            "$ref": "#/$defs/AppReference"
+          },
+          "title": "Apps",
+          "type": "array"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "thread_id": {
+          "title": "Thread Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id",
+        "run_id",
+        "apps"
+      ],
+      "title": "AppReady",
+      "type": "object"
+    },
+    "AppReference": {
+      "properties": {
+        "agent_revision_id": {
+          "title": "Agent Revision Id",
+          "type": "string"
+        },
+        "app_id": {
+          "title": "App Id",
+          "type": "string"
+        },
+        "connection_id": {
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "resource_uri": {
+          "title": "Resource Uri",
+          "type": "string"
+        },
+        "source_run_id": {
+          "title": "Source Run Id",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "unavailable": {
+          "default": false,
+          "title": "Unavailable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "app_id",
+        "connection_id",
+        "agent_revision_id",
+        "source_run_id",
+        "tool_call_id",
+        "tool_name",
+        "resource_uri"
+      ],
+      "title": "AppReference",
+      "type": "object"
+    },
     "ApprovalDecision": {
       "discriminator": {
         "mapping": {
@@ -640,8 +715,7 @@
       "type": "object"
     },
     "ConnectionSelection": {
-      "additionalProperties": false,
-      "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+      "description": "An agent's selected tools and permissions.",
       "properties": {
         "connection_id": {
           "maxLength": 41,
@@ -1040,7 +1114,8 @@
         "kind": {
           "enum": [
             "message",
-            "child_result"
+            "child_result",
+            "tool_result"
           ],
           "title": "Kind",
           "type": "string"
@@ -1234,6 +1309,54 @@
         }
       },
       "title": "EnvironmentPermissionSet",
+      "type": "object"
+    },
+    "EnvironmentVariables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+      "type": "object"
+    },
+    "ExecutionOverride": {
+      "additionalProperties": false,
+      "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
+      "properties": {
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EnvironmentVariables"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "steering": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Steering"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ExecutionOverride",
       "type": "object"
     },
     "Failed": {
@@ -2525,6 +2648,21 @@
       "title": "RecordSource",
       "type": "object"
     },
+    "RequestContext": {
+      "additionalProperties": false,
+      "description": "Explicit business headers, frozen in accepted Run options and kept out of model projections.",
+      "properties": {
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        }
+      },
+      "title": "RequestContext",
+      "type": "object"
+    },
     "Resume": {
       "additionalProperties": false,
       "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
@@ -2661,6 +2799,28 @@
           "anyOf": [
             {
               "$ref": "#/$defs/RunConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionOverride"
             },
             {
               "type": "null"
@@ -3200,6 +3360,13 @@
       "title": "SkillSelection",
       "type": "object"
     },
+    "Steering": {
+      "enum": [
+        "boundary",
+        "immediate"
+      ],
+      "type": "string"
+    },
     "StreamPosition": {
       "additionalProperties": false,
       "properties": {
@@ -3398,6 +3565,17 @@
           ],
           "title": "Current Run Id"
         },
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExecutionOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -3548,6 +3726,43 @@
       "minLength": 1,
       "pattern": "\\S",
       "type": "string"
+    },
+    "ToolExecutionOverride": {
+      "additionalProperties": false,
+      "properties": {
+        "foreground_wait_seconds": {
+          "anyOf": [
+            {
+              "maximum": 300,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Foreground Wait Seconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "inline",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "ToolExecutionOverride",
+      "type": "object"
     },
     "ToolPermissionMode": {
       "enum": [
@@ -3812,6 +4027,7 @@
         "queued",
         "resume",
         "child_result",
+        "tool_result",
         "spawned"
       ],
       "type": "string"
@@ -4111,6 +4327,9 @@
     }
   },
   "frames": {
+    "app_ready": {
+      "$ref": "#/$defs/AppReady"
+    },
     "delta": {
       "$ref": "#/$defs/Delta"
     },

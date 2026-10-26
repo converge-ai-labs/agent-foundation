@@ -1,5 +1,6 @@
 """MCP App originals cross worker persistence and independent, authorized control requests."""
 
+import asyncio
 import json
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -23,9 +24,125 @@ URI = "ui://counter/app.html"
 MIME = "text/html;profile=mcp-app"
 
 
+@pytest.mark.parametrize("lost_boundary", [False, True])
+async def test_app_ready_waits_for_commit_and_opens_before_run_ends(
+    service, scripted_model, runs_kit, listen, monkeypatch, lost_boundary
+):
+    from a13n_service.runs import checkpoints
+    from a13n_service.runs.stream import ThreadStream
+
+    commit_entered, allow_commit, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    commit = checkpoints.commit
+
+    async def held_commit(*args, **kwargs):
+        result = await commit(*args, **kwargs)
+        if any(ref.purpose == "app" for ref in kwargs["display"].tail.refs):
+            commit_entered.set()
+            await allow_commit.wait()  # Hold the test transaction after writing, before its caller commits.
+        return result
+
+    monkeypatch.setattr(checkpoints, "commit", held_commit)
+    if lost_boundary:
+        monkeypatch.setattr(ThreadStream, "boundary", lambda *args, **kwargs: None)
+    server = FastMCP("Ready App")
+
+    @server.tool(meta={"ui": {"resourceUri": URI}})
+    def show_ready() -> str:
+        return "Ready"
+
+    @server.resource(URI, mime_type=MIME)
+    def resource() -> str:
+        return "<p>Ready</p>"
+
+    async with serve(server.http_app(path="/mcp")) as mcp_url:
+        connection = await create(service, {"config": {"url": mcp_url + "/mcp"}})
+        agent = await runs_kit.create_agent(
+            service,
+            scripted_model,
+            connection_tools=[{"connection_id": connection["id"]}],
+            toolsets={"files": {"enabled": False}, "shell": {"enabled": False}},
+        )
+        scripted_model.call("show_ready", {}, call_id="call_ready")
+        scripted_model.say("Finished", gate=finish)
+        submitted = await runs_kit.start_thread(service, agent, "Show the App")
+        run_id = submitted["run"]["id"]
+        headers = await runs_kit.bearer(service)
+        async with listen(service.app) as base:
+            url = f"{base}{service.api}/sessions/{submitted['thread']['session_id']}/stream"
+            async with runs_kit.frames(url, headers) as stream:
+                await runs_kit.until(stream, lambda frame: frame[0] == "items")
+                task = await runs_kit.attempt(service)
+                try:
+                    observed = await runs_kit.until(
+                        stream,
+                        lambda frame: frame[0] == "delta" and frame[2]["event"].get("name") == "a13n.mcp_apps",
+                    )
+                    assert not any(frame[0] == "app_ready" for frame in observed)
+                    reference = observed[-1][2]["event"]["value"]["event"]["apps"][0]
+                    path = f"{service.api}/runs/{run_id}/apps/{reference['app_id']}/open"
+                    async with asyncio.timeout(10):
+                        await commit_entered.wait()
+                    assert (await service.client.post(path)).status_code == 404
+                    # A database refresh while the write is uncommitted cannot announce readiness either.
+                    from a13n_service.runs.stream import SessionHub
+
+                    assert not (await SessionHub(service.runtime).base(run_id, 1)).apps
+                    allow_commit.set()
+                    ready = await runs_kit.until(stream, lambda frame: frame[0] == "app_ready")
+                    assert ready[-1][2] == {
+                        "thread_id": submitted["thread"]["id"],
+                        "run_id": run_id,
+                        "apps": [reference],
+                    }
+                    assert (await service.client.post(path)).status_code == 200
+                    assert not task.done(), "Readiness must not wait for Run completion"
+                    async with runs_kit.frames(url, headers) as reconnected:
+                        replay = await runs_kit.until(reconnected, lambda frame: frame[0] == "app_ready")
+                        assert replay[-1][2] == ready[-1][2]
+                    finish.set()
+                    await runs_kit.until(stream, lambda frame: frame[0] == "items" and frame[2]["complete"])
+                    event, _, final_ready = await anext(stream)
+                    assert event == "app_ready" and final_ready == ready[-1][2]
+                finally:
+                    allow_commit.set()
+                    finish.set()
+                    await task
+
+
+@pytest.mark.parametrize("app_run", [False, "paged", "legacy", "save_failed"], indirect=True)
+async def test_saved_app_readiness_uses_committed_references(service, app_run, monkeypatch):
+    from a13n_service.runs.contents import ContentObject
+    from a13n_service.runs.stream import SessionHub
+
+    hub = SessionHub(service.runtime)
+    read = hub._object
+
+    async def display_only(ref):
+        assert not isinstance(ref, ContentObject) or ref.purpose != "app", "Readiness must not download originals"
+        return await read(ref)
+
+    monkeypatch.setattr(hub, "_object", display_only)
+    base = await hub.base(app_run.run_id, 1)
+    assert app_run.reference["unavailable"] is app_run.save_failed
+    expected = [] if app_run.reference["unavailable"] else [app_run.reference]
+    assert [app.model_dump(mode="json") for app in base.apps] == expected
+
+
 @pytest.fixture
 async def app_run(service, scripted_model, runs_kit, request, monkeypatch):
     mode = getattr(request, "param", False)
+    if mode == "save_failed":
+        save_item = Contents.item
+
+        async def failed_original(self, item, write):
+            async def save(data):
+                if b'"arguments"' in data and b'"result"' in data and b'"reference"' in data:
+                    raise OSError("App original storage unavailable")
+                return await write(data)
+
+            return await save_item(self, item, save)
+
+        monkeypatch.setattr(Contents, "item", failed_original)
     if mode == "legacy":
         save_app = Contents.app
 
@@ -110,6 +227,7 @@ async def app_run(service, scripted_model, runs_kit, request, monkeypatch):
             agent=agent,
             history=history,
             paged=mode == "paged",
+            save_failed=mode == "save_failed",
         )
 
 

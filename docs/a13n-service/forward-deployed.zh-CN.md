@@ -4,7 +4,7 @@ sidebarTitle: 前线部署工程
 description: 借助 Service 在客户的云中交付 agent，使用客户的模型、系统和访问规则，然后移交运维。
 ---
 
-前线部署工程师（FDE，Forward Deployed Engineer）与客户一起构建 agent，并在客户的环境中把 agent 投入生产。Service 开源且可自托管：Console、HTTP API、worker 和全部存储数据都运行在客户掌控的基础设施上。本页把这项工作的每个步骤对应到相应的 Service 指南。如果要在客户已运营的应用内运行 agent，请改为嵌入 [Harness](../a13n-harness/index.md) 库。
+前线部署工程师（FDE，Forward Deployed Engineer）与客户一起构建 agent，并在客户的环境中把 agent 投入生产。Service 开源且可自托管：将 Console、HTTP API、worker 和 Service 管理的存储部署在客户的基础设施上。模型、工具、trace 和记录型记忆数据流向所配置的后端；选择符合客户数据要求的后端。本页把这项工作的每个步骤对应到相应的 Service 指南。如果要在客户已运营的应用内运行 agent，请改为嵌入 [Harness](../a13n-harness/index.md) 库。
 
 ```mermaid
 flowchart TB

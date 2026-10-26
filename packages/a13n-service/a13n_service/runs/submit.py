@@ -12,6 +12,7 @@ from a13n_harness.configuration import RunConfiguration
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.resources.agents.schemas import AgentOverride
@@ -63,6 +64,11 @@ async def validate_message(
         accepted = RunOptions.model_validate(current.options).configuration or RunConfiguration()
         if message.options.configuration != accepted:
             raise conflict("run", current.id, "run_configuration_immutable")
+    if message.delivery == "steer" and thread.current_run_id is not None and message.options.execution is not None:
+        current = await session.get(RunRow, thread.current_run_id)
+        assert current is not None
+        if not matches(RunOptions.model_validate(current.options).execution, message.options.execution):
+            raise conflict("run", current.id, "execution_policy_immutable")
     revision, overrides = await run_revision(
         session,
         runtime,
@@ -105,6 +111,7 @@ async def _append(
         request=request,
         control=runtime.settings.control,
     )
+    runtime.mailbox.notify(session, entry)
     return Source.message(entry, "input", actor, revision, overrides)
 
 
@@ -196,6 +203,7 @@ async def prepare_thread(
     thread = new_thread(
         owner,
         mcp_headers=body.mcp_headers,
+        execution=body.execution,
         message_history=body.message_history,
         schedule_occurrence_id=schedule_occurrence_id,
     )

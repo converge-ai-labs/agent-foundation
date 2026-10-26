@@ -190,7 +190,7 @@ async def answer_question(executable):
     requests = first.deferred
     if len(requests.calls) != 1 or requests.approvals:
         raise RuntimeError("This example expects one call and no approvals")
-    call = requests.calls[0]
+    call = requests.calls[0].target_call
     if call.tool_name != "ask_user_question":
         raise RuntimeError("Expected the built-in question tool")
     question_request = AskUserQuestionRequest.model_validate(call.args_as_dict())

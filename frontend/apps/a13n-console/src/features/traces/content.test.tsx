@@ -5,7 +5,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { decodeContent, TraceContent, TraceJson } from "./content";
 import { observationKind } from "./identity";
 import { UNKNOWN } from "../../shared/unknown";
-import { PagedSource, TEXT_PAGE_SIZE } from "./content-pages";
+import { sourceChunks, TEXT_CHUNK_SIZE } from "./content-source";
+import { mockIntersections } from "../../../tests/intersection-observer";
+const intersect = mockIntersections();
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -142,47 +144,31 @@ it("does not reinterpret scalar strings or malformed JSON", () => {
   expect(decodeContent('{"ok":true}')).toEqual({ ok: true });
 });
 
-it("pages large JSON without losing source and copies the whole value", async () => {
+it("loads large JSON while scrolling and copies the whole value", async () => {
   const user = userEvent.setup();
   const write = vi.spyOn(navigator.clipboard, "writeText");
   const value = { large: "a".repeat(110_000) };
+  const text = JSON.stringify(value, null, 2);
   const { container } = render(<TraceJson value={value} />);
-  const chunks: string[] = [];
-  const next = screen.getByRole("button", { name: "Next" });
-  while (true) {
-    const chunk = container.querySelector("pre")!.textContent;
-    expect(chunk.length).toBeLessThanOrEqual(TEXT_PAGE_SIZE);
-    chunks.push(chunk);
-    if ((next as HTMLButtonElement).disabled) break;
-    await user.click(next);
-  }
-  expect(JSON.parse(chunks.join(""))).toEqual(value);
-  expect(container.querySelector(".hljs")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Copy full text" }));
-  expect(write).toHaveBeenCalledExactlyOnceWith(JSON.stringify(value, null, 2));
-});
-
-it("pages long text without splitting emoji or retaining another source's page", async () => {
-  const user = userEvent.setup();
-  const text = "a".repeat(TEXT_PAGE_SIZE - 1) + "😀tail";
-  const view = render(<PagedSource text={text} />);
-  expect(view.container.querySelector("pre")!.textContent).toBe(
-    "a".repeat(TEXT_PAGE_SIZE - 1),
-  );
-  await user.click(screen.getByRole("button", { name: "Next" }));
-  expect(view.container.querySelector("pre")!.textContent).toBe("😀tail");
-  view.rerender(<PagedSource text={"b".repeat(TEXT_PAGE_SIZE + 1)} />);
-  expect(view.container.querySelector("pre")!.textContent).toBe(
-    "b".repeat(TEXT_PAGE_SIZE),
-  );
-  view.rerender(<PagedSource text={text} />);
+  expect(container.querySelectorAll("pre")).toHaveLength(1);
   expect(
-    (screen.getByRole("button", { name: "Previous" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+    container.querySelector("pre")!.textContent.length,
+  ).toBeLessThanOrEqual(TEXT_CHUNK_SIZE);
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  const chunks = [...container.querySelectorAll("[data-content-chunk]")];
+  for (const chunk of chunks) intersect(chunk, true);
+  expect(
+    [...container.querySelectorAll("pre")]
+      .map((node) => node.textContent)
+      .join(""),
+  ).toBe(text);
+  intersect(chunks[0]!, false);
+  expect(container.querySelectorAll("pre")).toHaveLength(chunks.length - 1);
+  await user.click(screen.getByRole("button", { name: "Copy full text" }));
+  expect(write).toHaveBeenCalledExactlyOnceWith(text);
 });
 
-it("mounts one message page, bounds aggregate highlighting, and retains complete raw copy", async () => {
+it("mounts nearby messages, restores measured space on return, and retains full copy", async () => {
   const user = userEvent.setup();
   const write = vi.spyOn(navigator.clipboard, "writeText");
   const messages = Array.from({ length: 25 }, (_, index) => ({
@@ -191,18 +177,29 @@ it("mounts one message page, bounds aggregate highlighting, and retains complete
   }));
   const source = JSON.stringify({ messages });
   const { container } = mount(source);
-  expect(container.querySelectorAll("article")).toHaveLength(10);
+  expect(container.querySelectorAll("article")).toHaveLength(1);
   expect(screen.getByText("Message 0")).toBeTruthy();
   expect(screen.queryByText("Message 10")).toBeNull();
   expect(container.querySelector(".hljs")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Next" }));
+  const first = container.querySelector<HTMLElement>(
+    '[data-content-chunk="0"]',
+  )!;
+  const later = container.querySelector<HTMLElement>(
+    '[data-content-chunk="10"]',
+  )!;
+  vi.spyOn(first, "getBoundingClientRect").mockReturnValue({
+    height: 1200,
+  } as DOMRect);
+  intersect(later, true);
+  intersect(first, false);
   expect(screen.getByText("Message 10")).toBeTruthy();
   expect(screen.queryByText("Message 0")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Next" }));
-  expect(container.querySelectorAll("article")).toHaveLength(5);
-  expect(screen.getByText("Message 24")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Previous" }));
-  expect(screen.getByText("Message 10")).toBeTruthy();
+  expect(first.style.height).toBe("1200px");
+  expect(container.querySelectorAll("article")).toHaveLength(1);
+  intersect(first, true);
+  intersect(later, false);
+  expect(screen.getByText("Message 0")).toBeTruthy();
+  expect(first.style.height).toBe("");
   await user.click(
     screen.getByRole("button", { name: "Copy retained content" }),
   );
@@ -212,14 +209,41 @@ it("mounts one message page, bounds aggregate highlighting, and retains complete
   await user.click(screen.getByRole("button", { name: "Raw JSON" }));
   expect(container.querySelectorAll("article")).toHaveLength(0);
   expect(container.querySelector("pre")!.textContent).toBe(
-    JSON.stringify(source, null, 2).slice(0, TEXT_PAGE_SIZE),
+    sourceChunks(JSON.stringify(source, null, 2))[0],
   );
   await user.click(screen.getByRole("button", { name: "Preview" }));
   expect(screen.getByText("Message 0")).toBeTruthy();
 });
 
-it("bounds content blocks and Chat Completions tool calls inside a single message", async () => {
-  const user = userEvent.setup();
+it("retains nested source measurements when scrolling away from a long message", () => {
+  const text = "x".repeat(TEXT_CHUNK_SIZE) + "Source tail";
+  const { container } = mount(
+    Array.from({ length: 12 }, (_, index) => ({
+      role: "user",
+      content: index === 0 ? text : `Message ${index}`,
+    })),
+  );
+  const message = container.querySelector<HTMLElement>(
+    '[data-content-chunk="0"]',
+  )!;
+  const tail = message.querySelector<HTMLElement>('[data-content-chunk="1"]')!;
+  vi.spyOn(tail, "getBoundingClientRect").mockReturnValue({
+    height: 600,
+  } as DOMRect);
+  intersect(tail, true);
+  expect(screen.getByText("Source tail")).toBeTruthy();
+  intersect(message, false);
+  expect(screen.queryByText("Source tail")).toBeNull();
+  intersect(message, true);
+  const restored = message.querySelector<HTMLElement>(
+    '[data-content-chunk="1"]',
+  )!;
+  expect(restored.style.height).toBe("600px");
+  intersect(restored, true);
+  expect(screen.getByText("Source tail")).toBeTruthy();
+});
+
+it("automatically loads nested blocks and tool calls without nested page controls", () => {
   const { container } = mount([
     {
       role: "assistant",
@@ -234,14 +258,14 @@ it("bounds content blocks and Chat Completions tool calls inside a single messag
     },
   ]);
   expect(screen.getByText("Part 0")).toBeTruthy();
-  expect(screen.queryByText("Part 10")).toBeNull();
+  expect(screen.queryByText("Part 11")).toBeNull();
   expect(screen.getByText("tool_0")).toBeTruthy();
-  expect(screen.queryByText("tool_10")).toBeNull();
-  await user.click(screen.getAllByRole("button", { name: "Next" })[0]!);
+  expect(screen.queryByText("tool_11")).toBeNull();
+  for (const chunk of container.querySelectorAll('[data-content-chunk="11"]'))
+    intersect(chunk, true);
   expect(screen.getByText("Part 11")).toBeTruthy();
-  await user.click(screen.getAllByRole("button", { name: "Next" })[1]!);
   expect(screen.getByText("tool_11")).toBeTruthy();
-  expect(container.querySelectorAll("article")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
 });
 
 it("distinguishes chat, tools, agents and phases without guessing unknown types", () => {

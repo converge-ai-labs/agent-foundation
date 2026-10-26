@@ -53,9 +53,7 @@ export function MemoriesPage() {
   return (
     <Page
       title={t("Memories")}
-      description={t(
-        "Files and records your agents keep across conversations.",
-      )}
+      description={t("Files and records your agents keep across sessions.")}
       actions={create}
       toolbar={
         <Toolbar
@@ -178,7 +176,7 @@ export function MemoriesPage() {
             description={t(
               filtered
                 ? "Change or clear the search and filters."
-                : "Create a memory to give agents what they keep across conversations.",
+                : "Create a memory to give agents what they keep across sessions.",
             )}
             action={!filtered && create}
           />

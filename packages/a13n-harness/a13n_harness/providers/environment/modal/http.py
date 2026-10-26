@@ -1,12 +1,12 @@
 """Resolve an owned Modal target's TLS tunnel and attach shared EIP without starting it."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
-from a13n_envd_client import EIPSession
 from pydantic import SecretStr
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.modal.shared import ModalReference, ModalState, execute_command, sdk_errors
@@ -52,7 +52,7 @@ class HttpReference(ModalReference):
 @asynccontextmanager
 async def http_session(
     reference: ModalReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSessionBinding]:
     try:
         reference.require_target()
         sandbox = await reference.lookup()
@@ -115,6 +115,7 @@ def http_execution(
     reference.require_target()
     assert reference.state is not None
     return RemoteEnvdExecution(
+        environment=reference.config.environment,
         provider_key="modal",
         environment_id=reference.environment_id,
         state=reference.state,

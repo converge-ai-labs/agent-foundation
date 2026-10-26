@@ -29,6 +29,7 @@ from a13n_service.resources.assets.service import create_asset
 from a13n_service.resources.uploads import service as uploads
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.runs.tools import tool_failures
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
 
@@ -70,8 +71,11 @@ class AssetsCapability(AbstractCapability[AgentContext]):
         scope = WorkspaceScope(lease.organization_id, lease.workspace_id)
         name = filename or posixpath.basename(path)
         with tool_failures():
-            authorize(self.principal, scope, "write", authority=self.authority)
+            principal = await prove(runtime, lease)
+            authorize(principal, scope, "write", authority=self.authority)
             content = await _read(ctx.deps.environment, path, runtime.settings.objects.max_bytes)
+            principal = await prove(runtime, lease)
+            authorize(principal, scope, "write", authority=self.authority)
             upload = await uploads.store(
                 runtime.storage,
                 runtime.objects,
@@ -84,7 +88,7 @@ class AssetsCapability(AbstractCapability[AgentContext]):
             )
             asset, _ = await create_asset(
                 runtime.storage,
-                self.principal,
+                principal,
                 scope.workspace_id,
                 AssetCreate(upload_id=upload.upload_id, name=upload.filename),
                 source={"run_id": lease.run_id, "run_attempt_id": lease.attempt_id, "tool_call_id": call_id},

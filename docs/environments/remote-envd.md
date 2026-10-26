@@ -40,7 +40,7 @@ Read the small, copyable [Host integration](https://github.com/converge-ai-labs/
 
 ## Connect to an existing HTTP daemon
 
-The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_DEVICE_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths.
+The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_DEVICE_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths. Use the Host-owned [`PreparedSource` helper](../a13n-harness/environments.md#supply-a-source) to pass the connector to Harness:
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
@@ -52,7 +52,7 @@ state = EnvironmentState(
     state_version="1",
     state={"device_id": "env-remote-machine"},
 )
-environment = http_envd.execution_connector(
+connector = http_envd.execution_connector(
     {"working_directory": "/work/project"},
     configuration={"endpoint": "https://envd.example.com"},
     credential={"token": token_from_your_secret_store},
@@ -60,13 +60,14 @@ environment = http_envd.execution_connector(
     state=state,
 )
 
-# Harness binds, uses and closes this fresh adapter for the Run.
-result = await executable.run("Inspect the workspace", environment=environment)
+# PreparedSource comes from the Host integration above.
+# Harness opens and closes a fresh execution for this Run.
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
 ```
 
 HTTP and WebSocket Envd expose fixed-device connectors only; their definitions have no management factory or lifecycle methods.
 
-Outside Harness, use `async with await environment.open() as execution` and call the execution's operations. A shared `HttpEnvdProviderRuntime` stays open until Host shutdown.
+Outside Harness, use `async with await connector.open() as execution` and call the execution's operations. A shared `HttpEnvdProviderRuntime` stays open until Host shutdown.
 
 The example CLI can connect to an existing daemon too:
 
@@ -182,12 +183,19 @@ Configure the daemon to use `reverse_websocket`, the matching credential file, D
 ## State, concurrency and recovery
 
 - The Host's logical Environment ID and the Envd Device ID may differ. Initialization validates the Device ID; operation references belong to the logical Environment and current generation.
-- Persist only the Provider state envelope. It contains no credential, endpoint, connection, Session or daemon generation.
-- One Device admits multiple independent Sessions. Each fresh adapter opens its own Session with the captured cwd and owns its resources. Sessions are not tenant isolation boundaries.
+- Persist the portable Provider state envelope for target re-entry. It contains no credential, endpoint, connection, Session or daemon generation. Keep optional Session recovery hints separately, as described below.
+- One Device admits multiple independent Sessions. By default, each fresh execution opens its own Session with the captured cwd and owns its resources. Sessions are not tenant isolation boundaries.
 - Closing an adapter closes its Session, not remote infrastructure or a borrowed connection. Both HTTP and WebSocket Device connections remain Host-owned. File continuity survives; restarting the daemon invalidates native handles.
 - Device info and bounded directory listing require no adapter or Session. Resolve an omitted cwd from Device info before immutable Run acceptance.
-- A lost framed carrier detaches Sessions for disconnect grace. An existing owner can explicitly attach the exact same Session in the same generation; no operation or transfer is replayed. A fresh adapter always opens a new Session.
+- A lost framed carrier detaches Sessions for disconnect grace. An existing owner can explicitly attach the exact same Session in the same generation; no operation or transfer is replayed. A fresh connector can also attach through a compatible Host-owned recovery hint.
 - Never replay a possibly dispatched command or mutation merely because the connection dropped. A failed preparation requires a fresh adapter for the next attempt.
+
+To preserve a live Session across interrupted Host execution:
+
+1. Create an `EnvdSessionRecovery` collaborator from `a13n_harness.environment.session_recovery`. Restore its optional `EnvdSessionState` only for the original logical execution scope.
+2. Pass it as `session_recovery=recovery` to `execution_connector(...)`. Save the observed `recovery.state` in your Host checkpoint while the execution is active, separately from `EnvironmentState` and Harness state.
+3. Reconnect with current credentials and policy. Attachment checks target, Device identity/generation, cwd and required methods. An unavailable or incompatible hint opens a fresh Session; a changed execution boundary is rejected. Authentication, transport and compatibility failures propagate. Controlled-egress Sessions resolve current policy and open fresh.
+4. Normal execution close closes the Session and clears the in-memory hint; synchronize that change with Host persistence. Recovery neither restores process references nor replays mutations, and does not fence another authenticated client or extend Session expiry.
 
 The WebSocket SDK is process-local. If the listener and executing worker live in different processes, your Host must route execution to the connection owner or provide an explicit integration. No automatic relay, distributed registry or global connection pool is implied.
 

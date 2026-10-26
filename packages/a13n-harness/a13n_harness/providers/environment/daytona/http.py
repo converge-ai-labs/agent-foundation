@@ -1,12 +1,12 @@
 """Fixed-target Daytona routing and credentials for the shared Envd connection."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
-from a13n_envd_client import EIPSession
 from pydantic import BaseModel, Field, SecretStr
 
+from a13n_harness.environment.attachments import EIPSessionBinding
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
 from a13n_harness.environment.session_recovery import EnvdSessionRecovery
 from a13n_harness.providers.environment.daytona.shared import DaytonaReference, Execution
@@ -38,7 +38,7 @@ class HttpReference(DaytonaReference):
 @asynccontextmanager
 async def http_session(
     reference: DaytonaReference, *, session_recovery: EnvdSessionRecovery | None = None
-) -> AsyncIterator[EIPSession]:
+) -> AsyncGenerator[EIPSessionBinding]:
     try:
         reference.require_target()
         target = await reference.lookup()
@@ -117,6 +117,7 @@ def http_execution(
     reference.require_target()
     assert reference.state is not None
     return RemoteEnvdExecution(
+        environment=reference.config.environment,
         provider_key="daytona",
         environment_id=reference.environment_id,
         state=reference.state,

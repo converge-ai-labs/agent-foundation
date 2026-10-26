@@ -92,6 +92,9 @@ export function ResourceTable<T extends { id: string } | { key: string }>({
                   : undefined
               }
               onClick={(event) => {
+                // Portaled popovers still bubble through the React row, even
+                // though their contents are outside its DOM subtree.
+                if (!event.currentTarget.contains(event.target as Node)) return;
                 if (
                   event.target instanceof Element &&
                   event.target.closest(

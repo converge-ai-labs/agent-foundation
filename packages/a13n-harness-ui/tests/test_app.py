@@ -52,7 +52,6 @@ from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_CLIENT_ID,
     DEFAULT_GROK_OAUTH_ISSUER,
     DEFAULT_GROK_OAUTH_SCOPE,
-    AccountStoreError,
     Availability,
     GrokLoginRequest,
     Provider,
@@ -193,7 +192,8 @@ async def test_first_grok_login_uses_default_compatible_scope(
 
     assert before.availability is Availability.ABSENT
     assert after.availability is Availability.AVAILABLE
-    document = json.loads(auth_path.read_text())
+    assert not auth_path.exists()
+    document = json.loads((tmp_path / "state/oauth/accounts/acct-grok-default.json").read_text())
     assert set(document) == {DEFAULT_GROK_OAUTH_SCOPE}
     assert document[DEFAULT_GROK_OAUTH_SCOPE]["user_id"] == "account-1"
 
@@ -208,10 +208,9 @@ async def test_broken_unused_grok_store_does_not_block_application_startup(
 
     async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
         assert app.state is AppState.ready
-        with pytest.raises(AccountStoreError) as failed:
-            await app.inspect_model_account(Provider.GROK)
-
-    assert failed.value.code == "account_store_malformed"
+        assert (await app.inspect_model_account(Provider.GROK)).availability is Availability.ABSENT
+        assert (await app.subscription_accounts.adoption())["grok"].status == "invalid"
+    assert auth_path.read_text() == "not-json"
 
 
 async def test_application_starts_persists_objects_and_closes(tmp_path: Path) -> None:
@@ -369,7 +368,8 @@ async def test_invalid_first_candidate_starts_with_diagnostics_and_observer_acce
         with fail_after(3):
             while True:
                 status = await app.status()
-                if status.accepted_generation_digest is not None:
+                # Acceptance publishes the generation before post-accept work clears diagnostics.
+                if status.accepted_generation_digest is not None and status.candidate_error_code is None:
                     break
                 await sleep(0.05)
         assert status.candidate_error_code is None
@@ -441,20 +441,20 @@ async def test_configuration_observer_reloads_only_after_metadata_fingerprint_ch
     with fail_after(5):
         async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root):
             (await waiting.receive()).set()
-            gate = await waiting.receive()  # The initial fingerprint scan has completed.
-            assert calls == 2
+            gate = await waiting.receive()  # Bootstrap includes native default-group publication.
+            baseline = calls
             gate.set()
             gate = await waiting.receive()
-            assert calls == 2
+            assert calls == baseline
             (tmp_path / "agents/assistant.yaml").write_text(
                 (tmp_path / "agents/assistant.yaml").read_text().replace("Help the user.", "Help carefully.")
             )
             gate.set()
             gate = await waiting.receive()
-            assert calls == 3
+            assert calls == baseline + 1
             gate.set()
             await waiting.receive()
-            assert calls == 3
+            assert calls == baseline + 1
 
 
 async def test_configuration_observer_invalidates_diagnostic_changes_without_generation_change(
@@ -2495,6 +2495,52 @@ async def test_consumed_steering_checkpoint_and_terminal_save_use_successive_sel
         assert directory.turns == final_history.turns
 
 
+async def test_checkpoint_reuses_detached_history_for_display_and_excerpt(tmp_path, monkeypatch):
+    import weakref
+
+    from a13n_harness_ui import root_execution
+    from a13n_harness_ui.display_history import DisplayHistoryCollector
+
+    capture = DisplayHistoryCollector.capture
+    excerpt = root_execution.checkpoint_excerpt
+    captured = []
+    checkpoints = []
+
+    def record_capture(self, history=(), **kwargs):
+        if history:
+            captured[:] = [weakref.ref(history[-1])]
+        return capture(self, history, **kwargs)
+
+    def check_excerpt(previous, history):
+        assert captured and captured[0]() is history[-1]
+        checkpoints.append(len(history))
+        return excerpt(previous, history)
+
+    async def model(messages, info):
+        yield "Answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(DisplayHistoryCollector, "capture", record_capture)
+    monkeypatch.setattr(root_execution, "checkpoint_excerpt", check_excerpt)
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        thread = await app.create_thread()
+        for prompt in ("First input", "Second input"):
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
+            result = await app.wait_root_operation(receipt.receipt_id)
+            assert result.status is RootOperationStatus.completed
+        saved = await app._store.threads.get(thread.thread_id)
+        assert saved.excerpt.first_input == "First input"
+        assert saved.excerpt.latest_input == "Second input"
+        assert saved.excerpt.latest_reply == "Answer"
+    assert len(checkpoints) == 2
+    assert checkpoints[1] > checkpoints[0]
+
+
 @pytest.mark.parametrize("cancel_count", [1, 3])
 async def test_checkpoint_cancellation_after_commit_preserves_terminal_head_and_marker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancel_count: int
@@ -3126,3 +3172,37 @@ async def test_reopen_recovers_accepted_external_fact_without_replaying_approval
     assert len(external) == 1 and external[0].content == {"fact": "accepted once"}
     local = [part for part in observed if part.tool_call_id == "call_local"]
     assert len(local) == 1 and local[0].outcome == "failed"
+
+
+async def test_focused_watch_does_not_pin_consumed_bootstrap(tmp_path: Path) -> None:
+    import gc
+    import weakref
+
+    from a13n_harness_ui.display_history import DisplayPublication
+    from a13n_stream_protocol.display import DisplayFold
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        fold = DisplayFold("run", full_content=True)
+        observations = fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "m", "delta": "x" * 100_000}])
+        await app._live_hub.publish(
+            run_kind="root",
+            root_thread_id=thread.thread_id,
+            parent_thread_id=None,
+            thread_id=thread.thread_id,
+            run_id="run",
+            events=(),
+            display=DisplayPublication(tuple(observations), tuple(fold.items.values()), fold.export_continuation()),
+        )
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            snapshot = weakref.ref(watch.snapshot)
+            replay_event = weakref.ref(watch.root_stream.events[0])
+            events = watch.events
+            assert events.root_stream is None
+            del watch
+            gc.collect()
+            assert snapshot() is None
+            assert replay_event() is None
+            # TUI overflow recovery still captures the shared current cut.
+            assert events.capture_root_stream("run").summary.run_id == "run"

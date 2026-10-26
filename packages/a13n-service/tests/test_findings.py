@@ -201,7 +201,7 @@ async def test_presets_coexist_and_finder_writes_only_findings(service, scripted
 
 
 @pytest.mark.parametrize("endpoint", ["finding-agent", "agent-composer"])
-async def test_builtin_configuration_is_readonly_and_models_are_selected_automatically(
+async def test_builtin_models_are_selected_initially_and_never_silently_replaced(
     service, scripted_model, runs_kit, endpoint
 ):
     model = await runs_kit.create_model(service, scripted_model)
@@ -223,17 +223,10 @@ async def test_builtin_configuration_is_readonly_and_models_are_selected_automat
     path = f"/api/v1/agents/{head['id']}"
     revision = (await service.client.get(f"{path}/revisions/{head['default_revision_id']}")).json()
     assert revision["config"]["model"] == "alternative"
-    for change in ({"model": model}, {"model_settings": {"max_tokens": 2048}}, {"instructions": "Custom"}):
-        denied = await service.client.post(
-            f"{path}/revisions",
-            json={"config": {**revision["config"], **change}},
-            headers={"If-Match": prepared.headers["etag"]},
-        )
-        assert denied.status_code == 409 and denied.json()["error"]["details"]["reason"] == "builtin", denied.text
     repeated = await service.client.post(prepare)
     assert repeated.json()["default_revision_id"] == head["default_revision_id"]
     assert repeated.headers["etag"] == prepared.headers["etag"]
-    # When the current model becomes unusable, preparation picks another usable model.
+    # A disabled selected model remains selected; preparation never silently replaces a user's version.
     current_model = await service.client.get("/api/v1/models/alternative")
     disabled = await service.client.patch(
         "/api/v1/models/alternative", json={"enabled": False}, headers={"If-Match": current_model.headers["etag"]}
@@ -242,11 +235,18 @@ async def test_builtin_configuration_is_readonly_and_models_are_selected_automat
     refreshed = await service.client.post(prepare)
     assert refreshed.status_code == 200, refreshed.text
     current_revision = (await service.client.get(f"{path}/revisions/{refreshed.json()['default_revision_id']}")).json()
-    assert current_revision["config"]["model"] == model
+    assert current_revision["id"] == revision["id"]
+    assert current_revision["config"]["model"] == "alternative"
     assert current_revision["config"]["model_settings"] == {}
-    for action in ("archive", f"revisions/{revision['id']}/set-default"):
-        denied = await service.client.post(f"{path}/{action}", headers={"If-Match": refreshed.headers["etag"]})
-        assert denied.status_code == 409
+    denied = await service.client.post(f"{path}/archive", headers={"If-Match": refreshed.headers["etag"]})
+    assert denied.status_code == 409
+    changed = await service.client.post(
+        f"{path}/revisions",
+        json={"config": {**revision["config"], "model": model}},
+        headers={"If-Match": refreshed.headers["etag"]},
+    )
+    assert changed.status_code == 201, changed.text
+    assert changed.json()["config"]["model"] == model
 
 
 async def test_native_analysis_validates_evidence_and_derives_counts(service, scripted_model, runs_kit):
@@ -256,11 +256,15 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     service.app.state.runtime = runtime
     prepared = await service.client.post("/api/v1/finding-agent")
     assert prepared.status_code == 200, prepared.text
-    body = {"trace_id": TRACE}
+    body = {"trace_id": TRACE, "instructions": "Focus on unsupported success claims."}
     headers = {"Idempotency-Key": "analyze-1"}
     created = await service.client.post("/api/v1/finding-analyses", json=body, headers=headers)
     assert created.status_code == 201, created.text
     result = created.json()
+    assert result["selection"]["instructions"] == body["instructions"]
+    assert (await service.client.get(f"/api/v1/agents/{prepared.json()['id']}")).json()[
+        "default_revision_id"
+    ] == prepared.json()["default_revision_id"]
     assert result["agent_id"] == agent["id"]
     assert result["selected_traces"] == [{"trace_id": TRACE, "run_id": run["id"]}]
     assert result["finding_count"] == result["cited_trace_count"] == 0
@@ -302,12 +306,14 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     assert len(rows) == 2 and all(row["analysis_id"] == result["id"] for row in rows)
     assert rows[0]["source_run_id"] == result["run_id"]
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
+    assert status["selection"]["instructions"] == body["instructions"]
     assert status["read_trace_ids"] == [TRACE]
     assert status["finding_count"] == 2 and status["cited_trace_count"] == 1
     assert (status["session_id"], status["thread_id"]) == (result["session_id"], result["thread_id"])
     assert status["run_status"] == "completed"
     while not scripted_model.requests.empty():
         last_request = scripted_model.requests.get_nowait()
+    assert body["instructions"] in json.dumps(last_request["messages"])
     tools = {tool["function"]["name"]: tool["function"] for tool in last_request["tools"]}
     operations = {tool.key: (tool.method, tool.path) for tool in PLATFORM_TOOLS}
     assert {operations[name] for name in tools if name in operations} == preset.TOOLS

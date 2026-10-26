@@ -8,56 +8,6 @@ The recipe describes the target; the runtime holds its clients and credentials.
 
 [Choose a backend](index.md#choose-a-backend) for the short comparison. This page covers catalogs, extension registration, and built-in runtime requirements.
 
-## Provider catalog and plugins
-
-`ProviderCatalog` is an immutable explicit allowlist, shared by all five Provider domains: Model, Web, Connector, Memory, and Environment. Built-in Environment definitions are selected by exact type, and installed plugins contribute their own definitions:
-
-```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.plugins import load_provider_plugins
-
-plugins = load_provider_plugins(("acme",))
-catalog = ProviderCatalog(
-    (
-        *select_builtin_environment_providers(("direct_local", "docker")),
-        *(item for plugin in plugins for item in plugin.manifest.environment),
-    )
-)
-definition = catalog.require("acme_sandbox")
-```
-
-`load_provider_plugins()` imports only the entry-point names you list; an empty selection scans no installed metadata. It rejects a duplicate, malformed, missing, or ambiguous name, and reports the distribution name, version, and import target of each loaded plugin as provenance. The catalog then rejects a duplicate Provider type, so a plugin cannot shadow a built-in.
-
-Select plugins explicitly and restart the Host after changing their code.
-
-An installed distribution publishes one manifest under the shared entry-point group:
-
-```toml
-[project.entry-points."a13n_harness.providers.plugins"]
-acme = "acme_agent_environment:manifest"
-```
-
-```python
-from a13n_harness.providers.plugins import ProviderManifest
-
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
-```
-
-An `EnvironmentProviderDefinition` should:
-
-1. declare a stable `type`, display name, and optional HTTPS setup link;
-2. declare separate models for account configuration, credentials, and target recipes;
-3. expose execution metadata only; Service composes a separate `EnvironmentManagementDefinition` for management;
-4. return a fixed-target `EnvironmentConnector` from the pure `connector_factory`;
-5. return a fresh ready `EnvironmentExecution` from every `open()`, with its own `execution_id` and operations;
-6. validate fixed target references without changing authoritative state;
-7. leave target management to Service or the embedding Host. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
-
-The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
-
-For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).
-
 ## Built-in Providers
 
 Execution uses a Native basic path or the general Envd path; resource management retains a separate implementation for each vendor. See the [execution model](index.md#choose-a-backend).
@@ -66,17 +16,17 @@ Execution uses a Native basic path or the general Envd path; resource management
 | -------------- | ---------------- | ------------------------------------------------------------- | ------------------------------- |
 | Native         | `direct_local`   | Files & Shell on the local Host                               | Host-owned directory            |
 | Native / Envd  | `docker`         | Native Files & Shell; explicit HTTP EIP for general execution | Docker provider                 |
-| Native         | `e2b`            | Files & Shell in a remote sandbox                             | E2B provider                    |
+| Native / Envd  | `e2b`            | Native Files & Shell / explicit HTTP EIP                      | E2B provider                    |
 | Envd           | `local_envd`     | Local daemon over stdio                                       | Host-owned daemon               |
 | Envd           | `daytona`        | EIP to a compatible sandbox daemon                            | Daytona provider                |
 | Envd           | `modal`          | EIP to a compatible sandbox daemon                            | Modal provider                  |
-| Envd           | `vercel`         | EIP to a compatible sandbox daemon                            | Vercel provider                 |
-| Envd           | `sprites`        | EIP to a compatible sandbox daemon                            | Sprites provider                |
-| Envd           | `runloop`        | EIP to a compatible sandbox daemon                            | Runloop provider                |
+| Native / Envd  | `vercel`         | Native Files & Shell / explicit HTTP EIP                      | Vercel provider                 |
+| Native / Envd  | `sprites`        | Native Files & Shell / private-tunnel EIP                     | Sprites provider                |
+| Native         | `runloop`        | Vendor Files & Shell; EIP not integrated                      | Runloop provider                |
 | Envd           | `http_envd`      | HTTP(S) EIP                                                   | Connect-only                    |
 | Envd           | `websocket_envd` | Reverse WebSocket EIP                                         | Connect-only; Host owns ingress |
 
-Native Local, Docker, and E2B provide Files & Shell directly. General execution on Daytona, Modal, Vercel, Sprites, and Runloop uses Envd/EIP, while their resource management providers continue to use vendor APIs. Docker retains explicit Native and Envd paths.
+Daytona and Modal use Envd/EIP. Docker, E2B, Vercel and Sprites offer explicit Native and Envd paths. Sprites installs the desktop on each new sandbox through Service. Runloop currently provides vendor-native Files & Shell only; its Envd, Computer and human desktop access integrations are not implemented. Local execution remains separate.
 
 Before deploying Envd, check the [sandbox validation record](../a13n-envd/egress.md#cloud-platform-validation-record) for launch identities, egress coverage, and platform limits. Available execution capabilities follow daemon negotiation and Host policy.
 
@@ -131,20 +81,20 @@ With `execution="envd_http"`, the connector opens HTTP EIP Sessions against the 
 
 ## Cloud Providers
 
-E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. E2B supplies Native Files & Shell; the other five use the general Envd execution path. Advanced capabilities on an E2B target also use a compatible Envd connection. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
+E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop each retain a resource management provider. Daytona and Modal use Envd. E2B, Vercel and Sprites retain Native Files & Shell and offer an explicit Envd path for advanced capabilities. Runloop currently exposes Native Files & Shell only. Service E2B accounts select the E2B cloud or a compatible service by domain; see [Service environments](../a13n-service/environments.md#providers).
 
-| Provider       | Backend settings                                                               | Credential fields               | Common recipe settings                                                                |
-| -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------- |
-| E2B            | `domain`, optional `api_url`                                                   | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                |
-| Daytona        | `organization_id`, `target` (default `us`)                                     | `api_key`                       | `snapshot`, which sets the sandbox's resources                                        |
-| Modal          | `workspace`, existing deployed `app_name`, `environment_name` (default `main`) | `token_id`, `token_secret`      | required Envd-compatible `image`, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
-| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `runtime` (default `python3.13`), `vcpus`, `timeout_seconds`                          |
-| Fly.io Sprites | `organization`                                                                 | `api_key` (Sprites token)       | `region`                                                                              |
-| Runloop        | `organization`                                                                 | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                               |
+| Provider       | Backend settings                                                                                 | Credential fields               | Common recipe settings                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| E2B            | `domain`, optional `api_url`                                                                     | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`                                                        |
+| Daytona        | `organization_id`, `target` (default `us`)                                                       | `api_key`                       | `snapshot`, which sets the sandbox's resources                                                                                |
+| Modal          | optional `workspace`, `app_name` (default `a13n-sandboxes`), `environment_name` (default `main`) | `token_id`, `token_secret`      | Service automatic desktop `image="auto"` or custom Envd-compatible image, `desktop`, `cpu`, `memory` (MiB), `timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                                          | `api_key` (Vercel access token) | `execution`, `snapshot`, `desktop`, `runtime`, `vcpus`, `timeout_seconds`                                                     |
+| Fly.io Sprites | `organization`                                                                                   | `api_key` (Sprites token)       | `region`                                                                                                                      |
+| Runloop        | `organization`                                                                                   | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                                       |
 
-Use the organization, team, or Modal `workspace` that owns the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a recipe or reconnect state.
+Organization and team settings describe backend namespaces, not permission grants. Modal credentials select the workspace; its optional `workspace` field is a descriptive label. Credentials are never part of a recipe or reconnect state.
 
-Daytona, Modal, Vercel, Sprites, and Runloop management providers prepare the target, compatible Envd runtime, and authorized connection. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
+Daytona, Modal and explicitly configured Vercel and Sprites Envd management providers prepare the target, compatible Envd runtime, and authorized connection. Runloop does not yet prepare Envd. Images and snapshots may preinstall the daemon. EIP supplies file-path, command, process, and output semantics; OS sandbox and Egress enforce Host-selected policy. Capabilities follow actual negotiation. Migrate existing target references and configuration explicitly rather than silently interpreting legacy native execution settings as Envd settings.
 
 ### Reconnection and lifecycle
 
@@ -221,7 +171,11 @@ A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 
 ### E2B desktop preparation
 
-E2B defaults to `execution="native"` for Files & Shell without Envd. Select `execution="envd_http"` and `desktop=true` for Computer use. This requires an operator-built template containing Envd and desktop components; the stock `desktop` template does not provide `a13n-envd`.
+E2B defaults to `execution="native"` for Files & Shell without Envd. Select `execution="envd_http"` and `desktop=true` for Computer use. In Console, choose your E2B connection and enable **Desktop environment**. **Automatic desktop** prepares a private template on the first environment creation and reuses it on later creations. No local binary or manual template build is needed. The account key must permit template builds as well as sandboxes; the first creation takes longer. The stock E2B `desktop` template alone does not provide `a13n-envd`.
+
+The automatic manifest pins the base image, official Envd release and startup-source checksums. Reuse is scoped to the workspace, connection, backend, credential version and manifest. Changing credentials or upgrading the manifest prepares a new base for new instances. Existing instances keep their selected template. Failed builds retain diagnostic identity and are cleaned up only after ownership checks; successful private templates remain in your E2B account for reuse.
+
+For a manually maintained template, choose **Custom template** instead.
 
 The [template builder](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/desktop_template.py) packages a compatible Linux amd64 Envd binary, the shared desktop launcher, Noto CJK fonts, Chromium and the desktop-access supervisor. Run from a source checkout with `E2B_API_KEY` securely configured:
 
@@ -231,21 +185,25 @@ uv sync --locked
 uv run python desktop_template.py my-envd-desktop --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-Select that template name or ID in Console. Service starts the preinstalled components on creation, generates a private credential per sandbox, and connects through E2B's HTTPS port route. No additional Envd account or public bearer URL is needed. Agent files, shell and Computer operations all use EIP in this mode, with `/workspace` as working directory. Native account/root/helper settings apply only to Native execution. Opening an existing target never starts or repairs components; unavailable daemons and incompatible methods fail explicitly.
+For a custom build, enter that template name or ID in Console. For either path, Service starts the preinstalled components on creation, generates a private credential per sandbox, and connects through E2B's HTTPS port route. No additional Envd account or public bearer URL is needed. Agent files, shell and Computer operations all use EIP in this mode, with `/workspace` as working directory. Native account/root/helper settings apply only to Native execution. Opening an existing target never starts or repairs components; unavailable daemons and incompatible methods fail explicitly.
 
-Enable `desktop_assistance=true` for viewing and human control. Configure Agent Computer tools and mount permissions separately. The viewer supervisor enforces grants and revocation; Service coordinates safe pause and resume. Envd owns input, coordinate conversion and screenshot behavior. Its current Linux X11 backend supports physical keys but rejects literal Unicode text entry; there is no E2B Desktop SDK fallback. See [Envd Computer use](../a13n-envd/computer-use.md).
+Automatic desktop enables `desktop_assistance=true` by default. For custom templates, enable it explicitly for viewing and human control. Configure Agent Computer tools and mount permissions separately. The viewer supervisor enforces grants and revocation; Service coordinates safe pause and resume. Envd owns input, coordinate conversion and screenshot behavior. Its current Linux X11 backend supports physical keys but rejects literal Unicode text entry; there is no E2B Desktop SDK fallback. See [Envd Computer use](../a13n-envd/computer-use.md).
 
 ### Daytona
 
 Daytona runs all Agent files, shell, process, port and Computer operations through Envd/EIP. Its provider retains sandbox creation, inspection, stop/start, deletion and private connection setup. The working directory is `/workspace`; absolute file paths address the sandbox filesystem. Native stop/start preserves files, not desktop processes or old screenshot observations. Stop requires confirmed disabled auto-delete; deletion waits for terminal destruction.
 
-Both headless and desktop environments require an operator-built snapshot containing compatible Envd. Build one from this source checkout with a Linux amd64 binary and a private `DAYTONA_API_KEY` that can create snapshots:
+In Service / Console, enter a Daytona API key and enable Desktop. The organization is discovered from the key; `organization_id` is an optional account constraint and the default region is `us`. Saving a template does not build anything. First creation automatically builds a private snapshot with Envd, desktop dependencies and human access components; later creations reuse its recorded snapshot ID. No local binary or build script is required. The key needs Sandbox operations and Snapshot read/write/delete permissions.
+
+Console warns that the first build can take several minutes, displays actual stages and elapsed time, and keeps creating after you leave the page. Return to Environment instances to view the ready desktop or retry a confirmed failure after fixing its cause. Automatic snapshots use 2 CPUs, 4 GiB memory and 10 GiB disk. Reuse is isolated by Workspace, Provider, backend, credential version and manifest revision, and revalidates ownership, identity and build contents. Failed builds are cleaned up only after validation; uncertain submissions are reconciled without blind duplicate builds. Ready snapshots remain reusable after an instance is stopped or deleted.
+
+For a custom snapshot, including headless environments or runtime-only keys, build from this checkout with a Linux amd64 binary and a private `DAYTONA_API_KEY` with snapshot authority:
 
 ```bash
 uv run --with daytona==0.225.0 python examples/environment-provider/daytona_desktop_snapshot.py my-envd --region us --binary /absolute/path/to/linux-amd64/a13n-envd
 ```
 
-Use `{"snapshot": "my-envd"}` for Files & Shell, or `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}` for Computer and human access. Snapshot boot starts Envd and, when enabled, the shared X11 desktop and access supervisor. Service checks EIP readiness after create/start. Connecting and granting access never installs, restarts or repairs services. Runtime sandbox keys do not need snapshot-build permission.
+Use `{"snapshot": "my-envd"}` for Files & Shell, or `{"snapshot": "my-envd", "desktop": true, "desktop_assistance": true}` for Computer and human access. Snapshot boot starts Envd and, when enabled, the shared X11 desktop and access supervisor. Service checks EIP readiness after create/start. Connecting and granting access never installs, restarts or repairs services. Keys used only with custom snapshots do not need snapshot-build permission.
 
 Private HTTP port 8888 carries Agent EIP operations. Daytona proxy authentication and the guest Envd credential remain separate, in memory only. The Host validates the discovered endpoint against its deployment and Run policy. There is no native execution fallback. Enable Agent Computer tools and mount permissions separately. The snapshot includes CJK fonts; current Envd X11 input supports physical keys but rejects literal text, including Chinese and multiline text.
 
@@ -257,7 +215,13 @@ New Daytona organizations must choose a default region in the dashboard before c
 
 ### Modal
 
-Supply an explicit Envd-compatible `image`: a registry image or a Modal image ID (`im-...`) in the same account. Use an existing deployed App. Agent file, shell, process and Computer operations use Envd/EIP with `/workspace` as the default working directory and UID/GID 1000. Migrate old plain-Python images and native settings such as `root` and `python`, then create a new environment.
+In Service / Console, configure only the Modal Token ID and Token Secret, then enable Desktop. Connection configuration may be empty: it defaults to the `a13n-sandboxes` App in `main`, creating the App on first preparation if absent. `workspace` is an optional label; credentials select the account. Saving a template does not start a build.
+
+A desktop recipe with no `image` uses `auto`: first creation builds Envd, desktop dependencies and human access components from pinned public artifacts; later creations reuse the recorded immutable image ID. No local binary download or build script is needed. Console warns that first creation can take several minutes, shows real stages and elapsed time, continues in the background after leaving, offers a desktop preview when ready, and allows retry after a confirmed failure. Automatic desktops default to 2 CPUs, 4096 MiB, 3600 seconds and human assistance enabled; explicit overrides are retained.
+
+Build records are isolated by workspace, Provider, credential version and manifest. Reuse still validates image access with current credentials. Interrupted waits rejoin the same content-addressed build without allocating temporary sandboxes. Reusable images and the App remain account assets; allocated sandboxes retain ownership checks and failure cleanup.
+
+Custom images and headless environments still require an explicit compatible `image` and an existing App. Agent operations use Envd/EIP, `/workspace` and UID/GID 1000. The script below is an optional custom-image workflow:
 
 Authenticate with `modal token new` and prepare a compatible Linux amd64 Envd binary before running the image builder. The builder does not embed runtime credentials:
 
@@ -269,7 +233,13 @@ uv run --locked python examples/environment-provider/modal_desktop_image.py \
 Use the resulting image ID in the recipe:
 
 ```json
-{"image": "im-yourImageId", "desktop": true, "desktop_assistance": true, "cpu": 2, "memory": 4096}
+{
+  "image": "im-yourImageId",
+  "desktop": true,
+  "desktop_assistance": true,
+  "cpu": 2,
+  "memory": 4096
+}
 ```
 
 `desktop` requires an observable, input-ready desktop on create and resume. The Service-only `desktop_assistance` setting also requires the desktop access supervisor. A separate TLS tunnel on port 6081 provides read-only viewing, exclusive control, revocation and handback. The TLS tunnel on port 8888 carries Envd with its own guest token; the browser receives neither Modal nor Envd credentials. Enable Agent Computer tools and mount permissions separately.
@@ -282,11 +252,38 @@ Managed stop snapshots the filesystem before termination. Explicit start allocat
 
 ### Vercel Sandbox
 
-Default runtime: `python3.13`; root: `/vercel/sandbox`. Named persistent sandboxes use native stop/resume. Target identity includes native creation time; a new running session alone does not replace the persistent filesystem identity. Delete also requests native asynchronous cleanup of orphan snapshots.
+Vercel defaults to `execution="native"` for existing Files & Shell environments. Computer use requires `execution="envd_http"`, an operator-built `snapshot` and `desktop=true`. Enable Service `desktop_assistance=true` separately for human access.
+
+Build a snapshot from this checkout using a compatible Linux amd64 Envd binary. Securely configure `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`:
+
+```sh
+uv run --locked python examples/environment-provider/vercel_desktop_snapshot.py --binary /path/to/linux-amd64/a13n-envd
+```
+
+For slow local upload links, pass `--archive-url` for a compatible official Linux amd64 release archive and `--archive-sha256` from its verified `SHA256SUMS` instead of `--binary`. The sandbox downloads the archive, checks the checksum, and extracts only `a13n-envd`.
+
+The builder creates a temporary billable sandbox, installs desktop prerequisites and Google Chrome, uploads the supplied binary and shared launchers, then preserves a snapshot without live daemons or guest credentials. It deletes the build sandbox and retains the snapshot for reuse.
+
+```json
+{
+  "execution": "envd_http",
+  "snapshot": "snap_yourSnapshot",
+  "desktop": true,
+  "desktop_assistance": true,
+  "vcpus": 2,
+  "timeout_seconds": 1800
+}
+```
+
+Envd uses `/workspace` as UID/GID 1001; native execution retains `/vercel/sandbox`. Create and explicit resume start the preinstalled components and verify EIP and Computer readiness. Attachment and access never install, repair or resume a desktop. Port 8888 carries authenticated EIP; port 6081 carries the revocable desktop viewer. Browser clients receive short-lived supervisor credentials, never the Vercel access token or Envd guest token. Service validates ownership, native identity, current session and endpoint policy. Stop preserves files but recreates desktop processes on resume; old observations and grants become invalid.
+
+Runloop remains a command-backed Files & Shell provider. A historical standalone Envd runtime probe does not establish current Provider or Console integration.
 
 ### Fly.io Sprites
 
 Default root: `/home/sprite`; Python: guest-PATH `python3`. [Sprites' environment guide](https://docs.sprites.dev/working-with-sprites/) documents the writable home and preinstalled tools. Native automatic sleep preserves disk; explicit stop is unsupported. Destruction waits for confirmed absence.
+
+For Computer Use and human control, Service can [install the desktop automatically on each new Sprite](../a13n-service/environments.md#automatic-sprites-desktops). Harness then attaches to the prepared target with `execution="envd_http"`; native execution remains unchanged.
 
 ### Runloop
 
@@ -325,3 +322,53 @@ Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON`
 Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), and [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html).
 
 Docker templates can select `execution: envd_http` and require a desktop with `desktop: true`. Docker lifecycle still uses `docker_host`; HTTP EIP requires a separately configured reachable host and port-publication policy. See [the desktop setup](../a13n-envd/sandbox.md#managed-docker-desktop-in-service) for startup, permissions and restart behavior.
+
+## Provider catalog and plugins
+
+`ProviderCatalog` is an immutable explicit allowlist, shared by all five Provider domains: Model, Web, Connector, Memory, and Environment. Built-in Environment definitions are selected by exact type, and installed plugins contribute their own definitions:
+
+```python
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.plugins import load_provider_plugins
+
+plugins = load_provider_plugins(("acme",))
+catalog = ProviderCatalog(
+    (
+        *select_builtin_environment_providers(("direct_local", "docker")),
+        *(item for plugin in plugins for item in plugin.manifest.environment),
+    )
+)
+definition = catalog.require("acme_sandbox")
+```
+
+`load_provider_plugins()` imports only the entry-point names you list; an empty selection scans no installed metadata. It rejects a duplicate, malformed, missing, or ambiguous name, and reports the distribution name, version, and import target of each loaded plugin as provenance. The catalog then rejects a duplicate Provider type, so a plugin cannot shadow a built-in.
+
+Select plugins explicitly and restart the Host after changing their code.
+
+An installed distribution publishes one manifest under the shared entry-point group:
+
+```toml
+[project.entry-points."a13n_harness.providers.plugins"]
+acme = "acme_agent_environment:manifest"
+```
+
+```python
+from a13n_harness.providers.plugins import ProviderManifest
+
+manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+```
+
+An `EnvironmentProviderDefinition` should:
+
+1. declare a stable `type`, display name, and optional HTTPS setup link;
+2. declare separate models for account configuration, credentials, and target recipes;
+3. expose execution metadata only; Service composes a separate `EnvironmentManagementDefinition` for management;
+4. return a fixed-target `EnvironmentConnector` from the pure `connector_factory`, accepting the always-supplied `session_recovery` keyword (including `None`); Native accepts it without producing Session hints;
+5. return a fresh ready `EnvironmentExecution` from every `open()`, with its own `execution_id` and operations;
+6. validate fixed target references without changing authoritative state;
+7. leave target management to Service or the embedding Host. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
+
+The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
+
+For complete Host-side built-in lifecycles, including Docker state re-entry and explicit destruction, follow the [Built-in Provider Examples](examples.md).

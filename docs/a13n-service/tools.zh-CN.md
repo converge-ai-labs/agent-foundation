@@ -121,7 +121,18 @@ MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝�
 
 ### 供接入方使用的 MCP Apps
 
-Service 保存 App 工具的原始参数、声明和完整 MCP 结果（包括 `_meta`）。Run 实时输出通过 `a13n.mcp_apps` 提供引用，详细历史条目在 `content.mcp_apps` 中保留相同引用。引用提交后，可以使用其中的 `app_id` 调用以下鉴权接口：
+Service 保存 App 工具的原始参数、声明和完整 MCP 结果（包括 `_meta`）。运行实时输出通过 `a13n.mcp_apps` 提供引用，详细历史条目在 `content.mcp_apps` 中保留相同引用。
+
+**实时接入时，必须收到会话 SSE 的 `app_ready` 事件，才能启用 App 入口或调用其接口。** 更早收到的 `a13n.mcp_apps` delta 只是临时引用，即使 `unavailable` 为 `false` 也不表示可以打开。此时可以显示加载中的入口。`app_ready` 表示原始数据及其引用已保存并提交。包含该 App 的下一次检查点提交后就会通知，不必等待整个运行结束。使用事件中的 `run_id` 和各个 `apps[].app_id` 打开 App：
+
+```text
+event: app_ready
+data: {"thread_id":"thr_...","run_id":"run_...","apps":[{"app_id":"app_...","connection_id":"conn_...","agent_revision_id":"rev_...","source_run_id":"run_...","tool_call_id":"call_...","tool_name":"show_counter","resource_uri":"ui://counter/app.html","unavailable":false}]}
+```
+
+通过 `GET /api/v1/sessions/{session_id}/stream` 订阅。就绪事件跟在已提交的 `items` 帧后面，重连、输出恢复或运行结束时可能重复发送；请用 `(run_id, app_id)` 识别同一个 App。如果原始数据保存失败，已提交引用会标记 `unavailable: true`，也不会发送该 App 的就绪事件。如果运行在断线期间已经结束，或者通过 `GET …/runs/{run_id}/items` 加载更早的历史，其中可用的已提交引用可以直接打开。线程事件流不发送 `app_ready`；需要这个通知时，请使用会话事件流。就绪只表示数据已保存，打开时仍会检查权限并访问 MCP 服务器。
+
+可调用以下鉴权接口：
 
 | 请求                                                      | 请求体                                | 返回内容                            |
 | --------------------------------------------------------- | ------------------------------------- | ----------------------------------- |
@@ -220,7 +231,9 @@ Service 保存 App 工具的原始参数、声明和完整 MCP 结果（包括 `
 
 `config` 可省略，也可设置 `mode: proxy`、控制工具名称及分页限制，详见 [Harness ToolSearch](../a13n-harness/tool-search.md)。未分组来源保持直接暴露，`client_tools` 保留原有平铺调用与客户端恢复协议。需要审批后恢复的工具也应保持直接暴露。
 
-每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。迁移旧配置时，将 `mode: native` 改为 `proxy`，删除 `strategy` 和连接级 `defer_loading`；需要代理发现的连接加入 `groups`。使用这些已删除字段的旧修订和保存的运行配置不会自动转换：升级前创建替代修订，完成旧运行后再切换。
+每个子 agent 使用自己的修订配置。运行覆盖替换整个 `tool_search` 块；`groups: {}` 为该次运行关闭分组。
+
+连接选择通过 `connection_id`、`tools`、`permission` 和 `permissions` 配置执行行为。解析时忽略未知字段。
 
 ### 调用方请求头
 

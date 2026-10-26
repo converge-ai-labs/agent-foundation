@@ -164,3 +164,8 @@
     transition: none;
   }
 }
+
+/* Portaled menus opt in separately from their compact form's controls. */
+.compactChoicePopup [data-slot="select-item"] {
+  font-size: var(--a13n-text-sm);
+}

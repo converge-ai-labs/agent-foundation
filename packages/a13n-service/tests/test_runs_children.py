@@ -63,11 +63,13 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     scripted_model.call(
         "ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask", to="Role: coordinator"
     )
-    submitted = await runs_kit.start_thread(service, coordinator, "delegate, then ask me")
+    context = {"headers": {"x-trace": "child-context"}}
+    submitted = await runs_kit.start_thread(service, coordinator, "delegate, then ask me", options={"context": context})
     thread_id = submitted["thread"]["id"]
     await (await runs_kit.attempt(service))
     waiting = await runs_kit.get_run(service, submitted["run"]["id"])
     assert waiting["wait_reason"] == "call", waiting
+    assert (await _child_run(service, waiting["id"])).options["context"] == context
     scripted_model.say("42", to="Role: worker")
     await (await runs_kit.attempt(service))
     await _deliver(service)
@@ -87,6 +89,7 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     assert reply.status_code == 201, reply.text
     run = reply.json()
     assert (run["trigger"], run["parent_run_id"]) == ("resume", waiting["id"])
+    assert run["options"]["context"] == context
     scripted_model.say("Answer received", to="Role: coordinator")
     # The child steer can join this successor after its first request or start another Run.
     # Script both replies before execution: waiting until it seals deadlocks the first case.

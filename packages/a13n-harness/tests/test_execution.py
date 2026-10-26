@@ -24,6 +24,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness import DeferredToolRequests as HarnessDeferredToolRequests
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentState
 from a13n_harness.events import _RunEventEmitter
@@ -430,6 +431,8 @@ def _annotated_awaitable_deferred_from_text(
     "output_spec",
     [
         DeferredToolRequests,
+        HarnessDeferredToolRequests,
+        list[HarnessDeferredToolRequests],
         _DeferredAlias,
         Annotated[DeferredToolRequests, "reserved"],
         (str, DeferredToolRequests),

@@ -116,6 +116,16 @@ flowchart TD
 
 需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
+## Handoff 与自动压缩
+
+续接总结保留仍需使用的 Skill 路径与作用。恢复时，若完整内容已不可用，应重新读取。
+
+显式交接使用 `summarize`，自动压缩根据用量触发。阈值见[压缩较长的 Thread](#compact-a-long-thread)。
+
+直接调用 `summarize`，并确保它是该次模型响应中唯一的工具调用；不能通过 CodeAct 或 ToolSearch 代理组调用。保留的 CodeAct runner 仍在执行时，自动压缩会等待，Handoff 会拒绝调用。先等待 runner 结束并检查结果，再编写新的总结。其他保留的函数工具不会阻止上下文替换。
+
+按 Host 的接受策略保存返回的 `HarnessState`；总结不会保存应用存储。
+
 ### 保留已调用的工具
 
 `summarize` 和自动压缩都会保留数量和大小受限的已调用 [ToolSearch](tool-search.md) 工具。只有完成的目标工具调用才进入工作集，包括经 CodeAct 或 proxy 分发的调用。仅搜索不会加入工具，重复调用只刷新同一条记录。普通业务工具的结果由总结承载，不再重放。
@@ -202,11 +212,3 @@ without_image_preparation = spec.with_updates(
 ```
 
 省略 `image_input` 使用默认策略，`None` 禁用预处理。限制与自定义过滤器见[图片输入策略](models.md#image-input-policy)。
-
-## Handoff 与自动压缩
-
-续接总结保留仍需使用的 Skill 路径与作用。恢复时，若完整内容已不可用，应重新读取。
-
-显式交接使用 `summarize`，自动压缩根据用量触发。阈值见[压缩较长的 Thread](#compact-a-long-thread)。
-
-按 Host 的接受策略保存返回的 `HarnessState`；总结不会保存应用存储。

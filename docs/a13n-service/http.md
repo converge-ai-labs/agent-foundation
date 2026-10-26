@@ -22,7 +22,9 @@ Browsers use the login session cookie set by `POST /api/v1/auth/login`. For cook
 - send the login session's CSRF token in `X-CSRF-Token`; login returns it, and `GET /api/v1/auth/session` returns it again for an existing login session;
 - an `Origin` header, if sent, must equal the origin of `server.public_url`; for a loopback public URL, `localhost` and `127.0.0.1` are interchangeable.
 
-Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting a browser authorization (an OAuth authorization code or a connector account setup). An API key gets `403 forbidden` from all of them, one status everywhere: it never mints something that can outlive it, and never hands a third party a link to complete on your behalf. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
+Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting personal Connection authorization (OAuth or connector account setup). API keys receive `403 forbidden` for these operations. Workspace Model Provider authorization accepts API keys with the required workspace permissions. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
+
+Creating a [Schedule](schedules.md) delegates durable execution authority. Revoking or expiring the original API key does not stop that Schedule; pause or archive it to stop future submissions.
 
 Every authenticated response, including the route's own answer and any error after authentication, carries `Cache-Control: no-store` and, when the login session was renewed, its refreshed cookie.
 
@@ -92,9 +94,11 @@ These operations require an `Idempotency-Key` header of 1–512 visible ASCII ch
 
 - `POST …/threads` (start a thread with its first message) and `POST …/threads/{thread_id}/inbox` (submit a message)
 - `POST …/runs/{run_id}/fork` and `POST …/runs/{run_id}/resume`
+- `POST …/schedules` and `POST …/schedules/{schedule_id}/dispatch`
+- `POST …/finding-analyses`
 - `POST …/uploads`
 
-Generate a unique key per logical request and reuse it when retrying after a lost response. A first submission returns `201`; uploads return `200`. A retry with the same key and request returns `200` with the same created objects in their current state, not a copy of the first response. Reusing the key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.
+Generate a unique key per logical request and reuse it when retrying after a lost response. A first submission returns `201`; manual Schedule dispatch returns `202`, and uploads return `200`. A retry with the same key and request returns `200` with the same created objects in their current state, not a copy of the first response. Reusing the key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.
 
 ## Paging
 
@@ -102,14 +106,16 @@ Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–1
 
 ## Read summaries and selected details
 
-Use `view=compact` to find relevant runs, revisions, models, inbox entries, display items or spans. Combine the view with the operation's filters. Existing calls default to `view=detailed` and keep their original response. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
+Run lists and lineage return metadata and `input_preview: {text, truncated}`, containing at most 200 Unicode code points of input text. They do not accept `view`; read `/runs/{run_id}` for full input, output, options and other details. Thread run pages accept `anchor=<run_id>` to start at a specific Run, mutually exclusive with `cursor`, and include `total`, `first_number`, `next_cursor` toward older Runs and `previous_cursor` toward newer Runs. `first_number` is the first returned Run's chronological number, starting at one; it is not the number of loaded records. `limit` is a maximum: the shared 10,000-character response budget can yield fewer records, so always follow the returned cursors. Usage summaries include each Run’s `run_number` without additional Run-list requests.
+
+Use `view=compact` to find relevant revisions, models, inbox entries, display items or spans, and to summarize a selected Run. Combine the view with the operation's filters. These calls default to `view=detailed`. Compact lists default to ten records and may return fewer to keep responses small. Continue with the returned cursor or ordinal even when a filtered page is empty.
 
 A preview contains `text` and `truncated`. `omitted_sections` lists fields you can read separately. `source_truncated` means the stored content was already shortened; fetching more cannot recover discarded data. An omitted field or a shortened preview does not prove that the source lacks the information.
 
 For example, find failed runs and read one failure:
 
 ```http
-GET /api/v1/runs?view=compact&status=failed&limit=10
+GET /api/v1/runs?status=failed&limit=10
 GET /api/v1/runs/{run_id}?section=failure
 GET /api/v1/runs/{run_id}/items?view=compact&kind=tool_call&state=failed
 GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal=7&field=result&offset=0
@@ -123,7 +129,7 @@ To inspect configuration, read a revision with `section=all` or a configuration 
 
 Search tool catalogs through `/toolsets/index`, `/connections/{connection_id}/tools/index` or `/connector-providers/{provider_id}/apps/{app}/actions/index`. Read the matching `/definitions` endpoint with up to five repeated exact `name` values. Check `missing` and `oversized`. An oversized definition is read through that same endpoint with one name and versioned fragments; it is never silently shortened. The model catalog accepts compact search, capability filters and paging; select the exact provider/model for characteristics or pricing sections.
 
-Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. Follow `next_cursor` while `items` is empty. Once found, keep the request cursor that located the span while continuing its text fragments. Trace data remains subject to the deployment's retention and backend availability.
+Trace lists support `status`, `kind` and `tool_name`. To read one span's input or output, use `/traces/{trace_id}/spans/{span_id}/content` with `section=input|output`. The Service queries the backend for that span alone; empty `items` means the trace has no such span. Continue its text fragments with `version` and `next_offset`. A trace response over the backend's 8 MiB limit is `413 payload_too_large`, not an outage; for this route it means the span alone exceeds the limit. Trace data remains subject to the deployment's retention and backend availability.
 
 ## Limits
 

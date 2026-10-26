@@ -18,6 +18,13 @@ from .test_memory_spaces import create_space, due, history, patch, save, status
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+async def service(service, runs_kit):
+    """Policy tests advance organization explicitly without competing background sweeps."""
+    await runs_kit.pause_sweeps(service)
+    return service
+
+
 def test_policy_defaults_and_bounds() -> None:
     assert OrganizationPolicy().model_dump() == {
         "enabled": False,

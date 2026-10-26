@@ -50,44 +50,34 @@ export function AgentCreationMenu() {
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <div className={styles.creationActions}>
-        {composer.available && (
-          <Button
-            variant="default"
-            loading={composer.pending}
-            onClick={() => composer.start()}
-          >
-            <RocketLaunchIcon aria-hidden="true" />
-            {t("Create with AI")}
-          </Button>
-        )}
-        <div className={styles.splitButton}>
-          <Button variant="outline" onClick={() => navigate("new")}>
+      <Menu>
+        <MenuTrigger
+          render={<Button ref={triggerRef} loading={composer.pending} />}
+        >
+          <PlusIcon aria-hidden="true" />
+          {t("Create agent")}
+          <CaretDownIcon aria-hidden="true" />
+        </MenuTrigger>
+        <MenuPopup align="end" className="min-w-48">
+          {composer.available && (
+            <MenuItem
+              onClick={() => composer.start()}
+              disabled={composer.pending}
+            >
+              <RocketLaunchIcon aria-hidden="true" />
+              {t("Create with AI")}
+            </MenuItem>
+          )}
+          <MenuItem onClick={() => navigate("new")}>
             <PlusIcon aria-hidden="true" />
             {t("Create manually")}
-          </Button>
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button
-                  ref={triggerRef}
-                  variant="outline"
-                  size="icon"
-                  aria-label={t("More ways to create an agent")}
-                />
-              }
-            >
-              <CaretDownIcon aria-hidden="true" />
-            </MenuTrigger>
-            <MenuPopup align="end" className="min-w-48">
-              <MenuItem onClick={() => setOpen(true)}>
-                <FileArrowUpIcon aria-hidden="true" />
-                {t("Import YAML")}
-              </MenuItem>
-            </MenuPopup>
-          </Menu>
-        </div>
-      </div>
+          </MenuItem>
+          <MenuItem onClick={() => setOpen(true)}>
+            <FileArrowUpIcon aria-hidden="true" />
+            {t("Import YAML")}
+          </MenuItem>
+        </MenuPopup>
+      </Menu>
       <ModalFrame
         open={open}
         onOpenChange={(value) => {
@@ -292,7 +282,7 @@ export function ImportAgentForm({
             disabled={create.isPending}
             className={`fieldset-reset ${styles.importReview}`}
           >
-            <FormField label={t("Agent name")}>
+            <FormField label={t("Name")}>
               <Input
                 required
                 value={draft.name}

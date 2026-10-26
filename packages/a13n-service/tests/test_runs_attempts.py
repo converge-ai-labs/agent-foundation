@@ -177,6 +177,8 @@ async def test_one_heartbeat_serves_every_attempt_and_a_missed_renewal_cancels_o
         assert control.stopped.is_set() and control.outcome == Outcome.cancelled()
         assert not control.renewal_missed()
     finally:
+        # Release the fixture's cleanup gate even when an earlier assertion fails.
+        cleanup.set()
         loop.cancel()
         await asyncio.gather(loop, return_exceptions=True)
 

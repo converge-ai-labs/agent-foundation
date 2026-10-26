@@ -435,6 +435,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
     finish, resumed, delivered = Event(), Event(), Event()
     stages = {"parent": 0, "child": 0}
     resume_results = []
+    continuation_authority = []
     execution_id = None
 
     async def slow() -> int:
@@ -496,6 +497,8 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
                 await Event().wait()
             yield "Child waiting."
         elif stage == 2:
+            continuation = app._subagent_operator._completion_continuations[child_id]
+            continuation_authority.append((continuation.identity, continuation.usage_limits))
             yield {
                 0: DeltaToolCall(
                     name="tool_execution_result",
@@ -548,6 +551,9 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
         accepted = []
 
         async def observe(thread_id, prompt):
+            # IDs have left _pending, but delivery still owns the authority.
+            app._subagent_operator._release_completion_continuation(thread_id)
+            assert app._subagent_operator._completion_continuations[thread_id] is retained
             result = await original(thread_id, prompt)
             accepted.append(result)
             delivered.set()
@@ -568,12 +574,14 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             assert accepted == [True]
             assert len(page.executions) == 2
             assert {item.child_thread_id for item in page.executions} == {child_id}
-            latest = app._subagent_operator._completion_continuations[child_id]
-            assert latest.identity == retained.identity and latest.usage_limits == retained.usage_limits
+            assert continuation_authority == [(retained.identity, retained.usage_limits)]
+            assert child_id not in app._subagent_operator._completion_continuations
             assert (await app._tool_executions.runtime.info(child_id, execution_id)).delivery_acknowledged
         else:
             assert accepted == ([] if change == "stop" else [False])
             assert len(page.executions) == 1
+            if change != "stop":
+                assert app._subagent_operator._completion_continuations[child_id] is retained
         assert stages["parent"] == 3
         if change == "stop":
             assert child_id in app._tool_executions._suppressed
@@ -1034,3 +1042,67 @@ async def test_tui_background_observer_drains_burst_and_handles_terminal_receipt
             if shell.job is not None:
                 await shell.job
             shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize("outcome", ["accepted", "rejected", "exception", "suppressed"])
+async def test_pending_work_includes_inflight_delivery_until_final_bookkeeping(outcome):
+    owner = ToolExecutions()
+    entered, finish, settled = Event(), Event(), Event()
+    observed = []
+
+    def on_settled(thread_id):
+        observed.append(owner.has_pending_work(thread_id))
+        if entered.is_set():
+            settled.set()
+
+    async def deliver(thread_id, prompt):
+        assert thread_id not in owner._pending
+        assert owner.has_pending_work(thread_id)
+        entered.set()
+        await finish.wait()
+        if outcome == "exception":
+            raise RuntimeError("Delivery failed")
+        return outcome == "accepted"
+
+    owner.deliver = deliver
+    owner.settled = on_settled
+    async with create_task_group() as group:
+        owner.start(group)
+        await complete(owner, "first")
+        await entered.wait()
+        if outcome == "suppressed":
+            owner.suppress("thread-a")
+        finish.set()
+    assert settled.is_set()
+    assert observed[0] is True
+    assert owner.has_pending_work("thread-a") is (outcome in {"rejected", "exception"})
+    assert observed[-1] is (outcome in {"rejected", "exception"})
+
+
+async def test_pending_work_retains_cleanup_and_notifies_after_inline_completion():
+    owner = ToolExecutions()
+    cleaning, finish, settled = Event(), Event(), Event()
+
+    async def operation():
+        return 42
+
+    async def release():
+        cleaning.set()
+        await finish.wait()
+
+    def on_settled(thread_id):
+        assert not owner.has_pending_work(thread_id)
+        settled.set()
+
+    owner.settled = on_settled
+    record = owner.runtime.admit(
+        operation, thread_id="thread-a", run_id="run-a", tool_call_id="call", tool_name="fast", release=release
+    )
+    await cleaning.wait()
+    assert owner.has_pending_work("thread-a")
+    assert not owner.has_pending_work("thread-other")
+    finish.set()
+    with fail_after(5):
+        await settled.wait()
+    assert (await owner.runtime.result("thread-a", record.execution_id)).result == 42
+    await owner.close(timeout_seconds=0)

@@ -53,9 +53,9 @@ async def validate_agent(workspace_id: WorkspaceId, body: AgentValidate, actor: 
 async def prepare_composer(
     response: Response, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime
 ) -> Agent:
-    """The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+    """The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.
 
-    Refused with `model_required` while the workspace has no model the caller can use.
+    Initial preparation requires a usable model; later preparation preserves the selected model and revision.
     """
     prepared = await composer.prepare(
         runtime.storage,

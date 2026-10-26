@@ -20,10 +20,12 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_service.execution_policy import ExecutionOverride
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.infra.reads import tool_response
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, AgentRevision
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts, SessionMemorySettings
@@ -34,7 +36,7 @@ from a13n_service.runs.memories.schemas import FrozenMemoryMount
 from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
-type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
+type Trigger = Literal["input", "queued", "resume", "child_result", "tool_result", "spawned"]
 type Lineage = Literal["root", "continue", "fork"]
 type EntryStatus = Literal["pending", "assigned", "consumed", "failed", "withdrawn"]
 type Delivery = Literal["steer", "next_run"]
@@ -138,12 +140,28 @@ class UsageLimit(_Frozen):
     requests: int = Field(ge=1, le=10000)
 
 
+class RequestContext(_Frozen):
+    """Explicit business headers, frozen in accepted Run options and kept out of model projections."""
+
+    headers: dict[str, str] = Field(default_factory=dict, repr=False)
+
+    @field_validator("headers")
+    @classmethod
+    def normalized_headers(cls, value: dict[str, str]) -> dict[str, str]:
+        headers = normalize_headers(value)
+        if headers.keys() & {"api-key", "x-api-key", "x-goog-api-key", "user-agent"}:
+            raise ValueError("Reserved authentication or transport header")
+        return headers
+
+
 class RunOptions(_Frozen):
     """What a message may choose for the run it starts. A steer joins a run with the defaults or equal options."""
 
     labels: Labels = Field(default_factory=dict)
+    context: RequestContext | None = Field(default=None, exclude_if=lambda value: value is None, repr=False)
     # Omission (or null) on a steer retains the accepted snapshot. A configuration object is explicit.
     configuration: RunConfiguration | None = None
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     max_usage: UsageLimit | None = None
     # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
     # them into the run's options with their pins resolved, validating them again in any later transaction.
@@ -151,7 +169,28 @@ class RunOptions(_Frozen):
 
     def digest(self) -> str:
         """Joining choices as submitted; Run configuration is compared separately to its accepted snapshot."""
-        return hashlib.sha256(canonical_json(self.model_dump(mode="json", exclude={"configuration"}))).hexdigest()
+        return hashlib.sha256(
+            canonical_json(self.model_dump(mode="json", exclude={"configuration", "execution", "context"}))
+        ).hexdigest()
+
+
+def context_response[T: BaseModel](value: T) -> T:
+    """Project typed Run options at HTTP response boundaries before fragmenting MCP reads.
+
+    Input and storage serialization stay unchanged. Business JSON keys named context are not touched.
+    """
+    if not tool_response.get():
+        return value
+    if isinstance(value, RunOptions):
+        return value.model_copy(update={"context": None})
+    updates: dict[str, object] = {}
+    for name in type(value).model_fields:
+        item = getattr(value, name)
+        if isinstance(item, BaseModel):
+            updates[name] = context_response(item)
+        elif isinstance(item, list):
+            updates[name] = [context_response(child) if isinstance(child, BaseModel) else child for child in item]
+    return value.model_copy(update=updates)
 
 
 def _normalize_mcp_headers(value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
@@ -206,6 +245,7 @@ class NewThread(Message):
     # Preserve the canonical digest of requests submitted before this optional field existed.
     session: SessionCreate | None = Field(default=None, exclude_if=lambda value: value is None)
     mcp_headers: McpHeaders = Field(default_factory=dict)
+    execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     environments: InitialMounts = ()
     # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
     memories: MemoryMounts = ()
@@ -229,6 +269,7 @@ class Fork(Message):
 class ThreadUpdate(_Frozen):
     labels: Labels | None = None
     mcp_headers: McpHeaders | None = None
+    execution: ExecutionOverride | None = None
 
 
 class EntryUpdate(_Frozen):
@@ -463,6 +504,7 @@ class ThreadView(BaseModel):
     # The most recently sealed run: the history the thread's next run continues.
     last_run_id: str | None
     mcp_headers: dict[str, dict[str, str]]
+    execution: ExecutionOverride | None = None
     labels: dict[str, str]
     archived_at: datetime | None
     version: int
@@ -479,7 +521,7 @@ class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
     thread_id: str
-    kind: Literal["message", "child_result"]
+    kind: Literal["message", "child_result", "tool_result"]
     delivery: Delivery
     position: int
     status: EntryStatus
@@ -563,8 +605,7 @@ class RunQuery(_Frozen):
     status: Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"] | None = None
     created_after: AwareDatetime | None = None
     created_before: AwareDatetime | None = None
-    view: Literal["detailed", "compact"] = "detailed"
-    limit: int | None = Field(default=None, ge=1, le=100)
+    limit: PageLimit = 50
     cursor: str | None = None
 
     @model_validator(mode="after")
@@ -578,9 +619,50 @@ class RunQuery(_Frozen):
         return self
 
 
+class RunInputPreview(BaseModel):
+    text: str = Field(max_length=200, description="At most 200 Unicode code points of input text, in content order.")
+    truncated: bool
+
+
+class RunListItem(BaseModel):
+    """Run discovery metadata. Full input, results and execution settings belong to the Run detail read."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    workspace_id: str
+    session_id: str
+    thread_id: str
+    agent_id: str
+    agent_revision_id: str
+    principal_id: str
+    status: RunStatus
+    trigger: Trigger
+    lineage: Lineage
+    parent_run_id: str | None
+    source_entry_id: str | None
+    current_attempt_id: str | None
+    attempts: int
+    max_attempts: int
+    wait_reason: WaitReason | None
+    version: int
+    created_at: datetime
+    started_at: datetime | None
+    sealed_at: datetime | None
+    updated_at: datetime
+    input_preview: RunInputPreview
+
+
 class RunPage(BaseModel):
-    items: list[RunView]
+    items: list[RunListItem]
     next_cursor: str | None
+
+
+class ThreadRunPage(RunPage):
+    """Newest first; first_number is the first item's 1-based chronological position in the thread."""
+
+    previous_cursor: str | None
+    total: int
+    first_number: int
 
 
 class RunAgent(BaseModel):

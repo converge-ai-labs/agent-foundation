@@ -3,7 +3,7 @@ title: 配置 provider
 description: 分别配置 provider 的目标、后端连接和凭据。
 ---
 
-分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。
+分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。活跃会话的连续性使用单独的 Host 自有[会话恢复提示](remote-envd.md#state-concurrency-and-recovery)。
 
 | 值                                | 职责                               | 示例                                 |
 | --------------------------------- | ---------------------------------- | ------------------------------------ |
@@ -17,9 +17,7 @@ description: 分别配置 provider 的目标、后端连接和凭据。
 
 每个定义对每种类别只管理一个模型。没有配置 schema 版本：改变输入含义就改变了 provider 类型。
 
-[生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。
-
-[执行模型](index.md#choose-a-backend)定义 Native Files & Shell 与 Envd 通用执行的能力边界。[配置参考](configuration-reference.md)从当前模型生成，仍包含迁移前的字段；选择路径时以执行模型为准，迁移已有配置需显式进行。
+[生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。可用操作由选定的[执行路径](index.md#choose-a-backend)及其声明的描述符决定。
 
 ## Host 出站连接
 
@@ -77,21 +75,27 @@ Service 的 `E2BRecipe` 默认使用模板 `base`、根目录 `/home/user`、用
 
 `E2BConnectionConfiguration.domain` 默认为 `e2b.dev`；`E2BCredential.api_key` 是单独保护的值。Host 提供运行时凭据，在保留策略需要时维护保活，并在生命周期操作后持久保存沙箱状态。新适配器可重连精确保留的沙箱，但不会重建丢失输出或扩大访问。
 
+在 Service/Console 中，勾选桌面且不指定自定义模板时，默认自动准备私有模板（`template="auto"`、`execution="envd_http"`、`desktop_assistance=true`）。首次创建构建，后续在同一连接和凭据范围内复用。见[桌面准备](providers.md#e2b-desktop-preparation)。
+
+首次自动创建 E2B 桌面通常需要 1～2 分钟，也可能更久；后续创建复用模板。创建后，环境详情显示实际准备阶段和已等待时间。可以离开页面，后台会继续处理，稍后从环境实例列表重新打开详情。就绪后点击“查看桌面”获取只读快照，按需刷新；交互操作仍从会话中接管。创建失败会展示原因，上一轮操作结果确认后可以“重试创建”。只保存配置不会提前构建。
+
 ### Daytona
 
-`DaytonaEnvironmentConfiguration` 选择决定沙箱资源的快照。根目录默认为可写的 `/home/daytona`。`DaytonaConnectionConfiguration` 提供组织和目标区域；`TokenCredential` 提供 API key。
+`DaytonaEnvironmentConfiguration` 选择决定沙箱资源的快照。工作目录为 `/workspace`。`DaytonaConnectionConfiguration` 提供可选组织约束和目标区域；`TokenCredential` 提供 API key，省略组织时从 Key 识别。Harness 需要具体快照；Service 桌面配方可以省略快照，首次创建自动构建、后续复用。
 
 ### Modal
 
-`ModalEnvironmentConfiguration` 选择镜像、资源和有限生命周期。`ModalConnectionConfiguration` 指定 Modal `workspace` 和已部署的现有 App；`ModalCredential` 包含 token ID 和 secret。基于文件系统快照的停止/恢复仅用于托管目标。
+`ModalEnvironmentConfiguration` 选择镜像、资源和有限生命周期。`ModalConnectionConfiguration` 可选填写 Modal `workspace`，并指定 App（默认 `a13n-sandboxes`）；Service 自动桌面在首次创建时准备 App 和镜像；`ModalCredential` 包含 token ID 和 secret。基于文件系统快照的停止/恢复仅用于托管目标。
 
 ### Vercel Sandbox
 
-`VercelEnvironmentConfiguration` 选择运行时、vCPU 和会话寿命，根目录为 `/vercel/sandbox`。`VercelConnectionConfiguration` 指定团队和项目；`TokenCredential` 保存 Vercel access token。适配器使用命名的持久 Vercel 沙箱，支持原生停止和恢复。
+`VercelEnvironmentConfiguration` 默认提供原生 Files & Shell，根目录为 `/vercel/sandbox`。选择 `execution="envd_http"` 和运维构建的 `snapshot`，即可通过 EIP 使用 `/workspace`；`desktop=true` 必须使用该路径。Service 另以 `desktop_assistance=true` 开启人工访问。`VercelConnectionConfiguration` 指定 team 和 project；`TokenCredential` 保存 Vercel access token。Provider 使用命名持久沙箱，保留原生停止／恢复和会话时限。参见[快照准备](providers.md#vercel-sandbox)。
 
 ### Fly.io Sprites
 
 `SpritesEnvironmentConfiguration` 选择区域，默认目录为 `/home/sprite`。`SpritesConnectionConfiguration` 指定组织；`TokenCredential` 保存 Sprites token。不要调度显式停止：Sprites provider 不支持 `stop()`，且 Sprites 会自动休眠。
+
+Service 中设置 `desktop=true` 会自动选择 `execution="envd_http"`，并在每个新 Sprite 内安装桌面。执行通过私有 TCP 隧道连接 Envd，工作目录为 `/workspace`，默认启用人工接管。参见[自动创建 Sprites 桌面](../a13n-service/environments.md#automatic-sprites-desktops)。
 
 ### Runloop
 

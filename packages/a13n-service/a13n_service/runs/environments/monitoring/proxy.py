@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -156,7 +156,7 @@ class Proxy:
                 await reverse.close()
 
     @asynccontextmanager
-    async def reverse_connection(self, selection: Selection) -> AsyncIterator[WebSocketEnvdConnections]:
+    async def reverse_connection(self, selection: Selection) -> AsyncGenerator[WebSocketEnvdConnections]:
         """Reserve the same bounded collection lease before upgrading a reverse carrier."""
         if self.closed or not self.config.enabled:
             raise ServiceError("unavailable", "Proxy monitoring is unavailable")

@@ -27,7 +27,7 @@ from a13n_harness.tools import RECOVERY_RETRY_SAFE_METADATA_KEY
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability, SetToolMetadata
-from pydantic_ai.exceptions import CallDeferred, ModelRetry, UnexpectedModelBehavior
+from pydantic_ai.exceptions import CallDeferred, ModelConnectionError, ModelRetry, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -89,7 +89,14 @@ async def test_recovery_prompt_factory_receives_detached_messages() -> None:
     assert prompt.content == "original"
 
 
-async def test_stream_failure_resumes_with_partial_history_and_shared_usage() -> None:
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx2.RemoteProtocolError("stream disconnected"),
+        ModelConnectionError("test", "opaque provider failure", phase="read", in_stream=True),
+    ],
+)
+async def test_stream_failure_resumes_with_partial_history_and_shared_usage(error: Exception) -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -97,7 +104,7 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
         calls.append(deepcopy(messages))
         if len(calls) == 1:
             yield "partial answer"
-            raise httpx2.RemoteProtocolError("stream disconnected")
+            raise error
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -1109,7 +1116,7 @@ async def test_default_tool_retry_budget_allows_correction_and_preserves_tool_ov
         return "corrected"
 
     async def stream(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-        if any(isinstance(part, ToolReturnPart) for part in messages[-1].parts):
+        if any(isinstance(part, ToolReturnPart) and part.outcome == "success" for part in messages[-1].parts):
             yield "done"
         else:
             yield {0: DeltaToolCall(name="correcting_tool", json_args="{}", tool_call_id=f"tool-{len(attempts)}")}
@@ -1578,7 +1585,7 @@ async def test_declared_recovery_does_not_treat_retry_safety_as_approval(marker:
     if marker is True:
         assert result.status == "suspended"
         assert result.deferred is not None
-        assert [call.tool_call_id for call in result.deferred.approvals] == ["old-call"]
+        assert [call.target_call.tool_call_id for call in result.deferred.approvals] == ["old-call"]
         assert histories == []
     else:
         assert result.output_or_raise() == "continued"
@@ -1716,6 +1723,47 @@ async def test_stopped_mixed_stream_exports_partial_text(native_tool: bool, stop
     assert isinstance(tail, ModelResponse)
     assert tail.state == "interrupted"
     assert tail.parts == [TextPart(content="Already inspected. Next step pending.")]
+
+
+def test_interrupted_response_keeps_citations_received_after_part_end() -> None:
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, PartDeltaEvent, TextPartDelta, WebCitationSource
+
+    part = TextPart("Supported answer")
+    tracker = InterruptedResponseTracker()
+    tracker.observe(PartStartEvent(index=0, part=part), response_history_count=0)
+    tracker.observe(PartEndEvent(index=0, part=part), response_history_count=0)
+    citation = Citation(
+        [WebCitationSource("https://example.com/source", title="Source")],
+        anchor=ContentCitationAnchor(start=0, end=len(part.content)),
+    )
+    tracker.observe(
+        PartDeltaEvent(
+            index=0,
+            delta=TextPartDelta(
+                content_delta="",
+                provider_name="google",
+                provider_details={"citations": [{"confidence": 0.9}]},
+                citations_delta=[citation],
+            ),
+        ),
+        response_history_count=0,
+    )
+
+    normalized, closed = normalize_interrupted_history(
+        (ModelResponse(parts=[part], state="interrupted"),), response_tracker=tracker
+    )
+
+    assert closed == 0
+    assert len(normalized) == 1
+    assert normalized[0].parts == [
+        TextPart(
+            part.content,
+            provider_name="google",
+            provider_details={"citations": [{"confidence": 0.9}]},
+            citations=[citation],
+        )
+    ]
+    assert part.citations is None
 
 
 @pytest.mark.parametrize("observed", [False, True])

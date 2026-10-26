@@ -581,8 +581,8 @@ async def test_project_model_memory_survives_restart_without_creating_resources(
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     directory = tmp_path / "new-project"
     directory.mkdir()
-    before = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
     async with open_harness_ui_app(settings, configuration_path=path) as app:
+        before = {item: item.read_bytes() for item in path.parent.rglob("*.yaml")}
         backend = SessionBackend(app, CliRequest(), directory, Status())
         await backend.initialize()
         await backend.models("model-alternate")

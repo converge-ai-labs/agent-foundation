@@ -114,7 +114,7 @@ async def test_default_client_tool_suspends_without_executing_in_process() -> No
     assert result.status == "suspended"
     assert result.suspend_reason == "deferred"
     assert result.deferred is not None
-    assert [call.tool_name for call in result.deferred.calls] == ["client_action"]
+    assert [call.target_call.tool_name for call in result.deferred.calls] == ["client_action"]
     assert result.deferred.approvals == []
 
 
@@ -250,7 +250,7 @@ async def test_run_override_replaces_defaults_and_empty_override_clears_them() -
     )
     assert replaced.status == "suspended"
     assert replaced.deferred is not None
-    assert [call.tool_name for call in replaced.deferred.calls] == ["replacement_action"]
+    assert [call.target_call.tool_name for call in replaced.deferred.calls] == ["replacement_action"]
     assert "default_action" not in seen_names[0]
 
     async def text_stream(messages, info):
@@ -307,7 +307,7 @@ async def test_external_suspend_detach_rebuild_and_resume() -> None:
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             requests,
-            requests.build_results(calls={requests.calls[0].tool_call_id: {"ok": True}}),
+            requests.build_results(calls={requests.calls[0].target_call.tool_call_id: {"ok": True}}),
         ),
     )
 
@@ -346,7 +346,7 @@ async def test_deferred_result_boundary_preserves_prior_wire_history_until_provi
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             requests,
-            requests.build_results(calls={requests.calls[0].tool_call_id: {"ok": True}}),
+            requests.build_results(calls={requests.calls[0].target_call.tool_call_id: {"ok": True}}),
         ),
     )
 
@@ -363,7 +363,7 @@ async def test_deferred_external_results_reject_wrapped_non_finite_values_and_cy
     ).run("go", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
-    call_id = requests.calls[0].tool_call_id
+    call_id = requests.calls[0].target_call.tool_call_id
 
     with pytest.raises(RunError) as wrapped_nan:
         _build(
@@ -470,7 +470,7 @@ async def test_mixed_external_and_approval_batch_resumes_through_native_categori
         deferred_resume=DeferredToolResume(
             requests,
             requests.build_results(
-                calls={requests.calls[0].tool_call_id: {"client": "ok"}},
+                calls={requests.calls[0].target_call.tool_call_id: {"client": "ok"}},
                 approve_all=True,
             ),
         ),
@@ -498,7 +498,7 @@ async def test_changed_external_surface_is_rejected_before_new_model_work() -> N
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,
-                requests.build_results(calls={requests.calls[0].tool_call_id: "done"}),
+                requests.build_results(calls={requests.calls[0].target_call.tool_call_id: "done"}),
             ),
         )
     assert exc_info.value.code == "deferred_surface_mismatch"
@@ -563,7 +563,7 @@ async def test_consumed_external_results_do_not_freeze_later_tool_surfaces() -> 
     )
     suspended = await executable.run("go", bindings=RunBindings.embedded())
     assert suspended.state is not None and suspended.deferred is not None
-    request = suspended.deferred.calls[0]
+    request = suspended.deferred.calls[0].target_call
     completed = await executable.run(
         previous_state=suspended.state,
         bindings=RunBindings.embedded(),
@@ -605,7 +605,7 @@ async def test_client_declaration_permission_uses_native_identity_precedence(dec
     assert (result.status == "suspended") == suspended
     if suspended:
         assert result.deferred is not None
-        assert [call.tool_name for call in result.deferred.calls] == ["client_action"]
+        assert [call.target_call.tool_name for call in result.deferred.calls] == ["client_action"]
     else:
         assert result.status == "completed" and result.deferred is None
         parts = [

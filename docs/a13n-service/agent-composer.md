@@ -60,21 +60,24 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and adds a revision only when its configuration changed.
+The first call creates the workspace's preset (`source: "builtin"`, `preset_kind: "composer"`). Find it with `GET /api/v1/agents?source=builtin&preset_kind=composer`. Later preparation refreshes its name and description and offers protected configuration updates as candidate revisions. Your selected default and model remain unchanged.
 
 ## Choose its model
 
-Preparation selects an enabled model the caller can use, in this order:
+Initial preparation selects an enabled model the caller can use, in this order:
 
-1. The model in Composer's current revision, while it stays usable.
-2. The first available model matching the deployment's [`composer.models`](configuration.md#execution) list, in list order. Matching uses the upstream name and ignores a `vendor/` prefix.
-3. The first usable workspace model, by key.
+1. The first available model matching the deployment's [`composer.models`](configuration.md#execution) list, in list order. Matching uses the upstream name and ignores a `vendor/` prefix.
+2. The first usable workspace model, by key.
 
-If no model is usable, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
+If no model is usable during initial setup, preparation returns `409 conflict` with reason `model_required`. Console links to model setup. [Add a model](models.md), then prepare again.
 
 ## Built-in agent rules
 
-Preparation owns Composer's configuration and model selection. Editing, revising, archiving or setting an avatar returns `409 conflict` with reason `builtin`. Duplicate Composer to create a custom agent you can change.
+Open Composer's Agent page to change its model, thinking effort, output token limit, `temperature`, `top_p` or supplemental instructions. The instruction editor contains your supplement; official instructions appear in a read-only disclosure. Saving creates a revision containing your supplement. Official instructions come from the current Worker on every execution attempt, including recovery and continuation after waiting; they are not frozen with the revision. The disclosure shows current deployment guidance. Inspect the model request trace for the official text used in a particular run.
+
+Use **Versions → Set as default** to switch or roll back. Later preparation preserves the selected version even when its model becomes unavailable; select a replacement explicitly. Protected configuration updates appear as candidate versions without replacing your default or supplement. Other configuration, identity, avatar and archiving remain protected. Duplicate Composer to freely change those fields.
+
+API clients reuse validation and revision creation: read the selected default and original head ETag, keep the complete `config`, and change only the allowed model/settings and `config.instructions` supplement. Revision responses show current official text in read-only `builtin_instructions`. Composer always treats saved instructions as your supplement and receives official guidance from the Worker. Duplication and export combine current official text with your supplement into an independent custom Agent.
 
 ## Use the toolset in your own agents
 
@@ -99,16 +102,10 @@ Select [platform tools](tools.md#platform-tools) under **Advanced / Platform Fea
 
 Platform groups and the skill are not selected by default. Each tool keeps its own `permission`; `inherit` lets reads run and asks before writes. Select tools to grant operations and the skill to supply instructions. Active runs keep their accepted authority and tool selection after configuration changes.
 
-The `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. It shares the Harness Skills catalog and read lifecycle with user Skills. The Agent configuration schema is under `/platform-skills/platform-operations/schemas`; the deployment catalog under `/platform-instance` is prepared once at process startup and shared across attempts.
+The `platform-operations` skill reads packaged instructions through a read-only local Environment in the Worker, with no user Environment or container required. Find the agent configuration schema under `/platform-skills/platform-operations/schemas` and the deployment catalog under `/platform-instance`.
 
 Enable `view`, `ls`, `glob` and `grep` to read the skill. Composer enables only these four file tools. Built-in document mounts remain read-only; explicitly mounted user Environments follow the same file-tool permissions.
 
 ### Computer coordinate mode
 
-For a model that returns relative desktop positions, set the agent configuration to:
-
-```json
-{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
-```
-
-The tools convert relative coordinates from 0 to 1000 on each axis into the observed screenshot's pixels. Ask the model to pass relative positions directly, without multiplying by screen dimensions. Omit this setting or select `pixels` for models that already return pixel positions. The choice applies to pointer positions, including both drag endpoints, but not scroll distances or keyboard input. It works with Envd-backed desktop environments that advertise the requested Computer methods. Always verify the resulting application state; a successful click does not prove that a form was submitted.
+Choose pixel or relative coordinates in the [environment Computer configuration](environments.md#computer-coordinate-mode).

@@ -160,8 +160,12 @@ result = await executable.run(
 原生延迟工具和审批会以 `status="suspended"` 结束根逻辑 Run。结果包含：
 
 - `state`：已接受历史和 Capability 数据；
-- `deferred`：确切的原生待处理请求结构；
+- `deferred`：完整的 Harness 待处理请求结构；
 - `suspend_reason="deferred"`。
+
+从 `a13n_harness` 导入 `DeferredToolRequests` 和 `DeferredToolCall`。`calls` 与 `approvals` 中的每一项都包含 `model_call`、`target_call` 和 `target_identity`。直接调用的模型调用与目标调用相同；一对一代理调用保留两者。展示 `entry.target_call`，并以它的 `tool_call_id` 为键提交结果和元数据。持久化时保留完整记录：Harness 用 `model_call` 关联历史结果，并在恢复时检查当前目标身份。
+
+该格式替代原来的原生请求数组。升级 Host 前，应处理完待办并让已接受的延后输入写入历史。旧待处理检查点不会自动转换；不含待处理或已接受延后输入的检查点格式不变。原生内联处理器仍接收原生请求对象。`DeferredToolResults` 保留原生值类型，也从 `a13n_harness` 导出。
 
 Host 在 Run 关闭后处理外部交互，再启动新 Run：
 
@@ -191,7 +195,7 @@ second = await executable.run(
 
 - 存在之前状态；
 - 延迟请求与提供结果精确关联；
-- 待处理调用符合合法消息历史和当前工具类别；
+- 模型调用符合合法消息历史，目标符合当前工具身份和类别；
 - 覆盖参数再次通过验证；
 - 新策略和提供方约束仍允许派发。
 
@@ -203,7 +207,7 @@ second = await executable.run(
 
 外部结果可能在原生历史记录前就已接受。例如批次同时包含外部结果和本地批准动作，执行可能在动作运行前停在检查点。中间 `HarnessState` 本身不是已接受批次的完整记录。Harness 不在 Capability 状态中保留第二份延迟结果表示。
 
-Host 将关联的原生 `DeferredToolRequests` 和 `DeferredToolResults` 与所选检查点一起保留，或放入已有持久输入记录，直到历史纳入它们。发布新检查点时，`accepted.remaining(checkpoint.message_history)` 返回未纳入批次；已纳入或被后续响应替代时返回 `None`。按 Host 普通发布规则将此值与检查点持久化；收到输入或仅调用 `export_state()` 不会保存。
+Host 将完整的 Harness `DeferredToolRequests` 和原生 `DeferredToolResults` 与所选检查点一起保留，或放入已有持久输入记录，直到历史纳入它们。发布新检查点时，`accepted.remaining(checkpoint.message_history)` 返回未纳入批次；已纳入或被后续响应替代时返回 `None`。按 Host 普通发布规则将此值与检查点持久化；收到输入或仅调用 `export_state()` 不会保存。
 
 从中断的恢复 Run 继续时，提供保留批次和 `recovery=True`：
 

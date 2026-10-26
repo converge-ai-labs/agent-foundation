@@ -8,7 +8,7 @@ An environment is the computer an agent works on: its files and terminal tools a
 - **Managed environments**, which the Service creates, starts, stops and deletes from a **template**, such as a Docker container per thread.
 - **External targets**, computers you run yourself with the `a13n-envd` daemon, which the Service only connects to.
 
-Each managed vendor retains a resource management provider for creation, inspection, start/stop, destruction, renewal, and connection preparation. Execution follows the [shared model](../environments/index.md#choose-a-backend): Native Local/Docker/E2B provide Files & Shell for quick setup; Envd provides general execution with OS sandbox, Egress, Computer use, and Device metrics.
+Each managed vendor retains a resource management provider for creation, inspection, start/stop, destruction, renewal, and connection preparation. Execution follows the [shared model](../environments/index.md#choose-a-backend): Native Local/Docker/E2B/Vercel/Sprites/Runloop provide Files & Shell for quick setup; Envd provides general execution with OS sandbox, Egress, Computer use, and Device metrics.
 
 Threads **mount** environments. Each run freezes the thread's mounts when it is accepted and uses them until it ends. Without a mounted environment, an agent has no file or terminal tools.
 
@@ -28,7 +28,7 @@ Local and Docker provisioning default off; enable them in [Service settings](con
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
-In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Changing configuration requires replacing or removing any saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
+In Console, **Manage connections** beside the template's **Connection** selector opens the connection list without discarding the template draft. The same list is available at **Workspace settings → Providers → Environment**. Open a connection to view its settings; workspace writers can edit its name, enabled state, configuration and credentials, or choose **Delete connection**. Configuration changes keep an omitted credential. Replace it by providing a new value, or remove it with `null`; the new authentication mode must permit the saved credential. Deletion first shows the referencing templates and environment instances. Any reference, including a disabled template or retained historical instance, blocks deletion; an unused connection can be permanently deleted. This removes only the saved connection and credentials, not a Docker engine or native resource.
 
 ![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.webp)
 
@@ -38,8 +38,8 @@ In Console, **Manage connections** beside the template's **Connection** selector
 | --------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | `docker`  | Containers                                      | `docker_host`, optionally a remote `tcp://host:port` or `https://host:port` engine the outbound endpoint policy allows. No credential.                         | Stops the container                    |
 | `e2b`     | E2B sandboxes                                   | `domain` selects E2B cloud (default `e2b.dev`) or another E2B-compatible service; credential `{"api_key": ...}`. A recipe's `timeout_seconds` is at least 300. | Pauses, keeping memory and files       |
-| `daytona` | Daytona sandboxes                               | `organization_id`, optional `target` region; credential `{"api_key": ...}`                                                                                     | Stops, keeping files                   |
-| `modal`   | Modal sandboxes                                 | `workspace`, `app_name` (a deployed App that holds the sandboxes), optional `environment_name`; credential `{"token_id", "token_secret"}`                      | Snapshots the files, then terminates   |
+| `daytona` | Daytona sandboxes                               | Optional `organization_id` constraint and `target` region; credential `{"api_key": ...}`                                                                       | Stops, keeping files                   |
+| `modal`   | Modal sandboxes                                 | Optional `workspace`, `app_name` (default `a13n-sandboxes`), `environment_name` (default `main`); credential `{"token_id", "token_secret"}`                    | Snapshots the files, then terminates   |
 | `vercel`  | Persistent Vercel sandboxes                     | `team_id`, `project_id`; credential `{"api_key": ...}` (a Vercel access token)                                                                                 | Stops, keeping files                   |
 | `sprites` | Fly.io Sprites                                  | `organization`; credential `{"api_key": ...}`                                                                                                                  | Not supported; Sprites sleep when idle |
 | `runloop` | Runloop devboxes                                | `organization`; credential `{"api_key": ...}`                                                                                                                  | Suspends, keeping files                |
@@ -86,6 +86,14 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
 To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
+
+### Default environment variables
+
+Every built-in provider supports `config.recipe.environment`, for example `{"APP_MODE": "agent", "TOOL_ENDPOINT": "https://tools.example.com"}`. Add these in the template editor's **Environment variables** section. Commands and their normal child processes receive these defaults; explicit command values override them, and supported command unsets remove them. Agent, Thread and single-Run variables can override these defaults through [execution policy](agents-and-runs.md#execution-policy), without changing the shared sandbox.
+
+Defaults freeze with the recipe when creation is first dispatched. Editing a template does not update an existing instance, including after stop/start or snapshot resume. Create a new instance to use changed defaults. Local providers also require each name in `allowed_environment_keys` (or an unrestricted null allowlist).
+
+Use portable names (`APP_MODE`, not `app-mode`) and string values; empty values are allowed. These values are readable ordinary configuration: do not put credentials here. Platform bootstrap, desktop and telemetry names (`A13N_ENVD_*`, `EIP_*`, `A13N_DESKTOP*`, `OTEL_*`, `DISPLAY`, `XAUTHORITY`) are reserved. Provider credentials and existing secret bindings retain their separate controls.
 
 ### Docker image versions
 
@@ -214,6 +222,15 @@ Give an agent a graphical desktop to inspect screens, click controls and type. S
 
 Use loopback or an explicitly trusted private link for the plain-HTTP operation channel, with the deployment's outbound policy configured accordingly. Workers need access to the host address and Docker-assigned port. For a custom image, select **Custom image** and provide an image compatible with Envd HTTP and a graphical session; set `execution: "envd_http"` and `desktop: true`.
 
+### Automatic Vercel desktops
+
+1. Add a Vercel environment connection, paste a Vercel access token, and choose **Load Vercel teams**. Select a team and a project that the token can access. The token needs Sandbox and snapshot creation, read and deletion permissions. Create the project in Vercel first if the list is empty.
+2. Create a Vercel environment template, choose that connection and enable **Desktop environment**. Leave **Automatic desktop** selected. No local binary, image build script or snapshot ID is required.
+3. Create an instance from the template. The first creation builds a desktop snapshot and can take several minutes. Console shows its current phase and elapsed time. You can leave the page and return to **Environment instances** while creation continues.
+4. When ready, open the desktop preview. Runs using this environment can use Computer operations and Console human control. If creation fails, correct the reported configuration or permissions and use **Retry creation** when available.
+
+Later creations reuse the validated snapshot within the same workspace, Provider, credential version, team, project and build revision. Changing these inputs prepares a separate snapshot. Temporary builders are cleaned up; successful snapshots remain in your Vercel project for reuse. Use a Vercel access token with an appropriate lifetime: a short-lived CLI login token is unsuitable for an unattended long-running Provider connection. Custom snapshots remain available for operators. Headless native environments retain their existing behavior.
+
 ### Enable observation and interaction
 
 For an existing Envd-backed desktop with compatible Computer methods, start here. Computer permissions default off and are independent of desktop readiness.
@@ -231,18 +248,28 @@ When upgrading to this capability, upgrade Service control and worker roles toge
 
 Open **Environments and memory** from the session actions menu to configure Computer permissions for each mount. Run Details shows the permissions captured for that Run. The mount list separates **Computer permissions** from **Desktop status**. Status starts as **Not checked**; **Check desktop** probes a running environment without taking a screenshot or sending input. Unsupported environments explicitly explain that granting permissions does not add desktop support. Results describe the last check, not continuous monitoring. The result distinguishes absent desktop support, an unready desktop and supported operations; it does not grant Agent permissions or start stopped environments.
 
+### Computer coordinate mode
+
+For a model that returns relative desktop positions, set the agent configuration to:
+
+```json
+{"toolsets":{"computer":{"enabled":true,"config":{"coordinate_space":"normalized_1000"}}}}
+```
+
+The tools convert relative coordinates from 0 to 1000 on each axis into the observed screenshot's pixels. Ask the model to pass relative positions directly, without multiplying by screen dimensions. Omit this setting or select `pixels` for models that already return pixel positions. The choice applies to pointer positions, including both drag endpoints, but not scroll distances or keyboard input. It works with Envd-backed desktop environments that advertise the requested Computer methods. Always verify the resulting application state; a successful click does not prove that a form was submitted.
+
 ### Agent-requested desktop assistance
 
 An agent can pause and ask a person to operate its desktop. The Console assistance card offers **Open read-only desktop**, **Take control** and **Finish assistance**. Input is enabled only after Service grants control. Finishing first revokes desktop connections, then fills the assistance result in the pending batch. Review the other questions and approvals and choose **Submit responses** to continue. The agent must observe the current screen before further input.
 
 An operator must prepare a compatible desktop environment and set `desktop: true` and `desktop_assistance: true` in the environment recipe. Enabling Computer operations alone does not enable human access.
 
-| Provider | Desktop access prerequisites                                                                                                                                                                                                                                                                  |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E2B      | A custom template with the preinstalled desktop-access endpoint. The stock `desktop` template needs the viewer endpoint added; Agent Computer use also requires compatible Envd execution.                                                                                                    |
-| Docker   | A compatible desktop image and `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Docker Engine or Envd connectivity does not provide a browser route; plain WS is accepted only on loopback.                             |
-| Daytona  | An operator-built `snapshot` with the desktop access supervisor started at boot. Service uses a signed preview route to port 6081; the supervisor enforces read-only access and disconnects revoked controllers. See the [snapshot build instructions](../environments/providers.md#daytona). |
-| Modal    | An Envd-compatible `image` with the desktop access supervisor. Service uses a separate TLS tunnel on port 6081 and short-lived grants. See [Modal image preparation](../environments/providers.md#modal).                                                                                     |
+| Provider | Desktop access prerequisites                                                                                                                                                                                                                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2B      | A custom template with the preinstalled desktop-access endpoint. The stock `desktop` template needs the viewer endpoint added; Agent Computer use also requires compatible Envd execution.                                                                                                                                               |
+| Docker   | A compatible desktop image and `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Docker Engine or Envd connectivity does not provide a browser route; plain WS is accepted only on loopback.                                                                        |
+| Daytona  | Automatic `snapshot="auto"` (the desktop default), or a custom snapshot with the desktop access supervisor started at boot. Service uses a signed preview route to port 6081; the supervisor enforces read-only access and disconnects revoked controllers. See the [snapshot build instructions](../environments/providers.md#daytona). |
+| Modal    | Automatic `image="auto"` on desktop recipes, or an Envd-compatible custom image with the desktop access supervisor. Service uses a separate TLS tunnel on port 6081 and short-lived grants. See [Modal image preparation](../environments/providers.md#modal).                                                                           |
 
 Agent-requested assistance and user takeover use the same provider prerequisites. Credentials and desktop URLs do not grant the Agent Computer permissions; configure its toolset and mount separately.
 
@@ -261,3 +288,12 @@ After changing the desktop, choose **Return control and continue**. Service revo
 Closing the page, disconnecting, or choosing **End control, keep paused** does not resume the agent. Reconnect explicitly to complete handback. If the entire assistance interval has expired, **Continue agent** becomes usable only after Service confirms access cleanup; expiry itself never continues the task. Uncertain execution, lost worker ownership, unmanaged background commands, and configured subagent graphs block takeover; there is no force-control fallback. Completed tasks allow desktop interaction without starting another Run. Each Run selects one desktop mount for control. The same protocol applies to E2B, Docker, Daytona and Modal with the compatible endpoint and routing described above; remote Docker deployments still require validation of browser reachability and TLS.
 
 Deploy this update to Service control and worker roles together before enabling user takeover. Old workers do not honor the new execution fence or desktop pause checkpoint. Database rollback after user-control history has been created is rejected; use a forward repair.
+
+### Automatic Sprites desktops
+
+1. Add a Fly.io Sprites connection with your organization and API token. The token must allow creation with ownership labels, execution, deletion and URL settings. A name/quantity-restricted token may reject labels; use a suitable Sprites token rather than removing the ownership checks.
+2. Create a template, select that connection and enable **Desktop environment**. No local binary, prebuilt image or template ID is required.
+3. Create an instance. **Every new Sprite** installs Envd, desktop dependencies and Chrome, which can take several minutes. Console displays allocation, installation and desktop checks with elapsed time. You can leave the page; return to Environment instances to inspect progress or retry a confirmed failure.
+4. When ready, choose **View desktop** for a read-only snapshot. Interactive control is available from a conversation using that environment.
+
+A new Sprite installs again; reopening an existing Sprite after sleep retains its files and installation. The Envd route stays private. Browser desktop connections require short-lived guest grants and VNC authentication; the cloud API token stays in Service. Failed installation retains its owned target for explicit retry or deletion. Sprites does not support explicit stop; configure idle deletion if needed.

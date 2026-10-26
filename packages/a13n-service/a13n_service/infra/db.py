@@ -1,7 +1,7 @@
 """One engine/session owner, short SQL transaction scopes and the database rules tables declare."""
 
 import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
 from typing import Any, ClassVar
@@ -146,7 +146,7 @@ class Storage:
 
 
 @asynccontextmanager
-async def short_session(storage: Storage) -> AsyncIterator[AsyncSession]:
+async def short_session(storage: Storage) -> AsyncGenerator[AsyncSession]:
     session = storage.sessions()
     try:
         yield session
@@ -156,7 +156,7 @@ async def short_session(storage: Storage) -> AsyncIterator[AsyncSession]:
 
 
 @asynccontextmanager
-async def transaction(storage: Storage) -> AsyncIterator[AsyncSession]:
+async def transaction(storage: Storage) -> AsyncGenerator[AsyncSession]:
     """Commit on normal exit; callbacks registered with `after_commit` run only after that commit succeeded."""
     async with short_session(storage) as session:
         async with session.begin():

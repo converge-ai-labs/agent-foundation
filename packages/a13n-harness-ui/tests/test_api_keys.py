@@ -139,7 +139,7 @@ async def main():
             await anyio.sleep(0.01)
     for index in range(20):
         if role == "oauth":
-            await ChatGPTAccountStore(path).set_blocked(f"grant-{index}", True)
+            await ChatGPTAccountStore(path).begin(f"attempt-{index}", "http://127.0.0.1:1456/auth/callback")
         else:
             await ApiKeyStore(path).put(ApiKeyInput(
                 credential_ref=f"key-{role}-{index}", key=SecretStr("synthetic-key")))
@@ -170,5 +170,6 @@ anyio.run(main)
         f"key-{role}-{index}" for role in roles[:2] for index in range(20)
     }
     document = json.loads(path.read_text())
-    assert set(document["openai_chatgpt"]["blocked_grants"]) == {f"grant-{index}" for index in range(20)}
+    assert document["openai_chatgpt"]["attempt_id"] == "attempt-19"
+    assert document["openai_chatgpt"]["pending"]["redirect_uri"] == "http://127.0.0.1:1456/auth/callback"
     assert document["extension"] == {"retained": True}

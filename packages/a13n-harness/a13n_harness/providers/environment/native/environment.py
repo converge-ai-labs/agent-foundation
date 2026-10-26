@@ -2,9 +2,9 @@
 
 import hashlib
 from abc import abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import BinaryIO, Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -146,12 +146,18 @@ class NativeExecution[C: CommandConfiguration, S: TargetState](NativeReference[C
         self._descriptor = descriptor(self.config, identity, incarnation=incarnation)
         if self.commands:
             self.commands.closed = True
-        self.commands = NativeCommands(execute, self.config, self.descriptor.generation, execution_id)
+        self.commands = NativeCommands(execute, self.config, self.descriptor.generation, execution_id, transfer=self)
         files = GuestFiles(self.commands)
         self._operations = EnvironmentOperations(files=files, shell=self.commands)
         self._availability = EnvironmentAvailability(
             status="available", ready_families=self.descriptor.operation_families
         )
+
+    @abstractmethod
+    def read_stream(self, path: str) -> AsyncIterator[bytes]: ...
+
+    @abstractmethod
+    async def write_stream(self, path: str, source: BinaryIO, *, mode: int) -> None: ...
 
     async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
         if operations - self.descriptor.operation_families:

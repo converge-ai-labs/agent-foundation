@@ -10,6 +10,7 @@ from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.providers.registry import Registry
 from a13n_service.resources import revisions
+from a13n_service.resources.agents import preset_edits
 from a13n_service.resources.agents.schemas import Agent, AgentConfig, AgentCreate
 from a13n_service.resources.agents.service import agent_view, insert_head
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow, PresetKind
@@ -61,11 +62,46 @@ async def prepare(
         current = (
             None if head.default_revision_id is None else await session.get(AgentRevisionRow, head.default_revision_id)
         )
+        await revisions.update_head(session, actor, head, {"name": name, "description": description})
+        if kind in preset_edits.EDITABLE_KINDS and current is not None:
+            held = AgentConfig.model_validate(current.config)
+            config = configuration(held.model).model_copy(
+                update={
+                    "model_settings": held.model_settings,
+                    "instructions": held.instructions,
+                }
+            )
+            if config == held:
+                return agent_view(head)
+            config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
+            # A rollback keeps its selected revision. Do not recreate the same update on every preparation.
+            offered = await session.scalar(
+                select(AgentRevisionRow.id)
+                .where(
+                    AgentRevisionRow.agent_id == head.id,
+                    AgentRevisionRow.digest == revisions.config_digest(config.model_dump(mode="json")),
+                )
+                .limit(1)
+            )
+            if offered is None:
+                revision, created = await revisions.publish(
+                    session,
+                    head,
+                    AgentRevisionRow,
+                    config,
+                    actor=actor,
+                    note="Official preset update",
+                    make_default=False,
+                )
+                if created:
+                    audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})
+                    await session.flush()
+                    await session.refresh(head)
+            return agent_view(head)
         model = await _model(session, actor, scope, current, preferred)
         config = await validate_config(
             session, actor, scope, head.id, configuration(model), registry=registry, plugins=plugins
         )
-        await revisions.update_head(session, actor, head, {"name": name, "description": description})
         revision, created = await revisions.publish(session, head, AgentRevisionRow, config, actor=actor, note=None)
         if created:
             audit_row(session, actor, head, f"{kind}.prepare", {"revision_id": revision.id})

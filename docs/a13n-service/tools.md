@@ -121,7 +121,18 @@ MCP clients live for one attempt; tool catalogs can refresh during that attempt.
 
 ### MCP Apps for embedding applications
 
-Service saves an App tool's original arguments, declaration and full MCP result, including `_meta`. Live Run output emits `a13n.mcp_apps`; detailed Run items retain the same references in `content.mcp_apps`. Once the reference is committed, use its `app_id` with these authenticated endpoints:
+Service saves an App tool's original arguments, declaration and full MCP result, including `_meta`. Live run output emits `a13n.mcp_apps`; detailed run items retain the same references in `content.mcp_apps`.
+
+**Wait for the session SSE `app_ready` event before enabling a live App or calling its endpoints.** The earlier `delta` containing `a13n.mcp_apps` is provisional, even when `unavailable` is `false`. You may show a loading entry at that point. `app_ready` confirms that the original data and its reference have been saved and committed. It arrives after the next checkpoint containing the App, without waiting for the run to finish. Use the event's `run_id` and each `apps[].app_id` to open the App:
+
+```text
+event: app_ready
+data: {"thread_id":"thr_...","run_id":"run_...","apps":[{"app_id":"app_...","connection_id":"conn_...","agent_revision_id":"rev_...","source_run_id":"run_...","tool_call_id":"call_...","tool_name":"show_counter","resource_uri":"ui://counter/app.html","unavailable":false}]}
+```
+
+Subscribe through `GET /api/v1/sessions/{session_id}/stream`. Ready events follow committed `items` frames and may repeat after reconnect, output repair or run completion; identify an App by `(run_id, app_id)`. If saving the original fails, the committed reference has `unavailable: true` and no ready event is sent for it. If a run ended while disconnected, or you load older history through `GET …/runs/{run_id}/items`, its available committed references can be opened directly. The thread stream does not emit `app_ready`; use the session stream for this notification. Readiness confirms saved data, not ongoing access or MCP server availability.
+
+Use these authenticated endpoints:
 
 | Request                                                   | Body                                  | Result                                                      |
 | --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------- |
@@ -220,7 +231,9 @@ Groups can contain selected MCP or connector `connections`, `plugins` by instanc
 
 Omit `config` or set `mode: proxy`, control names, and pagination limits as described in [Harness ToolSearch](../a13n-harness/tool-search.md). Ungrouped sources stay direct. `client_tools` retain their flat external-call and client-resume protocol. Keep tools requiring approval/resume directly exposed as well.
 
-Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping. To migrate, change `mode: native` to `proxy`, remove `strategy` and connection-level `defer_loading`, and put connections in `groups` when proxy discovery is wanted. Older revisions and saved run configurations containing removed fields are not converted automatically: create replacement revisions and finish old runs before upgrading.
+Each child agent uses its own revision's configuration. A run override replaces the whole `tool_search` block; `groups: {}` disables grouping.
+
+Connection selections configure execution through `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored.
 
 ### Caller headers
 

@@ -10,6 +10,8 @@ import anyio
 import pytest
 from a13n_harness import (
     AgentStreamEventProtocol,
+    DeferredToolCall,
+    DeferredToolRequests,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -53,7 +55,6 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
-    RetryPromptPart,
     TextPart,
     TextPartDelta,
     ThinkingPart,
@@ -65,7 +66,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.output import TextOutput
-from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError
 
 _OCCURRED_AT = datetime(2026, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
@@ -261,6 +261,58 @@ def test_thinking_metadata_delta_uses_native_json_serializer(callback: bool) -> 
     assert len(following) == 1
     assert isinstance(following[0], ReasoningMessageContentEvent)
     assert following[0].delta == " more"
+
+
+@pytest.mark.parametrize("ended", [False, True])
+@pytest.mark.parametrize("restore", [False, True])
+def test_citation_only_delta_preserves_payload_without_opening_text(ended: bool, restore: bool) -> None:
+    from a13n_stream_protocol.display import DisplayFold
+    from pydantic_ai.messages import Citation, ContentCitationAnchor, WebCitationSource
+
+    observer = HarnessAguiObserver()
+    fold = DisplayFold("run-1")
+    part = TextPart("Supported answer", id="provider-text-id")
+    sources = [PartStartEvent(index=0, part=part)]
+    if ended:
+        sources.append(PartEndEvent(index=0, part=part))
+    for sequence, source in enumerate(sources):
+        fold.fold(
+            [event.model_dump(mode="json", by_alias=True) for event in observer.observe(_event(sequence, source))]
+        )
+    if restore:
+        observer = HarnessAguiObserver.restore(observer.export())
+        fold = DisplayFold.restore(fold.export())
+    before = dict(fold.items)
+    delta = TextPartDelta(
+        "",
+        provider_name="google",
+        provider_details={"citations": [{"confidence": 0.9}]},
+        citations_delta=[
+            Citation(
+                [WebCitationSource("https://example.com/source", title="Source")],
+                anchor=ContentCitationAnchor(start=0, end=len(part.content)),
+            )
+        ],
+    )
+    source = PartDeltaEvent(index=0, delta=delta)
+
+    (event,) = observer.observe(_event(2, source))
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == "a13n.pydantic_ai.part_delta"
+    assert event.value["event"] == TypeAdapter(PartDeltaEvent).dump_python(source, mode="json")
+    assert event.value["event"]["delta"]["citations_delta"][0]["sources"][0]["url"] == "https://example.com/source"
+    fold.fold([event.model_dump(mode="json", by_alias=True)])
+    assert {key: item for key, item in fold.items.items() if item.kind == "text_message"} == before
+    (observation,) = [item for item in fold.items.values() if item.kind == "observation"]
+    assert observation.state == "completed"
+    assert observation.content == {"name": event.name, "value": event.value}
+    assert len(fold.items) == 2
+    if not ended:
+        (following,) = observer.observe(_event(3, PartDeltaEvent(index=0, delta=TextPartDelta(" more"))))
+        assert isinstance(following, TextMessageContentEvent)
+        assert following.message_id == part.id
+        assert following.delta == " more"
 
 
 def test_capability_event_uses_nested_field_serializer() -> None:
@@ -630,10 +682,11 @@ def test_non_success_and_retry_tool_results_use_custom_fallback() -> None:
         _event(
             1,
             FunctionToolResultEvent(
-                RetryPromptPart(
+                ToolReturnPart(
                     content="try again",
                     tool_name="search",
                     tool_call_id="call-retry",
+                    outcome="retried",
                 )
             ),
         )
@@ -643,7 +696,8 @@ def test_non_success_and_retry_tool_results_use_custom_fallback() -> None:
     assert failed.name == "a13n.pydantic_ai.function_tool_result"
     assert failed.value["event"]["part"]["outcome"] == "failed"
     assert isinstance(retry, CustomEvent)
-    assert retry.value["event"]["part"]["part_kind"] == "retry-prompt"
+    assert retry.value["event"]["part"]["part_kind"] == "tool-return"
+    assert retry.value["event"]["part"]["outcome"] == "retried"
 
 
 def test_unmapped_public_events_fall_back_to_namespaced_custom_events() -> None:
@@ -1013,7 +1067,8 @@ async def test_real_harness_stream_observes_lifecycle_text_and_terminal_events()
 
 
 @pytest.mark.anyio
-async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
+@pytest.mark.parametrize("forwarded", [False, True])
+async def test_terminal_statuses_map_from_explicit_harness_results(forwarded: bool) -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "state"
@@ -1040,8 +1095,27 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         usage=RunUsageSummary(),
         suspend_reason="deferred",
         deferred=DeferredToolRequests(
-            calls=[ToolCallPart(tool_name="external", args={"x": 1}, tool_call_id="call-external")],
-            approvals=[ToolCallPart(tool_name="approve", args={}, tool_call_id="call-approval")],
+            metadata={
+                "call-external": {"a13n.harness.client-tool": {"declared_name": "external", "toolset_id": "editor"}}
+            },
+            calls=[
+                DeferredToolCall(
+                    ToolCallPart("call_tool", {}, "model-external") if forwarded else call, call, "tool/test/external"
+                )
+                for call in [
+                    ToolCallPart(
+                        tool_name="clients__external" if forwarded else "external",
+                        args={"x": 1},
+                        tool_call_id="call-external",
+                    )
+                ]
+            ],
+            approvals=[
+                DeferredToolCall(
+                    ToolCallPart("call_tool", {}, "model-approval") if forwarded else call, call, "tool/test/approve"
+                )
+                for call in [ToolCallPart(tool_name="approve", args={}, tool_call_id="call-approval")]
+            ],
         ),
     )
     failed = HarnessRunResult(
@@ -1082,9 +1156,10 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
     assert isinstance(suspended_event, RunFinishedEvent)
     assert suspended_event.outcome.type == "interrupt"
     assert [(entry.id, entry.tool_call_id, entry.reason) for entry in suspended_event.outcome.interrupts] == [
-        ("call-approval", "call-approval", "approval"),
-        ("call-external", "call-external", "external"),
+        ("call-approval", "model-approval" if forwarded else "call-approval", "approval"),
+        ("call-external", "model-external" if forwarded else "call-external", "external"),
     ]
+    assert suspended_event.outcome.interrupts[1].metadata["tool_name"] == "external"
     assert isinstance(failed_event, RunErrorEvent)
     assert failed_event.code == "model_failed"
     assert failed_event.message == "The model failed."

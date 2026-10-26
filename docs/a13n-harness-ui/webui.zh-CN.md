@@ -69,6 +69,14 @@ Run 活跃时，**Next message** 仍可编辑，但不会成为队列。**Steer*
 
 打开 **Details** 查看根操作、子执行、任务、笔记、用量和配置。执行、续接保存和 Environment 清理分别报告结果。子控件针对准确父执行；保存结果分页，活动预览有界。应用 Project 默认值需审阅前后差异。配置竞争时保留编辑并要求重新审阅。
 
+### 查看 token 用量和估算费用
+
+点击侧栏顶部、折叠按钮左侧的图表图标，打开 **Usage**。也可以使用 Project 菜单的 **View usage**，或 **Details → Usage → Open analytics**，直接查看对应范围。
+
+选择最近 7、30、90 个 UTC 日，或最多 366 天的自定义范围。按 Project、根 Thread 或实际 provider/model 筛选。汇总和每日图表涵盖所有匹配记录。明细可按 Project、Thread 或模型分组，按 token 或费用排序，点击行可进一步缩小范围。筛选条件保存在 URL 中。点击 **Refresh** 读取新保存的用量，页面不持续自动更新。
+
+总量包括保留的归档对话、Memory、Live、子 agent、辅助模型调用和 Coordinator worker。Project 归属跟随根 Thread 当前的 Project。费用是记录下来的模型美元估算值：**—** 表示未知，**$0** 表示已知为零，**+** 表示仅包含已知部分的小计。缓存 token 是输入/输出的子集，不额外计入总量。Provider 回执仍在 Thread 详情中查看。覆盖范围始于已持久化的观测，无法补回更早未记录的消耗。访客分享链接不授予分析页访问权限。
+
 ### 共享草稿
 
 草稿协作只存在于当前 App 实例。应用内导航保留浏览器编辑器状态，重新连接同一实例会再次同步。服务器重启后，需要明确加入替代草稿，并决定是否恢复本浏览器的文字。本浏览器尚未同步的编辑会在重新加载或浏览器崩溃时丢失；已同步的文字在服务器运行期间保留在共享草稿中。显示名称不是认证身份，撤销仅属于本地编辑器，已接受的 Send 建立新的撤销边界。
@@ -233,7 +241,7 @@ WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** �
 
 在 **Settings → Environments** 中，使用标识、HTTP endpoint 或反向 WebSocket 传输，以及凭据引用添加 Device 连接。**Check connection** 读取实时 Device 描述；保存连接不要求 Device 在线。同一资源可复用于不同工作目录和别名。
 
-在 **Projects** 或 **Configuration → Change next Run selections** 中，使用 **Add environment** ，选定 Device，再输入已知绝对工作目录，或浏览在线 Device。**Use this directory** 只修改草稿。使用 **Add directory** 在已有环境内添加路径。通过 **Default working directory** 从选中的环境里选择默认工作目录；移除该目录时，必须先选择替代目录再保存。Project 可以组合本地文件夹和远程 Environment，也可以只使用远程 Environment，但必须保留至少一个工作目录。Device 目录浏览不依赖原生计算机共享。
+在 **Project settings → Environments** 或 **Conversation details → Configuration → Change next Run selections** 中，使用 **Add environment** ，选定 Device，再输入已知绝对工作目录，或浏览在线 Device。**Use this directory** 只修改草稿。使用 **Add directory** 在已有环境内添加路径。通过 **Default working directory** 从选中的环境里选择默认工作目录；移除该目录时，必须先选择替代目录再保存。Project 可以组合本地文件夹和远程 Environment，也可以只使用远程 Environment，但必须保留至少一个工作目录。Device 目录浏览不依赖原生计算机共享。
 
 对未被使用的 Device 或自定义 profile 使用 **Forget**，即可删除本地配置，即使 Device 离线或 provider 已卸载也可以。对话框会列出当前配置引用，并链接到对应编辑器。先修复这些默认值，再回来移除资源。这不会删除远程数据、卸载 provider 或删除对话历史。内置 Environment 不能移除。
 
@@ -282,7 +290,7 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 每个打开的页面还会显示应用内通知，包括正在查看的对话。这些通知不受六小时或访问历史限制。系统推送和应用内通知可能同时出现。**Web Push 是唯一的系统通知路径**：如果不支持或无法连接 provider，就只剩应用内通知，没有本地系统通知后备机制。
 
-升级后，请重新加载此前打开的 WebUI 页面。现有订阅和签名密钥保留，但旧 Thread 关注列表移除。更新后的可见页面首次报告活动时，设备才恢复接收资格；仅同步注册不算活动。
+升级后，重新加载 WebUI 并保持更新后的页面可见，以续期此设备的交付窗口。现有订阅和签名密钥保留。
 
 如果启用时报告 **Browser push registration failed**，表示浏览器在将订阅保存到 Harness UI 之前就未能取得订阅。错误保留浏览器原始详情，并将此阶段与服务器交付区分。Android Chrome 的推送服务错误，应检查 Google Play 服务和设备到推送服务的连通性，包括 VPN 或防火墙限制。能打开 WebUI 不代表推送可达。比较 Wi-Fi 与移动数据，再明确重试注册。不要一开始就清空浏览器存储，因为这也会删除私人草稿和偏好。
 
@@ -290,7 +298,7 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 关闭 **Enable browser notifications** 会移除此浏览器订阅并停止权限提醒，不影响应用内通知或其他设备。退出登录也会尝试清理。如果浏览器和服务器两端清理都失败，可以在浏览器站点通知权限中阻止交付。清除浏览器存储不等于服务器取消订阅；可行时应先关闭通知。
 
-推送采用尽力交付，不是持久通知收件箱。服务器使用有界内存队列和有限重试，关闭或 provider 故障可能丢失提醒。重新打开 WebUI 不会重放旧的完成事件。推送不改变已保存历史、浏览器本地新结果圆点，或 Agent 工作的生命周期。请安全备份服务器数据根目录，以保留签名身份和订阅。
+推送采用尽力交付：关闭服务器或 provider 故障可能丢失提醒，重新打开 WebUI 不会重放。请打开对话查看结果。安全备份服务器数据根目录，以保留签名身份和订阅。
 
 ## Agent 协作与 Sidekick
 

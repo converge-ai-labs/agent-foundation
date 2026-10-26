@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import ClassVar
@@ -41,7 +41,7 @@ class ConnectorProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition
     @asynccontextmanager
     async def _open(
         self, parsed: C, secret: K | None, http: ConnectorHttpClient | None
-    ) -> AsyncIterator[ConnectorProviderRuntime]:
+    ) -> AsyncGenerator[ConnectorProviderRuntime]:
         if http is not None:
             async with self.open_provider(parsed, secret, http) as provider:
                 yield provider

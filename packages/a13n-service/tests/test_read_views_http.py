@@ -13,18 +13,18 @@ pytestmark = pytest.mark.anyio
 
 async def test_run_summaries_budget_paging_sections_and_original_etag(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
-    accepted = [await runs_kit.start_thread(service, agent, "汉字" * 1000) for _ in range(9)]
+    accepted = [await runs_kit.start_thread(service, agent, "汉字" * 1000) for _ in range(12)]
     expected = [value["run"]["id"] for value in reversed(accepted)]
     cursor, found = None, []
     while True:
-        params = {"view": "compact", "agent_id": agent["id"], "limit": 9}
+        params = {"agent_id": agent["id"], "limit": 12}
         if cursor:
             params["cursor"] = cursor
         response = await service.client.get(f"{service.api}/runs", params=params)
         assert response.status_code == 200, response.text
         body = response.json()
-        assert len(response.text) < 12000 and len(body["items"]) < 9
-        assert all(value["input"]["truncated"] and "options" not in value for value in body["items"])
+        assert len(response.text) < 12000 and len(body["items"]) < 12
+        assert all(value["input_preview"]["truncated"] and "options" not in value for value in body["items"])
         found.extend(value["id"] for value in body["items"])
         cursor = body["next_cursor"]
         if cursor is None:

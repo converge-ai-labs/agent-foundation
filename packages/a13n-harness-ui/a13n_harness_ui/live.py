@@ -275,6 +275,11 @@ class LiveSubscription:
     def cursor(self) -> LiveCursor:
         return self._cursor.model_copy(deep=True)
 
+    def take_root_stream(self) -> RootStreamReplay | None:
+        """Transfer the one-time bootstrap; later captures use shared compact state."""
+        replay, self.root_stream = self.root_stream, None
+        return replay
+
     def capture_root_stream(self, run_id: str) -> RootStreamReplay | None:
         """Refresh this scoped observer's baseline without dropping queued child events.
 
@@ -447,7 +452,8 @@ class HarnessUiLiveHub:
                         if not subscriber.accepts(event) or subscriber.gap:
                             continue
                         try:
-                            subscriber.send.send_nowait(event.model_copy(deep=True))
+                            # Queues share the hub-owned event; receive/drain detach it.
+                            subscriber.send.send_nowait(event)
                         except WouldBlock:
                             subscriber.gap = True
                         except (BrokenResourceError, ClosedResourceError):
@@ -489,12 +495,27 @@ class HarnessUiLiveHub:
             self._evicted_root_floor = max(self._evicted_root_floor, floor)
             self._root_floors.pop(root, None)
 
-    async def snapshot(self, *, root_thread_id: str | None = None) -> tuple[LiveEvent, ...]:
+    async def snapshot(
+        self,
+        *,
+        root_thread_id: str | None = None,
+        through_sequence: int | None = None,
+        max_bytes: int | None = None,
+    ) -> tuple[LiveEvent, ...]:
+        """Detach only the requested suffix, filtering before copying payloads."""
         async with self._lock:
-            return tuple(
-                event.model_copy(deep=True)
-                for event in (self._ring if root_thread_id is None else self._root_rings.get(root_thread_id, ()))
-            )
+            ring = self._ring if root_thread_id is None else self._root_rings.get(root_thread_id, ())
+            retained: list[LiveEvent] = []
+            remaining = max_bytes
+            for event in reversed(ring):
+                if through_sequence is not None and event.sequence > through_sequence:
+                    continue
+                if remaining is not None:
+                    remaining -= len(event.model_dump_json().encode())
+                    if remaining < 0:
+                        break
+                retained.append(event.model_copy(deep=True))
+            return tuple(reversed(retained))
 
     @asynccontextmanager
     async def subscribe(
@@ -519,7 +540,9 @@ class HarnessUiLiveHub:
                 root_thread_id=root_thread_id,
             )
             for event in replay:
-                send.send_nowait(event.model_copy(deep=True))
+                send.send_nowait(event)
+                del event
+            replay.clear()
             self._subscribers.add(subscriber)
             if root_thread_id is not None and root_thread_id not in self._root_rings:
                 self._root_rings[root_thread_id] = deque(maxlen=self._ring_size)
@@ -531,6 +554,8 @@ class HarnessUiLiveHub:
                 LiveCursor(epoch=self._epoch, sequence=start_sequence),
                 root_stream.capture() if root_stream is not None and after is None else None,
             )
+            # The subscription owns the current Run state.
+            del root_stream
         try:
             yield subscription
         finally:

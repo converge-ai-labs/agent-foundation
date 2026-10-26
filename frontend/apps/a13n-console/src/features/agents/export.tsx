@@ -82,17 +82,19 @@ export function ExportAgent({
   agent,
   config,
   version,
+  builtinInstructions,
   trigger,
 }: {
   agent: Schema["Agent"];
   config: AgentConfig;
   version: number;
+  builtinInstructions?: string | null;
   trigger?: ReactElement;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<Error>();
-  const file = agentFile(agent, config);
+  const file = agentFile(agent, config, builtinInstructions);
   return (
     <ModalFrame
       open={open}

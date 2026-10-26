@@ -21,35 +21,25 @@ export function MemorySection({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const mounts = draft.memoryMounts;
-  // Two sections of the editor, spaced by it like every other section.
+  // Space participation and individual memories share one editor group.
   return (
     <>
+      <SessionMemoryFields
+        compact
+        value={draft.memory}
+        onChange={draft.setMemory}
+        disabled={readOnly}
+      />
       <Section
-        title={t("Session memory defaults")}
-        description={t(
-          "New sessions inherit this Space selection. Apps can replace it for each session.",
-        )}
-      >
-        <SessionMemoryFields
-          value={draft.memory}
-          onChange={draft.setMemory}
-          disabled={readOnly}
-        />
-      </Section>
-      <Section
-        title={t("Standalone memories")}
-        description={t(
-          "What the agent keeps across conversations. New conversations mount these memories.",
-        )}
+        title={t("Memories")}
+        description={t("Available to new sessions.")}
         actions={
           !readOnly && (
             <ModalFrame
               open={open}
               onOpenChange={setOpen}
               title={t("Add memory")}
-              description={t(
-                "New conversations with this agent mount the memory from their first run.",
-              )}
+              description={t("Choose a memory for new sessions.")}
               closeLabel={t("Close")}
               trigger={
                 <Button type="button" variant="outline" size="sm">
@@ -75,7 +65,7 @@ export function MemorySection({
       >
         <MemoryMountRows
           mounts={mounts}
-          empty={t("No default memories.")}
+          empty={readOnly ? t("No default memories.") : undefined}
           onAccessChange={
             readOnly
               ? undefined

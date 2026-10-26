@@ -111,6 +111,13 @@ const apiFolderNames: Record<string, string> = {
   subscriptions: "订阅",
   tenancy: "租户管理",
   usage: "用量",
+  "desktop-assistance": "桌面协助",
+  findings: "执行诊断",
+  "memory spaces": "记忆空间",
+  "metrics-dashboards": "指标仪表盘",
+  "metrics-data-sources": "指标数据源",
+  "monitoring-devices": "监控设备",
+  schedules: "定时计划",
 };
 
 const chineseApiFiles: typeof apiSource.files = apiSource.files.map((file) => {

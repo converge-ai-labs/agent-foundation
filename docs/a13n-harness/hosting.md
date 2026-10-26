@@ -67,7 +67,7 @@ thread_values = CodeActStateOwner()
 bindings = RunBindings.embedded(tool_execution=runtime, codeact_state=thread_values)
 ```
 
-Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Whole CodeAct runners can detach; their nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
+Include `capability` in `AgentDefinition.capabilities` and pass `bindings` to the Run. Fast tools return their native results; eligible slow tools return an execution receipt while the original invocation continues. The default mode is `inline`. Detachment requires a tool with retained execution ownership and a retainable resource scope, such as supported Environment Shell calls and whole CodeAct runners. An ordinary `async def` custom tool remains inline; adding the runtime alone does not make it detachable. CodeAct's nested calls still await real values. Sequential tools retain their execution barrier until the real work settles.
 
 Bind the Harness runtime through `RunBindings.tool_execution` to enable automatic background execution and immediate steering. The runtime owns active calls; its store retains records and results. Runs without this binding use blocking generic tools, queued steering, and the Environment's native shell process controls. Enabling `auto` requires the binding at Run preparation; requesting immediate steering requires it before input acceptance.
 
@@ -84,6 +84,10 @@ Use the runtime's `on_completed` callback to schedule Host delivery without bloc
 ## Fresh Authority
 
 On every Run, select the current user/policy, model credentials, Provider state, and current Environment sources. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
+
+Pass business request headers through `RunBindings.embedded(request_context=RequestContext(headers={"x-trace": "trace-123"}))`, importing `RequestContext` from `a13n_harness`. Trusted tools read the detached, read-only map at `ctx.deps.request_context.headers`. Names normalize to lower case. Inline children inherit it. Hosts retain and reconstruct context for recovery or independent children; `HarnessState` does not store it, and new bindings default to empty. Headers are not automatically exposed in prompts, tool results or shell environments. The Host explicitly wires forwarding to model and MCP transports.
+
+Set `A13N_HARNESS_FORWARD_CONTEXT_HEADERS=false` to change the default for an omitted model Provider `forward_context_headers` parameter. Explicit `true` or `false` wins over the environment; unset keeps the built-in default `true`. The environment accepts `true` and `false` case-insensitively with surrounding whitespace ignored, and rejects other values. Resolution happens when the configuration is constructed. Hosts can use `a13n_harness.http.forward_context_headers_default()` for the same default in their MCP integration.
 
 ### Check Model Calls Before Dispatch
 

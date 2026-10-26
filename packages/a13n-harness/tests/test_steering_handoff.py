@@ -207,7 +207,7 @@ async def test_handoff_during_validation_preserves_denial_and_native_approval():
             await consumer
             result = stream.result
             assert result.status == "suspended"
-            assert [call.tool_call_id for call in result.deferred.approvals] == ["approval"]
+            assert [call.target_call.tool_call_id for call in result.deferred.approvals] == ["approval"]
             denied = next(
                 part
                 for message in result.state.message_history

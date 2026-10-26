@@ -6,7 +6,7 @@ numbers changes without gaps, so a change cursor is a number and the feed lists 
 A version is a change number as a string: a file's version is the number of its last change.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 
 from a13n_harness.providers.memory import (
@@ -406,7 +406,7 @@ async def purge_files(session: AsyncSession, memory_id: str) -> None:
     store.content_bytes = store.history_bytes = store.file_count = 0
 
 
-def _open(verb: Verb) -> None:
+async def _open(verb: Verb) -> None:
     """No gate: the caller authorized the operation already."""
 
 
@@ -423,19 +423,19 @@ class PostgresFileStore:
         memory_id: str,
         settings: MemorySettings,
         *,
-        gate: Callable[[Verb], None] = _open,
+        gate: Callable[[Verb], Awaitable[None]] = _open,
         count_changes: bool = True,
     ):
         self.storage, self.memory_id, self.settings, self.gate = storage, memory_id, settings, gate
         self.count_changes = count_changes
 
     async def list(self) -> list[FileEntry]:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return await list_entries(session, self.memory_id)
 
     async def read(self, path: str) -> FileText:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return file_text(await read_file(session, self.settings, self.memory_id, path))
 
@@ -448,7 +448,7 @@ class PostgresFileStore:
         origin: Origin,
         dependencies: Mapping[str, str | None] | None = None,
     ) -> str:
-        self.gate("run")
+        await self.gate("run")
         async with transaction(self.storage) as session:
             row = await write_file(
                 session,
@@ -472,7 +472,7 @@ class PostgresFileStore:
         origin: Origin,
         dependencies: Mapping[str, str | None] | None = None,
     ) -> str:
-        self.gate("run")
+        await self.gate("run")
         async with transaction(self.storage) as session:
             row = await move_file(
                 session,
@@ -495,7 +495,7 @@ class PostgresFileStore:
         origin: Origin,
         dependencies: Mapping[str, str | None] | None = None,
     ) -> None:
-        self.gate("run")
+        await self.gate("run")
         async with transaction(self.storage) as session:
             await delete_file(
                 session,
@@ -509,12 +509,12 @@ class PostgresFileStore:
             )
 
     async def changes(self, since: str | None) -> Changes | FullResync:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return await changes_since(session, self.memory_id, since)
 
     async def search(self, pattern: str, *, regex: bool, case_sensitive: bool, path: str, limit: int) -> Matches:
-        self.gate("read")
+        await self.gate("read")
         async with short_session(self.storage) as session:
             return await search_lines(
                 session,
@@ -528,6 +528,6 @@ class PostgresFileStore:
             )
 
     async def purge(self) -> None:
-        self.gate("write")
+        await self.gate("write")
         async with transaction(self.storage) as session:
             await purge_files(session, self.memory_id)

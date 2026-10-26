@@ -188,7 +188,7 @@ class FileSkillSource:
         roots: Sequence[str],
         *,
         required: bool = True,
-        skip_invalid: bool = False,
+        skip_invalid: bool = True,
         max_entries_per_root: int = 256,
         max_frontmatter_lines: int = 256,
         max_line_length: int = 16 * 1024,

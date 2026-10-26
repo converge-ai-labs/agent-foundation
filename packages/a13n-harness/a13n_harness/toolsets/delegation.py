@@ -590,6 +590,7 @@ def _create_inline_child_bindings(
         deferred_tools_supported=False,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),
         metadata=parent.metadata,
+        request_context=parent.request_context,
         configuration=parent.configuration,
     )
     factory = child.declaration.run_bindings_factory

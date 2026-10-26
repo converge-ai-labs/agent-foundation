@@ -243,6 +243,7 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
 
     prepared = SimpleNamespace(
         head=head,
+        state=SimpleNamespace(thread_id="thread-test"),
         stream=SimpleNamespace(pending_deferred_input=None),
         reconstructed=SimpleNamespace(memory_cursors=MemoryCursors()),
     )
@@ -266,7 +267,9 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
     async def finish_restart(*args):
         return False
 
+    released = []
     operator = SimpleNamespace(
+        _release_completion_continuation=released.append,
         _tool_executions=None,
         _restart=None,
         _finish_restart=finish_restart,
@@ -286,6 +289,7 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
     assert observed.attributes["a13n.ui.operation.status"] == expected_status
     assert (observed.status.status_code is StatusCode.ERROR) == (expected_status == "failed")
     assert active.done.is_set()
+    assert released == ["thread-test"]
 
 
 async def test_full_app_automatic_otlp_path_exports_without_global_registration(tmp_path, monkeypatch):

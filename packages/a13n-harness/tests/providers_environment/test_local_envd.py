@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from a13n_envd_client.eip.v1 import PathStyle
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import (
     EnvironmentAvailability,
@@ -89,7 +90,11 @@ def owners(monkeypatch):
             await asyncio.sleep(0)
             self.configuration = configuration
             self.device = SimpleNamespace(
-                descriptor=SimpleNamespace(device_id=device_id, boundary=SimpleNamespace(policy_digest="test-boundary"))
+                descriptor=SimpleNamespace(
+                    device_id=device_id,
+                    path_style=PathStyle.POSIX,
+                    boundary=SimpleNamespace(policy_digest="test-boundary"),
+                )
             )
             return self.device
 

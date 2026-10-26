@@ -19,7 +19,7 @@ import {
   Timestamp,
 } from "../../../../shared/feedback";
 import { CopyableId } from "../../../../shared/identity";
-import { JsonView } from "../../../../shared/forms";
+import { ExecutionFields, JsonView } from "../../../../shared/forms";
 import { UNKNOWN } from "../../../../shared/unknown";
 import { AgentLink } from "../../../agents/link";
 import { useAgent } from "../../../agents/queries";
@@ -29,6 +29,7 @@ import { conversationQueries, runPath } from "../../api";
 import { formatDuration } from "../../format";
 import { useRun, useRunUsage } from "../../queries";
 import { UsageTable } from "../../usage-table";
+import { ToolExecutions } from "../../tool-executions";
 import {
   computerPermissionMode,
   computerPermissionLabels,
@@ -165,6 +166,11 @@ function RunDetails({ selected }: { selected: Run }) {
           )}
         </dl>
       </Section>
+      {run.options.execution && (
+        <Section title={t("Execution policy")}>
+          <ExecutionFields value={run.options.execution} readOnly />
+        </Section>
+      )}
       <Section title={t("Environments and memory")}>
         {/* What this Run started with; later Runs follow the conversation's mounts. */}
         {!run.environment_mounts.length && !run.memory_mounts.length ? (
@@ -229,6 +235,9 @@ function RunDetails({ selected }: { selected: Run }) {
             ))}
           </ol>
         )}
+      </Section>
+      <Section title={t("Tool executions")}>
+        <ToolExecutions key={run.id} threadId={run.thread_id} runId={run.id} />
       </Section>
       <Section title={t("Lineage")}>
         <ErrorNotice error={lineage.error} />

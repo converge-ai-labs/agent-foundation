@@ -237,6 +237,16 @@
             ],
             "title": "Default Environment Template Id"
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "instructions": {
             "default": "",
             "maxLength": 262144,
@@ -438,6 +448,16 @@
               }
             ],
             "title": "Default Environment Template Id"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "instructions": {
             "default": "",
@@ -1370,6 +1390,19 @@
             "title": "Agent Id",
             "type": "string"
           },
+          "builtin_instructions": {
+            "anyOf": [
+              {
+                "maxLength": 262144,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Current deployment guidance for this builtin Agent, not a revision or Run snapshot.",
+            "title": "Builtin Instructions"
+          },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Output"
           },
@@ -1720,6 +1753,12 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "instructions": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Instructions",
+            "type": "string"
           },
           "max_traces": {
             "default": 10,
@@ -2729,11 +2768,8 @@
             "type": "string"
           },
           "method": {
+            "const": "manual_callback",
             "default": "manual_callback",
-            "enum": [
-              "manual_callback",
-              "browser_callback"
-            ],
             "title": "Method",
             "type": "string"
           }
@@ -2806,7 +2842,6 @@
             "enum": [
               "disconnected",
               "connected",
-              "refreshing",
               "reauthentication_required"
             ],
             "title": "State",
@@ -4110,8 +4145,7 @@
         "type": "object"
       },
       "ConnectionSelection": {
-        "additionalProperties": false,
-        "description": "An agent's use of one connection: all the tools it exposes, or a subset, and their permissions.",
+        "description": "An agent's selected tools and permissions.",
         "properties": {
           "connection_id": {
             "maxLength": 41,
@@ -4867,6 +4901,56 @@
           "signing_secret"
         ],
         "title": "CreatedSubscription",
+        "type": "object"
+      },
+      "CreationProgress": {
+        "properties": {
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "stage": {
+            "enum": [
+              "preparing",
+              "building",
+              "starting",
+              "ready",
+              "failed",
+              "inactive"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "started_at",
+          "observed_at"
+        ],
+        "title": "CreationProgress",
         "type": "object"
       },
       "CredentialMode": {
@@ -6355,7 +6439,8 @@
           "kind": {
             "enum": [
               "message",
-              "child_result"
+              "child_result",
+              "tool_result"
             ],
             "title": "Kind",
             "type": "string"
@@ -6814,6 +6899,13 @@
         "title": "EnvironmentUpdate",
         "type": "object"
       },
+      "EnvironmentVariables": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Default variables for Agent commands. Ordinary readable configuration, not secret storage. Command variables override these defaults.",
+        "type": "object"
+      },
       "EnvironmentView": {
         "properties": {
           "created_at": {
@@ -7112,6 +7204,243 @@
           "trace_id"
         ],
         "title": "Evidence",
+        "type": "object"
+      },
+      "ExecutionObservation": {
+        "properties": {
+          "execution": {
+            "$ref": "#/components/schemas/ExecutionView"
+          },
+          "shell": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShellPreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "enum": [
+              "live",
+              "retained",
+              "unavailable"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution",
+          "source"
+        ],
+        "title": "ExecutionObservation",
+        "type": "object"
+      },
+      "ExecutionOverride": {
+        "additionalProperties": false,
+        "description": "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.",
+        "properties": {
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EnvironmentVariables"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steering": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Steering"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ExecutionOverride",
+        "type": "object"
+      },
+      "ExecutionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExecutionView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "ExecutionPage",
+        "type": "object"
+      },
+      "ExecutionView": {
+        "description": "Run identity is the Service Run; attempt and worker identify the retained owner.",
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "delivery_acknowledged": {
+            "default": false,
+            "title": "Delivery Acknowledged",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "execution_id": {
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "first_delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Delivered At"
+          },
+          "foreground_released": {
+            "default": false,
+            "title": "Foreground Released",
+            "type": "boolean"
+          },
+          "result_available": {
+            "default": false,
+            "title": "Result Available",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "queued",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "lost"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "title": "Tool Call Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "worker_id": {
+            "title": "Worker Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "execution_id",
+          "thread_id",
+          "run_id",
+          "tool_call_id",
+          "tool_name",
+          "attempt_id",
+          "worker_id",
+          "cancel_requested_at",
+          "first_delivered_at",
+          "expires_at"
+        ],
+        "title": "ExecutionView",
         "type": "object"
       },
       "Export": {
@@ -9250,6 +9579,10 @@
       "McpConfig": {
         "additionalProperties": false,
         "properties": {
+          "forward_context_headers": {
+            "title": "Forward Context Headers",
+            "type": "boolean"
+          },
           "headers": {
             "default": [],
             "items": {
@@ -12916,6 +13249,16 @@
             "$ref": "#/components/schemas/InitialMounts",
             "default": []
           },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "const": "message",
             "default": "message",
@@ -13968,6 +14311,41 @@
         "title": "OrganizationUpdate",
         "type": "object"
       },
+      "OutputPreview": {
+        "properties": {
+          "observation_closed": {
+            "title": "Observation Closed",
+            "type": "boolean"
+          },
+          "produced_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Produced Bytes"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated",
+          "produced_bytes",
+          "observation_closed"
+        ],
+        "title": "OutputPreview",
+        "type": "object"
+      },
       "OutputSpec": {
         "additionalProperties": false,
         "description": "Plain text without a schema, one structured output, or at least two named variants.\n\n`resources` are the schemas `$ref`s may name besides the schema's own definitions.",
@@ -14800,6 +15178,67 @@
           "image_url"
         ],
         "title": "PrincipalSummary",
+        "type": "object"
+      },
+      "ProcessStatusProjection": {
+        "properties": {
+          "cleanup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "signal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal"
+          },
+          "termination_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Termination Reason"
+          }
+        },
+        "required": [
+          "phase",
+          "termination_reason",
+          "exit_code",
+          "signal",
+          "cleanup"
+        ],
+        "title": "ProcessStatusProjection",
         "type": "object"
       },
       "Profile": {
@@ -15720,6 +16159,21 @@
         "title": "Request",
         "type": "object"
       },
+      "RequestContext": {
+        "additionalProperties": false,
+        "description": "Explicit business headers, frozen in accepted Run options and kept out of model projections.",
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          }
+        },
+        "title": "RequestContext",
+        "type": "object"
+      },
       "Resume": {
         "additionalProperties": false,
         "description": "The complete result batch, submitted and stored on the successor without omission defaults.",
@@ -16246,6 +16700,26 @@
         "title": "RunContent",
         "type": "object"
       },
+      "RunInputPreview": {
+        "properties": {
+          "text": {
+            "description": "At most 200 Unicode code points of input text, in content order.",
+            "maxLength": 200,
+            "title": "Text",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text",
+          "truncated"
+        ],
+        "title": "RunInputPreview",
+        "type": "object"
+      },
       "RunItems": {
         "description": "Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,\nso the first item's ordinal tells whether earlier ones exist.",
         "properties": {
@@ -16295,6 +16769,166 @@
         "title": "RunLabels",
         "type": "object"
       },
+      "RunListItem": {
+        "description": "Run discovery metadata. Full input, results and execution settings belong to the Run detail read.",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Attempt Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_preview": {
+            "$ref": "#/components/schemas/RunInputPreview"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/Lineage"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Run Id"
+          },
+          "principal_id": {
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "sealed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sealed At"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source_entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Entry Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "wait_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "session_id",
+          "thread_id",
+          "agent_id",
+          "agent_revision_id",
+          "principal_id",
+          "status",
+          "trigger",
+          "lineage",
+          "parent_run_id",
+          "source_entry_id",
+          "current_attempt_id",
+          "attempts",
+          "max_attempts",
+          "wait_reason",
+          "version",
+          "created_at",
+          "started_at",
+          "sealed_at",
+          "updated_at",
+          "input_preview"
+        ],
+        "title": "RunListItem",
+        "type": "object"
+      },
       "RunMetrics": {
         "properties": {
           "average_duration_seconds": {
@@ -16328,6 +16962,26 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RunConfiguration-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
               },
               {
                 "type": "null"
@@ -16385,6 +17039,26 @@
               }
             ]
           },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,
@@ -16426,7 +17100,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/RunView"
+              "$ref": "#/components/schemas/RunListItem"
             },
             "title": "Items",
             "type": "array"
@@ -16701,34 +17375,6 @@
         "title": "RunSummary",
         "type": "object"
       },
-      "RunSummaryPage": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/RunSummary"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "items",
-          "next_cursor"
-        ],
-        "title": "RunSummaryPage",
-        "type": "object"
-      },
       "RunUsage": {
         "properties": {
           "models": {
@@ -16742,6 +17388,12 @@
             "title": "Run Id",
             "type": "string"
           },
+          "run_number": {
+            "description": "One-based chronological position among all Runs in the Thread.",
+            "minimum": 1.0,
+            "title": "Run Number",
+            "type": "integer"
+          },
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
@@ -16750,6 +17402,7 @@
         "required": [
           "run_id",
           "thread_id",
+          "run_number",
           "models"
         ],
         "title": "RunUsage",
@@ -18386,6 +19039,26 @@
         "title": "SharedSkillSync",
         "type": "object"
       },
+      "ShellPreview": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ProcessStatusProjection"
+          },
+          "stderr": {
+            "$ref": "#/components/schemas/OutputPreview"
+          },
+          "stdout": {
+            "$ref": "#/components/schemas/OutputPreview"
+          }
+        },
+        "required": [
+          "status",
+          "stdout",
+          "stderr"
+        ],
+        "title": "ShellPreview",
+        "type": "object"
+      },
       "Skill": {
         "properties": {
           "archived_at": {
@@ -19249,7 +19922,7 @@
         "type": "object"
       },
       "SpanContentPage": {
-        "description": "A matching span's selected content, or a continuation to keep locating that span.",
+        "description": "A matching span's selected content, or no items when the trace has no such span.",
         "properties": {
           "items": {
             "items": {
@@ -19657,6 +20330,13 @@
           "unsupported",
           "not_ready",
           "capacity"
+        ],
+        "type": "string"
+      },
+      "Steering": {
+        "enum": [
+          "boundary",
+          "immediate"
         ],
         "type": "string"
       },
@@ -20980,9 +21660,70 @@
         "title": "ThreadPage",
         "type": "object"
       },
+      "ThreadRunPage": {
+        "description": "Newest first; first_number is the first item's 1-based chronological position in the thread.",
+        "properties": {
+          "first_number": {
+            "title": "First Number",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RunListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "previous_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "previous_cursor",
+          "total",
+          "first_number"
+        ],
+        "title": "ThreadRunPage",
+        "type": "object"
+      },
       "ThreadUpdate": {
         "additionalProperties": false,
         "properties": {
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "anyOf": [
               {
@@ -21046,6 +21787,16 @@
               }
             ],
             "title": "Current Run Id"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -21277,6 +22028,41 @@
           "deployment_supported"
         ],
         "title": "ToolDefinition",
+        "type": "object"
+      },
+      "ToolExecutionOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "foreground_wait_seconds": {
+            "anyOf": [
+              {
+                "maximum": 300.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Foreground Wait Seconds"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inline",
+                  "auto"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "title": "ToolExecutionOverride",
         "type": "object"
       },
       "ToolInfo": {
@@ -21758,12 +22544,90 @@
         "title": "TraceBackend",
         "type": "object"
       },
+      "TraceSearchItem": {
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "root": {
+            "$ref": "#/components/schemas/Span"
+          }
+        },
+        "required": [
+          "root",
+          "duration_seconds",
+          "cost_usd"
+        ],
+        "title": "TraceSearchItem",
+        "type": "object"
+      },
+      "TraceSearchPage": {
+        "properties": {
+          "collected_at": {
+            "format": "date-time",
+            "title": "Collected At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSearchItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "total",
+          "collected_at"
+        ],
+        "title": "TraceSearchPage",
+        "type": "object"
+      },
       "Trigger": {
         "enum": [
           "input",
           "queued",
           "resume",
           "child_result",
+          "tool_result",
           "spawned"
         ],
         "type": "string"
@@ -22287,6 +23151,94 @@
         ],
         "type": "string"
       },
+      "VercelOption": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "VercelOption",
+        "type": "object"
+      },
+      "VercelOptions": {
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VercelOption"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "VercelOptions",
+        "type": "object"
+      },
+      "VercelOptionsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "VercelOptionsRequest",
+        "type": "object"
+      },
       "VideoInputPolicy": {
         "additionalProperties": false,
         "description": "Base64-after byte budget for both one video and all inline videos in a request.",
@@ -22703,7 +23655,7 @@
   "paths": {
     "/api/v1/agent-composer": {
       "post": {
-        "description": "The workspace's Agent Composer, created or brought up to date with the deployment's definition.\n\nRefused with `model_required` while the workspace has no model the caller can use.",
+        "description": "The workspace's Agent Composer, initialized or offered an updated official revision without changing its default.\n\nInitial preparation requires a usable model; later preparation preserves the selected model and revision.",
         "operationId": "prepare_composer",
         "parameters": [
           {
@@ -28184,6 +29136,76 @@
         "x-a13n-mcp": false
       }
     },
+    "/api/v1/environment-provider-options/vercel": {
+      "post": {
+        "description": "List accessible teams, or projects in a selected team, using an unsaved credential.",
+        "operationId": "vercel_provider_options",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VercelOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VercelOptions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Vercel Provider Options",
+        "tags": [
+          "providers"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
     "/api/v1/environment-providers": {
       "get": {
         "operationId": "list_environment_providers",
@@ -29570,6 +30592,145 @@
         "x-a13n-mcp": true
       }
     },
+    "/api/v1/environments/{environment_id}/creation": {
+      "get": {
+        "operationId": "get_environment_creation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CreationProgress"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Environment Creation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Environment Creation",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
+      }
+    },
+    "/api/v1/environments/{environment_id}/desktop-preview": {
+      "get": {
+        "operationId": "get_environment_desktop_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Environment Desktop Preview",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
     "/api/v1/environments/{environment_id}/metrics-binding": {
       "put": {
         "operationId": "select_metrics_source",
@@ -29818,6 +30979,93 @@
           "environments"
         ],
         "x-a13n-mcp": false
+      }
+    },
+    "/api/v1/environments/{environment_id}/retry-creation": {
+      "post": {
+        "operationId": "retry_environment_creation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The resource's ETag: `\"{id}:{version}\"` of its current view, `\"{key}:{version}\"` for a model",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Retry Environment Creation",
+        "tags": [
+          "environments"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/environments/{environment_id}/stop": {
@@ -37560,34 +38808,14 @@
           },
           {
             "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "default": "detailed",
-              "enum": [
-                "detailed",
-                "compact"
-              ],
-              "title": "View",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 100,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
@@ -37632,15 +38860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/RunPage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RunSummaryPage"
-                    }
-                  ],
-                  "title": "Response List Runs"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             },
@@ -39894,32 +41114,15 @@
             }
           },
           {
-            "description": "Use compact for discovery; detailed preserves the original response.",
-            "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadView",
-              "default": "detailed",
-              "description": "Use compact for discovery; detailed preserves the original response."
-            }
-          },
-          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 50,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
@@ -39948,15 +41151,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/RunPage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RunSummaryPage"
-                    }
-                  ],
-                  "title": "Response Get Run Lineage"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             },
@@ -45693,7 +46888,7 @@
     },
     "/api/v1/threads/{thread_id}/runs": {
       "get": {
-        "description": "Newest first.",
+        "description": "Newest first, optionally starting at an anchor run; cursors page towards older or newer runs.",
         "operationId": "list_thread_runs",
         "parameters": [
           {
@@ -45706,32 +46901,15 @@
             }
           },
           {
-            "description": "Use compact for discovery; detailed preserves the original response.",
-            "in": "query",
-            "name": "view",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/ReadView",
-              "default": "detailed",
-              "description": "Use compact for discovery; detailed preserves the original response."
-            }
-          },
-          {
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "maximum": 100,
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Limit"
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {
@@ -45748,6 +46926,23 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "anchor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Anchor"
             }
           },
           {
@@ -45776,15 +46971,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/RunPage"
-                    },
-                    {
-                      "$ref": "#/components/schemas/RunSummaryPage"
-                    }
-                  ],
-                  "title": "Response List Thread Runs"
+                  "$ref": "#/components/schemas/ThreadRunPage"
                 }
               }
             },
@@ -45927,6 +47114,494 @@
         "tags": [
           "runs"
         ]
+      }
+    },
+    "/api/v1/threads/{thread_id}/tool-executions": {
+      "get": {
+        "operationId": "list_tool_executions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "List Tool Executions",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
+    "/api/v1/threads/{thread_id}/tool-executions/{execution_id}": {
+      "get": {
+        "operationId": "get_tool_execution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Tool Execution",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
+    "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/cancel": {
+      "post": {
+        "operationId": "cancel_tool_execution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Cancel Tool Execution",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/observation": {
+      "get": {
+        "operationId": "observe_tool_execution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionObservation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Observe Tool Execution",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/threads/{thread_id}/tool-executions/{execution_id}/result": {
+      "get": {
+        "operationId": "get_tool_execution_result",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "execution_id",
+            "required": true,
+            "schema": {
+              "title": "Execution Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Unicode code-point offset; continue with next_offset.",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Unicode code-point offset; continue with next_offset.",
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum Unicode code points in this fragment.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 4000,
+              "description": "Maximum Unicode code points in this fragment.",
+              "maximum": 4000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Content version from the first read; required after offset 0.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Content version from the first read; required after offset 0.",
+              "title": "Version"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Tool Execution Result",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
       }
     },
     "/api/v1/toolsets": {
@@ -46601,6 +48276,297 @@
         }
       }
     },
+    "/api/v1/traces/search": {
+      "get": {
+        "description": "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank.",
+        "operationId": "search_traces",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "attribute",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 8,
+              "title": "Attribute",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_after",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Started After",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "started_before",
+            "required": true,
+            "schema": {
+              "format": "date-time",
+              "title": "Started Before",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "schema": {
+              "default": "started",
+              "enum": [
+                "started",
+                "duration",
+                "cost"
+              ],
+              "title": "Order By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Direction",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_duration_seconds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,31}0*$)\\d{0,15}\\.\\d{0,15}0*$)",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Duration Seconds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_duration_seconds",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,31}0*$)\\d{0,15}\\.\\d{0,15}0*$)",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Duration Seconds"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_cost_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,31}0*$)\\d{0,15}\\.\\d{0,15}0*$)",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Cost Usd"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_cost_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,31}0*$)\\d{0,15}\\.\\d{0,15}0*$)",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Cost Usd"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceSearchPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Search Traces",
+        "tags": [
+          "runs"
+        ],
+        "x-a13n-mcp": true,
+        "x-a13n-platform": {
+          "effect": "read",
+          "group": "execution"
+        }
+      }
+    },
     "/api/v1/traces/{trace_id}": {
       "get": {
         "description": "The trace's root span.",
@@ -47058,7 +49024,7 @@
     },
     "/api/v1/traces/{trace_id}/spans/{span_id}/content": {
       "get": {
-        "description": "Locate a span in bounded backend pages. Follow next_cursor when empty. Once found, retain that request's\ncursor while continuing fragments with version and next_offset.",
+        "description": "Read a fragment of one span's content. The backend is queried for that span alone; items is empty when the\ntrace has no such span. Continue fragments with version and next_offset.",
         "operationId": "read_span_content",
         "parameters": [
           {
@@ -47099,22 +49065,6 @@
               ],
               "title": "Section",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
             }
           },
           {

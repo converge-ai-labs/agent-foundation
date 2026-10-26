@@ -58,6 +58,8 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                 await asyncio.sleep(0.5)
 
     async def create(self) -> None:
+        if self.config.snapshot == "auto":
+            raise failure(self.provider_key, "desktop_snapshot_not_prepared", Category.INVALID)
         target = await self.lookup()
         if target is None:
             if self.target is not None:
@@ -72,6 +74,7 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                     "labels": self.labels,
                     "public": False,
                     "env": {
+                        **self.config.environment,
                         "A13N_ENVD_DEVICE_ID": self.owner,
                         "A13N_ENVD_TRANSPORT": "http",
                         "A13N_ENVD_HTTP_BIND": "0.0.0.0:8888",

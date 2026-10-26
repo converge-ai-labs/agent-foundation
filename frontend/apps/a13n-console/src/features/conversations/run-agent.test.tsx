@@ -9,6 +9,7 @@ import { fixtureRun, fixtureRunAgent } from "./transcript/fixture";
 
 let client: Client;
 let cache: QueryClient;
+let builtin = false;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -20,6 +21,7 @@ vi.mock("../../layout/workspace", () => ({
 }));
 
 beforeEach(() => {
+  builtin = false;
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -40,6 +42,13 @@ beforeEach(() => {
         return Response.json({
           ...executed,
           config: { ...executed.config, instructions: "Only this run." },
+        });
+      if (url.pathname.includes("/agents/"))
+        return Response.json({
+          id: "ap_test",
+          name: "Agent",
+          source: builtin ? "builtin" : "custom",
+          preset_kind: builtin ? "composer" : null,
         });
       return Response.json({ items: [], next_cursor: null });
     },
@@ -63,34 +72,43 @@ it("names only the fields a Run's overrides change", () => {
   expect(overriddenFields(fixtureRun())).toEqual([]);
 });
 
-it("shows the configuration a Run executed, read-only, with its overrides marked", async () => {
-  render(
-    <QueryClientProvider client={cache}>
-      <MemoryRouter>
-        <RunAgentDialog
-          run={fixtureRun({
-            options: { overrides: { instructions: "Only this run." } },
-          })}
-          open
-          onOpenChange={() => {}}
-        />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-  const dialog = await screen.findByRole("dialog");
-  expect(await within(dialog).findByText("Only this run.")).toBeTruthy();
-  expect(within(dialog).getByText("v2")).toBeTruthy();
-  const instructions = within(dialog).getByRole("region", {
-    name: "Instructions",
-  });
-  expect(within(instructions).getByText("Overridden")).toBeTruthy();
-  const model = within(dialog).getByRole("region", { name: "Model" });
-  expect(within(model).queryByText("Overridden")).toBeNull();
-  // Nothing in it can be edited or saved.
-  expect(
-    within(dialog).queryByRole("textbox", { name: "System instructions" }),
-  ).toBeNull();
-  expect(
-    within(dialog).queryByRole("button", { name: "Save changes" }),
-  ).toBeNull();
-});
+it.each([false, true])(
+  "shows saved configuration and overrides, with builtin guidance explained when applicable (%s)",
+  async (usesBuiltin) => {
+    builtin = usesBuiltin;
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter>
+          <RunAgentDialog
+            run={fixtureRun({
+              options: { overrides: { instructions: "Only this run." } },
+            })}
+            open
+            onOpenChange={() => {}}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Only this run.")).toBeTruthy();
+    expect(
+      !!within(dialog).queryByText(
+        /Built-in instructions come from the worker version/,
+      ),
+    ).toBe(usesBuiltin);
+    expect(within(dialog).getByText("v2")).toBeTruthy();
+    const instructions = within(dialog).getByRole("region", {
+      name: "Instructions",
+    });
+    expect(within(instructions).getByText("Overridden")).toBeTruthy();
+    const model = within(dialog).getByRole("region", { name: "Model" });
+    expect(within(model).queryByText("Overridden")).toBeNull();
+    // Nothing in it can be edited or saved.
+    expect(
+      within(dialog).queryByRole("textbox", { name: "System instructions" }),
+    ).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Save changes" }),
+    ).toBeNull();
+  },
+);

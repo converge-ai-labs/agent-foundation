@@ -85,6 +85,7 @@ class FindingPage(BaseModel):
 
 
 class AnalysisCreate(_Input):
+    instructions: str = Field(default="", max_length=8192, exclude_if=lambda value: not value)
     agent_id: ObjectId | None = None
     trace_id: TraceId | None = None
     started_after: AwareDatetime | None = None

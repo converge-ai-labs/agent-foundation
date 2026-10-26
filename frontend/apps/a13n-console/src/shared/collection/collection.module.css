@@ -325,7 +325,8 @@ tr:focus-within .rowMenu,
 }
 @media (max-width: 760px) {
   .toolbarSearch {
-    flex-basis: 100%;
+    flex-basis: 140px;
+    min-width: 0;
     max-width: none;
   }
   .toolbarTrailing {

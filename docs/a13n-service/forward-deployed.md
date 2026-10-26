@@ -4,7 +4,7 @@ sidebarTitle: Forward deployed engineering
 description: Deliver agents inside a customer's cloud with Service, using the customer's models, systems, and access rules, then hand over operations.
 ---
 
-A forward deployed engineer (FDE) builds agents together with a customer and puts them into production in the customer's environment. Service is open source and self-hosted: Console, the HTTP API, the workers, and all stored data run on infrastructure that the customer controls. This page connects each step of that work to the Service guide that describes it. To run agents inside an application that the customer already operates, embed the [Harness](../a13n-harness/index.md) library instead.
+A forward deployed engineer (FDE) builds agents together with a customer and puts them into production in the customer's environment. Service is open source and self-hosted: deploy Console, the HTTP API, workers and Service-managed storage on the customer's infrastructure. Model, tool, trace and record-memory data goes to the backends you configure; select those backends to meet the customer's data requirements. This page connects each step of that work to the Service guide that describes it. To run agents inside an application that the customer already operates, embed the [Harness](../a13n-harness/index.md) library instead.
 
 ```mermaid
 flowchart TB

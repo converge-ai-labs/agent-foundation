@@ -5,6 +5,8 @@ description: 配置 agent，开始对话，并跟踪、引导或恢复运行。
 
 **Agent** 是有名称的资源，其配置（模型、指令、工具和策略）保存为不可变、带编号的**修订版本** 。用户和应用在**会话**中与 agent 对话。会话包含一个或多个 **线程** ，每个线程是一段独立推进的历史；发送的消息进入线程**收件箱** ，线程每一次被接收的推进都是一次**运行** 。运行在 worker 上通过一次或多次**执行尝试** 完成，最终状态为 `completed`、`waiting`、`failed` 或 `cancelled`。
 
+按任务阅读：[配置 agent](#agents)、[开始对话](#start-a-conversation)、[提交或引导消息](#submit-a-message)、[回应等待项](#waits-approvals-and-questions)、[中断或分叉](#interrupt-fork-and-archive)、[查看结果](#results)和[改进问题](#find-and-improve-execution-issues)。
+
 ```mermaid
 stateDiagram-v2
     [*] --> accepted: 消息或恢复
@@ -45,7 +47,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 - `POST …/archive` 阻止 agent 的新运行（`422 disabled`）；已接收的运行会完成。`POST …/unarchive` 取消归档。
 - 列表可按 `label`、`q`（名称或描述）、`archived`、`source`（`custom` 或 `builtin`）以及 `skill_id`、`skill_revision_id` 筛选，后两者保留包含引用该 skill 的修订版本的 agent。
 
-内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。它们的完整配置均只读，包括模型和模型设置。准备操作自动选择可用模型，并在当前模型仍可用时保留它。名称等元信息、头像、归档和默认版本切换受到保护。
+内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。你可以编辑它们的模型、推理强度、最大输出 token、`temperature`、`top_p` 和补充指令。修订版本保存用户补充；只读的官方指令由当前 Worker 在每次执行尝试时提供，包括恢复和等待后的继续执行。其他配置、名称等元信息、头像和归档仍受保护。可以在版本历史中选择以前的默认版本；准备操作会保留这一选择，受保护配置的更新只生成候选版本，官方指令更新不需要新版本。需要自由修改所有配置时，可复制为自定义 Agent。
 
 ### Agent 配置
 
@@ -292,6 +294,20 @@ def history_json(messages: list[ModelMessage]) -> list[dict]:
 
 恢复或子结果沿用前一运行的选项。在 Console 中，**运行选项** 为下次运行设置模型、指令覆盖、媒体理解、固定修订版本及其他配置。
 
+## 请求上下文头
+
+在消息正文中传入模型与 MCP 请求共用的业务请求头。默认开启转发，因此只应包含允许发送到已配置模型 provider 和 MCP 服务器（包括第三方端点）的值：
+
+```json
+{"options": {"context": {"headers": {"x-trace-id": "trace-123", "x-tenant-id": "acme"}}}}
+```
+
+最多支持 32 个不区分大小写且名称唯一的请求头，值为最多 4096 字符的可打印 ASCII，名称和值合计不超过 8 KiB。认证和传输请求头属于保留字段。值以普通运行选项保存，敏感信息应放在 provider 或连接凭据中。入站 HTTP 请求头不会自动复制。
+
+故障恢复和显式 resume 保留已接收的上下文；内联和异步子 agent 继承它。新消息或分叉未指定上下文时使用空值。steer 可以省略上下文或重复已有值；不同的值等待后续运行。HTTP 读取保留上下文，MCP 查询结果在文本搜索和分片前移除它。提示词、历史和 shell 环境不会自动获得副本。
+
+模型请求头和每个连接的 `mcp_headers` 优先于共享上下文中的同名字段。provider 凭据、协议头、保存的敏感请求头和自动亲和性头始终优先。与模型 provider 受保护字段同名的上下文头会在该 provider 的请求中静默跳过，保存的上下文保持不变。自动转发需要同时开启部署类别开关和目标的 `config.forward_context_headers`。类别开关默认开启。未传入目标参数时使用 `A13N_HARNESS_FORWARD_CONTEXT_HEADERS`（环境变量未设置时为 true），显式值优先。模型 Provider 省略该参数时继承环境变量，MCP Connection 则在保存配置时写入解析后的值。设置 `A13N_PROVIDERS__FORWARD_MODEL_CONTEXT_HEADERS=false` 或 `A13N_PROVIDERS__FORWARD_MCP_CONTEXT_HEADERS=false` 可关闭相应类别。可信工具仍可读取上下文。fetch、download、浏览器和 shell 操作不会自动转发。
+
 ## 调用方请求头
 
 线程可通过 HTTP 请求头向 MCP 连接传递非凭据上下文，例如租户或对话 ID。创建线程时设置 `mcp_headers`，或使用 `PATCH …/threads/{thread_id}` 和线程的 `If-Match` 修改：
@@ -394,6 +410,72 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 每个已结束运行都是其线程继续的历史，与结果无关。失败或取消运行之后，下一个运行从它的最后一个检查点继续；若它在首个检查点前失败，则从它开始时的状态继续。它未完成的工具调用显示为已中断，不会再次执行。如果失败由历史本身导致，例如模型服务拒绝该历史，请改为分叉更早的运行。
 
+## 执行策略
+
+工具交还与引导时机可独立配置。`inline` 等待工具完成；`auto` 在前台等待结束后返回回执。`boundary` 在下一个模型边界应用引导；`immediate` 允许引导抢占当前前台等待。Service 默认使用 `auto`、5 秒和 `immediate`。
+
+各字段的优先级为：**单次运行 → 线程 → 所选智能体版本 → 部署默认值**。省略或 null 表示继承。创建智能体或发布版本时，在 `config.execution` 中设置默认值：
+
+```json
+{
+  "execution": {
+    "tools": {"mode": "auto", "foreground_wait_seconds": 5},
+    "steering": "immediate"
+  }
+}
+```
+
+持久线程覆盖可通过 `POST /threads` 的 `execution` 设置，也可携带线程的 `If-Match` 向 `PATCH /threads/{thread_id}` 发送：
+
+```json
+{"execution": {"tools": {"mode": "inline"}, "steering": "boundary"}}
+```
+
+PATCH 保留省略的字段。使用 `{"execution":{"tools":{"mode":null}}}` 仅恢复工具模式的继承，或使用 `{"execution":null}` 清空全部线程覆盖。继承项跟随每次新运行所选的智能体。
+
+仅覆盖一次运行时，在消息的 `options.execution` 中设置：
+
+```json
+{
+  "kind": "message",
+  "delivery": "next_run",
+  "agent_id": "agt_example",
+  "payload": {"content": [{"type": "text", "text": "Review this change"}]},
+  "options": {"execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 2}}}
+}
+```
+
+覆盖只影响该次运行。排队消息被接受为运行时，Service 冻结最终策略。恢复、交接、resume 与自动续接保留该策略。steer 可省略策略或重述相同字段；改变策略会返回 `execution_policy_immutable`。不同策略应使用 `next_run`。新运行使用 `inline` 时，仍可访问此前保留的调用。完成通知始终在边界处理。
+
+在 Console 中，智能体配置的 **执行策略** 设置默认值，**会话操作 → 执行策略** 设置当前线程。新会话 **选项** 对话框和空闲消息输入框的 **执行策略** 只影响一次运行。**详情 → 执行策略** 显示运行冻结的值。
+
+前台等待范围为 0–300 秒，不是执行截止时间。部署回退值为 `tool_executions.foreground_wait_seconds`；并发、保留期与关闭参数仍由部署统一设置。
+
+### 命令环境变量
+
+Agent 使用 `config.execution.environment`，Thread 使用 `execution.environment`，单次消息使用 `options.execution.environment`。例如 `{"execution":{"environment":{"APP_MODE":"staging","EMPTY":""}}}`。逐个变量的优先级为：**命令 → Run → Thread → Agent → Environment 已冻结的 recipe**。这些值作为普通配置保存，不用于保存密钥；变量名和保留名称规则与模板变量相同。Windows 上请保持变量名的大小写写法一致。
+
+Thread PATCH 会整体替换传入的变量表；传 null 或 `{}` 清除该层并恢复继承，省略则保持不变。空字符串表示显式设置为空；删除某个键不会移除下层默认值。命令显式 unset 在 Provider 支持时仍可移除继承值。
+
+Service 在 Run 接受时冻结 Agent／Thread／Run 三层的结果，恢复和继续执行仍使用原值。前台命令、后台进程及其普通子进程都会收到变量。共用 sandbox 的 Run 使用各自的命令环境，不修改 sandbox 全局变量或 recipe。内联子 Agent 共用所在 Run 的变量；Fork 和独立子 Thread 使用自己的 Agent 配置和覆盖值。Console 中可在上述**执行策略**入口编辑变量。
+
+## 保留的工具执行
+
+默认 `auto` 工具模式下，支持保留的工具调用会自动交还前台：超过等待时间（默认 5 秒）后，模型收到 `exec-*` 回执并可继续处理，而同一次调用仍在原 worker 上运行。回执是引用，不是结果。整个 CodeAct 调用及其嵌套调用保持在一起；后续 Run 可由其他 worker 执行。所有者丢失时，未完成的执行标记为 `lost`，Service 不会自动重放调用。
+
+在现有 Console 会话菜单的 **工具执行** 或 Run 详情中查看这些调用。刷新可更新状态；**检查** 打开元数据，**读取结果** 按需加载有界片段。关闭检查器会释放本地结果文本。
+
+| `/api/v1/threads/{thread_id}` 下的端点        | 用途                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| `GET /tool-executions`                        | 分页查询，可按 Service `run_id` 或 `active` 筛选。                |
+| `GET /tool-executions/{execution_id}`         | 查看状态，不确认结果交付。                                        |
+| `GET /tool-executions/{execution_id}/result`  | 使用 `offset`、`limit` 和 `version` 读取结果片段。                |
+| `POST /tool-executions/{execution_id}/cancel` | 请求取消；HTTP 202 表示接受请求，不代表清理已完成或副作用已回滚。 |
+
+引用属于确切的 Thread。读取结果会确认交付；首次确认启动配置的重读窗口（默认一小时），且不超过完成后的最大保留时间（默认 24 小时）。重复读取不会延长窗口。已过期记录返回 404；状态查询与回执不改变保留时间。
+
+完成提示遵循普通收件箱的顺序与容量规则。停止原始 Run 会请求取消其保留调用，并阻止迟到结果重新启动对话。停止后续 Run 不会取消更早 Run 的调用。即使取消请求已接受，Environment 仍保持使用中，直到保留操作及其清理实际完成。
+
 ## 结果
 
 读取 `GET …/runs/{run_id}` 并根据 `status` 处理。完成运行包含 `output`（文本或符合 `output_spec` 的 JSON）；等待运行包含 `pending`；失败运行包含 `failure {code, message}`。运行配置、血缘、挂载和时间戳请参阅 [API 参考](api-reference/index.md)。
@@ -415,12 +497,13 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| 事件     | 数据                                                        | 含义                                                                                                   |
-| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `thread` | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                   |
-| `items`  | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                   |
-| `delta`  | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
-| `gap`    | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                      |
+| 事件        | 数据                                                        | 含义                                                                                                                               |
+| ----------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `thread`    | `{thread, current_run, last_run, entries}`                  | 一个线程的当前状态：线程、活跃运行、最后结束的运行，以及待处理和已分配的收件箱条目。                                               |
+| `items`     | `{thread_id, run_id, first, items, continuation, complete}` | 运行从序号 `first` 起的已提交显示项。运行结束后的最终显示项中 `complete` 为 `true`。                                               |
+| `delta`     | `{thread_id, run_id, attempt, sequence, event, item}`       | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。                             |
+| `gap`       | `{thread_id, run_id}`                                       | 运行的实时输出丢失。下一个 `items` 帧之前，该运行不再发送 delta。                                                                  |
+| `app_ready` | `{thread_id, run_id, apps}`                                 | 列出的 MCP App 原始数据及引用已提交。收到该事件后才能启用对应入口；参阅 [MCP Apps](tools.md#mcp-apps-for-embedding-applications)。 |
 
 每个连接都从会话的当前状态开始：每个线程一个 `thread` 帧，按创建时间从旧到新，每个帧之后是其活跃运行的 `items` 帧和该运行已产生的输出。事件流没有游标，因此重连时不发送位置。渲染会话时：
 
@@ -463,6 +546,12 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 查询仅返回工作空间的 span。没有后端时返回 `503 unavailable`。Span 包含多少内容由 `telemetry.trace_content` 决定。Finding Agent 的分析运行只读取分析所选的 trace，并且逐个按 `trace_id` 读取：它自己的请求不能列出 trace 或尝试的 span，读取的每条 trace 都会记录为可引用的证据。
 
+在 **Traces** 中，点击**耗时**、**费用**或**开始时间**表头，按整个所选时间范围排序。耗时筛选填写秒数，费用筛选填写 USD；最小值和最大值均包含边界，点击**应用**后生效。例如，选择最近 24 小时、耗时最小值 `60`、费用最小值 `0.01`，再按费用降序，即可查找运行至少一分钟且上报费用至少 $0.01 的 trace。
+
+API 使用 `GET …/traces/search`，提供明确的 `started_after`、`started_before`，以及 `order_by=started|duration|cost`、`direction=asc|desc`。可选条件为 `min_duration_seconds`、`max_duration_seconds`、`min_cost_usd`、`max_cost_usd`，并支持原有 ID 和根属性筛选。费用累加 trace 内各 span 自身上报的费用；未上报不视为零，也不代表 Service 的 Run 计费金额。
+
+每次全范围查询由配置的后端执行，不缓存查询结果。Langfuse 每次读取最多 5,000 个匹配的根摘要，摘要总大小不超过 8 MiB。费用仅用于展示时，先选出当前页，再查询这一页的费用；费用参与排序或筛选时，仍需先查询全部候选 trace 的聚合费用，再分页。这要求 Langfuse 版本支持 Metrics API v2 按 Trace ID 和费用类别分组查询。Logfire 通过 SQL 完成聚合、筛选、排序和分页。使用返回的 Keyset 游标继续翻页时保持筛选条件不变。游标记录上一页末条的排序值和 trace/span ID，在该位置之后继续查询；前方新增或删除记录不会使下一页错位。排序值或筛选条件对应的数据发生变化时，仍可能重复或遗漏；分页不会冻结查询结果。查询限时 30 秒，结果不完整或超过收集限制时明确报错，不返回局部排名；请缩小时间范围或增加 ID 条件。结果仍受采样、上报延迟和保留期限影响。
+
 ## 发现并改进执行问题
 
 打开 **改进 → 发现（Improve → Findings）**，审阅 Agent Run 的诊断信号。每个发现项包含严重程度、人工审阅结论、引用的 Agent 版本、trace/Run 证据、问题说明和改进建议。即使标记为严重，在人工审阅前也仍是未确认信号。已保存的结论和理由默认以阅读模式展示。点击**编辑审阅**，选择已确认、预期行为、证据不足或误判，可以填写**审阅理由**，然后点击**保存审阅**，同时保存结论和理由。切换结论会清空旧理由；取消会恢复已保存的内容并返回阅读模式。关闭或重新打开发现项会保留审阅结论和理由，原始诊断和证据仍然可见。
@@ -485,7 +574,7 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 
 后续分析同一 agent 版本时，会收到近期已有的发现项，包括未审阅和已关闭的发现项。未审阅的发现项用于描述已有诊断，已审阅的发现项还会提供你的结论和理由；其他版本的发现项不会加入。Agent 会比较问题和证据，对相同诊断在摘要中引用已有发现项，报告新发现时说明证据的实质变化。这会减少重复诊断，但不保证完整去重，也不会合并已保存的发现项。反馈有数量和长度上限，可能被截短；每次分析保留接受时收到的反馈值，修改审阅只影响新分析，不改变重试的输入。可以在理由中解释误判原因或为什么错误属于预期行为。Agent 将反馈作为上下文参考，也可以根据新证据提出不同结论。
 
-选择 **分析 traces**，设置内置规则和时间范围、数量，无需选择 Agent；默认范围为工作空间内的 traces。分析自动使用内置 Finding Agent。准备操作自动选择可用模型，并在当前模型仍可用时保留它；模型和其他配置均只读。分析按需通过普通 Service Run 执行，需要部署已配置 trace 查询后端。内置规则关注执行失败、重试与恢复、回答质量；成功恢复的错误会结合上下文判断。在已结束的 trace 页面选择 **分析此 trace**，可以仅分析这一条。
+选择 **分析 traces**，设置内置规则和时间范围、数量，无需选择 Agent；默认范围为工作空间内的 traces。分析自动使用内置 Finding Agent。分析使用 Finding Agent 当前选定的默认版本和模型，可在其 Agent 页面修改。可填写“本次检查要求”，仅指导这一次分析，不修改 Agent 配置；要求会保存在分析历史中。分析按需通过普通 Service Run 执行，需要部署已配置 trace 查询后端。内置规则关注执行失败、重试与恢复、回答质量；成功恢复的错误会结合上下文判断。在已结束的 trace 页面选择 **分析此 trace**，可以仅分析这一条。
 
 选择过程最多扫描 100 个根节点，最多选取 20 条匹配 trace。执行与恢复规则在扫描范围内优先选取失败的 run，以及标记为错误或致命级别的根节点，同等优先级保留后端顺序。仅出现在子 span 中的错误不影响选择优先级。只选择回答质量规则时保留后端顺序。优先级信号提示值得调查，不代表已证实有问题。**分析历史**标签页用表格列出分析范围、运行状态和创建时间。点击记录，在详情弹窗中查看选中 trace 数、发现数、证据引用的不同 trace 数、选择上限和 trace 链接。这些数量不代表完整分析的 trace 数。打开分析运行，在最终回复中查看结果摘要和局限。没有发现项不代表所有 trace 都已审阅，也不代表 Agent 没有问题。
 
