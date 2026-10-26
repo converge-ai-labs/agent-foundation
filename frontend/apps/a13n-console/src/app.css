@@ -2,6 +2,7 @@
 :root {
   --font-weight-semibold: 500;
   --font-weight-bold: 500;
+  --console-page-gutter: clamp(20px, calc(4.375vw - 8px), 48px);
 }
 
 @layer base {

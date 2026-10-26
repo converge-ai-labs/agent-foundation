@@ -2,9 +2,15 @@
 .frame {
   container-type: inline-size;
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--a13n-radius-group);
 }
 .table {
   width: 100%;
+}
+.table thead {
+  background: var(--a13n-surface);
 }
 /* Keep room for the identity without crowding every supporting column. */
 :where(.table[data-fit]) > thead > tr > th:first-child,
@@ -328,7 +334,6 @@ tr:focus-within .rowMenu,
   .toolbarSearch {
     flex-basis: 140px;
     min-width: 0;
-    max-width: none;
   }
   .toolbarTrailing {
     margin-left: 0;
