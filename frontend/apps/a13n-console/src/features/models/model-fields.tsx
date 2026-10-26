@@ -14,7 +14,6 @@ import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
-import { ManageProvidersLink } from "../providers";
 import type { ModelDraft } from "./model-form";
 import { ModelIcon, providerBrand } from "./model-icon";
 import { ImageInputFields } from "./image-input-fields";
@@ -29,7 +28,6 @@ import styles from "./models.module.css";
 export function ModelSelection({
   model,
   onChange,
-  actions,
   showAddress = true,
   compact = false,
 }: {
@@ -37,8 +35,6 @@ export function ModelSelection({
   showAddress?: boolean;
   compact?: boolean;
   onChange?: () => void;
-  /** Quiet links that belong with the connection, not under the fields. */
-  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { draft, selectedEntry } = model;
@@ -82,7 +78,6 @@ export function ModelSelection({
               {t(compact ? "Choose a model" : "Change")}
             </Button>
           )}
-          {actions}
         </span>
       </div>
       {model.selectedProvider?.enabled === false && (
@@ -196,15 +191,7 @@ export function ModelFields({
       {(!compact || !model.manual) && (
         <ModelFieldGroup title={t("Model connection")}>
           {onChangeModel ? (
-            <ModelSelection
-              model={model}
-              onChange={onChangeModel}
-              actions={
-                model.selectedProvider && (
-                  <ManageProvidersLink variant="ghost" category="models" />
-                )
-              }
-            />
+            <ModelSelection model={model} onChange={onChangeModel} />
           ) : (
             <ModelAddress model={model} />
           )}
