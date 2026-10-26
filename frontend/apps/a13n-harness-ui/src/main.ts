@@ -1,4 +1,5 @@
 import "a13n-ui/styles.css";
+import "./shell/disclosure.css";
 import { a13nLogoUrl } from "a13n-ui";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";

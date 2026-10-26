@@ -1393,6 +1393,9 @@
   cursor: pointer;
   list-style: none;
 }
+.inputAttachment > details > summary::before {
+  content: none;
+}
 .inputAttachment > details > summary::-webkit-details-marker {
   display: none;
 }
@@ -1528,8 +1531,9 @@
   font-weight: 500;
   cursor: pointer;
 }
-.contextActivity > summary::marker {
+.contextActivity > summary::before {
   color: var(--context-accent);
+  opacity: 1;
 }
 .contextActivity[open] > summary {
   margin-bottom: 12px;

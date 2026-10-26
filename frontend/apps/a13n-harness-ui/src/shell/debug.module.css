@@ -41,6 +41,9 @@
   cursor: pointer;
   list-style: none;
 }
+.data > summary::before {
+  content: none;
+}
 .data > summary::-webkit-details-marker {
   display: none;
 }

@@ -13,7 +13,8 @@
 .permissionToast {
   position: fixed;
   inset-inline-end: 20px;
-  bottom: 20px;
+  /* Top-right keeps the reminder clear of the composer and its controls. */
+  top: 52px;
   /* A permission reminder must never cover a modal's controls. */
   z-index: 40;
   display: flex;
@@ -26,6 +27,9 @@
   background: var(--popover);
   color: var(--popover-foreground);
   box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+}
+:global(html[data-desktop]) .permissionToast {
+  top: 80px;
 }
 .permissionToast > svg {
   flex-shrink: 0;
