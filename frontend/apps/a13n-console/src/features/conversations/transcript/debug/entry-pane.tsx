@@ -1,4 +1,5 @@
 import { AguiContent, Button, DisclosureSection } from "a13n-ui";
+import { useState } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
@@ -336,12 +337,15 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
   );
 }
 
+const observationsPerPage = 20;
+
 function OtherPane({ entry }: { entry: OtherEntry }) {
   const { t, i18n } = useTranslation();
+  const [visibleCount, setVisibleCount] = useState(observationsPerPage);
   return (
     <div className={styles.pane}>
       <ul className={styles.observations}>
-        {entry.observations.map((observation) => (
+        {entry.observations.slice(0, visibleCount).map((observation) => (
           <li key={observation.id}>
             <code>{observation.name}</code>
             {observation.occurredAt && (
@@ -360,6 +364,18 @@ function OtherPane({ entry }: { entry: OtherEntry }) {
           </li>
         ))}
       </ul>
+      {visibleCount < entry.observations.length && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            setVisibleCount((count) => count + observationsPerPage)
+          }
+        >
+          {t("Load more")}
+        </Button>
+      )}
     </div>
   );
 }

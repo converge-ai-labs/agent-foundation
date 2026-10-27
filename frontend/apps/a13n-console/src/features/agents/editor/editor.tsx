@@ -20,7 +20,7 @@ import {
   type EditorSection,
 } from "../configuration";
 import { AgentEnvironment } from "../environment";
-import { AgentToolsets } from "../toolsets";
+import { AgentToolsets, useToolsetCatalog } from "../toolsets";
 import { AdvancedSection } from "./advanced";
 import { CompactionSection } from "./compaction";
 import {
@@ -108,8 +108,12 @@ export function AgentEditor({
     preset: incomingPreset,
   });
   const creating = version === undefined;
-  const draft = useAgentDraft(initial);
   const configurationReadonly = readonly || !!preset;
+  const toolsets = useToolsetCatalog();
+  const draft = useAgentDraft(
+    initial,
+    configurationReadonly ? undefined : toolsets.data?.items,
+  );
   const [note, setNote] = useState(""),
     [modelExpanded, setModelExpanded] = useState(false),
     [attempted, setAttempted] = useState(false),
@@ -292,7 +296,6 @@ export function AgentEditor({
               <SkillsSection
                 draft={draft}
                 choices={choices}
-                hostSkills={!!preset}
                 readOnly={configurationReadonly}
                 mark={mark("skills")}
               />

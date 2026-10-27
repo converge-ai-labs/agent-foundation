@@ -530,3 +530,36 @@ it("shows request metric failures with retry and leaves unavailable speed absent
   await screen.findByText("11s to first token");
   expect(screen.queryByText(/tok\/s/)).toBeNull();
 });
+
+it("reveals other observations in batches and resets when collapsed", async () => {
+  const timeline = fixtureTimeline();
+  timeline.entries.push({
+    id: "other-observations",
+    kind: "other",
+    count: 45,
+    startedAt: null,
+    endedAt: null,
+    durationMs: null,
+    state: "completed",
+    observations: Array.from({ length: 45 }, (_, index) => ({
+      id: `observation-${index}`,
+      name: `observation.${index}`,
+      occurredAt: null,
+      detail: { index },
+    })),
+  });
+  show({ timeline });
+  const user = userEvent.setup();
+  const toggle = screen.getByRole("button", { name: /45 other observations/ });
+  await user.click(toggle);
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(20);
+  expect(screen.queryByText("observation.20")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(40);
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(45);
+  expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  await user.click(toggle);
+  await user.click(toggle);
+  expect(screen.getAllByText(/^observation\.\d+$/)).toHaveLength(20);
+});

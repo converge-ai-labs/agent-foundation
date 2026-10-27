@@ -1,4 +1,5 @@
 {
+  "Included automatically with enabled platform tools.": "启用平台工具时自动附带。",
   "Background compaction": "后台压缩",
   "Wait for compaction at (%)": "等待压缩的占比（%）",
   "Enter a percentage greater than 0 and at most 100.": "请输入大于 0 且不超过 100 的百分比。",

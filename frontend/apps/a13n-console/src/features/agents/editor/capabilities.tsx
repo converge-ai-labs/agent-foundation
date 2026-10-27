@@ -37,7 +37,7 @@ import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import styles from "./editor.module.css";
 import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
-import { BuiltinSkillSelections } from "./builtin-skills";
+import { BuiltinSkillRows } from "./builtin-skills";
 import {
   MediaUnderstandingFields,
   useWorkspaceMediaDefault,
@@ -48,13 +48,11 @@ export function SkillsSection({
   draft,
   choices,
   readOnly,
-  hostSkills,
   mark,
 }: {
   draft: AgentDraft;
   choices: ReturnType<typeof useAgentChoices>;
   readOnly: boolean;
-  hostSkills: boolean;
   /** Says how a read-only view's value differs, beside the title. */
   mark?: ReactNode;
 }) {
@@ -119,13 +117,9 @@ export function SkillsSection({
         )
       }
     >
-      <BuiltinSkillSelections
-        draft={draft}
-        readOnly={readOnly}
-        hostSkills={hostSkills}
-      />
-      {draft.skills.length ? (
+      {draft.skills.length || draft.builtinSkills.length ? (
         <ListRows>
+          <BuiltinSkillRows names={draft.builtinSkills} />
           {draft.skills.map((selection, index) => {
             const skill = items.find((item) => item.id === selection.skill_id);
             const versions = revisions[index]?.data?.items ?? [];
