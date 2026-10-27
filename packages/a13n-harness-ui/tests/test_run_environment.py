@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.browser import Binding
 from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import CompositionError, RunCoordinationError
@@ -59,6 +61,38 @@ async def test_run_environment_override_is_captured_without_changing_thread(tmp_
             checkpoint = await read_continuation(app._store.objects, stored.continuation, include_display=True)
             saved = await app._store.objects.read_model(checkpoint.run_composition, ResolvedRunComposition)
             assert saved.environment_profile.profile_id == expected
+
+
+async def test_sandbox_run_does_not_inherit_enabled_host_browser(tmp_path, monkeypatch):
+    capabilities = []
+
+    class Reconstructor(_CompletedReconstructor):
+        def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+            capabilities.append(tuple(cap for cap in root_capabilities if isinstance(cap, BrowserUseCapability)))
+            return super().reconstruct(composition, root_capabilities=root_capabilities, **kwargs)
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=_write_configuration(tmp_path),
+        host_mode="webui",
+        share_computer=True,
+    ) as app:
+        app._root_runs._executor._agents = Reconstructor()
+        thread = await app.create_thread()
+        host = app.browsers()
+        binding = host.bindings[thread.thread_id] = Binding()
+        captures = await _stub_sandbox_runtime(app, thread.thread_id, monkeypatch)
+        for profile, expected_browser in [("environment-sandbox", False), (None, True)]:
+            receipt = await app.submit_thread(
+                thread_id=thread.thread_id,
+                prompt="Continue",
+                environment=None if profile is None else EnvironmentSelectionPatch(environment_profile_id=profile),
+            )
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+            assert captures[-1].environment_profile.profile_id == (profile or "environment-native")
+            assert bool(capabilities[-1]) is expected_browser
+            assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
+            assert host.binding(thread.thread_id) == binding.identity
 
 
 @pytest.mark.parametrize("profile", ["missing-profile", "environment-sandbox"])
@@ -250,3 +284,68 @@ async def test_management_state_is_published_before_execution_and_after_partial_
         assert head is not None and head.state is not None
         saved = await app._store.objects.read_model(head.state, StoredEnvironmentState)
         assert saved.state == observed
+
+
+@pytest.mark.parametrize("sandbox_default", [False, True])
+async def test_captured_full_control_browser_survives_next_run_default_changes(tmp_path, sandbox_default):
+    import asyncio
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness.capabilities.browser.cdp import Chromium, Page
+    from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
+
+    from .test_app import _reconstructed
+
+    entered, proceed = asyncio.Event(), asyncio.Event()
+    used = []
+
+    class Reconstructor:
+        def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+            capability = next(cap for cap in root_capabilities if isinstance(cap, BrowserUseCapability))
+
+            async def model(messages, info):
+                used.append(await capability.backend.tabs("list"))
+                entered.set()
+                await proceed.wait()
+                used.append(await capability.backend.tabs("list"))
+                yield "done"
+
+            return _reconstructed(model, root_capabilities)
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"),
+        configuration_path=_write_configuration(tmp_path),
+        host_mode="webui",
+        share_computer=True,
+    ) as app:
+        app._root_runs._executor._agents = Reconstructor()
+        thread = await app.create_thread(
+            defaults=NewThreadDefaults(
+                environment_profile_id="environment-sandbox" if sandbox_default else "environment-native"
+            )
+        )
+        host = app.browsers()
+        runtime = host.runtime = Chromium(Mock())
+        page = Page("tab", "session")
+        runtime.pages[page.target] = page
+        runtime.send = AsyncMock(return_value={"targetInfos": [{"type": "page", "targetId": "tab"}]})
+        runtime.close = AsyncMock()
+        host.bindings[thread.thread_id] = Binding(status="ready", scope=CdpBrowserBackend(runtime, page))
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id,
+            prompt="Use browser",
+            environment=EnvironmentSelectionPatch(environment_profile_id="environment-native"),
+        )
+        try:
+            await asyncio.wait_for(entered.wait(), 5)
+            await app.update_thread_configuration(
+                thread_id=thread.thread_id,
+                mutation=ThreadConfigurationMutation(
+                    expected_version=thread.configuration.version,
+                    patch=ThreadConfigurationPatch(environment_profile_id="environment-sandbox"),
+                ),
+            )
+        finally:
+            proceed.set()
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        assert len(used) == 2 and used[0][0].target == used[1][0].target == "tab"

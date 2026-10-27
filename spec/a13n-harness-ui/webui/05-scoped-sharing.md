@@ -18,17 +18,17 @@ Links use a fragment credential, removed before mounting network consumers. Gues
 
 Thread access includes the selected root and its child execution lineage, not independently created sidekick or worker roots. Project access includes roots currently assigned to that Project and their child execution lineage, including roots created after the link. Moving a root out of the Project removes Project-granted access. A missing target is unavailable. Memory-maintenance and Live Threads are not share targets.
 
-| Capability                                                                       | View | Prompt |
-| -------------------------------------------------------------------------------- | ---- | ------ |
-| Saved transcript and live output within scope                                    | Yes  | Yes    |
-| Conversation attachments                                                         | Yes  | Yes    |
-| Same-conversation presence                                                       | Yes  | Yes    |
-| Unsent shared draft and editor presence                                          | No   | Yes    |
-| Upload, coedit, send and steer                                                   | No   | Yes    |
-| Create a conversation in a shared Project using its defaults                     | No   | Yes    |
-| Change Agent, Model, Environment or Project configuration                        | No   | No     |
-| Approvals, external results, cancellation and lifecycle management               | No   | No     |
-| Native Host Files, Git, Terminal, Live, instance settings and sharing management | No   | No     |
+| Capability                                                                                        | View | Prompt |
+| ------------------------------------------------------------------------------------------------- | ---- | ------ |
+| Saved transcript and live output within scope                                                     | Yes  | Yes    |
+| Conversation attachments                                                                          | Yes  | Yes    |
+| Same-conversation presence                                                                        | Yes  | Yes    |
+| Unsent shared draft and editor presence                                                           | No   | Yes    |
+| Upload, coedit, send and steer                                                                    | No   | Yes    |
+| Create a conversation in a shared Project using its defaults                                      | No   | Yes    |
+| Change Agent, Model, Environment or Project configuration                                         | No   | No     |
+| Approvals, external results, cancellation and lifecycle management                                | No   | No     |
+| Native Host Files, Git, Terminal, Browser desktop, Live, instance settings and sharing management | No   | No     |
 
 Permissions apply on the server to finite requests and interactive connections. Guests enter an explicitly admitted API surface; existing administrative routes do not accept share keys. Child, operation and attachment identifiers are checked against their owning Thread rather than being treated as capabilities. Project creation ignores no supplied overrides: its narrow schema accepts only a create-only Thread identity and optional title.
 

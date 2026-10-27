@@ -128,6 +128,14 @@ class RunState(_Frozen):
     # Private same-Run attachment hints, never inherited by a successor Run.
     envd_sessions: dict[str, EnvdSessionState] = Field(default_factory=dict, repr=False)
 
+    def to_json_bytes(self) -> bytes:
+        """Encode a complete checkpoint without re-encoding its validated message history."""
+        if type(self) is not RunState or type(self.harness) is not HarnessState:
+            return self.model_dump_json().encode()
+        harness = self.harness.to_json_bytes()
+        envelope = self.model_dump_json(exclude={"harness"}).encode()
+        return b"".join((envelope[:-1], b',"harness":', harness, b"}"))
+
 
 def run_prefix(organization_id: str, run_id: str) -> str:
     return f"orgs/{organization_id}/runs/{run_id}"
@@ -362,7 +370,7 @@ async def publish_checkpoint(
     snapshot = await _contents(runtime, lease, snapshot, contents, control)
     written, *display = await _all(
         [
-            _publish(runtime, lease, "state", state.model_dump_json().encode()),
+            _publish(runtime, lease, "state", state.to_json_bytes()),
             *_display_writes(runtime, lease, snapshot),
         ]
     )

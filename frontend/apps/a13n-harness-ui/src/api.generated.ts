@@ -631,6 +631,210 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/browser/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Browser Executables */
+        post: operations["scan_browser_executables_api_browser_scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check Browser Configuration */
+        post: operations["check_browser_configuration_api_browser_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browser State */
+        get: operations["browser_state_api_threads__thread_id__browser_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browser Setup */
+        get: operations["browser_setup_api_threads__thread_id__browser_setup_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable Browser */
+        post: operations["enable_browser_api_threads__thread_id__browser_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Browser */
+        post: operations["start_browser_api_threads__thread_id__browser_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Browser */
+        post: operations["reset_browser_api_threads__thread_id__browser_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/viewport": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resize Browser */
+        post: operations["resize_browser_api_threads__thread_id__browser_viewport_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Browser */
+        post: operations["stop_browser_api_threads__thread_id__browser_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/take-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take Browser Control */
+        post: operations["take_browser_control_api_threads__thread_id__browser_take_control_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/handback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Handback Browser */
+        post: operations["handback_browser_api_threads__thread_id__browser_handback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/browser/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Browser Access */
+        post: operations["browser_access_api_threads__thread_id__browser_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/terminals": {
         parameters: {
             query?: never;
@@ -2986,6 +3190,200 @@ export interface components {
          * @enum {string}
          */
         Availability: "available" | "absent" | "incompatible" | "unsupported";
+        /** BrowserAccess */
+        BrowserAccess: {
+            /** Ticket */
+            ticket: string;
+            /** Control */
+            control: boolean;
+            /** Password */
+            password: string;
+        };
+        /** BrowserControl */
+        BrowserControl: {
+            state: components["schemas"]["BrowserState"];
+            /** Control Token */
+            control_token: string;
+        };
+        /** BrowserExecutable */
+        BrowserExecutable: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "system" | "custom";
+        };
+        /** BrowserInstallStep */
+        BrowserInstallStep: {
+            /** Title */
+            title: string;
+            /** Command */
+            command: string;
+        };
+        /** @enum {string} */
+        BrowserPlatform: "linux" | "macos" | "windows" | "other";
+        /** @enum {string} */
+        BrowserPreset: "desktop" | "laptop" | "wide" | "tablet" | "tablet-landscape" | "phone" | "phone-landscape";
+        /** BrowserRequirement */
+        BrowserRequirement: {
+            /** Name */
+            name: string;
+            /** Installed */
+            installed: boolean;
+            /** Detail */
+            detail: string;
+            /**
+             * Required
+             * @default true
+             */
+            required?: boolean;
+            /**
+             * Purpose
+             * @default
+             */
+            purpose?: string;
+            /**
+             * Managed
+             * @default false
+             */
+            managed?: boolean;
+        };
+        /** BrowserScan */
+        BrowserScan: {
+            /**
+             * Browsers
+             * @default []
+             */
+            browsers?: components["schemas"]["BrowserExecutable"][];
+            /**
+             * Vncs
+             * @default []
+             */
+            vncs?: components["schemas"]["VncExecutable"][];
+        };
+        /** BrowserSetup */
+        BrowserSetup: {
+            platform: components["schemas"]["BrowserPlatform"];
+            /** Distribution */
+            distribution?: string | null;
+            /** Supported */
+            supported: boolean;
+            /** Ready */
+            ready: boolean;
+            browser?: components["schemas"]["BrowserExecutable"] | null;
+            vnc?: components["schemas"]["VncExecutable"] | null;
+            /**
+             * Requirements
+             * @default []
+             */
+            requirements?: components["schemas"]["BrowserRequirement"][];
+            /**
+             * Steps
+             * @default []
+             */
+            steps?: components["schemas"]["BrowserInstallStep"][];
+            /**
+             * Message
+             * @default
+             */
+            message?: string;
+        };
+        /** BrowserState */
+        BrowserState: {
+            /**
+             * Session Id
+             * @default
+             */
+            session_id?: string;
+            /**
+             * Status
+             * @default disabled
+             * @enum {string}
+             */
+            status?: "disabled" | "enabled" | "ready" | "stopped" | "failed";
+            /**
+             * Control
+             * @default agent
+             * @enum {string}
+             */
+            control?: "agent" | "human";
+            /**
+             * Url
+             * @default
+             */
+            url?: string;
+            /** Error */
+            error?: string | null;
+            /** @default desktop */
+            viewport?: components["schemas"]["BrowserPreset"];
+            /**
+             * Viewports
+             * @default [
+             *       {
+             *         "preset": "desktop",
+             *         "label": "Desktop",
+             *         "width": 1280,
+             *         "height": 800
+             *       },
+             *       {
+             *         "preset": "laptop",
+             *         "label": "Laptop",
+             *         "width": 1366,
+             *         "height": 768
+             *       },
+             *       {
+             *         "preset": "wide",
+             *         "label": "Desktop HD",
+             *         "width": 1920,
+             *         "height": 1080
+             *       },
+             *       {
+             *         "preset": "tablet",
+             *         "label": "Tablet",
+             *         "width": 768,
+             *         "height": 1024
+             *       },
+             *       {
+             *         "preset": "tablet-landscape",
+             *         "label": "Tablet landscape",
+             *         "width": 1024,
+             *         "height": 768
+             *       },
+             *       {
+             *         "preset": "phone",
+             *         "label": "Phone",
+             *         "width": 390,
+             *         "height": 844
+             *       },
+             *       {
+             *         "preset": "phone-landscape",
+             *         "label": "Phone landscape",
+             *         "width": 844,
+             *         "height": 390
+             *       }
+             *     ]
+             */
+            viewports?: components["schemas"]["BrowserViewport"][];
+            /**
+             * Resize Available
+             * @default true
+             */
+            resize_available?: boolean;
+        };
+        /** BrowserViewport */
+        BrowserViewport: {
+            preset: components["schemas"]["BrowserPreset"];
+            /** Label */
+            label: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
         /** CapabilitySelection */
         CapabilitySelection: {
             capability: components["schemas"]["CatalogKey"];
@@ -4743,6 +5141,11 @@ export interface components {
              * @default false
              */
             host_terminal?: boolean;
+            /**
+             * Browser
+             * @default false
+             */
+            browser?: boolean;
         };
         /** ListenerStatus */
         ListenerStatus: {
@@ -7602,6 +8005,31 @@ export interface components {
              */
             max_video_bytes?: number;
         };
+        /** VncExecutable */
+        VncExecutable: {
+            /** @default tigervnc */
+            kind?: components["schemas"]["VncKind"];
+            /** Path */
+            path: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "system" | "custom";
+            /** Window Manager */
+            window_manager?: string | null;
+            /** Xrandr */
+            xrandr?: string | null;
+            /** Display Server */
+            display_server?: string | null;
+            /**
+             * Disable Resizing
+             * @default false
+             */
+            disable_resizing?: boolean;
+        };
+        /** @enum {string} */
+        VncKind: "tigervnc" | "x11vnc" | "wayvnc";
         /** VoiceSnapshot */
         VoiceSnapshot: {
             /**
@@ -8410,6 +8838,44 @@ export interface components {
         AppDecision: {
             /** Approve */
             approve: boolean;
+        };
+        /**
+         * BrowserConfiguration
+         * @description Host executable bindings captured at App startup; never install dependencies.
+         */
+        BrowserConfiguration: {
+            /** Executable */
+            executable?: string | null;
+            /** Vnc Executable */
+            vnc_executable?: string | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
+        /** BrowserCommand */
+        BrowserCommand: {
+            /** Session Id */
+            session_id: string;
+        };
+        /** BrowserViewportRequest */
+        BrowserViewportRequest: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Control Token
+             * @default
+             */
+            control_token?: string;
+            preset: components["schemas"]["BrowserPreset"];
+        };
+        /** BrowserAccessRequest */
+        BrowserAccessRequest: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Control Token
+             * @default
+             */
+            control_token?: string;
         };
         /** TerminalCreate */
         TerminalCreate: {
@@ -10104,6 +10570,388 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftSummary"][];
+                };
+            };
+        };
+    };
+    scan_browser_executables_api_browser_scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserScan"];
+                };
+            };
+        };
+    };
+    check_browser_configuration_api_browser_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserConfiguration"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSetup"];
+                };
+            };
+        };
+    };
+    browser_state_api_threads__thread_id__browser_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browser_setup_api_threads__thread_id__browser_setup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserSetup"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_browser_api_threads__thread_id__browser_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_browser_api_threads__thread_id__browser_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_browser_api_threads__thread_id__browser_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resize_browser_api_threads__thread_id__browser_viewport_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserViewportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_browser_api_threads__thread_id__browser_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_browser_control_api_threads__thread_id__browser_take_control_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserControl"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    handback_browser_api_threads__thread_id__browser_handback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserControl"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browser_access_api_threads__thread_id__browser_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserAccess"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

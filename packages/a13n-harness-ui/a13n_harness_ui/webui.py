@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hmac
@@ -38,7 +39,17 @@ from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.browser import (
+    BrowserAccess,
+    BrowserAccessRequest,
+    BrowserCommand,
+    BrowserControl,
+    BrowserState,
+    BrowserViewportRequest,
+)
+from a13n_harness_ui.browser_setup import BrowserScan, BrowserSetup
 from a13n_harness_ui.configuration import ResourceMutationRequest
+from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
 from a13n_harness_ui.configuration.views import (
     AgentToolSearchView,
@@ -213,6 +224,7 @@ class ListenerFeatures(SurfaceModel):
     host_files: bool = False
     host_git: bool = False
     host_terminal: bool = False
+    browser: bool = False
 
 
 class ListenerStatus(SurfaceModel):
@@ -601,6 +613,9 @@ def create_webui(
         if code in {"request_too_large", "host_files_too_large", "host_git_too_large"}:
             status = 413
         elif code in {
+            "browser_disabled",
+            "browser_full_control_required",
+            "browser_thread_unavailable",
             "host_files_disabled",
             "host_files_permission_denied",
             "host_files_transfer_expired",
@@ -611,6 +626,17 @@ def create_webui(
             status = 403
         elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
             status = 409
+        elif code in {
+            "browser_human_control",
+            "browser_observation_required",
+            "browser_reference_expired",
+            "browser_access_expired",
+        }:
+            status = 409
+        elif code in {"browser_runtime_unavailable", "browser_runtime_not_ready"}:
+            status = 503
+        elif code == "browser_limit":
+            status = 429
         elif code == "host_files_io_error":
             status = 500
         elif code in {"device_authentication_failed", "device_revoked", "device_pairing_rejected"}:
@@ -705,6 +731,7 @@ def create_webui(
                 host_files=app().shares_computer,
                 host_git=app().host_git_available,
                 host_terminal=app().host_terminal_available,
+                browser=app().browser_available,
             ),
             host=host,
             access="api_key" if api_key is not None else "dangerous_bypass",
@@ -1093,6 +1120,135 @@ def create_webui(
             pass
         finally:
             draft.detach(participant)
+
+    @server.post("/api/browser/scan", response_model=BrowserScan)
+    async def scan_browser_executables() -> BrowserScan:
+        return await app().scan_browser_executables()
+
+    @server.post("/api/browser/check", response_model=BrowserSetup, openapi_extra=_body(BrowserConfiguration))
+    async def check_browser_configuration(request: Request) -> BrowserSetup:
+        return await app().check_browser_configuration(await _document(request, BrowserConfiguration))
+
+    @server.get("/api/threads/{thread_id}/browser", response_model=BrowserState)
+    async def browser_state(thread_id: str) -> BrowserState:
+        return await app().browser_state(thread_id)
+
+    @server.get("/api/threads/{thread_id}/browser/setup", response_model=BrowserSetup)
+    async def browser_setup(thread_id: str) -> BrowserSetup:
+        return await app().browser_setup(thread_id)
+
+    @server.post("/api/threads/{thread_id}/browser/enable", response_model=BrowserState)
+    async def enable_browser(thread_id: str) -> BrowserState:
+        return await app().enable_browser(thread_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/start", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
+    )
+    async def start_browser(thread_id: str, request: Request) -> BrowserState:
+        return await app().start_browser(thread_id, await _document(request, BrowserCommand))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/reset", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
+    )
+    async def reset_browser(thread_id: str, request: Request) -> BrowserState:
+        return await app().reset_browser(thread_id, await _document(request, BrowserCommand))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/viewport",
+        response_model=BrowserState,
+        openapi_extra=_body(BrowserViewportRequest),
+    )
+    async def resize_browser(thread_id: str, request: Request) -> BrowserState:
+        return await app().resize_browser(thread_id, await _document(request, BrowserViewportRequest))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/stop", response_model=BrowserState, openapi_extra=_body(BrowserCommand)
+    )
+    async def stop_browser(thread_id: str, request: Request) -> BrowserState:
+        return await app().stop_browser(thread_id, await _document(request, BrowserCommand))
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/take-control",
+        response_model=BrowserControl,
+        openapi_extra=_body(BrowserCommand),
+    )
+    async def take_browser_control(thread_id: str, request: Request) -> BrowserControl:
+        return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=True)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/handback", response_model=BrowserControl, openapi_extra=_body(BrowserCommand)
+    )
+    async def handback_browser(thread_id: str, request: Request) -> BrowserControl:
+        return await app().control_browser(thread_id, await _document(request, BrowserCommand), human=False)
+
+    @server.post(
+        "/api/threads/{thread_id}/browser/access",
+        response_model=BrowserAccess,
+        openapi_extra=_body(BrowserAccessRequest),
+    )
+    async def browser_access(thread_id: str, request: Request) -> BrowserAccess:
+        return await app().browser_access(thread_id, await _document(request, BrowserAccessRequest))
+
+    @server.websocket("/api/threads/{thread_id}/browser/connect")
+    async def connect_browser(
+        socket: WebSocket, thread_id: str, ticket: Annotated[str, Query(min_length=16, max_length=80)]
+    ) -> None:
+        # HTTP authentication issues a short-lived single-use ticket. The API key never enters the URL.
+        try:
+            browsers = app().browsers()
+            reader, writer = await browsers.connect(thread_id, ticket)
+        except (HarnessUiError, OSError):
+            await socket.close(code=4403)
+            return
+        try:
+            await socket.accept(subprotocol="binary" if "binary" in socket.scope.get("subprotocols", []) else None)
+            async with create_task_group() as group:
+
+                async def output() -> None:
+                    try:
+                        while data := await reader.read(64 * 1024):
+                            async with asyncio.timeout(10):
+                                await socket.send_bytes(data)
+                    finally:
+                        group.cancel_scope.cancel()
+
+                async def input_() -> None:
+                    try:
+                        while True:
+                            message = await socket.receive()
+                            data = message.get("bytes")
+                            if not isinstance(data, bytes) or len(data) > 64 * 1024:
+                                break
+                            writer.write(data)
+                            await writer.drain()
+                    finally:
+                        group.cancel_scope.cancel()
+
+                async def authority() -> None:
+                    try:
+                        while True:
+                            await asyncio.sleep(1)
+                            await browsers.authorize(thread_id)
+                            if writer.is_closing():
+                                return
+                    finally:
+                        group.cancel_scope.cancel()
+
+                group.start_soon(output)
+                group.start_soon(input_)
+                group.start_soon(authority)
+        except* (WebSocketDisconnect, OSError, HarnessUiError, TimeoutError):
+            pass
+        finally:
+            await browsers.disconnect(writer)
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+            try:
+                await socket.close()
+            except (RuntimeError, WebSocketDisconnect):
+                pass
 
     @server.get("/api/host/terminals", response_model=tuple[TerminalView, ...])
     async def terminals() -> tuple[TerminalView, ...]:

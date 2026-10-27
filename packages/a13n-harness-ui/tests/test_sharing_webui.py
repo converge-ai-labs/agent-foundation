@@ -14,7 +14,7 @@ pytestmark = pytest.mark.anyio
 
 
 @asynccontextmanager
-async def shared_server(tmp_path, *, skip_auth=False):
+async def shared_server(tmp_path, *, skip_auth=False, share_computer=False):
     configuration = _write_configuration(tmp_path)
     owner = None
 
@@ -25,6 +25,7 @@ async def shared_server(tmp_path, *, skip_auth=False):
             _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False}),
             configuration_path=configuration,
             host_mode="webui",
+            share_computer=share_computer,
             instrumentation=None,
         ) as app:
             owner = app
@@ -68,7 +69,25 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         assert (await client.get(prefix + f"/threads/{private.thread_id}", headers=headers)).status_code == 401
         for path in ("/api/status", "/api/shares", "/api/configuration/sources", "/api/host/files", "/api/presence"):
             assert (await client.get(path, headers=headers)).status_code == 401
-        for path in ("/configuration/sources", "/host/files", "/selectors", "/status"):
+        for method, path in (
+            ("POST", "/api/browser/scan"),
+            ("POST", "/api/browser/check"),
+            ("GET", f"/api/threads/{thread.thread_id}/browser"),
+            ("POST", f"/api/threads/{thread.thread_id}/browser/access"),
+            ("GET", f"/api/threads/{thread.thread_id}/browser/setup"),
+            *(
+                ("POST", f"/api/threads/{thread.thread_id}/browser/{action}")
+                for action in ("enable", "start", "reset", "stop", "take-control", "handback", "viewport")
+            ),
+        ):
+            assert (await client.request(method, path, headers=headers)).status_code == 401
+        for path in (
+            "/configuration/sources",
+            "/host/files",
+            "/selectors",
+            "/status",
+            f"/threads/{thread.thread_id}/browser",
+        ):
             response = await client.get(prefix + path, headers=headers)
             assert response.status_code == 404
         response = await client.post(

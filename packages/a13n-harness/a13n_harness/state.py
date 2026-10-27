@@ -223,6 +223,24 @@ class HarnessState(BaseModel):
         """Return detached portable state for each stateful Environment mount."""
         return _ENVIRONMENT_STATES_ADAPTER.validate_json(cast(bytes, self.environment_states_json))
 
+    def to_json_bytes(self) -> bytes:
+        """Encode a complete continuation envelope, retaining message validation on every save.
+
+        Reuse the immutable history encoding after decoding it for validation. General
+        Pydantic serialization options and subclass serializers keep their normal path.
+        """
+        history = self.message_history_json
+        if type(self) is not HarnessState or not isinstance(history, bytes):
+            return self.model_dump_json().encode()
+        try:
+            decode_messages(history)
+        except (ValueError, TypeError):
+            # Preserve Pydantic's serialization error for invalid native dataclasses
+            # or an unchecked model_copy/model_construct value.
+            return self.model_dump_json().encode()
+        envelope = self.model_dump_json(exclude={"message_history"}).encode()
+        return b"".join((envelope[:-1], b',"message_history":', history, b"}"))
+
     def fork(self, *, thread_id: str | None = None) -> HarnessState:
         """Copy portable continuation data into a distinct generated or Host-selected Thread."""
         from a13n_harness.capabilities.subagents import _fork_inline_subagent_state

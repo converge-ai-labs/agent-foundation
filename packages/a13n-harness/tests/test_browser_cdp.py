@@ -631,3 +631,98 @@ async def test_capture_stops_own_screencast_on_failure(browser, failure):
             await capture(browser, page)
     assert browser.client.send_raw.call_args_list[-1].args == ("Page.stopScreencast", {}, "session")
     assert page.visual is None
+
+
+async def test_resize_corrects_delayed_window_manager_decorations(browser):
+    page = Page("page", "session")
+    bounds = {"windowState": "maximized", "width": 1280, "height": 880}
+    decoration = {"width": 0, "height": 80}
+    sizes = []
+
+    async def set_bounds(identity, values):
+        bounds.update(values)
+        if "width" in values:
+            sizes.append((values["width"], values["height"]))
+            # The WM applies borders only after the first resize from maximized.
+            decoration.update(width=8, height=84)
+
+    browser.window = AsyncMock(side_effect=lambda page: {"windowId": 1, "bounds": dict(bounds)})
+    browser.window_bounds = AsyncMock(side_effect=set_bounds)
+    browser.evaluate = AsyncMock(
+        side_effect=lambda page, expression: {
+            "width": bounds["width"] - decoration["width"],
+            "height": bounds["height"] - decoration["height"],
+        }
+    )
+    await browser.resize_window(page, 768, 1024)
+    assert sizes == [(768, 1104), (776, 1108)]
+    assert await browser.evaluate(page, "size") == {"width": 768, "height": 1024}
+
+
+async def test_resize_prepares_screen_before_setting_window_bounds(browser):
+    page = Page("page", "session")
+    bounds = {"windowState": "normal", "width": 1288, "height": 891}
+    screen = dict(width=1288, height=891)
+
+    async def prepare(width, height):
+        screen.update(width=width + 1, height=height + 1)
+
+    async def set_bounds(identity, values):
+        if "width" in values:
+            assert values["width"] < screen["width"]
+            assert values["height"] < screen["height"]
+        bounds.update(values)
+
+    browser.window = AsyncMock(side_effect=lambda page: {"windowId": 1, "bounds": dict(bounds)})
+    browser.window_bounds = AsyncMock(side_effect=set_bounds)
+    browser.evaluate = AsyncMock(
+        side_effect=lambda page, expression: {"width": bounds["width"] - 8, "height": bounds["height"] - 91}
+    )
+    await browser.resize_window(page, 768, 1024, prepare_bounds=prepare)
+    assert await browser.evaluate(page, "size") == {"width": 768, "height": 1024}
+
+
+@pytest.mark.parametrize("actual_width,accepted", [(500, True), (389, False)])
+async def test_resize_accepts_native_minimum_but_not_undersized_content(browser, actual_width, accepted):
+    page = Page("page", "session")
+    browser.window = AsyncMock(return_value={"windowId": 1, "bounds": {"width": actual_width + 8, "height": 935}})
+    browser.window_bounds = AsyncMock()
+    browser.evaluate = AsyncMock(return_value={"width": actual_width, "height": 844})
+    if accepted:
+        await browser.resize_window(page, 390, 844, allow_minimum=True)
+        assert browser.window_bounds.await_count >= 4
+    else:
+        with pytest.raises(BrowserError, match="did not resize"):
+            await browser.resize_window(page, 390, 844, allow_minimum=True)
+
+
+@pytest.mark.parametrize("state", ["maximized", "fullscreen"])
+async def test_resize_restores_window_after_screen_change(browser, state):
+    page = Page("page", "session")
+    bounds = {"windowState": state, "width": 1288, "height": 891}
+    prepares = 0
+    restores = 0
+
+    async def prepare(width, height):
+        nonlocal prepares
+        prepares += 1
+        if prepares == 1:
+            # A delayed WM reaction to RandR overtakes the initial restore.
+            bounds["windowState"] = state
+
+    async def set_bounds(identity, values):
+        nonlocal restores
+        if "windowState" in values:
+            restores += 1
+            bounds.update(values)
+        elif bounds["windowState"] == "normal":
+            bounds.update(values)
+
+    browser.window = AsyncMock(side_effect=lambda page: {"windowId": 1, "bounds": dict(bounds)})
+    browser.window_bounds = AsyncMock(side_effect=set_bounds)
+    browser.evaluate = AsyncMock(
+        side_effect=lambda page, expression: {"width": bounds["width"] - 8, "height": bounds["height"] - 91}
+    )
+    await browser.resize_window(page, 768, 1024, prepare_bounds=prepare)
+    assert restores >= 2
+    assert await browser.evaluate(page, "size") == {"width": 768, "height": 1024}
