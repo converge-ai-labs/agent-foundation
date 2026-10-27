@@ -339,6 +339,20 @@ async def test_usage_requires_workspace_read_permission(service):  # type: ignor
             denied = await viewer.get(path, params=WINDOW, headers={"X-Workspace-ID": other["id"]})
             assert allowed.status_code == (404 if endpoint.startswith("records/") else 200)
             assert denied.status_code == 403
+        assert (
+            await viewer.get(
+                f"{service.api}/usage/members", params=WINDOW, headers={"X-Workspace-ID": service.tenant.workspace_id}
+            )
+        ).status_code == 403
+        for endpoint in ("overview", "agents", "models"):
+            for principal_id in (service.tenant.principal_id, "usr_00000000000000000000"):
+                assert (
+                    await viewer.get(
+                        f"{service.api}/usage/{endpoint}",
+                        params={**WINDOW, "principal_id": principal_id},
+                        headers={"X-Workspace-ID": service.tenant.workspace_id},
+                    )
+                ).status_code == 403
 
 
 async def test_dst_day_uses_local_calendar_with_both_repeated_hours(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
@@ -557,3 +571,95 @@ async def test_totals_and_run_pages_preserve_numbers_and_whole_model_groups(serv
         f"{service.api}/usage/runs", params={"thread_id": thread["thread_id"], "cursor": page["next_cursor"]}
     )
     assert changed.status_code == 400
+
+
+async def test_members_attribute_execution_identity_and_filter_all_views(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    from a13n_service.tenancy.tables import PrincipalRow
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    user_id = service.tenant.principal_id
+    await observed_run(service, runs_kit, agent, records=[("scripted", 100, 20, 50, Decimal("0.2"), START)])
+    account = (await service.client.post(f"{service.workspace}/service-accounts", json={"name": "Shared bot"})).json()
+    key = (
+        await service.client.post(f"{service.workspace}/service-accounts/{account['id']}/keys", json={"name": "test"})
+    ).json()
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=service.app),
+        base_url="https://service.test",
+        headers={"authorization": "Bearer " + key["secret"]},
+    ) as client:
+        bot = SimpleNamespace(**{**vars(service), "client": client})
+        await observed_run(
+            bot,
+            runs_kit,
+            agent,
+            seconds=30,
+            records=[("scripted", 200, 40, 100, Decimal("0.4"), START), ("scripted", 400, 80, 100, None, START)],
+        )
+        # Late usage follows ingestion rather than Run start.
+        await observed_run(
+            bot,
+            runs_kit,
+            agent,
+            started=START - timedelta(days=10),
+            records=[("scripted", 50, 10, 0, Decimal("0.1"), START)],
+        )
+        assert (await client.get(f"{service.api}/usage/members", params=WINDOW)).status_code == 403
+        for endpoint in ("overview", "agents", "models"):
+            assert (
+                await client.get(f"{service.api}/usage/{endpoint}", params={**WINDOW, "principal_id": account["id"]})
+            ).status_code == 403
+    async with transaction(service.runtime.storage) as session:
+        principal = await session.get_one(PrincipalRow, account["id"])
+        principal.status = "disabled"
+    groups = (await read(service, "members"))["items"]
+    assert [row["principal_id"] for row in groups] == [account["id"], user_id]
+    assert [(row["kind"], row["status"]) for row in groups] == [("service_account", "disabled"), ("user", "active")]
+    assert groups[0]["runs"] == {"runs": 1, "average_duration_seconds": 30}
+    assert groups[0]["usage"]["requests"] == 3
+    assert Decimal(groups[0]["usage"]["cost"]) == Decimal("0.5")
+    total = await read(service)
+    for metric in ("requests", "input_tokens", "output_tokens", "cache_read_tokens", "unpriced_requests"):
+        assert sum(row["usage"][metric] for row in groups) == total["usage"][metric]
+    for principal_id, requests in ((user_id, 1), (account["id"], 3)):
+        overview = await read(service, principal_id=principal_id)
+        assert overview["usage"]["requests"] == requests
+        assert sum(day["usage"]["requests"] for day in overview["daily"]) == requests
+        for endpoint in ("agents", "models"):
+            items = (await read(service, endpoint, principal_id=principal_id))["items"]
+            assert sum(item["usage"]["requests"] for item in items) == requests
+    first = await read(service, "members", limit=1)
+    second = await read(service, "members", limit=1, cursor=first["next_cursor"])
+    assert second["items"][0]["principal_id"] == user_id
+    assert (
+        await service.client.get(
+            f"{service.api}/usage/members", params={**WINDOW, "cursor": first["next_cursor"], "principal_id": user_id}
+        )
+    ).status_code == 400
+    # Neither missing nor foreign identities reveal a global principal's profile.
+    other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Elsewhere"})).json()
+    foreign = (
+        await service.client.post(f"/api/v1/workspaces/{other['id']}/service-accounts", json={"name": "Foreign"})
+    ).json()
+    for principal_id in ("usr_00000000000000000000", foreign["id"]):
+        assert (await read(service, "members", principal_id=principal_id))["items"] == []
+        assert (await read(service, principal_id=principal_id))["usage"]["requests"] == 0
+    assert (
+        await service.client.get(f"{service.api}/usage/members", params=WINDOW, headers={"X-Workspace-ID": other["id"]})
+    ).json()["items"] == []
+
+
+async def test_member_with_only_runs_is_counted_without_model_usage(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    await observed_run(service, runs_kit, agent, seconds=25)
+    await observed_run(service, runs_kit, agent, started=START + timedelta(days=3))
+    [member] = (await read(service, "members"))["items"]
+    assert member["principal_id"] == service.tenant.principal_id
+    assert member["usage"]["requests"] == 0
+    assert Decimal(member["usage"]["cost"]) == 0
+    assert member["runs"] == {"runs": 1, "average_duration_seconds": 25}
+    assert (await read(service, "models", principal_id=member["principal_id"]))["items"] == []

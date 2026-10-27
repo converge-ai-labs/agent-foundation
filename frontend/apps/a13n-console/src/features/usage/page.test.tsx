@@ -12,12 +12,15 @@ import { afterEach, expect, it, vi } from "vitest";
 import { UsagePage } from "./page";
 import type { Schema } from "../../shared/api";
 
-const http = vi.hoisted(() => ({ GET: vi.fn() }));
+const http = vi.hoisted(() => ({ GET: vi.fn(), admin: false }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ workspace: () => http }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_usage" } }),
+  useWorkspace: () => ({
+    workspace: { id: "ws_usage" },
+    can: (verb: string) => verb === "admin" && http.admin,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -32,6 +35,7 @@ afterEach(() => {
   caches.forEach((cache) => cache.clear());
   caches.length = 0;
   vi.resetAllMocks();
+  http.admin = false;
 });
 const metrics: Schema["ModelMetrics"] = {
   requests: 2,
@@ -48,6 +52,7 @@ const overview: Schema["UsageOverview"] = {
   daily: [{ date: "2026-09-28", usage: metrics }],
 };
 function mount() {
+  Element.prototype.scrollIntoView = vi.fn();
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -81,29 +86,48 @@ function setup() {
             next_cursor: null,
           }
         : {
-            items: path.endsWith("models")
+            items: path.endsWith("members")
               ? [
                   {
-                    model: "anthropic-claude-opus-5.5",
-                    name: "NexusHub Claude Opus 5.5",
-                    usage: metrics,
-                  },
-                  {
-                    model: "unknown",
-                    name: "Unpriced model",
-                    usage: { ...metrics, cost: null },
-                  },
-                ]
-              : [
-                  {
-                    agent_id: "agent_one",
-                    name: options.params.query.cursor
-                      ? "Second page"
-                      : "Support assistant",
+                    principal_id: "usr_alice",
+                    name: "Alice",
+                    kind: "user",
+                    status: "active",
                     usage: metrics,
                     runs: overview.runs,
                   },
-                ],
+                  {
+                    principal_id: "sa_bot",
+                    name: "Shared bot",
+                    kind: "service_account",
+                    status: "disabled",
+                    usage: metrics,
+                    runs: overview.runs,
+                  },
+                ]
+              : path.endsWith("models")
+                ? [
+                    {
+                      model: "anthropic-claude-opus-5.5",
+                      name: "NexusHub Claude Opus 5.5",
+                      usage: metrics,
+                    },
+                    {
+                      model: "unknown",
+                      name: "Unpriced model",
+                      usage: { ...metrics, cost: null },
+                    },
+                  ]
+                : [
+                    {
+                      agent_id: "agent_one",
+                      name: options.params.query.cursor
+                        ? "Second page"
+                        : "Support assistant",
+                      usage: metrics,
+                      runs: overview.runs,
+                    },
+                  ],
             next_cursor:
               path.endsWith("agents") && !options.params.query.cursor
                 ? "cursor_next"
@@ -172,4 +196,136 @@ it("recovers from a query failure and displays empty usage", async () => {
   await waitFor(() =>
     expect(screen.queryByText("Usage unavailable")).toBeNull(),
   );
+});
+
+it("keeps member analytics out of the non-admin view", async () => {
+  setup();
+  mount();
+  await screen.findByRole("table", { name: "Usage breakdown" });
+  expect(screen.queryByRole("button", { name: "By member" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Member: All members" }),
+  ).toBeNull();
+  expect(http.GET.mock.calls.some(([path]) => path.endsWith("members"))).toBe(
+    false,
+  );
+});
+
+it("lets an admin inspect a member across overview, model and agent usage and return to all members", async () => {
+  http.admin = true;
+  setup();
+  mount();
+  const user = userEvent.setup();
+  await screen.findByRole("table", { name: "Usage breakdown" });
+  await user.click(screen.getByRole("button", { name: "By member" }));
+  await screen.findByText("Alice");
+  expect(screen.getByText("User")).toBeTruthy();
+  expect(screen.getByText("Service account · Disabled")).toBeTruthy();
+  await user.click(
+    within(screen.getByRole("row", { name: /Shared bot/ })).getByRole(
+      "button",
+      { name: "View usage" },
+    ),
+  );
+  expect(screen.getByText("Viewing usage for")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "By member" })).toBeNull();
+  expect(
+    within(
+      screen
+        .getAllByRole("status")
+        .find((node) => node.textContent?.includes("Viewing usage for"))!,
+    ).getByText("Shared bot"),
+  ).toBeTruthy();
+  await waitFor(() => {
+    for (const endpoint of ["overview", "agents"]) {
+      expect(
+        http.GET.mock.calls
+          .filter(([path]) => path === `/api/v1/usage/${endpoint}`)
+          .at(-1)?.[1].params.query.principal_id,
+      ).toBe("sa_bot");
+    }
+  });
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByText("Second page");
+  await user.click(screen.getByRole("button", { name: "By model" }));
+  await screen.findByText("Unpriced model");
+  const modelQuery = http.GET.mock.calls
+    .filter(([path]) => path === "/api/v1/usage/models")
+    .at(-1)?.[1].params.query;
+  expect(modelQuery.principal_id).toBe("sa_bot");
+  expect(modelQuery.cursor).toBeUndefined();
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls
+        .filter(([path]) => path === "/api/v1/usage/overview")
+        .at(-1)?.[1].params.query.principal_id,
+    ).toBe("sa_bot"),
+  );
+  await user.click(screen.getByRole("button", { name: "Clear member filter" }));
+  expect(screen.queryByText("Viewing usage for")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "By member" }));
+  await screen.findByText("Alice");
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls
+        .filter(([path]) => path === "/api/v1/usage/overview")
+        .at(-1)?.[1].params.query.principal_id,
+    ).toBeUndefined(),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Clear member filter" }),
+  ).toBeNull();
+});
+
+it("filters the whole page from the top member picker and switches or clears identities", async () => {
+  http.admin = true;
+  setup();
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Support assistant");
+  await user.click(screen.getByRole("button", { name: "By model" }));
+  await screen.findByText("Unpriced model");
+  await user.click(screen.getByRole("button", { name: "Member: All members" }));
+  await user.click(await screen.findByRole("button", { name: "Alice · User" }));
+  await waitFor(() => {
+    for (const endpoint of ["overview", "models"]) {
+      expect(
+        http.GET.mock.calls
+          .filter(([path]) => path === `/api/v1/usage/${endpoint}`)
+          .at(-1)?.[1].params.query.principal_id,
+      ).toBe("usr_alice");
+    }
+  });
+  expect(screen.getByText("Viewing usage for")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "By member" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Member: Alice" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Member: Alice" }));
+  await user.click(
+    await screen.findByRole("button", {
+      name: "Shared bot · Service account · Disabled",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls
+        .filter(([path]) => path === "/api/v1/usage/overview")
+        .at(-1)?.[1].params.query.principal_id,
+    ).toBe("sa_bot"),
+  );
+  await user.click(screen.getByRole("button", { name: "Member: Shared bot" }));
+  await user.click(screen.getByRole("button", { name: "All members" }));
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls
+        .filter(([path]) => path === "/api/v1/usage/overview")
+        .at(-1)?.[1].params.query.principal_id,
+    ).toBeUndefined(),
+  );
+  expect(screen.queryByText("Viewing usage for")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "By model" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
 });

@@ -13,6 +13,7 @@ from a13n_service.usage.schemas import (
     BreakdownQuery,
     ContextUsage,
     ContextUsageQuery,
+    MemberUsagePage,
     ModelRequestMetrics,
     ModelUsagePage,
     OverviewQuery,
@@ -41,21 +42,28 @@ async def list_run_usage(
     return await service.run_usage(runtime.storage, actor, workspace_id, query)
 
 
-@router.get("/overview")
+@router.get("/overview", openapi_extra={"x-a13n-mcp": True})
 async def usage_overview(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[OverviewQuery, Query()]
 ) -> UsageOverview:
     return await service.overview(runtime.storage, actor, workspace_id, query)
 
 
-@router.get("/agents")
+@router.get("/agents", openapi_extra={"x-a13n-mcp": True})
 async def usage_agents(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[BreakdownQuery, Query()]
 ) -> AgentUsagePage:
     return await service.agents(runtime.storage, actor, workspace_id, query)
 
 
-@router.get("/models")
+@router.get("/members", openapi_extra={"x-a13n-mcp": True})
+async def list_usage_members(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[BreakdownQuery, Query()]
+) -> MemberUsagePage:
+    return await service.members(runtime.storage, actor, workspace_id, query)
+
+
+@router.get("/models", openapi_extra={"x-a13n-mcp": True})
 async def usage_models(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[BreakdownQuery, Query()]
 ) -> ModelUsagePage:
