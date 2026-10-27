@@ -32,10 +32,10 @@ export const providerCategories = [
   {
     value: "environments",
     label: "Environment",
-    emptyTitle: "No environment connections yet",
+    emptyTitle: "No environment providers yet",
     icon: MonitorIcon,
     description: "Configure where your agents' environments run.",
-    empty: "Add a connection before creating templates.",
+    empty: "Add a provider before creating templates.",
   },
   {
     value: "connectors",

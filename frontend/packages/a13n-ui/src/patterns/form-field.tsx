@@ -74,7 +74,10 @@ export function FormField({
       className={className ?? "w-full min-w-0"}
     >
       {labelAction ? (
-        <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 leading-4">
+        <div
+          data-slot="field-label-row"
+          className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 leading-4"
+        >
           <FieldLabel
             htmlFor={id}
             className={hideLabel ? "sr-only" : undefined}

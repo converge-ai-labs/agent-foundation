@@ -61,6 +61,48 @@ class ExecutableAgent[OutputT]:
         self._model_inference = model_inference
         self._observation = observation
 
+    async def compact(
+        self,
+        *,
+        previous_state: HarnessState,
+        instruction: str | None = None,
+        environment: EnvironmentEntry | None = None,
+        environments: Mapping[str, EnvironmentEntry] | None = None,
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
+        resume_usage: bool = False,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunResult[str]:
+        """Compact a quiescent checkpoint, returning a summary and resumable state.
+
+        Built-in constraints and the caller's instruction are appended at the tail.
+        When instruction is None, default compaction guidance is used instead.
+        The Agent must support text output with its existing tool configuration.
+        A completed result can be saved immediately; runtime restoration occurs
+        automatically on the next ordinary Run. Hosts publish only completed
+        results and retain the original checkpoint on failure or cancellation.
+        Scheduling, fenced publication, and save-failure notifications are Host-owned.
+        """
+        from a13n_harness._compaction_run import _CompactionRunStream
+
+        async with _CompactionRunStream(
+            executable=self,
+            previous_state=previous_state,
+            instruction=instruction,
+            environment=environment,
+            environments=environments,
+            default_environment=default_environment,
+            bindings=bindings,
+            resume_usage=resume_usage,
+            usage=usage,
+            usage_limits=usage_limits,
+        ) as stream:
+            async for item in stream:
+                if isinstance(item, HarnessRunResultEvent):
+                    return item.result
+        raise RunError("Compaction ended without a terminal result.", code="run_result_missing")
+
     def definition_usage_limits(self) -> UsageLimits:
         """Return a detached definition baseline, independent of per-Run overrides."""
         return _usage_limits_from_spec(self.definition.agent)

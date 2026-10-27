@@ -30,6 +30,7 @@ class StorageSettings(BaseModel):
 
     data_root: Path = Field(default_factory=default_harness_ui_data_root)
     scratch_retention_seconds: float = Field(default=259200.0, gt=0)
+    compaction_retention_seconds: float = Field(default=604800.0, gt=0)
     busy_timeout_seconds: float = Field(default=DEFAULT_SQLITE_BUSY_TIMEOUT_SECONDS, gt=0, le=60)
     cleanup_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES

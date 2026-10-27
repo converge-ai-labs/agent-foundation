@@ -7,7 +7,7 @@ You need the Service URL, a workspace API key, and an agent with a working model
 
 ## Set up credentials
 
-Create an API key under **Workspace settings → My API keys**. Keep the key and Service URL in server-side configuration. The key acts in its workspace with the current permissions of its principal: the user or service account it belongs to. You need the **runner** role or higher in that workspace; creating agents requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts).
+In Console, open the agent's menu and select **Connect to app**. Follow the integration guide or copy the instructions for your coding assistant. Create a personal API key in the same dialog if you do not have one saved. You can also manage your keys under **API keys** in the sidebar. Keep the key and Service URL in server-side configuration. The key acts in its workspace with the current permissions of its principal: the user or service account it belongs to. You need the **runner** role or higher in that workspace; creating agents requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts).
 
 ## Start with an SDK
 

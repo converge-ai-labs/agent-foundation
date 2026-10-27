@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from a13n_harness import AgentContext, HarnessState
+from a13n_harness.capabilities import CompactionCapability
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs, WrapRunHandler
@@ -49,7 +50,9 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.wait_for_model = False
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
+        return CapabilityOrdering(
+            position="innermost", wrapped_by=(ModelContextCoordinatorCapability, CompactionCapability)
+        )
 
     @asynccontextmanager
     async def process(self, commit: Callable[[Staged], Awaitable[None]]) -> AsyncGenerator[None]:
@@ -148,7 +151,9 @@ class Boundaries(AbstractCapability[AgentContext]):
     ) -> asyncio.Future[None]:
         if self._closed:
             raise asyncio.CancelledError
-        if len(messages) == self.staged_length:
+        # Only parallel tools share a cut. A model boundary can replace equal-length
+        # history or write a compaction disposition without changing message count.
+        if at == "tool" and len(messages) == self.staged_length:
             assert self._completed is not None
             return self._completed
         # Reserve before the first await: parallel tools wait for the same cut.

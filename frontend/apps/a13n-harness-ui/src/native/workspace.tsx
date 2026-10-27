@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import {
   Folder,
+  Globe,
   GitDiff,
   X,
   ArrowClockwise,
@@ -41,6 +42,7 @@ import styles from "./native.module.css";
 import { TerminalPanel, type TerminalRequest } from "./terminal";
 import { TerminalAction } from "./terminal-action";
 import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
+import { BrowserPanel } from "../browser/panel";
 import { usePanelSize } from "./panel-size";
 import { ReturnToChat } from "./capture";
 import { useThread } from "../conversations/queries";
@@ -124,7 +126,9 @@ export function NativeWorkspace({
   const editorElement = useRef<HTMLDivElement>(null);
   const folderTrail = useRef<HTMLElement>(null);
   const [paneLink, setPaneLink] = useState("");
-  const [pane, setPane] = useState<"files" | "changes" | null>(null);
+  const [pane, setPane] = useState<"files" | "changes" | "browser" | null>(
+    null,
+  );
   const [directory, setDirectory] = useState("");
   const [root, setRoot] = useState("");
   const [path, setPath] = useState("");
@@ -460,7 +464,7 @@ export function NativeWorkspace({
     focusCenter();
     refresh();
   };
-  const show = (next: "files" | "changes") => {
+  const show = (next: "files" | "changes" | "browser") => {
     cancelOpening();
     if (pane === next) {
       closePane();
@@ -541,6 +545,18 @@ export function NativeWorkspace({
                   <GitDiff
                     weight={pane === "changes" ? "duotone" : "regular"}
                   />
+                </Button>
+              )}
+              {status.data?.features?.browser && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Browser"
+                  aria-label="Browser"
+                  aria-pressed={pane === "browser"}
+                  onClick={() => show("browser")}
+                >
+                  <Globe weight={pane === "browser" ? "duotone" : "regular"} />
                 </Button>
               )}
               {status.data?.features?.host_terminal && (
@@ -640,7 +656,49 @@ export function NativeWorkspace({
               }}
             />
           )}
-          {isWorkspace && pane && (
+          {isWorkspace && pane === "browser" && (
+            <aside
+              style={{ "--panel-width": `${width}%` } as CSSProperties}
+              ref={paneElement}
+              tabIndex={-1}
+              className={`${styles.pane} ${expanded ? styles.expandedPane : ""}`}
+              aria-label="Browser panel"
+            >
+              <header className={styles.paneHeader}>
+                <strong>Browser</strong>
+                <div className={styles.panelTools}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={
+                      expanded ? "Restore drawer width" : "Expand drawer"
+                    }
+                    onClick={() => setExpanded(!expanded)}
+                  >
+                    {expanded ? <ArrowsInSimple /> : <ArrowsOutSimple />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Close browser viewer"
+                    title="Close viewer (browser keeps running)"
+                    onClick={closePane}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              </header>
+              <BrowserPanel
+                key={threadId ?? "new"}
+                threadId={threadId}
+                fullControl={
+                  thread.data?.thread.configuration?.environment_profile_id ===
+                  "environment-native"
+                }
+              />
+            </aside>
+          )}
+          {isWorkspace && pane && pane !== "browser" && (
             <aside
               style={{ "--panel-width": `${width}%` } as CSSProperties}
               ref={paneElement}

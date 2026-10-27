@@ -9,6 +9,7 @@ import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { FormActions, TextAreaField } from "../../../shared/forms";
 import shared from "../../../shared/shared.module.css";
 import { invalidateMemories, isStale, memoryQueries } from "../api";
+import { useMountedModal } from "../../../shared/dialogs";
 
 type Memory = Schema["Memory"];
 
@@ -147,7 +148,7 @@ export function FileActionDialog({
   memory,
   path,
   kind,
-  onClose,
+  onClose: onClosed,
   onMoved,
   onDeleted,
 }: {
@@ -158,6 +159,7 @@ export function FileActionDialog({
   onMoved: (path: string) => void;
   onDeleted: () => void;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const { t } = useTranslation(),
     client = useClient(),
     { workspace } = useWorkspace();
@@ -166,10 +168,7 @@ export function FileActionDialog({
   );
   return (
     <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+      {...modalProps}
       title={t(kind === "rename" ? "Rename file" : "Delete file")}
       description={t(
         kind === "rename"

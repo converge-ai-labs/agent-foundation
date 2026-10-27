@@ -29,7 +29,8 @@ import { RunAgentDialog } from "../../run-agent";
 import type { RunTimeline } from "../../timeline";
 import { MessageAuthor } from "../../message-author";
 import { RequestContent, requestLabel } from "../user-message";
-import { isInteractive } from "../run-actions";
+import { useInteractiveThread } from "../run-actions";
+import { hasDelegation, transcriptBlocks } from "../items";
 import {
   childThreadOf,
   childThreadPath,
@@ -74,11 +75,17 @@ export function DebugRunSection({
 }) {
   const { t } = useTranslation();
   const { can, basePath } = useWorkspace();
+  const interactive = useInteractiveThread(thread);
   const [open, toggleOpen] = useRunOpen(run.id);
   const [configuring, setConfiguring] = useState(false);
   const active = isActiveRun(run.status) || run.status === "waiting";
   const now = useNow(active);
-  const children = useChildThreads(run.session_id, run.thread_id);
+  const children = useChildThreads(
+    hasDelegation(transcriptBlocks(timeline.entries, run.status))
+      ? run.session_id
+      : "",
+    run.id,
+  );
   const child = childThreadOf(children, run.id);
   const started = Date.parse(run.started_at ?? run.created_at);
   const ended = run.sealed_at ? Date.parse(run.sealed_at) : now;
@@ -90,7 +97,7 @@ export function DebugRunSection({
     child: child && {
       path: childThreadPath(basePath, child),
     },
-    answerable: isInteractive(thread) && can("run"),
+    answerable: interactive && can("run"),
     jumpToDock,
   };
   const outcome = runOutcome(run);

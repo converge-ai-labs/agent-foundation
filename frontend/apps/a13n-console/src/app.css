@@ -1,3 +1,15 @@
+/* Console emphasis stays one step above regular text, including shared UI. */
+:root {
+  --font-weight-semibold: 500;
+  --font-weight-bold: 500;
+  --accent: color-mix(in srgb, var(--foreground) 2%, transparent);
+  --console-page-gutter: clamp(20px, calc(4.375vw - 8px), 48px);
+}
+
+:root.dark {
+  --accent: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
 @layer base {
   /* Pages keep one content width whether or not they scroll. */
   html {
@@ -46,6 +58,15 @@
   top: 12px;
 }
 
+/* Configuration labels are distinct from values and supporting copy. */
+[data-slot="field-label"],
+[data-slot="read-only-label"],
+[data-slot="settings-row-label"] {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 /* Console modal composition, including dialogs rendered through portals. */
 [data-a13n-modal] {
   border-radius: 14px;
@@ -70,12 +91,20 @@
   font-size: var(--a13n-text-sm);
   line-height: 1.65;
 }
+[data-a13n-modal] [data-slot="button"] {
+  font-size: var(--a13n-text-sm);
+}
 [data-a13n-modal] form {
-  row-gap: 14px;
+  row-gap: 16px;
+}
+form:has(> [data-a13n-form-section]),
+[data-a13n-modal] form:has(> [data-a13n-form-section]) {
+  row-gap: 24px;
 }
 [data-a13n-modal]
   :is([data-a13n-form-actions], [data-slot="dialog-footer"])
-  button {
+  button:not([role="switch"]) {
+  font-size: var(--a13n-text-sm);
   min-height: 32px;
   padding-inline: 12px;
   border-radius: 8px;
@@ -86,6 +115,11 @@
   padding-top: 4px;
   padding-bottom: 18px;
   box-shadow: none;
+}
+@media (width < 480px) {
+  [data-a13n-modal] [data-a13n-form-actions] button:not([role="switch"]) {
+    padding-inline: 10px;
+  }
 }
 /* While fields scroll under the sticky footer, a hairline separates them. */
 @supports (animation-timeline: scroll()) {
@@ -116,4 +150,9 @@
 [data-slot="sidebar-gap"],
 [data-slot="sidebar-container"] {
   transition: width 180ms ease-out;
+}
+
+[data-slot="disclosure-surface"] > [data-slot="collapsible-trigger"] {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
 }

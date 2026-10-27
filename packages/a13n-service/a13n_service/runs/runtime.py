@@ -30,6 +30,7 @@ from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 if TYPE_CHECKING:
+    from a13n_service.runs.compaction_model import BackgroundCompaction
     from a13n_service.runs.environments.monitoring.proxy import Proxy
     from a13n_service.runs.tool_executions.owner import Executions
 
@@ -68,6 +69,12 @@ class Runtime:
         from a13n_service.runs.tool_executions.owner import Executions
 
         return Executions(self)
+
+    @cached_property
+    def compactions(self) -> BackgroundCompaction:
+        from a13n_service.runs.compaction_model import BackgroundCompaction
+
+        return BackgroundCompaction(self)
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:

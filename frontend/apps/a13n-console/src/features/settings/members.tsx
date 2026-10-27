@@ -329,12 +329,12 @@ function ChangeRole({
   return (
     <ModalFrame
       onOpenChange={(value) => {
+        setOpen(value);
         if (!change.isPending) {
           if (value) {
             setBasis(item);
             setRole(roleOf(item));
           }
-          setOpen(value);
           change.reset();
           reload.reset();
         }

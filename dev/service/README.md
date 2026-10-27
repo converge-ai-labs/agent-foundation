@@ -64,7 +64,7 @@ It reads the state back through the API and writes the seeded IDs and the verifi
 
 ### Findings preview
 
-With queryable tracing, the same seeded reset adds a release operations Agent with three real scripted Runs and one completed managed Findings analysis. Open **Improve → Findings** for:
+With queryable tracing, the same seeded reset adds a release operations Agent with three real scripted Runs and one completed managed Findings analysis. Open **Insights → Findings** for:
 
 - An unreviewed `answer_quality` diagnosis centered on an unsupported shipping quote; missing clarification is supporting evidence.
 - A confirmed `tool_execution` dependency issue with a reviewer note.

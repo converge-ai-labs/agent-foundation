@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
-import { fixtureRun, fixtureThread } from "./fixture";
+import { fixtureRun, fixtureSession, fixtureThread } from "./fixture";
 import { ThreadInbox } from "./inbox";
 
 let client: Client;
@@ -62,6 +62,8 @@ function mount(
     auth: { type: "session", csrfToken: "csrf-fixture" },
     fetch: async (input, init) => {
       const request = new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/sessions/ses_1"))
+        return Response.json(fixtureSession());
       requests.push(request);
       return respond(request);
     },

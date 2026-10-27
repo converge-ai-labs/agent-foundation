@@ -516,7 +516,7 @@ it("keeps runtime drafts separate and saves using the matching connection", asyn
       }) as HTMLInputElement
     ).value,
   ).toBe("custom");
-  await user.click(screen.getByRole("combobox", { name: "Connection" }));
+  await user.click(screen.getByRole("combobox", { name: "Provider" }));
   expect(await screen.findByRole("option", { name: "E2B" })).toBeTruthy();
   expect(screen.queryByRole("option", { name: "Local" })).toBeNull();
   await user.keyboard("{Escape}");
@@ -595,30 +595,32 @@ it("creates a connection in place, clears canceled credentials and retains the r
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
-  await user.click(screen.getByRole("button", { name: "Manage connections" }));
-  await user.click(
-    await screen.findByRole("button", { name: "Add connection" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Manage providers" }));
+  await user.click(await screen.findByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: "E2B" }));
   let dialog = within(screen.getByRole("dialog"));
   await user.type(dialog.getByLabelText("API key"), "discarded-test-key");
   await user.click(dialog.getByRole("button", { name: "Cancel" }));
-  await screen.findByRole("dialog", { name: "Manage connections" });
-  await user.click(screen.getByRole("button", { name: "Add connection" }));
+  const reopenedManagement = await screen.findByRole("dialog", {
+    name: "Manage providers",
+  });
+  await user.click(
+    within(reopenedManagement).getByRole("button", { name: "Add provider" }),
+  );
   await user.click(await screen.findByRole("button", { name: "E2B" }));
   dialog = within(screen.getByRole("dialog"));
   expect((dialog.getByLabelText("API key") as HTMLInputElement).value).toBe("");
   await user.type(dialog.getByLabelText("API key"), "test-key");
-  await user.click(dialog.getByRole("button", { name: "Add connection" }));
+  await user.click(dialog.getByRole("button", { name: "Add provider" }));
   await screen.findByText("Connection rejected");
   expect(state.POST).toHaveBeenCalledTimes(1);
   expect(state.close).not.toHaveBeenCalled();
-  await user.click(dialog.getByRole("button", { name: "Add connection" }));
+  await user.click(dialog.getByRole("button", { name: "Add provider" }));
   const management = await screen.findByRole("dialog", {
-    name: "Manage connections",
+    name: "Manage providers",
   });
   await user.click(within(management).getByRole("button", { name: "Close" }));
-  await user.click(screen.getByRole("combobox", { name: "Connection" }));
+  await user.click(screen.getByRole("combobox", { name: "Provider" }));
   await user.click(await screen.findByRole("option", { name: "E2B" }));
   expect(state.POST).toHaveBeenCalledTimes(2);
   expect(state.POST).toHaveBeenLastCalledWith("/api/v1/environment-providers", {
@@ -683,18 +685,16 @@ it("keeps a late connection result without replacing a newly selected runtime", 
   mountCreationPage();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "E2B" }));
-  await user.click(screen.getByRole("button", { name: "Manage connections" }));
-  await user.click(
-    await screen.findByRole("button", { name: "Add connection" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Manage providers" }));
+  await user.click(await screen.findByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: "E2B" }));
   const dialog = within(screen.getByRole("dialog"));
   await user.type(dialog.getByLabelText("API key"), "test-key");
-  await user.click(dialog.getByRole("button", { name: "Add connection" }));
+  await user.click(dialog.getByRole("button", { name: "Add provider" }));
   await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
   await user.click(dialog.getByRole("button", { name: "Close" }));
   const management = await screen.findByRole("dialog", {
-    name: "Manage connections",
+    name: "Manage providers",
   });
   await user.click(within(management).getByRole("button", { name: "Close" }));
   await user.click(screen.getByRole("tab", { name: "Own hosting" }));
@@ -705,14 +705,14 @@ it("keeps a late connection result without replacing a newly selected runtime", 
     await pending;
   });
   expect(
-    screen.getByRole("combobox", { name: "Connection" }).textContent,
+    screen.getByRole("combobox", { name: "Provider" }).textContent,
   ).toContain("Local");
   await user.click(screen.getByRole("tab", { name: "Cloud hosting" }));
   await user.click(screen.getByRole("button", { name: "E2B" }));
   expect(
-    screen.getByRole("combobox", { name: "Connection" }).textContent,
+    screen.getByRole("combobox", { name: "Provider" }).textContent,
   ).not.toContain("Another E2B");
-  await user.click(screen.getByRole("combobox", { name: "Connection" }));
+  await user.click(screen.getByRole("combobox", { name: "Provider" }));
   expect(
     await screen.findByRole("option", { name: "Another E2B" }),
   ).toBeTruthy();
@@ -814,13 +814,13 @@ it("manages connections in place without losing the template draft", async () =>
   });
   await user.clear(recipe);
   await user.type(recipe, "custom-recipe");
-  expect(screen.queryByRole("button", { name: "Add connection" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Manage connections" }));
+  expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Manage providers" }));
   const management = await screen.findByRole("dialog", {
-    name: "Manage connections",
+    name: "Manage providers",
   });
   expect(
-    await within(management).findByRole("table", { name: "Connections" }),
+    await within(management).findByRole("table", { name: "Providers" }),
   ).toBeTruthy();
   await user.click(within(management).getByRole("button", { name: "Close" }));
   expect(

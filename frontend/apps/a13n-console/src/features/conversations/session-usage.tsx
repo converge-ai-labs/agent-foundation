@@ -1,18 +1,19 @@
 import { Button, ModalFrame } from "a13n-ui";
 import { ChartBarIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
+import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { exactCost, formatCost } from "../../shared/cost";
 import { conversationQueries, runPath } from "./api";
 import { ContextWindow } from "./context-window";
 import { formatTokens } from "./format";
+import { useThreadNavigation } from "./queries";
 import { threadName } from "./thread-branches";
-import { chronological } from "./transcript/thread-runs";
 import { percent } from "../usage/values";
 import {
   Tokens,
@@ -32,12 +33,10 @@ type Summary = Schema["UsageSummary"];
  */
 export function SessionUsage({
   sessionId,
-  threads,
   thread,
   runId,
 }: {
   sessionId: string;
-  threads: readonly Thread[];
   thread?: Thread;
   runId?: string;
 }) {
@@ -81,14 +80,15 @@ export function SessionUsage({
         </Button>
       }
     >
-      <SessionUsageReport
-        sessionId={sessionId}
-        thread={open ? thread : undefined}
-        runId={runId}
-        summary={usage.data}
-        threads={threads}
-        close={() => setOpen(false)}
-      />
+      {open && (
+        <SessionUsageReport
+          sessionId={sessionId}
+          thread={thread}
+          runId={runId}
+          summary={usage.data}
+          close={() => setOpen(false)}
+        />
+      )}
     </ModalFrame>
   );
 }
@@ -96,68 +96,83 @@ export function SessionUsage({
 function SessionUsageReport({
   sessionId,
   summary,
-  threads,
   thread,
   runId,
   close,
 }: {
   sessionId: string;
   summary: Summary;
-  threads: readonly Thread[];
   thread?: Thread;
   runId?: string;
   close: () => void;
 }) {
   const { t } = useTranslation();
-  const { basePath } = useWorkspace();
-  const known = new Map(threads.map((thread) => [thread.id, thread]));
-  // Conversations in creation order; Run numbers count within each one, as
-  // its Run list does.
-  const used = new Set(summary.runs.map((run) => run.thread_id));
-  const threadIds = [
-    ...chronological(threads)
-      .map((thread) => thread.id)
-      .filter((id) => used.has(id)),
-    ...[...used].filter((id) => !known.has(id)),
-  ];
-  const perModel = summary.models.length > 1;
-  const sections: UsageSection[] = threadIds.map((threadId) => {
-    const thread = known.get(threadId);
-    return {
-      key: threadId,
-      title:
-        threadIds.length > 1
-          ? thread
-            ? threadName(thread, threads, t)
-            : t("Thread")
-          : undefined,
-      groups: summary.runs
-        .filter((run) => run.thread_id === threadId)
-        .map((run) => {
-          return {
-            key: run.run_id,
-            models: run.models,
-            label: (
-              <Link
-                className={styles.runLink}
-                to={runPath(
-                  basePath,
-                  {
-                    session_id: sessionId,
-                    thread_id: threadId,
-                    run_id: run.run_id,
-                  },
-                  "debug",
-                )}
-                onClick={close}
-              >
-                {t("Run {{index}}", { index: run.run_number })}
-              </Link>
-            ),
-          };
-        }),
-    };
+  const { basePath, workspace } = useWorkspace();
+  const client = useClient(),
+    queries = conversationQueries(client, workspace.id);
+  const pages = useInfiniteQuery(queries.usageRuns(sessionId));
+  const selected = useThreadNavigation(sessionId, thread?.id);
+  const runs = pages.data?.pages.flatMap((page) => page.items) ?? [];
+  // Keep earlier page keys stable when another usage page arrives.
+  const seen = new Set<string>();
+  const batches = (pages.data?.pages ?? [])
+    .map((page) =>
+      [...new Set(page.items.map((run) => run.thread_id))].filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      }),
+    )
+    .filter((ids) => ids.length);
+  const threadIds = [...seen];
+  const navigation = useQueries({
+    queries: batches.map((thread_id) =>
+      queries.threadPage(sessionId, { thread_id, limit: 50 }),
+    ),
   });
+  const known = new Map(
+    navigation
+      .flatMap((page) => page.data?.items ?? [])
+      .map((thread) => [thread.id, thread]),
+  );
+  const perModel = summary.models.length > 1;
+  const sections: UsageSection[] = [...known.values()]
+    .sort(
+      (a, b) =>
+        a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+    )
+    .map((thread) => {
+      const threadId = thread.id;
+      return {
+        key: threadId,
+        title: threadIds.length > 1 ? threadName(thread, t) : undefined,
+        groups: runs
+          .filter((run) => run.thread_id === threadId)
+          .map((run) => {
+            return {
+              key: run.run_id,
+              models: run.models,
+              label: (
+                <Link
+                  className={styles.runLink}
+                  to={runPath(
+                    basePath,
+                    {
+                      session_id: sessionId,
+                      thread_id: threadId,
+                      run_id: run.run_id,
+                    },
+                    "debug",
+                  )}
+                  onClick={close}
+                >
+                  {t("Run {{index}}", { index: run.run_number })}
+                </Link>
+              ),
+            };
+          }),
+      };
+    });
   return (
     <div className={styles.report}>
       <UsageStats
@@ -167,7 +182,9 @@ function SessionUsageReport({
             <ContextWindow
               scope={runId ? { run_id: runId } : { thread_id: thread.id }}
               live={!!thread.current_run_id}
-              statLabel={threadName(thread, threads, t)}
+              statLabel={
+                selected.data ? threadName(selected.data, t) : t("Thread")
+              }
             />
           )
         }
@@ -186,6 +203,16 @@ function SessionUsageReport({
       </section>
       <section className={styles.section}>
         <h3>{t("By run")}</h3>
+        <ErrorNotice
+          error={pages.error ?? navigation.find((page) => page.error)?.error}
+          retry={() => {
+            void pages.refetch();
+            for (const page of navigation) if (page.error) void page.refetch();
+          }}
+        />
+        {(pages.isPending || navigation.some((page) => page.isPending)) && (
+          <Loading variant="list" rows={3} />
+        )}
         <UsageTable
           caption={t("Usage by run")}
           leading={t("Run")}
@@ -193,6 +220,15 @@ function SessionUsageReport({
           requests={false}
           sections={sections}
         />
+        {pages.hasNextPage && (
+          <Button
+            variant="outline"
+            disabled={pages.isFetchingNextPage}
+            onClick={() => void pages.fetchNextPage()}
+          >
+            {t("Load more")}
+          </Button>
+        )}
       </section>
     </div>
   );

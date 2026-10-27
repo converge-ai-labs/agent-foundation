@@ -22,11 +22,15 @@ export function CallbackUrlField({ description }: { description: string }) {
     <>
       {redirect.data && (
         <ReadOnlyField label={t("Callback URL")} description={description}>
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 break-all">
+          <span className="flex min-w-0 items-start gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2">
+            <span
+              title={redirect.data.redirect_uri}
+              className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs leading-relaxed"
+            >
               {redirect.data.redirect_uri}
             </span>
             <CopyButton
+              iconOnly
               value={redirect.data.redirect_uri}
               copyLabel={t("Copy callback URL")}
             />

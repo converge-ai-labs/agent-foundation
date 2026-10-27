@@ -110,7 +110,7 @@ Worker 也提供 Harness 指标，例如 `a13n_harness_run_duration_seconds`，�
 
 ### Console 中的工作空间用量
 
-打开 **Observe → Usage** 查看当前工作空间。可选择最近 7 天、30 天，或最长 366 天的自定义范围。概览显示模型成本、token、缓存输入、缓存命中率、运行数、请求数和平均运行时长。日图表可在 Spend 和 Tokens 间切换，再通过分页明细比较 agent 或模型。
+打开 **Insights → Usage** 查看当前工作空间。可选择最近 7 天、30 天，或最长 366 天的自定义范围。概览显示模型成本、token、缓存输入、缓存命中率、运行数、请求数和平均运行时长。日图表可在 Spend 和 Tokens 间切换，再通过分页明细比较 agent 或模型。
 
 ![Console 中最近 30 天的成本、token、缓存命中率与每日花费](../../.github/assets/service-console.webp)
 

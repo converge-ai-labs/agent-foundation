@@ -76,43 +76,49 @@ export function SettingsLayout() {
                   ? "/settings/connections"
                   : "/settings/resources";
   return (
-    <div className={styles.settings}>
-      <nav
-        className={`${styles.settingsNav} a13n-scrollbar`}
-        aria-label="Settings sections"
-      >
-        <h2>Settings</h2>
-        {location.pathname.startsWith("/projects") && (
-          <Link className={styles.activeNav} to="/projects" aria-current="page">
-            Projects
-          </Link>
-        )}
-        {sections.map(({ path, label, icon: Icon }) => {
-          const active =
-            location.pathname === "/settings/source"
-              ? sourceSection === path
-              : location.pathname === path ||
-                (path !== "/settings" &&
-                  location.pathname.startsWith(`${path}/`));
-          return (
+    <div className={styles.settingsFrame}>
+      <div className={styles.settings}>
+        <nav
+          className={`${styles.settingsNav} a13n-scrollbar`}
+          aria-label="Settings sections"
+        >
+          <h2>Settings</h2>
+          {location.pathname.startsWith("/projects") && (
             <Link
-              key={path}
-              to={path}
-              aria-current={active ? "page" : undefined}
-              className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? layout.utilityLink : ""}`}
+              className={styles.activeNav}
+              to="/projects"
+              aria-current="page"
             >
-              <Icon
-                aria-hidden="true"
-                size={18}
-                weight={active ? "duotone" : "regular"}
-              />
-              {label}
+              Projects
             </Link>
-          );
-        })}
-      </nav>
-      <div className={`${styles.settingsContent} a13n-scrollbar`}>
-        <Outlet />
+          )}
+          {sections.map(({ path, label, icon: Icon }) => {
+            const active =
+              location.pathname === "/settings/source"
+                ? sourceSection === path
+                : location.pathname === path ||
+                  (path !== "/settings" &&
+                    location.pathname.startsWith(`${path}/`));
+            return (
+              <Link
+                key={path}
+                to={path}
+                aria-current={active ? "page" : undefined}
+                className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? styles.settingsUtilityLink : ""}`}
+              >
+                <Icon
+                  aria-hidden="true"
+                  size={18}
+                  weight={active ? "duotone" : "regular"}
+                />
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className={`${styles.settingsContent} a13n-scrollbar`}>
+          <Outlet />
+        </div>
       </div>
     </div>
   );
@@ -263,7 +269,10 @@ export function EnvironmentsPage() {
         title="Environments"
         description="Choose where and how your agents work."
       />
-      <nav className={layout.tabs} aria-label="Environment sections">
+      <nav
+        className={`${layout.tabs} a13n-scrollbar`}
+        aria-label="Environment sections"
+      >
         {[
           ["local", "Local execution"],
           ["devices", "Devices"],

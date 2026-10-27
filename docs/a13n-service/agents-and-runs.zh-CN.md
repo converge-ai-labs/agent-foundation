@@ -69,6 +69,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | 字段                              | 含义                                                                                                                                                                          |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `model`                           | 模型 key。参阅[模型](models.md)。                                                                                                                                             |
+| `background_compaction`           | 后台摘要策略：`enabled` 默认 `false`，`blocking_threshold` 默认 `0.95`。参阅[上下文压缩](#context-compaction)。                                                               |
 | `model_settings`                  | 模型 API 专属设置，例如推理强度。                                                                                                                                             |
 | `model_characteristics`           | 上下文窗口和上下文管理阈值。                                                                                                                                                  |
 | `instructions`                    | 系统指令，最多 256 KiB。                                                                                                                                                      |
@@ -90,6 +91,12 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `memory_mounts`                   | 新线程首次接收运行时挂载的[记忆](memory.md#mount-a-memory-on-a-thread)，`[{name, memory_id, access}]`。                                                                       |
 
 保存时按工作空间验证完整配置：每个引用的模型、skill、连接、provider 和 agent 必须存在且可由你使用，否则对应字段以 `invalid_argument` 拒绝；没有 `revision_id` 的 skill 和子 agent 引用会固定到当前默认修订版本。因此修订版本保留其配置以及 skill 和子 agent 的固定修订版本；它引用的模型、连接、provider 和模板是实时资源，每次使用时重新解析。
+
+### 上下文压缩
+
+长对话会将较早的上下文压缩为摘要。Service 默认同步压缩。要为 agent 开启后台生成，在 Console 编辑器中打开**高级设置 → 上下文压缩**，打开**启用后台压缩**并保存修订版本。对应的 Agent 配置为 `background_compaction: {enabled: true, blocking_threshold: 0.95}`。开启后，普通线程在确认当前请求仍有上下文余量时，在后台生成摘要。阻塞阈值默认是精确计数输入占窗口的 95%，取值大于零且不超过一。达到此线时，运行等待已有后台操作；没有后台操作时则同步压缩。输出预留空间可能要求更早阻塞，普通压缩触发线仍为 90%。摘要可以在同一次运行中应用，也可以在该线程下次运行时应用。关闭后台生成后，已保留的摘要仍可交付。近期消息和工具结果保持原有顺序。内联和异步子 agent 使用同步压缩。
+
+上下文无法安全容纳请求时，运行会等待已有压缩完成，或改用同步压缩。后台失败后，需要时也会同步恢复。超大后台输入使用同步路径。所有摘要请求都计入其所属运行的 `max_usage.requests`；后台用量可能在该运行结束后到达。中断运行不会取消其后台摘要。归档线程会终止该摘要的后续使用，分支不会继承待处理的压缩。
 
 ### 工具权限
 
@@ -520,7 +527,7 @@ curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A
 
 ## 用量
 
-每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总，并对每个运行做同样的汇总：
+每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总全部匹配记录。Session 总量覆盖所有运行，不受分页影响：
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -529,11 +536,18 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
              "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
-             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
- "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}]}
 ```
 
-每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。`runs` 按从早到晚列出记录了用量的匹配运行，各运行的条目相加等于 `models`。缓存输入（`cache_read_tokens`）包含在 `input_tokens` 中。已完成的流式请求还会给出 `average_time_to_first_chunk_seconds`（等待首个流式分片的平均时间）和 `output_tokens_per_second`（首个分片之后的生成速度）；没有这类请求时两者为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。缓存输入（`cache_read_tokens`）包含在 `input_tokens` 中。已完成的流式请求还会给出 `average_time_to_first_chunk_seconds`（等待首个流式分片的平均时间）和 `output_tokens_per_second`（首个分片之后的生成速度）；没有这类请求时两者为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+
+按运行查看明细时，单独请求 `GET …/usage/runs`，使用相同筛选条件以及 `limit` 和 `cursor`：
+
+```sh
+curl "$A13N_URL/api/v1/usage/runs?session_id=$SESSION&limit=50" -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+响应为 `{ "items": [{ "run_id": "run_…", "thread_id": "thread_…", "run_number": 3, "models": [...] }], "next_cursor": "…" }`。记录了用量的运行按时间从早到晚排列，同一运行的各模型用量始终在同一页。保持筛选条件不变，使用 `next_cursor` 继续读取；值为 `null` 时结束。`run_number` 是运行在线程中的时间顺序编号，计数包含没有用量的运行。单页明细只覆盖部分运行，完整总量始终读取 `/usage`。原先读取 `/usage.runs` 的客户端需要改为读取这些分页。
 
 ## Trace
 
@@ -554,7 +568,7 @@ API 使用 `GET …/traces/search`，提供明确的 `started_after`、`started_
 
 ## 发现并改进执行问题
 
-打开 **改进 → 发现（Improve → Findings）**，审阅 Agent Run 的诊断信号。每个发现项包含严重程度、人工审阅结论、引用的 Agent 版本、trace/Run 证据、问题说明和改进建议。即使标记为严重，在人工审阅前也仍是未确认信号。已保存的结论和理由默认以阅读模式展示。点击**编辑审阅**，选择已确认、预期行为、证据不足或误判，可以填写**审阅理由**，然后点击**保存审阅**，同时保存结论和理由。切换结论会清空旧理由；取消会恢复已保存的内容并返回阅读模式。关闭或重新打开发现项会保留审阅结论和理由，原始诊断和证据仍然可见。
+打开 **洞察 → 发现（Insights → Findings）**，审阅 Agent Run 的诊断信号。每个发现项包含严重程度、人工审阅结论、引用的 Agent 版本、trace/Run 证据、问题说明和改进建议。即使标记为严重，在人工审阅前也仍是未确认信号。已保存的结论和理由默认以阅读模式展示。点击**编辑审阅**，选择已确认、预期行为、证据不足或误判，可以填写**审阅理由**，然后点击**保存审阅**，同时保存结论和理由。切换结论会清空旧理由；取消会恢复已保存的内容并返回阅读模式。关闭或重新打开发现项会保留审阅结论和理由，原始诊断和证据仍然可见。
 
 可以按类型、严重程度、审阅结论或开关状态筛选发现项。每个发现项按核心问题选择一种主要类型：
 

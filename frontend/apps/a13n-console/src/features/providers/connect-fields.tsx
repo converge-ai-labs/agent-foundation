@@ -8,7 +8,7 @@ import {
 import { useId, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { fieldSchema } from "../../shared/forms/schema-definition";
-import { ProviderKeyLink, SchemaFields } from "../../shared/forms";
+import { FormSection, ProviderKeyLink, SchemaFields } from "../../shared/forms";
 import {
   advancedConfigured,
   hasFields,
@@ -17,9 +17,8 @@ import {
 } from "./schemas";
 
 /**
- * The connect step every category shares: the secret the service asks for,
- * then what it cannot run without, then the name it is listed under, with the
- * settings that already have an answer folded away.
+ * The setup step every category shares: identity, credentials and configuration
+ * fields, with optional settings folded away inside their owning group.
  */
 export function ProviderConnectFields({
   configurationFields,
@@ -31,7 +30,6 @@ export function ProviderConnectFields({
   onConfigurationChange = () => {},
   name,
   onNameChange,
-  nameDescription = "How this provider is listed across the console.",
   keyLink,
   advancedOpen,
   onAdvancedOpenChange,
@@ -45,7 +43,6 @@ export function ProviderConnectFields({
   /** Omitted by a category whose services configure nothing. */
   configuration?: Record<string, unknown>;
   onConfigurationChange?: (value: Record<string, unknown>) => void;
-  nameDescription?: string;
   name: string;
   onNameChange: (value: string) => void;
   /** Where the service hands out the secret, if that page is known. */
@@ -59,25 +56,8 @@ export function ProviderConnectFields({
   const { t } = useTranslation();
   return (
     <>
-      {hasFields(credentialSchema) && (
-        <SchemaFields
-          secret
-          autoFocus
-          labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
-          schema={credentialSchema ?? {}}
-          value={credential}
-          onChange={onCredentialChange}
-        />
-      )}
-      {configurationFields}
-      <ProviderConfigurationFields
-        schema={configurationFields ? undefined : configurationSchema}
-        value={configuration}
-        onChange={onConfigurationChange}
-        advancedOpen={advancedOpen}
-        onAdvancedOpenChange={onAdvancedOpenChange}
-      >
-        <FormField label={t("Name")} description={t(nameDescription)}>
+      <FormSection title={t("Basic information")}>
+        <FormField label={t("Name")}>
           <Input
             required
             maxLength={128}
@@ -85,13 +65,37 @@ export function ProviderConnectFields({
             onChange={(event) => onNameChange(event.target.value)}
           />
         </FormField>
-      </ProviderConfigurationFields>
+      </FormSection>
+      {hasFields(credentialSchema) && (
+        <FormSection title={t("Credentials")}>
+          <SchemaFields
+            secret
+            autoFocus
+            labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
+            schema={credentialSchema ?? {}}
+            value={credential}
+            onChange={onCredentialChange}
+          />
+        </FormSection>
+      )}
+      {(hasFields(configurationSchema) || configurationFields) && (
+        <FormSection title={t("Configuration")}>
+          {configurationFields}
+          <ProviderConfigurationFields
+            schema={configurationFields ? undefined : configurationSchema}
+            value={configuration}
+            onChange={onConfigurationChange}
+            advancedOpen={advancedOpen}
+            onAdvancedOpenChange={onAdvancedOpenChange}
+          />
+        </FormSection>
+      )}
       {children}
     </>
   );
 }
 
-/** Configuration controls shared by connection creation and editing. */
+/** Configuration controls shared by provider creation and editing. */
 export function ProviderConfigurationFields({
   schema: configurationSchema,
   value: configuration,

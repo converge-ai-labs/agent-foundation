@@ -50,6 +50,7 @@ The App owns:
 - Thread creation, metadata and configuration mutation, Project-filtered keyset queries, and transcript projection;
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
+- App-owned background compaction independent of foreground Run and waiter lifetimes, with [durable result retention](03-local-storage-and-recovery.md#retained-background-compaction);
 - in-memory shared browser drafts, page/focus and editor presence, with frontend Send using existing root admission;
 - explicitly enabled native Host files, Git projections, and human PTY lifetimes;
 - Project-root Environment binding and state lifecycle;

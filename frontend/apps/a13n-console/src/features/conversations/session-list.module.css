@@ -209,14 +209,6 @@ button.tag:hover .tagKey {
   margin: 0;
   border: 0;
 }
-.originFields {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 18px;
-  background: var(--a13n-surface);
-  border-radius: 12px;
-}
 
 /* Narrow collections --------------------------------------------------------- */
 @container (max-width: 880px) {

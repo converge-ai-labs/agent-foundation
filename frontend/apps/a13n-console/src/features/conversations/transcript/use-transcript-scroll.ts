@@ -27,12 +27,17 @@ export function useTranscriptScroll(
 ) {
   const [showJump, setShowJump] = useState(false);
   const controller = useRef<ScrollController | null>(null);
+  const inspection = useRef({ identity, startAtTop: level === "debug" });
   useLayoutEffect(() => {
     const element = content.current;
     const stage = element?.closest("[data-session-stage]");
     if (!element || !(stage instanceof HTMLElement)) return;
-    let mode: Mode = "following";
+    if (inspection.current.identity !== identity)
+      inspection.current = { identity, startAtTop: true };
+    let mode: Mode = inspection.current.startAtTop ? "reading" : "following";
     let readerScrolling = false;
+    let movingAway = false;
+    let lastTop = stage.scrollTop;
     const capture = () => {
       const edge = stage.getBoundingClientRect().top;
       const run = [...element.querySelectorAll<HTMLElement>("[data-run]")].find(
@@ -53,12 +58,19 @@ export function useTranscriptScroll(
         : undefined;
     };
     let anchor = capture();
-    const atEnd = () =>
-      stage.scrollHeight - stage.scrollTop - stage.clientHeight < 100;
+    const distanceToEnd = () =>
+      stage.scrollHeight - stage.scrollTop - stage.clientHeight;
+    // Allow fractional scrollTop rounding, but never treat a reader near the
+    // bottom as having returned to it. Button visibility is a separate choice.
+    const atEnd = () => distanceToEnd() <= 1;
     // Scroll intent controls following; actual geometry controls the button.
     // A wheel gesture at the boundary may never produce a scroll event.
-    const updateJump = () => setShowJump(mode !== "jumping" && !atEnd());
-    const move = (top: number) => stage.scrollTo({ top, behavior: "instant" });
+    const updateJump = () =>
+      setShowJump(mode !== "jumping" && distanceToEnd() >= 100);
+    const move = (top: number) => {
+      stage.scrollTo({ top, behavior: "instant" });
+      lastTop = stage.scrollTop;
+    };
     const setMode = (next: Mode) => {
       mode = next;
       updateJump();
@@ -69,24 +81,29 @@ export function useTranscriptScroll(
     };
     const followLatest = () => {
       readerScrolling = false;
+      movingAway = false;
       setMode("following");
       align();
     };
     const onScroll = () => {
       if (readerScrolling && mode !== "jumping") {
-        setMode(atEnd() ? "following" : "reading");
+        if (stage.scrollTop !== lastTop) movingAway = stage.scrollTop < lastTop;
+        setMode(atEnd() && !movingAway ? "following" : "reading");
         anchor = capture();
       } else updateJump();
+      lastTop = stage.scrollTop;
     };
     const onScrollEnd = () => {
+      const readerEnded = readerScrolling;
       readerScrolling = false;
       // Output may have grown during the one explicit native animation.
-      if (mode === "jumping" || atEnd()) followLatest();
+      if (mode === "jumping" || (readerEnded && atEnd() && !movingAway))
+        followLatest();
       else updateJump();
     };
     const onGestureEnd = () => {
       // Scrollbar taps and touches can also finish without moving the stage.
-      if (readerScrolling && atEnd()) followLatest();
+      if (readerScrolling && !movingAway && atEnd()) followLatest();
     };
     const readerScroll = (event: Event) => {
       if (
@@ -115,6 +132,12 @@ export function useTranscriptScroll(
         followLatest();
         return;
       }
+      // Keyup can precede the browser’s first animated scroll frame. Remember
+      // upward intent so that ending the gesture cannot immediately undo it.
+      movingAway =
+        (event instanceof WheelEvent && event.deltaY < 0) ||
+        (event instanceof KeyboardEvent && !towardEnd);
+      lastTop = stage.scrollTop;
       // Stop following at the gesture, before a resize can race the scroll event.
       if (mode === "jumping") move(stage.scrollTop);
       readerScrolling = true;
@@ -179,6 +202,10 @@ export function useTranscriptScroll(
       stage.addEventListener(event, readerScroll, { passive: true });
     for (const event of ["touchend", "pointerup", "keyup"])
       stage.addEventListener(event, onGestureEnd, { passive: true });
+    if (inspection.current.startAtTop) {
+      move(0);
+      anchor = capture();
+    }
     align();
     return () => {
       observer.disconnect();

@@ -1,4 +1,5 @@
 {
+  "Host-selected overlap policy, separate from the common compaction trigger.": "Host 选择的并行压缩策略，独立于普通压缩触发线。",
   "Explicit business headers, frozen in accepted Run options and kept out of model projections.": "显式业务请求头，冻结保存在已接受的 Run 选项中，不包含在模型可见的投影中。",
   "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.": "按需覆盖：null 表示继承；Thread PATCH 区分省略字段与 null。",
   "List Tool Executions": "列出工具执行",
@@ -341,6 +342,9 @@
   "All search terms must match one run's retained user/assistant text": "所有搜索词必须在同一个 Run 保留的用户或助手文本中命中",
   "A session or thread ID": "会话或线程 ID",
   "List Sessions": "列出会话",
+  "List Session Threads": "列出会话线程",
+  "Lightweight Session navigation, oldest first, with stable per-origin positions and parent references.": "轻量会话导航，按创建时间从早到晚排列，提供各来源类型内的稳定序号和父线程引用。",
+  "Bounded navigation metadata; positions count the complete Session before filtering.": "有界的导航元数据；序号在筛选前按整个会话计算。",
   "Create Session": "创建会话",
   "Get Session": "获取会话",
   "Get Message Authors": "获取消息作者",
@@ -410,6 +414,8 @@
   "Repeating a request with the same `Idempotency-Key` and bytes returns the same upload.": "相同 `Idempotency-Key` 和字节内容重复请求，返回同一上传。",
   "Create Upload": "创建上传",
   "Summarize Usage": "汇总用量",
+  "List Run Usage": "列出运行用量",
+  "One page of Run usage; Run numbers include all Runs in each Thread, including those without usage.": "一页运行用量；运行编号计入所属线程中的全部运行，包括没有用量记录的运行。",
   "Usage Agents": "Agent 用量",
   "Usage Models": "模型用量",
   "Usage Overview": "用量概览",
@@ -565,5 +571,15 @@
   "List Plugins": "列出插件",
   "The plugins loaded by this Control process, without constructing or executing instances.": "列出当前 Control 进程已加载的插件，不创建或执行插件实例。",
   "List Builtin Skills": "列出内置 skill",
-  "The skills bundled with this Service release, separately from workspace skill resources.": "列出当前 Service 版本提供的内置 skill，与工作区 skill 资源分开。"
+  "The skills bundled with this Service release, separately from workspace skill resources.": "列出当前 Service 版本提供的内置 skill，与工作区 skill 资源分开。",
+  "Get Builtin Skill": "获取内置 skill",
+  "Optionally require the manifest's digest; a changed package returns conflict.": "可指定文件清单的摘要以校验包是否一致；包发生变化时返回冲突错误。",
+  "Read Builtin Skill Archive": "读取内置 skill 压缩包",
+  "The current builtin skill package as a zip archive": "当前内置 skill 包的 ZIP 压缩文件",
+  "The current deployment's bundled skill and its package file manifest.": "当前部署提供的内置 skill 及其包内文件清单。",
+  "The current process's bundled package, without a workspace resource or revision.": "当前进程提供的内置包，不对应工作区资源或修订版本。",
+  "Delete Connector Provider": "删除 connector provider",
+  "Delete Memory Provider": "删除记忆 provider",
+  "Delete Model Provider": "删除模型 provider",
+  "Delete Web Provider": "删除 Web provider"
 }

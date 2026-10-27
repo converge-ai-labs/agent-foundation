@@ -8,6 +8,8 @@ A logical Harness Run may contain several sequential `ModelAttempt` values when 
 
 Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Runs retain its native deferred boundary when current Host bindings support it, independently of parent lineage. Unsupported Runs resolve runtime deferral as denied tool results inside the same loop and reserve terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
 
+`ExecutableAgent.compact(previous_state=..., instruction=None, ...)` uses this same outer Run lifecycle for a summary-only state transition. Its eligibility, cache-compatible request, and restoration contract are owned by [Host-Triggered Compaction](09-context-and-memory.md#host-triggered-compaction). It returns a string summary rather than the Agent's business output and stops before business tool execution or semantic recovery.
+
 ## Live Runs
 
 `ExecutableAgent.live(model=...)` enters one duplex native realtime session as one Harness Run. It shares the ordinary Run's fresh Context, Environment lifetime, plugin middleware, state export, cancellation, usage ledger, and post-cleanup terminal fence. Pydantic AI owns the connection, turn detection, tool scheduling, audio retention, playback, and provider reconnect behavior. Harness does not start ordinary `ModelAttempt` recovery or replay effectful tools after a connection failure.

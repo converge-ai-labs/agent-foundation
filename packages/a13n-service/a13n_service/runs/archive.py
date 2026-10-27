@@ -4,7 +4,7 @@ from sqlalchemy import delete, update
 
 from a13n_service.infra.db import lock, now, transaction
 from a13n_service.infra.http import require_match
-from a13n_service.runs import inbox
+from a13n_service.runs import compactions, inbox
 from a13n_service.runs.environments.tables import ThreadEnvironmentRow
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.runtime import Runtime
@@ -49,4 +49,5 @@ async def archive(
             )
             .values(cancel_requested_at=current)
         )
+        await compactions.archive(session, runtime, thread.id, at=current)
         return ThreadView.model_validate(await refresh_version(session, thread))

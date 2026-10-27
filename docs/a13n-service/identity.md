@@ -93,13 +93,13 @@ Operations that check your current password share one rate limit per client addr
 
 An API key authenticates as its principal and is always **confined to one workspace**. It carries no permissions of its own: each request gets the principal's current grants, limited to that workspace (and to `read` in its organization). Changing or removing a grant changes every key of that principal immediately.
 
-Create a personal key in Console under **Workspace settings → My API keys**, or with `POST /api/v1/users/me/keys` and `{name, workspace_id, expires_at?}`. You need a login session and at least `read` in that workspace; API keys cannot create other keys (`403 forbidden`). The response contains the secret (`a13n_…`) exactly once; the Service stores only its hash. Send the key as a bearer token; requests with it act in its workspace:
+Create a personal key in Console under **API keys** in the sidebar, or with `POST /api/v1/users/me/keys` and `{name, workspace_id, expires_at?}`. You need a login session and at least `read` in that workspace; API keys cannot create other keys (`403 forbidden`). The response contains the secret (`a13n_…`) exactly once; the Service stores only its hash. Send the key as a bearer token; requests with it act in its workspace:
 
 ```sh
 curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-List and revoke your keys under **My API keys** (`GET /api/v1/users/me/keys`, `DELETE /api/v1/users/me/keys/{key_id}`). Workspace administrators see and revoke every key confined to their workspace under **Member keys** (`/api/v1/workspaces/{workspace_id}/keys`). `last_used_at` shows recent use, updated at most once a minute.
+List and revoke your keys under **API keys** (`GET /api/v1/users/me/keys`, `DELETE /api/v1/users/me/keys/{key_id}`). Workspace administrators see and revoke every key confined to their workspace under **Member keys** (`/api/v1/workspaces/{workspace_id}/keys`). `last_used_at` shows recent use, updated at most once a minute.
 
 ## Service accounts
 

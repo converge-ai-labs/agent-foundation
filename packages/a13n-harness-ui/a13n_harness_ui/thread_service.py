@@ -355,6 +355,7 @@ class ThreadService:
                 replacement=published,
                 read_model=read_model,
                 activity_changed=False,
+                clear_compaction=True,
             )
             await self._store.publish_work(thread_id, published, state)
 

@@ -146,7 +146,6 @@ export function SettingsLayout({
             <div
               className={styles.content}
               data-settings-part="content"
-              data-content={selected.layout ?? "collection"}
               key={`${scope}:${selected.value}`}
             >
               {heading && (

@@ -155,7 +155,7 @@ export function NewConnection({
       open={open}
       onOpenChange={(value) => {
         setOpen(value);
-        if (!value) setGeneration((current) => current + 1);
+        if (value) setGeneration((current) => current + 1);
       }}
       onConnected={(id) => {
         setOpen(false);

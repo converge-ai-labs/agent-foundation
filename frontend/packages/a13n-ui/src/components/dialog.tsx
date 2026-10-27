@@ -36,7 +36,7 @@ export function DialogBackdrop({
   return (
     <DialogPrimitive.Backdrop
       className={cn(
-        "fixed inset-0 z-50 bg-black/36 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0",
+        "fixed inset-0 z-50 bg-black/36 transition-opacity duration-[var(--a13n-overlay-duration)] ease-out motion-reduce:transition-none data-ending-style:opacity-0 data-starting-style:opacity-0",
         className,
       )}
       data-slot="dialog-backdrop"
@@ -88,9 +88,9 @@ export function DialogPopup({
       >
         <DialogPrimitive.Popup
           className={cn(
-            "group/dialog relative grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] min-h-0 w-full min-w-0 max-w-[32.5rem] origin-center overflow-hidden rounded-[12px] border-0 bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-var(--nested-dialogs))] shadow-floating outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0 sm:scale-[calc(1-0.1*var(--nested-dialogs))] sm:data-ending-style:scale-98 sm:data-starting-style:scale-98",
+            "group/dialog relative grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] min-h-0 w-full min-w-0 max-w-[32.5rem] origin-center overflow-hidden rounded-[12px] border-0 bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-var(--nested-dialogs))] shadow-floating outline-none transition-opacity duration-[var(--a13n-overlay-duration)] ease-out motion-reduce:transition-none data-ending-style:opacity-0 data-starting-style:opacity-0 sm:scale-[calc(1-0.1*var(--nested-dialogs))]",
             bottomStickOnMobile &&
-              "max-sm:max-w-none max-sm:max-h-[calc(100dvh-3rem)] max-sm:origin-bottom max-sm:rounded-none max-sm:data-ending-style:translate-y-4 max-sm:data-starting-style:translate-y-4",
+              "max-sm:max-w-none max-sm:max-h-[calc(100dvh-3rem)] max-sm:origin-bottom max-sm:rounded-none",
             placement === "top" &&
               "max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-6.5rem)]",
             className,
@@ -104,7 +104,7 @@ export function DialogPopup({
             <DialogPrimitive.Close
               aria-label="Close"
               className="absolute end-4 top-5"
-              render={<Button size="icon" variant="ghost" />}
+              render={<Button size="icon" variant="ghost" tooltip={false} />}
               {...closeProps}
             >
               <XIcon />

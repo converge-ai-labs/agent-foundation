@@ -23,6 +23,8 @@ For worked examples, start with [common configuration recipes](configuration-rec
 | External tools                                            | `mcp/*.yaml` or `mcp/*.json`        | [MCP fields](mcp.md#mcp-field-reference)                                         |
 | Harness Plugins, Environment profiles, and Run Extensions | `extensions/*.yaml`                 | [Extension fields](extensions-and-mcp.md#harness-plugin-and-run-extension-files) |
 
+Host browser executable bindings live in root `browser`; see [Host browser](#host-browser).
+
 Resource references use their **`id`**, not a filename or display name. For example, `defaults.agent: agent-coder` selects the Agent whose YAML says `id: agent-coder`.
 
 ## Locate and validate your files
@@ -70,6 +72,9 @@ This starter document shows the main root settings. Optional integrations are de
 ```yaml
 schema_version: "1"
 max_goal_iterations: 10
+background_compaction:
+  enabled: true
+  blocking_threshold: 0.95
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -122,6 +127,16 @@ webui:
   sidekick: {}
 ```
 
+### Background compaction
+
+`background_compaction.enabled` defaults to `true`. `blocking_threshold` defaults to `0.95` and accepts values greater than zero and at most one. At 95% counted input occupancy, a Run waits for existing background work or compacts synchronously if none exists. The output reserve can require blocking earlier. The normal compaction trigger remains 90%. Agents with the `compaction` Capability can summarize older history while the foreground Run continues, when the Model can verify enough context capacity. At the compaction trigger, insufficient or unknown capacity selects synchronous compaction when no background operation exists. If one is already running, the Run waits for it. Failed background work falls back to synchronous compaction, including failures observed in a later Run or after restart; current usage limits still apply. Only root Threads use this mode; inline and asynchronous subagents retain synchronous compaction.
+
+Completed summaries are saved before use. The current Run applies a ready summary at a safe model boundary, or a later Run restores it together with its current input. Completion alone does not rewrite an idle conversation. App restart restores completed work and never replays an interrupted summary request.
+
+Processed summaries and cleared operations are marked together with their saved checkpoint, then removed by automatic cleanup. Cleanup runs at startup and hourly. Unused operations expire after seven days; active Runs and background requests are protected. Expiry preserves conversation history, and later Runs can generate a new summary when needed. Embedded Apps can change the age threshold through `StorageSettings.compaction_retention_seconds`.
+
+Set `background_compaction.enabled: false` to use synchronous compaction for later Runs. Already saved, unexpired summaries remain available. Model context budgets and explicit compaction thresholds are unchanged.
+
 ### File memory
 
 File memory is on by default. Global facts live in `memory/global/` beside the selected YAML; Project facts in `memory/projects/<project-id>/`. Projectless conversations use only global memory. Keep `MEMORY.md` as a short always-loaded index, with detailed topics in separate files. Memory is not conversation history and does not restrict Full Control or human access.
@@ -157,6 +172,20 @@ Back up `memory/` beside the selected YAML separately from application data. `.a
 ### Media understanding
 
 `media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` fallback when the active Model cannot accept that media natively. Each defaults to `null`, preserving the corresponding Harness environment-variable fallback. Configure these in **Settings → Models** or `/model defaults`. See [media understanding defaults](models-and-authentication.md#media-understanding-defaults) for precedence, model input capability requirements, and Run capture behavior.
+
+### Host browser
+
+Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null`, which automatically selects compatible installed programs when you enable the browser. No configuration save or restart is needed for automatic selection. `vnc_executable` applies only to Linux. To override a selection, provide an absolute Host path, for example:
+
+```yaml
+browser:
+  executable: /usr/bin/chromium
+  vnc_executable: /usr/bin/Xtigervnc
+```
+
+Use **Settings → General → Host browser** for advanced overrides, or replace the example paths with your installation's paths. Save and restart Harness UI to apply changed overrides. Choose **Automatic** to clear an override. Invalid explicit paths block startup without falling back to another program. Automatic detection never installs software or rewrites settings. Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation. macOS requires only Chromium for automation. Optional read-only window preview requires macOS 14 or later and Screen Recording permission for the application running Harness UI. **Open Screen Recording settings** opens the Host settings. No VNC password or remote input is used; missing preview permission does not block automation. Follow the [macOS preparation steps](webui.md#install-host-components) before starting.
+
+The bindings apply to all Projects. One browser instance and profile are shared; the profile lives at `<data_root>/browsers/profile` and has no separate path setting. See the [browser quick start](webui.md#first-time-setup) for Host packages, selection and first use, and [sandbox startup options](command-reference.md#webui) for deployments that explicitly require disabling Chromium's sandbox.
 
 ### WebUI allowed origins
 

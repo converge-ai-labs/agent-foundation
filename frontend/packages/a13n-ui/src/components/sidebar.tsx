@@ -65,9 +65,13 @@ export function SidebarProvider({
   className,
   style,
   children,
+  mobileBreakpoint = "md",
   ...props
-}: React.ComponentProps<"div">): React.ReactElement {
-  const isMobile = useMediaQuery("max-md");
+}: React.ComponentProps<"div"> & {
+  /** Keep room for the consuming application's main content. */
+  mobileBreakpoint?: "md" | "lg";
+}): React.ReactElement {
+  const isMobile = useMediaQuery(`max-${mobileBreakpoint}`);
   const [openMobile, setOpenMobile] = React.useState(false);
   const contextValue = React.useMemo(
     () => ({ isMobile, openMobile, setOpenMobile }),

@@ -69,6 +69,7 @@ A revision's `config` holds:
 | Field                             | Meaning                                                                                                                                                                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `model`                           | The model's key. See [Models](models.md).                                                                                                                                                                                             |
+| `background_compaction`           | Background summary policy: `enabled` defaults to `false`, `blocking_threshold` to `0.95`. See [Context compaction](#context-compaction).                                                                                              |
 | `model_settings`                  | Model-API-specific settings, such as reasoning effort.                                                                                                                                                                                |
 | `model_characteristics`           | The context window and context-management thresholds.                                                                                                                                                                                 |
 | `instructions`                    | The system instructions, up to 256 KiB.                                                                                                                                                                                               |
@@ -90,6 +91,12 @@ A revision's `config` holds:
 | `memory_mounts`                   | [Memories](memory.md#mount-a-memory-on-a-thread) each new thread mounts when its first run is accepted, `[{name, memory_id, access}]`.                                                                                                |
 
 Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, or saving fails with `invalid_argument` on that field, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore keeps its configuration and its skill and subagent pins; the models, connections, providers and templates it names are live and are resolved again at each use.
+
+### Context compaction
+
+Long conversations compact older context into a summary. Service defaults to synchronous compaction. To enable background generation for an agent, open **Advanced → Context compaction** in its Console editor, switch on **Enable background compaction**, and save the revision. The corresponding Agent config is `background_compaction: {enabled: true, blocking_threshold: 0.95}`. Ordinary threads then generate summaries in the background while the current request has verified context headroom. The default blocking threshold is 95% counted input occupancy; its value must be greater than zero and at most one. At that line, the run waits for existing work or compacts synchronously if none exists. Output reserve can require blocking earlier. The normal compaction trigger remains 90%. The summary can apply during the same run or when the thread next runs. Disabling background generation preserves delivery of retained summaries. Recent messages and tool results remain in order. Inline and asynchronous subagents compact synchronously.
+
+When context cannot safely fit, the run waits for pending compaction or uses synchronous compaction. Background failure also uses synchronous recovery when needed. Oversized background inputs use the synchronous path. All summary requests count toward the originating run's `max_usage.requests`; background usage can arrive after that run finishes. Interrupting the run does not cancel its background summary. Archiving the thread retires it, and a fork does not inherit pending compaction.
 
 ### Tool permissions
 
@@ -520,7 +527,7 @@ The stream is provisional; the items of a run are the durable record. The Servic
 
 ## Usage
 
-Every model request is recorded with its token counts and a snapshot of the model's pricing. `GET …/usage` sums the records per model, and the same way for each run:
+Every model request is recorded with its token counts and a snapshot of the model's pricing. `GET …/usage` sums all matching records per model. Session totals include every Run, independent of pagination:
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -529,11 +536,18 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
              "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
-             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
- "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}]}
 ```
 
-Each entry's `model` is a model key, or `null` for records attributed to no model. `runs` lists the matching runs that recorded usage, oldest first; their entries add up to `models`. Cached input (`cache_read_tokens`) is part of `input_tokens`. Streamed requests that completed also report `average_time_to_first_chunk_seconds`, the mean wait for the first streamed chunk, and `output_tokens_per_second` while generating after it; both are `null` when no such request was recorded. Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_before`. `cost` is `null` when no record of the model was priced. A run's `usage_at_seal` is its usage when it ended; reports that arrive later still count in `/usage`.
+Each entry's `model` is a model key, or `null` for records attributed to no model. Cached input (`cache_read_tokens`) is part of `input_tokens`. Streamed requests that completed also report `average_time_to_first_chunk_seconds`, the mean wait for the first streamed chunk, and `output_tokens_per_second` while generating after it; both are `null` when no such request was recorded. Filter by `run_id`, `thread_id`, `session_id`, and `ingested_after`/`ingested_before`. `cost` is `null` when no record of the model was priced. A run's `usage_at_seal` is its usage when it ended; reports that arrive later still count in `/usage`.
+
+Read Run breakdowns separately with `GET …/usage/runs`, using the same filters plus `limit` and `cursor`:
+
+```sh
+curl "$A13N_URL/api/v1/usage/runs?session_id=$SESSION&limit=50" -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+The response is `{ "items": [{ "run_id": "run_…", "thread_id": "thread_…", "run_number": 3, "models": [...] }], "next_cursor": "…" }`. It lists Runs with recorded usage oldest first, keeping all model totals for one Run together. Follow `next_cursor` with unchanged filters; `null` ends the collection. `run_number` is the Run's chronological position within its Thread, including Runs without usage. One page is only a partial breakdown; use `/usage` for complete totals. Clients that previously read `/usage.runs` must read these pages instead.
 
 ## Traces
 
@@ -554,7 +568,7 @@ The configured backend executes each search without a result cache. Langfuse rea
 
 ## Find and improve execution issues
 
-Open **Improve → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. The saved assessment and review note appear in reading mode. Select **Edit assessment**, choose confirmed, expected, insufficient, or false positive, optionally add a **Review note**, then select **Save assessment**. The outcome and note are saved together. Changing the outcome clears the previous rationale; Cancel restores saved values and returns to reading mode. Closing and reopening preserve the assessment and note, and the original diagnosis and evidence stay visible.
+Open **Insights → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. The saved assessment and review note appear in reading mode. Select **Edit assessment**, choose confirmed, expected, insufficient, or false positive, optionally add a **Review note**, then select **Save assessment**. The outcome and note are saved together. Changing the outcome clears the previous rationale; Cancel restores saved values and returns to reading mode. Closing and reopening preserve the assessment and note, and the original diagnosis and evidence stay visible.
 
 Filter findings by category, severity, assessment or open/closed state. Each finding uses one primary category for its central claim:
 

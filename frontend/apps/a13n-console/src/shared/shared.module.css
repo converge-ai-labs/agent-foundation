@@ -37,10 +37,7 @@
   margin-top: 12px;
 }
 .filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  composes: toolbar from "./collection/collection.module.css";
   margin-bottom: 20px;
 }
 .filters > [data-slot="field"] {
@@ -99,4 +96,12 @@
   .cardGrid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Keep navigation tabs in their own scroll region, never the whole page. */
+.tabStrip {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-block: 2px;
 }

@@ -1,8 +1,3 @@
-.utilityLink {
-  margin-top: 24px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
 .formWidth {
   width: 100%;
   max-width: 680px;
@@ -61,12 +56,7 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-@media (max-width: 1000px) {
-  .utilityLink {
-    margin-top: 0;
-  }
-}
-@media (max-width: 600px) {
+@container settings-content (max-width: 600px) {
   .disclosure > summary small {
     display: block;
     margin: 6px 0 0 16px;

@@ -1,3 +1,4 @@
+import { FormSection } from "../../shared/forms";
 import { ClockIcon, PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
@@ -11,7 +12,7 @@ import {
   ModalFrame,
   SegmentedControl,
 } from "a13n-ui";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -55,12 +56,23 @@ function duration(seconds: number, t: TFunction) {
 export function ScheduleEditor({
   schedule,
   onSaved,
+  trigger,
+  open: controlledOpen,
+  onOpenChange,
 }: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: ReactElement | false;
   schedule?: Schedule;
   onSaved?: (schedule: Schedule) => void;
 }) {
   const { t } = useTranslation(),
-    [open, setOpen] = useState(false);
+    [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (value: boolean) => {
+    setLocalOpen(value);
+    onOpenChange?.(value);
+  };
   return (
     <ModalFrame
       open={open}
@@ -75,10 +87,18 @@ export function ScheduleEditor({
           : "Preview the timing, then choose whether to enable the schedule on creation.",
       )}
       trigger={
-        <Button variant={schedule ? "outline" : "default"} type="button">
-          {schedule ? <PencilSimpleIcon size={14} /> : <PlusIcon size={14} />}
-          {t(schedule ? "Edit schedule" : "Create schedule")}
-        </Button>
+        trigger === false
+          ? undefined
+          : (trigger ?? (
+              <Button variant={schedule ? "outline" : "default"} type="button">
+                {schedule ? (
+                  <PencilSimpleIcon size={14} />
+                ) : (
+                  <PlusIcon size={14} />
+                )}
+                {t(schedule ? "Edit schedule" : "Create schedule")}
+              </Button>
+            ))
       }
     >
       {open && (
@@ -248,264 +268,272 @@ function ScheduleForm({
         save.mutate();
       }}
     >
-      <FormField label={t("Name")}>
-        <Input
-          required
-          maxLength={128}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
+      <FormSection title={t("Basic information")}>
+        <FormField label={t("Name")}>
+          <Input
+            required
+            maxLength={128}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <TextAreaField
+          label={t("Description (optional)")}
+          rows={2}
+          value={description}
+          onChange={setDescription}
+          maxLength={2048}
         />
-      </FormField>
-      <TextAreaField
-        label={t("Description (optional)")}
-        rows={2}
-        value={description}
-        onChange={setDescription}
-        maxLength={2048}
-      />
-      <SegmentedControl
-        label={t("Schedule type")}
-        value={timingType}
-        onValueChange={(value) => {
-          setTimingType(value === "once" ? "once" : "cron");
-          preview.reset();
-        }}
-        options={[
-          { value: "cron", label: t("Recurring") },
-          { value: "once", label: t("One time") },
-        ]}
-      />
-      {timingType === "once" ? (
-        <DateTimeField
-          futureOnly={!schedule}
-          label={t("Run at")}
-          hint={t("Date and time in {{timezone}}.", {
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          })}
-          precision="second"
-          clearable={false}
-          value={runAt}
+      </FormSection>
+      <FormSection title={t("Schedule")}>
+        <SegmentedControl
+          label={t("Schedule type")}
+          value={timingType}
           onValueChange={(value) => {
-            setRunAt(value);
+            setTimingType(value === "once" ? "once" : "cron");
             preview.reset();
           }}
+          options={[
+            { value: "cron", label: t("Recurring") },
+            { value: "once", label: t("One time") },
+          ]}
         />
-      ) : (
-        <div className={styles.timing}>
-          <FormField
-            label={t("Cron expression")}
-            description={
-              describeCron(expression, t, i18n.resolvedLanguage) ??
-              t("Minute, hour, day, month and weekday.")
-            }
-          >
-            <Input
-              required
-              value={expression}
-              onChange={(event) => {
-                setExpression(event.target.value);
-                preview.reset();
-              }}
-            />
-          </FormField>
-          <FormField
-            label={t("Time zone")}
-            description={t("Times in the expression follow this zone.")}
-          >
-            <TimeZonePicker
-              value={timezone}
-              onValueChange={(value) => {
-                setTimezone(value);
-                preview.reset();
-              }}
-            />
-          </FormField>
-        </div>
-      )}
-      <div>
-        <Button
-          type="button"
-          variant="outline"
-          loading={preview.isPending}
-          onClick={() => preview.mutate()}
-        >
-          <ClockIcon size={14} />
-          {t("Preview next times")}
-        </Button>
-      </div>
-      <ErrorNotice error={preview.error} />
-      {preview.data?.items.length === 0 && (
-        <p role="status" className={styles.notice}>
-          {t(
-            timingType === "once"
-              ? "This time has already passed. Choose a future date and time."
-              : "No upcoming trigger times.",
-          )}
-        </p>
-      )}
-      {!!preview.data?.items.length && (
-        <ol className={styles.preview} aria-label={t("Next scheduled times")}>
-          {preview.data.items.map((time) => (
-            <li key={time.utc}>
-              <ZonedTime
-                value={time.utc}
-                timeZone={timingType === "once" ? undefined : timezone}
-              />
-            </li>
-          ))}
-        </ol>
-      )}
-      <FormField
-        label={t("Maximum delay (seconds)")}
-        description={
-          Number.isInteger(lateness) && lateness > 0
-            ? t(
-                "Skip a trigger that cannot be submitted within {{duration}}.",
-                {
-                  duration: duration(lateness, t),
-                },
-              )
-            : t("Skip a trigger when it cannot be submitted within this time.")
-        }
-      >
-        <Input
-          type="number"
-          min={60}
-          max={86400}
-          required
-          value={lateness}
-          onChange={(event) => setLateness(event.target.valueAsNumber)}
-        />
-      </FormField>
-      <SegmentedControl
-        label={t("Invocation editor")}
-        value={mode}
-        onValueChange={(next) => {
-          if (next === mode) return;
-          if (next === "json") {
-            const snapshot = JSON.stringify(fieldInvocation(), null, 2);
-            setFieldsSnapshot(snapshot);
-            setJson(snapshot);
-            setMode("json");
-          } else {
-            if (json === fieldsSnapshot) {
-              setMode("fields");
-              return;
-            }
-            if (parsed.fields) {
-              const { draft, input } = parsed.fields;
-              setInvocationBase(draft);
-              setAgentId(draft.agent_id);
-              setRevision(draft.agent_revision_id ?? "");
-              setInput(input);
-              setMode("fields");
-            } else {
-              setShowModeError(true);
-            }
-          }
-        }}
-        options={[
-          { value: "fields", label: t("Fields") },
-          { value: "json", label: t("JSON") },
-        ]}
-      />
-      <ModalFrame
-        open={showModeError}
-        onOpenChange={setShowModeError}
-        finalFocus={jsonInput}
-        title={t("Cannot switch to fields")}
-        description={parsed.error ? t(parsed.error.message) : undefined}
-        closeLabel={t("Close")}
-        footer={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowModeError(false)}
+        {timingType === "once" ? (
+          <DateTimeField
+            futureOnly={!schedule}
+            label={t("Run at")}
+            hint={t("Date and time in {{timezone}}.", {
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            })}
+            precision="second"
+            clearable={false}
+            value={runAt}
+            onValueChange={(value) => {
+              setRunAt(value);
+              preview.reset();
+            }}
+          />
+        ) : (
+          <div className={styles.timing}>
+            <FormField
+              label={t("Cron expression")}
+              description={
+                describeCron(expression, t, i18n.resolvedLanguage) ??
+                t("Minute, hour, day, month and weekday.")
+              }
             >
-              {t("Continue editing")}
-            </Button>
-            {fieldsSnapshot !== undefined && (
+              <Input
+                required
+                value={expression}
+                onChange={(event) => {
+                  setExpression(event.target.value);
+                  preview.reset();
+                }}
+              />
+            </FormField>
+            <FormField
+              label={t("Time zone")}
+              description={t("Times in the expression follow this zone.")}
+            >
+              <TimeZonePicker
+                value={timezone}
+                onValueChange={(value) => {
+                  setTimezone(value);
+                  preview.reset();
+                }}
+              />
+            </FormField>
+          </div>
+        )}
+        <div>
+          <Button
+            type="button"
+            variant="outline"
+            loading={preview.isPending}
+            onClick={() => preview.mutate()}
+          >
+            <ClockIcon size={14} />
+            {t("Preview next times")}
+          </Button>
+        </div>
+        <ErrorNotice error={preview.error} />
+        {preview.data?.items.length === 0 && (
+          <p role="status" className={styles.notice}>
+            {t(
+              timingType === "once"
+                ? "This time has already passed. Choose a future date and time."
+                : "No upcoming trigger times.",
+            )}
+          </p>
+        )}
+        {!!preview.data?.items.length && (
+          <ol className={styles.preview} aria-label={t("Next scheduled times")}>
+            {preview.data.items.map((time) => (
+              <li key={time.utc}>
+                <ZonedTime
+                  value={time.utc}
+                  timeZone={timingType === "once" ? undefined : timezone}
+                />
+              </li>
+            ))}
+          </ol>
+        )}
+        <FormField
+          label={t("Maximum delay (seconds)")}
+          description={
+            Number.isInteger(lateness) && lateness > 0
+              ? t(
+                  "Skip a trigger that cannot be submitted within {{duration}}.",
+                  {
+                    duration: duration(lateness, t),
+                  },
+                )
+              : t(
+                  "Skip a trigger when it cannot be submitted within this time.",
+                )
+          }
+        >
+          <Input
+            type="number"
+            min={60}
+            max={86400}
+            required
+            value={lateness}
+            onChange={(event) => setLateness(event.target.valueAsNumber)}
+          />
+        </FormField>
+      </FormSection>
+      <FormSection title={t("Invocation")}>
+        <SegmentedControl
+          label={t("Invocation editor")}
+          value={mode}
+          onValueChange={(next) => {
+            if (next === mode) return;
+            if (next === "json") {
+              const snapshot = JSON.stringify(fieldInvocation(), null, 2);
+              setFieldsSnapshot(snapshot);
+              setJson(snapshot);
+              setMode("json");
+            } else {
+              if (json === fieldsSnapshot) {
+                setMode("fields");
+                return;
+              }
+              if (parsed.fields) {
+                const { draft, input } = parsed.fields;
+                setInvocationBase(draft);
+                setAgentId(draft.agent_id);
+                setRevision(draft.agent_revision_id ?? "");
+                setInput(input);
+                setMode("fields");
+              } else {
+                setShowModeError(true);
+              }
+            }
+          }}
+          options={[
+            { value: "fields", label: t("Fields") },
+            { value: "json", label: t("JSON") },
+          ]}
+        />
+        <ModalFrame
+          open={showModeError}
+          onOpenChange={setShowModeError}
+          finalFocus={jsonInput}
+          title={t("Cannot switch to fields")}
+          description={parsed.error ? t(parsed.error.message) : undefined}
+          closeLabel={t("Close")}
+          footer={
+            <>
               <Button
                 type="button"
-                onClick={() => {
-                  setJson(fieldsSnapshot);
-                  setShowModeError(false);
-                  if (!stale) save.reset();
-                  setMode("fields");
-                }}
+                variant="outline"
+                onClick={() => setShowModeError(false)}
               >
-                {t("Discard JSON changes and return to fields")}
+                {t("Continue editing")}
               </Button>
-            )}
-          </>
-        }
-      >
-        {parsed.error instanceof JsonDraftSyntaxError && (
-          <p>
-            {t("Line {{line}}, column {{column}}", {
-              line: parsed.error.line,
-              column: parsed.error.column,
-            })}
-          </p>
-        )}
-        {fieldsSnapshot !== undefined && (
-          <p className={styles.notice}>
-            {t(
-              "Restores the form as it was before you opened JSON. Other schedule fields are kept.",
-            )}
-          </p>
-        )}
-      </ModalFrame>
-      {mode === "json" ? (
-        <TextAreaField
-          ref={jsonInput}
-          label={t("Invocation JSON")}
-          code
-          rows={12}
-          value={json}
-          invalid={!!parsed.error}
-          onChange={setJson}
-        />
-      ) : (
-        <>
-          <ErrorNotice
-            error={agents.error}
-            retry={() => void agents.refetch()}
-          />
-          <ChoiceField
-            label={t("Agent")}
-            required
-            value={agentId}
-            placeholder={t("Select an agent")}
-            onValueChange={(next) => {
-              if (next === agentId) return;
-              setAgentId(next);
-              setRevision("");
-            }}
-            options={(agents.data ?? []).map((agent) => ({
-              value: agent.id,
-              label: agent.name,
-            }))}
-          />
-          <ScheduleRevisionField
-            agentId={agentId}
-            value={revision}
-            onValueChange={setRevision}
-          />
+              {fieldsSnapshot !== undefined && (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setJson(fieldsSnapshot);
+                    setShowModeError(false);
+                    if (!stale) save.reset();
+                    setMode("fields");
+                  }}
+                >
+                  {t("Discard JSON changes and return to fields")}
+                </Button>
+              )}
+            </>
+          }
+        >
+          {parsed.error instanceof JsonDraftSyntaxError && (
+            <p>
+              {t("Line {{line}}, column {{column}}", {
+                line: parsed.error.line,
+                column: parsed.error.column,
+              })}
+            </p>
+          )}
+          {fieldsSnapshot !== undefined && (
+            <p className={styles.notice}>
+              {t(
+                "Restores the form as it was before you opened JSON. Other schedule fields are kept.",
+              )}
+            </p>
+          )}
+        </ModalFrame>
+        {mode === "json" ? (
           <TextAreaField
-            label={t("Input")}
-            rows={5}
-            value={input}
-            onChange={setInput}
+            ref={jsonInput}
+            label={t("Invocation JSON")}
+            code
+            rows={12}
+            value={json}
+            invalid={!!parsed.error}
+            onChange={setJson}
           />
-        </>
-      )}
-      <p className={styles.notice}>
-        {t(
-          "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.",
+        ) : (
+          <>
+            <ErrorNotice
+              error={agents.error}
+              retry={() => void agents.refetch()}
+            />
+            <ChoiceField
+              label={t("Agent")}
+              required
+              value={agentId}
+              placeholder={t("Select an agent")}
+              onValueChange={(next) => {
+                if (next === agentId) return;
+                setAgentId(next);
+                setRevision("");
+              }}
+              options={(agents.data ?? []).map((agent) => ({
+                value: agent.id,
+                label: agent.name,
+              }))}
+            />
+            <ScheduleRevisionField
+              agentId={agentId}
+              value={revision}
+              onValueChange={setRevision}
+            />
+            <TextAreaField
+              label={t("Input")}
+              rows={5}
+              value={input}
+              onChange={setInput}
+            />
+          </>
         )}
-      </p>
+        <p className={styles.notice}>
+          {t(
+            "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.",
+          )}
+        </p>
+      </FormSection>
       {stale ? (
         <ConflictNotice
           title={t("Schedule changed")}

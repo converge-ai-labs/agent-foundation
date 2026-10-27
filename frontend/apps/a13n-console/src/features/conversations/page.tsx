@@ -1,6 +1,10 @@
 import { Button, SearchPicker } from "a13n-ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -30,6 +34,7 @@ import {
 } from "./api";
 import { Composer, RunOptions, useRunOptions } from "./composer";
 import type { EnvironmentChoice } from "./composer/options-dialog";
+import { SessionBodyLoading, SessionError } from "./session-feedback";
 import { SessionList } from "./list";
 import { SessionAuthorsProvider } from "./message-authors";
 import { SessionHeader } from "./session-header";
@@ -168,7 +173,11 @@ export function NewConversation() {
           agentName={selected?.name}
           options={
             <>
-              <RunOptions options={options} showAgent={false} />
+              <RunOptions
+                options={options}
+                showAgent={false}
+                agentId={agentId}
+              />
               {can("run") && (
                 <SessionMemoryControl
                   value={memory}
@@ -241,135 +250,163 @@ export function NewConversation() {
 }
 
 export function SessionLayout() {
-  const { sessionId = "", threadId, runId } = useParams(),
-    { workspace } = useWorkspace();
+  const { t } = useTranslation();
+  const { sessionId = "", threadId, runId } = useParams();
+  const { workspace } = useWorkspace();
+  const { search } = useLocation();
   const client = useClient(),
     cache = useQueryClient();
-  useEffect(() => {
-    const queries = conversationQueries(client, workspace.id);
-    if (threadId) {
-      void cache.prefetchQuery(queries.thread(threadId));
-      void cache.prefetchQuery(queries.runs(threadId, { anchor: runId }));
-    }
-    if (runId) {
-      void cache.prefetchQuery(queries.run(runId));
-      void cache.prefetchQuery(queries.items(runId));
-    }
-  }, [client, cache, workspace.id, threadId, runId]);
+  const queries = conversationQueries(client, workspace.id);
   const session = useSession(sessionId);
-  if (session.isPending) return <Loading variant="detail" />;
-  if (!session.data)
-    return (
-      <ErrorNotice error={session.error} retry={() => void session.refetch()} />
-    );
-  return <SessionContent scheduleId={session.data.schedule_id ?? undefined} />;
-}
-
-function SessionContent({ scheduleId }: { scheduleId?: string }) {
-  const { t } = useTranslation(),
-    { sessionId = "", threadId, runId } = useParams(),
-    { workspace } = useWorkspace(),
-    client = useClient(),
-    cache = useQueryClient(),
-    queries = conversationQueries(client, workspace.id);
-  const ordinary = useQuery({
-    ...queries.threads(sessionId),
-    enabled: !scheduleId || !threadId,
-  });
-  const selectedThread = useQuery({
-    ...queries.thread(threadId ?? ""),
-    enabled: !!scheduleId && !!threadId,
-  });
-  const threads =
-    scheduleId && threadId
-      ? {
-          data: selectedThread.data ? [selectedThread.data] : undefined,
-          error: selectedThread.error,
-          isPending: selectedThread.isPending,
-          refetch: selectedThread.refetch,
-        }
-      : ordinary;
-  // Chat returns to the main conversation, never the most recently listed child.
-  // An explicit Thread URL remains authoritative, including forks and children.
-  const { search } = useLocation();
   const chat = new URLSearchParams(search).get("view") === "chat";
-  const roots = threads.data?.filter((thread) => thread.origin === "new") ?? [];
-  const first = chat
-    ? roots.length === 1
-      ? roots[0]
-      : undefined
-    : threads.data?.[0];
+  const roots = useQuery({
+    ...queries.threads(
+      sessionId,
+      chat ? { origin: ["new"], limit: 2 } : { limit: 1 },
+    ),
+    enabled: !!session.data && !threadId,
+  });
+  const fallback = useQuery({
+    ...queries.threads(sessionId, { limit: 1 }),
+    enabled:
+      !!session.data && !threadId && chat && roots.data?.items.length === 0,
+  });
+  const first =
+    chat && roots.data?.items.length !== 1 ? undefined : roots.data?.items[0];
+  const targetThread = threadId ?? first?.id;
+  const selectedThread = useQuery({
+    ...queries.thread(targetThread ?? ""),
+    enabled: !!targetThread,
+    initialData: first?.id === targetThread ? first : undefined,
+    initialDataUpdatedAt: roots.dataUpdatedAt,
+  });
+  const target =
+    selectedThread.data ?? (first?.id === targetThread ? first : undefined);
+  const selectedRun = runId ?? target?.current_run_id ?? target?.last_run_id;
+  useEffect(() => {
+    // Start loading the transcript module while the target is being resolved.
+    void import("./transcript").catch(() => undefined);
+  }, [sessionId]);
+  useEffect(() => {
+    if (selectedRun) {
+      void cache.prefetchQuery(queries.run(selectedRun));
+      void cache.prefetchQuery(queries.items(selectedRun));
+      if (targetThread)
+        void cache.prefetchQuery(
+          queries.runs(targetThread, { anchor: selectedRun }),
+        );
+    }
+  }, [client, cache, workspace.id, targetThread, selectedRun]);
   return (
-    // The header and the run sections share one owner for what is collapsed.
     <SessionAuthorsProvider
       key={`${workspace.id}:${sessionId}`}
       sessionId={sessionId}
     >
       <SessionStreamProvider
         sessionId={sessionId}
+        enabled={!!session.data}
         onEvent={(event) => {
           if (
-            scheduleId &&
+            session.data?.schedule_id &&
             event.type === "connection" &&
             event.state === "live"
           )
             void invalidateConversation(cache, workspace.id, {
               threadId,
-              runId:
-                runId ??
-                selectedThread.data?.current_run_id ??
-                selectedThread.data?.last_run_id,
+              runId: selectedRun,
             });
         }}
       >
         <RunCollapseProvider>
           <div className={styles.sessionDetail}>
-            <SessionHeader threads={threads.data ?? []} />
-            <ErrorNotice
-              error={threads.error}
-              retry={() => void threads.refetch()}
-            />
+            <SessionHeader />
             <div
               className={`${styles.sessionContent} a13n-scrollbar`}
               data-session-stage
             >
-              {threadId ? (
-                <Outlet />
-              ) : first ? (
-                <Navigate to={`threads/${first.id}${search}`} replace />
-              ) : threads.isPending ? (
-                <Loading variant="list" rows={3} />
-              ) : threads.data?.length ? (
-                <div className="grid gap-3 p-6">
-                  <h2>{t("Choose a thread")}</h2>
-                  <p>{t("Choose which thread history to open.")}</p>
-                  <ul className="grid gap-2">
-                    {threads.data.map((thread) => (
-                      <li key={thread.id}>
-                        <Button
-                          variant="outline"
-                          render={<Link to={`threads/${thread.id}${search}`} />}
-                        >
-                          {thread.id} · {t(`origin.${thread.origin}`)}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : !threads.error ? (
-                <Empty
-                  icon={<ChatsIcon aria-hidden="true" />}
-                  title={t("No threads yet")}
-                  description={t(
-                    "Threads created by the host application appear here.",
-                  )}
-                />
-              ) : null}
+              <SessionError
+                error={
+                  session.error ??
+                  (!threadId ? (roots.error ?? fallback.error) : null)
+                }
+                retry={() => {
+                  void session.refetch();
+                  if (!threadId) {
+                    void roots.refetch();
+                    if (chat) void fallback.refetch();
+                  }
+                }}
+              />
+              <Suspense fallback={<SessionBodyLoading />}>
+                {session.isPending ? (
+                  <SessionBodyLoading />
+                ) : !session.data ? null : threadId ? (
+                  <Outlet />
+                ) : first ? (
+                  <Navigate to={`threads/${first.id}${search}`} replace />
+                ) : roots.isPending ||
+                  (chat &&
+                    roots.data?.items.length === 0 &&
+                    fallback.isPending) ? (
+                  <SessionBodyLoading />
+                ) : roots.data?.items.length || fallback.data?.items.length ? (
+                  <ThreadChoices sessionId={sessionId} />
+                ) : !roots.error && !fallback.error ? (
+                  <Empty
+                    icon={<ChatsIcon aria-hidden="true" />}
+                    title={t("No threads yet")}
+                    description={t(
+                      "Threads created by the host application appear here.",
+                    )}
+                  />
+                ) : null}
+              </Suspense>
             </div>
           </div>
         </RunCollapseProvider>
       </SessionStreamProvider>
     </SessionAuthorsProvider>
+  );
+}
+
+function ThreadChoices({ sessionId }: { sessionId: string }) {
+  const { t } = useTranslation(),
+    { search } = useLocation(),
+    { workspace } = useWorkspace(),
+    client = useClient();
+  const threads = useInfiniteQuery(
+    conversationQueries(client, workspace.id).threadPages(sessionId),
+  );
+  return (
+    <div className="grid gap-3 p-6">
+      <h2>{t("Choose a thread")}</h2>
+      <p>{t("Choose which thread history to open.")}</p>
+      <ErrorNotice error={threads.error} retry={() => void threads.refetch()} />
+      {threads.isPending && <SessionBodyLoading />}
+      <ul className="grid gap-2">
+        {threads.data?.pages
+          .flatMap((page) => page.items)
+          .map((thread) => (
+            <li key={thread.id}>
+              <Button
+                variant="outline"
+                render={<Link to={`threads/${thread.id}${search}`} />}
+              >
+                {thread.id} · {t(`origin.${thread.origin}`)}
+              </Button>
+            </li>
+          ))}
+      </ul>
+      {threads.hasNextPage && (
+        <Button
+          variant="outline"
+          disabled={threads.isFetchingNextPage}
+          onClick={() => void threads.fetchNextPage()}
+        >
+          {t("Load more")}
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -386,20 +423,20 @@ export function ThreadLayout() {
     runId ?? thread.data?.current_run_id ?? thread.data?.last_run_id;
   if (thread.data && thread.data.session_id !== sessionId)
     return (
-      <ErrorNotice
+      <SessionError
         error={new Error(t("This thread does not belong to this session."))}
       />
     );
   return (
     <>
-      <ErrorNotice
+      <SessionError
         error={thread.error}
         retry={() => {
           void thread.refetch();
         }}
       />
       {thread.isPending ? (
-        <Loading variant="detail" />
+        <SessionBodyLoading />
       ) : runId ? (
         <Outlet />
       ) : selected ? (

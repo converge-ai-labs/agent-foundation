@@ -14,7 +14,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function setup() {
+function setup(initialLevel?: string) {
+  let level = initialLevel;
+  let identity = "first";
   let resize!: () => void;
   let scroll!: ReturnType<typeof useTranscriptScroll>;
   let height = 2000;
@@ -30,9 +32,15 @@ function setup() {
       disconnect() {}
     },
   );
-  function Transcript({ level }: { level?: string }) {
+  function Transcript({
+    level,
+    identity,
+  }: {
+    level?: string;
+    identity: string;
+  }) {
     const ref = useRef<HTMLDivElement>(null);
-    scroll = useTranscriptScroll(ref, level);
+    scroll = useTranscriptScroll(ref, level, identity);
     return (
       <div
         data-session-stage
@@ -74,15 +82,20 @@ function setup() {
       </div>
     );
   }
-  const view = render(<Transcript />);
+  const view = render(<Transcript level={level} identity={identity} />);
   const stage = view.container.querySelector<HTMLElement>(
     "[data-session-stage]",
   )!;
   return {
     stage,
     writes,
-    switchLevel(level: string) {
-      view.rerender(<Transcript level={level} />);
+    switchLevel(next: string) {
+      level = next;
+      view.rerender(<Transcript level={level} identity={identity} />);
+    },
+    switchRun(next: string) {
+      identity = next;
+      view.rerender(<Transcript level={level} identity={identity} />);
     },
     scroll: () => scroll,
     resize: () => act(resize),
@@ -262,4 +275,62 @@ it("keeps a visible message in place when earlier content is inserted inside the
   expect(message.getBoundingClientRect().top).toBe(top);
   expect(view.stage.scrollTop).toBe(1000);
   expect(screen.getByText("Jump to latest")).toBeTruthy();
+});
+
+it.each(["wheel", "ArrowUp"])(
+  "keeps a small upward %s movement near the bottom instead of snapping back",
+  (input) => {
+    const view = setup();
+    if (input === "wheel") fireEvent.wheel(view.stage, { deltaY: -40 });
+    else fireEvent.keyDown(view.stage, { key: input });
+    view.stage.scrollTop = 1460;
+    fireEvent.scroll(view.stage);
+    if (input !== "wheel") fireEvent.keyUp(view.stage, { key: input });
+    fireEvent(view.stage, new Event("scrollend"));
+    expect(view.stage.scrollTop).toBe(1460);
+    // The jump button can remain hidden nearby without resuming following.
+    expect(screen.getByText("At latest")).toBeTruthy();
+    view.grow(300);
+    view.resize();
+    expect(view.stage.scrollTop).toBe(1460);
+    expect(screen.getByText("Jump to latest")).toBeTruthy();
+  },
+);
+
+it("keeps upward intent when keyup precedes the first animated scroll frame", () => {
+  const view = setup();
+  fireEvent.keyDown(view.stage, { key: "ArrowUp" });
+  fireEvent.keyUp(view.stage, { key: "ArrowUp" });
+  // A queued scroll event can still describe the old bottom position.
+  fireEvent.scroll(view.stage);
+  view.stage.scrollTop = 1460;
+  fireEvent.scroll(view.stage);
+  fireEvent(view.stage, new Event("scrollend"));
+  view.resize();
+  expect(view.stage.scrollTop).toBe(1460);
+});
+
+it("opens Debug at the beginning and does not follow content that finishes loading", () => {
+  const view = setup("debug");
+  expect(view.stage.scrollTop).toBe(0);
+  view.grow(-1600);
+  view.resize();
+  fireEvent(view.stage, new Event("scrollend"));
+  view.grow(2000);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(0);
+  expect(screen.getByText("Jump to latest")).toBeTruthy();
+});
+
+it("resets another Run and cached back navigation to the top without stealing the sidebar scroll", () => {
+  const view = setup();
+  expect(view.stage.scrollTop).toBe(1500);
+  view.switchRun("second");
+  expect(view.stage.scrollTop).toBe(0);
+  view.grow(400);
+  view.resize();
+  expect(view.stage.scrollTop).toBe(0);
+  view.readAt(600);
+  view.switchRun("first");
+  expect(view.stage.scrollTop).toBe(0);
 });

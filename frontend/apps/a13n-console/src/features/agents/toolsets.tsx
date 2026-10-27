@@ -7,7 +7,7 @@ import {
   Label,
   Checkbox,
 } from "a13n-ui";
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import {
   useEffect,
@@ -248,7 +248,7 @@ export function AgentToolsets({
                     })
                   : t("Off")}
               </span>
-              <CaretDownIcon
+              <CaretRightIcon
                 size={16}
                 className={
                   expanded ? styles.toolsetCaretOpen : styles.toolsetCaret
@@ -351,7 +351,7 @@ export function AgentToolsets({
                               }
                             >
                               {t("Configure")}
-                              <CaretDownIcon size={14} aria-hidden="true" />
+                              <CaretRightIcon size={14} aria-hidden="true" />
                             </CollapsibleTrigger>
                           )}
                           <ToolPermissions

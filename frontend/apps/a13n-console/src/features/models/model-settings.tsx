@@ -33,7 +33,7 @@ export function requestDefaults(
 }
 
 /** Read API vocabulary from the same schema used to validate the JSON editor. */
-function enumValues(schema: unknown): string[] {
+export function enumValues(schema: unknown): string[] {
   if (!isRecord(schema)) return [];
   if (Array.isArray(schema.enum))
     return schema.enum.filter(

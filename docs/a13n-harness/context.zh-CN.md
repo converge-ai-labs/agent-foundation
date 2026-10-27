@@ -116,21 +116,49 @@ flowchart TD
 
 需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
+### Host 主动压缩
+
+在两个 Run 之间调用 `compact()`，总结选定的检查点而不继续业务任务。无需配置 `CompactionCapability` 或达到阈值：
+
+```python
+compacted = await executable.compact(
+    previous_state=latest_state,
+    instruction=None,  # Or custom guidance, such as "Preserve the migration plan."
+    bindings=bindings,
+)
+summary = compacted.output_or_raise()
+# Save compacted.state through the Host's fenced checkpoint path, then stop.
+# No ordinary run() call is needed to finish compaction.
+```
+
+请求接收完整历史，不进行裁剪。它保持相同的系统提示、工具 schema、输出配置和模型设置，在末尾追加内置的禁止调用工具等约束，再拼接 `instruction`。`None` 使用默认压缩指导；传入字符串则替换默认指导。保持 executable 和 bindings 稳定，以保留提供方的缓存前缀。缓存是否可用仍由提供方决定。
+
+现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回未完成的响应、工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。成功结果中的历史已经压缩完成，可以立即保存。下次普通 Run 会在继续任务前自动恢复保留的工具发现并通知上下文恢复监听器；保存检查点无需等待这一步。
+
+失败时继续使用原检查点，单独记录失败。失败结果提供安全的错误码、原因和 `failure.details.phase`；提前拒绝以及生成、导出、摘要通知失败还会发出 `compaction_failed`。取消发出取消失败通知并继续传播。准备、middleware 和清理错误沿用普通 Run 的异常契约。Host 只保存成功结果，并校验预期版本或执行所有权。保存失败或版本冲突需要明确反馈；只有发布提交成功后才提示保存完成。`CompactionSummaryEvent` 和 `compaction_completed` 表示检查点已生成，不代表持久化成功，也不会在后续恢复时重复发出。
+
+检查点必须处于已完成的边界：待处理工具、保留的执行、未恢复的 handoff 和待完成的压缩恢复应先通过普通 Run 的恢复流程完成。对这些状态调用 `compact()` 会返回 `compaction_boundary_pending`，不发起摘要请求，也不覆盖待恢复标记。刚完成压缩的检查点也带有待恢复标记：可以立即保存，但再次压缩前应等待普通 Run 完成恢复。对同一检查点重试 `compact()` 无法清除待恢复边界。Host 负责阻止 Thread 并发推进，并决定何时保存返回的 State。`compact()` 不修改传入的检查点。空闲计时器和自动调度由 Host 实现。
+
 ### 后台压缩
 
 Host 可以独立于前台 Run 执行总结生成：
 
 ```python
-from a13n_harness.compaction import CompactionOperator
+from a13n_harness.compaction import BackgroundCompactionPolicy, CompactionOperator
 
 
 def background_compaction(operator: CompactionOperator) -> CompactionCapability:
-    return CompactionCapability(background=True, operator=operator)
+    return CompactionCapability(
+        background=BackgroundCompactionPolicy(enabled=True, blocking_threshold=0.95),
+        operator=operator,
+    )
 ```
+
+`BackgroundCompactionPolicy` 默认 `enabled=False`、`blocking_threshold=0.95`。阻塞阈值取值大于零且不超过一。只有精确计数的输入低于窗口的这个比例时，才启动后台操作或在后台运行期间继续前台；达到阈值即阻塞。输出预留空间可能要求更早阻塞。普通压缩触发线仍为 90%，替换后请求只要能容纳于实际窗口，即使高于阻塞线也可继续。`background=True` 使用默认的已开启策略。
 
 在 operator 中实现 `submit(input)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。提交总结的 Run 关闭后，后台执行仍应继续。每个 Thread 同时只接纳一个未确认的操作，先保存就绪结果再通知，读取结果不消费结果。使用 `generate_compaction(input, request)` 执行总结协议与有界瞬态重试。回调接收 `CompactionInput`，通过 `request_messages`、`settings` 和 `parameters` 获取新的可变副本，使用新的 Host 模型调用授权，并统计每次尝试；不要捕获父 Run 的 Agent、资源或可变用量对象。
 
-Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。容量未知或不足时，Harness 等待同一个操作。若合并后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
+Harness 冻结当前待发送请求之前的完整历史前缀。总结就绪后，Harness 替换该前缀，保留之后的全部原生消息，包括工具结果和 steering，并在下一个适用的模型边界应用。前台继续并行推进需要原生 token 计数、已知上下文窗口和显式 `max_tokens` 输出预留。达到压缩触发线时，Harness 仅在容量已验证充足时启动后台，否则直接同步压缩，不提交新的后台操作。如果已有操作正在运行，容量未知或不足时就等待该操作。后台失败（包括跨 Run 前中断）且仍需压缩时，转为同步压缩。降级成功将旧操作标记为 skipped，Host 在检查点提交后才清理它。降级失败保留原历史，仅在容量已验证充足时继续；同一 Run 不会反复重试该失败。所有摘要调用仍遵循当前用量限制和准入规则。若替换后的请求仍被确认超出窗口，则报错，而不是裁剪最近的工作。
 
 结果在两个 Run 之间就绪时，将其与最新选定的检查点一起传给普通 Run：
 

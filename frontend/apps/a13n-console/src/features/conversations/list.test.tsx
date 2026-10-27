@@ -176,7 +176,10 @@ it.each([
       baseUrl: "https://service.example",
       auth: { type: "session" },
       fetch: async () =>
-        Response.json({ items: [session("First")], next_cursor: null }),
+        Response.json({
+          items: [{ ...session("First"), labels: { "a13n.console": "debug" } }],
+          next_cursor: null,
+        }),
     });
     const cache = new QueryClient({
       defaultOptions: { queries: { retry: false } },

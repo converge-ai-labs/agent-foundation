@@ -309,7 +309,7 @@ it("keeps retained observations inside Debug and loads their full content on dem
   expect(screen.queryByText(name)).toBeNull();
 });
 
-it("keeps loaded Run rows, scroll and focus through routed inspection and Back", async () => {
+it("replaces the whole Run body with a skeleton and opens routed or cached selections at the top", async () => {
   navigation = true;
   let finishDetail!: () => void;
   let finishItems!: () => void;
@@ -324,6 +324,26 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
     const navigate = useNavigate();
     return <button onClick={() => navigate(-1)}>Back</button>;
   }
+  function Stage() {
+    return (
+      <div
+        data-session-stage
+        ref={(node) => {
+          if (!node) return;
+          Object.defineProperties(node, {
+            scrollHeight: { configurable: true, value: 2400 },
+            clientHeight: { configurable: true, value: 600 },
+          });
+          node.scrollTo = (options) => {
+            if (typeof options === "object")
+              node.scrollTop = Math.max(0, Math.min(options.top ?? 0, 1800));
+          };
+        }}
+      >
+        <RunPage />
+      </div>
+    );
+  }
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter
@@ -335,7 +355,7 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
         <Routes>
           <Route
             path="/workspace/design/sessions/:sessionId/threads/:threadId/runs/:runId"
-            element={<RunPage />}
+            element={<Stage />}
           />
         </Routes>
       </MemoryRouter>
@@ -346,10 +366,13 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
   const list = within(panel);
   await list.findByText("Run 6");
   const oldContent = await screen.findByText("Message run_6");
+  const stage = document.querySelector<HTMLElement>("[data-session-stage]")!;
+  expect(stage.scrollTop).toBe(0);
+  stage.scrollTop = 900;
   const queue = screen.getByText("Thread inbox");
   const dock = queue.closest("[data-thread-dock]");
   expect(dock).not.toBeNull();
-  await user.click(list.getByRole("button", { name: "Load earlier runs" }));
+  await user.click(list.getByRole("button", { name: "Earlier runs" }));
   const selected = await list.findByRole("button", { name: /^Run 4/ });
   const rows = list.getAllByRole("button");
   panel.scrollTop = 90;
@@ -370,21 +393,39 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
   expectStable();
   expect(screen.getByText("Message run_6")).toBe(oldContent);
   expect(oldContent.closest("[inert]")).not.toBeNull();
-  expect(screen.getByText("Loading run…")).toBeTruthy();
   expect(document.querySelector('[data-variant="detail"]')).toBeNull();
+  expect(
+    screen
+      .getAllByRole("status")
+      .some((status) => status.textContent?.includes("Loading…")),
+  ).toBe(true);
+  expect(oldContent.closest("[hidden]")).not.toBeNull();
+  expect(document.querySelector("[data-session-loading]")).not.toBeNull();
+  expect(document.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+  expect(queue.closest("[hidden]")).not.toBeNull();
+  expect(stage.scrollTop).toBe(0);
+  expect(screen.queryByText("Loading run…")).toBeNull();
   expect(screen.getByText("Thread inbox")).toBe(queue);
   await act(async () => {
     finishDetail();
   });
-  expect(screen.getByText("Message run_6")).toBe(oldContent);
+  expect(oldContent.closest("[hidden]")).not.toBeNull();
+  expect(document.querySelector("[data-session-loading]")).not.toBeNull();
+  expect(stage.scrollTop).toBe(0);
   await act(async () => {
     finishItems();
   });
   await screen.findByText("Message run_4");
+  expect(document.querySelector('[data-variant="detail"]')).toBeNull();
+  expect(screen.getByText("Message run_4").closest("[hidden]")).toBeNull();
   expect(screen.queryByText("Loading run…")).toBeNull();
   expect(screen.getByText("Thread inbox")).toBe(queue);
   expect(queue.closest("[data-thread-dock]")).toBe(dock);
   expectStable();
+  expect(document.querySelector("[data-session-loading]")).toBeNull();
+  expect(queue.closest("[hidden]")).toBeNull();
+  expect(stage.scrollTop).toBe(0);
+  stage.scrollTop = 1200;
   expect(scrollIntoView.mock.instances).not.toContain(selected);
   await user.click(screen.getByRole("button", { name: "Back" }));
   await waitFor(() =>
@@ -400,6 +441,7 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
       new URL(r.url).pathname.endsWith("/runs/run_6/items"),
     ),
   ).toHaveLength(1);
+  expect(stage.scrollTop).toBe(0);
   // The selected Run's detail may load, but its list must not be anchored again.
   const lists = requests.filter((r) =>
     new URL(r.url).pathname.endsWith("/threads/thread/runs"),
@@ -443,7 +485,11 @@ it("ignores a late item response after selecting another Run", async () => {
   const rendered = render(view("run_6"));
   await screen.findByText("Message run_6");
   rendered.rerender(view("run_4"));
-  await screen.findByText("Loading run…");
+  await waitFor(() =>
+    expect(
+      screen.getByText("Message run_6").closest("[aria-busy=true]"),
+    ).not.toBeNull(),
+  );
   rendered.rerender(view("run_3"));
   await screen.findByText("Message run_3");
   await act(async () => {
@@ -453,3 +499,18 @@ it("ignores a late item response after selecting another Run", async () => {
   expect(screen.getByText("Message run_3")).toBeTruthy();
   expect(screen.queryByText("Loading run…")).toBeNull();
 });
+
+it.each(["chat", "debug"])(
+  "keeps an external session read-only in explicit %s view",
+  async (level) => {
+    labels = {};
+    show(`/?view=${level}`);
+    await screen.findByText(
+      level === "debug" ? "Run failed" : "Build an agent",
+    );
+    expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resubmit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Create branch/ })).toBeNull();
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+  },
+);

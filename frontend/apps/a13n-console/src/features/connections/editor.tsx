@@ -354,7 +354,7 @@ function ConnectionSettings({
           )}
         </div>
       )}
-      <SettingsSection>
+      <SettingsSection variant="outlined">
         <SettingsRow label={t("Name")} controlId={manage ? nameId : undefined}>
           {manage ? (
             <form
@@ -401,7 +401,7 @@ function ConnectionSettings({
         </SettingsRow>
       </SettingsSection>
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      <SettingsSection title={t("Connection check")}>
+      <SettingsSection variant="outlined" title={t("Connection check")}>
         <SettingsRow
           label={t("Last check")}
           description={

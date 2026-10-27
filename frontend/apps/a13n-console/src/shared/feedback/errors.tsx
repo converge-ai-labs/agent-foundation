@@ -34,6 +34,10 @@ function reasonCopy(error: ApiError, t: TFunction) {
     );
   if (error.code !== "conflict") return undefined;
   switch (reason) {
+    case "provider_in_use":
+      return t(
+        "This provider is still referenced and cannot be deleted. Remove its references or disable it instead.",
+      );
     case "mount_limit":
       return t(
         "A thread can mount at most {{limit}} environments. Remove one before adding another.",

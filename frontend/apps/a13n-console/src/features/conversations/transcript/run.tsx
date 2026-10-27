@@ -7,9 +7,9 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
-import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
+import { SessionBodyLoading, SessionError } from "../session-feedback";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
 import { BranchOrigin } from "../thread-branches";
@@ -19,7 +19,7 @@ import { useViewLevel } from "./debug/view";
 import { HistoryTranscript } from "./history";
 import { RunEntry } from "./run-entry";
 import { RunDock, ThreadDock, type PendingMessage } from "./run-dock";
-import { isInteractive } from "./run-actions";
+import { useInteractiveThread } from "./run-actions";
 import { useTranscriptScroll } from "./use-transcript-scroll";
 import { UserMessage } from "./user-message";
 import { inputText } from "../input";
@@ -92,7 +92,7 @@ export function RunContent({
   const presentation = ready ? { run, runIds } : retained;
   const switching = !ready;
   const agent = useAgent(presentation?.run.agent_id);
-  // Keep the last complete presentation until both bounded reads are ready.
+  // Keep mounted Thread state while the next observation is covered by a skeleton.
   // Query keys own the data: a late response for another selection cannot win.
   useEffect(() => {
     if (ready) setRetained({ run, runIds });
@@ -171,67 +171,61 @@ export function RunContent({
 
   // The navigator belongs to the Thread. Keep it mounted while the selected
   // Run loads; only its transcript and composer start a new inspection lifetime.
-  if (threadQuery.isPending || session.isPending)
-    return <Loading variant="detail" />;
+  if (threadQuery.isPending || session.isPending) return <SessionBodyLoading />;
   if (!thread)
     return (
-      <ErrorNotice
+      <SessionError
         error={threadQuery.error}
         retry={() => void threadQuery.refetch()}
       />
     );
+  if (!presentation) {
+    const error =
+      run && !valid
+        ? new Error(t("This run does not belong to this thread."))
+        : (runQuery.error ?? items.error);
+    return error ? (
+      <SessionError
+        error={error}
+        retry={() => {
+          void runQuery.refetch();
+          void items.refetch();
+        }}
+      />
+    ) : (
+      <SessionBodyLoading />
+    );
+  }
   const debugLevel = level === "debug";
   return (
     <div className={debugLevel ? debug.page : styles.page}>
       <div className={debugLevel ? debug.frame : styles.page}>
         {debugLevel && <RunNavigator thread={thread} runId={runId} />}
-        {presentation ? (
-          <RunBody
-            run={presentation.run}
-            runIds={presentation.runIds}
-            thread={thread}
-            level={level}
-            agentName={agent.data?.name}
-            switching={switching}
-            pending={
-              switching &&
-              !runQuery.isError &&
-              !items.isError &&
-              (!run || valid)
-            }
-            retry={() => {
-              void runQuery.refetch();
-              void items.refetch();
-            }}
-            error={
-              run && !valid
-                ? new Error(t("This run does not belong to this thread."))
-                : (runQuery.error ??
-                  items.error ??
-                  threadQuery.error ??
-                  successor.error ??
-                  lineage.error)
-            }
-          />
-        ) : (
-          <div className={styles.opening}>
-            {runQuery.isError || items.isError || (run && !valid) ? (
-              <ErrorNotice
-                error={
-                  run && !valid
-                    ? new Error(t("This run does not belong to this thread."))
-                    : (runQuery.error ?? items.error)
-                }
-                retry={() => {
-                  void runQuery.refetch();
-                  void items.refetch();
-                }}
-              />
-            ) : (
-              <p role="status">{t("Loading run…")}</p>
-            )}
-          </div>
-        )}
+        <RunBody
+          run={presentation.run}
+          runIds={presentation.runIds}
+          inspectionId={runIds[0]!}
+          thread={thread}
+          level={level}
+          agentName={agent.data?.name}
+          switching={switching}
+          pending={
+            switching && !runQuery.isError && !items.isError && (!run || valid)
+          }
+          retry={() => {
+            void runQuery.refetch();
+            void items.refetch();
+          }}
+          error={
+            run && !valid
+              ? new Error(t("This run does not belong to this thread."))
+              : (runQuery.error ??
+                items.error ??
+                threadQuery.error ??
+                successor.error ??
+                lineage.error)
+          }
+        />
       </div>
     </div>
   );
@@ -240,6 +234,7 @@ export function RunContent({
 function RunBody({
   run,
   runIds,
+  inspectionId,
   thread,
   level,
   agentName,
@@ -250,6 +245,7 @@ function RunBody({
 }: {
   run: Schema["RunView"];
   runIds: string[];
+  inspectionId: string;
   thread: Schema["ThreadView"];
   level: ViewLevel;
   agentName?: string;
@@ -259,14 +255,13 @@ function RunBody({
   error: unknown;
 }) {
   const { t } = useTranslation();
-  const { can, workspace } = useWorkspace();
-  const client = useClient();
-  const threads = useQuery({
-    ...conversationQueries(client, workspace.id).threads(thread.session_id),
-    enabled: thread.origin === "fork",
-  });
+  const { can } = useWorkspace();
+  const interactive = useInteractiveThread(thread);
   const transcript = useRef<HTMLDivElement>(null);
-  const scroll = useTranscriptScroll(transcript, level, runIds[0]);
+  const scroll = useTranscriptScroll(transcript, level, inspectionId);
+  // Manual selections replace the inspection. Automatic successors extend it
+  // and keep the existing transcript and draft visible while their items load.
+  const replacing = switching && inspectionId !== runIds[0];
   const stopped = ["failed", "cancelled"].includes(run.status);
   // A stopped Run is asked again from the dock, while it is still the
   // Thread's latest: its message is prefilled there to be sent again.
@@ -284,7 +279,7 @@ function RunBody({
   }, [submitting, runIds]);
   const resubmission =
     stopped &&
-    isInteractive(thread) &&
+    interactive &&
     can("run") &&
     (thread.current_run_id ?? thread.last_run_id) === run.id
       ? runResubmission(run)
@@ -304,23 +299,16 @@ function RunBody({
       className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
       ref={transcript}
     >
-      {(pending || error != null) && (
-        <div className={styles.switchStatus}>
-          {pending && <p role="status">{t("Loading run…")}</p>}
-          <ErrorNotice error={error} retry={retry} />
-        </div>
-      )}
+      {pending && replacing && <SessionBodyLoading />}
+      <SessionError error={error} retry={retry} />
       <div
         key={runIds[0]}
+        hidden={replacing}
         inert={switching}
         aria-busy={pending}
         className={styles.observation}
       >
-        <BranchOrigin
-          thread={thread}
-          threads={threads.data ?? [thread]}
-          level={level}
-        />
+        <BranchOrigin thread={thread} level={level} />
         <div className={debugLevel ? debug.sections : styles.transcript}>
           {level === "chat" && (
             <HistoryTranscript
@@ -353,7 +341,7 @@ function RunBody({
             ))}
         </div>
       </div>
-      <ThreadDock thread={thread}>
+      <ThreadDock thread={thread} hidden={replacing}>
         <div inert={switching} className={styles.dockRun}>
           <RunDock
             key={runIds[0]}

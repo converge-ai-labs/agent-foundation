@@ -76,6 +76,25 @@ export function fixtureRunAgent(): Schema["RunAgent"] {
   };
 }
 
+/** Session source is independent of editable display metadata. */
+export function fixtureSession(
+  overrides: Partial<Schema["SessionView"]> = {},
+): Schema["SessionView"] {
+  return {
+    id: "ses_1",
+    workspace_id: "ws_1",
+    labels: { "a13n.console": "debug" },
+    title: null,
+    origin: null,
+    created_by_id: "usr_1",
+    last_run_id: "run_2",
+    version: 1,
+    created_at: START,
+    updated_at: at(12),
+    ...overrides,
+  };
+}
+
 export function fixtureThread(
   overrides: Partial<Schema["ThreadView"]> = {},
 ): Schema["ThreadView"] {
@@ -97,6 +116,51 @@ export function fixtureThread(
     version: 4,
     workspace_id: "ws_1",
     ...overrides,
+  };
+}
+
+export function fixtureNavigationPage(
+  threads: Schema["ThreadView"][],
+  params = new URLSearchParams(),
+): Schema["ThreadNavigationPage"] {
+  const ordered = [...threads].sort(
+    (a, b) =>
+      a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
+  );
+  const reference = (thread: Schema["ThreadView"]) => {
+    const peers = ordered.filter((value) => value.origin === thread.origin);
+    return {
+      id: thread.id,
+      origin: thread.origin,
+      subagent: thread.subagent,
+      origin_number: peers.findIndex((value) => value.id === thread.id) + 1,
+      origin_count: peers.length,
+    };
+  };
+  const origins = params.getAll("origin"),
+    ids = params.getAll("thread_id");
+  const filtered = ordered.filter(
+    (thread) =>
+      (!origins.length || origins.includes(thread.origin)) &&
+      (!ids.length || ids.includes(thread.id)) &&
+      (!params.has("origin_run_id") ||
+        thread.origin_run_id === params.get("origin_run_id")),
+  );
+  const start = Number(params.get("cursor") ?? 0),
+    limit = Number(params.get("limit") ?? 50);
+  return {
+    items: filtered.slice(start, start + limit).map((thread) => ({
+      ...thread,
+      ...reference(thread),
+      origin_thread: threads.find(
+        (value) => value.id === thread.origin_thread_id,
+      )
+        ? reference(
+            threads.find((value) => value.id === thread.origin_thread_id)!,
+          )
+        : null,
+    })),
+    next_cursor: filtered.length > start + limit ? String(start + limit) : null,
   };
 }
 
@@ -255,6 +319,13 @@ export function fixtureBranchedSession() {
           key: name,
           name: name === "agt_child" ? "Researcher" : "Release Bot",
         });
+      if (url.pathname.endsWith("/sessions/ses_1/threads"))
+        return Response.json(
+          fixtureNavigationPage(
+            [fixtureThread(), fixtureChildThread, fixtureForkThread],
+            url.searchParams,
+          ),
+        );
       if (url.pathname.endsWith("/threads/thr_1"))
         return Response.json(fixtureThread());
       if (

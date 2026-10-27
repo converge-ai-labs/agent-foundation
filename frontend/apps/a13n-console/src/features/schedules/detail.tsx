@@ -1,13 +1,20 @@
 import {
   ArchiveIcon,
-  ClockIcon,
   DotsThreeOutlineVerticalIcon,
-  PlayIcon,
   PlusIcon,
+  ClockIcon,
+  PlayIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
-import { useEffect, useRef } from "react";
+import {
+  Button,
+  DisclosureSection,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "a13n-ui";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
@@ -137,6 +144,7 @@ function ScheduleContent({
     { workspace, basePath, can } = useWorkspace(),
     cache = useQueryClient(),
     { t } = useTranslation();
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const stream = useSessionStream(),
     keys = scheduleKeys(workspace.id);
   const auth = useAuth();
@@ -226,6 +234,14 @@ function ScheduleContent({
                   )}
                 </>
               )}
+              {can("admin") && (
+                <WebhookEditor
+                  scheduleId={schedule.id}
+                  open={webhookOpen}
+                  onOpenChange={setWebhookOpen}
+                  trigger={false}
+                />
+              )}
               {(can("admin") || canDispatch || canArchive) && (
                 <Menu>
                   <MenuTrigger
@@ -245,15 +261,10 @@ function ScheduleContent({
                   </MenuTrigger>
                   <MenuPopup align="end">
                     {can("admin") && (
-                      <WebhookEditor
-                        scheduleId={schedule.id}
-                        trigger={
-                          <MenuItem closeOnClick={false}>
-                            <PlusIcon aria-hidden="true" />
-                            {t("Add Webhook")}
-                          </MenuItem>
-                        }
-                      />
+                      <MenuItem onClick={() => setWebhookOpen(true)}>
+                        <PlusIcon aria-hidden="true" />
+                        {t("Add Webhook")}
+                      </MenuItem>
                     )}
                     {canDispatch && (
                       <MenuItem
@@ -273,7 +284,12 @@ function ScheduleContent({
                         )}
                         danger
                         triggerElement={
-                          <MenuItem closeOnClick={false} variant="destructive">
+                          <MenuItem
+                            closeOnClick={false}
+                            nativeButton
+                            render={<button type="button" />}
+                            variant="destructive"
+                          >
                             <ArchiveIcon aria-hidden="true" />
                             {t("Archive")}
                           </MenuItem>
@@ -325,36 +341,52 @@ function ScheduleContent({
       )}
       <ErrorNotice error={stream?.error} />
       {editReason && <p className={styles.notice}>{editReason}</p>}
-      <dl className={styles.summary}>
-        <div>
-          <dt>{t("Timing")}</dt>
-          <dd>
-            <ScheduleTiming rule={schedule.schedule} />
-          </dd>
-        </div>
-        <div>
-          <dt>{t("Next trigger")}</dt>
-          <dd>
-            {!status.data ? (
-              t("Loading…")
-            ) : status.data.next_fire_at ? (
-              <Timestamp value={status.data.next_fire_at} />
-            ) : (
-              t("Not scheduled")
+      <div className={styles.overview}>
+        <dl className={styles.summary}>
+          <div>
+            <dt>{t("Timing")}</dt>
+            <dd>
+              <ScheduleTiming rule={schedule.schedule} />
+            </dd>
+          </div>
+          <div>
+            <dt>{t("Next trigger")}</dt>
+            <dd>
+              {!status.data ? (
+                t("Loading…")
+              ) : status.data.next_fire_at ? (
+                <Timestamp value={status.data.next_fire_at} />
+              ) : (
+                t("Not scheduled")
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("Work in progress")}</dt>
+            <dd>
+              {!status.data
+                ? t("Loading…")
+                : busy
+                  ? t("Pending or unfinished work")
+                  : t("No unfinished work")}
+            </dd>
+          </div>
+        </dl>
+        {schedule.state === "completed" && (
+          <p className={styles.notice}>
+            {t(
+              "Scheduling has finished. Check the trigger history for submission and execution results.",
             )}
-          </dd>
-        </div>
-        <div>
-          <dt>{t("Work in progress")}</dt>
-          <dd>
-            {!status.data
-              ? t("Loading…")
-              : busy
-                ? t("Pending or unfinished work")
-                : t("No unfinished work")}
-          </dd>
-        </div>
-      </dl>
+          </p>
+        )}
+        {schedule.pause_reason && schedule.pause_reason !== "manual" && (
+          <p className={styles.notice}>
+            {t(`schedule.reason.${schedule.pause_reason}`, {
+              defaultValue: schedule.pause_reason,
+            })}
+          </p>
+        )}
+      </div>
       <Section
         title={t("Execution instructions")}
         description={t("This input is sent to the agent on every trigger.")}
@@ -396,26 +428,19 @@ function ScheduleContent({
           )}
         </div>
       </Section>
-      {schedule.state === "completed" && (
+      <DisclosureSection
+        className={styles.permissions}
+        title={t("Execution permissions")}
+      >
         <p className={styles.notice}>
           {t(
-            "Scheduling has finished. Check the trigger history for submission and execution results.",
+            "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.",
           )}
         </p>
-      )}
-      {schedule.pause_reason && (
-        <p className={styles.notice}>
-          {t(`schedule.reason.${schedule.pause_reason}`, {
-            defaultValue: schedule.pause_reason,
-          })}
-        </p>
-      )}
-      <p className={styles.notice}>
-        {t(
-          "This schedule uses your saved execution permissions. Signing out or revoking the original API key does not stop it. Pause or archive it to stop future work.",
-        )}
-      </p>
-      <ScheduleHistory scheduleId={schedule.id} />
+      </DisclosureSection>
+      <div className={styles.history}>
+        <ScheduleHistory scheduleId={schedule.id} />
+      </div>
     </DetailPage>
   );
 }

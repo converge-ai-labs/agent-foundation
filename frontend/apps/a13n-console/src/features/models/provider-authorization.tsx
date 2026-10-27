@@ -1,3 +1,4 @@
+import { FormSection } from "../../shared/forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input } from "a13n-ui";
 import { useState } from "react";
@@ -119,24 +120,18 @@ export function ProviderAuthorization({
     busy = start.isPending || complete.isPending || disconnect.isPending,
     connected = status.data?.state === "connected";
   return (
-    <section
-      className="grid min-w-0 gap-4"
-      aria-label={t("ChatGPT authorization")}
+    <FormSection
+      title={t("ChatGPT authorization")}
+      description={t("Shared by this workspace, not a personal connection.")}
     >
-      <div>
-        <strong>{t("ChatGPT authorization")}</strong>
-        <p className="text-sm text-muted-foreground">
-          {t("Shared by this workspace, not a personal connection.")}
-        </p>
-      </div>
       {configurationDirty && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {t(
             "Save configuration changes before starting or completing sign-in.",
           )}
         </p>
       )}
-      <p role="status">
+      <p role="status" className="text-sm">
         {attempt
           ? t("Waiting for sign-in")
           : status.isPending
@@ -144,7 +139,11 @@ export function ProviderAuthorization({
             : (status.data?.email ??
               t(connected ? "Connected" : "Not connected"))}
       </p>
-      {status.data?.message && <p className="text-sm">{status.data.message}</p>}
+      {status.data?.message && (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {status.data.message}
+        </p>
+      )}
       {attempt && (
         <>
           <AuthorizationLink
@@ -231,7 +230,7 @@ export function ProviderAuthorization({
         )}
       </div>
       {tokensCleared && (
-        <p role="status">
+        <p role="status" className="text-sm">
           {t(
             "Local tokens were cleared. Manage remote access in ChatGPT settings.",
           )}
@@ -242,6 +241,6 @@ export function ProviderAuthorization({
           status.error ?? start.error ?? complete.error ?? disconnect.error
         }
       />
-    </section>
+    </FormSection>
   );
 }

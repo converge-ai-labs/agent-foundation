@@ -59,6 +59,12 @@ a13n-harness-ui webui
 
 打开打印的登录链接，并保持前台服务器运行。配置 Model、开始对话，与可信协作者一起工作。宿主机原生文件和终端共享默认开启；使用 `--no-share-computer` 可以关闭。访问和部署见 [WebUI](webui.md)。
 
+### Browser Use 前置条件
+
+原生 **Browser** 旁栏在 Linux 或 macOS WebUI Host 上运行 Chromium 系浏览器。Linux 上先安装 Chrome、Chromium 或 Edge 及兼容的 VNC 服务（Docker 部署则安装在容器内），再到 **Settings → General → Host browser** 选择两个可执行文件。TigerVNC 同时提供显示和 VNC 服务。macOS 自动化只需 Chromium。可选的只读预览需要 macOS 14 或更高版本，以及运行 Harness UI 的应用的屏幕录制权限。预览仅显示当前对话拥有的浏览器窗口，包含真实地址栏。无需 VNC 服务或密码。在 Mac 本机操作浏览器前暂停自动化，完成后再恢复。以非 root 用户运行，并保持 Chromium 沙箱启用。
+
+Harness UI 已包含浏览器自动化依赖，无需另装 Python 包、浏览器扩展、MCP 服务或 Node.js 运行时。[浏览器快速开始](webui.md#first-time-setup)介绍安装命令、探测选择、保存重启及首次使用。需要保持电脑共享开启；`--no-share-computer` 也会关闭 Host 浏览器访问。
+
 ## 下一步
 
 [完成设置](setup.md)，然后[找到你的配置](configuration.md)。

@@ -16,6 +16,8 @@ from a13n_service.usage.schemas import (
     ModelRequestMetrics,
     ModelUsagePage,
     OverviewQuery,
+    RunUsagePage,
+    RunUsageQuery,
     UsageFilter,
     UsageOverview,
     UsageSummary,
@@ -29,6 +31,14 @@ async def summarize_usage(
     runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, where: Annotated[UsageFilter, Query()]
 ) -> UsageSummary:
     return await service.summarize(runtime.storage, actor, workspace_id, where)
+
+
+@router.get("/runs", openapi_extra={"x-a13n-mcp": True})
+async def list_run_usage(
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, query: Annotated[RunUsageQuery, Query()]
+) -> RunUsagePage:
+    """One page of Run usage; Run numbers include all Runs in each Thread, including those without usage."""
+    return await service.run_usage(runtime.storage, actor, workspace_id, query)
 
 
 @router.get("/overview")

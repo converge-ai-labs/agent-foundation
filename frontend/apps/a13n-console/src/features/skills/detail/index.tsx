@@ -12,6 +12,7 @@ import {
 } from "../../../shared/feedback";
 import { DetailHeader, DetailPage, useTabParam } from "../../../shared/page";
 import { ImportSkill } from "../import-dialog";
+import { archiveQuery } from "../archive";
 import { revisionQuery, revisionsQuery } from "../revisions";
 import { SkillAvatar, skillSource } from "../source";
 import styles from "../skills.module.css";
@@ -122,7 +123,11 @@ export function SkillDetail() {
                 <Link to="?tab=files">{t("View default version")}</Link>
               </p>
             )}
-            <SkillFiles key={revision.data.id} revision={revision.data} />
+            <SkillFiles
+              key={revision.data.id}
+              manifest={revision.data.config}
+              archive={archiveQuery(client, revision.data)}
+            />
           </>
         )
       ) : tab === "versions" ? (

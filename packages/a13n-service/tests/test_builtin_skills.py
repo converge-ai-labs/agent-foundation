@@ -1,5 +1,6 @@
 """Builtin skill discovery and identity-based placement through real Service runs."""
 
+import hashlib
 import json
 import posixpath
 import re
@@ -7,6 +8,7 @@ import re
 import pytest
 from a13n_service.resources.skills import builtin, package
 
+from .mcp_support import call, client, key, rpc
 from .test_skills import DOCUMENT, archive, create
 
 pytestmark = pytest.mark.anyio
@@ -39,6 +41,65 @@ async def test_catalog_is_separate_from_workspace_skills_and_admitted_to_mcp(ser
     assert operation["x-a13n-mcp"] is True
     denied = await service.client.get(f"{service.api}/builtin-skills", headers={"X-Workspace-ID": "ws_" + "0" * 24})
     assert denied.status_code in {403, 404}, denied.text
+
+
+async def test_builtin_detail_and_download_match_the_current_package(service):
+    response = await service.client.get(f"{service.api}/builtin-skills/{NAME}")
+    assert response.status_code == 200, response.text
+    detail = response.json()
+    bundled = service.runtime.builtin_skills[NAME]
+    assert detail == {
+        **bundled.definition.model_dump(),
+        "root": bundled.archive.root,
+        "files": [{"path": path, "size": size} for path, size in bundled.archive.entries],
+        "package_digest": bundled.digest,
+        "package_size": len(bundled.archive.content),
+    }
+    for params in ({}, {"package_digest": detail["package_digest"]}):
+        response = await service.client.get(f"{service.api}/builtin-skills/{NAME}/content", params=params)
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"] == "application/zip"
+        assert f"{NAME}.zip" in response.headers["content-disposition"]
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert hashlib.sha256(response.content).hexdigest() == detail["package_digest"]
+        assert len(response.content) == detail["package_size"]
+        files = package.read_package(response.content).files
+        assert {path: len(content) for path, content in files.items()} == {
+            file["path"]: file["size"] for file in detail["files"]
+        }
+        assert b"# Platform operations" in files["SKILL.md"]
+        assert "providers" in json.loads(files["instance/catalog.json"])
+    changed = await service.client.get(
+        f"{service.api}/builtin-skills/{NAME}/content", params={"package_digest": "0" * 64}
+    )
+    assert changed.status_code == 409, changed.text
+    assert changed.json()["error"]["details"]["reason"] == "package_changed"
+
+
+@pytest.mark.parametrize("suffix", ["", "/content"])
+async def test_builtin_reads_require_workspace_access_and_known_names(service, suffix):
+    url = f"{service.api}/builtin-skills/{NAME}{suffix}"
+    denied = await service.client.get(url, headers={"X-Workspace-ID": "ws_" + "0" * 24})
+    assert denied.status_code in {403, 404}, denied.text
+    unknown = await service.client.get(f"{service.api}/builtin-skills/unknown{suffix}")
+    assert unknown.status_code == 404, unknown.text
+    assert unknown.json()["error"]["details"]["kind"] == "builtin_skill"
+    service.client.cookies.clear()
+    anonymous = await service.client.get(url)
+    assert anonymous.status_code == 401, anonymous.text
+
+
+async def test_builtin_detail_is_discoverable_and_callable_through_mcp(service):
+    secret = await key(service)
+    async with client(service, secret) as http:
+        tools = (await rpc(http, "tools/list")).json()["result"]["tools"]
+        names = {tool["name"] for tool in tools}
+        assert "get_builtin_skill" in names
+        assert "read_builtin_skill_archive" not in names
+        result = await call(http, service, "GET", "/builtin-skills/{name}", name=NAME)
+        assert result["status"] == 200
+        assert result["body"]["name"] == NAME
+        assert any(file["path"] == "SKILL.md" for file in result["body"]["files"])
 
 
 @pytest.mark.parametrize("mode", ["shared", "isolated"])

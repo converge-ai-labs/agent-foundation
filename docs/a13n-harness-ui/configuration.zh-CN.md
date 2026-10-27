@@ -23,6 +23,8 @@ description: 根配置文件、加载优先级，以及修改何时生效。
 | 外部工具                                         | `mcp/*.yaml` 或 `mcp/*.json`        | [MCP 字段](mcp.md#mcp-field-reference)                                   |
 | Harness Plugin、Environment 配置和 Run Extension | `extensions/*.yaml`                 | [扩展字段](extensions-and-mcp.md#harness-plugin-and-run-extension-files) |
 
+Host 浏览器的可执行文件绑定位于根配置 `browser`，见 [Host 浏览器](#host-browser)。
+
 资源引用使用 **`id`**，不用文件名或显示名称。例如，`defaults.agent: agent-coder` 选择 YAML 中 `id: agent-coder` 的 Agent。
 
 ## 定位并验证文件
@@ -70,6 +72,9 @@ Harness UI 跳过缺失或无效的 Agent Capability，保留有效条目，不�
 ```yaml
 schema_version: "1"
 max_goal_iterations: 10
+background_compaction:
+  enabled: true
+  blocking_threshold: 0.95
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -122,6 +127,16 @@ webui:
   sidekick: {}
 ```
 
+### 后台压缩
+
+`background_compaction.enabled` 默认为 `true`。`blocking_threshold` 默认为 `0.95`，取值大于零且不超过一。精确计数的输入达到上下文窗口的 95% 时，Run 会等待已有后台操作；没有后台操作时则同步压缩。输出预留空间可能要求更早阻塞。普通压缩触发线仍为 90%。启用 `compaction` Capability 的 Agent 可以在前台 Run 继续执行时总结旧历史，前提是 Model 能验证上下文容量足够。达到压缩触发线时，若容量不足或未知且没有后台操作，就直接同步压缩；若已有后台操作运行，则等待它。后台失败时转同步压缩，后续 Run 或重启后发现的失败也遵循同一规则，当前用量限制仍然生效。仅根 Thread 使用此模式；内联和异步 subagent 均保持同步压缩。
+
+摘要先保存，再使用。当前 Run 会在安全的模型调用边界应用已完成摘要，或由后续 Run 将其与当前输入一起恢复。摘要完成不会改写空闲对话的检查点。App 重启会恢复已完成结果，不会重放中断的摘要请求。
+
+已处理的摘要和已清除的操作会与检查点一起写入结束标记，再由自动清理删除。清理在启动时和之后每小时运行。未使用的操作满七天后过期；活跃 Run 和后台请求受到保护。过期不会删除对话历史，后续 Run 仍可按需生成新摘要。嵌入式 App 可通过 `StorageSettings.compaction_retention_seconds` 调整期限。
+
+将 `background_compaction.enabled` 设为 `false`，后续 Run 就会使用同步压缩。已保存且未过期的摘要仍可交付。Model 上下文预算和显式压缩阈值不变。
+
 ### 文件记忆
 
 文件记忆默认开启。全局事实存于选中 YAML 旁的 `memory/global/`，Project 事实存于 `memory/projects/<project-id>/`。无 Project 对话只使用全局记忆。`MEMORY.md` 保持为始终加载的短索引，详细主题放在独立文件。记忆不是对话历史，不限制 Full Control 或人工访问。
@@ -157,6 +172,20 @@ memory:
 ### 媒体理解
 
 `media_understanding.image`、`.video` 和 `.audio` 选择已保存 Model ID，供活动 Model 无法原生接受媒体时作为文件 `view` 回退。每项默认 `null`，保留对应的 Harness 环境变量回退。在 **Settings → Models** 或 `/model defaults` 中配置。优先级、模型输入能力要求和 Run 捕获行为见[媒体理解默认值](models-and-authentication.md#media-understanding-defaults)。
+
+### Host 浏览器
+
+根配置 `browser.executable` 和 `browser.vnc_executable` 绑定原生 WebUI Browser 旁栏使用的程序。两者默认都是 `null`，启用浏览器时会自动选择已安装的兼容程序，无需保存配置或重启。`vnc_executable` 仅适用于 Linux。如需覆盖自动选择，可填写 Host 上的绝对路径，例如：
+
+```yaml
+browser:
+  executable: /usr/bin/chromium
+  vnc_executable: /usr/bin/Xtigervnc
+```
+
+在 **Settings → General → Host browser** 中设置高级覆盖项，或将示例路径替换为实际安装路径。修改覆盖项后需保存并重启 Harness UI；选择 **Automatic** 可清除覆盖。显式路径无效时会阻止启动，不会回退到其他程序。自动探测不会安装软件或改写配置。浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及已启用浏览器的对话中的 Full Control Run。macOS 自动化只需 Chromium。可选的只读窗口预览需要 macOS 14 或更高版本，以及运行 Harness UI 的应用的屏幕录制权限。**Open Screen Recording settings** 用于打开 Host 设置。无需 VNC 密码，不提供远程输入；缺少预览权限不阻止自动化。启动前请完成 [macOS 准备步骤](webui.md#install-host-components)。
+
+绑定对所有 Project 生效，所有对话共用一个浏览器实例和 Profile。Profile 位于 `<data_root>/browsers/profile`，没有单独的路径设置。Host 依赖、选择和首次使用见[浏览器快速开始](webui.md#first-time-setup)；部署明确需要关闭 Chromium 沙箱时，见[沙箱启动选项](command-reference.md#webui)。
 
 ### WebUI 允许的 origin
 

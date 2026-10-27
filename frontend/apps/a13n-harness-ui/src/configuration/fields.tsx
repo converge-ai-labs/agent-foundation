@@ -1,6 +1,7 @@
 import { useLocation } from "react-router";
 import { PlugsConnected, Robot } from "@phosphor-icons/react";
 import management from "./management.module.css";
+import { useState } from "react";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
 import {
@@ -24,6 +25,7 @@ import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
+import { BrowserFields } from "./browser-fields";
 import { type EnvironmentBinding } from "./environment-bindings";
 
 export function ResourceFields({
@@ -38,6 +40,7 @@ export function ResourceFields({
   onChange: (value: string) => void;
 }) {
   const location = useLocation();
+  const [browserOpen, setBrowserOpen] = useState(location.hash === "#browser");
   const selectors = useSelectors();
   const sources = useSources();
   const { client } = useTransport();
@@ -382,6 +385,21 @@ export function ResourceFields({
               {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             </SettingsSection>
             <details
+              id="browser"
+              onToggle={(event) => setBrowserOpen(event.currentTarget.open)}
+              className={layout.disclosure}
+              open={location.hash === "#browser" || undefined}
+            >
+              <summary>
+                Host browser<small>Browser and VNC</small>
+              </summary>
+              <BrowserFields
+                source={source}
+                onChange={onChange}
+                active={browserOpen}
+              />
+            </details>
+            <details
               id="live"
               className={layout.disclosure}
               open={location.hash === "#live" || undefined}
@@ -400,6 +418,7 @@ export function ResourceFields({
                   <ChoiceField
                     label="Live"
                     hideLabel
+                    className={styles.settingControl}
                     value={
                       get(["live", "enabled"]) === true ? "enabled" : "disabled"
                     }
@@ -427,6 +446,7 @@ export function ResourceFields({
                   <ChoiceField
                     label="Voice"
                     hideLabel
+                    className={styles.settingControl}
                     value={text(["live", "voice"]) || "cove"}
                     options={[
                       "cove",
@@ -468,6 +488,7 @@ export function ResourceFields({
                   <ChoiceField
                     label="Live file access"
                     hideLabel
+                    className={styles.settingControl}
                     value={
                       get(["live", "files_enabled"]) === false
                         ? "disabled"
@@ -482,15 +503,17 @@ export function ResourceFields({
                     }
                   />
                 </SettingsRow>
-                <FormField label="Live instructions">
-                  <Textarea
-                    value={text(["live", "instructions"])}
-                    onChange={(event) =>
-                      set(["live", "instructions"], event.target.value)
-                    }
-                    rows={3}
-                  />
-                </FormField>
+                <div className={styles.fieldGroup}>
+                  <FormField label="Live instructions">
+                    <Textarea
+                      value={text(["live", "instructions"])}
+                      onChange={(event) =>
+                        set(["live", "instructions"], event.target.value)
+                      }
+                      rows={3}
+                    />
+                  </FormField>
+                </div>
               </SettingsSection>
             </details>
             <details className={layout.disclosure}>

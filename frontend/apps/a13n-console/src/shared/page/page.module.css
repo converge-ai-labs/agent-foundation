@@ -2,7 +2,7 @@
 .page {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 48px 64px;
+  padding: 32px var(--console-page-gutter) 64px;
 }
 .back {
   display: inline-flex;
@@ -31,6 +31,7 @@
 }
 .header > :first-child {
   flex: 1 1 360px;
+  min-width: 0;
 }
 .titleRow {
   display: flex;
@@ -41,9 +42,10 @@
 .titleRow h1 {
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
+  overflow-wrap: anywhere;
 }
 .count {
   align-self: flex-end;
@@ -61,10 +63,12 @@
   line-height: 20px;
 }
 .actions {
+  composes: compact from "../controls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -85,7 +89,7 @@
 .detailPage {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 48px 120px;
+  padding: 32px var(--console-page-gutter) 120px;
 }
 .identity {
   display: flex;
@@ -98,23 +102,25 @@
   gap: 4px;
   min-width: 0;
 }
-/* Text flow, so status and edit follow the last line of a wrapped name. */
+/* Centre status and edit controls on the title; wrap without squeezing them. */
 .detailTitleRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   min-width: 0;
 }
 .detailTitleRow h1 {
-  display: inline;
+  min-width: 0;
   margin: 0;
   font-size: var(--a13n-text-2xl);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-title);
   line-height: 32px;
   overflow-wrap: break-word;
-  vertical-align: middle;
 }
 .detailTitleRow > :not(h1) {
-  margin-left: 8px;
-  vertical-align: middle;
+  flex: none;
 }
 .subtitle {
   display: flex;
@@ -139,9 +145,8 @@
   overflow-wrap: anywhere;
 }
 .tabs {
+  composes: tabStrip from "../shared.module.css";
   margin-top: 24px;
-  overflow-x: auto;
-  padding-block: 2px;
 }
 .tabs [data-slot="tabs-tab"] > [data-slot="tab-count"] {
   margin-left: 6px;
@@ -228,19 +233,27 @@
 }
 .sectionHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
+.sectionHeader > :first-child {
+  flex: 1 1 160px;
+  min-width: 0;
+}
 .sectionHeader h2 {
   margin: 0;
   font-size: var(--a13n-text-lg);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--a13n-tracking-heading);
   line-height: 20px;
 }
 /* A section action centres on the title line, not on title and summary. */
 .sectionActions {
+  composes: compact from "../controls.module.css";
+  max-width: 100%;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -255,6 +268,7 @@
 }
 .sectionBody {
   display: grid;
+  align-content: start;
   gap: 16px;
   min-width: 0;
 }
@@ -275,7 +289,7 @@
 .subsection > .sectionHeader h3 {
   margin: 0;
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 20px;
 }
 .subsection > .sectionHeader p {
@@ -304,6 +318,10 @@
     align-self: start;
     flex-direction: column;
     gap: 12px;
+  }
+  /* The wrapping basis is a width only in the row layout. */
+  .sections > .section > .sectionHeader > :first-child {
+    flex: none;
   }
   .sections > .section > .sectionHeader .sectionActions {
     margin-block: 0;
@@ -402,25 +420,27 @@
 }
 @media (width < 768px) {
   .page {
-    padding: 24px var(--a13n-page-gutter-mobile) 40px;
+    padding-block: 16px 40px;
   }
   .header {
-    flex-direction: column;
     align-items: flex-start;
-    gap: 14px;
+    gap: 12px;
   }
   .header > :first-child {
-    flex-basis: auto;
-    width: 100%;
+    flex: 1 1 200px;
   }
   .actions {
     justify-content: flex-start;
+    gap: 6px;
   }
   .toolbar {
-    margin-top: 16px;
+    margin-top: 14px;
+  }
+  .identity {
+    align-items: flex-start;
   }
   .detailPage {
-    padding: 20px var(--a13n-page-gutter-mobile) 140px;
+    padding: 16px var(--console-page-gutter) 140px;
   }
   .saveBar {
     flex-wrap: wrap;

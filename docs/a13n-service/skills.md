@@ -11,6 +11,8 @@ A skill is identified by its [ID](resources.md#common-conventions) (`sk_…`), w
 
 The **Skills** page also lists release-owned built-in skills. Select **platform-operations** in an agent's **Skills** section and save a revision; the API field is `builtin_skills: ["platform-operations"]`. `GET /api/v1/builtin-skills` returns their names and descriptions. These entries have no workspace ID, revisions or import/edit actions, and selecting them does not grant platform tools or file permissions.
 
+Click a built-in skill to open its read-only file browser, starting at `SKILL.md`. You can browse references and the deployment catalog, switch between Markdown preview and source, or download the ZIP. The content reflects the current Service deployment and updates with it; there is no independent version history.
+
 Custom agents, including copies of Agent Composer, require a primary environment. Their built-in and imported skills use the same `skill_sync` policy and cannot share a declared name. Shared mode places the guide at `/workspace/.agents/skills/platform-operations/SKILL.md`; isolated mode uses the package-digest directory described below. The package includes `schemas/agent-config.json` and `instance/catalog.json`, with relative references. Built-in agents retain their read-only Host files and do not require a user environment for these instructions. Existing custom agents using built-in skills must now select a session environment or configure a default environment template; without a primary environment their runs fail before the model is called.
 
 ## Package format

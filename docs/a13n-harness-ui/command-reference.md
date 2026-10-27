@@ -37,13 +37,18 @@ Place global options before these subcommands. Authentication and plugin command
 
 Run one foreground WebUI server with bundled browser assets.
 
-| Parameter                                                       | Type / choices   | Parser default | Meaning                                                                                                               |
-| --------------------------------------------------------------- | ---------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `--host`                                                        | text             | `"127.0.0.1"`  | Listener IPv4 or IPv6 address.                                                                                        |
-| `--port`                                                        | integer 1..65535 | `8765`         | Listener TCP port.                                                                                                    |
-| `--apikey, --api-key`                                           | text             | not set        | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).                                     |
-| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`        | Disable Web authentication only; does not change Agent permissions.                                                   |
-| `--share-computer` / `--no-share-computer`                      | boolean          | `true`         | Share native Host Files, Git Changes, and Terminal panels as the server OS account, independent of Agent permissions. |
+| Parameter                                                       | Type / choices   | Parser default            | Meaning                                                                                                               |
+| --------------------------------------------------------------- | ---------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `--host`                                                        | text             | `"127.0.0.1"`             | Listener IPv4 or IPv6 address.                                                                                        |
+| `--port`                                                        | integer 1..65535 | `8765`                    | Listener TCP port.                                                                                                    |
+| `--apikey, --api-key`                                           | text             | not set                   | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).                                     |
+| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`                   | Disable Web authentication only; does not change Agent permissions.                                                   |
+| `--share-computer` / `--no-share-computer`                      | boolean          | `true`                    | Share native Host Files, Git Changes, and Terminal panels as the server OS account, independent of Agent permissions. |
+| `--browser-no-sandbox` / `--browser-sandbox`                    | boolean          | `false` (sandbox enabled) | Explicitly disable or enable Chromium's sandbox. Overrides `A13N_HARNESS_UI_BROWSER_NO_SANDBOX`.                      |
+
+`--no-share-computer` also disables the Host Browser drawer, discovery and browser automation.
+
+Run the browser Host as a non-root user with the default sandbox enabled. For a separately isolated Host that requires disabling it, use `--browser-no-sandbox` or set `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`; this removes Chromium's sandbox protection. `--browser-sandbox` restores the sandbox even when that environment variable is set. Root is rejected unless sandbox disabling is explicit. These are server startup options; [executable bindings](configuration.md#host-browser) are configured separately.
 
 ### `envd update`
 

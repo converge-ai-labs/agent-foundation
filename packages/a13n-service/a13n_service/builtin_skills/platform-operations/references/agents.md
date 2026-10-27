@@ -23,6 +23,10 @@ Models use keys. Skills and subagents use IDs and exact Revision IDs after valid
 
 `memory` sets new-session defaults: `enabled` and `spaces[{name, space_id, access}]`, selecting existing workspace Memory Spaces with read or write access. The first accepted business run fills omitted session fields from its Agent Revision; the session then keeps those choices. Each Space owns its organization policy and model. `memory_mounts` selects standalone memories for new threads.
 
+## Configure context compaction
+
+`background_compaction` belongs to the Agent Revision and defaults to `{enabled: false, blocking_threshold: 0.95}`. Enable it for background summaries on ordinary threads. Inline and asynchronous children compact synchronously. The blocking threshold accepts values greater than zero and at most one; counted input at or above this share of the context window waits for existing work or compacts synchronously if none exists. Output reserve can require blocking earlier. The common compaction trigger remains independent. Disabling generation preserves delivery of retained results.
+
 ## Configure tool discovery
 
 `tool_search` groups tools the Agent already selects. Each group names a `description`, `connections` by Connection ID, `plugins` by instance name, local `capabilities` (`environment`, `web`), and optionally `platform: true`. Each source belongs to one group. Omit `config.mode` or set it to `proxy`; control names and discovery limits are configurable. The model uses fixed discovery, description, invocation, tool-list, and group-list controls. It can enumerate the complete directory with `list_tools(detail="full")` and `next_offset` without promoting member schemas into model requests.

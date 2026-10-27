@@ -130,8 +130,16 @@ class RunUsage(BaseModel):
 
 class UsageSummary(BaseModel):
     models: list[ModelUsage]
-    # The same per-model sums for each Run, in creation order.
-    runs: list[RunUsage]
+
+
+class RunUsageQuery(UsageFilter):
+    limit: PageLimit = 50
+    cursor: str | None = Field(default=None, max_length=2048)
+
+
+class RunUsagePage(BaseModel):
+    items: list[RunUsage]
+    next_cursor: str | None
 
 
 class ModelRequestMetrics(BaseModel):

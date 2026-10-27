@@ -12,16 +12,17 @@ import {
   executionPatch,
   FormActions,
 } from "../../shared/forms";
-import { ConflictNotice } from "../../shared/dialogs";
+import { useMountedModal, ConflictNotice } from "../../shared/dialogs";
 import { conversationKeys } from "./api";
 
 export function ThreadExecutionDialog({
   thread,
-  onClose,
+  onClose: onClosed,
 }: {
   thread: Schema["ThreadView"];
   onClose: () => void;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const { t } = useTranslation();
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -43,9 +44,6 @@ export function ThreadExecutionDialog({
     onSuccess: (value) => {
       const keys = conversationKeys(workspace.id);
       cache.setQueryData(keys.thread(value.id), value);
-      void cache.invalidateQueries({
-        queryKey: keys.threads(value.session_id),
-      });
       onClose();
     },
   });
@@ -67,16 +65,12 @@ export function ThreadExecutionDialog({
   const pending = save.isPending || reload.isPending;
   return (
     <ModalFrame
-      open
+      {...modalProps}
       title={t("Thread execution policy")}
       description={t(
         "Applies to new runs in this thread. Inherited fields follow the selected agent.",
       )}
       closeLabel={t("Close")}
-      onOpenChange={(open, details) => {
-        if (pending) details.cancel();
-        else if (!open) onClose();
-      }}
     >
       <form
         className="grid gap-5"

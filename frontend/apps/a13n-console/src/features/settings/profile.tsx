@@ -236,6 +236,7 @@ function ProfileForm({
       }}
     >
       <SettingsSection
+        variant="outlined"
         title={
           target.kind === "personal"
             ? t("Account")
@@ -293,6 +294,7 @@ function ProfileForm({
       />
       {danger && (
         <SettingsSection
+          variant="outlined"
           title={t("Danger zone")}
           description={t("These actions cannot be undone.")}
         >

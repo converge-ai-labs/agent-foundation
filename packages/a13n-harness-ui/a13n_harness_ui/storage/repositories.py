@@ -13,6 +13,7 @@ from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 
+from .compaction import CompactionSettlement, settle_compaction
 from .contracts import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -692,6 +693,8 @@ class ThreadRepository:
         excerpt: ConversationExcerpt | None = None,
         activity_changed: bool = True,
         updated_at: datetime | None = None,
+        clear_compaction: bool = False,
+        compaction_settlement: CompactionSettlement | None = None,
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
         serialized = read_model.model_dump_json()
@@ -708,6 +711,7 @@ class ThreadRepository:
                     None if expected is None else expected.logical_digest,
                     None if actual is None else actual.logical_digest,
                 )
+            await settle_compaction(session, thread_id, settlement=compaction_settlement, clear=clear_compaction)
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest

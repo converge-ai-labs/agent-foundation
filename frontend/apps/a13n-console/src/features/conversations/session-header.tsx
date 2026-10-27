@@ -18,15 +18,16 @@ import {
   PencilSimpleIcon,
   SlidersHorizontalIcon,
 } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+import { useClient } from "../../auth/context";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
-import type { Schema } from "../../shared/api";
 import { StatePill } from "../../shared/feedback";
 import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
-import { isActiveRun, isConsoleSession } from "./api";
+import { conversationQueries, isActiveRun, isConsoleSession } from "./api";
 import { useRun, useSession } from "./queries";
 import { useViewLevel } from "./transcript/debug/view";
 import { useRunCollapseAll } from "./transcript/debug/collapse";
@@ -37,6 +38,7 @@ import { ThreadExecutionDialog } from "./thread-execution";
 import { ThreadMountsDialog } from "./thread-mounts";
 import { SessionEditor } from "./session-editor";
 import { sessionTitle } from "./session-identity";
+import { isInteractive } from "./transcript/run-actions";
 import styles from "./conversations.module.css";
 
 /**
@@ -45,24 +47,29 @@ import styles from "./conversations.module.css";
  * The actions menu closes the first line, so a narrow screen keeps it beside
  * the name and moves only the view controls to a second line.
  */
-export function SessionHeader({
-  threads,
-}: {
-  threads: readonly Schema["ThreadView"][];
-}) {
+export function SessionHeader() {
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
-  const { basePath, can } = useWorkspace();
-  const thread = threads.find((entry) => entry.id === threadId);
-  const root = threads.find(
-    (entry) => entry.origin === "new" && entry.session_id === sessionId,
-  );
+  const { basePath, can, workspace } = useWorkspace();
+  const client = useClient(),
+    queries = conversationQueries(client, workspace.id);
+  const selected = useQuery({
+    ...queries.thread(threadId),
+    enabled: !!threadId,
+  });
+  const thread =
+    selected.data?.session_id === sessionId ? selected.data : undefined;
+  const roots = useQuery({
+    ...queries.threadPage(sessionId, { origin: ["new"], limit: 1 }),
+    enabled: thread?.origin === "child",
+  });
+  const root = roots.data?.items[0];
   const session = useSession(sessionId);
   const { level, setLevel: switchLevel } = useViewLevel(thread, session.data);
   const run = useRun(runId);
   const valid = run.data?.session_id === sessionId;
   const agent = useAgent(valid ? run.data?.agent_id : undefined);
-  const { total } = useThreadRuns(threadId);
+  const { total } = useThreadRuns(runId ? threadId : "", runId);
   const collapse = useRunCollapseAll();
   const [mounts, setMounts] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -148,16 +155,9 @@ export function SessionHeader({
           </span>
         )}
         {level === "debug" && (
-          <SessionUsage
-            sessionId={sessionId}
-            threads={threads}
-            thread={thread}
-            runId={runId}
-          />
+          <SessionUsage sessionId={sessionId} thread={thread} runId={runId} />
         )}
-        {thread && (
-          <ThreadBranches thread={thread} threads={threads} level={level} />
-        )}
+        {thread && <ThreadBranches thread={thread} level={level} />}
         <SegmentedControl
           className={styles.levelSwitch}
           label={t("Disclosure level")}
@@ -186,7 +186,7 @@ export function SessionHeader({
           <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
         </MenuTrigger>
         <MenuPopup align="end">
-          {can("run") && session.data && (
+          {can("run") && isConsoleSession(session.data) && session.data && (
             <MenuItem onClick={() => setEditing(true)}>
               <PencilSimpleIcon size={14} aria-hidden="true" />
               {t("Edit session details")}
@@ -210,12 +210,15 @@ export function SessionHeader({
               {t("Environments and memory")}
             </MenuItem>
           )}
-          {thread && can("run") && !thread.archived_at && (
-            <MenuItem onClick={() => setExecution(true)}>
-              <SlidersHorizontalIcon size={14} aria-hidden="true" />
-              {t("Execution policy")}
-            </MenuItem>
-          )}
+          {thread &&
+            isInteractive(thread, session.data) &&
+            can("run") &&
+            !thread.archived_at && (
+              <MenuItem onClick={() => setExecution(true)}>
+                <SlidersHorizontalIcon size={14} aria-hidden="true" />
+                {t("Execution policy")}
+              </MenuItem>
+            )}
           {can("read") && (
             <MenuItem
               render={
@@ -241,14 +244,14 @@ export function SessionHeader({
           onOpenChange={setMounts}
         />
       )}
-      {execution && thread && (
+      {execution && thread && isInteractive(thread, session.data) && (
         <ThreadExecutionDialog
           key={thread.id}
           thread={thread}
           onClose={() => setExecution(false)}
         />
       )}
-      {editing && session.data && (
+      {editing && session.data && isConsoleSession(session.data) && (
         <SessionEditor
           session={session.data}
           onClose={() => setEditing(false)}

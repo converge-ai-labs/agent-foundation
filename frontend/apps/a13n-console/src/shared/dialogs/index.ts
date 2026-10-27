@@ -16,3 +16,4 @@ export {
   type ResourceEditorControl,
 } from "./resource-modal";
 export { ResourceModalTitle } from "./resource-modal-title";
+export { useMountedModal } from "./use-mounted-modal";

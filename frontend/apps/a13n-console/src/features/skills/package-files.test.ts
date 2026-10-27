@@ -1,8 +1,36 @@
 import { strToU8, zipSync } from "fflate";
 import { expect, it } from "vitest";
-import { previewLimit, readTextFile } from "./package-files";
+import { linkedPackageFile, previewLimit, readTextFile } from "./package-files";
 
 const file = (path: string, size = 0) => ({ path, size });
+
+it("resolves package links relative to the selected file without intercepting external or unknown links", () => {
+  const files = [
+    file("SKILL.md"),
+    file("references/guide.md"),
+    file("references/with space.md"),
+  ];
+  expect(
+    linkedPackageFile("SKILL.md", "references/guide.md#steps", files),
+  ).toBe("references/guide.md");
+  expect(linkedPackageFile("references/guide.md", "../SKILL.md", files)).toBe(
+    "SKILL.md",
+  );
+  expect(
+    linkedPackageFile("SKILL.md", "references/with%20space.md", files),
+  ).toBe("references/with space.md");
+  for (const href of [
+    "https://example.com/SKILL.md",
+    "//example.com/SKILL.md",
+    "/SKILL.md",
+    "#heading",
+    "mailto:user@example.com",
+    "missing.md",
+    "%invalid",
+  ]) {
+    expect(linkedPackageFile("SKILL.md", href, files)).toBeUndefined();
+  }
+});
 
 it("reads only the selected file below the package root and preserves UTF-8 source", () => {
   const text = "---\nname: 示例\ndescription: Review\n---\n# Review\n";

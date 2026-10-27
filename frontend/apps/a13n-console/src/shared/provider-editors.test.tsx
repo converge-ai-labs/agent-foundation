@@ -127,11 +127,9 @@ it.each(surfaces)(
   "creates a workspace %s provider after loading the first list page",
   async (surface) => {
     const user = userEvent.setup();
-    const addLabel =
-      surface === "environment" ? "Add connection" : "Add provider";
     const { connector, type, listPath, detailPath } = setup(surface);
     await screen.findByText("Existing provider");
-    await user.click(screen.getByRole("button", { name: addLabel }));
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
     // Every category starts creation from the provider catalog.
     expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
     await user.click(
@@ -157,7 +155,7 @@ it.each(surfaces)(
     expect(
       screen.queryByRole("button", { name: "Replace credentials" }),
     ).toBeNull();
-    await user.click(screen.getByRole("button", { name: addLabel }));
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
     await waitFor(() =>
       expect(http.POST).toHaveBeenCalledWith(
         listPath,
@@ -176,7 +174,7 @@ it.each(surfaces)(
       false,
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await user.click(screen.getByRole("button", { name: addLabel }));
+    await user.click(screen.getByRole("button", { name: "Add provider" }));
     // The catalog comes back, so the previous draft cannot leak forward.
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
     await screen.findByRole("button", {

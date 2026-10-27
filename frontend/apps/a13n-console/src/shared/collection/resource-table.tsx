@@ -160,6 +160,7 @@ function RowMenu({ label, children }: { label: string; children: ReactNode }) {
               size="icon-sm"
               type="button"
               aria-label={label}
+              tooltip={false}
             />
           }
         >

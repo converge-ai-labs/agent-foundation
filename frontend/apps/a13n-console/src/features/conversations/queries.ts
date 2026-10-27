@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
-import { conversationQueries } from "./api";
+import { conversationKeys, conversationQueries } from "./api";
 
 export function useRun(runId?: string | null) {
   const client = useClient(),
@@ -22,23 +22,40 @@ export function useRunAgent(runId: string) {
 
 export function useSession(sessionId?: string | null) {
   const client = useClient(),
-    { workspace } = useWorkspace();
+    { workspace } = useWorkspace(),
+    cache = useQueryClient();
+  const source = cache
+    .getQueryCache()
+    .findAll({
+      queryKey: conversationKeys(workspace.id).sessions(),
+    })
+    .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+    .find((query) =>
+      (query.state.data as Schema["SessionPage"] | undefined)?.items.some(
+        (session) => session.id === sessionId,
+      ),
+    );
   return useQuery({
     ...conversationQueries(client, workspace.id).session(sessionId ?? ""),
     enabled: !!sessionId,
+    initialData: () =>
+      (source?.state.data as Schema["SessionPage"] | undefined)?.items.find(
+        (session) => session.id === sessionId,
+      ),
+    initialDataUpdatedAt: source?.state.dataUpdatedAt,
   });
 }
 
-/** Share the Session's recorded usage, independent of loaded display pages. */
+/** Read only this Run's recorded usage, independent of display pages. */
 export function useRunUsage(run: Pick<Schema["RunView"], "id" | "session_id">) {
   const client = useClient(),
     { workspace } = useWorkspace();
   return useQuery({
     ...conversationQueries(client, workspace.id).usage({
-      session_id: run.session_id,
+      run_id: run.id,
     }),
-    select: (summary) =>
-      summary.runs.find((usage) => usage.run_id === run.id)?.models ?? [],
+    meta: { sessionId: run.session_id },
+    select: (summary) => summary.models,
   });
 }
 
@@ -52,5 +69,17 @@ export function useRequestMetrics(runId: string, recordId?: string | null) {
       recordId ?? "",
     ),
     enabled: !!recordId,
+  });
+}
+
+export function useThreadNavigation(sessionId: string, threadId?: string) {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  return useQuery({
+    ...conversationQueries(client, workspace.id).threadPage(sessionId, {
+      thread_id: threadId ? [threadId] : [],
+    }),
+    enabled: !!threadId,
+    select: (page) => page.items[0],
   });
 }

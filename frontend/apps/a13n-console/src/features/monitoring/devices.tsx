@@ -13,7 +13,7 @@ import {
   ResourceTable,
   Toolbar,
 } from "../../shared/collection";
-import { Confirm } from "../../shared/dialogs";
+import { useMountedModal, Confirm } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions, SecretReveal } from "../../shared/forms";
 import { Page, PageActions } from "../../shared/page";
@@ -164,11 +164,12 @@ export function DevicesPage() {
 }
 function DeviceEditor({
   device,
-  onClose,
+  onClose: onClosed,
 }: {
   device?: Schema["Device"];
   onClose: () => void;
 }) {
+  const { close: onClose, modalProps } = useMountedModal(onClosed);
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     cache = useQueryClient(),
@@ -214,10 +215,7 @@ function DeviceEditor({
   });
   return (
     <ModalFrame
-      open
-      onOpenChange={(value) => {
-        if (!value && !save.isPending) onClose();
-      }}
+      {...modalProps}
       title={device?.name ?? t("Register device")}
       closeLabel={t("Close")}
       size="lg"

@@ -12,6 +12,7 @@ from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
+from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -95,6 +96,15 @@ class ConfigurationModel(StrictModel):
     model_config = ConfigDict(extra="allow")
     # Pydantic uses this narrower annotation to validate retained JSON extras.
     __pydantic_extra__: dict[str, JsonValue] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class BackgroundCompactionConfiguration(BackgroundCompactionPolicy, ConfigurationModel):
+    enabled: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _boolean_switch(cls, value: object) -> object:
+        return {"enabled": value} if isinstance(value, bool) else value
 
 
 class ProcessConfiguration(ConfigurationModel):
@@ -346,12 +356,29 @@ class EnvdConfiguration(StrictModel):
         return value
 
 
+class BrowserConfiguration(ConfigurationModel):
+    """Host executable bindings captured at App startup; never install dependencies."""
+
+    executable: str | None = Field(default=None, min_length=1, max_length=4096)
+    vnc_executable: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @field_validator("executable", "vnc_executable")
+    @classmethod
+    def _host_path(cls, value: str | None) -> str | None:
+        if value is not None:
+            if "\x00" in value or not Path(value).expanduser().is_absolute():
+                raise ValueError("browser paths must be absolute Host paths")
+            return str(Path(value).expanduser().resolve(strict=False))
+        return None
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
     schema_version: Literal["1"] = "1"
     process: ProcessConfiguration = Field(default_factory=ProcessConfiguration)
     envd: EnvdConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
+    browser: BrowserConfiguration = Field(default_factory=BrowserConfiguration)
     input: InputConfiguration = Field(default_factory=InputConfiguration)
     defaults: GlobalDefaults = Field(default_factory=GlobalDefaults)
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
@@ -370,6 +397,7 @@ class HarnessUiDocument(ConfigurationModel):
     memory: MemoryConfiguration = Field(default_factory=MemoryConfiguration)
     live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
+    background_compaction: BackgroundCompactionConfiguration = Field(default_factory=BackgroundCompactionConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):

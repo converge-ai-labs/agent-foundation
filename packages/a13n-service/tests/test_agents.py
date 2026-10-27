@@ -273,6 +273,20 @@ def test_lazy_environment_override_preserves_false_and_inherits_null(baseline: b
     assert apply_override(revision, restored).lazy_environment is applied.lazy_environment
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_background_compaction_is_revision_owned_and_roundtrips(enabled: bool) -> None:
+    assert config().background_compaction.enabled is False
+    revision = config(background_compaction={"enabled": enabled, "blocking_threshold": 0.925})
+    restored = AgentConfig.model_validate_json(revision.model_dump_json())
+    assert restored.background_compaction == revision.background_compaction
+    assert (
+        apply_override(restored, AgentOverride(instructions="Changed")).background_compaction
+        == revision.background_compaction
+    )
+    with pytest.raises(ValidationError):
+        restored.background_compaction.enabled = not enabled
+
+
 class _Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     level: int = 1
@@ -365,6 +379,41 @@ def test_build_composes_the_definition_without_io() -> None:
     (subagent,) = composed.subagents
     assert (subagent.name, subagent.description, subagent.agent.definition_id) == ("helper", "Helps", HELPER_REVISION)
     assert composed.model is None and composed.agent.model == subagent.agent.agent.model == MODEL
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_background_compaction_build_preserves_policy_and_keeps_children_synchronous(enabled: bool) -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.compaction import CompactionOperator
+
+    selected = config(
+        background_compaction={"enabled": enabled, "blocking_threshold": 0.925},
+        subagents={"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+    )
+    child = resolved(HELPER, HELPER_REVISION, config(background_compaction={"enabled": True}))
+    root = resolved(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        selected,
+        subagents={"helper": ResolvedSubagent(selected.subagents["helper"], child.revision_id, "Helps", child)},
+    )
+    operator = AsyncMock(spec=CompactionOperator) if enabled else None
+    built = build(root, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None, compaction=operator)
+    [capability] = [item for item in built.definition.capabilities if isinstance(item, CompactionCapability)]
+    assert capability.background is enabled
+    if enabled:
+        assert capability.background_policy == selected.background_compaction
+    [child_capability] = [
+        item for item in built.definition.subagents[0].agent.capabilities if isinstance(item, CompactionCapability)
+    ]
+    assert child_capability.background is False and child_capability.operator is None
+    # Async child roots are built without an operator even if their own revision opts in.
+    child_built = build(child, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
+    [async_capability] = [
+        item for item in child_built.definition.capabilities if isinstance(item, CompactionCapability)
+    ]
+    assert async_capability.background is False and async_capability.operator is None
 
 
 @pytest.mark.parametrize("mode", ["allow", "ask", "deny", "inherit"])

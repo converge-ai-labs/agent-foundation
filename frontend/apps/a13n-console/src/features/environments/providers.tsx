@@ -23,7 +23,7 @@ export function EnvironmentProviders() {
       notice={
         <p className={providerStyles.notice}>
           {t(
-            "Local directories run on the worker. Docker connections use the engine and network access configured by your administrator.",
+            "Local directories run on the worker. Docker providers use the engine and network access configured by your administrator.",
           )}
         </p>
       }

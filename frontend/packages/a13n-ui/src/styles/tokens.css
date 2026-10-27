@@ -1,4 +1,5 @@
 :root {
+  --a13n-overlay-duration: 120ms;
   --a13n-font-brand: "Space Grotesk", var(--a13n-font);
   --a13n-font:
     -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",

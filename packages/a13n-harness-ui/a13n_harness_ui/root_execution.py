@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import partial
@@ -24,6 +24,7 @@ from a13n_harness import (
 )
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
+from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
@@ -38,7 +39,9 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.browser import HostBrowsers
 from a13n_harness_ui.capability_runtime import production_run_bindings
+from a13n_harness_ui.compaction import BackgroundCompaction
 from a13n_harness_ui.composition import (
     AgentReconstructor,
     CompositionAcceptanceService,
@@ -59,6 +62,7 @@ from a13n_harness_ui.display_history import (
     with_display_history,
 )
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
@@ -135,6 +139,7 @@ class RootRunAdmission:
     organization: MemoryOrganizationRun | None = None
     resume_usage: bool = False
     display: DisplayArchive | None = None
+    browser_binding: str | None = None
 
 
 class RootRunExecutor:
@@ -158,8 +163,12 @@ class RootRunExecutor:
         work: ThreadWorkService | None = None,
         restart_coordinator: GracefulRestart | None = None,
         mcp_apps: AppSnapshots | None = None,
+        browsers: HostBrowsers | None = None,
         tool_executions: ToolExecutions | None = None,
+        compaction: BackgroundCompaction | None = None,
     ) -> None:
+        self._browsers = browsers
+        self._compaction = compaction
         self._tool_executions = tool_executions
         self._store = store
         self._mcp_apps = mcp_apps
@@ -328,9 +337,29 @@ class RootRunExecutor:
             positions,
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
             display=archive,
+            browser_binding=(
+                self._browsers.binding(thread_id)
+                if self._browsers is not None
+                and published.value.environment_profile.profile_id == FULL_CONTROL_PROFILE_ID
+                else None
+            ),
         )
 
     async def execute(
+        self,
+        admission: RootRunAdmission,
+        *,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        goal: GoalView | None = None,
+        on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
+        on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
+    ) -> RootRunOutcome:
+        async with self._compaction.use(admission.thread.thread_id) if self._compaction is not None else nullcontext():
+            return await self._execute(
+                admission, on_stream=on_stream, goal=goal, on_goal=on_goal, on_main_account=on_main_account
+            )
+
+    async def _execute(
         self,
         admission: RootRunAdmission,
         *,
@@ -433,6 +462,7 @@ class RootRunExecutor:
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
                 published.value,
+                background_compaction=self._compaction,
                 pricing_catalog=pricing_catalog,
                 memory_positions=admission.memory_positions,
                 organization=admission.organization,
@@ -442,6 +472,11 @@ class RootRunExecutor:
                     goal_capability,
                     RootCheckpointCapability(save_checkpoint),
                     _ToolPresentationCapability(retain_tool_presentation),
+                    *(
+                        (BrowserUseCapability(self._browsers.backend(thread_id, admission.browser_binding)),)
+                        if self._browsers is not None and admission.browser_binding is not None
+                        else ()
+                    ),
                     *(
                         (RestartPauseCapability(self._restart, thread_id),)
                         if self._restart is not None and admission.organization is None
@@ -496,6 +531,19 @@ class RootRunExecutor:
                 actor="a13n-harness-ui.root",
                 host_refs={"thread_id": thread.thread_id},
             )
+            usage_reporter = self._store.usage.reporter(thread_id)
+            model_call_check = (
+                await reconstructed.compaction.prepare(
+                    instance=instance,
+                    reporter=usage_reporter,
+                    state=previous_state,
+                    limits=reconstructed.executable.definition_usage_limits(),
+                    resume_usage=admission.resume_usage,
+                )
+                if reconstructed.compaction is not None
+                else None
+            )
+            compaction_result = await self._compaction.restore(previous_state) if self._compaction is not None else None
             bindings = RunBindings(
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
                 codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
@@ -504,7 +552,8 @@ class RootRunExecutor:
                 environment=None if environment is None else environment.runtime,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
-                usage_reporter=self._store.usage.reporter(thread_id),
+                usage_reporter=usage_reporter,
+                model_call_check=model_call_check,
                 producer_observer=display.observe,
                 file_media_understanding=reconstructed.file_media_understanding(previous_state.thread_id),
                 working_state_observer=(
@@ -536,6 +585,7 @@ class RootRunExecutor:
                 input_factory=input_factory,
                 bindings=bindings,
                 previous_state=previous_state,
+                compaction_result=compaction_result,
                 resume_usage=admission.resume_usage,
                 deferred_resume=deferred_resume,
             )
@@ -903,6 +953,7 @@ class RootRunExecutor:
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             async with checkpoint_lock(self._store.layout.root, thread.thread_id):
                 published_ref = await publish_continuation(self._store.objects, continuation)
+                settlement = await self._store.compactions.settlement(state)
                 selected = await self._store.threads.select_continuation(
                     thread_id=thread.thread_id,
                     expected=thread.continuation,
@@ -911,6 +962,7 @@ class RootRunExecutor:
                     completed_run_id=completed_run_id,
                     excerpt=excerpt,
                     activity_changed=activity_changed,
+                    compaction_settlement=settlement,
                 )
                 # Only this Run's previous successful checkpoint is replaceable.
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.

@@ -6,20 +6,26 @@
   gap: 10px;
 }
 .details {
+  container-type: inline-size;
   display: grid;
-  gap: 26px;
+  gap: 16px;
   min-width: 0;
   padding-bottom: 8px;
 }
 .section {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
+}
+.section:first-child {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--a13n-surface);
 }
 .section h3 {
   margin: 0;
   font-size: var(--a13n-text-sm);
-  font-weight: 600;
+  font-weight: 500;
 }
 .note {
   margin: 0;
@@ -29,7 +35,7 @@
 .facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 24px;
+  gap: 16px 24px;
   margin: 0;
   font-size: var(--a13n-text-sm);
 }
@@ -49,7 +55,7 @@
 }
 .list {
   display: grid;
-  gap: 10px;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -62,6 +68,7 @@
 }
 .item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -126,5 +133,174 @@
 @media (max-width: 560px) {
   .facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.execution {
+  padding: 0;
+}
+.execution [data-slot="execution-fields"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 24px;
+}
+.execution [role="group"] {
+  gap: 3px;
+}
+.execution [role="group"] > :first-child {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.execution [role="group"]:first-child {
+  order: 1;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 144px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+@media (max-width: 560px) {
+  .facts {
+    gap: 12px;
+  }
+  .facts > div {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 12px;
+    align-items: baseline;
+  }
+  .execution [data-slot="execution-fields"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .execution [role="group"],
+  .execution [role="group"]:first-child {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 12px;
+    align-items: baseline;
+  }
+  .meta {
+    margin-left: 0;
+    white-space: normal;
+  }
+}
+
+.details [data-slot="disclosure-surface"] > button {
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+}
+@container (max-width: 720px) {
+  .usage table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .usage thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .usage tbody,
+  .usage tfoot {
+    display: block;
+  }
+  .usage tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 20px;
+    padding: 12px 0;
+  }
+  .usage td,
+  .usage td[data-number],
+  .usage th {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .usage td:first-child,
+  .usage th:first-child {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+  .usage td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--a13n-secondary);
+    font-size: var(--a13n-text-xs);
+    margin-bottom: 3px;
+    font-weight: 400;
+  }
+  .usage tfoot td:empty {
+    display: none;
+  }
+}
+
+.usage th,
+.usage td {
+  border: 0;
+}
+.usage thead {
+  color: var(--a13n-secondary);
+}
+.usage tbody tr + tr {
+  border-top: 12px solid transparent;
+}
+
+@container (width > 720px) {
+  .usage thead th {
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom: 0;
+    background: var(--a13n-surface);
+  }
+  .usage thead th:first-child {
+    border-radius: 8px 0 0 8px;
+  }
+  .usage thead th:last-child {
+    border-radius: 0 8px 8px 0;
+  }
+  .usage :is(th, td):first-child {
+    padding-left: 14px;
+  }
+  .usage :is(th, td):last-child {
+    padding-right: 14px;
+  }
+}
+
+/* Detail groups share the outlined body used by Run options. */
+.details
+  > .section
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  margin-top: 6px;
+  margin-bottom: 2px;
+  padding: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.details > .section > .list {
+  padding: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+}
+.list > li + li {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+@container (max-width: 480px) {
+  .item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+  .item .meta {
+    grid-column: 1 / -1;
+    margin-left: 0;
   }
 }

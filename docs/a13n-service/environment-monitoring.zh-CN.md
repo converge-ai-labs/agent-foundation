@@ -5,11 +5,11 @@ description: 为环境和 Device 指标选择采集与历史查询后端，并�
 
 环境监控独立于 agent 运行，展示 Envd 目标的资源使用情况。为每个环境选择工作空间中的指标数据源。未选择数据源的环境不会启用 Service 后台采集或自动配置导出器。[Service 监控](monitoring.md)介绍 Service 自身的健康状态。
 
-首次使用时，将环境的指标数据源设为 **Local Cache**，在目标上执行一些操作，再打开 **观察 → 指标** 并选择该环境。已有目标需要运行中的 Envd sampler；没有样本时，请按[绑定并验证环境](#bind-and-verify-an-environment)检查。Local Cache 在 Redis 中保存临时历史，无需外部指标数据库。
+首次使用时，将环境的指标数据源设为 **Local Cache**，在目标上执行一些操作，再打开 **环境 → 指标** 并选择该环境。已有目标需要运行中的 Envd sampler；没有样本时，请按[绑定并验证环境](#bind-and-verify-an-environment)检查。Local Cache 在 Redis 中保存临时历史，无需外部指标数据库。
 
 ## 在 Console 中使用仪表盘
 
-在工作空间中打开 **观察 → 指标**。选择环境或 Device，查看其已配置的指标。内置 **Environment overview** 与自定义仪表盘一样可以编辑。
+在工作空间中打开 **环境 → 指标**。选择环境或 Device，查看其已配置的指标。内置 **Environment overview** 与自定义仪表盘一样可以编辑。
 
 1. 选择 **编辑仪表盘**，添加、编辑或移除面板。拖动面板手柄调整位置，拖动角落调整大小。面板编辑器也支持输入位置和大小；小屏幕按顺序堆叠已保存的布局。
 2. 选择预定义的 Environment / Device 指标，或选择数据源并编写 PromQL。PromQL 需要工作空间管理员权限。Local Cache 支持预定义指标，不支持任意 PromQL。

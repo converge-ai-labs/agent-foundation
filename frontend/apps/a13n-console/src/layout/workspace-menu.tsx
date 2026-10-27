@@ -9,12 +9,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "a13n-ui";
-import {
-  CaretUpDownIcon,
-  CheckIcon,
-  GearSixIcon,
-  PlusIcon,
-} from "@phosphor-icons/react";
+import { CaretUpDownIcon, CheckIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { UserAvatar } from "./avatar";
@@ -108,19 +103,19 @@ export function WorkspaceMenu({
             );
           })}
         </MenuGroup>
-        <MenuSeparator />
-        <MenuGroup>
-          <MenuItem onClick={() => open(`${context.basePath}/settings`)}>
-            <GearSixIcon aria-hidden="true" />
-            {t("Workspace settings")}
-          </MenuItem>
-          {context.organizationCan("admin") && (
-            <MenuItem onClick={() => open("/organization/settings/workspaces")}>
-              <PlusIcon aria-hidden="true" />
-              {t("Create workspace")}
-            </MenuItem>
-          )}
-        </MenuGroup>
+        {context.organizationCan("admin") && (
+          <>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuItem
+                onClick={() => open("/organization/settings/workspaces")}
+              >
+                <PlusIcon aria-hidden="true" />
+                {t("Create workspace")}
+              </MenuItem>
+            </MenuGroup>
+          </>
+        )}
       </MenuPopup>
     </Menu>
   );

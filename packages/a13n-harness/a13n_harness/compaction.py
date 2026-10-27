@@ -38,6 +38,7 @@ from a13n_harness.storage import RunStorage
 
 __all__ = [
     "COMPACTION_CAPABILITY_ID",
+    "BackgroundCompactionPolicy",
     "CompactionBasis",
     "CompactionInput",
     "CompactionModelRequest",
@@ -56,6 +57,15 @@ _PARAMETERS = TypeAdapter(ModelRequestParameters)
 _SETTINGS = TypeAdapter(dict[str, JsonValue])
 
 
+class BackgroundCompactionPolicy(BaseModel):
+    """Host-selected overlap policy, separate from the common compaction trigger."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    blocking_threshold: float = Field(default=0.95, gt=0, le=1)
+
+
 class _CompactionState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -63,6 +73,7 @@ class _CompactionState(BaseModel):
     basis_digest: str
     disposition: Literal["applied", "skipped"]
     restoration_pending: bool = False
+    completion_emitted: bool = False
 
 
 class CompactionBasis(BaseModel):
@@ -151,7 +162,10 @@ class CompactionInput(BaseModel):
         # Remove structured output requirements, preserving ordinary tools,
         # instructions, native configuration and tool_choice for cache reuse.
         parameters = replace(
-            deepcopy(parameters),
+            parameters,
+            # Host-only tool metadata may hold live callbacks and resources.
+            # Serialize provider definitions, never copy or retain those owners.
+            function_tools=[replace(tool, metadata=None) for tool in parameters.function_tools],
             output_mode="text",
             output_object=None,
             output_tools=[],

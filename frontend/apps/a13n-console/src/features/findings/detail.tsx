@@ -1,5 +1,12 @@
 import { SparkleIcon } from "@phosphor-icons/react";
-import { Button, ChoiceField, FormField, ModalFrame, Textarea } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  ModalFrame,
+  Textarea,
+} from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -14,12 +21,11 @@ import {
   DetailHeader,
   DetailPage,
   Page,
-  RailNote,
   RailRow,
   RailSection,
   Section,
 } from "../../shared/page";
-import { FormActions } from "../../shared/forms";
+import { FormActions, FormSection } from "../../shared/forms";
 import { CopyableId } from "../../shared/identity";
 import { useAgentComposer } from "../agents/composer";
 import {
@@ -191,29 +197,26 @@ export function FindingDetail() {
               <Timestamp value={finding.updated_at} relative />
             </RailRow>
           </RailSection>
-          <RailSection title={t("Technical references")}>
-            <RailRow label={t("Finding ID")}>
-              <CopyableId value={finding.id} />
-            </RailRow>
-            <RailRow label={t("Agent version")}>
-              <CopyableId value={finding.agent_revision_id} />
-            </RailRow>
-            {finding.analysis_id && (
-              <RailRow label={t("Analysis ID")}>
-                <CopyableId value={finding.analysis_id} />
+          <DisclosureSection title={t("Technical references")}>
+            <RailSection>
+              <RailRow label={t("Finding ID")}>
+                <CopyableId value={finding.id} />
               </RailRow>
-            )}
-            {finding.source_run_id && (
-              <RailRow label={t("Analysis run")}>
-                <RunEvidence runId={finding.source_run_id} />
+              <RailRow label={t("Agent version")}>
+                <CopyableId value={finding.agent_revision_id} />
               </RailRow>
-            )}
-          </RailSection>
-          {!finding.source_run_id && (
-            <RailNote>
-              {t("Submitted through the findings API or an Agent tool.")}
-            </RailNote>
-          )}
+              {finding.analysis_id && (
+                <RailRow label={t("Analysis ID")}>
+                  <CopyableId value={finding.analysis_id} />
+                </RailRow>
+              )}
+              {finding.source_run_id && (
+                <RailRow label={t("Analysis run")}>
+                  <RunEvidence runId={finding.source_run_id} />
+                </RailRow>
+              )}
+            </RailSection>
+          </DisclosureSection>
         </>
       }
     >
@@ -222,12 +225,7 @@ export function FindingDetail() {
       <Section title={t("What happened")}>
         <MarkdownContent text={finding.explanation} />
       </Section>
-      <Section
-        title={t("Evidence")}
-        description={t(
-          "Trace availability depends on backend retention and capture. External producers are responsible for their trace and span references.",
-        )}
-      >
+      <Section title={t("Evidence")}>
         <div className={styles.evidenceList}>
           {finding.evidence.map((evidence, index) => (
             <Evidence key={index} evidence={evidence} number={index + 1} />
@@ -275,30 +273,32 @@ function Evidence({
         </Link>
         <RunEvidence runId={evidence.run_id} />
       </div>
-      <dl className={styles.evidenceIds}>
-        <div>
-          <dt>{t("Trace ID")}</dt>
-          <dd>
-            <CopyableId value={evidence.trace_id} />
-          </dd>
-        </div>
-        <div>
-          <dt>{t("Run ID")}</dt>
-          <dd>
-            <CopyableId value={evidence.run_id} />
-          </dd>
-        </div>
-        {evidence.span_ids?.length ? (
+      <DisclosureSection title={t("Trace references")}>
+        <dl className={styles.evidenceIds}>
           <div>
-            <dt>{t("Steps")}</dt>
+            <dt>{t("Trace ID")}</dt>
             <dd>
-              {evidence.span_ids.map((id) => (
-                <CopyableId key={id} value={id} />
-              ))}
+              <CopyableId value={evidence.trace_id} />
             </dd>
           </div>
-        ) : null}
-      </dl>
+          <div>
+            <dt>{t("Run ID")}</dt>
+            <dd>
+              <CopyableId value={evidence.run_id} />
+            </dd>
+          </div>
+          {evidence.span_ids?.length ? (
+            <div>
+              <dt>{t("Steps")}</dt>
+              <dd>
+                {evidence.span_ids.map((id) => (
+                  <CopyableId key={id} value={id} />
+                ))}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </DisclosureSection>
     </div>
   );
 }
@@ -375,8 +375,7 @@ function AssessmentEditor({
     <ModalFrame
       open={editing}
       onOpenChange={(open) => {
-        if (pending) return;
-        if (open) {
+        if (open && !pending) {
           setBaseline(finding);
           setAssessment(finding.assessment);
           setNote(finding.assessment_note);
@@ -391,9 +390,7 @@ function AssessmentEditor({
       }
       title={label}
       closeLabel={t("Close")}
-      description={t(
-        "Record your judgment of the evidence. This does not change the original diagnosis.",
-      )}
+      description={t("Review this finding and add your feedback.")}
     >
       <form
         className={styles.form}
@@ -411,31 +408,33 @@ function AssessmentEditor({
         }}
       >
         <ErrorNotice error={error} />
-        <ChoiceField
-          label={t("Assessment")}
-          value={assessment}
-          disabled={pending}
-          options={Object.entries(assessmentLabels).map(([value, label]) => ({
-            value,
-            label: t(label),
-          }))}
-          onValueChange={(value) => {
-            if (value !== assessment) setNote("");
-            setAssessment(value as Schema["Finding"]["assessment"]);
-          }}
-        />
+        <FormSection>
+          <ChoiceField
+            label={t("Assessment")}
+            value={assessment}
+            disabled={pending}
+            options={Object.entries(assessmentLabels).map(([value, label]) => ({
+              value,
+              label: t(label),
+            }))}
+            onValueChange={(value) => {
+              if (value !== assessment) setNote("");
+              setAssessment(value as Schema["Finding"]["assessment"]);
+            }}
+          />
+        </FormSection>
         <FormField
           label={t("Review note")}
           description={t(
-            "Explain your judgment. Later analyses of this Agent version will receive reviewed findings and their notes.",
+            "Your feedback helps future analyses of this agent version.",
           )}
         >
           <Textarea
-            rows={5}
+            rows={4}
             maxLength={2048}
             value={note}
             disabled={pending}
-            placeholder={t("What did the analysis miss or misunderstand?")}
+            placeholder={t("Add context or explain your decision…")}
             onChange={(event) => setNote(event.target.value)}
           />
         </FormField>

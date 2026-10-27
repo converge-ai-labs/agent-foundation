@@ -1,3 +1,4 @@
+import { fixtureSession, fixtureThread } from "./transcript/fixture";
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
 import { runRequest } from "./request";
@@ -128,7 +129,12 @@ it("labels organizer input as maintenance and excludes conversation controls", (
     purpose: "memory_organization" as const,
   };
   expect(runRequest(run({}), organizer).kind).toBe("memory_organization");
-  expect(isInteractive(organizer)).toBe(false);
+  expect(
+    isInteractive(organizer, {
+      id: organizer.session_id,
+      labels: { "a13n.console": "debug" },
+    }),
+  ).toBe(false);
 });
 
 it.each(["succeeded", "failed", "cancelled", "lost"])(
@@ -165,4 +171,25 @@ it("keeps an incomplete tool notification out of the user-message fallback", () 
     status: null,
     text: "",
   });
+});
+
+it("only enables interaction for the matching Console session and a human-driven thread", () => {
+  const current = fixtureThread();
+  const session = fixtureSession();
+  expect(isInteractive(current, session)).toBe(true);
+  expect(isInteractive(current, undefined)).toBe(false);
+  expect(isInteractive(undefined, session)).toBe(false);
+  expect(isInteractive(current, fixtureSession({ id: "other" }))).toBe(false);
+  expect(
+    isInteractive(
+      current,
+      fixtureSession({ labels: {}, origin: { application: "a13n-console" } }),
+    ),
+  ).toBe(false);
+  expect(isInteractive(fixtureThread({ origin: "child" }), session)).toBe(
+    false,
+  );
+  expect(
+    isInteractive(fixtureThread({ purpose: "memory_organization" }), session),
+  ).toBe(false);
 });

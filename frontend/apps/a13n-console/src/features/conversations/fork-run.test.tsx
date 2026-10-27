@@ -1,3 +1,4 @@
+import { fixtureSession } from "./transcript/fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,6 +9,7 @@ import type { Schema } from "../../shared/api";
 import { conversationKeys, type ViewLevel } from "./api";
 import { ForkRun } from "./fork-run";
 import {
+  fixtureNavigationPage,
   fixtureForkThread,
   fixtureRun,
   fixtureThread,
@@ -60,9 +62,14 @@ beforeEach(() => {
   cache = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  cache.setQueryData(conversationKeys("ws_1").threads("ses_1"), [
-    fixtureThread(),
-  ]);
+  cache.setQueryData(
+    conversationKeys("ws_1").session("ses_1"),
+    fixtureSession(),
+  );
+  cache.setQueryData(
+    conversationKeys("ws_1").navigation("ses_1"),
+    fixtureNavigationPage([fixtureThread()]),
+  );
   client = createClient({
     baseUrl: "https://service.example",
     auth: { type: "session", csrfToken: "csrf" },
@@ -95,6 +102,8 @@ beforeEach(() => {
           { status: 201 },
         );
       }
+      if (path.endsWith("/sessions/ses_1"))
+        return Response.json(fixtureSession());
       if (path.includes("/agents/"))
         return Response.json({ id: "agt_1", name: "Researcher" });
       if (path.endsWith("/threads"))
@@ -200,8 +209,12 @@ it.each(["chat", "debug"] as const)(
       cache.getQueryData(conversationKeys("ws_1").run("run_fork")),
     ).toEqual(next);
     expect(
-      cache.getQueryData(conversationKeys("ws_1").threads("ses_1")),
-    ).toContainEqual(fixtureForkThread);
+      cache.getQueryData(conversationKeys("ws_1").thread(fixtureForkThread.id)),
+    ).toEqual(fixtureForkThread);
+    expect(
+      cache.getQueryState(conversationKeys("ws_1").navigation("ses_1"))
+        ?.isInvalidated,
+    ).toBe(true);
   },
 );
 

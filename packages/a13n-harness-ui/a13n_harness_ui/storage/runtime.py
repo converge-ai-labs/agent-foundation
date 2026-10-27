@@ -15,6 +15,7 @@ from a13n_harness_ui import __version__
 from a13n_harness_ui.errors import StoreConflictError
 
 from .checkpoint_lock import checkpoint_lock
+from .compaction import CompactionRepository
 from .continuations import read_continuation
 from .contracts import Continuation, StoredThreadInitialState
 from .database import Database, open_database
@@ -62,6 +63,7 @@ class LocalStore:
         self.inspections = InspectionRepository(database.sessions)
         self.work = WorkRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
+        self.compactions = CompactionRepository(database.sessions)
         self.usage_analytics = UsageAnalyticsRepository(database.sessions)
         self.voice = VoiceTranscriptRepository(database.sessions, objects)
         self.restarts = RestartRepository(database.sessions)

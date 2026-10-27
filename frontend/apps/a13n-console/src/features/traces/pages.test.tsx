@@ -637,8 +637,7 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   expect(await panel.findByText("Diagnostic reason")).toBeTruthy();
   expect(panel.getByText("Model")).toBeTruthy();
   expect(panel.getAllByText(/model-version/).length).toBeGreaterThan(0);
-  expect(panel.getByText("Error")).toBeTruthy();
-  expect(panel.getByText("error")).toBeTruthy();
+  expect(panel.getAllByText("Error")).toHaveLength(2);
   expect(panel.getByText("Telemetry status")).toBeTruthy();
   expect(panel.getAllByText(UNKNOWN).length).toBeGreaterThan(0);
   for (const name of ["Resource attributes", "Scope", "Events", "Links"])

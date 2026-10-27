@@ -59,6 +59,12 @@ a13n-harness-ui webui
 
 Open the printed login link and keep the foreground server running. Configure Models, start conversations, and work with trusted collaborators. Native host file and terminal sharing are enabled by default; use `--no-share-computer` to disable them. See [WebUI](webui.md) for access and deployment.
 
+### Browser Use prerequisites
+
+The native **Browser** drawer runs a Chromium-based browser on a Linux or macOS WebUI Host. On Linux, install Chrome, Chromium or Edge and a compatible VNC server on that Host (inside the container for Docker), then select both executables in **Settings → General → Host browser**. TigerVNC provides the display and VNC server together. On macOS, only Chromium is required for automation. Optional read-only preview requires macOS 14 or later and Screen Recording permission for the application running Harness UI. It shows only the conversation's owned browser window, including the real address bar. No VNC service or password is needed. Pause automation before operating the browser locally on the Mac, then resume. Run as a non-root user with Chromium's sandbox enabled.
+
+Browser automation is included with Harness UI; no extra Python package, browser extension, MCP server or Node.js runtime is needed. Follow the [browser quick start](webui.md#first-time-setup) for installation commands, detection, saving and restarting, and your first browser session. Computer sharing must remain enabled; `--no-share-computer` also disables Host browser access.
+
 ## Next step
 
 [Complete setup](setup.md), then [find your configuration](configuration.md).

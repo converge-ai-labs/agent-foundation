@@ -108,38 +108,14 @@ function RunDetails({ selected }: { selected: Run }) {
   const models = usage.data ?? [];
   return (
     <div className={styles.details}>
-      <Section title={t("Usage")}>
-        <ErrorNotice error={usage.error} retry={() => void usage.refetch()} />
-        {usage.isPending ? (
-          <Loading variant="list" rows={1} />
-        ) : models.length ? (
-          <UsageTable
-            caption={t("Usage by model")}
-            sections={[{ key: "models", groups: [{ key: run.id, models }] }]}
-            total
-          />
-        ) : (
-          !usage.error && (
-            <p className={styles.note}>{t("No model usage recorded.")}</p>
-          )
-        )}
-      </Section>
       <Section title={t("Overview")}>
         <dl className={styles.facts}>
-          <Fact term={t("Run")}>
-            <CopyableId value={run.id} />
-          </Fact>
-          <Fact term={t("Thread")}>
-            <CopyableId value={run.thread_id} />
-          </Fact>
           <Fact term={t("Agent")}>
             <AgentLink agentId={run.agent_id}>
               {agent.data?.name ?? run.agent_id}
             </AgentLink>
           </Fact>
-          <Fact term={t("Agent revision")}>
-            <CopyableId value={run.agent_revision_id} />
-          </Fact>
+          <Fact term={t("Duration")}>{formatDuration(duration)}</Fact>
           <Fact term={t("Started")}>
             {run.started_at ? (
               <Timestamp value={run.started_at} precise />
@@ -154,24 +130,56 @@ function RunDetails({ selected }: { selected: Run }) {
               UNKNOWN
             )}
           </Fact>
-          <Fact term={t("Duration")}>{formatDuration(duration)}</Fact>
-          {can("read") && (
-            <Fact term={t("Traces")}>
-              <Link
-                to={`${basePath}/traces?run_id=${run.id}&from=${encodeURIComponent(run.created_at)}&to=${encodeURIComponent(new Date(new Date(run.sealed_at ?? Date.now()).getTime() + 1_000).toISOString())}`}
-              >
-                {t("Open run traces")}
-              </Link>
-            </Fact>
-          )}
         </dl>
+        <DisclosureSection title={t("References")}>
+          <dl className={styles.facts}>
+            <Fact term={t("Run")}>
+              <CopyableId value={run.id} />
+            </Fact>
+            <Fact term={t("Thread")}>
+              <CopyableId value={run.thread_id} />
+            </Fact>
+            <Fact term={t("Agent revision")}>
+              <CopyableId value={run.agent_revision_id} />
+            </Fact>
+            {can("read") && (
+              <Fact term={t("Traces")}>
+                <Link
+                  to={`${basePath}/traces?run_id=${run.id}&from=${encodeURIComponent(run.created_at)}&to=${encodeURIComponent(new Date(new Date(run.sealed_at ?? Date.now()).getTime() + 1_000).toISOString())}`}
+                >
+                  {t("Open run traces")}
+                </Link>
+              </Fact>
+            )}
+          </dl>
+        </DisclosureSection>
+      </Section>
+      <Section title={t("Usage")}>
+        <ErrorNotice error={usage.error} retry={() => void usage.refetch()} />
+        {usage.isPending ? (
+          <Loading variant="list" rows={1} />
+        ) : models.length ? (
+          <div className={styles.usage}>
+            <UsageTable
+              caption={t("Usage by model")}
+              sections={[{ key: "models", groups: [{ key: run.id, models }] }]}
+              total
+            />
+          </div>
+        ) : (
+          !usage.error && (
+            <p className={styles.note}>{t("No model usage recorded.")}</p>
+          )
+        )}
       </Section>
       {run.options.execution && (
-        <Section title={t("Execution policy")}>
-          <ExecutionFields value={run.options.execution} readOnly />
+        <Section title={t("Execution policy")} collapsible>
+          <div className={styles.execution}>
+            <ExecutionFields value={run.options.execution} readOnly compact />
+          </div>
         </Section>
       )}
-      <Section title={t("Environments and memory")}>
+      <Section title={t("Environments and memory")} collapsible>
         {/* What this Run started with; later Runs follow the conversation's mounts. */}
         {!run.environment_mounts.length && !run.memory_mounts.length ? (
           <ListRowsEmpty>
@@ -236,10 +244,10 @@ function RunDetails({ selected }: { selected: Run }) {
           </ol>
         )}
       </Section>
-      <Section title={t("Tool executions")}>
+      <Section title={t("Tool executions")} collapsible>
         <ToolExecutions key={run.id} threadId={run.thread_id} runId={run.id} />
       </Section>
-      <Section title={t("Lineage")}>
+      <Section title={t("Lineage")} collapsible>
         <ErrorNotice error={lineage.error} />
         {related &&
           (!related.length ? (
@@ -283,14 +291,28 @@ function RunDetails({ selected }: { selected: Run }) {
           </Button>
         )}
       </Section>
-      <DisclosureSection title={<>{t("Raw metadata")}</>}>
+      <DisclosureSection className={styles.section} title={t("Raw metadata")}>
         <JsonView value={run} />
       </DisclosureSection>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  children,
+  collapsible = false,
+}: {
+  title: string;
+  children: ReactNode;
+  collapsible?: boolean;
+}) {
+  if (collapsible)
+    return (
+      <DisclosureSection className={styles.section} title={title}>
+        {children}
+      </DisclosureSection>
+    );
   return (
     <section className={styles.section}>
       <h3>{title}</h3>

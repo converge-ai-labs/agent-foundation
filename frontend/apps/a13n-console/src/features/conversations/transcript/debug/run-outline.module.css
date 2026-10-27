@@ -117,3 +117,24 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Paging belongs to the index, with the same quiet rhythm as its Run rows. */
+.pageAction {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  height: 28px;
+  margin-block: 4px;
+  padding: 0 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.pageAction svg {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+}

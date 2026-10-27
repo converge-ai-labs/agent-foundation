@@ -6,12 +6,14 @@
   border: 0;
   min-width: 0;
 }
+/* Keep the legend in the grid instead of the native fieldset border slot,
+   so enclosing settings rows can own their padding. */
 .environmentVariables legend {
-  /* Keep the legend inside the padded grid instead of the fieldset's top edge. */
   float: left;
+  width: 100%;
   padding: 0;
-  font-weight: 500;
   margin: 0;
+  font-weight: 500;
 }
 .environmentVariables p {
   color: var(--a13n-secondary);
@@ -38,4 +40,22 @@
   .environmentVariableRow > :first-child {
     grid-column: 1 / -1;
   }
+}
+
+.readOnlyVariables {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.readOnlyVariables > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+}
+.readOnlyVariables dt {
+  color: var(--a13n-secondary);
+  font-family: var(--font-mono);
+}
+.readOnlyVariables dd {
+  margin: 0;
 }

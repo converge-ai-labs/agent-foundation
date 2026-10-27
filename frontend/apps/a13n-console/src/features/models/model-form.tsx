@@ -1,19 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { WarningIcon } from "@phosphor-icons/react";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  ChoiceField,
-  DisclosureSection,
-  FormField,
-  Input,
-  SettingsRow,
-  SettingsSection,
-  Switch,
-} from "a13n-ui";
-import { useId, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -21,33 +7,21 @@ import { type Schema } from "../../shared/api";
 import { CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, jsonObject, validateSettings } from "../../shared/forms";
-import { IconTile } from "../../shared/identity";
-import sharedStyles from "../../shared/shared.module.css";
-import { ManageProvidersLink } from "../providers";
 import { modelApi, workspaceProvidersQuery } from "./api";
 import { catalogRefKey } from "./catalog-picker";
+import { ModelFields, ModelStatus } from "./model-fields";
 import { ModelPicker } from "./model-picker";
-import { ModelIcon, providerBrand } from "./model-icon";
-import { ImageInputFields } from "./image-input-fields";
 import {
   imageInputDraft,
   imageInputPolicy,
   imageInputErrors,
 } from "./image-input";
 import {
-  ModelInformation,
-  ModelCapabilitySummary,
   characteristicsInput,
   characteristicsDefaults,
 } from "./model-information";
-import { defaultModelKey, keyPattern } from "./model-options";
-import { ModelSettingsFields, requestDefaults } from "./model-settings";
-import {
-  ModelPricing,
-  priceEntry,
-  priceTable,
-  type PriceTable,
-} from "./model-pricing";
+import { requestDefaults } from "./model-settings";
+import { priceEntry, priceTable, type PriceTable } from "./model-pricing";
 import { useModelProviderDefinitions } from "./provider-definitions";
 import styles from "./models.module.css";
 
@@ -110,6 +84,7 @@ export function useModelDraft({
     enabled: original?.value.enabled ?? true,
   }));
   const [initial] = useState(draft);
+  const [nameEdited, setNameEdited] = useState(!!original);
   const [imageInput, setImageInput] = useState(() =>
     imageInputDraft(draft.characteristics.image_input),
   );
@@ -150,6 +125,7 @@ export function useModelDraft({
     settingsJson !== initialSettingsJson ||
     JSON.stringify(imageInput) !== JSON.stringify(initialImageInput);
   function change<K extends keyof Draft>(key: K, value: Draft[K]) {
+    if (key === "name") setNameEdited(true);
     setDraft((current) => ({ ...current, [key]: value }));
   }
   /** Catalog values seed the draft; anything the reader typed wins. */
@@ -174,7 +150,7 @@ export function useModelDraft({
       model_api: channels.includes(item.ref.provider)
         ? callingApi
         : "openai.chat_completions",
-      name: current.name || item.name,
+      name: current.name && nameEdited ? current.name : item.name,
       characteristics: characteristicsDefaults(item.characteristics),
       pricing: priceTable(pricing),
     }));
@@ -188,7 +164,8 @@ export function useModelDraft({
       catalog_ref: null,
       model_name: item?.slug ?? "",
       model_api: callingApi,
-      name: current.name || item?.display_name || "",
+      name:
+        current.name && nameEdited ? current.name : item?.display_name || "",
       characteristics: characteristicsDefaults(item?.characteristics),
       pricing: null,
     }));
@@ -324,262 +301,6 @@ export function CatalogNotice({ model }: { model: ModelDraft }) {
   return null;
 }
 
-/** The model this draft points at, and the two fields that address it. */
-export function ModelSelection({
-  model,
-  onChange,
-  actions,
-  showAddress = true,
-}: {
-  model: ModelDraft;
-  showAddress?: boolean;
-  onChange?: () => void;
-  /** Quiet links that belong with the connection, not under the fields. */
-  actions?: ReactNode;
-}) {
-  const { t } = useTranslation();
-  const { draft, selectedEntry } = model;
-  return (
-    <div className={sharedStyles.stack}>
-      <div className={styles.chosenRow}>
-        <IconTile size={36} tone="elevated">
-          <ModelIcon
-            upstream={draft.model_name}
-            catalogRef={draft.catalog_ref}
-            provider={providerBrand(model.selectedProvider)}
-            size={20}
-          />
-        </IconTile>
-        {/* The model, then the provider serving it; the ID field below is never repeated. */}
-        <span className={styles.chosenCopy}>
-          <strong>
-            {selectedEntry?.name ||
-              (!showAddress && draft.model_name) ||
-              t("Custom model")}
-          </strong>
-          {model.selectedProvider && (
-            <small>{model.selectedProvider.name}</small>
-          )}
-        </span>
-        <span className={styles.chosenActions}>
-          {onChange && (
-            <Button type="button" variant="ghost" size="sm" onClick={onChange}>
-              {t("Change")}
-            </Button>
-          )}
-          {actions}
-        </span>
-      </div>
-      {model.selectedProvider?.enabled === false && (
-        <Alert variant="warning">
-          <WarningIcon aria-hidden="true" />
-          <AlertTitle>{t("Provider disabled")}</AlertTitle>
-          <AlertDescription>
-            {t("Agents can't use this model until {{provider}} is enabled.", {
-              provider: model.selectedProvider.name,
-            })}
-          </AlertDescription>
-        </Alert>
-      )}
-      {showAddress && <ModelAddress model={model} />}
-    </div>
-  );
-}
-
-function ModelAddress({ model }: { model: ModelDraft }) {
-  const { t } = useTranslation();
-  const hintId = useId();
-  const { draft, selectedEntry, definition, channels } = model;
-  const compatible =
-    !!selectedEntry && !channels.includes(selectedEntry.ref.provider);
-  const multipleApis = (definition?.model_apis?.length ?? 0) > 1;
-  return (
-    <div className={styles.address}>
-      <div className={multipleApis ? sharedStyles.twoColumns : undefined}>
-        <FormField label={t("Upstream model")}>
-          <Input
-            required
-            maxLength={256}
-            aria-describedby={hintId}
-            value={draft.model_name}
-            onChange={(event) => model.change("model_name", event.target.value)}
-          />
-        </FormField>
-        {multipleApis && (
-          <ChoiceField
-            label={t("API")}
-            value={model.callingApi}
-            onValueChange={(value) => model.change("model_api", value)}
-            options={
-              definition?.model_apis?.map((value) => ({
-                value,
-                label: definition.model_api_labels?.[value] ?? value,
-              })) ?? []
-            }
-          />
-        )}
-      </div>
-      {/* Spans both columns, so the hint never wraps in a half-width cell. */}
-      <p id={hintId} className={styles.addressHint}>
-        {t(
-          compatible
-            ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
-            : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
-        )}
-      </p>
-    </div>
-  );
-}
-
-/** Creating needs only a name; the same detailed controls remain available on demand. */
-export function ModelFields({
-  model,
-  compact = false,
-  requireEnabled = false,
-}: {
-  model: ModelDraft;
-  compact?: boolean;
-  requireEnabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  const { draft, selectedEntry } = model;
-  const name = (
-    <FormField label={t("Name")}>
-      <Input
-        required
-        maxLength={128}
-        value={draft.name}
-        onChange={(event) => model.change("name", event.target.value)}
-      />
-    </FormField>
-  );
-  const details = (
-    <div className={styles.modelDetails}>
-      {compact && !model.manual && <ModelAddress model={model} />}
-      <section className={styles.identityFields}>
-        {/* A saved model's key is fixed and already in the dialog title. */}
-        {compact ? <ModelKeyField model={model} /> : name}
-        <FormField label={t("Description")}>
-          <Input
-            maxLength={2048}
-            value={draft.description}
-            placeholder={t("Optional")}
-            onChange={(event) =>
-              model.change("description", event.target.value)
-            }
-          />
-        </FormField>
-      </section>
-      <ModelInformation
-        value={draft.characteristics}
-        onChange={(value) => model.change("characteristics", value)}
-      />
-      <ModelPricing
-        value={draft.pricing}
-        onChange={(pricing) => model.change("pricing", pricing)}
-      />
-      {selectedEntry?.pricing_warning && (
-        <p className={styles.stepNote}>{t(selectedEntry.pricing_warning)}</p>
-      )}
-      {selectedEntry &&
-        draft.pricing &&
-        (model.customEndpoint ||
-          !model.channels.includes(selectedEntry.ref.provider)) && (
-          <p className={styles.stepNote}>
-            {t(
-              "Catalog prices are references from the model provider. Your gateway may charge differently.",
-            )}
-          </p>
-        )}
-      {compact && !requireEnabled && <ModelStatus model={model} />}
-    </div>
-  );
-  return (
-    <>
-      {compact ? (
-        <>
-          {name}
-          <ModelCapabilitySummary value={draft.characteristics} />
-        </>
-      ) : (
-        details
-      )}
-      <DisclosureSection
-        title={t("Advanced")}
-        summary={
-          model.settingsJson.trim() !== "{}" ||
-          model.imageInput.policy !== undefined ||
-          JSON.stringify(model.imageInput) !== JSON.stringify(imageInputDraft())
-            ? t("Configured")
-            : undefined
-        }
-        open={model.settingsExpanded}
-        onOpenChange={model.setSettingsExpanded}
-      >
-        <div className={styles.modelDetails}>
-          {compact && details}
-          <ModelSettingsFields
-            value={model.settingsJson}
-            onChange={model.setSettingsJson}
-            schema={model.settingsSchema}
-            modelApi={model.callingApi}
-          />
-          <ImageInputFields
-            value={model.imageInput}
-            onChange={model.setImageInput}
-          />
-        </div>
-      </DisclosureSection>
-    </>
-  );
-}
-
-/** The key agents name the model by; the Service derives one when left empty. */
-function ModelKeyField({ model }: { model: ModelDraft }) {
-  const { t } = useTranslation();
-  const derived = defaultModelKey(
-    model.selectedProvider?.type,
-    model.draft.model_name,
-  );
-  return (
-    <FormField
-      label={t("Model key")}
-      description={t(
-        "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.",
-      )}
-    >
-      <Input
-        required={!derived}
-        maxLength={128}
-        pattern={keyPattern}
-        placeholder={derived}
-        value={model.draft.key}
-        onChange={(event) => model.change("key", event.target.value)}
-      />
-    </FormField>
-  );
-}
-
-/** Whether agents can select the model. */
-export function ModelStatus({ model }: { model: ModelDraft }) {
-  const { t } = useTranslation();
-  return (
-    <SettingsSection>
-      <SettingsRow
-        controlId="model-enabled"
-        label={t("Enabled")}
-        description={t("Agents can select this model.")}
-      >
-        <Switch
-          id="model-enabled"
-          checked={model.draft.enabled}
-          onCheckedChange={(value) => model.change("enabled", value)}
-        />
-      </SettingsRow>
-    </SettingsSection>
-  );
-}
-
 /** One-pass editor for a model that already exists. */
 export function EditModelForm({
   resource,
@@ -606,23 +327,13 @@ export function EditModelForm({
     );
   return (
     <form
-      className={styles.modelForm}
+      className={`${styles.modelForm} ${styles.modelConfigurationForm}`}
       onSubmit={(event) => {
         event.preventDefault();
         model.save.mutate();
       }}
     >
-      <ModelSelection
-        model={model}
-        onChange={() => setChanging(true)}
-        actions={
-          model.selectedProvider && (
-            <ManageProvidersLink variant="ghost" category="models" />
-          )
-        }
-      />
-      <ModelStatus model={model} />
-      <ModelFields model={model} />
+      <ModelFields model={model} onChangeModel={() => setChanging(true)} />
       <ErrorNotice
         error={
           model.save.error ?? model.definitions.error ?? model.providers.error
@@ -630,6 +341,7 @@ export function EditModelForm({
         retry={() => void reload()}
       />
       <FormActions
+        leading={<ModelStatus model={model} />}
         onCancel={close}
         pending={model.save.isPending}
         disabled={model.incomplete || !model.dirty}

@@ -1,14 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import {
-  ChatIcon,
-  ChatsIcon,
-  PencilSimpleIcon,
-  PlayIcon,
-} from "@phosphor-icons/react";
+import { ChatIcon, PencilSimpleIcon, PlayIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, representation } from "../../shared/api";
@@ -21,6 +16,7 @@ import {
 import { ResourceReference } from "../../shared/identity";
 import { DetailHeader, DetailPage, useTabParam } from "../../shared/page";
 import { useAgentComposer } from "./composer";
+import { ConnectAgent } from "./connect";
 import { AgentAvatar } from "./avatar";
 import type { AgentConfig } from "./configuration";
 import { AgentEditor } from "./editor";
@@ -199,18 +195,12 @@ export function AgentDetail() {
                   {t("Edit with AI")}
                 </Button>
               )}
-              {can("read") && (
-                <Button
-                  variant="outline"
-                  render={
-                    <Link
-                      to={`${basePath}/sessions?agent_id=${encodeURIComponent(agent.id)}`}
-                    />
-                  }
-                >
-                  <ChatsIcon aria-hidden="true" />
-                  {t("View sessions")}
-                </Button>
+              {can("run") && (
+                <ConnectAgent
+                  key={`${workspace.id}:${agent.id}`}
+                  agent={agent}
+                  trigger="button"
+                />
               )}
               {can("run") && (
                 <Button

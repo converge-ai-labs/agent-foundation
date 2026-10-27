@@ -262,3 +262,23 @@ async def test_close_prunes_only_its_download_history_including_closed_popups(sc
     assert two in browser.scopes
     await one.close()
     assert "c" in browser.download_records
+
+
+@pytest.mark.parametrize("previously_owned", [False, True])
+async def test_empty_scope_new_window_only_replaces_previous_ownership(scoped_browser, previously_owned):
+    browser, infos = scoped_browser
+    scope = CdpBrowserBackend(browser, browser.pages["one"] if previously_owned else None)
+    if previously_owned:
+        await scope.tabs("close", target="one")
+    page = Page("new", "new-session")
+
+    async def create(**kwargs):
+        browser.pages[page.target] = page
+        infos[page.target] = {"targetId": page.target, "type": "page"}
+        return page
+
+    browser.create = AsyncMock(side_effect=create)
+    assert not await scope.tabs("list")
+    await scope.tabs("new")
+    browser.create.assert_awaited_once_with(new_window=previously_owned)
+    assert scope.page is page
