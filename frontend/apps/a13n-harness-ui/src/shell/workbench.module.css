@@ -38,7 +38,7 @@
   justify-content: space-between;
   gap: 8px;
   min-height: 36px;
-  padding: 0 0 8px 6px;
+  padding: 0 2px 8px 6px;
 }
 /* Desktop shells draw their own titlebar: keep the header draggable and
    leave room for macOS window controls. */

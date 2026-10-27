@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
+import styles from "./environments.module.css";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -54,12 +55,14 @@ export function DefaultWorkingDirectory({
   const missing =
     !!selected && !choices.some((item) => item.value === selected);
   return (
-    <div className="flex flex-col gap-2">
+    <div className={styles.defaultDirectory}>
       <ChoiceField
         label="Default working directory"
+        layout="stacked"
+        popupClassName={styles.directoryOptions}
         value={selected}
         onValueChange={(alias) => onChange(alias || null)}
-        description="Used for relative paths and commands without an explicit directory."
+        description="Used when a command or path doesn’t specify a directory."
         options={[
           ...(allowUnsetDefault && !value.environment_bindings?.length
             ? [
@@ -101,10 +104,7 @@ export function BindingSummary({
   return (
     <>
       {deviceEnvironments(bindings).map((group) => (
-        <section
-          key={group.key}
-          className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3"
-        >
+        <section key={group.key} className={styles.summaryEnvironment}>
           <p className="font-medium">
             {devices.data?.find((item) => item.id === group.deviceId)?.name ??
               group.deviceId}
@@ -115,7 +115,7 @@ export function BindingSummary({
             {directoryCount(group.directories.length)}
           </p>
           {group.directories.map((binding) => (
-            <p key={binding.alias} className="break-all">
+            <p key={binding.alias} className={styles.summaryPath}>
               {binding.working_directory}
               {binding.alias === defaultEnvironment && (
                 <span className="ml-2 text-muted-foreground">Default</span>
@@ -159,7 +159,7 @@ export function EnvironmentBindings({
   const selectedDefault = selectedWorkingDirectory(value);
   const removingDefault = removing?.alias === selectedDefault;
   return (
-    <section className="flex flex-col gap-4" aria-label="Remote environments">
+    <section className={styles.remote} aria-label="Remote environments">
       <ErrorNotice error={devices.error} />
       {deviceEnvironments(bindings).map((group) => {
         const name =
@@ -169,7 +169,7 @@ export function EnvironmentBindings({
         return (
           <section
             key={group.key}
-            className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-4"
+            className={styles.environment}
             aria-label={`${name} environment`}
           >
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -197,12 +197,9 @@ export function EnvironmentBindings({
                 </Button>
               </div>
             </div>
-            <ul className="flex min-w-0 flex-col gap-2">
+            <ul className={styles.directoryList}>
               {group.directories.map((binding) => (
-                <li
-                  key={binding.alias}
-                  className="flex items-center justify-between gap-3"
-                >
+                <li key={binding.alias} className={styles.directory}>
                   <div className="min-w-0 text-sm">
                     <p className="break-all">{binding.working_directory}</p>
                     {binding.alias === selectedDefault && (
@@ -240,7 +237,7 @@ export function EnvironmentBindings({
                 Add directory
               </Button>
             </div>
-            <details className="text-xs text-muted-foreground">
+            <details className={styles.advanced}>
               <summary className="cursor-pointer">Run details</summary>
               <p className="mt-2">
                 {policy.permission_ceiling?.operations?.join(", ") ??
@@ -261,7 +258,8 @@ export function EnvironmentBindings({
       <div>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
+          size="sm"
           disabled={bindings.length >= 64}
           onClick={() => setEditing({})}
         >
@@ -275,8 +273,9 @@ export function EnvironmentBindings({
           if (!open) setEditing(undefined);
         }}
         title={editing?.group ? "Edit environment" : "Add environment"}
-        description="Choose a Device, its access policy and working directories. Changes stay in this draft until you save the enclosing settings."
-        closeLabel="Cancel"
+        size="lg"
+        description="Choose a device and its working directories. Changes are added to your draft."
+        closeLabel="Close"
       >
         {editing && (
           <DeviceEnvironmentEditor
@@ -398,7 +397,7 @@ function DeviceEnvironmentEditor({
       ),
     );
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className={styles.editor}>
       <ChoiceField
         label="Device"
         placeholder="Choose a Device"
@@ -440,10 +439,7 @@ function DeviceEnvironmentEditor({
       />
       {deviceId &&
         directories.map((directory, index) => (
-          <div
-            key={`${deviceId}:${index}`}
-            className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/40 p-3"
-          >
+          <div key={`${deviceId}:${index}`} className={styles.draftDirectory}>
             <DeviceDirectory
               deviceId={deviceId}
               value={directory.path}
@@ -501,7 +497,7 @@ function DeviceEnvironmentEditor({
         </div>
       )}
       <ErrorNotice error={error} />
-      <div className="flex justify-end gap-2">
+      <div data-a13n-form-actions className={styles.actions}>
         <Button type="button" variant="outline" onClick={cancel}>
           Cancel
         </Button>

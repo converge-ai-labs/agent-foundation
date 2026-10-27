@@ -17,28 +17,35 @@
   padding-inline: 12px;
 }
 .row {
-  min-height: 44px;
-  gap: 16px;
-  padding-block: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
+  min-height: 36px;
+  gap: 2px 16px;
+  padding-block: 4px;
   font-size: 13px;
   line-height: 20px;
 }
 .row > :first-child {
-  flex: 1;
-  min-width: 0;
+  display: contents;
 }
 .row [data-slot="settings-row-label"] {
+  grid-column: 1;
+  grid-row: 1;
   font-weight: 400;
 }
 .row > :first-child > p {
-  margin-top: 2px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: 12px;
   line-height: 18px;
 }
 .row > :last-child {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
-  max-width: 60%;
+  max-width: 100%;
   color: var(--a13n-secondary);
 }
 .row [data-slot="select-trigger"],
@@ -81,14 +88,21 @@
   width: 260px;
   max-width: 100%;
 }
+@media (pointer: coarse) {
+  .row {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+}
 @media (max-width: 600px) {
   .section
     > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
     padding-inline: 14px;
   }
   .row {
-    gap: 16px;
-    padding-block: 12px;
+    min-height: 44px;
+    gap: 4px 12px;
+    padding-block: 10px;
   }
   .row:has([data-slot="input-control"]) {
     display: grid;

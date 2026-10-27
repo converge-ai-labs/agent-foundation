@@ -1,4 +1,6 @@
 import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { Desktop } from "@phosphor-icons/react";
+import styles from "./environments.module.css";
 
 import type { Schema } from "../transport/client";
 import {
@@ -44,20 +46,25 @@ export function EnvironmentsEditor({
       item.profile_id === (value.environment_profile_id ?? inheritedProfile),
   );
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <section
-        className="flex min-w-0 flex-col gap-3 rounded-lg bg-muted/40 p-4"
-        aria-label="Local environment"
-      >
-        <div>
-          <h3 className="font-medium">Local · Harness server</h3>
-          <p className="text-sm text-muted-foreground">
-            {roots.length ? directoryCount(roots.length) : "Chat files only"} on
-            the computer running Harness. All local directories share this mode.
-          </p>
+    <div className={styles.editor}>
+      <section className={styles.environment} aria-label="Local environment">
+        <div className={styles.heading}>
+          <Desktop aria-hidden />
+          <div>
+            <h3>Local · Harness server</h3>
+            <p>The computer running Harness</p>
+          </div>
+          <span className={styles.count}>
+            {roots.length ? directoryCount(roots.length) : "Chat files only"}
+          </span>
         </div>
         <ChoiceField
           label="Local mode"
+          description={
+            profile?.mode === "full-control"
+              ? "Full Control runs as the server account, without a sandbox."
+              : profile?.description
+          }
           value={value.environment_profile_id ?? ""}
           onValueChange={(environment_profile_id) =>
             onChange({
@@ -84,13 +91,6 @@ export function EnvironmentsEditor({
               : []),
           ]}
         />
-        {profile && (
-          <p className="text-sm text-muted-foreground">
-            {profile.mode === "full-control"
-              ? "Full Control runs as the server account, without a sandbox."
-              : profile.description}
-          </p>
-        )}
         <ProjectFolders
           compact
           roots={roots.map((path) => ({ path }))}
@@ -135,8 +135,8 @@ export function EnvironmentsSummary({
   );
   const selected = selectedWorkingDirectory(value);
   return (
-    <div className="flex flex-col gap-3 text-sm">
-      <section className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3">
+    <div className={styles.summary}>
+      <section className={styles.summaryEnvironment}>
         <p className="font-medium">Local · Harness server</p>
         <p className="text-muted-foreground">
           {profile?.name ?? value.environment_profile_id ?? "Default mode"}
@@ -145,7 +145,7 @@ export function EnvironmentsSummary({
             : " · Chat files only"}
         </p>
         {(value.local_roots ?? []).map((path, index) => (
-          <p key={path} className="break-all">
+          <p key={path} className={styles.summaryPath}>
             {path}
             {localAlias(index) === selected && (
               <span className="ml-2 text-muted-foreground">Default</span>

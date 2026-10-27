@@ -232,6 +232,7 @@ export function ResourceFields({
           >
             <Textarea
               aria-label="Additional instructions"
+              variant="soft"
               value={text(["instructions"])}
               onChange={(event) => set(["instructions"], event.target.value)}
               rows={5}

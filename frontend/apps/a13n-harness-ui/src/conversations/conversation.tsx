@@ -1080,8 +1080,9 @@ function ConversationContent({
           open={inspection}
           onOpenChange={setInspection}
           title="Chat details"
-          description="See how this chat runs. Nothing here changes the current run."
+          description="Activity, configuration and usage for this chat."
           closeLabel="Close"
+          size="lg"
         >
           <ConversationDetails
             threadId={threadId}
@@ -1090,7 +1091,7 @@ function ConversationContent({
             reconcile={reconcile}
             readOnly={readOnly}
           />
-          <div className={styles.detailActions}>
+          <div className={styles.detailActions} data-a13n-form-actions>
             {!readOnly && thread && (
               <CoordinatorSettings
                 thread={thread}

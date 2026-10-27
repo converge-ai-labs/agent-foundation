@@ -17,6 +17,7 @@ import {
   useComposerSettings,
 } from "./composer-settings";
 import { ModelControlPanel, type ModelControlProps } from "./model-controls";
+import { useTaskOptionsDialog } from "./task-options";
 
 export function RunEnvironments({
   catalog,
@@ -33,6 +34,7 @@ export function RunEnvironments({
   disabled: boolean;
 }) {
   const [editing, setEditing] = useState<Schema<"EnvironmentSelectionPatch">>();
+  useTaskOptionsDialog(editing !== undefined);
   const roots = value?.local_roots ?? configuration?.local_roots ?? [];
   const bindings =
     value?.environment_bindings ?? configuration?.environment_bindings ?? [];
@@ -60,6 +62,7 @@ export function RunEnvironments({
       <Button
         type="button"
         variant="ghost"
+        className={panelStyles.resetAction}
         disabled={disabled}
         onClick={() => {
           onChange(undefined);
@@ -68,17 +71,22 @@ export function RunEnvironments({
       >
         Use chat defaults
       </Button>
-      <Button
-        type="button"
-        disabled={disabled || invalid || !editing}
-        onClick={() => {
-          if (!editing || disabled) return;
-          onChange(editing);
-          closeEditor();
-        }}
-      >
-        Use for next run
-      </Button>
+      <div className={panelStyles.confirmActions}>
+        <Button type="button" variant="outline" onClick={closeEditor}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          disabled={disabled || invalid || !editing}
+          onClick={() => {
+            if (!editing || disabled) return;
+            onChange(editing);
+            closeEditor();
+          }}
+        >
+          Use for next run
+        </Button>
+      </div>
     </>
   );
   const content = editing && (
@@ -117,8 +125,9 @@ export function RunEnvironments({
           if (!open) setEditing(undefined);
         }}
         title="Environments"
-        closeLabel="Cancel"
-        description="Choose environments and their working directories for subsequent Runs in this tab. Chat defaults and the active Run stay unchanged."
+        size="lg"
+        closeLabel="Close"
+        description="Choose where future runs in this tab work. Chat defaults stay unchanged."
         footer={footer}
       >
         <fieldset className="min-w-0" disabled={disabled}>

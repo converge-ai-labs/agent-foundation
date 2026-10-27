@@ -144,7 +144,7 @@ it.each([
     expect(screen.getByText("13.3K")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Tokens details" }));
     expect(screen.getByText("13,345")).toBeTruthy();
-    expect(screen.getByText("11,000")).toBeTruthy();
+    expect(screen.getByText("11,000", { selector: "strong" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Context details" }));
     expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Chat usage" })).toBeNull();

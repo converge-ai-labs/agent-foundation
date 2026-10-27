@@ -56,12 +56,23 @@ it("shows actual context counts, unknown capacity and over-capacity observations
   expect(number("Used tokens")).toBe("25,000");
   expect(number("Context window")).toBe("100,000");
   expect(number("Remaining tokens")).toBe("75,000");
+  expect(screen.getByRole("meter").getAttribute("aria-valuetext")).toBe(
+    "25,000 of 100,000 tokens",
+  );
   view.rerender(<ContextDetails used={25000} />);
-  expect(number("Context window")).toBe("Unknown");
-  expect(number("Remaining tokens")).toBe("Unknown");
+  expect(number("Used tokens")).toBe("25,000");
+  expect(screen.queryByText("Context window")).toBeNull();
+  expect(screen.queryByRole("meter")).toBeNull();
+  expect(
+    screen.getByText("Context limit unavailable for this model."),
+  ).toBeTruthy();
   view.rerender(<ContextDetails used={1100} capacity={1000} />);
   expect(number("Remaining tokens")).toBe("0");
   expect(number("Over capacity")).toBe("100");
+  expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("1000");
+  expect(screen.getByRole("meter").getAttribute("aria-valuetext")).toBe(
+    "1,100 of 1,000 tokens",
+  );
   view.rerender(<ContextDetails used={0} capacity={1000} />);
   expect(number("Used tokens")).toBe("0");
   expect(number("Remaining tokens")).toBe("1,000");
@@ -99,7 +110,7 @@ it("switches model scope without treating a subagent media source as extra usage
       }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Root" }));
+  fireEvent.click(screen.getByRole("button", { name: "This chat" }));
   expect(screen.getByText("provider/root-model")).toBeTruthy();
   expect(screen.queryByText("provider/media-model")).toBeNull();
   expect(number("Model cost · USD")).toBe("$0.1250");
@@ -116,7 +127,7 @@ it("switches model scope without treating a subagent media source as extra usage
 it("renders legacy summaries without new attribution fields and does not invent scoped models", () => {
   render(<CostDetails usage={usage} />);
   expect(screen.getByText("provider/root-model")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Root" }));
+  fireEvent.click(screen.getByRole("button", { name: "This chat" }));
   expect(screen.getByText(/Model attribution is unavailable/)).toBeTruthy();
   expect(number("Model cost · USD")).toBe("$0.1250");
 });

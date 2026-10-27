@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
+import { useTaskOptionsDialog } from "./task-options";
 import { ArrowCounterClockwise, CaretRight } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result } from "../transport/client";
@@ -26,6 +27,7 @@ export function ClearContext({
   const queries = useQueryClient();
   // Confirm exactly the context the user opened, not a newer shared head.
   const [target, setTarget] = useState<string | null>(null);
+  useTaskOptionsDialog(!!target);
   const clear = useMutation({
     mutationFn: (expected: string) =>
       result(

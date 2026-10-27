@@ -394,15 +394,21 @@ function AddModelDialog({
         if (!open && !save.isPending) onClose();
       }}
       title="Add model"
-      closeLabel="Cancel"
+      size="lg"
+      closeLabel="Close"
       footer={
-        <Button
-          disabled={!recipe || !recipeReady}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          Save model
-        </Button>
+        <>
+          <Button variant="outline" disabled={save.isPending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!recipe || !recipeReady}
+            loading={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            Save model
+          </Button>
+        </>
       }
     >
       <div className={styles.stack}>

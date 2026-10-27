@@ -1,4 +1,11 @@
-import { useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Button,
   Popover,
@@ -12,6 +19,18 @@ import {
   TreeStructure,
 } from "@phosphor-icons/react";
 import styles from "./composer-settings.module.css";
+
+const TaskDialogContext = createContext<((open: boolean) => void) | null>(null);
+
+/** Keep a dialog's owner mounted, but retire the menu when the dialog closes. */
+export function useTaskOptionsDialog(open: boolean) {
+  const onOpenChange = useContext(TaskDialogContext);
+  useEffect(() => {
+    if (!open || !onOpenChange) return;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [open, onOpenChange]);
+}
 
 /** Infrequent work choices stay together, without taking space from the draft. */
 export function TaskOptions({
@@ -28,6 +47,11 @@ export function TaskOptions({
   context?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const onDialogOpenChange = useCallback((next: boolean) => {
+    if (next) setDialogOpen(true);
+    else setOpen(false);
+  }, []);
   const content = (
     <>
       <PopoverTitle className={styles.srOnly}>Chat options</PopoverTitle>
@@ -68,7 +92,13 @@ export function TaskOptions({
   );
   const trigger = <Button variant="ghost" size="icon-sm" />;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setDialogOpen(false);
+        setOpen(next);
+      }}
+    >
       <PopoverTrigger
         render={trigger}
         aria-label="Chat options"
@@ -80,9 +110,12 @@ export function TaskOptions({
         side="top"
         align="end"
         sideOffset={6}
+        data-dialog-open={dialogOpen || undefined}
         className={`${styles.popup} ${styles.taskPopup}`}
       >
-        {content}
+        <TaskDialogContext value={onDialogOpenChange}>
+          {content}
+        </TaskDialogContext>
       </PopoverPopup>
     </Popover>
   );

@@ -416,25 +416,25 @@
   min-width: 0;
   margin: 0.5rem 0;
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 8px;
   overflow: hidden;
   background: color-mix(in srgb, var(--muted) 16%, transparent);
 }
 .questionStatus {
-  padding: 0.875rem 1rem 0;
+  padding: 10px 12px 0;
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--muted-foreground);
 }
 .questionContext {
-  padding: 0.875rem 1rem;
+  padding: 8px 12px;
   overflow-wrap: anywhere;
 }
 .answers {
   display: grid;
   gap: 0.75rem;
   margin: 0;
-  padding: 0.875rem 1rem;
+  padding: 8px 12px;
   overflow-wrap: anywhere;
 }
 .answers:empty {
@@ -473,8 +473,16 @@
   background: transparent;
 }
 .questionReceipt [data-slot="disclosure-surface"] > button {
-  font-size: 0.75rem;
+  min-height: 28px;
+  width: calc(100% - 8px);
+  margin-inline: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
   color: var(--muted-foreground);
+}
+.questionReceipt .details {
+  padding: 4px 12px 12px;
 }
 .originalQuestion {
   font-size: 0.8125rem;

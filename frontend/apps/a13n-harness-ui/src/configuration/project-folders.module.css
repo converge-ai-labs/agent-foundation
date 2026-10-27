@@ -5,6 +5,21 @@
   gap: 12px;
   min-width: 0;
 }
+.folders {
+  gap: 8px;
+}
+.label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+.directoryRow {
+  gap: 6px;
+}
+.directoryRow > [data-slot="button"] {
+  flex-shrink: 0;
+}
 .row {
   display: flex;
   align-items: end;
@@ -50,7 +65,8 @@
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -68,6 +84,8 @@
   min-width: 0;
 }
 .entry > svg {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 .entry:focus-visible {
@@ -75,10 +93,25 @@
   outline-offset: -2px;
 }
 @media (max-width: 480px) {
-  .row {
+  .row:not(.directoryRow) {
     flex-wrap: wrap;
   }
-  .row > :first-child {
+  .row:not(.directoryRow) > :first-child {
     flex-basis: 100%;
+  }
+  .browseButton > span {
+    display: none;
+  }
+  .directoryRow > [data-slot="button"] {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+  }
+}
+@media (pointer: coarse) {
+  .entry,
+  .directoryRow > [data-slot="button"] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

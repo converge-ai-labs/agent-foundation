@@ -1,0 +1,149 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.environment {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.heading > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.heading > div {
+  min-width: 0;
+  flex: 1;
+}
+.heading h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.heading p,
+.count {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.count {
+  text-align: right;
+}
+.environment > [data-slot="settings-row"] {
+  padding-block: 0;
+}
+.remote {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.remote:empty {
+  display: none;
+}
+.remote .environment {
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border);
+}
+.directoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.directory {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+.directory > div {
+  min-width: 0;
+  font-size: 13px;
+}
+.directory p {
+  overflow-wrap: anywhere;
+}
+.directory small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.advanced {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.advanced > summary {
+  cursor: pointer;
+  padding-block: 4px;
+}
+.defaultDirectory {
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border);
+}
+.defaultDirectory [data-slot="select-trigger"] {
+  width: 100%;
+}
+.defaultDirectory [data-slot="select-value"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.directoryOptions [data-slot="select-item"] {
+  height: auto;
+}
+.directoryOptions [data-slot="select-item"] span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+}
+.draftDirectory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+.summary {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.summaryEnvironment {
+  display: grid;
+  gap: 4px;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--a13n-border);
+  font-size: 12px;
+  line-height: 18px;
+}
+.summaryEnvironment > p {
+  margin: 0;
+}
+.summaryEnvironment > p:first-child {
+  color: var(--a13n-text);
+}
+.summaryPath {
+  overflow-wrap: anywhere;
+  color: var(--a13n-secondary);
+}

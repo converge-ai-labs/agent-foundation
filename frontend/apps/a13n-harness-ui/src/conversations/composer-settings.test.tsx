@@ -244,6 +244,9 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.type(folder, "/changed");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(draft.environment).toBeUndefined();
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Environments" })).toBeNull(),
+  );
   if (!screen.queryByRole("button", { name: "Environments" }))
     await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));

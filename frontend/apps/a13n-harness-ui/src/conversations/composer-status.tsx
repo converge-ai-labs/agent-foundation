@@ -22,6 +22,7 @@ import {
 import { ContextDetails, UsageDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
 import { useDebug } from "../shell/debug";
+import { ArrowClockwise } from "@phosphor-icons/react";
 
 export function ComposerStatus({
   threadId,
@@ -127,8 +128,26 @@ export function ComposerStatus({
                 {label === "Cost" && !debug ? "Usage" : label}{" "}
                 <strong>{value}</strong>
               </PopoverTrigger>
-              <PopoverPopup side="top" align="start" className={styles.popup}>
-                <PopoverTitle>{title}</PopoverTitle>
+              <PopoverPopup side="top" align="end" className={styles.popup}>
+                <div className={styles.popupHeader}>
+                  <PopoverTitle>{title}</PopoverTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Refresh usage"
+                    title="Refresh usage"
+                    loading={usage.isFetching || context.isFetching}
+                    onClick={() => {
+                      void usage.refetch();
+                      void context.refetch();
+                      void inspection.refetch();
+                      if (receipt) void observed.refetch();
+                      else void activity.refetch();
+                    }}
+                  >
+                    <ArrowClockwise />
+                  </Button>
+                </div>
                 {label === "Context" ? (
                   <ContextDetails
                     used={tokens}
@@ -138,6 +157,7 @@ export function ComposerStatus({
                   <UsageDetails usage={usage.data} />
                 )}
                 <ErrorNotice
+                  inline
                   error={
                     usage.error ||
                     context.error ||
@@ -146,20 +166,6 @@ export function ComposerStatus({
                     activity.error
                   }
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  loading={usage.isFetching || context.isFetching}
-                  onClick={() => {
-                    void usage.refetch();
-                    void context.refetch();
-                    void inspection.refetch();
-                    if (receipt) void observed.refetch();
-                    else void activity.refetch();
-                  }}
-                >
-                  Refresh usage
-                </Button>
               </PopoverPopup>
             </Popover>
           ))}

@@ -174,7 +174,9 @@ it("confirms cancelling an existing edit and restores the saved content without 
   let dialog = await screen.findByRole("dialog", {
     name: "Discard this local draft?",
   });
-  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await user.click(
+    within(dialog).getByRole("button", { name: "Keep editing" }),
+  );
   expect(drafts.get(path)?.content).toContain("agent-edited");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Cancel" }));

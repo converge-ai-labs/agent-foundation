@@ -600,7 +600,7 @@ export function NativeWorkspace({
                 {(
                   [
                     ["rename", "Rename", PencilSimple],
-                    ["details", "Chat settings", SlidersHorizontal],
+                    ["details", "Chat details", SlidersHorizontal],
                     ["share", "Share", ShareNetwork],
                   ] as const
                 ).map(([action, label, Icon]) => (

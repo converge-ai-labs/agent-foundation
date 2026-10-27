@@ -35,12 +35,13 @@ export function SettingsChoice({
   label,
   description,
   hideLabel,
+  layout = "row",
   ...props
-}: ComponentProps<typeof ChoiceField>) {
+}: ComponentProps<typeof ChoiceField> & { layout?: "row" | "stacked" }) {
   const generatedId = useId();
   const id = props.id ?? generatedId;
   // Existing rows already provide their label; never nest a row inside a row.
-  if (hideLabel || props.variant === "filter")
+  if (hideLabel || props.variant === "filter" || layout === "stacked")
     return (
       <ChoiceField
         {...props}

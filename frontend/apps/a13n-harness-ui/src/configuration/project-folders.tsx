@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Input } from "a13n-ui";
 import {
   ArrowUpIcon,
   CaretRightIcon,
@@ -32,6 +32,9 @@ export function ProjectFolders({
     onChange(roots.map((root, i) => (i === index ? { ...root, path } : root)));
   return (
     <div className={styles.folders}>
+      {compact && roots.length > 0 && (
+        <p className={styles.label}>Working directories</p>
+      )}
       {!compact && (
         <p className={styles.hint}>
           Existing absolute directories on the server or container, not this
@@ -41,32 +44,48 @@ export function ProjectFolders({
       )}
       {roots.map((root, index) => (
         <div key={index} className={styles.folder}>
-          <div className={styles.row}>
-            <TextField
-              label={
-                index === 0
-                  ? "Server directory"
-                  : `Additional server directory ${index}`
-              }
-              value={root.path}
-              onChange={(value) => update(index, value)}
-            />
+          <div className={`${styles.row} ${styles.directoryRow}`}>
+            {compact ? (
+              <Input
+                aria-label={
+                  index === 0
+                    ? "Server directory"
+                    : `Additional server directory ${index}`
+                }
+                value={root.path}
+                title={root.path}
+                placeholder="/path/to/project"
+                autoComplete="off"
+                onChange={(event) => update(index, event.target.value)}
+              />
+            ) : (
+              <TextField
+                label={
+                  index === 0
+                    ? "Server directory"
+                    : `Additional server directory ${index}`
+                }
+                value={root.path}
+                onChange={(value) => update(index, value)}
+              />
+            )}
             {status.data?.features?.host_files && (
               <Button
                 type="button"
                 variant="outline"
+                className={styles.browseButton}
                 aria-label={`Browse directory ${index + 1}`}
                 aria-expanded={browsing === index}
                 onClick={() => setBrowsing(browsing === index ? null : index)}
               >
                 <FolderIcon />
-                Browse
+                <span>Browse</span>
               </Button>
             )}
             <Button
               type="button"
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               disabled={!allowEmpty && roots.length <= 1}
               aria-label={`Remove directory ${index + 1}`}
               onClick={() => {

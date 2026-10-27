@@ -27,10 +27,15 @@
 }
 .instructions {
   min-height: 96px;
-  padding: 12px;
+  padding: 0;
   border-radius: 8px;
   font-size: 13px;
   line-height: 21px;
+}
+.instructions > textarea {
+  min-height: 104px;
+  padding: 10px 12px;
+  field-sizing: content;
 }
 .modelEditor {
   display: flex;

@@ -61,7 +61,7 @@
   margin-bottom: 4px;
 }
 .heading h2 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
 }
 .tabs {
@@ -82,14 +82,14 @@
   background: var(--a13n-surface);
 }
 .inspectorBody {
-  min-height: 64px;
+  min-height: 48px;
   padding: 4px 2px;
 }
 .caption {
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);
   font-size: 12px;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
 }
 .tasks {
   list-style: none;
@@ -164,7 +164,13 @@
   overflow-wrap: anywhere;
 }
 .notes details > div {
-  margin-top: 12px;
+  margin: 6px 0 0 18px;
+}
+.notes details > div > :first-child {
+  margin-top: 0;
+}
+.notes details > div > :last-child {
+  margin-bottom: 0;
 }
 .loading {
   display: grid;

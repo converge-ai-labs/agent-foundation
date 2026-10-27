@@ -7,6 +7,12 @@
   --harness-reading-width: 720px;
   --harness-prose-size: 14px;
   --harness-prose-leading: 1.6;
+  --harness-code-keyword: light-dark(#8250df, #d2a8ff);
+  --harness-code-string: light-dark(#116329, #a5d6ff);
+  --harness-code-value: light-dark(#0550ae, #79c0ff);
+  --harness-code-definition: light-dark(#953800, #ffa657);
+  --harness-code-comment: light-dark(#6e7781, #919ba6);
+  --harness-code-deletion: light-dark(#a40e26, #ffa198);
   --background: #fefefe;
   --foreground: #262626;
   --card: #ffffff;
@@ -143,6 +149,14 @@
 }
 :where([data-a13n-modal] [data-slot="dialog-panel"]) {
   padding: 0 16px 16px;
+}
+:where(
+  [data-a13n-modal] [data-slot="dialog-panel"]:has([data-a13n-form-actions])
+) {
+  padding-bottom: 0;
+}
+[data-a13n-modal] [data-a13n-form-actions] {
+  padding-block: 12px 16px;
 }
 :where([data-a13n-modal] [data-slot="dialog-footer"]) {
   padding: 12px 16px 16px;

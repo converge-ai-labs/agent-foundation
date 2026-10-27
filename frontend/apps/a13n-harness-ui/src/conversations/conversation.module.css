@@ -40,6 +40,7 @@
 }
 .newConversationLink > svg:last-child {
   margin-left: auto;
+  margin-right: 1px;
   width: 14px;
 }
 .shortcuts button.homeLink {
@@ -60,7 +61,7 @@
 }
 .draftsCount {
   margin-inline-start: auto;
-  min-width: 18px;
+  min-width: 16px;
   text-align: center;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -121,7 +122,10 @@
   flex: 1;
   overflow: auto;
   min-height: 80px;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+}
+.threadGroups::-webkit-scrollbar {
+  display: none;
 }
 .initialLoading {
   min-height: 32px;
@@ -361,9 +365,6 @@
   color: var(--a13n-secondary);
   cursor: pointer;
 }
-.threadDisclosure:hover {
-  background: var(--a13n-hover);
-}
 .threadDisclosure:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
@@ -429,9 +430,12 @@
   }
 }
 .threadActions:hover,
-.threadActions[data-popup-open] {
+.threadActions[data-popup-open],
+.groupActions button:hover,
+.groupActions button[data-popup-open],
+.projectDrag:hover {
   color: var(--a13n-text);
-  background: var(--accent);
+  background: transparent;
 }
 .threadLink {
   flex: 1;
@@ -461,7 +465,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 14px;
+  width: 16px;
   height: 18px;
   color: var(--a13n-secondary);
 }
@@ -1236,7 +1240,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding-top: 16px;
 }
 .detailActions:empty {
@@ -1297,6 +1301,25 @@ dl.detailGrid > .detailLongRow dd {
 }
 .inspection [data-slot="tabs-panel"] > section + section {
   margin-top: 20px;
+}
+.inspection section > h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.inspection [data-slot="tabs-panel"] > section > p,
+.inspection [data-slot="tabs-panel"] > .form > section > p {
+  margin-block: 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.inspection dl.detailGrid {
+  margin-block: 8px 12px;
+}
+.inspection dl.detailGrid > div {
+  padding-block: 5px;
 }
 @media (max-width: 700px) {
   .header {

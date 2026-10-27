@@ -46,17 +46,179 @@ button.metric:hover,
   color: var(--warning-foreground);
 }
 .popup {
-  width: min(320px, calc(100vw - 24px));
+  width: min(344px, calc(100vw - 24px));
   font-size: 13px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
-  max-height: min(720px, 75dvh);
+}
+.popup [data-slot="popover-viewport"] {
+  max-height: min(560px, 75dvh, var(--available-height));
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.popupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.contextCapacity {
+  margin-top: 16px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.contextMeter {
+  height: 5px;
+  margin-top: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--a13n-surface);
+}
+.contextMeter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--info-foreground);
+}
+.contextMeter[data-full] > span {
+  background: var(--warning-foreground);
+}
+.usageOverview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+  margin: 16px 0 12px;
+}
+.usageOverview dt {
+  grid-row: 1;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.usageOverview dd {
+  grid-row: 2;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.usageOverview dd strong {
+  font-weight: inherit;
+}
+.usageOverview .scope {
+  margin: 2px 0 0;
+  font-size: 11px;
+  letter-spacing: normal;
+}
+.tokenDistribution {
+  margin-bottom: 12px;
+}
+.tokenBar {
+  display: flex;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--a13n-border);
+}
+.tokenBar > span {
+  height: 100%;
+  background: var(--a13n-secondary);
+  border-radius: inherit;
+}
+.tokenLegend {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 7px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.tokenLegend > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tokenLegend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--a13n-secondary);
+}
+.tokenLegend > span:last-child i {
+  background: var(--a13n-border);
+}
+.tokenLegend strong {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.emptyScope {
+  margin: 0 0 14px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.breakdown {
+  margin-block: 2px;
+}
+.breakdown > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  margin-inline: -6px;
+  padding: 5px 6px;
+  border-radius: 5px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+.breakdown > summary:hover,
+.modelHeader:hover {
+  background: var(--a13n-hover);
+}
+.breakdown > summary::-webkit-details-marker {
+  display: none;
+}
+.breakdown > summary::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-inline: 2px 4px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  color: var(--a13n-secondary);
+}
+.breakdown[open] > summary::before {
+  transform: rotate(45deg);
+}
+.breakdown > summary > span {
+  margin-left: auto;
+  color: var(--a13n-secondary);
+}
+.breakdown > summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+.analyticsLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 0;
+  padding-block: 10px;
+  border-top: 1px solid var(--a13n-border-soft);
+  font-size: 12px;
+}
+.popup .analyticsLink {
+  margin: 8px -12px -12px;
+  padding-inline: 12px;
+}
+.analyticsLink:hover {
+  background: var(--a13n-hover);
 }
 .numbers {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 16px;
+  gap: 5px 16px;
   margin: 10px 0;
 }
 .numbers dt {
@@ -66,6 +228,15 @@ button.metric:hover,
   margin: 0;
   text-align: right;
   font-weight: 500;
+}
+.contextNumbers[data-unknown-limit] {
+  align-items: baseline;
+  margin-block: 16px 12px;
+}
+.contextNumbers[data-unknown-limit] dd {
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 .scope {
   display: block;
@@ -81,18 +252,36 @@ button.metric:hover,
 }
 .models {
   list-style: none;
-  margin: 8px 0;
+  margin: 2px 0 8px 12px;
   padding: 0;
 }
 .models li {
-  padding: 8px 0;
+  padding: 2px 0;
+}
+.models li + li {
   border-top: 1px solid var(--a13n-border-soft);
 }
 .modelHeader {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 28px;
+  margin-inline: -4px;
+  padding: 4px;
+  border-radius: 4px;
+}
+.modelHeader::before {
+  grid-column: 1;
+}
+.modelHeader:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+.modelDetails[open] > summary {
+  margin-bottom: 8px;
 }
 .usageDetails {
   min-width: 0;
@@ -104,7 +293,7 @@ button.metric:hover,
   padding: 2px;
   margin-top: 10px;
   background: var(--a13n-surface);
-  border-radius: 10px;
+  border-radius: 6px;
 }
 .scopeSelector button {
   flex: 1;
@@ -112,6 +301,9 @@ button.metric:hover,
 .scopeSelector button[aria-pressed="true"] {
   background: var(--a13n-elevated);
   color: var(--a13n-text);
+}
+:global(.dark) .scopeSelector button[aria-pressed="true"] {
+  background: var(--a13n-selected);
 }
 .attribution summary {
   cursor: pointer;
@@ -124,9 +316,8 @@ button.metric:hover,
 }
 .sourceGroup {
   margin-top: 10px;
-  padding: 10px 12px;
-  background: var(--a13n-surface);
-  border-radius: 10px;
+  padding: 2px 0 2px 10px;
+  border-left: 1px solid var(--a13n-border);
   overflow-wrap: anywhere;
 }
 .models .numbers {
@@ -135,7 +326,9 @@ button.metric:hover,
   font-size: 12px;
 }
 .modelName {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .modelCost {
   text-align: right;
@@ -161,5 +354,23 @@ button.metric:hover,
 @container conversation-page (max-width: 600px) {
   .bar {
     width: 100%;
+  }
+}
+
+@media (max-width: 600px), (pointer: coarse) {
+  .breakdown > summary,
+  .modelHeader,
+  .attribution summary,
+  .scopeSelector button,
+  .analyticsLink,
+  .popupHeader button {
+    min-height: 44px;
+  }
+  .attribution summary {
+    display: flex;
+    align-items: center;
+  }
+  .popupHeader button {
+    min-width: 44px;
   }
 }

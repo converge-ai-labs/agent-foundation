@@ -765,15 +765,20 @@ export function SourceDocument({
         onOpenChange={setDeleting}
         title="Delete this configuration?"
         description={`This deletes ${path} and every resource defined in it. References must be removed first. Unsaved edits will be discarded.`}
-        closeLabel="Cancel"
+        closeLabel="Close confirmation"
         footer={
-          <Button
-            variant="destructive"
-            loading={remove.isPending}
-            onClick={() => remove.mutate()}
-          >
-            Delete configuration
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setDeleting(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={remove.isPending}
+              onClick={() => remove.mutate()}
+            >
+              Delete configuration
+            </Button>
+          </>
         }
       >
         <ErrorNotice error={remove.error} />
@@ -783,22 +788,27 @@ export function SourceDocument({
         onOpenChange={setReplacing}
         title="Discard this local draft?"
         description="Reload the saved configuration. Your unsaved edits will be lost."
-        closeLabel="Cancel"
+        closeLabel="Close confirmation"
         footer={
-          <Button
-            onClick={() => {
-              const accepted = source.data!;
-              update({
-                content: accepted.content ?? "",
-                base: accepted.content,
-                digest: accepted.source_digest,
-                replacement: false,
-              });
-              setReplacing(false);
-            }}
-          >
-            Reload saved version
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setReplacing(false)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={() => {
+                const accepted = source.data!;
+                update({
+                  content: accepted.content ?? "",
+                  base: accepted.content,
+                  digest: accepted.source_digest,
+                  replacement: false,
+                });
+                setReplacing(false);
+              }}
+            >
+              Reload saved version
+            </Button>
+          </>
         }
       >
         <p>{path}</p>

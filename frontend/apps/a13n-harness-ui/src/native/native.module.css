@@ -434,7 +434,13 @@
   flex-shrink: 0;
   color: var(--a13n-secondary);
 }
+.fileActions:hover,
+.fileActions[data-popup-open] {
+  color: var(--a13n-text);
+  background: transparent;
+}
 .fileRow:hover,
+.fileRow:has([data-popup-open]),
 .changeRow:hover,
 .selected {
   background: var(--a13n-surface);

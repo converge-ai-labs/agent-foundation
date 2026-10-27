@@ -64,19 +64,22 @@ export function FileView({
           signal,
         }),
       );
-      const next = mediaKind(info.media_type)
-        ? info
-        : {
-            ...(await result(
-              client.GET("/api/host/files/text", {
-                params: {
-                  query: { path, expected_revision: info.entry.revision },
-                },
-                signal,
-              }),
-            )),
-            media_type: info.media_type,
-          };
+      // .ts is both TypeScript and an MPEG transport stream suffix. The text
+      // endpoint checks the actual bytes; binary streams keep their media view.
+      const next =
+        mediaKind(info.media_type) && !/\.ts$/i.test(path)
+          ? info
+          : {
+              ...(await result(
+                client.GET("/api/host/files/text", {
+                  params: {
+                    query: { path, expected_revision: info.entry.revision },
+                  },
+                  signal,
+                }),
+              )),
+              media_type: info.media_type,
+            };
       const existing = buffers.get(path);
       if (existing) existing.observe(next);
       else buffers.set(path, new FileBuffer(next));

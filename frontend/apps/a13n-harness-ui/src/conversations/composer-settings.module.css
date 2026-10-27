@@ -93,6 +93,13 @@
   gap: 8px;
   margin-top: 16px;
 }
+.resetAction {
+  margin-inline-end: auto;
+}
+.confirmActions {
+  display: flex;
+  gap: 8px;
+}
 .hint {
   margin: 8px 0;
   font-size: 12px;
@@ -139,6 +146,10 @@
 }
 .taskPopup {
   width: min(240px, calc(100vw - 24px));
+}
+.taskPopup[data-dialog-open] {
+  visibility: hidden;
+  pointer-events: none;
 }
 .optionList {
   padding: 4px;
