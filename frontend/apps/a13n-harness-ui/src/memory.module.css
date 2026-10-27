@@ -27,7 +27,6 @@
   composes: row from "./shell/navigation-row.module.css";
   background: var(--a13n-selected);
   color: var(--a13n-text);
-  font-weight: 500;
 }
 .scope span,
 .selected span {

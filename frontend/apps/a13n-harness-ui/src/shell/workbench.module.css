@@ -1035,9 +1035,9 @@ a.resourceRow:hover {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px;
+  padding: 6px 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 6px;
   background: transparent;
   color: var(--a13n-text);
   text-align: left;

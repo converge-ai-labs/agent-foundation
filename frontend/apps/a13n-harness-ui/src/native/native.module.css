@@ -385,7 +385,8 @@
 .fileRow {
   display: flex;
   align-items: center;
-  border-radius: 7px;
+  margin-bottom: 2px;
+  border-radius: 6px;
 }
 .fileLink,
 .changeRow {
@@ -396,14 +397,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 34px;
-  padding: 7px 8px;
+  min-height: 28px;
+  padding: 4px 8px;
   font-size: 13px;
   line-height: 20px;
   min-width: 0;
   width: 100%;
   text-align: left;
-  border-radius: 5px;
+  border-radius: 6px;
+}
+.changeRow {
+  margin-bottom: 2px;
+}
+@media (pointer: coarse) {
+  .fileLink,
+  .changeRow {
+    min-height: 44px;
+  }
 }
 .fileLink span,
 .changeRow span {

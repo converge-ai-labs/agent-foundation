@@ -36,7 +36,6 @@
 }
 .newConversationLink {
   composes: row from "../shell/navigation-row.module.css";
-  margin-bottom: 2px;
   font-weight: 400;
 }
 .newConversationLink > svg:last-child {
@@ -142,10 +141,7 @@
   }
 }
 .projectGroup {
-  margin-bottom: 2px;
-}
-.projectGroup[open] {
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .projectPreview {
   background: var(--popover);
@@ -201,7 +197,8 @@
   justify-content: space-between;
   color: var(--a13n-text);
   font-size: 12px;
-  border-radius: 8px;
+  border-radius: 6px;
+  margin-bottom: 2px;
 }
 .groupHeading:hover {
   background: var(--a13n-hover);
@@ -213,21 +210,26 @@
   inset-inline-end: 28px;
   top: 0;
 }
+.groupActions button,
+.threadActions {
+  width: 24px;
+  height: 24px;
+}
 .groupToggle {
   display: flex;
   align-items: center;
   gap: 7px;
   flex: 1;
   min-width: 0;
-  min-height: 28px;
-  padding: 5px 88px 5px 8px;
+  min-height: 24px;
+  padding: 3px 88px 3px 8px;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: start;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 6px;
   line-height: 18px;
 }
 .groupToggle > span {
@@ -249,7 +251,7 @@
   display: grid;
   place-items: center;
   width: 24px;
-  height: 28px;
+  height: 24px;
   color: var(--a13n-secondary);
 }
 .groupChevron > svg {
@@ -268,7 +270,7 @@
   inset-inline-start: 1px;
   top: 0;
   width: 28px;
-  height: 28px;
+  height: 24px;
   z-index: 1;
   touch-action: none;
   cursor: grab;
@@ -307,7 +309,8 @@
   }
 }
 .groupThreads {
-  margin-inline-start: 16px;
+  /* Match the project label after its 14px icon and 7px gap. */
+  margin-inline-start: 21px;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -329,8 +332,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 28px;
-  border-radius: 8px;
+  min-height: 24px;
+  margin-bottom: 2px;
+  border-radius: 6px;
   transition: background-color 120ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -348,7 +352,7 @@
   justify-content: center;
   flex: 0 0 24px;
   width: 24px;
-  height: 28px;
+  height: 24px;
   margin: 0 4px 0 0;
   padding: 0;
   border: 0;
@@ -387,7 +391,7 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  height: 28px;
+  height: 24px;
   margin-inline: 3px;
   color: var(--a13n-tertiary);
 }
@@ -435,9 +439,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
-  padding: 5px 8px;
-  border-radius: 8px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 6px;
   color: var(--a13n-text);
   text-decoration: none;
   font-size: 12px;
@@ -598,11 +602,11 @@
   margin-bottom: 4px;
 }
 .userInput {
-  margin: 8px 0 18px;
+  margin: 8px 0 14px auto;
   position: relative;
-  width: 100%;
+  width: fit-content;
   min-width: 64px;
-  max-width: 100%;
+  max-width: min(85%, 640px);
 }
 .userMessage {
   color: var(--a13n-text);
@@ -631,37 +635,17 @@
   transition: opacity 120ms ease;
 }
 .userInput > .messageActions {
-  position: absolute;
-  top: 4px;
-  right: -32px;
-  margin: 0;
-}
-.assistantMessage > .messageActions {
-  position: absolute;
-  bottom: 0;
-  right: -32px;
-  margin: 0;
+  margin-inline-start: 6px;
 }
 @container conversation-page (max-width: 600px) {
   .assistantMessage {
     padding-inline: 6px;
   }
   .userInput {
-    margin-bottom: 36px;
+    max-width: 90%;
   }
   .messageActions {
     opacity: 1;
-  }
-  .assistantMessage:has(> .messageActions) {
-    padding-bottom: 32px;
-  }
-  .assistantMessage > .messageActions {
-    right: 0;
-  }
-  .userInput > .messageActions {
-    top: auto;
-    bottom: -32px;
-    right: 0;
   }
 }
 .userInput:hover > .messageActions,
@@ -688,8 +672,7 @@
 }
 .userInput > .messageActions:has([role="alert"]),
 .assistantMessage > .messageActions:has([role="alert"]) {
-  position: static;
-  margin-top: 6px;
+  flex-wrap: wrap;
   opacity: 1;
 }
 @media (pointer: coarse) {
@@ -697,16 +680,13 @@
   .threadLink {
     min-height: 44px;
   }
-  .userInput {
-    margin-bottom: 48px;
-  }
-  .userInput > .messageActions {
-    top: auto;
-    right: 0;
-    bottom: -44px;
-  }
-  .assistantMessage:has(> .messageActions) {
-    padding-bottom: 44px;
+  .groupActions button,
+  .threadActions,
+  .groupChevron,
+  .projectDrag,
+  .threadDisclosure,
+  .threadStar {
+    height: 44px;
   }
   .copyMessage {
     width: 44px;
@@ -1328,7 +1308,7 @@ dl.detailGrid > .detailLongRow dd {
     width: 100%;
   }
   .reading {
-    padding-right: 0;
+    padding-inline: 12px;
   }
   .detailGrid {
     grid-template-columns: 1fr;

@@ -95,7 +95,7 @@ it("renders one thumbnail per authored occurrence and keeps hidden descriptions 
     source_id: "input-one",
     harness_ui: { composer: { index, label: "image#1" }, attachment },
   });
-  const view = render(
+  render(
     <TransportContext value={{ fetch } as unknown as Transport}>
       <InputContent
         threadId="one"
@@ -131,9 +131,10 @@ it("renders one thumbnail per authored occurrence and keeps hidden descriptions 
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   expect(screen.getAllByText("photo.png")).toHaveLength(2);
   expect(screen.queryByText("hidden description")).toBeNull();
+  const message = screen.getByText("before").parentElement!;
   const visible = [
-    ...view.container.querySelectorAll(
-      'header ~ span, header ~ div > button[aria-label^="Preview "]',
+    ...message.querySelectorAll(
+      ':scope > span, :scope > div > button[aria-label^="Preview "]',
     ),
   ].map((node) => node.textContent);
   expect(visible).toEqual(["before ", "photo.png", " between ", "photo.png"]);

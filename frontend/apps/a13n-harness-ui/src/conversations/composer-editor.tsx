@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import {
+  drawSelection,
+  EditorView,
+  keymap,
+  placeholder,
+} from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -150,6 +155,8 @@ export function ComposerEditor({
       doc: doc.getText("text").toString(),
       extensions: [
         EditorView.lineWrapping,
+        // Match the caret to the text metrics, including an empty placeholder.
+        drawSelection(),
         EditorView.domEventHandlers({
           focus: activate,
           keydown: activate,
@@ -204,6 +211,11 @@ export function ComposerEditor({
             fontFamily: "inherit",
           },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
+          ".cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
+            {
+              backgroundColor:
+                "color-mix(in srgb, var(--a13n-signal) 22%, transparent)",
+            },
           "&.cm-focused": { outline: "none" },
           ".cm-ySelectionCaret": {
             borderLeftWidth: "2px",

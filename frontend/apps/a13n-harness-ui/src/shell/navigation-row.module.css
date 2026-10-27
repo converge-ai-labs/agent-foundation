@@ -1,12 +1,13 @@
 .row {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 7px;
-  min-height: 28px;
+  min-height: 24px;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 3px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--a13n-text-supporting);
   font-family: inherit;
