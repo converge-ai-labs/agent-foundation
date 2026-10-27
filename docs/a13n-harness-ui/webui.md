@@ -172,11 +172,11 @@ Closing a browser tab keeps other tabs open. Closing a conversation’s last tab
 ### Capture and annotate a screenshot
 
 1. In the connected Browser drawer, select the camera icon, **Capture and annotate screenshot**. This freezes the currently displayed desktop locally, including the browser controls. You do not need to take control; the live browser keeps running.
-2. Use the icon toolbar to crop, draw arrows, rectangles, ellipses or freehand marks, add multiline text, pixelate a region, or cover private details with **Opaque redaction**. Hover or focus a tool for its name and shortcut. Use opaque redaction for sensitive content; mosaic is only a visual effect.
+2. Creating marks and crop regions requires a mouse, pen or touch pointer; keyboard-only creation is not supported. Use the icon toolbar to crop, draw arrows, rectangles, ellipses or freehand marks, add multiline text, pixelate a region, or cover private details with **Opaque redaction**. Hover or focus a tool for its name and shortcut. Use opaque redaction for sensitive content; mosaic is only a visual effect.
 3. Choose **Select** to move or resize a mark. The **Annotations** picker also selects marks. Use Delete to remove a selected mark, arrow keys to nudge it (Shift for larger steps), and Ctrl/Command+Z or Ctrl/Command+Shift+Z to undo or redo. Hold Shift while drawing to constrain shapes or arrow angles. Apply text with Ctrl/Command+Enter; Escape cancels the text edit.
 4. Select **Copy PNG** or press Ctrl/Command+Enter outside text input. After copying, chat receives focus. Paste explicitly into the composer or another app. Capturing and copying do not attach, upload or send the image automatically.
 
-The editor temporarily suspends remote input and text clipboard synchronization. PNG dimensions follow the source crop, regardless of preview zoom or screen pixel density. If clipboard permission is denied or image copying is unsupported, your edits remain available; retry or choose **Download PNG**. Closing the editor discards its local edits. Pasting into chat uses the existing attachment limits and upload handling.
+The editor temporarily suspends remote input and text clipboard synchronization. PNG dimensions follow the source crop, regardless of preview zoom or screen pixel density. If clipboard permission is denied or image copying is unsupported, your edits remain available; retry or choose **Download PNG**. Closing the editor asks you to confirm before discarding text edits or undo/redo history. Pasting into chat uses the existing attachment limits and upload handling.
 
 ## Observe Memory
 

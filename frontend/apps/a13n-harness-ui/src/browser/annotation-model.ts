@@ -129,6 +129,32 @@ export function drawAnnotation(
       };
 }
 
+/** Bake shape resizing into source geometry so stroke width keeps its pixel meaning. */
+export function resizeAnnotation(
+  mark: Annotation,
+  transform: Transform,
+): Annotation {
+  const resized = { ...mark, ...transform };
+  if (resized.kind === "text") return resized;
+  const { scaleX, scaleY } = transform;
+  return resized.kind === "arrow" || resized.kind === "pen"
+    ? {
+        ...resized,
+        scaleX: 1,
+        scaleY: 1,
+        points: resized.points.map(
+          (value, index) => value * (index % 2 === 0 ? scaleX : scaleY),
+        ),
+      }
+    : {
+        ...resized,
+        scaleX: 1,
+        scaleY: 1,
+        width: resized.width * scaleX,
+        height: resized.height * scaleY,
+      };
+}
+
 export function meaningfulAnnotation(mark: Annotation): boolean {
   if (mark.kind === "text") return !!mark.text.trim();
   if (mark.kind === "pen" || mark.kind === "arrow")
