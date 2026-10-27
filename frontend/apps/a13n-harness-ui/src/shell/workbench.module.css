@@ -582,6 +582,13 @@ a.resourceRow:hover {
   }
 }
 
+.settingsFrame {
+  container: settings-layout / inline-size;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
 .settings {
   display: flex;
   flex: 1;
@@ -596,6 +603,11 @@ a.resourceRow:hover {
 }
 .settingsNav .activeNav {
   background: var(--a13n-surface);
+}
+.settingsUtilityLink {
+  margin-top: 24px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
 }
 .settingControl {
   width: 280px;
@@ -615,7 +627,7 @@ a.resourceRow:hover {
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
-  padding: 0 8px 24px 0;
+  padding: 0 4px 24px 0;
 }
 .settingsContent > * {
   flex-shrink: 0;
@@ -656,7 +668,8 @@ a.resourceRow:hover {
 .panelContent > button {
   align-self: flex-start;
 }
-@media (max-width: 1000px) {
+/* Keep room for the 680px form, navigation, gap, and scrollbar. */
+@container settings-layout (max-width: 920px) {
   .settings {
     flex-direction: column;
     gap: 20px;
@@ -669,6 +682,9 @@ a.resourceRow:hover {
   }
   .settingsNav h2 {
     display: none;
+  }
+  .settingsUtilityLink {
+    margin-top: 0;
   }
   .settingsNav a {
     white-space: nowrap;
