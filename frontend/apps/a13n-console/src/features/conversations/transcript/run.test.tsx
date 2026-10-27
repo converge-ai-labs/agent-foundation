@@ -370,8 +370,9 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
   expectStable();
   expect(screen.getByText("Message run_6")).toBe(oldContent);
   expect(oldContent.closest("[inert]")).not.toBeNull();
-  expect(screen.getByText("Loading run…")).toBeTruthy();
-  expect(document.querySelector('[data-variant="detail"]')).toBeNull();
+  expect(document.querySelector('[data-variant="detail"]')).not.toBeNull();
+  expect(oldContent.closest("[hidden]")).not.toBeNull();
+  expect(screen.queryByText("Loading run…")).toBeNull();
   expect(screen.getByText("Thread inbox")).toBe(queue);
   await act(async () => {
     finishDetail();
@@ -381,6 +382,8 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
     finishItems();
   });
   await screen.findByText("Message run_4");
+  expect(document.querySelector('[data-variant="detail"]')).toBeNull();
+  expect(screen.getByText("Message run_4").closest("[hidden]")).toBeNull();
   expect(screen.queryByText("Loading run…")).toBeNull();
   expect(screen.getByText("Thread inbox")).toBe(queue);
   expect(queue.closest("[data-thread-dock]")).toBe(dock);
@@ -443,7 +446,9 @@ it("ignores a late item response after selecting another Run", async () => {
   const rendered = render(view("run_6"));
   await screen.findByText("Message run_6");
   rendered.rerender(view("run_4"));
-  await screen.findByText("Loading run…");
+  await waitFor(() =>
+    expect(document.querySelector('[data-variant="detail"]')).not.toBeNull(),
+  );
   rendered.rerender(view("run_3"));
   await screen.findByText("Message run_3");
   await act(async () => {

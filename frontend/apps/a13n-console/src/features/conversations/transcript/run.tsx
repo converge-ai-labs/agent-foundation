@@ -228,7 +228,7 @@ export function RunContent({
                 }}
               />
             ) : (
-              <p role="status">{t("Loading run…")}</p>
+              <Loading variant="detail" />
             )}
           </div>
         )}
@@ -305,15 +305,16 @@ function RunBody({
       className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
       ref={transcript}
     >
-      {(pending || error != null) && (
+      {pending && <Loading variant="detail" />}
+      {error != null && (
         <div className={styles.switchStatus}>
-          {pending && <p role="status">{t("Loading run…")}</p>}
           <ErrorNotice error={error} retry={retry} />
         </div>
       )}
       <div
         key={runIds[0]}
         inert={switching}
+        hidden={pending}
         aria-busy={pending}
         className={styles.observation}
       >
