@@ -181,6 +181,98 @@ async def test_compact_failure_preserves_history_and_never_dispatches_tools(kind
     assert "a13n.working-state" not in result.state.agent_context_state.entries
 
 
+@pytest.mark.parametrize("incomplete_at", ["segment", "response"])
+async def test_compact_rejects_nonempty_incomplete_response_before_checkpoint_or_summary_event(incomplete_at):
+    from a13n_harness.capabilities.context import CompactionSummaryEvent
+    from pydantic_ai.capabilities import AbstractCapability
+
+    summaries = []
+    observed = []
+    calls = 0
+
+    class Listener(AbstractCapability):
+        async def on_event(self, ctx, *, event):
+            if isinstance(event, CompactionSummaryEvent):
+                summaries.append(event)
+
+        async def after_model_request(self, ctx, *, request_context, response):
+            if incomplete_at == "response":
+                response.state = "incomplete"
+            return response
+
+    class IncompleteModel(FunctionModel):
+        @asynccontextmanager
+        async def request_stream(self, messages, model_settings, model_request_parameters, run_context=None):
+            async with super().request_stream(
+                messages, model_settings, model_request_parameters, run_context
+            ) as response:
+                if incomplete_at == "segment":
+                    response.state = "incomplete"
+                yield response
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        yield "Partial summary"
+
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=IncompleteModel(stream_function=stream), capabilities=(Listener(),)
+    )
+    previous = _previous()
+    frozen = previous.model_dump_json()
+    result = await agent.compact(
+        previous_state=previous, bindings=RunBindings.embedded(producer_observer=observed.append)
+    )
+    assert result.status == "failed"
+    assert result.failure.code == "compaction_summary_invalid"
+    assert result.failure.details == {"phase": "summary"}
+    assert result.output is None
+    assert result.state.model_dump_json() == frozen
+    assert previous.model_dump_json() == frozen
+    assert calls == 1
+    assert summaries == []
+    events = [
+        item.event.payload
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "context"
+    ]
+    assert [event["type"] for event in events] == ["compaction_started", "compaction_failed"]
+    assert events[1]["failed_phase"] == "summary"
+    assert events[1]["operation_id"] == events[0]["operation_id"]
+
+
+@pytest.mark.parametrize("terminal_state", ["complete", "incomplete"])
+async def test_compact_checks_terminal_segment_after_native_continuation(terminal_state):
+    calls = 0
+
+    class ContinuingModel(FunctionModel):
+        @asynccontextmanager
+        async def request_stream(self, messages, model_settings, model_request_parameters, run_context=None):
+            state = "suspended" if calls == 0 else terminal_state
+            async with super().request_stream(
+                messages, model_settings, model_request_parameters, run_context
+            ) as response:
+                response.state = state
+                yield response
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        yield "Partial summary" if calls == 1 else "Finished summary"
+
+    agent = HarnessBuilder().build(AgentSpec(), output_type=str, model=ContinuingModel(stream_function=stream))
+    previous = _previous()
+    result = await agent.compact(previous_state=previous)
+    assert calls == 2
+    if terminal_state == "complete":
+        assert result.status == "completed", result.failure
+        assert "Finished summary" in result.output_or_raise()
+    else:
+        assert result.status == "failed"
+        assert result.failure.code == "compaction_summary_invalid"
+        assert result.state.model_dump_json() == previous.model_dump_json()
+
+
 @pytest.mark.parametrize(
     "history",
     [

@@ -10,16 +10,19 @@ from uuid import uuid4
 
 from pydantic import TypeAdapter
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
+    ModelResponse,
+    ModelResponseState,
     NativeToolCallPart,
     TextPart,
     ToolCallPart,
     _merge_consecutive_messages,
 )
 from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.models._continuation import observe_continuation_segments
 
 from a13n_harness._context_history import _COMPACTION_PROMPT
 from a13n_harness._handoff import _HANDOFF_STATE_VERSION, HANDOFF_CAPABILITY_ID, _HandoffState
@@ -55,6 +58,23 @@ class _SummaryRequestCapability(AbstractCapability[AgentContext]):
 
     history: list[ModelMessage]
     context: RunContext[AgentContext] | None = None
+    last_segment_state: ModelResponseState | None = None
+
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
+        # Pydantic AI 2.61 marks an exhausted composite stream complete even when
+        # its last provider segment is incomplete. Retain that segment's state
+        # before merging; intermediate suspended segments may still complete.
+        def record_segment(response: ModelResponse) -> None:
+            self.last_segment_state = response.state
+
+        with observe_continuation_segments(request_context, record_segment):
+            return await handler(request_context)
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost", wrapped_by=(UsageCapability,))
@@ -207,6 +227,10 @@ class _CompactionRunStream(HarnessRunStream[str]):
                                 pass
                     elif Agent.is_call_tools_node(node):
                         response = node.model_response
+                        if response.state != "complete" or capture.last_segment_state not in (None, "complete"):
+                            raise DefinitionError(
+                                "Compaction returned an unfinished response.", code="compaction_summary_invalid"
+                            )
                         if any(isinstance(part, (ToolCallPart, NativeToolCallPart)) for part in response.parts):
                             raise DefinitionError("Compaction returned tool calls.", code="compaction_summary_invalid")
                         summary = "\n\n".join(
