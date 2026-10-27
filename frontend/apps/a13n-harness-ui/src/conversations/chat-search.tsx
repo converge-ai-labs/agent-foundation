@@ -3,13 +3,20 @@ import { Link } from "react-router";
 import {
   Button,
   Dialog,
+  DialogClose,
   DialogPopup,
   DialogTitle,
   DialogTrigger,
   Input,
-  SearchPicker,
+  Combobox,
+  ComboboxTrigger,
+  ComboboxPopup,
+  ComboboxInput,
+  ComboboxList,
+  ComboboxItem,
+  ComboboxEmpty,
 } from "a13n-ui";
-import { MagnifyingGlass, ChatCircle } from "@phosphor-icons/react";
+import { MagnifyingGlass, Funnel, X } from "@phosphor-icons/react";
 import { useProjects } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { useThreads } from "./queries";
@@ -21,11 +28,20 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
   const projects = useProjects();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [scope, setScope] = useState("");
+  const projectOptions = [
+    { value: "", label: "All projects" },
+    ...(projects.data ?? []).map((project) => ({
+      value: project.project_id,
+      label: project.name,
+    })),
+  ];
   const input = useRef<HTMLInputElement>(null);
   const results = useRef<HTMLDivElement>(null);
   const close = () => {
     setOpen(false);
+    setFilterOpen(false);
     setQuery("");
     setScope("");
   };
@@ -36,17 +52,19 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
         setOpen(value);
         if (value) onOpen();
         if (!value) {
+          setFilterOpen(false);
           setQuery("");
           setScope("");
         }
       }}
     >
       <DialogTrigger className={navigation.homeLink}>
-        <MagnifyingGlass size={18} />
+        <MagnifyingGlass size={18} aria-hidden="true" />
         <span>Search chats</span>
       </DialogTrigger>
       <DialogPopup
         placement="top"
+        showCloseButton={false}
         className={styles.popup}
         initialFocus={input}
         onKeyDown={(event) => {
@@ -78,35 +96,81 @@ export function ChatSearch({ onOpen }: { onOpen: () => void }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+          <Combobox
+            items={projectOptions}
+            value={
+              projectOptions.find((option) => option.value === scope) ??
+              projectOptions[0]
+            }
+            itemToStringLabel={(option) => option.label}
+            itemToStringValue={(option) => option.value}
+            isItemEqualToValue={(option, selected) =>
+              option.value === selected.value
+            }
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
+            onValueChange={(option) => {
+              if (!option) return;
+              setScope(option.value);
+              setFilterOpen(false);
+              requestAnimationFrame(() => input.current?.focus());
+            }}
+          >
+            <ComboboxTrigger
+              render={<Button variant="ghost" size="icon" />}
+              aria-label={
+                scope
+                  ? `Project scope: ${projectOptions.find((option) => option.value === scope)?.label ?? scope}`
+                  : "Project scope"
+              }
+              className={scope ? styles.activeFilter : undefined}
+            >
+              <Funnel size={18} />
+            </ComboboxTrigger>
+            <ComboboxPopup align="end" className={styles.filter}>
+              <ComboboxInput
+                aria-label="Find project"
+                placeholder="Find a project…"
+                showTrigger={false}
+              />
+              <ComboboxEmpty>No matching projects.</ComboboxEmpty>
+              <ComboboxList>
+                {(option: { value: string; label: string }) => (
+                  <ComboboxItem key={option.value} value={option}>
+                    {option.label}
+                  </ComboboxItem>
+                )}
+              </ComboboxList>
+            </ComboboxPopup>
+          </Combobox>
+          <DialogClose
+            render={<Button variant="ghost" size="icon" />}
+            aria-label="Close search"
+          >
+            <X size={18} />
+          </DialogClose>
         </div>
-        <div className={styles.scope}>
-          <SearchPicker
-            label="Project scope"
-            placeholder="All projects"
-            emptyMessage="No matching projects."
-            value={scope}
-            onValueChange={setScope}
-            groups={[
-              {
-                label: "Projects",
-                options: [
-                  { value: "", label: "All projects" },
-                  ...(projects.data ?? []).map((project) => ({
-                    value: project.project_id,
-                    label: project.name,
-                  })),
-                ],
-              },
-            ]}
-          />
-        </div>
-        <div ref={results} className={`${styles.results} a13n-scrollbar`}>
-          {open && query.trim() ? (
+        {scope && (
+          <div className={styles.scope}>
+            <button
+              type="button"
+              onClick={() => {
+                setScope("");
+                input.current?.focus();
+              }}
+              aria-label="Clear project filter"
+            >
+              {projects.data?.find((project) => project.project_id === scope)
+                ?.name ?? scope}
+              <X size={12} aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        {open && query.trim() && (
+          <div ref={results} className={`${styles.results} a13n-scrollbar`}>
             <SearchResults query={query.trim()} scope={scope} close={close} />
-          ) : (
-            <p className={styles.empty}>Find a chat by title or message.</p>
-          )}
-        </div>
+          </div>
+        )}
       </DialogPopup>
     </Dialog>
   );
@@ -140,7 +204,6 @@ function SearchResults({
           aria-label={conversationTitle(row.thread)}
           onClick={close}
         >
-          <ChatCircle size={18} aria-hidden="true" />
           <span>
             <strong>{conversationTitle(row.thread)}</strong>
             <small>

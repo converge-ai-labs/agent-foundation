@@ -1,7 +1,7 @@
 .section {
   display: grid;
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 8px;
 }
 .heading {
   display: flex;
@@ -32,9 +32,7 @@
 }
 .accountCard {
   min-width: 0;
-  padding: 20px 24px;
-  background: var(--a13n-surface);
-  border-radius: 10px;
+  padding: 16px;
 }
 .accountHeader,
 .accountIdentity,
@@ -49,7 +47,6 @@
 .accountHeader {
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
 }
 .accountIdentity {
   min-width: 0;
@@ -127,8 +124,9 @@
   justify-content: space-between;
   gap: 16px;
   padding: 16px;
-  background: var(--a13n-surface);
-  border-radius: 8px;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
 }
 .identity {
   display: grid;
@@ -247,8 +245,9 @@
   align-items: flex-start;
   gap: 16px;
   padding: 16px;
-  background: var(--a13n-surface);
-  border-radius: 8px;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
 }
 .voucherRow > button {
   flex-shrink: 0;
@@ -297,7 +296,7 @@
   min-width: 0;
 }
 .providerSection + .providerSection {
-  margin-top: 20px;
+  margin-top: 24px;
 }
 .providerHeading {
   display: flex;
@@ -375,7 +374,7 @@
 }
 @media (max-width: 700px) {
   .accountCard {
-    padding: 14px;
+    padding: 16px;
   }
   .accountIdentity {
     gap: 8px;
@@ -424,4 +423,71 @@
 }
 .memberField > div {
   width: 100%;
+}
+
+.listToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.listToolbar > button {
+  flex-shrink: 0;
+}
+.listToolbar > [data-slot="input-control"] {
+  flex: 1;
+  min-width: 0;
+  max-width: 300px;
+}
+.accountList {
+  display: grid;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--a13n-canvas);
+  overflow: hidden;
+}
+.accountList > * + * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.allowanceSummary {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.expanded {
+  transform: rotate(90deg);
+}
+.usageDetails {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.usageToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .listToolbar {
+    gap: 12px;
+  }
+  .allowanceSummary {
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.legacyUsage {
+  composes: details from "../shell/workbench.module.css";
+  margin-top: 8px;
+}
+.legacyUsage > summary {
+  font-weight: 400;
+  font-size: 12px;
 }

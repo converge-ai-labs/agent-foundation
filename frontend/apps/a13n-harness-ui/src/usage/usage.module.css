@@ -1,11 +1,8 @@
 .page {
   width: 100%;
-  /* Same frame as the other document pages (native .documentPage). */
   max-width: 1120px;
-  margin: 0 auto;
-  padding: 24px 24px 48px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  margin: 0;
+  padding: 0 0 8px;
 }
 .filters {
   display: grid;
@@ -232,9 +229,6 @@
   border-radius: 3px;
 }
 @media (max-width: 1100px) {
-  .page {
-    padding: 24px;
-  }
   .filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -243,9 +237,6 @@
   }
 }
 @media (max-width: 600px) {
-  .page {
-    padding: 20px 16px;
-  }
   .filters {
     gap: 12px;
   }

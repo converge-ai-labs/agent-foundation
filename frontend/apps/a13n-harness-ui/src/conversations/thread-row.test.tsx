@@ -248,11 +248,12 @@ it.each([
   { waiting: true, failed: false, label: "Needs your answer" },
   { waiting: false, failed: true, label: "Failed" },
 ])(
-  "retains an explicit $label state in a compact row",
+  "announces $label with a trailing status icon in a compact row",
   ({ waiting, failed, label }) => {
     mount({ waiting, failed });
     const state = screen.getByText(label);
-    expect(state.className).toContain("attentionState");
+    expect(state.className).toContain("srOnly");
+    expect(state.parentElement?.querySelector("svg")).not.toBeNull();
     expect(
       screen.getByRole("link", { name: new RegExp(`Example.*${label}`) }),
     ).toBeTruthy();
@@ -333,29 +334,27 @@ it("opens a worker draft from a running Coordinator without sending it a message
   expect(requests).toHaveLength(0);
 });
 
-it("keeps Coordinator identity through compact activity and explicit attention states", () => {
+it("keeps Coordinator identity and trailing activity through state changes", () => {
   const { row, rerender } = mount({ coordinator: true, activeWorkerCount: 2 });
-  const link = screen.getByRole("link", { name: /Example/ });
-  const identity = link.querySelector("svg");
+  const link = screen.getByRole("link", { name: /Example.*Coordinator/ });
   const summary = within(link).getByText("2 workers active").closest("small")!;
-  expect(summary.querySelector("svg")).toBeNull();
+  expect(link.querySelector("svg")).toBeNull();
 
   row.thread.root_activity.state = "preparing";
   rerender(row, 2);
-  expect(summary.textContent).toBe("Preparing · 2 workers active");
-  const spinner = summary.querySelector("svg");
+  expect(summary.textContent).toBe("2 workers active");
+  const status = within(link).getByTitle("Preparing");
+  const spinner = status.querySelector("svg");
   expect(spinner).not.toBeNull();
 
   row.thread.root_activity.state = "running";
   rerender(row, 1);
-  expect(summary.textContent).toBe("Running · 1 worker active");
-  expect(summary.querySelector("svg")).toBe(spinner);
+  expect(summary.textContent).toBe("1 worker active");
+  expect(within(link).getByTitle("Running").querySelector("svg")).toBe(spinner);
 
   row.pending_decision = { kind: "question", count: 1 };
   rerender(row, 1);
-  expect(
-    within(link).getByText("Needs your answer · 1 worker active"),
-  ).toBeTruthy();
+  expect(within(link).getByTitle("Needs your answer")).toBe(status);
   expect(link.querySelectorAll("svg")).toHaveLength(1);
 
   row.pending_decision = null;
@@ -366,13 +365,13 @@ it("keeps Coordinator identity through compact activity and explicit attention s
     submitted_at: "2026-01-01T00:00:00Z",
   };
   rerender(row, 0);
-  expect(within(link).getByText("Failed")).toBeTruthy();
+  expect(within(link).getByTitle("Failed")).toBe(status);
 
   row.thread.last_execution = null;
   rerender(row, 0);
   expect(link.querySelector("small")).toBeNull();
-  expect(link.querySelector("svg")).toBe(identity);
-  expect(screen.getByRole("link", { name: /Example/ })).toBe(link);
+  expect(link.querySelector("svg")).toBeNull();
+  expect(screen.getByRole("link", { name: /Example.*Coordinator/ })).toBe(link);
 });
 
 it("finishes Star on confirmation without waiting for list refresh or invalidating history", async () => {

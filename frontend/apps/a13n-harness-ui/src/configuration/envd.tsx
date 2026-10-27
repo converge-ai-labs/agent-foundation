@@ -142,6 +142,7 @@ export function EnvdRuntime() {
   return (
     <>
       <SettingsSection
+        variant="outlined"
         title="Local runtime"
         description={state?.host ?? "Loading host…"}
       >
@@ -246,6 +247,7 @@ export function EnvdRuntime() {
         </div>
       )}
       <SettingsSection
+        variant="outlined"
         title="Capabilities"
         description="Full Control and Sandbox are checked together."
       >
@@ -287,6 +289,7 @@ export function EnvdRuntime() {
         </SettingsRow>
       </SettingsSection>
       <SettingsSection
+        variant="outlined"
         title="Version & updates"
         description="The envd version selected by this Harness UI installation."
       >

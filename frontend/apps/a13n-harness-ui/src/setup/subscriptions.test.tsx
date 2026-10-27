@@ -57,6 +57,7 @@ function mount({
   credits = voucherCredits,
   failResetOnce = false,
   groups = false,
+  usable = true,
 } = {}) {
   const writes: { path: string; method: string; body: any }[] = [];
   vi.stubGlobal(
@@ -90,7 +91,7 @@ function mount({
           accounts: [
             {
               account,
-              authentication: { availability: "available" },
+              authentication: { availability: "available", usable },
               usage: { account_id: account.id, usage: null },
             },
           ],
@@ -151,9 +152,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("offers sign-in without empty usage details and performs no automatic writes", async () => {
+  const writes = mount({ usable: false });
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+  expect(await screen.findByText("Login target: acct-work")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Usage for Work" })).toBeNull();
+  expect(writes).toEqual([]);
+});
+
 it("refreshes the selected account and opens login for the newly created native identity", async () => {
   const writes = mount();
-  fireEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Usage for Work" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
   await waitFor(() =>
     expect(writes[0]?.path).toBe(
       "/api/subscriptions/accounts/acct-work/refresh",

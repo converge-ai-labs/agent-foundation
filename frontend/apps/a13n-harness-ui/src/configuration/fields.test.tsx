@@ -90,13 +90,13 @@ it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enab
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
   const user = userEvent.setup();
-  const sidekick = await screen.findByRole("combobox", { name: "Sidekick" });
-  expect(sidekick.textContent).toContain("Disabled");
+  const sidekick = await screen.findByRole("switch", { name: "Sidekick" });
+  expect(sidekick.getAttribute("aria-checked")).toBe("false");
   expect(screen.queryByRole("combobox", { name: "Sidekick agent" })).toBeNull();
   expect(screen.queryByRole("combobox", { name: "Sidekick model" })).toBeNull();
   expect(screen.getByTestId("source").textContent).toBe(initial);
   await user.click(sidekick);
-  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  await user.click(screen.getByText("Delegation defaults"));
   expect(
     parse(screen.getByTestId("source").textContent!).webui.sidekick,
   ).toEqual({});
@@ -306,23 +306,25 @@ it("shows default-on memory without rewriting YAML and preserves organizer choic
   renderFields(initial);
   const user = userEvent.setup();
   expect(
-    (await screen.findByRole("combobox", { name: "File memory" })).textContent,
-  ).toContain("Enabled");
+    (await screen.findByRole("switch", { name: "File memory" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
   expect(
-    screen.getByRole("combobox", { name: "Automatic organization" })
-      .textContent,
-  ).toContain("Enabled");
+    screen
+      .getByRole("switch", { name: "Automatic organization" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  await user.click(screen.getByText("Organization settings"));
   expect(screen.getByTestId("source").textContent).toBe(initial);
   fireEvent.change(
     screen.getByRole("textbox", { name: "Organization instructions" }),
     { target: { value: "Preserve decisions and preferences." } },
   );
   await user.click(
-    screen.getByRole("combobox", { name: "Automatic organization" }),
+    screen.getByRole("switch", { name: "Automatic organization" }),
   );
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
-  await user.click(screen.getByRole("combobox", { name: "File memory" }));
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("switch", { name: "File memory" }));
   expect(parse(screen.getByTestId("source").textContent!).memory).toEqual({
     enabled: false,
     auto_organize: {

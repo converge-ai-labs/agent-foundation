@@ -13,6 +13,7 @@
   display: flex;
   gap: 24px;
   overflow-x: auto;
+  scrollbar-width: none;
   flex-shrink: 0;
 }
 .tabs a {
@@ -37,11 +38,28 @@
   }
 }
 @media (max-width: 600px) {
-  .disclosure > summary small {
-    display: block;
-    margin: 6px 0 0 16px;
-  }
   .tabs {
     gap: 20px;
   }
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.groupDisclosure {
+  composes: details from "../shell/workbench.module.css";
+}
+.groupDisclosure > summary {
+  min-height: 48px;
+  font-weight: 400;
+}
+.groupDisclosure[open] > summary {
+  margin-bottom: 0;
+}
+.groupDisclosure > div {
+  padding: 0 0 16px;
+}
+.groupDisclosure > div > [data-slot="settings-row"] {
+  padding-top: 8px;
 }

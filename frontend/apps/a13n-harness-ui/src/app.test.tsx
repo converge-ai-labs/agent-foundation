@@ -1324,7 +1324,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
   });
   render(<BrowserApp />);
   const user = userEvent.setup();
-  const live = await screen.findByRole("combobox", {
+  const live = await screen.findByRole("switch", {
     name: "Live",
   });
   const expectHidden = () => {
@@ -1334,23 +1334,28 @@ it("shows Live entries only after enabling and saving, and hides them again with
   };
   expectHidden();
   await user.click(live);
-  await user.click(await screen.findByRole("option", { name: "Enabled" }));
   expectHidden();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  expect(await screen.findByRole("link", { name: "Live" })).toBeTruthy();
   expect(
     await screen.findByRole("button", { name: "Start voice" }),
   ).toBeTruthy();
-  await user.click(screen.getByRole("combobox", { name: "Live" }));
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
+  expect(await screen.findByRole("link", { name: "Live" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+  await user.click(await screen.findByRole("switch", { name: "Live" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
   await waitFor(expectHidden);
   expect(writes).toBe(2);
-  expect(
-    vi
-      .mocked(fetch)
-      .mock.calls.some(([input]) => (input as Request).method === "POST"),
-  ).toBe(false);
+  const writesToExecution = vi.mocked(fetch).mock.calls.filter(([input]) => {
+    const request = input as Request;
+    return (
+      request.method === "POST" &&
+      new URL(request.url).pathname !== "/api/threads/configuration-preview"
+    );
+  });
+  expect(writesToExecution).toEqual([]);
 });
 
 it("configures Sidekick in General without changing defaults or starting chats", async () => {
@@ -1429,8 +1434,11 @@ it("configures Sidekick in General without changing defaults or starting chats",
   render(<BrowserApp />);
   const user = userEvent.setup();
   expect(
-    (await screen.findByRole("combobox", { name: "Sidekick" })).textContent,
-  ).toContain("Enabled");
+    (await screen.findByRole("switch", { name: "Sidekick" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
+  await user.click(screen.getByText("Delegation defaults"));
   expect(
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
   ).toContain("Inherit current agent");
@@ -1455,8 +1463,7 @@ it("configures Sidekick in General without changing defaults or starting chats",
       screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
     ).toContain("Worker"),
   );
-  await user.click(screen.getByRole("combobox", { name: "Sidekick" }));
-  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("switch", { name: "Sidekick" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(writes).toBe(2));
   expect(parse(content).webui.sidekick).toBeNull();
@@ -1737,10 +1744,11 @@ it("shares the root draft across General, execution, runtime and connection sett
   });
   render(<BrowserApp />);
   const user = userEvent.setup();
-  const live = await screen.findByRole("combobox", { name: "Live" });
-  expect(live.closest("details")?.open).toBe(true);
+  const live = await screen.findByRole("switch", { name: "Live" });
+  expect(screen.getByText("Voice settings").closest("details")?.open).toBe(
+    true,
+  );
   await user.click(live);
-  await user.click(await screen.findByRole("option", { name: "Enabled" }));
   await user.click(screen.getByRole("link", { name: "Environments" }));
   await user.click(await screen.findByRole("combobox", { name: "Runtime" }));
   await user.click(await screen.findByRole("option", { name: "envd" }));
@@ -1763,8 +1771,10 @@ it("shares the root draft across General, execution, runtime and connection sett
   expect(content).toContain("# Preserve me");
   await user.click(screen.getByRole("link", { name: "General" }));
   expect(
-    (await screen.findByRole("combobox", { name: "Live" })).textContent,
-  ).toContain("Enabled");
+    (await screen.findByRole("switch", { name: "Live" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 });
 
@@ -1784,8 +1794,10 @@ it.each([
   if (hash)
     await waitFor(() =>
       expect(
-        document.getElementById("notifications")?.hasAttribute("open"),
-      ).toBe(true),
+        within(document.getElementById("notifications")!).getByRole("switch", {
+          name: "Enable browser notifications",
+        }),
+      ).toBeTruthy(),
     );
   const navigation = await screen.findByRole("navigation", {
     name: "Settings sections",
@@ -1803,4 +1815,28 @@ it.each([
     "Connections",
     "Configuration files",
   ]);
+});
+
+it("replaces chat navigation in Settings and returns to the same chat route", async () => {
+  window.history.replaceState(null, "", "/?project=project-test");
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await screen.findByRole("navigation", { name: "Chat shortcuts" });
+  const chatRoute = window.location.pathname + window.location.search;
+  await user.click(screen.getByRole("button", { name: "Workspace menu" }));
+  await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+  await screen.findByRole("navigation", { name: "Settings sections" });
+  expect(
+    screen.queryByRole("navigation", { name: "Chat shortcuts" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Search chats" })).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "Back to chats" }).getAttribute("href"),
+  ).toBe(chatRoute);
+  await user.click(screen.getByRole("link", { name: "Back to chats" }));
+  await screen.findByRole("navigation", { name: "Chat shortcuts" });
+  expect(
+    screen.queryByRole("navigation", { name: "Settings sections" }),
+  ).toBeNull();
+  expect(window.location.pathname + window.location.search).toBe(chatRoute);
 });

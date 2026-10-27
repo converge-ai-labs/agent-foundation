@@ -24,9 +24,9 @@ import { ModelEditor } from "./model-editor";
 import { readDocument, updateDocument } from "./documents";
 import {
   DotsThree,
-  Cpu,
+  Cube,
   Key,
-  Robot,
+  HeadCircuit,
   Plus,
   Copy,
   Image,
@@ -162,7 +162,7 @@ export function ModelsPage() {
               >
                 <div className={management.resourceIdentity}>
                   <span className={management.resourceIcon}>
-                    <Cpu aria-hidden="true" weight="duotone" />
+                    <Cube aria-hidden="true" weight="duotone" />
                   </span>
                   <div className={management.resourceInfo}>
                     {source ? (
@@ -180,7 +180,7 @@ export function ModelsPage() {
                         <ModelCredentialSummary path={source.relative_path} />
                       )}
                       <small className={management.metadata}>
-                        <Robot aria-hidden="true" />
+                        <HeadCircuit aria-hidden="true" />
                         <span>
                           {selectors.data?.agents
                             .filter(

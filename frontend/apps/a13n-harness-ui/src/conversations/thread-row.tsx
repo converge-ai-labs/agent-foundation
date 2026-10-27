@@ -96,16 +96,10 @@ export function ThreadRow({
   );
   const isCoordinator = row.thread.role === "coordinator";
   const state = threadState(row);
-  const needsAttention =
-    !!row.pending_decision || state === "Failed" || state === "Outcome unknown";
-  const activity = [
-    state,
+  const workerActivity =
     activeWorkerCount > 0
       ? `${activeWorkerCount} ${activeWorkerCount === 1 ? "worker" : "workers"} active`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+      : "";
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
   const starLabel = row.thread.starred ? "Unstar chat" : "Star chat";
@@ -179,23 +173,6 @@ export function ThreadRow({
             `${styles.threadLink} ${isActive ? styles.selected : ""}`
           }
         >
-          <span className={styles.threadIcon}>
-            {isCoordinator ? (
-              <CoordinatorIcon size={18} />
-            ) : (
-              <ThreadStateIcon row={row} />
-            )}
-            {unsent && (
-              <span
-                className={styles.draftMarker}
-                role="img"
-                aria-label="Draft · Unsent input"
-                title="Draft · Unsent input"
-              >
-                <PencilSimple size={10} weight="bold" aria-hidden="true" />
-              </span>
-            )}
-          </span>
           <span className={styles.threadLabel}>
             <strong title={title}>{title}</strong>
             {row.thread.role === "coordinator" && title !== "Coordinator" && (
@@ -209,20 +186,31 @@ export function ThreadRow({
                     : "Without a project")}
               </small>
             )}
-            {needsAttention ? (
-              <small className={styles.attentionState}>
-                {isCoordinator ? activity : state}
-              </small>
-            ) : !isCoordinator && state ? (
-              <small className={styles.srOnly}>{state}</small>
-            ) : null}
-            {isCoordinator && activity && !needsAttention && (
-              <small className={styles.coordinatorActivity} title={activity}>
-                {state && <ThreadStateIcon row={row} />}
-                <span>{activity}</span>
-              </small>
-            )}
           </span>
+          {isCoordinator && workerActivity && (
+            <small
+              className={styles.coordinatorActivity}
+              title={workerActivity}
+            >
+              {workerActivity}
+            </small>
+          )}
+          {unsent && (
+            <span
+              className={styles.draftMarker}
+              role="img"
+              aria-label="Draft · Unsent input"
+              title="Unsent input"
+            >
+              <PencilSimple size={12} aria-hidden="true" />
+            </span>
+          )}
+          {state && (
+            <span className={styles.threadStatus} title={state}>
+              <ThreadStateIcon row={row} />
+              <span className={styles.srOnly}>{state}</span>
+            </span>
+          )}
           {unread && (
             <span
               className={styles.resultDot}

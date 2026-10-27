@@ -601,7 +601,7 @@ export function AccountsPage() {
     <div className={accountStyles.page}>
       <PageHeader
         title="Accounts & API keys"
-        description="Manage subscription access, account routing, and saved model credentials."
+        description="Connect the accounts and API keys your models use."
       />
       <nav className={accountStyles.tabs} aria-label="Account settings">
         {[

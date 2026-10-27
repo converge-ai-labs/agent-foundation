@@ -47,7 +47,7 @@ export function ExecutionDefaultsFields({ source, onChange }: FieldsProps) {
   )?.ready;
   return (
     <>
-      <SettingsSection>
+      <SettingsSection variant="outlined">
         <SettingsRow
           label="Runtime"
           description="Direct runs on this host without downloading a runtime."
@@ -191,7 +191,7 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
   };
   return (
     <>
-      <SettingsSection>
+      <SettingsSection variant="outlined">
         <SettingsRow
           label="Runtime source"
           description="Managed downloads the exact release selected by the installed client."

@@ -147,14 +147,16 @@ export function CredentialKeys({
     keys.data?.some((key) => key.credential_ref === reference.trim());
   return (
     <section className={styles.section} aria-label="Saved API keys">
-      <header className={styles.heading}>
-        <div>
-          <h2>Saved API keys</h2>
-          <p>
-            Keys for Models and Devices, grouped by Model provider or Device
-            use. Key values stay on the server.
-          </p>
-        </div>
+      <p className={styles.help}>
+        Keys are stored on the server and can be reused by models and devices.
+      </p>
+      <div className={styles.listToolbar}>
+        <SearchField
+          label="Search API keys"
+          placeholder="Search keys, models or devices…"
+          value={filter}
+          onChange={setFilter}
+        />
         <Button
           onClick={() => {
             setReference("");
@@ -165,19 +167,13 @@ export function CredentialKeys({
         >
           <PlusIcon /> Add API key
         </Button>
-      </header>
+      </div>
       <ErrorNotice
         error={
           keys.error ||
           sources.error ||
           resources.find((resource) => resource.error)?.error
         }
-      />
-      <SearchField
-        label="Search API keys"
-        placeholder="Search keys, models or devices…"
-        value={filter}
-        onChange={setFilter}
       />
       {saved && <p role="status">{saved}</p>}
       {keys.isPending && <p role="status">Loading keys…</p>}

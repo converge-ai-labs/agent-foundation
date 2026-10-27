@@ -255,6 +255,99 @@ function UsageFreshness({ snapshot }: { snapshot: Schema<"UsageSnapshot"> }) {
   );
 }
 
+function SubscriptionAccountRow({
+  view,
+  children,
+  refreshing,
+  onRefresh,
+  onSignIn,
+  onEnable,
+  onVouchers,
+}: {
+  view: AccountView;
+  children: ReactNode;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onSignIn: () => void;
+  onEnable: () => void;
+  onVouchers?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { account, authentication } = view;
+  const usageAvailable = authentication.usable || !!view.usage.usage;
+  const allowance = compactAllowance(view.usage.usage);
+  const usage = view.usage.usage;
+  return (
+    <article className={styles.accountCard}>
+      <header className={styles.accountHeader}>
+        <div className={styles.identity}>
+          <strong>{account.name}</strong>
+          <span className={styles.accountMeta}>
+            <span
+              className={styles.status}
+              data-connected={account.enabled && authentication.usable}
+            >
+              {!account.enabled
+                ? "Paused"
+                : authentication.usable
+                  ? "Connected"
+                  : "Sign-in required"}
+            </span>
+            {usage && "plan_type" in usage && usage.plan_type !== "unknown" && (
+              <span className={styles.plan}>{usage.plan_type}</span>
+            )}
+          </span>
+        </div>
+        <div className={styles.cardActions}>
+          {usageAvailable && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Usage for ${account.name}`}
+              aria-expanded={expanded}
+              onClick={() => setExpanded(!expanded)}
+            >
+              <span className={styles.allowanceSummary}>
+                {allowance || "Usage"}
+              </span>
+              <CaretRightIcon
+                className={expanded ? styles.expanded : undefined}
+              />
+            </Button>
+          )}
+          {!account.enabled ? (
+            <Button variant="outline" size="sm" onClick={onEnable}>
+              Enable
+            </Button>
+          ) : !authentication.usable ? (
+            <Button variant="outline" size="sm" onClick={onSignIn}>
+              Sign in
+            </Button>
+          ) : null}
+          {children}
+        </div>
+      </header>
+      {expanded && usageAvailable && (
+        <div className={styles.usageDetails}>
+          <div className={styles.usageToolbar}>
+            <span>Usage & allowance</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={refreshing}
+              onClick={onRefresh}
+            >
+              <ArrowsClockwiseIcon />
+              Refresh
+            </Button>
+          </div>
+          <AccountUsage view={view} onVouchers={onVouchers} />
+        </div>
+      )}
+    </article>
+  );
+}
+
 export function SubscriptionAccounts({
   renderLogin,
   connections,
@@ -389,11 +482,12 @@ export function SubscriptionAccounts({
   );
   return (
     <section className={styles.section} aria-label="Subscription accounts">
-      <header className={styles.heading}>
-        <div>
-          <h2>Subscription accounts</h2>
-          <p>Allowance refreshes automatically, or on demand.</p>
-        </div>
+      <div className={styles.listToolbar}>
+        <SearchField
+          label="Search accounts"
+          value={filter}
+          onChange={setFilter}
+        />
         <Button
           onClick={() => {
             setName("");
@@ -405,7 +499,7 @@ export function SubscriptionAccounts({
           <PlusIcon aria-hidden="true" />
           Add account
         </Button>
-      </header>
+      </div>
       <ErrorNotice
         error={
           catalog.error ||
@@ -433,11 +527,6 @@ export function SubscriptionAccounts({
             </Button>
           </div>
         )}
-      <SearchField
-        label="Search accounts"
-        value={filter}
-        onChange={setFilter}
-      />
       {catalog.isPending && <p role="status">Loading accounts…</p>}
       <div className={styles.rows}>
         {(["codex", "grok"] as const).map((provider) => {
@@ -466,126 +555,92 @@ export function SubscriptionAccounts({
                   {providerAccounts.length === 1 ? "account" : "accounts"}
                 </span>
               </header>
-              <div className={styles.rows}>
+              <div className={styles.accountList}>
                 {providerAccounts.map((view) => {
-                  const { account, authentication } = view;
+                  const { account } = view;
                   return (
-                    <article key={account.id} className={styles.accountCard}>
-                      <header className={styles.accountHeader}>
-                        <div className={styles.accountIdentity}>
-                          <BrandIcon
-                            identity={
-                              account.provider === "codex" ? "openai" : "xai"
+                    <SubscriptionAccountRow
+                      key={account.id}
+                      view={view}
+                      refreshing={
+                        refresh.isPending && refresh.variables === account.id
+                      }
+                      onRefresh={() => refresh.mutate(account.id)}
+                      onSignIn={() => setLogin(account)}
+                      onEnable={() =>
+                        update.mutate({ id: account.id, enabled: true })
+                      }
+                      onVouchers={
+                        account.provider === "codex"
+                          ? () => setReset(account)
+                          : undefined
+                      }
+                    >
+                      <Menu>
+                        <MenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Manage account"
+                            />
+                          }
+                        >
+                          <DotsThreeIcon />
+                        </MenuTrigger>
+                        <MenuPopup align="end">
+                          <MenuItem onClick={() => setLogin(account)}>
+                            <KeyIcon />
+                            Sign-in & logout
+                          </MenuItem>
+                          <MenuItem
+                            onClick={() => {
+                              setName(account.name);
+                              setEditing(account);
+                            }}
+                          >
+                            <PencilSimpleIcon />
+                            Rename
+                          </MenuItem>
+                          <MenuItem
+                            disabled={update.isPending}
+                            onClick={() =>
+                              update.mutate({
+                                id: account.id,
+                                enabled: !account.enabled,
+                              })
                             }
-                            size={24}
-                          />
-                          <div className={styles.identity}>
-                            <div className={styles.accountName}>
-                              <strong>{account.name}</strong>
-                              {view.usage.usage &&
-                                "plan_type" in view.usage.usage &&
-                                view.usage.usage.plan_type !== "unknown" && (
-                                  <span className={styles.plan}>
-                                    {view.usage.usage.plan_type}
-                                  </span>
-                                )}
-                            </div>
-                            <span className={styles.accountMeta}>
-                              {account.provider === "codex" ? "Codex" : "Grok"}
-                              <span
-                                className={styles.status}
-                                data-connected={
-                                  account.enabled &&
-                                  authentication.availability === "available"
-                                }
-                              >
-                                {account.enabled
-                                  ? authentication.availability === "available"
-                                    ? "Connected"
-                                    : "Sign-in required"
-                                  : "Paused"}
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-                        <div className={styles.cardActions}>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label="Refresh"
-                            loading={
+                          >
+                            {account.enabled ? <PauseIcon /> : <PlayIcon />}
+                            {account.enabled ? "Pause" : "Enable"}
+                          </MenuItem>
+                          {account.provider === "codex" && (
+                            <MenuItem onClick={() => setReset(account)}>
+                              <TicketIcon />
+                              Reset voucher…
+                            </MenuItem>
+                          )}
+                          <MenuItem
+                            disabled={
                               refresh.isPending &&
                               refresh.variables === account.id
                             }
                             onClick={() => refresh.mutate(account.id)}
                           >
                             <ArrowsClockwiseIcon />
-                          </Button>
-                          <Menu>
-                            <MenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label="Manage account"
-                                />
-                              }
-                            >
-                              <DotsThreeIcon />
-                            </MenuTrigger>
-                            <MenuPopup align="end">
-                              <MenuItem onClick={() => setLogin(account)}>
-                                <KeyIcon />
-                                Sign-in & logout
-                              </MenuItem>
-                              <MenuItem
-                                onClick={() => {
-                                  setName(account.name);
-                                  setEditing(account);
-                                }}
-                              >
-                                <PencilSimpleIcon />
-                                Rename
-                              </MenuItem>
-                              <MenuItem
-                                disabled={update.isPending}
-                                onClick={() =>
-                                  update.mutate({
-                                    id: account.id,
-                                    enabled: !account.enabled,
-                                  })
-                                }
-                              >
-                                {account.enabled ? <PauseIcon /> : <PlayIcon />}
-                                {account.enabled ? "Pause" : "Enable"}
-                              </MenuItem>
-                              {account.provider === "codex" && (
-                                <MenuItem onClick={() => setReset(account)}>
-                                  <TicketIcon />
-                                  Reset voucher…
-                                </MenuItem>
-                              )}
-                              <MenuSeparator />
-                              <MenuItem
-                                variant="destructive"
-                                onClick={() => setDeleting(account)}
-                              >
-                                <TrashIcon />
-                                Delete…
-                              </MenuItem>
-                            </MenuPopup>
-                          </Menu>
-                        </div>
-                      </header>
-                      <AccountUsage
-                        view={view}
-                        onVouchers={
-                          account.provider === "codex"
-                            ? () => setReset(account)
-                            : undefined
-                        }
-                      />
-                    </article>
+                            Refresh usage
+                          </MenuItem>
+                          <MenuSeparator />
+                          <MenuItem
+                            variant="destructive"
+                            onClick={() => setDeleting(account)}
+                          >
+                            <TrashIcon />
+                            Delete…
+                          </MenuItem>
+                        </MenuPopup>
+                      </Menu>
+                    </SubscriptionAccountRow>
                   );
                 })}
               </div>
@@ -605,53 +660,57 @@ export function SubscriptionAccounts({
               aria-label={`${connection.label} accounts`}
             >
               <header className={styles.providerHeading}>
+                <BrandIcon
+                  identity={
+                    connection.provider === "copilot" ? "github" : "openai"
+                  }
+                  size={20}
+                />
                 <h3>{connection.label}</h3>
                 <span>1 account</span>
               </header>
-              <article className={styles.accountCard}>
-                <header className={styles.accountHeader}>
-                  <div className={styles.accountIdentity}>
-                    <BrandIcon
-                      identity={
-                        connection.provider === "copilot" ? "github" : "openai"
-                      }
-                      size={24}
-                    />
-                    <div className={styles.identity}>
-                      <strong>{connection.label}</strong>
-                      <span className={styles.accountMeta}>
-                        {status.account_id ?? "Server account"}
-                        <span
-                          className={styles.status}
-                          data-connected={status.usable}
-                        >
-                          {status.usable
-                            ? "Connected"
-                            : status.required_action === "refresh"
-                              ? "Refreshes on first use"
-                              : "Sign-in required"}
+              <div className={styles.accountList}>
+                <article className={styles.accountCard}>
+                  <header className={styles.accountHeader}>
+                    <div className={styles.accountIdentity}>
+                      <div className={styles.identity}>
+                        <strong>{status.account_id ?? "Server account"}</strong>
+                        <span className={styles.accountMeta}>
+                          <span
+                            className={styles.status}
+                            data-connected={status.usable}
+                          >
+                            {status.usable
+                              ? "Connected"
+                              : status.required_action === "refresh"
+                                ? "Refreshes on first use"
+                                : "Sign-in required"}
+                          </span>
                         </span>
-                      </span>
+                      </div>
                     </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setConnectionLogin(connection)}
-                  >
-                    Manage account
-                  </Button>
-                </header>
-                {connection.provider === "copilot" ? (
-                  <CopilotAllowance
-                    identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
-                    ready={
-                      status.usable || status.required_action === "refresh"
-                    }
-                  />
-                ) : (
-                  <ChatGPTAllowance />
-                )}
-              </article>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setConnectionLogin(connection)}
+                    >
+                      Manage account
+                    </Button>
+                  </header>
+                  <details className={styles.legacyUsage}>
+                    <summary>Usage & allowance</summary>
+                    {connection.provider === "copilot" ? (
+                      <CopilotAllowance
+                        identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
+                        ready={
+                          status.usable || status.required_action === "refresh"
+                        }
+                      />
+                    ) : (
+                      <ChatGPTAllowance />
+                    )}
+                  </details>
+                </article>
+              </div>
             </section>
           ))}
         {!catalog.isPending &&
@@ -809,19 +868,20 @@ export function AccountGroups() {
       {id && !catalog.isPending && !group && (
         <p role="status">Group not found.</p>
       )}
-      <header className={styles.heading}>
-        <div>
-          <h2>Account groups</h2>
-          <p>
-            Models select a same-provider group. Changes apply to the next Run.
-          </p>
-        </div>
+      <p className={styles.help}>
+        Pool accounts from the same provider and choose how models use them.
+      </p>
+      <div className={styles.listToolbar}>
+        <SearchField
+          label="Search groups"
+          value={filter}
+          onChange={setFilter}
+        />
         <Button onClick={() => setParams({ tab: "groups", group: "new" })}>
           <PlusIcon aria-hidden="true" />
           Add group
         </Button>
-      </header>
-      <SearchField label="Search groups" value={filter} onChange={setFilter} />
+      </div>
       <div className={styles.rows}>
         {catalog.data?.groups
           .filter((item) =>

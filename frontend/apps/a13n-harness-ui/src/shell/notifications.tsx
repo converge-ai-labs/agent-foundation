@@ -464,9 +464,13 @@ export function NotificationSettings({
           description="Task results and requests for your input on this browser."
         />
       )}
-      <SettingsSection>
+      <SettingsSection
+        variant="outlined"
+        title={embedded ? "Notifications" : undefined}
+      >
         <SettingsRow
           label="Enable browser notifications"
+          stackOnNarrow={false}
           controlId="desktop-notifications"
           description="Alerts from every chat in this browser. Previews may appear on your lock screen."
         >

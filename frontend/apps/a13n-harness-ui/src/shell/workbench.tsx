@@ -57,6 +57,7 @@ import {
   AgentsPage,
   EnvironmentsPage,
 } from "../configuration/settings";
+import { SettingsNavigation } from "../configuration/settings-navigation";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
 import { ErrorNotice, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
@@ -163,6 +164,16 @@ function WorkbenchContent({
   );
   const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
+  const settingsMode = /^\/(settings|setup)(\/|$)/.test(location.pathname);
+  const lastChat = useRef("/");
+  if (
+    !settingsMode &&
+    (location.pathname === "/" ||
+      location.pathname === "/new" ||
+      location.pathname.startsWith("/threads/"))
+  ) {
+    lastChat.current = `${location.pathname}${location.search}`;
+  }
   const selectedThreadId = useMatch("/threads/:threadId")?.params.threadId;
   const selectedThread = useThread(selectedThreadId ?? "");
   const memoryMode =
@@ -202,34 +213,40 @@ function WorkbenchContent({
   ];
   const navigation = (
     <>
-      {memoryMode && memoryEnabled ? (
-        <MemoryNavigation
-          projectId={
-            selectedThread.data?.thread.memory_scope
-              ? selectedThread.data.thread.configuration.project_id
-              : undefined
-          }
-        />
-      ) : (
-        <ConversationNavigation />
-      )}
-      {links.length > 0 && (
-        <nav aria-label="Workbench shortcuts" className={styles.supportingNav}>
-          {links.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/"}
-              className={({ isActive }) =>
-                isActive ? styles.activeNav : styles.navLink
-              }
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      )}
+      <div hidden={settingsMode} className={styles.navigationBody}>
+        {memoryMode && memoryEnabled ? (
+          <MemoryNavigation
+            projectId={
+              selectedThread.data?.thread.memory_scope
+                ? selectedThread.data.thread.configuration.project_id
+                : undefined
+            }
+          />
+        ) : (
+          <ConversationNavigation />
+        )}
+        {links.length > 0 && (
+          <nav
+            aria-label="Workbench shortcuts"
+            className={styles.supportingNav}
+          >
+            {links.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) =>
+                  isActive ? styles.activeNav : styles.navLink
+                }
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+        )}
+      </div>
+      {settingsMode && <SettingsNavigation backTo={lastChat.current} />}
       <div className={styles.sidebarFooter}>
         <Menu>
           <MenuTrigger

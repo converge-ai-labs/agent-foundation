@@ -1,5 +1,5 @@
 import { useContext, useState } from "react";
-import { Link, Outlet, useLocation, useSearchParams } from "react-router";
+import { Link, Outlet, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { SettingsRow, SettingsSection, Skeleton, Switch } from "a13n-ui";
 import { debugShortcutLabel, useDebug } from "../shell/debug";
@@ -28,93 +28,10 @@ import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
 import environmentStyles from "./environments-page.module.css";
 
-import {
-  SlidersHorizontal,
-  Robot,
-  Cpu,
-  Desktop,
-  Key,
-  PlugsConnected,
-  FileCode,
-} from "@phosphor-icons/react";
-
-const sections = [
-  { path: "/settings", label: "General", icon: SlidersHorizontal },
-  { path: "/settings/agents", label: "Agents", icon: Robot },
-  { path: "/settings/models", label: "Models", icon: Cpu },
-  { path: "/settings/environments", label: "Environments", icon: Desktop },
-  { path: "/settings/accounts", label: "Accounts & API keys", icon: Key },
-  { path: "/settings/connections", label: "Connections", icon: PlugsConnected },
-  { path: "/settings/resources", label: "Configuration files", icon: FileCode },
-];
 export function SettingsLayout() {
-  const location = useLocation();
-  const sources = useSources();
-  const drafts = useContext(DraftContext);
-  const path = new URLSearchParams(location.search).get("path") ?? "";
-  const source = sources.data?.sources.find(
-    (item) => item.relative_path === path,
-  );
-  const sourceKind =
-    source?.resource_kind ??
-    readDocument(drafts.get(path)?.content ?? "")?.get("kind");
-  const sourceSection =
-    sourceKind === "root"
-      ? "/settings"
-      : sourceKind === "project"
-        ? "/projects"
-        : sourceKind === "model"
-          ? "/settings/models"
-          : sourceKind === "agent"
-            ? "/settings/agents"
-            : sourceKind === "harness_plugin"
-              ? "/settings/connections"
-              : sourceKind === "environment_profile" ||
-                  sourceKind === "device" ||
-                  sourceKind === "environment_run_extension"
-                ? "/settings/environments"
-                : sourceKind === "mcp_server"
-                  ? "/settings/connections"
-                  : "/settings/resources";
   return (
-    <div className={styles.settings}>
-      <nav
-        className={`${styles.settingsNav} a13n-scrollbar`}
-        aria-label="Settings sections"
-      >
-        <h2>Settings</h2>
-        {location.pathname.startsWith("/projects") && (
-          <Link className={styles.activeNav} to="/projects" aria-current="page">
-            Projects
-          </Link>
-        )}
-        {sections.map(({ path, label, icon: Icon }) => {
-          const active =
-            location.pathname === "/settings/source"
-              ? sourceSection === path
-              : location.pathname === path ||
-                (path !== "/settings" &&
-                  location.pathname.startsWith(`${path}/`));
-          return (
-            <Link
-              key={path}
-              to={path}
-              aria-current={active ? "page" : undefined}
-              className={`${active ? styles.activeNav : styles.navLink} ${path === "/settings/resources" ? layout.utilityLink : ""}`}
-            >
-              <Icon
-                aria-hidden="true"
-                size={18}
-                weight={active ? "duotone" : "regular"}
-              />
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-      <div className={`${styles.settingsContent} a13n-scrollbar`}>
-        <Outlet />
-      </div>
+    <div className={`${styles.settingsContent} a13n-scrollbar`}>
+      <Outlet />
     </div>
   );
 }
@@ -122,9 +39,10 @@ export function SettingsLayout() {
 function DebugModeSetting() {
   const debug = useDebug();
   return (
-    <SettingsSection title="Developer">
+    <SettingsSection variant="outlined" title="Developer">
       <SettingsRow
         label="Debug mode"
+        stackOnNarrow={false}
         controlId="debug-mode"
         description={
           <>
@@ -145,7 +63,6 @@ function DebugModeSetting() {
 }
 
 export function GeneralSettings() {
-  const location = useLocation();
   const sources = useSources();
   const status = useStatus(5000);
   const memory = status.data?.app.memory_organization;
@@ -170,7 +87,7 @@ export function GeneralSettings() {
           <SourceDocument
             key={root.relative_path}
             path={root.relative_path}
-            title="General settings"
+            title="General"
             embedded
           />
         </div>
@@ -180,23 +97,16 @@ export function GeneralSettings() {
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
-      <details
-        id="notifications"
-        className={layout.disclosure}
-        open={location.hash === "#notifications" || undefined}
-      >
-        <summary>
-          Notifications<small>Task results and requests for your input</small>
-        </summary>
+      <section id="notifications">
         <NotificationSettings embedded />
-      </details>
+      </section>
       <div className={layout.formWidth}>
         <DebugModeSetting />
       </div>
       <details className={layout.disclosure}>
         <summary>Setup and diagnostics</summary>
         {memory && (
-          <SettingsSection title="Memory organization status">
+          <SettingsSection variant="plain" title="Memory organization status">
             <p role="status" className={styles.fieldGroup}>
               {(memory.active_scopes?.length ?? 0) > 0
                 ? `Organizing: ${memory.active_scopes?.join(", ")}`

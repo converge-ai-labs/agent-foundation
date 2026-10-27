@@ -15,7 +15,6 @@ import {
   Plus,
   Folder,
   CaretRight,
-  PencilSimple,
   DotsThree,
   DotsSixVertical,
   Gear,
@@ -94,7 +93,7 @@ export function ConversationNavigation() {
     <div className={styles.navigation}>
       <nav aria-label="Chat shortcuts" className={styles.shortcuts}>
         <NavLink to="/" end className={styles.newConversationLink}>
-          <PencilSimple size={18} />
+          <PencilSimpleIcon size={18} aria-hidden="true" />
           <span>New chat</span>
           <Plus size={14} />
         </NavLink>
@@ -403,7 +402,11 @@ function ProjectGroup({
             aria-expanded={expanded}
             onClick={() => toggle(!expanded)}
           >
-            <Folder className={styles.projectIcon} />
+            <Folder
+              size={18}
+              aria-hidden="true"
+              className={styles.projectIcon}
+            />
             <span>{group.name}</span>
             {unreadCount > 0 && (
               <small

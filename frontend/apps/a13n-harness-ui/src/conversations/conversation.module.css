@@ -211,7 +211,9 @@
 .groupActions {
   display: flex;
   flex-shrink: 0;
-  margin-inline-end: 28px;
+  position: absolute;
+  inset-inline-end: 28px;
+  top: 2px;
 }
 .groupToggle {
   display: flex;
@@ -220,7 +222,7 @@
   flex: 1;
   min-width: 0;
   min-height: 32px;
-  padding: 6px 8px;
+  padding: 6px 88px 6px 8px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -297,6 +299,15 @@
     visibility: hidden;
   }
 }
+@media (hover: hover) and (pointer: fine) {
+  .groupToggle {
+    padding-inline-end: 32px;
+  }
+  .groupHeading:is(:hover, :focus-within, :has([data-popup-open]))
+    .groupToggle {
+    padding-inline-end: 88px;
+  }
+}
 .groupThreads {
   margin-inline-start: 16px;
 }
@@ -319,7 +330,7 @@
 .threadRow {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   min-height: 32px;
   border-radius: 8px;
   transition: background-color 120ms ease-out;
@@ -424,7 +435,7 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   padding: 6px 8px;
   border-radius: 8px;
@@ -441,43 +452,25 @@
   outline: 1px solid var(--ring);
   outline-offset: -2px;
 }
-.threadIcon {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  color: var(--a13n-secondary);
-}
-.threadIcon > svg {
-  width: 18px;
-  height: 18px;
-}
+.threadStatus,
 .draftMarker {
-  position: absolute;
-  inset-inline-end: -3px;
-  bottom: -3px;
-  display: grid;
-  place-items: center;
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
-  background: var(--a13n-canvas);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 20px;
   color: var(--a13n-secondary);
 }
-.threadRow:has(.selected) .draftMarker {
-  background: var(--a13n-selected);
+.threadStatus > svg {
+  width: 16px;
+  height: 16px;
 }
 .threadLink > span {
   min-width: 0;
 }
 .threadLabel {
   flex: 1;
-}
-.threadLink .attentionState {
-  color: var(--a13n-text-supporting);
-  font-size: 12px;
 }
 .threadLink strong {
   display: block;
@@ -493,29 +486,20 @@
   margin-top: 2px;
 }
 .threadLink .coordinatorActivity {
-  position: relative;
-  line-height: 16px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.coordinatorActivity > span {
-  display: block;
+  flex-shrink: 0;
+  max-width: 90px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.coordinatorActivity > svg {
-  position: absolute;
-  inset-inline-start: -23px;
-  top: 2px;
-  width: 12px;
-  height: 12px;
+  margin: 0;
+  line-height: 20px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .resultDot {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
-  margin-top: 6px;
   border-radius: 50%;
   background: var(--info-foreground);
 }
@@ -1766,4 +1750,9 @@
     gap: 4px;
     padding-inline: 4px;
   }
+}
+
+.projectIcon {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
 }

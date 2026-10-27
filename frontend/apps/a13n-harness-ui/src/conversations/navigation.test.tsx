@@ -410,7 +410,7 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   expect(screen.queryByRole("button", { name: "Reorder One" })).toBeNull();
   if (!screen.queryByRole("searchbox"))
     fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close search" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
   expect(activity).toHaveLength(calls + 1);
@@ -677,9 +677,10 @@ it("scopes the search dialog without resetting the sidebar's loaded pages", asyn
   expect(activity).toHaveLength(calls + 1);
   await user.click(trigger);
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+  expect(screen.getByRole("combobox", { name: "Project scope" })).toBeTruthy();
   expect(
-    screen.getByRole("combobox", { name: "Project scope" }).textContent,
-  ).toContain("All projects");
+    screen.queryByRole("button", { name: "Clear project filter" }),
+  ).toBeNull();
   fireEvent.change(screen.getByRole("searchbox"), {
     target: { value: "match" },
   });
@@ -1779,16 +1780,14 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const owner = await screen.findByRole("link", { name: /owner.*Running/ });
-  const summary = within(owner)
-    .getByText("Running · 2 workers active")
-    .closest("small")!;
-  const spinner = summary.querySelector("svg");
+  const summary = within(owner).getByText("2 workers active").closest("small")!;
+  const spinner = within(owner).getByTitle("Running").querySelector("svg");
   await within(owner).findByRole("img", { name: "Draft · Unsent input" });
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for owner" }),
   );
   await screen.findByRole("link", { name: /worker-one/ });
-  expect(summary.textContent).toBe("Running · 2 workers active");
+  expect(summary.textContent).toBe("2 workers active");
 
   let release!: () => void;
   pauseActivity = new Promise<void>((resolve) => {
@@ -1805,8 +1804,10 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
       .getByRole("button", { name: "Collapse workers for owner" })
       .getAttribute("aria-expanded"),
   ).toBe("true");
-  expect(summary.textContent).toBe("Running · 2 workers active");
-  expect(summary.querySelector("svg")).toBe(spinner);
+  expect(summary.textContent).toBe("2 workers active");
+  expect(within(owner).getByTitle("Running").querySelector("svg")).toBe(
+    spinner,
+  );
   expect(screen.getByRole("link", { name: /owner.*Running/ })).toBe(owner);
 
   coordinators[0].root_activity.state = "inactive";

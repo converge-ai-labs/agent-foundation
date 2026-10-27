@@ -18,6 +18,7 @@ export function DeviceFields({
   if (text(["authentication", "kind"]) === "paired") {
     return (
       <SettingsSection
+        variant="outlined"
         title="Paired Device"
         description="This connection was approved on this host. The credential stays on the device and does not need to be entered here."
       >
@@ -32,6 +33,7 @@ export function DeviceFields({
   }
   return (
     <SettingsSection
+      variant="outlined"
       title="Device connection"
       description="Save the connection once; select working directories separately for Projects and chats."
     >

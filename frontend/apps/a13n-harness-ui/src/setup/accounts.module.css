@@ -138,6 +138,7 @@
   gap: 24px;
   margin-bottom: 0;
   overflow-x: auto;
+  scrollbar-width: none;
 }
 .tabs a {
   flex-shrink: 0;
@@ -159,4 +160,8 @@
   .tabs {
     gap: 16px;
   }
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }

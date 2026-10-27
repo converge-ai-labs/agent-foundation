@@ -120,8 +120,10 @@
 .page[hidden] {
   display: none;
 }
-/* Full-bleed workspaces (Memory) own their panes, edges and scrolling. */
+/* Full-bleed workspaces own their panes, edges and scrolling. */
 .center > .page.flushPage {
+  display: flex;
+  flex-direction: column;
   padding: 0;
   overflow: hidden;
   scrollbar-gutter: auto;
@@ -131,9 +133,7 @@
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  max-width: 1120px;
-  margin-inline: auto;
-  padding: 24px;
+  padding: 24px clamp(20px, 5vw, 64px) 40px;
 }
 /* The drawer keeps one 12px content inset on every row: header and tab
    controls sit 4px in so their ghost padding lands on the same line, and

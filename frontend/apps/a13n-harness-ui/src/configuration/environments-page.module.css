@@ -37,11 +37,6 @@
 }
 
 @media (max-width: 600px) {
-  .sectionHeader {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .profileLink > :first-child {
     flex-basis: 100%;
   }

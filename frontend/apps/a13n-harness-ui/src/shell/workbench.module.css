@@ -18,6 +18,15 @@
 .sidebarCollapsed {
   display: none;
 }
+.navigationBody {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.navigationBody[hidden] {
+  display: none;
+}
 .supportingNav {
   display: grid;
   gap: 2px;
@@ -203,22 +212,32 @@
   color: inherit;
 }
 .pageHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 16px;
 }
-/* Every title sits on a 32px row, so header actions center on it and page
-   content starts at the same offset whether or not a header has actions. */
+.pageHeader > div:first-child {
+  display: contents;
+}
 .pageHeader > div > :is(h1, h2) {
   display: flex;
   align-items: center;
+  grid-column: 1;
+  grid-row: 1;
   min-height: 32px;
-  margin-bottom: 4px;
+  margin: 0;
 }
 .pageHeader p {
+  grid-column: 1 / -1;
+  grid-row: 2;
   max-width: 660px;
   color: var(--a13n-secondary);
+}
+.pageHeader > .actions {
+  grid-column: 2;
+  grid-row: 1;
+  justify-content: flex-end;
 }
 .actions {
   display: flex;
@@ -329,8 +348,8 @@
 .resourceList {
   display: flex;
   flex-direction: column;
-  /* The same grey grouped list as Models and Accounts. */
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -351,8 +370,7 @@
   border-bottom: none;
 }
 a.resourceRow:hover {
-  /* Rows sit on the grey surface, so hover steps one shade further. */
-  background: var(--a13n-selected);
+  background: var(--a13n-hover);
 }
 .resourceRow > :first-child {
   flex: 1;
@@ -361,7 +379,7 @@ a.resourceRow:hover {
 .resourceRow small {
   color: var(--a13n-secondary);
   display: block;
-  font-size: 11px;
+  font-size: 12px;
 }
 .resourceRow strong {
   font-weight: 500;
@@ -506,35 +524,34 @@ a.resourceRow:hover {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-/* The one disclosure: a grey summary row with a chevron that turns on open. */
+/* Shared disclosure rows keep advanced controls close to their context. */
 .details {
   width: 100%;
 }
 .details > summary {
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12px;
+  align-items: center;
+  gap: 4px 16px;
+  min-height: 48px;
+  padding: 12px 0;
   list-style: none;
   cursor: pointer;
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: var(--a13n-surface);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 20px;
   user-select: none;
-  transition: background-color 120ms ease-out;
 }
 .details > summary::-webkit-details-marker {
   display: none;
 }
-/* Chevron disclosure marker: points right when closed, down when open. */
 .details > summary::before {
   content: "";
-  flex: 0 0 auto;
-  align-self: center;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-self: center;
   width: 6px;
   height: 6px;
-  margin-inline: 2px 12px;
   border-inline-end: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   color: var(--a13n-secondary);
@@ -545,7 +562,7 @@ a.resourceRow:hover {
   transform: rotate(45deg);
 }
 .details > summary:hover {
-  background: var(--a13n-hover);
+  color: var(--a13n-secondary);
 }
 @media (prefers-reduced-motion: reduce) {
   .details > summary,
@@ -563,10 +580,13 @@ a.resourceRow:hover {
   margin-bottom: 12px;
 }
 .details > summary small {
-  margin-left: 12px;
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: 12px;
   font-weight: 400;
+  line-height: 18px;
 }
 .details > :not(summary):not(:last-child) {
   margin-bottom: 12px;
@@ -694,10 +714,6 @@ a.resourceRow:hover {
   .cardGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .pageHeader {
-    flex-direction: column;
-    gap: 16px;
-  }
   .twoColumns {
     grid-template-columns: 1fr;
   }
@@ -753,39 +769,49 @@ a.resourceRow:hover {
   }
 }
 
-.settings {
+.settingsNavigation {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   min-width: 0;
-  gap: 32px;
+  gap: 4px;
+}
+.backToChats {
+  composes: row from "./navigation-row.module.css";
+  margin-bottom: 20px;
+  color: var(--a13n-secondary);
+}
+.settingsNavigationTitle {
+  padding: 0 8px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--a13n-secondary);
 }
 .settingsNav {
-  flex: 0 0 176px;
+  display: grid;
+  align-content: start;
+  gap: 2px;
   min-height: 0;
   overflow: auto;
 }
 .settingsNav .activeNav {
-  background: var(--a13n-surface);
+  background: var(--a13n-selected);
 }
 .settingControl {
   width: 280px;
   max-width: 100%;
 }
-.settingsNav h2 {
-  /* Same inset as the rows below, so the title starts on the icon column. */
-  padding: 0 8px;
-  margin-bottom: 16px;
-}
 .settingsContent {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 0 8px 24px 0;
+  padding: 32px clamp(20px, 5vw, 64px) 48px;
 }
 .settingsContent > * {
   flex-shrink: 0;
@@ -803,8 +829,7 @@ a.resourceRow:hover {
 .emptyList {
   margin: 0;
   padding: 20px 16px;
-  border: 1px dashed var(--a13n-border);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--a13n-secondary);
   font-size: 13px;
   line-height: 20px;
@@ -814,31 +839,11 @@ a.resourceRow:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-block: 20px;
+  padding-block: 8px;
 }
 .panelContent > button {
   align-self: flex-start;
 }
-@media (max-width: 1000px) {
-  .settings {
-    flex-direction: column;
-    gap: 20px;
-  }
-  .settingsNav {
-    display: flex;
-    flex: none;
-    gap: 4px;
-    overflow: auto;
-  }
-  .settingsNav h2 {
-    display: none;
-  }
-  .settingsNav a {
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-}
-
 .sourceDocument {
   display: flex;
   flex-direction: column;
@@ -848,9 +853,7 @@ a.resourceRow:hover {
   min-width: 0;
 }
 .sourceDocument > .pageHeader {
-  flex-direction: row;
   align-items: center;
-  gap: 16px;
 }
 .sourceDocument > .pageHeader > :first-child {
   min-width: 0;
@@ -892,7 +895,7 @@ a.resourceRow:hover {
 .configurationForm > .stack {
   gap: 24px;
 }
-/* Full-width fields inside a grouped card keep the 16px row rhythm. */
+/* Field groups use spacing to separate their controls. */
 .fieldGroup {
   padding-block: 16px;
 }
@@ -1020,4 +1023,15 @@ a.resourceRow:hover {
   border-radius: 6px;
   font-size: 11px;
   cursor: pointer;
+}
+
+.pageHeader > div > h1 {
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.configurationFields {
+  display: grid;
+  gap: 32px;
+  min-width: 0;
 }

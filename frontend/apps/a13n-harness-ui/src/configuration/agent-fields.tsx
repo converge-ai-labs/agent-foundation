@@ -139,6 +139,7 @@ export function AgentFields({
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
       <SettingsSection
+        variant="outlined"
         title={
           <span className={management.sectionTitle}>
             <Wrench aria-hidden="true" weight="duotone" />
@@ -254,6 +255,7 @@ export function AgentFields({
         {connections}
       </SettingsSection>
       <SettingsSection
+        variant="outlined"
         title={
           <span className={management.sectionTitle}>
             <TreeStructure aria-hidden="true" weight="duotone" />
