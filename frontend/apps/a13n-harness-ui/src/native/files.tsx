@@ -1,16 +1,28 @@
 import { useContext, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  ModalFrame,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuCheckboxItem,
+  MenuSeparator,
+  MenuGroup,
+  MenuGroupLabel,
+} from "a13n-ui";
 import {
   Folder,
   File,
   Link as LinkIcon,
   DotsThree,
   CaretRight,
+  Plus,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice, TextField, SearchField } from "../shell/ui";
 import { basename, joinPath, gitPath, FileBuffers, withinRoot } from "./buffer";
 import { useGitStatus } from "./changes";
 import styles from "./native.module.css";
@@ -92,44 +104,75 @@ export function Files({
       )}
       {directory && (
         <>
-          <div className={styles.actions}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setOperation({ kind: "new-file" })}
-            >
-              New file
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setOperation({ kind: "new-directory" })}
-            >
-              New folder
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setOperation({ kind: "upload" })}
-            >
-              Upload
-            </Button>
-            {git.feature && (
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={hideIgnored}
-                  onChange={(event) => setHideIgnored(event.target.checked)}
-                />
-                Hide Git-ignored entries
-              </label>
-            )}
+          <div className={styles.directoryToolbar}>
+            <SearchField
+              label="Filter loaded files in this directory"
+              placeholder="Filter files…"
+              value={filter}
+              onChange={setFilter}
+            />
+            <Menu>
+              <MenuTrigger
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Add file or folder"
+                  />
+                }
+              >
+                <Plus />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem onClick={() => setOperation({ kind: "new-file" })}>
+                  New file
+                </MenuItem>
+                <MenuItem
+                  onClick={() => setOperation({ kind: "new-directory" })}
+                >
+                  New folder
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem onClick={() => setOperation({ kind: "upload" })}>
+                  Upload files
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+            <Menu>
+              <MenuTrigger
+                render={
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Folder actions"
+                  />
+                }
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem onClick={() => copyPath(directory)}>
+                  Copy folder path
+                </MenuItem>
+                {openTerminal && (
+                  <MenuItem onClick={() => openTerminal(directory)}>
+                    Open terminal here
+                  </MenuItem>
+                )}
+                {git.feature && (
+                  <>
+                    <MenuSeparator />
+                    <MenuCheckboxItem
+                      checked={hideIgnored}
+                      onCheckedChange={setHideIgnored}
+                    >
+                      Hide Git-ignored entries
+                    </MenuCheckboxItem>
+                  </>
+                )}
+              </MenuPopup>
+            </Menu>
           </div>
-          <TextField
-            label="Filter loaded files in this directory"
-            value={filter}
-            onChange={setFilter}
-          />
           {listing.hasNextPage && (
             <small>
               Filtering loaded entries only. Load more files to include the rest
@@ -141,27 +184,6 @@ export function Files({
               Copy unavailable. Select the file path to copy it.
             </small>
           )}
-          <details className={styles.entryActions}>
-            <summary>Folder actions</summary>
-            <div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => copyPath(directory)}
-              >
-                Copy folder path
-              </Button>
-              {openTerminal && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => openTerminal(directory)}
-                >
-                  Open terminal here
-                </Button>
-              )}
-            </div>
-          </details>
           <ErrorNotice
             error={listing.error}
             retry={() =>
@@ -242,62 +264,65 @@ export function Files({
                         <CaretRight size={14} aria-hidden="true" />
                       )}
                     </button>
-                    <details className={styles.entryActions}>
-                      <summary
-                        aria-label={`Actions for ${basename(entry.path)}`}
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={`Actions for ${basename(entry.path)}`}
+                            className={styles.fileActions}
+                          />
+                        }
                       >
-                        <DotsThree size={20} />
-                      </summary>
-                      <div>
-                        <small>
-                          {entry.kind}
-                          {entry.link_target ? ` → ${entry.link_target}` : ""}
-                        </small>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => copyPath(entry.path)}
-                        >
-                          Copy path
-                        </Button>
-                        {openTerminal && entry.kind === "directory" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openTerminal(entry.path)}
-                          >
-                            Open terminal here
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setOperation({ kind: "move", entry })}
-                        >
-                          Rename or move
-                        </Button>
-                        {entry.kind === "file" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                        <DotsThree />
+                      </MenuTrigger>
+                      <MenuPopup align="end">
+                        <MenuGroup>
+                          {entry.kind === "symlink" && (
+                            <MenuGroupLabel>
+                              {entry.kind}
+                              {entry.link_target
+                                ? ` → ${entry.link_target}`
+                                : ""}
+                            </MenuGroupLabel>
+                          )}
+                          <MenuItem onClick={() => copyPath(entry.path)}>
+                            Copy path
+                          </MenuItem>
+                          {openTerminal && entry.kind === "directory" && (
+                            <MenuItem onClick={() => openTerminal(entry.path)}>
+                              Open terminal here
+                            </MenuItem>
+                          )}
+                          <MenuItem
                             onClick={() =>
-                              setOperation({ kind: "replace", entry })
+                              setOperation({ kind: "move", entry })
                             }
                           >
-                            Replace from upload
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setOperation({ kind: "delete", entry })
-                          }
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </details>
+                            Rename or move
+                          </MenuItem>
+                          {entry.kind === "file" && (
+                            <MenuItem
+                              onClick={() =>
+                                setOperation({ kind: "replace", entry })
+                              }
+                            >
+                              Replace from upload
+                            </MenuItem>
+                          )}
+                          <MenuSeparator />
+                          <MenuItem
+                            variant="destructive"
+                            onClick={() =>
+                              setOperation({ kind: "delete", entry })
+                            }
+                          >
+                            Delete
+                          </MenuItem>
+                        </MenuGroup>
+                      </MenuPopup>
+                    </Menu>
                   </div>
                 );
               })}

@@ -203,42 +203,40 @@ export function ResourceFields({
         </SettingsSection>
       )}
       {kind === "model" && (
-        <SettingsSection variant="outlined" title="General">
-          {field("Name", ["name"])}
-          <div className={styles.fieldGroup}>
-            <ModelFields
-              source={source}
-              onChange={onChange}
-              onReady={onReady}
-            />
-          </div>
-        </SettingsSection>
+        <ModelFields
+          source={source}
+          onChange={onChange}
+          onReady={onReady}
+          nameField={field("Name", ["name"])}
+        />
       )}
       {kind === "agent" && (
         <>
           <SettingsSection variant="outlined" title="General">
-            <div className={`${styles.fieldGroup} ${styles.stack}`}>
-              {field("Name", ["name"])}
-              <div className={management.modelPickerRow}>
-                <ResourceChoice
-                  label="Model"
-                  value={text(["model"])}
-                  loading={selectors.isPending || sources.isPending}
-                  onValueChange={(value) => set(["model"], value || undefined)}
-                  options={[{ value: "", label: "Not connected" }, ...models]}
-                />
-                <AddModelButton onSaved={(id) => set(["model"], id)} />
-              </div>
-              <FormField label="Additional instructions">
-                <Textarea
-                  value={text(["instructions"])}
-                  onChange={(event) =>
-                    set(["instructions"], event.target.value)
-                  }
-                  rows={7}
-                />
-              </FormField>
-            </div>
+            {field("Name", ["name"])}
+            <ResourceChoice
+              label="Model"
+              value={text(["model"])}
+              loading={selectors.isPending || sources.isPending}
+              onValueChange={(value) => set(["model"], value || undefined)}
+              options={[{ value: "", label: "Not connected" }, ...models]}
+              actions={
+                <AddModelButton compact onSaved={(id) => set(["model"], id)} />
+              }
+            />
+          </SettingsSection>
+          <SettingsSection
+            variant="plain"
+            title="Instructions"
+            description="Additional guidance for this agent, alongside its built-in instructions."
+          >
+            <Textarea
+              aria-label="Additional instructions"
+              value={text(["instructions"])}
+              onChange={(event) => set(["instructions"], event.target.value)}
+              rows={5}
+              className={management.instructions}
+            />
           </SettingsSection>
           <AgentFields
             source={source}

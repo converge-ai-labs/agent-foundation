@@ -11,13 +11,8 @@ import {
 } from "a13n-ui";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import {
-  EmptyList,
-  ErrorNotice,
-  PageHeader,
-  SearchField,
-  TextField,
-} from "../shell/ui";
+import { EmptyList, ErrorNotice, PageHeader, SearchField } from "../shell/ui";
+import { SettingsTextField as TextField } from "../shell/settings";
 import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
@@ -115,33 +110,37 @@ export function ModelsPage() {
       );
     },
   });
+  const filteredModels = (selectors.data?.models ?? []).filter((model) =>
+    `${model.name} ${model.route} ${model.model_id}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
   return (
-    <>
+    <div className={layout.collectionPage}>
       <PageHeader
         title="Models"
         description="Provider models your agents run on, with their credentials."
-        actions={
+      />
+      <div className={layout.collection}>
+        <div className={layout.toolbar}>
+          <SearchField
+            label="Search models"
+            value={search}
+            onChange={setSearch}
+          />
           <AddModelButton
             variant="default"
             onSaved={() => void queries.invalidateQueries()}
           />
-        }
-      />
-      <ErrorNotice
-        error={
-          selectors.error || sources.error || clone.error || setDefault.error
-        }
-      />
-      <SearchField label="Search models" value={search} onChange={setSearch} />
-      <DraftLinks kinds={["model"]} search={search} />
-      <div className={management.modelList}>
-        {(selectors.data?.models ?? [])
-          .filter((model) =>
-            `${model.name} ${model.route} ${model.model_id}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-          )
-          .map((model) => {
+        </div>
+        <ErrorNotice
+          error={
+            selectors.error || sources.error || clone.error || setDefault.error
+          }
+        />
+        <DraftLinks kinds={["model"]} search={search} />
+        <div className={management.modelList}>
+          {filteredModels.map((model) => {
             const source = sources.data?.sources.find(
               (item) =>
                 item.resource_kind === "model" &&
@@ -156,6 +155,7 @@ export function ModelsPage() {
                   <div className={management.resourceInfo}>
                     {source ? (
                       <Link
+                        className={management.modelLink}
                         to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
                       >
                         <strong>{model.name}</strong>
@@ -164,21 +164,6 @@ export function ModelsPage() {
                       <strong>{model.name}</strong>
                     )}
                     <small>{model.route}</small>
-                    <div className={management.resourceMeta}>
-                      {source?.content_available && (
-                        <ModelCredentialSummary path={source.relative_path} />
-                      )}
-                      <small className={management.metadata}>
-                        <span>
-                          {selectors.data?.agents
-                            .filter(
-                              (agent) => agent.model_id === model.model_id,
-                            )
-                            .map((agent) => agent.name)
-                            .join(", ") || "No agents using this model"}
-                        </span>
-                      </small>
-                    </div>
                     {mediaKinds.some(
                       (kind) =>
                         selectors.data?.media_understanding?.[kind] ===
@@ -197,6 +182,19 @@ export function ModelsPage() {
                       </small>
                     )}
                   </div>
+                </div>
+                <div className={management.resourceMeta}>
+                  {source?.content_available && (
+                    <ModelCredentialSummary path={source.relative_path} />
+                  )}
+                  <small className={management.metadata}>
+                    <span>
+                      {selectors.data?.agents
+                        .filter((agent) => agent.model_id === model.model_id)
+                        .map((agent) => agent.name)
+                        .join(", ") || "No agents using this model"}
+                    </span>
+                  </small>
                 </div>
                 {source && !source.writable && (
                   <span className={styles.tag}>Read only</span>
@@ -254,12 +252,16 @@ export function ModelsPage() {
               </div>
             );
           })}
+        </div>
+        {!!selectors.data?.models?.length && !filteredModels.length && (
+          <EmptyList>No matching models.</EmptyList>
+        )}
+        {selectors.data && !selectors.data.models?.length && (
+          <EmptyList>
+            No models yet. Add a subscription or API connection to get started.
+          </EmptyList>
+        )}
       </div>
-      {selectors.data && !selectors.data.models?.length && (
-        <EmptyList>
-          No models yet. Add a subscription or API connection to get started.
-        </EmptyList>
-      )}
       {root && (
         <details className={layout.disclosure}>
           <summary>
@@ -275,7 +277,7 @@ export function ModelsPage() {
           />
         </details>
       )}
-    </>
+    </div>
   );
 }
 
@@ -321,16 +323,24 @@ function ModelCredentialSummary({ path }: { path: string }) {
 export function AddModelButton({
   onSaved,
   variant = "outline",
+  compact = false,
 }: {
   onSaved: (id: string) => void;
   variant?: "default" | "outline";
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} onClick={() => setOpen(true)}>
+      <Button
+        variant={compact ? "ghost" : variant}
+        size={compact ? "icon-sm" : "default"}
+        aria-label="Add model"
+        title={compact ? "Add model" : undefined}
+        onClick={() => setOpen(true)}
+      >
         <Plus aria-hidden="true" />
-        Add model
+        {!compact && "Add model"}
       </Button>
       {open && (
         <AddModelDialog onClose={() => setOpen(false)} onSaved={onSaved} />
@@ -397,8 +407,10 @@ function AddModelDialog({
     >
       <div className={styles.stack}>
         <ErrorNotice error={save.error} />
-        <TextField label="Model name" value={name} onChange={setName} />
         <ModelEditor
+          nameField={
+            <TextField label="Model name" value={name} onChange={setName} />
+          }
           value={recipe}
           onChange={setRecipe}
           onRecipeReady={setRecipeReady}

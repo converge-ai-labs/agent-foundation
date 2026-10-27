@@ -199,6 +199,40 @@ function mount() {
   );
 }
 
+it.each([false, true])(
+  "keeps model overrides while navigating compact option pages (mobile: %s)",
+  async (onMobile) => {
+    mobile = onMobile;
+    const user = userEvent.setup();
+    mount();
+    await user.click(
+      screen.getByRole("button", { name: "Agent & Model settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Thinking" }));
+    await user.click(screen.getByRole("button", { name: "Low" }));
+    expect(draft.controls).toEqual({ thinking: "low" });
+    expect(
+      screen.getByRole("button", { name: "Thinking" }).textContent,
+    ).toContain("Low");
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Fast mode" }));
+    expect(draft.controls).toEqual({ thinking: "low", fast: true });
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Standard mode" }));
+    expect(draft.controls.fast).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Speed" }));
+    await user.click(screen.getByRole("button", { name: "Use model speed" }));
+    expect(draft.controls).toEqual({ thinking: "low", fast: null });
+    await user.click(
+      screen.getByRole("button", { name: "Close Agent & Model settings" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull(),
+    );
+    expect(draft.submission.kind).toBe("idle");
+  },
+);
+
 it("edits working folders in-place, cancels without applying, and locks pending selections", async () => {
   mobile = true;
   const user = userEvent.setup();

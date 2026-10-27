@@ -1,6 +1,7 @@
 import {
   SettingsChoice as ChoiceField,
   SettingsTextField as TextField,
+  SettingsSection,
 } from "../shell/settings";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
@@ -40,6 +41,7 @@ import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { EmptyList, ErrorNotice, SearchField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
+import layout from "../configuration/settings.module.css";
 import {
   ChatGPTAllowance,
   CopilotAllowance,
@@ -726,7 +728,7 @@ export function SubscriptionAccounts({
           )}
       </div>
       {!!catalog.data?.adoption && (
-        <details className={styles.migration}>
+        <details className={`${styles.migration} ${layout.disclosure}`}>
           <summary>Import existing CLI logins</summary>
           <p>
             Imported once on first startup. Original CLI files are unchanged;
@@ -875,11 +877,13 @@ export function AccountGroups() {
         Pool accounts from the same provider and choose how models use them.
       </p>
       <div className={styles.listToolbar}>
-        <SearchField
-          label="Search groups"
-          value={filter}
-          onChange={setFilter}
-        />
+        {!!catalog.data?.groups.length && (
+          <SearchField
+            label="Search groups"
+            value={filter}
+            onChange={setFilter}
+          />
+        )}
         <Button onClick={() => setParams({ tab: "groups", group: "new" })}>
           <PlusIcon aria-hidden="true" />
           Add group
@@ -933,7 +937,9 @@ export function AccountGroups() {
             </article>
           ))}
         {!catalog.isPending && !catalog.data?.groups.length && (
-          <EmptyList>No groups yet. Create one to combine accounts.</EmptyList>
+          <p className={layout.emptySection}>
+            No groups yet. Create one to combine accounts.
+          </p>
         )}
       </div>
     </section>
@@ -1195,7 +1201,7 @@ function GroupEditor({
       </header>
       <ErrorNotice error={sources.error || save.error || remove.error} />
       <fieldset className={styles.groupFields} disabled={!writable || busy}>
-        <div className={styles.form}>
+        <SettingsSection title="Details">
           <TextField
             label="Group name"
             value={draft.name}
@@ -1260,16 +1266,18 @@ function GroupEditor({
               scheduling; small overshoot is possible.
             </p>
           )}
-        </div>
-        <div className={styles.form}>
-          <h3>Accounts</h3>
-          <p className={styles.help}>
-            {draft.strategy === "weighted"
+        </SettingsSection>
+        <SettingsSection
+          title="Accounts"
+          description={
+            draft.strategy === "weighted"
               ? "Higher weights receive more Runs. The selected account stays in use while eligible."
-              : "Accounts are tried from top to bottom. Move your preferred account first."}
-          </p>
+              : "Accounts are tried from top to bottom. Move your preferred account first."
+          }
+        >
           <FormField
             className={styles.memberField}
+            hideLabel
             label={
               draft.strategy === "weighted"
                 ? "Members and weights"
@@ -1365,7 +1373,7 @@ function GroupEditor({
               updated first.
             </p>
           )}
-        </div>
+        </SettingsSection>
       </fieldset>
       <div className={styles.editorFooter}>
         <p className={styles.help}>

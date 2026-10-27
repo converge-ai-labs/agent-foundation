@@ -1,12 +1,13 @@
 import { SettingsChoice as ChoiceField } from "../shell/settings";
-import { SettingsSection } from "../shell/settings";
+import { SettingsSection, SettingsToggle } from "../shell/settings";
+import layout from "./settings.module.css";
 import type { ReactNode } from "react";
 import { ArrowCounterClockwise, Trash } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { Link } from "react-router";
 import { useRootConfiguration } from "./root-configuration";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Checkbox, FormField, Textarea } from "a13n-ui";
+import { Button, FormField, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { AgentNativeTools, nativeToolKind } from "./native-tools";
 import { useSelectors, useSources, useTransport } from "../transport/context";
@@ -122,110 +123,110 @@ export function AgentFields({
   return (
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
-      <SettingsSection
-        variant="outlined"
-        title={
-          <span className={management.sectionTitle}>Tools & capabilities</span>
-        }
-      >
-        <AgentNativeTools source={source} onChange={onChange} />
-        <div className={`${styles.stack} ${styles.fieldGroup}`}>
-          <h4 className={management.subsectionTitle}>Tasks & notes</h4>
-          <div className={management.checkboxRow}>
-            <label className={management.check}>
-              <Checkbox
-                checked={working.tasks_enabled ?? true}
-                onCheckedChange={(checked) =>
-                  setWorking("tasks_enabled", checked)
-                }
-              />
-              Tasks
-            </label>
-            <label className={management.check}>
-              <Checkbox
-                checked={working.notes_enabled ?? true}
-                onCheckedChange={(checked) =>
-                  setWorking("notes_enabled", checked)
-                }
-              />
-              Notes
-            </label>
+      <SettingsSection title="Tools & capabilities">
+        <SettingsToggle
+          label="Tasks"
+          description="Track the work this agent plans and completes."
+          checked={working.tasks_enabled ?? true}
+          onCheckedChange={(checked) => setWorking("tasks_enabled", checked)}
+        />
+        <SettingsToggle
+          label="Notes"
+          description="Keep working notes during a conversation."
+          checked={working.notes_enabled ?? true}
+          onCheckedChange={(checked) => setWorking("notes_enabled", checked)}
+        />
+        <details className={layout.groupDisclosure}>
+          <summary>
+            <span>Model-native tools</span>
+            <small>Tools provided by the selected model</small>
+          </summary>
+          <div>
+            <AgentNativeTools source={source} onChange={onChange} />
           </div>
-          <h4 className={management.subsectionTitle}>Capabilities</h4>
-          {capabilities.map(
-            (item, index) =>
-              !nativeToolKind(item) &&
-              item.capability !== "working_state" && (
-                <div className={management.capability} key={index}>
-                  <div className={management.capabilityHeader}>
-                    <span className={management.inlineLabel}>
-                      {item.capability.replaceAll("_", " ")}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      aria-label={`${["file_context", "user_interaction", "codeact"].includes(item.capability) ? "Reset capability" : "Remove capability"} ${item.capability}`}
-                      onClick={() => remove("capabilities", index)}
-                    >
-                      {["file_context", "user_interaction", "codeact"].includes(
-                        item.capability,
-                      ) ? (
-                        <ArrowCounterClockwise aria-hidden="true" />
-                      ) : (
-                        <Trash aria-hidden="true" />
-                      )}
-                      {["file_context", "user_interaction", "codeact"].includes(
-                        item.capability,
-                      )
-                        ? "Reset to default"
-                        : "Remove"}
-                    </Button>
+        </details>
+        <details className={layout.groupDisclosure}>
+          <summary>
+            <span>Capabilities</span>
+            <small>
+              Add skills, web access and other installed capabilities
+            </small>
+          </summary>
+          <div className={management.capabilities}>
+            {capabilities.map(
+              (item, index) =>
+                !nativeToolKind(item) &&
+                item.capability !== "working_state" && (
+                  <div className={management.capability} key={index}>
+                    <div className={management.capabilityHeader}>
+                      <span className={management.inlineLabel}>
+                        {item.capability.replaceAll("_", " ")}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        aria-label={`${["file_context", "user_interaction", "codeact"].includes(item.capability) ? "Reset capability" : "Remove capability"} ${item.capability}`}
+                        onClick={() => remove("capabilities", index)}
+                      >
+                        {[
+                          "file_context",
+                          "user_interaction",
+                          "codeact",
+                        ].includes(item.capability) ? (
+                          <ArrowCounterClockwise aria-hidden="true" />
+                        ) : (
+                          <Trash aria-hidden="true" />
+                        )}
+                        {[
+                          "file_context",
+                          "user_interaction",
+                          "codeact",
+                        ].includes(item.capability)
+                          ? "Reset to default"
+                          : "Remove"}
+                      </Button>
+                    </div>
+                    <CapabilityOptions
+                      source={source}
+                      index={index}
+                      onChange={onChange}
+                    />
                   </div>
-                  <CapabilityOptions
-                    source={source}
-                    index={index}
-                    onChange={onChange}
-                  />
-                </div>
-              ),
-          )}
-          <ResourceChoice
-            loading={catalog.isPending}
-            label="Add capability"
-            value=""
-            onValueChange={(capability) => {
-              if (capability)
-                add("capabilities", { capability, configuration: {} });
-            }}
-            options={[
-              { value: "", label: "Choose an installed capability" },
-              ...(catalog.data ?? [])
-                .filter(
-                  (item) =>
-                    item.kind === "capability" &&
-                    item.configurable &&
-                    ![
-                      "NativeTool",
-                      "native_image_generation",
-                      "working_state",
-                    ].includes(item.key) &&
-                    !capabilities.some(
-                      (selected) => selected.capability === item.key,
-                    ),
-                )
-                .map((item) => ({ value: item.key, label: item.key })),
-            ]}
-          />
-          <small>
-            Additional capability options are available in Advanced
-            configuration.
-          </small>
-        </div>
-        {connections}
+                ),
+            )}
+            <ResourceChoice
+              loading={catalog.isPending}
+              label="Add capability"
+              value=""
+              onValueChange={(capability) => {
+                if (capability)
+                  add("capabilities", { capability, configuration: {} });
+              }}
+              options={[
+                { value: "", label: "Choose capability" },
+                ...(catalog.data ?? [])
+                  .filter(
+                    (item) =>
+                      item.kind === "capability" &&
+                      item.configurable &&
+                      ![
+                        "NativeTool",
+                        "native_image_generation",
+                        "working_state",
+                      ].includes(item.key) &&
+                      !capabilities.some(
+                        (selected) => selected.capability === item.key,
+                      ),
+                  )
+                  .map((item) => ({ value: item.key, label: item.key })),
+              ]}
+            />
+          </div>
+        </details>
       </SettingsSection>
-      <SettingsSection
-        variant="outlined"
-        title={<span className={management.sectionTitle}>Delegation</span>}
-      >
+      {connections && (
+        <SettingsSection title="Connections">{connections}</SettingsSection>
+      )}
+      <SettingsSection variant="outlined" title="Delegation">
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
           {children.map((item, index) => (
             <div className={management.capabilityHeader} key={index}>
@@ -262,7 +263,7 @@ export function AgentFields({
             options={[
               {
                 value: "",
-                label: "Choose a configured Agent or Markdown subagent",
+                label: "Choose subagent",
               },
               ...(sources.data?.sources ?? [])
                 .filter(
@@ -306,13 +307,13 @@ export function AgentFields({
           <ErrorNotice error={root.error} />
         </div>
       </SettingsSection>
-      <details className={styles.details}>
-        <summary>
-          <span className={management.inlineLabel}>Tool restrictions</span>
-        </summary>
-        <div className={styles.stack}>
-          <label className={management.check}>
-            <Checkbox
+      <SettingsSection title="Advanced tools">
+        <details className={layout.groupDisclosure}>
+          <summary>Tool restrictions</summary>
+          <div className={styles.stack}>
+            <SettingsToggle
+              label="Restrict tool names"
+              description="Allow only the optional tools named below."
               checked={Array.isArray(raw.tools)}
               onCheckedChange={(checked) =>
                 onChange(
@@ -320,65 +321,66 @@ export function AgentFields({
                 )
               }
             />
-            Restrict tool names
-          </label>
-          {Array.isArray(raw.tools) && (
-            <FormField
-              label="Allowed tool names"
-              description="One exact name per line. An empty list removes optional tools; required infrastructure remains available."
-            >
-              <Textarea
-                rows={3}
-                onBlur={(event) =>
-                  onChange(
-                    updateDocument(
-                      source,
-                      ["tools"],
-                      event.target.value.split("\n").filter(Boolean),
-                    ),
-                  )
-                }
-                value={raw.tools.join("\n")}
-                onChange={(event) =>
-                  onChange(
-                    updateDocument(
-                      source,
-                      ["tools"],
-                      event.target.value ? event.target.value.split("\n") : [],
-                    ),
-                  )
-                }
-              />
-            </FormField>
-          )}
-        </div>
-      </details>
-      <details className={styles.details}>
-        <summary>
-          <span className={management.inlineLabel}>Saved tool groups</span>
-        </summary>
-        <p>
-          Saved configuration, not unsaved edits. Edit groups in Advanced
-          configuration.
-        </p>
-        {!accepted ? (
-          <p>Save this agent to inspect its tool groups.</p>
-        ) : proxy.isPending ? (
-          <p>Loading composition…</p>
-        ) : (
-          <>
-            {!proxy.data?.sources.length && (
-              <p>No configured plugin or MCP sources.</p>
+            {Array.isArray(raw.tools) && (
+              <FormField
+                label="Allowed tool names"
+                description="One exact name per line. An empty list removes optional tools; required infrastructure remains available."
+              >
+                <Textarea
+                  rows={3}
+                  onBlur={(event) =>
+                    onChange(
+                      updateDocument(
+                        source,
+                        ["tools"],
+                        event.target.value.split("\n").filter(Boolean),
+                      ),
+                    )
+                  }
+                  value={raw.tools.join("\n")}
+                  onChange={(event) =>
+                    onChange(
+                      updateDocument(
+                        source,
+                        ["tools"],
+                        event.target.value
+                          ? event.target.value.split("\n")
+                          : [],
+                      ),
+                    )
+                  }
+                />
+              </FormField>
             )}
-            {proxy.data?.sources.map((item) => (
-              <p key={item.resource_id}>
-                <span>{item.name}</span> · {item.presentation}
-                {item.group ? ` · ${item.group}` : ""}
-              </p>
-            ))}
-          </>
-        )}
-      </details>
+          </div>
+        </details>
+        <details className={layout.groupDisclosure}>
+          <summary>Saved tool groups</summary>
+          <div className={styles.stack}>
+            <p>
+              Saved configuration, not unsaved edits. Edit groups in Advanced
+              configuration.
+            </p>
+            {!accepted ? (
+              <p>Save this agent to inspect its tool groups.</p>
+            ) : proxy.isPending ? (
+              <p>Loading composition…</p>
+            ) : (
+              <>
+                {!proxy.data?.sources.length && (
+                  <p>No configured plugin or MCP sources.</p>
+                )}
+                {proxy.data?.sources.map((item) => (
+                  <p key={item.resource_id}>
+                    <span>{item.name}</span> · {item.presentation}
+                    {item.group ? ` · ${item.group}` : ""}
+                  </p>
+                ))}
+              </>
+            )}
+          </div>
+        </details>
+      </SettingsSection>
     </>
   );
 }
@@ -438,22 +440,16 @@ function CapabilityOptions({
             ]}
             onValueChange={(mode) => set(["search", "mode"], mode)}
           />
-          <label className={management.check}>
-            <Checkbox
-              checked={config.fetch?.enabled ?? true}
-              onCheckedChange={(checked) => set(["fetch", "enabled"], checked)}
-            />
-            Fetch web resources
-          </label>
-          <label className={management.check}>
-            <Checkbox
-              checked={config.download?.enabled ?? true}
-              onCheckedChange={(checked) =>
-                set(["download", "enabled"], checked)
-              }
-            />
-            Download files
-          </label>
+          <SettingsToggle
+            label="Fetch web resources"
+            checked={config.fetch?.enabled ?? true}
+            onCheckedChange={(checked) => set(["fetch", "enabled"], checked)}
+          />
+          <SettingsToggle
+            label="Download files"
+            checked={config.download?.enabled ?? true}
+            onCheckedChange={(checked) => set(["download", "enabled"], checked)}
+          />
         </div>
       </details>
     );

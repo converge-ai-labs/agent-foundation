@@ -2,6 +2,7 @@ import { useId, type ComponentProps } from "react";
 import {
   ChoiceField,
   Input,
+  Switch,
   SettingsRow as SharedSettingsRow,
   SettingsSection as SharedSettingsSection,
 } from "a13n-ui";
@@ -89,6 +90,26 @@ export function SettingsTextField({
         type={type}
         disabled={disabled}
         autoComplete="off"
+        aria-describedby={description ? `${id}-description` : undefined}
+      />
+    </SettingsRow>
+  );
+}
+
+export function SettingsToggle({
+  label,
+  description,
+  ...props
+}: Omit<ComponentProps<typeof Switch>, "id"> & {
+  label: string;
+  description?: string;
+}) {
+  const id = useId();
+  return (
+    <SettingsRow label={label} description={description} controlId={id}>
+      <Switch
+        {...props}
+        id={id}
         aria-describedby={description ? `${id}-description` : undefined}
       />
     </SettingsRow>

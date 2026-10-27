@@ -228,7 +228,7 @@ it.each([false, true])(
       : original;
     mount(initial);
     const user = userEvent.setup();
-    await user.click(await screen.findByText("Model defaults"));
+    await screen.findByRole("heading", { name: "Model defaults" });
     await user.click(
       await screen.findByRole("combobox", { name: "Context budget" }),
     );
@@ -251,7 +251,7 @@ it.each([false, true])(
 it("provider defaults remove preset-owned fields without removing custom native settings", async () => {
   mount();
   const user = userEvent.setup();
-  await user.click(await screen.findByText("Model defaults"));
+  await screen.findByRole("heading", { name: "Model defaults" });
   const preset = await screen.findByRole("combobox", {
     name: "Settings preset",
   });
@@ -319,7 +319,7 @@ it("edits the permanent reasoning mode without clobbering effort, and removes on
       "  thinking: high\n  openai_reasoning_mode: pro\n  openai_reasoning_summary: detailed",
     ),
   );
-  await user.click(await screen.findByText("Model defaults"));
+  await screen.findByRole("heading", { name: "Model defaults" });
   await user.click(
     await screen.findByRole("combobox", { name: "Reasoning mode" }),
   );

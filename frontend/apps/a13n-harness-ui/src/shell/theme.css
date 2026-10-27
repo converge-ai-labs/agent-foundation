@@ -1,0 +1,111 @@
+/* Harness is a reading workspace. Chrome stays quiet beside full-size prose. */
+:root {
+  color-scheme: light;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --a13n-text-body: 16px;
+  --background: #fcfcfb;
+  --foreground: #252522;
+  --card: #ffffff;
+  --card-foreground: #252522;
+  --muted: #f3f3f1;
+  --muted-foreground: #74746f;
+  --popover: #ffffff;
+  --popover-foreground: #252522;
+  --border: rgb(37 37 34 / 7%);
+  --input: rgb(37 37 34 / 13%);
+  --accent: rgb(37 37 34 / 4.5%);
+  --accent-foreground: #252522;
+  --primary: #30302d;
+  --primary-foreground: #ffffff;
+  --sidebar: #f3f3f1;
+  --a13n-selected: rgb(37 37 34 / 7%);
+}
+
+:root.dark {
+  color-scheme: dark;
+  --background: #1b1b19;
+  --foreground: #eeeeea;
+  --card: #242421;
+  --card-foreground: #eeeeea;
+  --muted: #242421;
+  --muted-foreground: #a3a39b;
+  --popover: #292926;
+  --popover-foreground: #eeeeea;
+  --border: rgb(238 238 234 / 8%);
+  --input: rgb(238 238 234 / 15%);
+  --accent: rgb(238 238 234 / 6%);
+  --accent-foreground: #eeeeea;
+  --primary: #eeeeea;
+  --primary-foreground: #252522;
+  --sidebar: #161614;
+  --a13n-selected: rgb(238 238 234 / 8%);
+}
+
+[data-slot="menu-popup"],
+[data-slot="popover-popup"],
+[data-slot="select-popup"],
+[data-slot="combobox-popup"] {
+  max-width: calc(100vw - 24px);
+  border-radius: 12px;
+}
+
+[data-slot="button"],
+[data-slot="select-trigger"],
+[data-slot="combobox-trigger"],
+[data-slot="input-control"],
+[data-slot="select-button"],
+[data-slot="toggle"] {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-slot="combobox-positioner"] > span {
+  width: max(var(--anchor-width), 300px);
+  min-width: min(300px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  border-radius: 12px;
+}
+
+[data-slot="menu-item"],
+[data-slot="menu-link-item"],
+[data-slot="menu-checkbox-item"],
+[data-slot="menu-radio-item"],
+[data-slot="menu-sub-trigger"] {
+  min-height: 34px;
+  padding-block: 6px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-slot="select-item"],
+[data-slot="combobox-item"] {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (max-width: 639px) {
+  [data-slot="input"],
+  [data-slot="textarea"] {
+    font-size: 16px;
+  }
+  [data-slot="menu-item"],
+  [data-slot="menu-link-item"],
+  [data-slot="menu-checkbox-item"],
+  [data-slot="menu-radio-item"],
+  [data-slot="menu-sub-trigger"],
+  [data-slot="select-item"],
+  [data-slot="combobox-item"] {
+    min-height: 44px;
+  }
+}
+
+@media (pointer: coarse) {
+  [data-slot="menu-item"],
+  [data-slot="menu-link-item"],
+  [data-slot="menu-checkbox-item"],
+  [data-slot="menu-radio-item"],
+  [data-slot="menu-sub-trigger"] {
+    min-height: 44px;
+  }
+}

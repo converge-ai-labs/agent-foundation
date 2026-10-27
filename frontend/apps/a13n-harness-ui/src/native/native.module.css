@@ -55,6 +55,15 @@
   align-items: center;
   gap: 12px;
 }
+@media (min-width: 768px) {
+  .settingsToolbar .workspaceHeading {
+    visibility: hidden;
+  }
+  .settingsToolbar {
+    height: 48px;
+    min-height: 48px;
+  }
+}
 .projectBreadcrumb {
   flex-shrink: 1;
   max-width: 180px;
@@ -337,11 +346,15 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.fileToolbar > .actions {
+  margin-left: auto;
+}
 .viewControls {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
+  order: -1;
+  margin-right: auto;
 }
 .check {
   display: flex;
@@ -353,10 +366,21 @@
 .fileList {
   min-height: 48px;
 }
+.directoryToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.directoryToolbar > [data-slot="input-control"] {
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+  margin-right: 4px;
+}
 .fileRow {
   display: flex;
   align-items: center;
-  border-radius: 5px;
+  border-radius: 7px;
 }
 .fileLink,
 .changeRow {
@@ -367,8 +391,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 34px;
   padding: 7px 8px;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 20px;
   min-width: 0;
   width: 100%;
   text-align: left;
@@ -386,34 +412,17 @@
 .fileLink small,
 .changeRow small {
   flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.fileActions {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
 }
 .fileRow:hover,
 .changeRow:hover,
 .selected {
   background: var(--a13n-surface);
-}
-.entryActions {
-  flex-shrink: 0;
-  position: relative;
-  font-size: 12px;
-}
-.entryActions summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 5px;
-}
-.entryActions[open] > div {
-  position: absolute;
-  z-index: 5;
-  width: 170px;
-  right: 0;
-  padding: 8px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 6px;
-  background: var(--a13n-canvas);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
 }
 .file {
   flex: 1;
@@ -440,29 +449,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fileHeader > button,
-.fileMeta {
+.fileHeader > button {
   margin-left: auto;
   flex-shrink: 0;
-}
-.fileMeta,
-.unsaved {
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.unsaved {
-  flex-shrink: 0;
-}
-.unsaved::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  vertical-align: 1px;
 }
 .fileFooter {
   display: flex;
@@ -512,7 +501,7 @@
 .notice details,
 .metadata,
 .repo details {
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 .metadata p {

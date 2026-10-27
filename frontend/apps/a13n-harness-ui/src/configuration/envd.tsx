@@ -135,111 +135,116 @@ export function EnvdRuntime() {
           : "Preparing runtime and checking readiness…";
   return (
     <>
-      <SettingsSection
-        variant="outlined"
-        title="Local runtime"
-        description={state?.host ?? "Loading host…"}
-      >
-        <SettingsRow
-          label="envd"
-          description={
-            state?.source === "custom"
-              ? "Custom executable · managed on this host"
-              : `Managed by Harness UI · ${state?.required_version ?? "loading version…"}`
-          }
+      <div className={layout.statusBlock}>
+        <SettingsSection
+          variant="outlined"
+          title="Local runtime"
+          description={state?.host ?? "Loading host…"}
         >
-          <StatusPill variant={state?.running_devices ? "success" : "neutral"}>
-            {!state
-              ? "Loading…"
-              : state.running_devices
-                ? `${state.running_devices} running`
-                : state.installed
-                  ? "Installed · stopped"
-                  : updateAvailable
-                    ? "Update required"
-                    : "Not installed"}
-          </StatusPill>
-        </SettingsRow>
-        <div className={layout.actions}>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={blocked}
-            onClick={() => action.mutate("execution")}
+          <SettingsRow
+            label="envd"
+            description={
+              state?.source === "custom"
+                ? "Custom executable · managed on this host"
+                : `Managed by Harness UI · ${state?.required_version ?? "loading version…"}`
+            }
           >
-            {action.isPending && action.variables === "execution"
-              ? "Preparing…"
-              : state?.running_devices
-                ? "Check"
-                : state?.installed
-                  ? "Start"
-                  : updateAvailable
-                    ? "Update & start"
-                    : "Install & start"}
-          </Button>
-          {!!state?.instances?.length && (
-            <>
+            <div className={layout.controls}>
+              <StatusPill
+                variant={state?.running_devices ? "success" : "neutral"}
+              >
+                {!state
+                  ? "Loading…"
+                  : state.running_devices
+                    ? `${state.running_devices} running`
+                    : state.installed
+                      ? "Installed · stopped"
+                      : updateAvailable
+                        ? "Update required"
+                        : "Not installed"}
+              </StatusPill>
+
               <Button
                 size="sm"
                 variant="outline"
                 disabled={blocked}
-                onClick={() => setConfirmation("restart")}
+                onClick={() => action.mutate("execution")}
               >
-                Restart
+                {action.isPending && action.variables === "execution"
+                  ? "Preparing…"
+                  : state?.running_devices
+                    ? "Check"
+                    : state?.installed
+                      ? "Start"
+                      : updateAvailable
+                        ? "Update & start"
+                        : "Install & start"}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => setConfirmation("stop")}
-              >
-                Stop
-              </Button>
-            </>
-          )}
-          {action.isPending && action.variables !== "stop" && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => controller.current?.abort()}
-            >
-              Cancel preparation
-            </Button>
-          )}
-        </div>
-      </SettingsSection>
-      {!state?.installed && state && (
-        <p className={layout.hint}>
-          {updateAvailable
-            ? `Update envd to ${state.required_version} for this Harness UI version.`
-            : "Install envd to check Full Control and Sandbox automatically."}
-        </p>
-      )}
-      {busy && (
-        <p role="status" className={layout.hint}>
-          {progress}
-          {action.variables === "desktop" &&
-            " Approve the permission prompt on the host; this can take up to two minutes."}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className={layout.hint}>
-          {notice}
-        </p>
-      )}
-      <ErrorNotice
-        error={runtime.error || action.error || state?.error}
-        retry={() => void runtime.refetch()}
-      />
-      {state?.restart_required && (
-        <div role="status" className={styles.notice}>
-          <strong>Restart Harness UI to apply saved configuration</strong>
-          <p>
-            Restart the server with the same launch command to load these
-            settings.
+              {!!state?.instances?.length && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={blocked}
+                    onClick={() => setConfirmation("restart")}
+                  >
+                    Restart
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setConfirmation("stop")}
+                  >
+                    Stop
+                  </Button>
+                </>
+              )}
+              {action.isPending && action.variables !== "stop" && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => controller.current?.abort()}
+                >
+                  Cancel preparation
+                </Button>
+              )}
+            </div>
+          </SettingsRow>
+        </SettingsSection>
+        {!state?.installed && state && (
+          <p className={layout.hint}>
+            {updateAvailable
+              ? `Update envd to ${state.required_version} for this Harness UI version.`
+              : "Install envd to check Full Control and Sandbox automatically."}
           </p>
-        </div>
-      )}
+        )}
+        {busy && (
+          <p role="status" className={layout.hint}>
+            {progress}
+            {action.variables === "desktop" &&
+              " Approve the permission prompt on the host; this can take up to two minutes."}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className={layout.hint}>
+            {notice}
+          </p>
+        )}
+        <ErrorNotice
+          error={runtime.error || action.error || state?.error}
+          retry={() => void runtime.refetch()}
+        />
+        {state?.restart_required && (
+          <div role="status" className={styles.notice}>
+            <strong>Restart Harness UI to apply saved configuration</strong>
+            <p>
+              Restart the server with the same launch command to load these
+              settings.
+            </p>
+          </div>
+        )}
+      </div>
       <SettingsSection
         variant="outlined"
         title="Capabilities"

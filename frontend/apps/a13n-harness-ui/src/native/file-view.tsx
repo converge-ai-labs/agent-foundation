@@ -4,10 +4,8 @@ import { Button } from "a13n-ui";
 import {
   ArrowClockwise,
   DownloadSimple,
-  Eye,
   FloppyDisk,
   TextAlignLeft,
-  TextT,
 } from "@phosphor-icons/react";
 import { ApiError, result } from "../transport/client";
 import { useTransport } from "../transport/context";
@@ -183,14 +181,6 @@ export function FileView({
   };
   return (
     <section className={styles.file} aria-label="File content">
-      <header className={styles.fileHeader}>
-        <strong title={path}>{basename(path)}</strong>
-        {buffer.dirty && <span className={styles.unsaved}>Unsaved</span>}
-        <span className={styles.fileMeta}>
-          {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
-          {media ?? (buffer.base.presentation ?? "binary").replace("_", " ")}
-        </span>
-      </header>
       {symlink && (
         <div className={styles.notice}>
           Resolved target: {buffer.base.resolved_path}. This path is read-only;
@@ -206,7 +196,7 @@ export function FileView({
       )}
       <div className={styles.fileToolbar}>
         <div className={styles.actions} aria-label="File actions">
-          {editable && (
+          {editable && (buffer.dirty || buffer.saving || buffer.uncertain) && (
             <Button
               size="sm"
               disabled={
@@ -225,22 +215,24 @@ export function FileView({
             </Button>
           )}
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Refresh"
+            title="Refresh file"
             onClick={() => void refreshContent()}
             disabled={buffer.saving || read.isFetching}
           >
             <ArrowClockwise />
-            Refresh
           </Button>
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Download"
+            title="Download file"
             onClick={() => void download()}
             disabled={read.isFetching || !!read.error}
           >
             <DownloadSimple />
-            Download
           </Button>
           {editable && buffer.dirty && (
             <Button
@@ -265,21 +257,19 @@ export function FileView({
             {markdown && (
               <>
                 <Button
-                  variant={mode === "preview" ? "secondary" : "outline"}
+                  variant={mode === "preview" ? "secondary" : "ghost"}
                   size="sm"
                   aria-pressed={mode === "preview"}
                   onClick={() => setMode("preview")}
                 >
-                  <Eye />
                   Preview
                 </Button>
                 <Button
-                  variant={mode === "text" ? "secondary" : "outline"}
+                  variant={mode === "text" ? "secondary" : "ghost"}
                   size="sm"
                   aria-pressed={mode === "text"}
                   onClick={() => setMode("text")}
                 >
-                  <TextT />
                   Text
                 </Button>
               </>
@@ -287,7 +277,7 @@ export function FileView({
             {mode === "text" && (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 aria-pressed={wrap}
                 onClick={() => setWrap(!wrap)}
               >
@@ -492,6 +482,10 @@ export function FileView({
       </footer>
       <details className={styles.metadata}>
         <summary>File details</summary>
+        <p>
+          {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
+          {media ?? (buffer.base.presentation ?? "binary").replace("_", " ")}
+        </p>
         <p>{path}</p>
         {buffer.base.resolved_path !== path && (
           <p>Resolved path: {buffer.base.resolved_path}</p>

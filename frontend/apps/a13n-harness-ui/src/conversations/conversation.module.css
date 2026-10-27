@@ -36,10 +36,8 @@
 }
 .newConversationLink {
   composes: row from "../shell/navigation-row.module.css";
-  background: var(--a13n-elevated);
-  box-shadow: var(--a13n-shadow-subtle);
-  margin-bottom: 6px;
-  font-weight: 500;
+  margin-bottom: 2px;
+  font-weight: 400;
 }
 .newConversationLink > svg:last-child {
   margin-left: auto;
@@ -202,7 +200,7 @@
   align-items: center;
   justify-content: space-between;
   color: var(--a13n-text);
-  font-size: 13px;
+  font-size: 14px;
   border-radius: 8px;
 }
 .groupHeading:hover {
@@ -221,8 +219,8 @@
   gap: 8px;
   flex: 1;
   min-width: 0;
-  min-height: 32px;
-  padding: 6px 88px 6px 8px;
+  min-height: 36px;
+  padding: 8px 88px 8px 10px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -331,7 +329,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 36px;
   border-radius: 8px;
   transition: background-color 120ms ease-out;
 }
@@ -437,11 +435,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .threadLink:hover,
@@ -610,7 +608,7 @@
   padding: 10px 16px;
   background: var(--a13n-surface);
   border-radius: 16px;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -843,6 +841,8 @@
   color: var(--a13n-text);
 }
 .reasoning[open] > div {
+  font-size: 14px;
+  line-height: 1.65;
   padding-inline-start: 14px;
   border-inline-start: 1px solid var(--a13n-border);
 }
@@ -936,17 +936,19 @@
 }
 .composer {
   container: composer / inline-size;
+  --composer-font-size: 16px;
+  --composer-content-height: 48px;
   flex-shrink: 0;
   /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
      each side. */
   width: min(760px, 100% - 84px);
   margin: 0 auto;
   border: 1px solid var(--a13n-input-border);
-  border-radius: 16px;
-  /* 1px border + 12px padding = 13px content inset, shared with the work
-     strip and metrics row so their controls start on the same line. */
-  padding: 10px 12px 8px;
-  background: var(--a13n-canvas);
+  border-radius: 20px;
+  /* The editor, action row and surrounding work strip share a calm
+     inset without drawing another frame around each control. */
+  padding: 12px 14px 10px;
+  background: var(--card);
   box-shadow:
     0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent),
     0 4px 16px -8px color-mix(in srgb, var(--a13n-text) 10%, transparent);
@@ -1097,15 +1099,15 @@
   gap: 4px;
   margin-top: 4px;
 }
-/* Icon controls share one 32px box so their glyphs sit on the content line
-   (8px inset). Touch devices get a centered 44px hit area from Button. */
+/* Icon controls share a 34px box; touch devices retain the shared
+   44px hit area. */
 .composerActions > button {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
 }
 .composerActions > button svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 .composerChoices {
   display: flex;

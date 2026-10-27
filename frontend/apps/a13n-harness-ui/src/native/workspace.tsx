@@ -511,7 +511,9 @@ export function NativeWorkspace({
       <div
         className={`${styles.workarea} ${isWorkspace && pane ? styles.withPane : ""} ${isWorkspace && terminalOpen && status.data?.features?.host_terminal ? styles.withTerminal : ""}`}
       >
-        <header className={styles.workToolbar}>
+        <header
+          className={`${styles.workToolbar} ${location.pathname.startsWith("/settings") ? styles.settingsToolbar : ""}`}
+        >
           {navigation}
           {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
           <div className={styles.workspaceHeading}>
@@ -751,14 +753,16 @@ export function NativeWorkspace({
                   >
                     <LinkSimple />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Refresh files and changes"
-                    onClick={refresh}
-                  >
-                    <ArrowClockwise />
-                  </Button>
+                  {view !== "file" && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Refresh files and changes"
+                      onClick={refresh}
+                    >
+                      <ArrowClockwise />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -857,7 +861,9 @@ export function NativeWorkspace({
               )}
               {!projectLoading &&
                 directory &&
-                (pane === "files" || view === "page") && (
+                (view === "page" ||
+                  (pane === "files" &&
+                    (localRoots.length > 1 || directory !== fileRoot))) && (
                   <div className={styles.location}>
                     {pane === "changes" && (
                       <strong title={root}>{project?.name}</strong>

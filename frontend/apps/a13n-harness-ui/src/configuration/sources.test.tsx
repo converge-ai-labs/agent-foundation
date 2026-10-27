@@ -163,8 +163,9 @@ it("checks without saving and keeps a rejected draft available for repair", asyn
 
 it("confirms cancelling an existing edit and restores the saved content without publishing", async () => {
   const { client, drafts, path, content, user } = mountEditor("agent", false);
-  await screen.findByRole("button", { name: "Save changes" });
-  await user.click(screen.getByText("Advanced configuration"));
+  await screen.findByRole("heading", { name: "Example" });
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  await user.click(await screen.findByText("Advanced configuration"));
   const id = screen.getByRole("textbox", { name: "Resource ID" });
   await user.clear(id);
   await user.type(id, "agent-edited");

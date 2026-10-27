@@ -6,8 +6,50 @@
 .formWidth {
   width: 100%;
 }
+.emptySection {
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 14px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.collectionPage {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+.collection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.toolbar > :first-child:not(:only-child) {
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+.toolbar > :last-child:not(:only-child) {
+  flex-shrink: 0;
+  margin-left: auto;
+}
 .disclosure {
   composes: details from "../shell/workbench.module.css";
+}
+.disclosures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .tabs {
   display: flex;
@@ -63,4 +105,8 @@
 }
 .groupDisclosure > div > [data-slot="settings-row"] {
   padding-top: 16px;
+}
+.groupDisclosure > div > p,
+.groupDisclosure > div > [role="status"] {
+  padding-block: 12px;
 }

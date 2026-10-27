@@ -12,8 +12,9 @@ import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { EmptyList, ErrorNotice, SearchField } from "../shell/ui";
+import { ErrorNotice, SearchField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
+import layout from "../configuration/settings.module.css";
 
 export function CredentialKeys({
   connections,
@@ -149,15 +150,18 @@ export function CredentialKeys({
   return (
     <section className={styles.section} aria-label="Saved API keys">
       <p className={styles.help}>
-        Keys are stored on the server and can be reused by models and devices.
+        Shared by models and devices on this server, separate from your
+        browser’s access key.
       </p>
       <div className={styles.listToolbar}>
-        <SearchField
-          label="Search API keys"
-          placeholder="Search keys, models or devices…"
-          value={filter}
-          onChange={setFilter}
-        />
+        {!!keys.data?.length && (
+          <SearchField
+            label="Search API keys"
+            placeholder="Search keys, models or devices…"
+            value={filter}
+            onChange={setFilter}
+          />
+        )}
         <Button
           onClick={() => {
             setReference("");
@@ -244,16 +248,12 @@ export function CredentialKeys({
           </section>
         ))}
       {!keys.isPending && !keys.error && !grouped.size && (
-        <EmptyList>
+        <p className={layout.emptySection}>
           {filter
             ? "No keys match your search."
             : "No saved keys yet. Add an API key, then select it in a Model or Device."}
-        </EmptyList>
+        </p>
       )}
-      <p className={styles.help}>
-        These credentials are shared by Models and Devices, separate from your
-        browser’s instance access key.
-      </p>
       <ModalFrame
         open={!!editing}
         onOpenChange={(open) => {

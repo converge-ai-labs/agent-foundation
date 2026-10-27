@@ -1,4 +1,4 @@
-/* Harness UI keeps one compact control scale at every width: 13px labels and
+/* Harness UI keeps one compact control scale at every width: 14px labels and
    the desktop control heights. Shared primitives otherwise grow to 16px text
    and taller boxes below 640px, which mixes two scales on one phone screen
    next to the app's own 32px chrome. Coarse pointers keep their enlarged hit

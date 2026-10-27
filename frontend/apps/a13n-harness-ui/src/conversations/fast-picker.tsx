@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { Button } from "a13n-ui";
+import { Check } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import { speedLabel } from "./speed-label";
 import styles from "./composer-settings.module.css";
@@ -17,17 +18,8 @@ export function FastPicker({
 }) {
   const descriptionId = useId();
   const control = model?.fast;
-  const selected =
-    value == null
-      ? control?.state
-      : value === "ultrafast"
-        ? "ultrafast"
-        : value
-          ? "on"
-          : "off";
-  const active = selected === "on";
-  const ultraActive = selected === "ultrafast";
-  const state = speedLabel(selected);
+  const active = value === true;
+  const ultraActive = value === "ultrafast";
   const unavailable =
     value === "ultrafast" ? !control?.ultrafast_supported : !control?.supported;
   const showUltrafast =
@@ -36,51 +28,58 @@ export function FastPicker({
     ultraActive;
   return (
     <section aria-label="Speed" className={styles.speedControl}>
-      <div className={styles.controlHeading}>
-        <span>Speed</span>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Use model speed"
+        aria-pressed={value == null}
+        disabled={disabled}
+        onClick={() => onChange(null)}
+      >
+        <span>
+          Model default
+          <small>Model setting: {speedLabel(control?.state)}</small>
+        </span>
+        {value == null && <Check aria-hidden />}
+      </Button>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Standard mode"
+        aria-pressed={value === false}
+        disabled={disabled || !control?.supported}
+        onClick={() => onChange(false)}
+      >
+        <span>Standard</span>
+        {value === false && <Check aria-hidden />}
+      </Button>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Fast mode"
+        aria-describedby={descriptionId}
+        aria-pressed={active}
+        disabled={disabled || !control?.supported}
+        onClick={() => onChange(true)}
+      >
+        <span>Fast</span>
+        {active && <Check aria-hidden />}
+      </Button>
+      {showUltrafast && (
         <Button
           variant="ghost"
-          size="sm"
-          aria-label="Use model speed"
-          aria-pressed={value == null}
-          disabled={disabled}
-          onClick={() => onChange(null)}
-        >
-          {value == null ? "Using model setting" : "Use model setting"}
-        </Button>
-      </div>
-      <div className={styles.speedToggles}>
-        <Button
-          variant="outline"
-          size="sm"
-          className={styles.fastToggle}
-          aria-label="Fast mode"
+          className={styles.choice}
+          aria-label="Ultrafast mode"
           aria-describedby={descriptionId}
-          aria-pressed={active}
-          disabled={disabled || !control?.supported}
-          onClick={() => onChange(!active)}
+          aria-pressed={ultraActive}
+          title={control?.ultrafast_reason ?? undefined}
+          disabled={disabled || !control?.ultrafast_supported}
+          onClick={() => onChange("ultrafast")}
         >
-          Fast
+          <span>Ultrafast</span>
+          {ultraActive && <Check aria-hidden />}
         </Button>
-        {showUltrafast && (
-          <Button
-            variant="outline"
-            size="sm"
-            className={styles.fastToggle}
-            aria-label="Ultrafast mode"
-            aria-describedby={descriptionId}
-            aria-pressed={ultraActive}
-            title={control?.ultrafast_reason ?? undefined}
-            disabled={disabled || !control?.ultrafast_supported}
-            onClick={() => onChange(ultraActive ? false : "ultrafast")}
-          >
-            Ultrafast
-          </Button>
-        )}
-        <span className={styles.controlState}>
-          {value != null && unavailable ? "Unavailable selection" : state}
-        </span>
-      </div>
+      )}
       <p id={descriptionId} className={styles.hint}>
         {control?.reason ??
           (!control?.supported

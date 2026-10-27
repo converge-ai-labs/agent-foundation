@@ -77,7 +77,8 @@ def configuration(root: Path) -> Path:
             "kind": "model",
             "id": "model-review",
             "name": "GPT-5",
-            "route": "openai:gpt-5",
+            "route": "openai-responses:gpt-5",
+            "model_configuration": {"base_url": "https://api.openai.com/v1"},
             "authentication": {"kind": "api_key", "env": "REVIEW_MODEL_KEY"},
         },
         "agents/review.yaml": {

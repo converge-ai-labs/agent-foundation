@@ -224,9 +224,8 @@
 
 .migration summary {
   cursor: pointer;
-  font-size: 12px;
-  color: var(--a13n-secondary);
-  padding: 6px 0;
+  font-size: 14px;
+  color: var(--a13n-text);
 }
 .members > span {
   background: var(--a13n-elevated);
@@ -311,7 +310,7 @@
 .groupFields h3 {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .providerHeading > span {
   color: var(--a13n-secondary);
@@ -327,9 +326,9 @@
 }
 .groupFields {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 32px;
+  gap: 40px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -337,6 +336,11 @@
 }
 .groupFields > div {
   min-width: 0;
+}
+.memberField > div > div > p {
+  padding-block: 18px 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
 }
 .member {
   padding: 12px;
@@ -358,7 +362,7 @@
 }
 .help {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--a13n-secondary);
   line-height: 1.6;
 }
@@ -437,6 +441,7 @@
 }
 .listToolbar > button {
   flex-shrink: 0;
+  margin-left: auto;
 }
 .listToolbar > [data-slot="input-control"] {
   flex: 1;

@@ -2,15 +2,15 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 32px;
+  min-height: 36px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--a13n-text-supporting);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 20px;
   text-align: start;

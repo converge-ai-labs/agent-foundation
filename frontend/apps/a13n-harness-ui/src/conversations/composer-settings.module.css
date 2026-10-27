@@ -1,5 +1,5 @@
 .popup {
-  width: min(440px, calc(100vw - 24px));
+  width: min(360px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -13,12 +13,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 16px 20px;
+  padding: 10px 12px 6px;
   outline: none;
 }
 .title {
   flex: 1;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
 }
 .body {
@@ -27,16 +27,16 @@
   max-height: min(65dvh, 540px);
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 20px 20px;
+  padding: 0 12px 12px;
 }
 .row {
   display: flex;
   width: 100%;
-  min-height: 52px;
+  min-height: 40px;
   height: auto;
   justify-content: flex-start;
   gap: 12px;
-  padding: 14px 8px;
+  padding: 8px;
   font-weight: 400;
 }
 .row > span:first-child {
@@ -117,8 +117,8 @@
   max-width: 240px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
   gap: 6px;
 }
 .modelTrigger > span {
@@ -133,8 +133,8 @@
 .optionRow {
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 20px 0;
+  gap: 20px;
+  padding: 14px 8px;
 }
 .optionRow > div {
   flex: 1;
@@ -182,46 +182,42 @@
 .modelControls {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-top: 16px;
-}
-.controlHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-}
-.controlHeading > button:last-child {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
-}
-.controlState {
-  flex: 1;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
+  gap: 0;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--a13n-border);
 }
 .levels {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   width: 100%;
-  gap: 4px;
-  margin-top: 8px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--a13n-hover);
+  gap: 2px;
+  margin-top: 4px;
 }
 .levels > button {
-  flex: 1 1 auto;
+  width: 100%;
   height: auto;
-  min-height: 32px;
-  padding: 5px 8px;
-  font-size: 12px;
+  min-height: 40px;
+  padding: 10px 8px;
+  justify-content: space-between;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 400;
   white-space: normal;
   overflow-wrap: anywhere;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.levels > button:hover {
+  background: var(--a13n-hover);
+}
+.levels small {
+  display: block;
+  margin-top: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }
 .speedControl {
   display: flex;
@@ -231,26 +227,6 @@
 .speedControl .hint {
   margin: 0;
   line-height: 1.6;
-}
-.speedToggles {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.speedToggles .controlState {
-  min-width: 100px;
-  text-align: right;
-}
-.fastToggle {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  box-shadow: none;
-}
-.fastToggle[aria-pressed="true"] {
-  color: var(--primary-foreground);
-  border-color: var(--a13n-accent);
-  background: var(--a13n-accent);
 }
 @container composer (max-width: 480px) {
   .modelTrigger {

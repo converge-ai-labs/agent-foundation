@@ -40,7 +40,27 @@
   width: auto;
   max-width: 100%;
   min-height: 32px;
-  background: var(--a13n-canvas);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  text-align: right;
+  justify-content: flex-end;
+}
+.row [data-slot="select-value"] {
+  text-align: right;
+}
+.row [data-slot="select-trigger"] > span:first-child {
+  flex: 1;
+  justify-content: flex-end;
+}
+.row [data-slot="select-trigger"]:hover,
+.row button[role="combobox"]:hover,
+.row [data-popup-open] {
+  background: var(--a13n-hover);
+}
+.row [data-slot="select-trigger"]:focus-visible,
+.row button[role="combobox"]:focus-visible {
+  border-color: var(--ring);
 }
 .row button[data-slot="combobox-trigger"] {
   width: 220px;

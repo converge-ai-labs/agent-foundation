@@ -33,11 +33,13 @@ type SearchOption = ComponentProps<
   typeof SearchPicker
 >["groups"][number]["options"][number];
 
-type Page = "root" | "model" | "agent" | "reasoning";
+type Page = "root" | "model" | "agent" | "thinking" | "speed" | "reasoning";
 const titles: Record<Page, string> = {
   root: "Agent & Model",
   model: "Select model",
   agent: "Select agent",
+  thinking: "Thinking",
+  speed: "Speed",
   reasoning: "Reasoning mode",
 };
 const SettingsContext = createContext<{

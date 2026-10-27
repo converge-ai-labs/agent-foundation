@@ -170,21 +170,23 @@ export function ConnectionsPage() {
         headingLevel={2}
         title="Harness plugins"
       />
-      {root && (
+      <div className={layout.disclosures}>
+        {root && (
+          <details className={layout.disclosure}>
+            <summary>Chat defaults</summary>
+            <SourceDocument
+              path={root.relative_path}
+              title="Default connections & extensions"
+              embedded
+              section="connections"
+            />
+          </details>
+        )}
         <details className={layout.disclosure}>
-          <summary>Chat defaults</summary>
-          <SourceDocument
-            path={root.relative_path}
-            title="Default connections & extensions"
-            embedded
-            section="connections"
-          />
+          <summary>Installed plugins</summary>
+          <InstalledCatalog kind="harness_plugin" />
         </details>
-      )}
-      <details className={layout.disclosure}>
-        <summary>Installed plugins</summary>
-        <InstalledCatalog kind="harness_plugin" />
-      </details>
+      </div>
     </>
   );
 }

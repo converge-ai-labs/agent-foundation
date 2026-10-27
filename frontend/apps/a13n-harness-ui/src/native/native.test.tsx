@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import {
   cleanup,
   fireEvent,
@@ -19,7 +20,7 @@ import { FileBuffers, FileBuffer } from "./buffer";
 import { FileView } from "./file-view";
 import { NativeWorkspace } from "./workspace";
 import { Changes } from "./changes";
-import { FileOperation } from "./files";
+import { FileOperation, Files } from "./files";
 
 vi.mock("../configuration/editor", () => ({
   SourceEditor: ({
@@ -114,6 +115,41 @@ const attachment: Schema<"ThreadAttachment"> = {
     location: "host",
   },
 };
+it("opens file actions by keyboard and preserves files when the editor is dismissed", async () => {
+  const f = fixture();
+  f.get.mockImplementation(async (path) => ({
+    data:
+      path === "/api/status"
+        ? { features: { host_files: true, host_git: false } }
+        : {
+            entries: [file.entry],
+            directory: { revision: "directory-one" },
+            resolved_path: "/code",
+            next_offset: null,
+          },
+  }));
+  const user = userEvent.setup();
+  render(<Files directory="/code" path="" open={vi.fn()} refresh={vi.fn()} />, {
+    wrapper: f.Wrapper,
+  });
+  const actions = await screen.findByRole("button", {
+    name: "Actions for file.txt",
+  });
+  actions.focus();
+  await user.keyboard("{Enter}");
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Rename or move" }),
+  );
+  await screen.findByRole("dialog", { name: "Rename or move file or folder" });
+  expect(f.post).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    screen.getByRole("button", { name: /^file\.txt\s*5 B$/ }),
+  ).toBeTruthy();
+  expect(f.post).not.toHaveBeenCalled();
+  expect(f.put).not.toHaveBeenCalled();
+});
 it("adds only acknowledged attachment metadata to the original destination when navigation changes during capture", async () => {
   const f = fixture();
   let acknowledge!: (value: unknown) => void;

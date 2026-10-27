@@ -971,6 +971,7 @@ it("adds a configurable capability to the chosen agent and preserves unrelated c
       )) as HTMLTextAreaElement
     ).value,
   ).toBe("Unfinished instructions");
+  await user.click(screen.getByText("Capabilities", { exact: true }));
   await user.click(
     await screen.findByRole("combobox", { name: "Add capability" }),
   );

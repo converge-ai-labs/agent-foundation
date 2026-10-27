@@ -374,17 +374,15 @@ it("edits Agent working state without losing custom configuration", async () => 
   renderFields(initial);
   const user = userEvent.setup();
   expect(
-    (await screen.findByRole("checkbox", { name: "Tasks" })).getAttribute(
+    (await screen.findByRole("switch", { name: "Tasks" })).getAttribute(
       "aria-checked",
     ),
   ).toBe("true");
   expect(
-    screen
-      .getByRole("checkbox", { name: "Notes" })
-      .getAttribute("aria-checked"),
+    screen.getByRole("switch", { name: "Notes" }).getAttribute("aria-checked"),
   ).toBe("false");
   expect(screen.getByTestId("source").textContent).toBe(initial);
-  screen.getByRole("checkbox", { name: "Tasks" }).focus();
+  screen.getByRole("switch", { name: "Tasks" }).focus();
   await user.keyboard(" ");
   expect(
     parse(screen.getByTestId("source").textContent!).capabilities[0]
@@ -397,6 +395,7 @@ it("allows typing multiple skill directories and preserves advanced options", as
     'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: skills\n    configuration: {roots: [], custom: keep}\n',
   );
   const user = userEvent.setup();
+  await user.click(screen.getByText("Capabilities", { exact: true }));
   const roots = await screen.findByRole("textbox", {
     name: "Additional skill directories",
   });
@@ -414,10 +413,11 @@ it("edits web options without replacing nested custom constraints", async () => 
     'schema_version: "1"\nkind: agent\nid: agent-one\nname: Helper\ncapabilities:\n  - capability: web\n    configuration:\n      search: {mode: auto, allowed_domains: [example.com]}\n      download: {max_bytes: 1234}\n',
   );
   const user = userEvent.setup();
+  await user.click(screen.getByText("Capabilities", { exact: true }));
   await user.click(await screen.findByText("Web options"));
   await user.click(screen.getByRole("combobox", { name: "Web search" }));
   await user.click(await screen.findByRole("option", { name: "Host search" }));
-  await user.click(screen.getByRole("checkbox", { name: "Download files" }));
+  await user.click(screen.getByRole("switch", { name: "Download files" }));
   expect(
     parse(screen.getByTestId("source").textContent!).capabilities[0]
       .configuration,

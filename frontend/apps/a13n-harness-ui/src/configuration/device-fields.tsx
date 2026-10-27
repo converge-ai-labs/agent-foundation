@@ -1,6 +1,6 @@
 import { SettingsTextField as TextField } from "../shell/settings";
 import { SettingsChoice as ChoiceField } from "../shell/settings";
-import { SettingsSection } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
 
 import { readDocument, updateDocument } from "./documents";
 
@@ -24,12 +24,23 @@ export function DeviceFields({
         title="Paired Device"
         description="This connection was approved on this host. The credential stays on the device and does not need to be entered here."
       >
-        <p>Native Device ID: {text(["device_id"])}</p>
-        <p>
-          {document.getIn(["authentication", "revoked"])
-            ? "Revoked. This credential can no longer connect."
-            : "Registered. Use Environments settings to check or revoke the connection."}
-        </p>
+        <SettingsRow label="Native Device ID">
+          <span>{text(["device_id"])}</span>
+        </SettingsRow>
+        <SettingsRow
+          label="Connection"
+          description={
+            document.getIn(["authentication", "revoked"])
+              ? "This credential can no longer connect."
+              : "Use Environments settings to check or revoke the connection."
+          }
+        >
+          <span>
+            {document.getIn(["authentication", "revoked"])
+              ? "Revoked"
+              : "Registered"}
+          </span>
+        </SettingsRow>
       </SettingsSection>
     );
   }
@@ -72,10 +83,12 @@ export function DeviceFields({
           description="The envd HTTP origin, for example https://device.example.com."
         />
       ) : (
-        <p>
-          Configure envd to connect to this server at /api/devices/
-          {text(["id"])}/connect using the referenced credential.
-        </p>
+        <SettingsRow
+          label="Server connection"
+          description="Configure envd with this path and the referenced credential."
+        >
+          <span>/api/devices/{text(["id"])}/connect</span>
+        </SettingsRow>
       )}
       <ChoiceField
         label="Credential source"

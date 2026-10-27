@@ -1,6 +1,6 @@
 .markdown {
   min-width: 0;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
@@ -11,7 +11,7 @@
   margin-bottom: 0;
 }
 .markdown p {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   font-size: inherit;
   line-height: inherit;
   color: inherit;
@@ -82,10 +82,10 @@
   font-size: 24px;
 }
 .markdown h2 {
-  font-size: 17px;
+  font-size: 20px;
 }
 .markdown h3 {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
 }
 .markdown h4,
@@ -202,8 +202,10 @@
 }
 .markdown table {
   width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }
@@ -253,7 +255,7 @@
 }
 @media (max-width: 600px) {
   .markdown {
-    font-size: 14px;
+    font-size: 16px;
   }
   .markdown th,
   .markdown td {

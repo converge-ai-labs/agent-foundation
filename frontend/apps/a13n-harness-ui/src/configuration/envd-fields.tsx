@@ -217,14 +217,12 @@ export function EnvdConfigurationFields({ source, onChange }: FieldsProps) {
           />
         </SettingsRow>
         {custom && (
-          <div className="p-4">
-            <TextField
-              label="Executable path"
-              value={executable}
-              onChange={(value) => update({ executable: value })}
-              description="Absolute path to a13n-envd on the Harness host. Custom executables are never downloaded automatically."
-            />
-          </div>
+          <TextField
+            label="Executable path"
+            value={executable}
+            onChange={(value) => update({ executable: value })}
+            description="Absolute path to a13n-envd on the Harness host. Custom executables are never downloaded automatically."
+          />
         )}
         <SettingsRow
           label="Metrics collection"

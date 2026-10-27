@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   Button,
-  ChoiceField,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -19,7 +18,6 @@ import {
   PageHeader,
   Panel,
   SearchField,
-  TextField,
 } from "../shell/ui";
 import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
@@ -39,6 +37,11 @@ import {
   ExecutionDefaultsFields,
 } from "./envd-fields";
 import styles from "../shell/workbench.module.css";
+import layout from "./settings.module.css";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 
 export type SourceDraft = {
   content: string;
@@ -185,54 +188,70 @@ export function SourcesPage({
   const [id, setId] = useState("model-primary");
   const drafts = useContext(DraftContext);
   const navigate = useNavigate();
+  const visible = listed?.filter((source) =>
+    `${displayName(source)} ${source.relative_path} ${source.resource_ids.join(" ")}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const addAction = kinds ? (
+    kinds.map((kind) => (
+      <NewResourceButton
+        key={kind}
+        kind={kind}
+        variant={headingLevel === 2 ? "outline" : "default"}
+      />
+    ))
+  ) : (
+    <Button onClick={() => setCreating(true)}>
+      <Plus />
+      Add configuration
+    </Button>
+  );
   return (
-    <>
+    <section
+      className={headingLevel === 2 ? layout.collection : layout.collectionPage}
+    >
       <PageHeader
         title={title}
         level={headingLevel}
         description={description}
-        actions={
-          kinds ? (
-            kinds.map((kind) => <NewResourceButton key={kind} kind={kind} />)
-          ) : (
-            <Button onClick={() => setCreating(true)}>
-              <Plus />
-              Add configuration
-            </Button>
-          )
-        }
+        actions={headingLevel === 2 ? addAction : undefined}
       />
-      <ErrorNotice
-        error={sources.error || selectors.error}
-        retry={() => {
-          void sources.refetch();
-          void selectors.refetch();
-        }}
-      />
-      {!!listed?.length && (
-        <SearchField
-          label={`Search ${inlineLabel(title)}`}
-          value={search}
-          onChange={setSearch}
+      <div className={layout.collection}>
+        {(headingLevel === 1 || !!listed?.length) && (
+          <div className={layout.toolbar}>
+            {!!listed?.length && (
+              <SearchField
+                label={`Search ${inlineLabel(title)}`}
+                value={search}
+                onChange={setSearch}
+              />
+            )}
+            {headingLevel === 1 && (
+              <div className={styles.actions}>{addAction}</div>
+            )}
+          </div>
+        )}
+        <ErrorNotice
+          error={sources.error || selectors.error}
+          retry={() => {
+            void sources.refetch();
+            void selectors.refetch();
+          }}
         />
-      )}
-      {sources.isPending && <p role="status">Loading resources…</p>}
-      <DraftLinks kinds={kinds} search={search} />
-      <div className={styles.resourceList}>
-        {listed
-          ?.filter((source) =>
-            `${displayName(source)} ${source.relative_path} ${source.resource_ids.join(" ")}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-          )
-          .map((source) => (
+        {sources.isPending && <p role="status">Loading resources…</p>}
+        <DraftLinks kinds={kinds} search={search} />
+        <div className={styles.resourceList}>
+          {visible?.map((source) => (
             <Link
               key={source.relative_path}
               className={styles.resourceRow}
               to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
             >
               <div>
-                <strong>{displayName(source)}</strong>
+                <strong>
+                  {kinds ? displayName(source) : source.relative_path}
+                </strong>
                 <small>
                   {kinds?.length === 1 && kinds[0] === "agent"
                     ? source.resource_ids
@@ -246,8 +265,12 @@ export function SourcesPage({
                         })
                         .join(", ")
                     : kinds
-                      ? source.resource_ids.join(", ")
-                      : source.relative_path}
+                      ? source.resource_ids.join(", ") === displayName(source)
+                        ? ""
+                        : source.resource_ids.join(", ")
+                      : displayName(source) === source.relative_path
+                        ? ""
+                        : displayName(source)}
                 </small>
               </div>
               {source.resource_kind === "agent" &&
@@ -267,21 +290,29 @@ export function SourcesPage({
               )}
             </Link>
           ))}
-      </div>
-      {kinds && listed?.length === 0 && (
-        <EmptyList>
-          No {inlineLabel(title)} yet. Add one to get started.
-        </EmptyList>
-      )}
-      {sources.data && !kinds && !sources.data.sources.length && (
-        <Panel title="No saved configuration">
-          <p>
-            Complete guided setup to create the root configuration before adding
-            resources.
+        </div>
+        {!!listed?.length && !visible?.length && (
+          <EmptyList>No matching {inlineLabel(title)}.</EmptyList>
+        )}
+        {kinds && listed?.length === 0 && (
+          <p
+            className={
+              headingLevel === 2 ? layout.emptySection : styles.emptyList
+            }
+          >
+            No {inlineLabel(title)} yet. Add one to get started.
           </p>
-          <Link to="/setup">Open setup</Link>
-        </Panel>
-      )}
+        )}
+        {sources.data && !kinds && !sources.data.sources.length && (
+          <Panel title="No saved configuration">
+            <p>
+              Complete guided setup to create the root configuration before
+              adding resources.
+            </p>
+            <Link to="/setup">Open setup</Link>
+          </Panel>
+        )}
+      </div>
       <ModalFrame
         open={creating}
         onOpenChange={setCreating}
@@ -346,7 +377,7 @@ export function SourcesPage({
           />
         </div>
       </ModalFrame>
-    </>
+    </section>
   );
 }
 
@@ -382,12 +413,19 @@ export function SourceDocument({
   const [notice, setNotice] = useState("");
   const [modelReady, setModelReady] = useState(false);
   const kind = readDocument(draft?.content ?? "")?.get("kind");
-  const back =
+  const [back, backLabel] =
     kind === "agent"
-      ? "/settings/agents"
+      ? ["/settings/agents", "Agents"]
       : kind === "model"
-        ? "/settings/models"
-        : "/settings/resources";
+        ? ["/settings/models", "Models"]
+        : kind === "device"
+          ? ["/settings/environments?tab=devices", "Devices"]
+          : kind === "environment_profile" ||
+              kind === "environment_run_extension"
+            ? ["/settings/environments?tab=profiles", "Environments"]
+            : kind === "mcp_server" || kind === "harness_plugin"
+              ? ["/settings/connections", "Connections"]
+              : ["/settings/resources", "Configuration files"];
   const [deleting, setDeleting] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const source = useQuery({
@@ -494,61 +532,61 @@ export function SourceDocument({
     )?.label ?? (path.endsWith(".md") ? "subagent" : "configuration"),
   );
   return (
-    <div className={styles.sourceDocument}>
-      {!embedded && (
-        <Link className={styles.back} to={back}>
-          <ArrowLeft />
-          {kind === "agent"
-            ? "Agents"
-            : kind === "model"
-              ? "Models"
-              : "Configuration files"}
-        </Link>
-      )}
-      <PageHeader
-        level={mediaOnly || section ? 2 : 1}
-        description={
-          mediaOnly
-            ? "Used when native input is unavailable."
-            : section === "envd"
-              ? "Settings for this whole server. Save, then restart Harness UI to apply them."
-              : section === "execution"
-                ? "Default for new chats. Projects can override this selection."
-                : undefined
-        }
-        title={
-          title ||
-          (isNew
-            ? `Add ${resourceLabel}`
-            : String(
-                readDocument(draft?.content ?? "")?.get("name") ||
-                  path ||
-                  "Configuration",
-              ))
-        }
-        actions={
-          source.data?.writable &&
-          source.data.resource_kind !== "root" && (
-            <Menu>
-              <MenuTrigger
-                aria-label="More configuration actions"
-                render={<Button variant="ghost" size="icon" />}
-              >
-                <DotsThree />
-              </MenuTrigger>
-              <MenuPopup align="end">
-                <MenuItem
-                  variant="destructive"
-                  onClick={() => setDeleting(true)}
+    <div
+      className={`${styles.sourceDocument} ${section || mediaOnly ? styles.sourceSubsection : ""}`}
+    >
+      <div className={styles.sourceHeader}>
+        {!embedded && (
+          <Link className={styles.back} to={back}>
+            <ArrowLeft />
+            {backLabel}
+          </Link>
+        )}
+        <PageHeader
+          level={mediaOnly || section ? 2 : 1}
+          description={
+            mediaOnly
+              ? "Used when native input is unavailable."
+              : section === "envd"
+                ? "Settings for this whole server. Save, then restart Harness UI to apply them."
+                : section === "execution"
+                  ? "Default for new chats. Projects can override this selection."
+                  : undefined
+          }
+          title={
+            title ||
+            (isNew
+              ? `Add ${resourceLabel}`
+              : String(
+                  readDocument(draft?.content ?? "")?.get("name") ||
+                    path ||
+                    "Configuration",
+                ))
+          }
+          actions={
+            source.data?.writable &&
+            source.data.resource_kind !== "root" && (
+              <Menu>
+                <MenuTrigger
+                  aria-label="More configuration actions"
+                  render={<Button variant="ghost" size="icon" />}
                 >
-                  <Trash />
-                  Delete configuration
-                </MenuItem>
-              </MenuPopup>
-            </Menu>
-          )
-        }
-      />
+                  <DotsThree />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuItem
+                    variant="destructive"
+                    onClick={() => setDeleting(true)}
+                  >
+                    <Trash />
+                    Delete configuration
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
+            )
+          }
+        />
+      </div>
       <ErrorNotice error={source.error || remove.error} />
       {external && (
         <div className={styles.notice}>
@@ -659,65 +697,64 @@ export function SourceDocument({
             )}
         </div>
       )}
-      {(embedded || section) && !dirty && notice && (
+      {!dirty && !isNew && !validate.error && !save.error && notice && (
         <p role="status">{notice}</p>
       )}
-      {canEdit &&
-        ((!embedded && !section) || dirty || validate.error || save.error) && (
-          <footer
-            className={styles.editorActions}
-            aria-label="Configuration actions"
-          >
-            {(validate.error || save.error) && (
-              <div className={styles.editorError}>
-                <ErrorNotice error={validate.error || save.error} />
-              </div>
-            )}
-            <div className={styles.editorState}>
-              {dirty && <span>Unsaved changes</span>}
-              {notice && <small role="status">{notice}</small>}
+      {canEdit && (isNew || dirty || validate.error || save.error) && (
+        <footer
+          className={styles.editorActions}
+          aria-label="Configuration actions"
+        >
+          {(validate.error || save.error) && (
+            <div className={styles.editorError}>
+              <ErrorNotice error={validate.error || save.error} />
             </div>
-            <div className={styles.actions}>
-              {isNew ? (
-                <ConfirmAction
-                  key={path}
-                  trigger={
-                    <Button variant="ghost" disabled={save.isPending}>
-                      Cancel
-                    </Button>
-                  }
-                  title="Discard this unsaved configuration?"
-                  description={`Your unsaved configuration for ${path} will be lost.`}
-                  confirmLabel="Discard draft"
-                  destructive
-                  onConfirm={() => {
-                    drafts.delete(path);
-                    navigate(back);
-                  }}
-                />
-              ) : (
-                <Button
-                  variant="ghost"
-                  disabled={!dirty || save.isPending}
-                  onClick={() => setReplacing(true)}
-                >
-                  {mediaOnly ? "Discard" : "Cancel"}
-                </Button>
-              )}
+          )}
+          <div className={styles.editorState}>
+            {dirty && <span>Unsaved changes</span>}
+            {notice && <small role="status">{notice}</small>}
+          </div>
+          <div className={styles.actions}>
+            {isNew ? (
+              <ConfirmAction
+                key={path}
+                trigger={
+                  <Button variant="ghost" disabled={save.isPending}>
+                    Cancel
+                  </Button>
+                }
+                title="Discard this unsaved configuration?"
+                description={`Your unsaved configuration for ${path} will be lost.`}
+                confirmLabel="Discard draft"
+                destructive
+                onConfirm={() => {
+                  drafts.delete(path);
+                  navigate(back);
+                }}
+              />
+            ) : (
               <Button
-                loading={save.isPending}
-                disabled={!dirty || (kind === "model" && !modelReady)}
-                onClick={() => save.mutate(draft!.content)}
+                variant="ghost"
+                disabled={!dirty || save.isPending}
+                onClick={() => setReplacing(true)}
               >
-                {isNew
-                  ? `Create ${resourceLabel}`
-                  : mediaOnly
-                    ? "Save"
-                    : "Save changes"}
+                {mediaOnly ? "Discard" : "Cancel"}
               </Button>
-            </div>
-          </footer>
-        )}
+            )}
+            <Button
+              loading={save.isPending}
+              disabled={!dirty || (kind === "model" && !modelReady)}
+              onClick={() => save.mutate(draft!.content)}
+            >
+              {isNew
+                ? `Create ${resourceLabel}`
+                : mediaOnly
+                  ? "Save"
+                  : "Save changes"}
+            </Button>
+          </div>
+        </footer>
+      )}
       {source.data?.content_available && !writable && (
         <Panel>
           <SourceEditor value={source.data.content ?? ""} readOnly />

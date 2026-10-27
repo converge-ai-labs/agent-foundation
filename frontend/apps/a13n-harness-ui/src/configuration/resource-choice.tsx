@@ -14,6 +14,7 @@ export function ResourceChoice({
   placeholder = "Choose a resource",
   loading = false,
   row = true,
+  actions,
 }: {
   label: string;
   value: string;
@@ -23,6 +24,7 @@ export function ResourceChoice({
   placeholder?: string;
   loading?: boolean;
   row?: boolean;
+  actions?: ReactNode;
 }) {
   const id = useId();
   const choices = Array.from(
@@ -38,9 +40,7 @@ export function ResourceChoice({
     <SearchPicker
       id={id}
       label={label}
-      placeholder={
-        choices.find((item) => item.value === value)?.label ?? placeholder
-      }
+      placeholder={placeholder}
       emptyMessage={loading ? "Loading resources…" : "No matching resources."}
       value={value}
       onValueChange={onValueChange}
@@ -66,7 +66,12 @@ export function ResourceChoice({
   );
   return row ? (
     <SettingsRow label={label} description={description} controlId={id}>
-      <div className={styles.settingControl}>{control}</div>
+      <div
+        className={`${styles.settingControl} ${actions ? styles.settingControlWithActions : ""}`}
+      >
+        {control}
+        {actions}
+      </div>
     </SettingsRow>
   ) : (
     <FormField label={label} description={description}>

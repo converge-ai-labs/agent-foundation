@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { Button, ToggleGroup, ToggleGroupItem } from "a13n-ui";
+import { Check } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import styles from "./composer-settings.module.css";
 
@@ -22,38 +23,43 @@ export function ThinkingPicker({
   const options = control?.options ?? [];
   const explicit = options.filter((item) => item.value !== null);
   const inherited = options.find((item) => item.value === null);
+  const sharedDescription =
+    explicit.length > 1 &&
+    explicit.every((item) => item.description === explicit[0]?.description)
+      ? explicit[0]?.description
+      : undefined;
   const selected = options.find((item) => item.value === (value ?? null));
-  const effective = value ?? control?.default_value;
   const unavailable =
     value != null && (!selected || !!selected.disabled_reason);
   return (
     <section aria-label="Thinking">
-      <div className={styles.controlHeading}>
-        <span>Thinking</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="Use default thinking"
-          aria-pressed={value == null}
-          disabled={disabled || !!inherited?.disabled_reason}
-          title={inherited?.disabled_reason ?? inherited?.description}
-          onClick={() => onChange(null)}
-        >
-          {value == null ? "Using default" : "Use default"}
-        </Button>
-      </div>
+      <Button
+        variant="ghost"
+        className={styles.choice}
+        aria-label="Use default thinking"
+        aria-pressed={value == null}
+        disabled={disabled || !!inherited?.disabled_reason}
+        title={inherited?.disabled_reason ?? inherited?.description}
+        onClick={() => onChange(null)}
+      >
+        <span>
+          Model default
+          <small>{control?.default_summary ?? inherited?.description}</small>
+        </span>
+        {value == null && <Check aria-hidden />}
+      </Button>
       {explicit.length > 0 && (
         <ToggleGroup
           aria-label="Thinking level"
           aria-describedby={descriptionId}
           className={styles.levels}
-          value={effective == null ? [] : [JSON.stringify(effective)]}
+          orientation="vertical"
+          value={value == null ? [] : [JSON.stringify(value)]}
           disabled={disabled}
           onValueChange={(keys) => {
-            // Clicking the inherited active level makes it an explicit choice.
+            // Re-selecting an explicit level keeps that choice.
             const key =
-              keys[0] ??
-              (effective == null ? undefined : JSON.stringify(effective));
+              keys[0] ?? (value == null ? undefined : JSON.stringify(value));
             const option = explicit.find(
               (item) => JSON.stringify(item.value) === key,
             );
@@ -68,26 +74,25 @@ export function ThinkingPicker({
               disabled={!!item.disabled_reason}
               title={item.disabled_reason ?? item.description}
             >
-              {item.label}
+              <span>
+                {item.label}
+                {(item.disabled_reason || !sharedDescription) && (
+                  <small>{item.disabled_reason ?? item.description}</small>
+                )}
+              </span>
+              {item.value === value && <Check aria-hidden />}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
       )}
-      <p id={descriptionId} className={styles.hint}>
-        {unavailable
-          ? (selected?.disabled_reason ??
-            "Unavailable selection — use default.")
-          : value == null && control
-            ? `Model default: ${control.default_summary}`
-            : selected?.description}
-      </p>
-      {explicit
-        .filter((item) => item.disabled_reason)
-        .map((item) => (
-          <p key={JSON.stringify(item.value)} className={styles.hint}>
-            {item.label}: {item.disabled_reason}
-          </p>
-        ))}
+      {(unavailable || sharedDescription) && (
+        <p id={descriptionId} className={styles.hint}>
+          {unavailable
+            ? (selected?.disabled_reason ??
+              "Unavailable selection — use default.")
+            : sharedDescription}
+        </p>
+      )}
       {(!control || control.reason) && (
         <p className={styles.hint}>
           {control?.reason ?? "No thinking controls available."}
