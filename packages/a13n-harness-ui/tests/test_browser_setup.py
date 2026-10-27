@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness_ui import browser_setup as module
+from a13n_harness_ui.browser import require_browser
 from a13n_harness_ui.browser_setup import BrowserExecutable
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 
@@ -380,6 +381,7 @@ async def test_root_preparation_and_start_share_explicit_sandbox_policy(host, mo
     from a13n_harness_ui.browser import Binding, HostBrowsers
     from a13n_harness_ui.errors import HarnessUiError
 
+    monkeypatch.setattr("a13n_harness_ui.browser.require_browser", require_browser)
     monkeypatch.setattr(module.os, "geteuid", lambda: 0)
     setup = await module.inspect_browser(host, no_sandbox=no_sandbox)
     assert setup.ready is no_sandbox
