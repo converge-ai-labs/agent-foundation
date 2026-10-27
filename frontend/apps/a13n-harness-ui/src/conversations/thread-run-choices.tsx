@@ -1,5 +1,5 @@
 import { Button, ModalFrame } from "a13n-ui";
-import { CaretRight } from "@phosphor-icons/react";
+import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
 import { ModelOptions } from "./model-picker";
@@ -99,10 +99,14 @@ export function RunEnvironments({
         disabled={disabled || !configuration}
         aria-label="Environments"
         title={summary}
-        className={panelStyles.environmentButton}
+        className={panelStyles.optionAction}
         onClick={beginEditing}
       >
-        <span className={panelStyles.environmentLabel}>{summary}</span>
+        <Desktop aria-hidden />
+        <span className={panelStyles.optionCopy}>
+          <span>Environment</span>
+          <small className={panelStyles.environmentLabel}>{summary}</small>
+        </span>
         <CaretRight aria-hidden="true" size={14} />
       </Button>
       <ModalFrame

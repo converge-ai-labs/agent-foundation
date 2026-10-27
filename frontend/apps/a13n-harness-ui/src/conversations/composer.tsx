@@ -876,7 +876,7 @@ export function Composer({
       size="sm"
       className={styles.goalButton}
       aria-pressed={draft.mode === "goal"}
-      title="Keep working and checking the full objective until the Agent verifies completion or reaches the continuation limit. Applies to your next submission, not steering."
+      title="Keep working on your next message until the goal is complete or the continuation limit is reached."
       disabled={!canRun || busy || preparing || pending || unknown}
       onClick={() => {
         draft.mode = draft.mode === "goal" ? "normal" : "goal";
@@ -884,7 +884,7 @@ export function Composer({
       }}
     >
       <Target aria-hidden weight={draft.mode === "goal" ? "fill" : "regular"} />
-      Goal
+      Keep working
     </Button>
   );
   const coordinatorDisabled =
@@ -935,13 +935,13 @@ export function Composer({
         aria-pressed={draft.coordinator}
         title={
           coordinator.available
-            ? "Become a Coordinator when you send. The role cannot be reversed after creation or conversion."
-            : "Requires an available Project and an idle chat without pending decisions."
+            ? "Plan and delegate work across agents. This stays on after you send your first message."
+            : "Choose a project and finish any active work or pending decisions first."
         }
         disabled={coordinatorDisabled}
         onClick={toggleCoordinator}
       >
-        <CoordinatorIcon size={16} /> Coordinator
+        <CoordinatorIcon size={16} /> Coordinate agents
       </Button>
     ));
   return (
@@ -1005,13 +1005,15 @@ export function Composer({
           <div className={styles.composerHeader}>
             {!transport.shareId &&
               draft.mode === "goal" &&
-              cloneElement(goalToggle, { "aria-label": "Turn off Goal" })}
+              cloneElement(goalToggle, {
+                "aria-label": "Turn off keep working",
+              })}
             {ownerControl ||
               (coordinatorActive
                 ? coordinatorControl
                 : draft.coordinator && coordinatorControl
                   ? cloneElement(coordinatorControl, {
-                      "aria-label": "Turn off Coordinator",
+                      "aria-label": "Turn off agent coordination",
                     })
                   : null)}
           </div>
@@ -1117,7 +1119,7 @@ export function Composer({
               <TaskOptions
                 goal={
                   <Switch
-                    aria-label="Goal"
+                    aria-label="Keep working"
                     title={goalToggle.props.title}
                     checked={draft.mode === "goal"}
                     disabled={
@@ -1132,7 +1134,7 @@ export function Composer({
                 coordinator={
                   !owner && !coordinatorActive && coordinator ? (
                     <Switch
-                      aria-label="Coordinator"
+                      aria-label="Coordinate agents"
                       title={
                         coordinatorControl
                           ? coordinatorControl.props.title

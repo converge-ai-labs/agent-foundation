@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
+import { ArrowCounterClockwise, CaretRight } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import styles from "./composer-settings.module.css";
 
 export function ClearContext({
   threadId,
@@ -49,8 +51,9 @@ export function ClearContext({
   return (
     <>
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
+        className={styles.optionAction}
         aria-label="Clear context"
         title="Clear context · keep chat history and your draft"
         disabled={disabled || !continuationId || clear.isPending}
@@ -60,7 +63,12 @@ export function ClearContext({
           setTarget(continuationId!);
         }}
       >
-        Clear
+        <ArrowCounterClockwise aria-hidden />
+        <span className={styles.optionCopy}>
+          <span>Clear context</span>
+          <small>Keep history, files and draft</small>
+        </span>
+        <CaretRight aria-hidden size={14} />
       </Button>
       <ModalFrame
         open={!!target}

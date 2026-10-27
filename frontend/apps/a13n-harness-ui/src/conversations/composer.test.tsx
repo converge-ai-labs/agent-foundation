@@ -9,6 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
 import {
@@ -398,7 +399,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
-it("keeps Goal intent visible after task-option selection and disables it during active work", () => {
+it("enables Goal intent from its option label, keeps it visible and disables it during active work", async () => {
   const draft = new ThreadDraft();
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -430,13 +431,15 @@ it("keeps Goal intent visible after task-option selection and disables it during
   );
   const view = render(renderComposer());
   const editor = screen.getByRole("textbox", { name: "Message" });
-  fireEvent.click(screen.getByRole("button", { name: "Task options" }));
-  const goal = screen.getByRole("switch", { name: "Goal" });
-  fireEvent.click(goal);
+  fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const goal = screen.getByRole("switch", { name: "Keep working" });
+  await userEvent.click(screen.getByText("Keep working"));
   expect(goal.getAttribute("aria-checked")).toBe("true");
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
-  expect(screen.getByRole("button", { name: "Turn off Goal" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Turn off keep working" }),
+  ).toBeTruthy();
   expect(
     editor.compareDocumentPosition(
       screen.getByText("Agent and model summary"),
@@ -495,7 +498,7 @@ it.each([false, true])(
     );
     try {
       const slot = screen.getByRole("button", {
-        name: "Task options",
+        name: "Chat options",
       }).previousElementSibling!;
       act(() => draft.doc.getText("text").insert(0, "Pending edit"));
       await act(() => vi.advanceTimersByTimeAsync(699));
@@ -513,7 +516,7 @@ it.each([false, true])(
       act(acknowledge);
       expect(screen.queryByRole("status")).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Task options" })
+        screen.getByRole("button", { name: "Chat options" })
           .previousElementSibling,
       ).toBe(slot);
       act(() => {
@@ -1284,7 +1287,7 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
       </TransportContext>
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Task options" }));
+  fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
   fireEvent.click(screen.getByRole("button", { name: "Clear context" }));
   fireEvent.click(
     within(
@@ -1376,8 +1379,8 @@ it.each([
         </TransportContext>
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Task options" }));
-    fireEvent.click(screen.getByRole("switch", { name: "Coordinator" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
     expect(calls).toEqual([]);
     expect(screen.queryByRole("dialog", { name: /Make this/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1397,7 +1400,7 @@ it.each([
         expect(
           (
             screen.getByRole("button", {
-              name: "Turn off Coordinator",
+              name: "Turn off agent coordination",
             }) as HTMLButtonElement
           ).disabled,
         ).toBe(true);
@@ -1413,7 +1416,7 @@ it.each([
         );
         await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
         expect(
-          screen.queryByRole("switch", { name: "Coordinator" }),
+          screen.queryByRole("switch", { name: "Coordinate agents" }),
         ).toBeNull();
         expect(calls).toHaveLength(1);
         fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1425,7 +1428,9 @@ it.each([
       }
     } else {
       expect(calls[1]).toBe("/api/threads/{thread_id}/submit");
-      expect(screen.queryByRole("switch", { name: "Coordinator" })).toBeNull();
+      expect(
+        screen.queryByRole("switch", { name: "Coordinate agents" }),
+      ).toBeNull();
       expect(screen.getByText("Coordinator")).toBeTruthy();
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");

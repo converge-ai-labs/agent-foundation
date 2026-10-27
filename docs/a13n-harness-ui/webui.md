@@ -89,11 +89,11 @@ Type `$` followed by a Skill name to see available Skills and their descriptions
 
 ## Share a Thread or Project
 
-1. Click **Share** beside the microphone in a Thread, or **Share Project** in a Project's menu.
-2. Choose **Thread** or **Project**. A Project link includes its current and future Threads; moving a Thread out removes that link's access.
-3. Choose **Can view** to read history, attachments and live output, or **Can prompt** to coedit the shared draft, upload, send and steer. Prompt guests can also create Threads in a shared Project using its defaults.
+1. Click **Share** in the chat header, or **Share Project** in a Project's menu.
+2. Under **Include**, choose **This chat** or **All chats in [project]**. A Project link includes its current and future Threads; moving a Thread out removes that link's access.
+3. Choose **View only** to read history, attachments and live output, or **Send messages** to coedit the shared draft, upload, send and steer. Prompt guests can also create Threads in a shared Project using its defaults.
 4. Choose an expiry of one hour, one day or seven days, then click **Create link**. Opening the panel alone creates nothing.
-5. **Copy link** or **Preview as guest**. Copy before closing: the secret is displayed only once. Under **Active links**, change permission and click **Save**, or **Revoke** access immediately.
+5. **Copy link** or **Open shared view**. Copy before closing: the secret is displayed only once. Under **Manage links**, change permission and click **Save**, or **Revoke** access immediately.
 
 Share prompt links only with people you trust. Prompts use the existing Agent's tools and Environment authority, including any cross-conversation tools. Sharing limits browser/API access, not Agent execution. Guests cannot change configuration, answer approvals, use native Files or Terminal, or manage links. The owner responds to approvals.
 
@@ -118,7 +118,7 @@ Memory controls stay in **Settings → General**. Turning off automatic organiza
 
 ## Work with a Coordinator
 
-Select a Project, enable **Coordinator** in the composer, and send an objective. This creates a Coordinator, or converts an existing ordinary conversation before sending. On narrow screens, the toggle stays in the composer header. Each Project can have several Coordinators; **Goal** is an independent option; see [Work toward a Goal](everyday-use.md#work-toward-a-goal).
+Select a Project, open **Chat options** in the composer, enable **Coordinate agents**, and send an objective. This creates a Coordinator, or converts an existing ordinary conversation before sending. Enabled options appear above the editor on every screen size. Each Project can have several Coordinators; **Keep working** is an independent Goal option; see [Work toward a Goal](everyday-use.md#work-toward-a-goal).
 
 The role is permanent after creation or conversion. If sending fails afterward, the conversation remains a Coordinator and your input stays available for retry. A Coordinator requires a Project.
 
@@ -148,9 +148,9 @@ These are shared conversation drafts, not a personal queue. Synchronized drafts 
 
 ## Agent and Model settings
 
-The composer footer right-aligns the current Agent and Model names as a read-only summary. Use the adjacent **Agent & Model settings** icon to change them. Agent, Model, and Reasoning mode open their choices inside the same panel; Thinking levels and the Fast button are directly available on the overview. Each has a **Use default** action to restore inherited settings instead of guessing an explicit equivalent.
+The composer footer shows the current Model. Open its **Agent & Model settings** control to change the Agent, Model, or supported Thinking, Speed, and Reasoning mode choices. Each choice opens inside the same panel. Each has a **Use default** action to restore inherited settings instead of guessing an explicit equivalent.
 
-On phones, the panel opens as a bottom sheet. **Goal**, **Coordinator**, and **Environments** remain in the composer header. On every screen size, the **Clear context** eraser beside attachments starts the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded; chat history, files, conversation settings and unsent input are kept.
+On phones, the Agent and Model panel opens as a bottom sheet. **Chat options**, beside the message editor, contains **Keep working**, **Coordinate agents**, **Environment**, and **Clear context**. **Clear context** starts the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded; chat history, files, conversation settings and unsent input are kept.
 
 ## Fast mode
 

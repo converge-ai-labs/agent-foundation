@@ -130,37 +130,73 @@
   width: 12px;
   flex-shrink: 0;
 }
-.optionRow {
-  display: flex;
+.taskPopup {
+  width: min(336px, calc(100vw - 24px));
+}
+.optionList {
+  padding: 6px;
+}
+.optionRow,
+.optionAction {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 16px;
-  padding: 10px 8px;
-}
-.optionRow > div {
-  flex: 1;
-  min-width: 0;
-}
-.optionRow > button {
-  flex-shrink: 0;
-  max-width: 44%;
-}
-.optionRow strong {
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  height: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-align: left;
   font-size: 13px;
   font-weight: 400;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
 }
-.optionRow p {
-  margin: 3px 0 0;
-  font-size: 12px;
-  line-height: 18px;
+.optionRow:hover:not(:has([data-disabled])),
+.optionAction:hover:not(:disabled) {
+  background: var(--a13n-hover);
+}
+.optionRow > svg,
+.optionAction > svg {
+  width: 18px;
+  height: 18px;
   color: var(--a13n-secondary);
 }
-.environmentButton {
-  min-width: 0;
+.optionAction > svg:last-child {
+  width: 14px;
+  height: 14px;
 }
-.environmentLabel {
+.optionCopy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.optionCopy small {
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 400;
+  color: var(--a13n-secondary);
+  white-space: normal;
+}
+.optionActions {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--a13n-border);
+}
+.optionCopy .environmentLabel {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 .identity > button {
   flex-shrink: 0;

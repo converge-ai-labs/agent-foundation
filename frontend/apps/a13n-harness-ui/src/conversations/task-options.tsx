@@ -6,7 +6,11 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "a13n-ui";
-import { SlidersHorizontal, X } from "@phosphor-icons/react";
+import {
+  SlidersHorizontal,
+  Target,
+  TreeStructure,
+} from "@phosphor-icons/react";
 import styles from "./composer-settings.module.css";
 
 /** Infrequent work choices stay together, without taking space from the draft. */
@@ -24,51 +28,29 @@ export function TaskOptions({
   const [open, setOpen] = useState(false);
   const content = (
     <>
-      <div className={styles.header}>
-        <PopoverTitle className={styles.title}>Task options</PopoverTitle>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close task options"
-          onClick={() => setOpen(false)}
-        >
-          <X />
-        </Button>
-      </div>
-      <div className={styles.body}>
-        <div className={styles.optionRow}>
-          <div>
-            <strong>Goal mode</strong>
-            <p>Keep working and checking until the objective is complete.</p>
-          </div>
+      <PopoverTitle className={styles.srOnly}>Chat options</PopoverTitle>
+      <div className={styles.optionList}>
+        <label className={styles.optionRow} aria-label="Keep working">
+          <Target aria-hidden />
+          <span className={styles.optionCopy}>
+            <span>Keep working</span>
+            <small>Continue until your goal is complete</small>
+          </span>
           {goal}
-        </div>
+        </label>
         {coordinator && (
-          <div className={styles.optionRow}>
-            <div>
-              <strong>Coordinator</strong>
-              <p>
-                Plan and delegate work in this project. Permanent after sending.
-              </p>
-            </div>
+          <label className={styles.optionRow} aria-label="Coordinate agents">
+            <TreeStructure aria-hidden />
+            <span className={styles.optionCopy}>
+              <span>Coordinate agents</span>
+              <small>Can't be turned off after sending</small>
+            </span>
             {coordinator}
-          </div>
+          </label>
         )}
-        {environment && (
-          <div className={styles.optionRow}>
-            <div>
-              <strong>Working environment</strong>
-              <p>Choose where this chat runs and which folders it can use.</p>
-            </div>
+        {(environment || context) && (
+          <div className={styles.optionActions}>
             {environment}
-          </div>
-        )}
-        {context && (
-          <div className={styles.optionRow}>
-            <div>
-              <strong>Start with fresh context</strong>
-              <p>Keep your chat history, files and draft.</p>
-            </div>
             {context}
           </div>
         )}
@@ -80,12 +62,17 @@ export function TaskOptions({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={trigger}
-        aria-label="Task options"
-        title="Task options"
+        aria-label="Chat options"
+        title="Chat options"
       >
         <SlidersHorizontal />
       </PopoverTrigger>
-      <PopoverPopup side="top" align="start" className={styles.popup}>
+      <PopoverPopup
+        side="top"
+        align="end"
+        sideOffset={8}
+        className={`${styles.popup} ${styles.taskPopup}`}
+      >
         {content}
       </PopoverPopup>
     </Popover>

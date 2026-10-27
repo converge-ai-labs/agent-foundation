@@ -238,7 +238,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   const user = userEvent.setup();
   mount();
   if (!screen.queryByRole("button", { name: "Environments" }))
-    await user.click(screen.getByRole("button", { name: "Task options" }));
+    await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   const folder = screen.getByDisplayValue("/workspace");
@@ -247,7 +247,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(draft.environment).toBeUndefined();
   if (!screen.queryByRole("button", { name: "Environments" }))
-    await user.click(screen.getByRole("button", { name: "Task options" }));
+    await user.click(screen.getByRole("button", { name: "Chat options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getByDisplayValue("/workspace")).toBeTruthy();
   const restoredFolder = screen.getByDisplayValue("/workspace");
@@ -270,7 +270,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.click(
     screen.getByRole("button", { name: "Close Agent & Model settings" }),
   );
-  await user.click(screen.getByRole("button", { name: "Task options" }));
+  await user.click(screen.getByRole("button", { name: "Chat options" }));
   expect(
     (
       screen.getByRole("button", {
@@ -279,7 +279,9 @@ it("edits working folders in-place, cancels without applying, and locks pending 
     ).disabled,
   ).toBe(true);
   expect(
-    screen.getByRole("switch", { name: "Goal" }).getAttribute("aria-disabled"),
+    screen
+      .getByRole("switch", { name: "Keep working" })
+      .getAttribute("aria-disabled"),
   ).toBe("true");
 });
 
@@ -292,7 +294,7 @@ it.each([false, true])(
     mount();
     const editor = screen.getByRole("textbox", { name: "Message" });
     if (!screen.queryByRole("button", { name: "Environments" }))
-      await user.click(screen.getByRole("button", { name: "Task options" }));
+      await user.click(screen.getByRole("button", { name: "Chat options" }));
     await user.click(screen.getByRole("button", { name: "Environments" }));
     const folder = screen.getByDisplayValue("/workspace");
     await user.clear(folder);

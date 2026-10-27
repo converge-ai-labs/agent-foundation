@@ -290,7 +290,7 @@ function GuestShell({
             })}
           </span>
           <span className={styles.badge}>
-            {canPrompt ? "Can prompt" : "Can view"}
+            {canPrompt ? "Can send messages" : "View only"}
           </span>
           <ParticipantAvatars
             participants={(live.presence?.participants ?? []).filter(

@@ -89,11 +89,11 @@ Run 活跃时，**Next message** 仍可编辑，但不会成为队列。**Steer*
 
 ## 分享 Thread 或 Project
 
-1. 点击 Thread 中麦克风旁的 **Share**，或 Project 菜单中的 **Share Project**。
-2. 选择 **Thread** 或 **Project**。Project 链接包含当前和未来的 Thread；Thread 移出后，该链接不再能访问它。
-3. 选择 **Can view** 阅读历史、附件和实时输出，或选择 **Can prompt** 共同编辑草稿、上传、发送和引导工作。可发送的访客还能按 Project 默认设置创建 Thread。
+1. 点击聊天顶部的 **Share**，或 Project 菜单中的 **Share Project**。
+2. 在 **Include** 中选择 **This chat** 或 **All chats in [project]**。Project 链接包含当前和未来的 Thread；Thread 移出后，该链接不再能访问它。
+3. 选择 **View only** 阅读历史、附件和实时输出，或选择 **Send messages** 共同编辑草稿、上传、发送和引导工作。可发送的访客还能按 Project 默认设置创建 Thread。
 4. 选择一小时、一天或七天的有效期，再点击 **Create link**。仅打开面板不会生成链接。
-5. 点击 **Copy link** 或 **Preview as guest**。关闭前请复制，密钥只显示一次。在 **Active links** 中修改权限后点击 **Save**，或用 **Revoke** 撤销访问。
+5. 点击 **Copy link** 或 **Open shared view**。关闭前请复制，密钥只显示一次。在 **Manage links** 中修改权限后点击 **Save**，或用 **Revoke** 撤销访问。
 
 只把可发送链接交给信任的人。提示词使用现有 Agent 的工具和 Environment 权限，包括跨对话工具。分享限制浏览器/API 访问范围，不隔离 Agent 执行。访客不能修改配置、回答审批、使用原生 Files 或 Terminal，也不能管理链接。审批由实例主人处理。
 
@@ -118,7 +118,7 @@ Memory 控制仍位于 **Settings → General**。关闭自动整理会保留 Me
 
 ## 与 Coordinator 协作
 
-选择一个 Project，在输入框中开启 **Coordinator**，然后发送目标。这会创建 Coordinator，或在发送前将已有普通对话转换为 Coordinator。窄屏下，开关仍位于输入框顶部。每个 Project 可以有多个 Coordinator；**Goal** 是独立选项，参阅[围绕 Goal 持续工作](everyday-use.md#work-toward-a-goal)。
+选择一个 Project，在输入框的 **Chat options** 中开启 **Coordinate agents**，然后发送目标。这会创建 Coordinator，或在发送前将已有普通对话转换为 Coordinator。开启的选项在所有屏幕尺寸下都会显示在编辑区上方。每个 Project 可以有多个 Coordinator；**Keep working** 是独立的 Goal 选项，参阅[围绕 Goal 持续工作](everyday-use.md#work-toward-a-goal)。
 
 创建或转换后，该角色不可撤销。如果之后发送失败，对话仍保留 Coordinator 角色，输入也会保留以便重试。Coordinator 必须归属一个 Project。
 
@@ -148,9 +148,9 @@ Coordinator 创建 worker、回答问题并整合已验证结果。展开其侧�
 
 ## Agent 与模型设置
 
-输入框底部右侧只读显示当前 Agent 和模型名称。通过旁边的 **Agent & Model settings** 图标修改。Agent、Model 和 Reasoning mode 在同一面板中打开各自选项；Thinking 等级和 Fast 按钮直接显示在概览中。每项都有 **Use default** ，可以恢复继承设置，无需猜测哪个显式值与默认值等效。
+输入框底部显示当前 Model。打开 **Agent & Model settings** 控件，可以修改 Agent、Model，以及支持的 Thinking、Speed 和 Reasoning mode 选项。各项选择都在同一面板中打开。每项都有 **Use default** ，可以恢复继承设置，无需猜测哪个显式值与默认值等效。
 
-手机上面板以底部弹层打开。**Goal**、**Coordinator** 和 **Environments** 仍位于输入框顶部。在任何屏幕尺寸下，附件旁的 **Clear context** 橡皮擦按钮都会让下一条消息不带之前的模型消息、笔记、任务或其他已保存的 Agent 工作状态开始。待处理的问题和审批会被丢弃；聊天历史、文件、对话设置和未发送输入会保留。
+手机上的 Agent 与模型面板以底部弹层打开。编辑区旁的 **Chat options** 包含 **Keep working**、**Coordinate agents**、**Environment** 和 **Clear context**。**Clear context** 会让下一条消息不带之前的模型消息、笔记、任务或其他已保存的 Agent 工作状态开始。待处理的问题和审批会被丢弃；聊天历史、文件、对话设置和未发送输入会保留。
 
 ## Fast 模式
 

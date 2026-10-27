@@ -351,8 +351,8 @@ function NewConversation({
       onContinue={() => setShowAvailable(true)}
     >
       <section className={styles.page} aria-label="New chat">
-        <h1 className={styles.welcome}>What can I help with?</h1>
         <div className={styles.inputArea}>
+          <h1 className={styles.welcome}>What can I help with?</h1>
           <ConversationTranscript
             entries={[]}
             blocks={[]}
