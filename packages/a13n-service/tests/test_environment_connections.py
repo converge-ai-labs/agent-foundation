@@ -138,6 +138,6 @@ async def test_connection_reference_query_and_delete_are_available_through_mcp(s
             "DELETE",
             "/environment-providers/{provider_id}",
             provider_id=provider["id"],
-            **{"If-Match": etag(provider)},
+            if_match=etag(provider),
         )
         assert result["status"] == 204

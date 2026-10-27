@@ -76,7 +76,7 @@ async def test_generated_schemas_bodies_metadata_errors_and_no_cookie_state() ->
     assert not Draft202012Validator(schema).is_valid({"request_body": {"kind": "managed", "config": {"unknown": True}}})
     with caller():
         for body in ({"note": None}, {}):
-            result = await mapped["update_item"].run({"item_id": "one", "if-match": '"item:1"', "request_body": body})
+            result = await mapped["update_item"].run({"item_id": "one", "if_match": '"item:1"', "request_body": body})
             value = result.structured_content
             assert value["body"] == {"note": None}
             assert value["headers"] == {"etag": '"item:2"', "x-request-id": "req_test"}
@@ -178,3 +178,61 @@ def test_assembly_rejects_invalid_admission_and_names_are_order_independent() ->
     second = tool_name("a" * 90 + "y")
     assert first != second and len(first) == len(second) == 64
     assert json.dumps(first) == json.dumps(tool_name("a" * 90 + "x"))
+
+
+async def test_header_arguments_use_snake_case_names_and_reach_their_http_headers() -> None:
+    app = FastAPI()
+    seen = []
+
+    @app.post("/items/{item_id}/runs", operation_id="start_item", openapi_extra=ADMIT)
+    async def start(
+        item_id: str,
+        body: Nested,
+        request: Request,
+        idempotency_key: str = Header(alias="Idempotency-Key"),
+        if_match: str | None = Header(None, alias="If-Match"),
+    ) -> dict:
+        seen.append(dict(request.headers))
+        return {}
+
+    @app.get("/items/{item_id}/events", operation_id="item_events", openapi_extra=ADMIT)
+    async def events(item_id: str, request: Request, last_event_id: str | None = Header(None, alias="Last-Event-ID")):
+        seen.append(dict(request.headers))
+        return {}
+
+    mapped = tools(app)
+    start_schema = mapped["start_item"].parameters
+    assert set(start_schema["properties"]) == {"item_id", "idempotency_key", "if_match", "request_body"}
+    assert set(start_schema["required"]) == {"item_id", "idempotency_key", "request_body"}
+    assert set(mapped["item_events"].parameters["properties"]) == {"item_id", "last_event_id"}
+    for tool in mapped.values():
+        assert not {"If-Match", "Idempotency-Key", "Last-Event-ID"} & tool.parameters["properties"].keys()
+    with caller():
+        result = await mapped["start_item"].run(
+            {"item_id": "one", "idempotency_key": "key-1", "if_match": '"item:1"', "request_body": {}}
+        )
+        assert result.structured_content["status"] == 200
+        assert seen[-1]["idempotency-key"] == "key-1" and seen[-1]["if-match"] == '"item:1"'
+        await mapped["item_events"].run({"item_id": "one", "last_event_id": "1-2"})
+        assert seen[-1]["last-event-id"] == "1-2"
+        # The HTTP spelling is not an argument name; the rejection names the replacement instead.
+        with pytest.raises(ToolError) as rejected:
+            await mapped["start_item"].run(
+                {"item_id": "one", "Idempotency-Key": "secret-key-value", "request_body": {}}
+            )
+        message = str(rejected.value)
+        assert "Idempotency-Key" in message
+        assert "idempotency_key" in message and "if_match" in message and "request_body" in message
+        assert "secret-key-value" not in message
+        assert len(seen) == 2
+
+
+def test_header_argument_names_must_stay_unique() -> None:
+    app = FastAPI()
+
+    @app.get("/items/{item_id}", operation_id="item", openapi_extra=ADMIT)
+    async def item(item_id: str, header: str | None = Header(None, alias="Item-Id")) -> dict:
+        return {}
+
+    with pytest.raises(ValueError, match="item_id collides"):
+        tools(app)

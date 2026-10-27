@@ -75,11 +75,16 @@ def api_tools(app: ASGIApp, schema: dict[str, Any], base_url: str, routes: Seque
     return tools
 
 
+def argument_name(header: str) -> str:
+    """The model-facing name of a header parameter: lowercase snake_case, such as `If-Match` -> `if_match`."""
+    return re.sub(r"[^a-z0-9]+", "_", header.lower()).strip("_")
+
+
 def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
-    """Keep transport parameters flat and the original JSON body nested."""
+    """Keep transport parameters flat and the original JSON body nested; header arguments are snake_case."""
     parameters = deepcopy(route.flat_param_schema)
     properties = parameters.setdefault("properties", {})
-    mappings = {}
+    transport = {}
     for key, mapping in route.parameter_map.items():
         if mapping["location"] == "body" or (
             mapping["location"] == "header" and mapping["openapi_name"].lower() in CONTEXT_HEADERS
@@ -89,7 +94,21 @@ def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str,
         else:
             if mapping["location"] == "cookie":
                 raise ValueError(f"MCP operations cannot use cookie parameters: {route.operation_id}")
-            mappings[key] = mapping
+            transport[key] = mapping
+    # Rename only after body fields are gone, so a body field never shadows or swallows a renamed header.
+    mappings: dict[str, dict[str, str]] = {}
+    for key, mapping in transport.items():
+        name = key
+        if mapping["location"] == "header":
+            name = argument_name(mapping["openapi_name"])
+            if not name:
+                raise ValueError(f"MCP header parameter has no argument name: {route.operation_id}")
+            if name != key:
+                if name in properties:
+                    raise ValueError(f"MCP argument {name} collides after normalization: {route.operation_id}")
+                properties[name] = properties.pop(key)
+                parameters["required"] = [name if item == key else item for item in parameters.get("required", [])]
+        mappings[name] = mapping
     if "request_body" in properties:
         raise ValueError(f"MCP parameter collides with request_body: {route.operation_id}")
     if route.request_body:
@@ -144,7 +163,7 @@ class ApiTool(Tool):
         super().__init__(
             name=name,
             description=f"{route.method} {route.path}\n{route.description or route.summary or ''}\n"
-            "Returns {status, headers, body}. Use headers.etag as If-Match for subsequent writes. "
+            "Returns {status, headers, body}. Use headers.etag as if_match for subsequent writes. "
             "Writes are not retried; check resource state after an unknown outcome.",
             parameters=parameters,
             output_schema=_output_schema(route, error_schema),
@@ -165,8 +184,13 @@ class ApiTool(Tool):
         self._base_url = base_url
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        if arguments.keys() - self.parameters["properties"].keys():
-            raise ToolError("Unknown operation arguments; use the names in the tool schema")
+        accepted = self.parameters["properties"].keys()
+        if unknown := arguments.keys() - accepted:
+            # Names only, never values; a caller on an outdated spelling sees the replacement.
+            raise ToolError(
+                f"Unknown operation arguments: {', '.join(sorted(key[:64] for key in unknown))}. "
+                f"Use the names in the tool schema: {', '.join(sorted(accepted)) or '(none)'}"
+            )
         for name, mapping in self._route.parameter_map.items():
             if mapping["location"] == "path":
                 converter = self._target.param_convertors[mapping["openapi_name"]]

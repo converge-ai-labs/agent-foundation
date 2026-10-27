@@ -49,7 +49,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": created["headers"]["etag"]},
+            if_match=created["headers"]["etag"],
             request_body={},
         )
         assert unchanged["status"] == 200 and unchanged["body"]["guide"] == "custom"
@@ -59,7 +59,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": unchanged["headers"]["etag"]},
+            if_match=unchanged["headers"]["etag"],
             request_body={"guide": None},
         )
         assert cleared["status"] == 200 and cleared["body"]["guide"] is None
@@ -69,7 +69,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
             "PATCH",
             "/memories/{memory_id}",
             **args,
-            **{"If-Match": created["headers"]["etag"]},
+            if_match=created["headers"]["etag"],
             request_body={"guide": "stale"},
         )
         assert stale["status"] == 412 and stale["body"]["error"]["code"] == "precondition_failed"
@@ -77,7 +77,7 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         listing = await call(http, service, "GET", "/memories", limit=1)
         assert listing["body"]["items"][0]["id"] == memory_id
         deleted = await call(
-            http, service, "DELETE", "/memories/{memory_id}", **args, **{"If-Match": cleared["headers"]["etag"]}
+            http, service, "DELETE", "/memories/{memory_id}", **args, if_match=cleared["headers"]["etag"]
         )
         assert deleted["status"] == 204 and deleted["body"] is None
     async with short_session(service.runtime.storage) as session:
