@@ -410,7 +410,8 @@ it("lazily fetches five rows per expanded project and preserves each page throug
   expect(screen.queryByRole("button", { name: "Reorder One" })).toBeNull();
   if (!screen.queryByRole("searchbox"))
     fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
-  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
   expect(activity).toHaveLength(calls + 1);
 });
@@ -648,7 +649,7 @@ it("does not cancel an in-flight Show more when a summary event refreshes naviga
   expect(pageAborted).toBe(false);
 });
 
-it("preserves project scope filtering and cached independent pages through scoped search", async () => {
+it("scopes the search dialog without resetting the sidebar's loaded pages", async () => {
   mount();
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "One" }));
@@ -657,40 +658,37 @@ it("preserves project scope filtering and cached independent pages through scope
     screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByText("Older two");
-  await user.click(screen.getByRole("button", { name: "Two" }));
-  await screen.findByText("Other project");
-  if (!screen.queryByRole("searchbox"))
-    await user.click(screen.getByRole("button", { name: "Search chats" }));
-  await user.click(screen.getByRole("button", { name: "Filter by project" }));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Project scope" }),
-  );
+  const calls = activity.length;
+  const trigger = screen.getByRole("button", { name: "Search chats" });
+  await user.click(trigger);
+  const search = screen.getByRole("searchbox", { name: "Find chats" });
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  expect(activity).toHaveLength(calls);
+  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
   await user.click(await screen.findByRole("option", { name: "Two" }));
-  expect(screen.queryByRole("button", { name: "One" })).toBeNull();
-  expect(screen.getByRole("link", { name: "Other project" })).toBeTruthy();
-  if (!screen.queryByRole("searchbox"))
-    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
-  fireEvent.change(screen.getByRole("searchbox", { name: "Find chats" }), {
-    target: { value: "match" },
-  });
+  expect(activity).toHaveLength(calls);
+  fireEvent.change(search, { target: { value: "match" } });
   await screen.findByText("Global match");
   expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
-  expect(screen.getByText("Results from Two")).toBeTruthy();
-  if (!screen.queryByRole("searchbox"))
-    fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
-  fireEvent.change(screen.getByRole("searchbox", { name: "Find chats" }), {
-    target: { value: "" },
-  });
-  const calls = activity.length;
-  if (!screen.queryByRole("searchbox"))
-    await user.click(screen.getByRole("button", { name: "Search chats" }));
-  await user.click(screen.getByRole("button", { name: "Filter by project" }));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Project scope" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "All Projects" }));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(trigger);
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
-  expect(activity).toHaveLength(calls);
+  expect(activity).toHaveLength(calls + 1);
+  await user.click(trigger);
+  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
+  expect(
+    screen.getByRole("combobox", { name: "Project scope" }).textContent,
+  ).toContain("All projects");
+  fireEvent.change(screen.getByRole("searchbox"), {
+    target: { value: "match" },
+  });
+  const match = await screen.findByRole("link", { name: "Global match" });
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(match);
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByText("/threads/Global%20match")).toBeTruthy();
 });
 
 it("preserves status labels, title tooltips and independent action menus from the polished navigation", async () => {
@@ -1163,9 +1161,11 @@ it("keeps the entry and project rows stable while local drafts appear and clear"
   act(() => {
     draft.doc.getText("text").insert(0, "Remember me");
   });
-  expect(await screen.findByRole("button", { name: "Drafts 1" })).toBe(trigger);
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(document.activeElement).toBe(search);
+  await waitFor(() => expect(trigger.textContent).toContain("1"));
+  expect(screen.getByRole("dialog", { name: "Search chats" })).toBeTruthy();
+  await waitFor(() => expect(document.activeElement).toBe(search));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("button", { name: "One" })).toBe(project);
   await user.click(trigger);
   await screen.findByRole("link", { name: /old-draft/ });
@@ -1590,20 +1590,12 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
   await within(group).findByRole("link", { name: /owner.*Coordinator/ });
-  fireEvent.click(
-    await within(group).findByRole("button", {
-      name: "Recent chats in One",
-    }),
-  );
   expect(
     within(group).getByRole("link", { name: /owner.*Coordinator/ }),
   ).toBeTruthy();
   expect(
     within(group).getByRole("heading", { name: "New results · 1" }),
   ).toBeTruthy();
-  fireEvent.click(
-    within(group).getByRole("button", { name: "Recent chats in One" }),
-  );
   fireEvent.click(
     await screen.findByRole("button", {
       name: "Show more chats in One",
@@ -1836,7 +1828,7 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
   );
 });
 
-it("collapses only read history while retaining every active and unread chat", async () => {
+it("limits read history while retaining every active, unread and selected chat", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
@@ -1861,21 +1853,15 @@ it("collapses only read history while retaining every active and unread chat", a
   const group = await screen.findByRole("region", { name: "One" });
   await within(group).findByRole("link", { name: /Active 6/ });
   const selected = within(group).getByRole("link", { name: "selected-old" });
-  const recent = within(group).getByRole("button", {
-    name: "Recent chats in One",
-  });
-  fireEvent.click(recent);
-  expect(recent.getAttribute("aria-expanded")).toBe("false");
-  expect(within(group).getAllByRole("link")).toHaveLength(14);
+  expect(within(group).getAllByRole("link")).toHaveLength(19);
   expect(
     within(group).getAllByRole("img", { name: "New result" }),
   ).toHaveLength(6);
-  expect(within(group).queryByRole("link", { name: "Recent 1" })).toBeNull();
+  expect(within(group).getByRole("link", { name: "Recent 1" })).toBeTruthy();
   expect(within(group).getByRole("link", { name: "selected-old" })).toBe(
     selected,
   );
   expect(activity).toHaveLength(1);
-  fireEvent.click(recent);
   fireEvent.click(
     within(group).getByRole("button", {
       name: "Show more chats in One",
@@ -1888,7 +1874,11 @@ it("collapses only read history while retaining every active and unread chat", a
     }),
   );
   expect(within(group).queryByRole("link", { name: "Older two" })).toBeNull();
-  expect(document.activeElement).toBe(recent);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      within(group).getByRole("button", { name: "Show more chats in One" }),
+    ),
+  );
   expect(within(group).getByRole("link", { name: "selected-old" })).toBe(
     selected,
   );
@@ -1926,14 +1916,13 @@ it("previews project paths on keyboard focus without loading collapsed history",
   expect(document.activeElement).toBe(project);
 });
 
-it("keeps collapsed history reachable when every loaded recent row becomes unread", async () => {
+it("keeps older history reachable when every loaded recent row becomes unread", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
   mount("/", false, results);
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   await screen.findByRole("link", { name: "Recent 5" });
-  fireEvent.click(screen.getByRole("button", { name: "Recent chats in One" }));
   await act(async () => {
     for (let i = 1; i <= 5; i++) {
       const item = {
@@ -1952,19 +1941,13 @@ it("keeps collapsed history reachable when every loaded recent row becomes unrea
   expect(screen.getByRole("heading", { name: "New results · 5" })).toBeTruthy();
   expect(screen.getByRole("link", { name: /Recent 5/ })).toBeTruthy();
   fireEvent.click(
-    screen.getByRole("button", {
-      name: "Recent chats in One",
-      expanded: false,
-    }),
-  );
-  fireEvent.click(
     screen.getByRole("button", { name: "Show more chats in One" }),
   );
   await screen.findByRole("link", { name: "Older two" });
   vi.restoreAllMocks();
 });
 
-it("keeps the owner of an unread worker above collapsed history", async () => {
+it("keeps the owner of an unread worker above read history", async () => {
   vi.stubGlobal("indexedDB", new IDBFactory());
   coordinators = [
     { ...thread("worker-owner"), role: "coordinator", archived: true },
@@ -1989,9 +1972,6 @@ it("keeps the owner of an unread worker above collapsed history", async () => {
   const owner = await screen.findByRole("link", {
     name: /worker-owner.*Coordinator/,
   });
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Recent chats in One" }),
-  );
   expect(screen.getByRole("link", { name: /worker-owner.*Coordinator/ })).toBe(
     owner,
   );

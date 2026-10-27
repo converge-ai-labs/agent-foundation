@@ -199,8 +199,6 @@ function WorkbenchContent({
     ...(voiceSettings.data?.enabled
       ? [{ to: "/live", label: "Live", icon: Waveform }]
       : []),
-    ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
-    { to: "/settings", label: "Settings", icon: Gear },
   ];
   const navigation = (
     <>
@@ -215,21 +213,23 @@ function WorkbenchContent({
       ) : (
         <ConversationNavigation />
       )}
-      <nav aria-label="Workbench shortcuts" className={styles.supportingNav}>
-        {links.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === "/"}
-            className={({ isActive }) =>
-              isActive ? styles.activeNav : styles.navLink
-            }
-          >
-            <Icon size={18} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
-      </nav>
+      {links.length > 0 && (
+        <nav aria-label="Workbench shortcuts" className={styles.supportingNav}>
+          {links.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              className={({ isActive }) =>
+                isActive ? styles.activeNav : styles.navLink
+              }
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      )}
       <div className={styles.sidebarFooter}>
         <Menu>
           <MenuTrigger
@@ -250,6 +250,17 @@ function WorkbenchContent({
             <CaretUpDown size={16} aria-hidden="true" />
           </MenuTrigger>
           <MenuPopup side="top" align="start" className={styles.workspacePopup}>
+            <MenuItem render={<Link to="/settings" />}>
+              <Gear />
+              Settings
+            </MenuItem>
+            {memoryEnabled && (
+              <MenuItem render={<Link to="/memory" />}>
+                <Brain />
+                Memory
+              </MenuItem>
+            )}
+            <MenuSeparator />
             <MenuItem onClick={openPeople}>
               <Users />
               People & display name

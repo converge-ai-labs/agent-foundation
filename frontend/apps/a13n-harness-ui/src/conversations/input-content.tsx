@@ -330,34 +330,36 @@ export function InputContent({
       <div
         className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
       >
-        <header>
-          {source && guest ? (
-            <span className={styles.threadSource}>
-              From thread · {source.title || source.id}
-            </span>
-          ) : source ? (
-            <Link
-              className={styles.threadSource}
-              to={`/threads/${encodeURIComponent(source.id)}`}
-              title={
-                source.title ? `${source.title} · ${source.id}` : source.id
-              }
-              aria-label={`From thread ${source.title || source.id}`}
-            >
-              <Chats size={16} aria-hidden="true" />
-              <span className={styles.threadSourceLabel}>From thread</span>
-              <span className={styles.threadSourceName}>
-                {source.title || source.id}
+        {(source || status) && (
+          <header>
+            {source && guest ? (
+              <span className={styles.threadSource}>
+                From thread · {source.title || source.id}
               </span>
-              <ArrowUpRight size={12} aria-hidden="true" />
-            </Link>
-          ) : null}
-          {status && (
-            <span role="status" className={styles.inputStatus}>
-              {status}
-            </span>
-          )}
-        </header>
+            ) : source ? (
+              <Link
+                className={styles.threadSource}
+                to={`/threads/${encodeURIComponent(source.id)}`}
+                title={
+                  source.title ? `${source.title} · ${source.id}` : source.id
+                }
+                aria-label={`From thread ${source.title || source.id}`}
+              >
+                <Chats size={16} aria-hidden="true" />
+                <span className={styles.threadSourceLabel}>From thread</span>
+                <span className={styles.threadSourceName}>
+                  {source.title || source.id}
+                </span>
+                <ArrowUpRight size={12} aria-hidden="true" />
+              </Link>
+            ) : null}
+            {status && (
+              <span role="status" className={styles.inputStatus}>
+                {status}
+              </span>
+            )}
+          </header>
+        )}
         {source ? (
           <div id={contentId} hidden={!expanded}>
             {content}

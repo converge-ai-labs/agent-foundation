@@ -10,32 +10,17 @@
   padding-bottom: 8vh;
 }
 .welcome {
-  width: min(100%, 720px);
-  margin: 0 auto 28px;
-  padding: 0 4px;
-}
-.eyebrow {
-  display: block;
-  margin-bottom: 12px;
-  font-size: 12px;
+  width: min(100%, 680px);
+  margin: 0 auto 24px;
+  text-align: center;
+  font-size: 24px;
   font-weight: 500;
-  color: var(--a13n-secondary);
-}
-.welcome h1 {
-  margin: 0 0 10px;
-  font-size: 28px;
-  font-weight: 500;
-  line-height: 1.3;
-  letter-spacing: -0.035em;
-  overflow-wrap: anywhere;
-}
-.welcome p {
-  color: var(--a13n-secondary);
-  font-size: 14px;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
 }
 .inputArea {
   flex-shrink: 0;
-  width: min(100%, 720px);
+  width: min(100%, 680px);
   margin: 0 auto;
 }
 .inputArea > section {
@@ -75,55 +60,8 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-.suggestions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 24px;
-}
-.suggestions > button {
-  position: relative;
-  display: grid;
-  gap: 6px;
-  padding: 16px;
-  border: 0;
-  border-radius: 12px;
-  background: transparent;
-  text-align: start;
-  cursor: pointer;
-  color: var(--a13n-secondary);
-  transition: background 120ms ease;
-}
-.suggestions > button:hover {
-  background: var(--a13n-surface);
-}
-.suggestions > button:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-.suggestions strong {
-  color: var(--a13n-text);
-  font-size: 13px;
-  font-weight: 500;
-  margin-top: 6px;
-}
-.suggestions span {
-  font-size: 12px;
-  line-height: 1.5;
-}
-.suggestionArrow {
-  position: absolute;
-  right: 12px;
-  top: 18px;
-  opacity: 0;
-}
-.suggestions > button:hover .suggestionArrow,
-.suggestions > button:focus-visible .suggestionArrow {
-  opacity: 1;
-}
-@container new-conversation (max-height: 380px) {
-  .welcome,
-  .suggestions {
+@container new-conversation (max-height: 320px) {
+  .welcome {
     display: none;
   }
   .inputArea {
@@ -199,36 +137,11 @@
 @media (max-width: 600px) {
   .page {
     justify-content: flex-start;
-    padding: 36px 0 0;
+    padding: 12vh 0 0;
   }
   .welcome {
     margin-bottom: 24px;
-  }
-  .welcome h1 {
     font-size: 24px;
-  }
-  .suggestions {
-    grid-template-columns: 1fr;
-    gap: 2px;
-    margin-top: 16px;
-  }
-  .suggestions > button {
-    grid-template-columns: 24px 1fr;
-    gap: 2px 12px;
-    padding: 12px 8px;
-  }
-  .suggestions strong {
-    margin: 0;
-  }
-  .suggestions > button > svg:first-child {
-    grid-row: span 2;
-    align-self: center;
-  }
-  .suggestions span {
-    grid-column: 2;
-  }
-  .suggestionArrow {
-    display: none;
   }
   .context {
     gap: 8px;

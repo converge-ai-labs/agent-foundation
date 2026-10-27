@@ -446,7 +446,7 @@ it("forgets the retained credential and closes protected views", async () => {
   );
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
   expect(
-    screen.queryByRole("heading", { name: "What are we working on?" }),
+    screen.queryByRole("heading", { name: "What can I help with?" }),
   ).toBeNull();
 });
 
@@ -760,7 +760,7 @@ it("works without browser storage", async () => {
   try {
     render(<BrowserApp />);
     await screen.findByRole("heading", {
-      name: "What are we working on?",
+      name: "What can I help with?",
     });
     await userEvent.click(
       screen.getByRole("button", { name: "Workspace menu" }),
@@ -1611,7 +1611,7 @@ it("shows one connection notice for server loss and reconciles on retry without 
   });
   expect(
     await screen.findByRole("heading", {
-      name: "What are we working on?",
+      name: "What can I help with?",
     }),
   ).toBeTruthy();
   expect(

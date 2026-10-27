@@ -459,7 +459,7 @@ function mount(initial = path, sidebar = false) {
 }
 async function fill() {
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   await waitFor(() =>
     expect(
@@ -796,7 +796,7 @@ it("uses one composer across project plus actions, Home and settings without cre
   });
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   expect(editor.textContent).toBe("Build this");
@@ -806,13 +806,13 @@ it("uses one composer across project plus actions, Home and settings without cre
   fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
     "Build this",
   );
   fireEvent.click(screen.getByRole("link", { name: "New without project" }));
-  await screen.findByRole("heading", { name: "What are we working on?" });
+  await screen.findByRole("heading", { name: "What can I help with?" });
   expect(creations.current!.defaults.project_id).toBeNull();
   expect(values(original.composer.doc).prompt).toBe("Build this");
   expect(writes).toHaveLength(0);
@@ -872,7 +872,7 @@ it("explains a frozen project from sidebar plus and unlocks it only after a miss
     screen.getByRole("button", { name: "New chat in Second project" }),
   );
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(creations.current).toBe(original);
   expect(original.defaults.project_id).toBe("project-two");
@@ -978,7 +978,7 @@ it("unlocks creation choices on the backend missing-thread response when retryin
   );
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(creations.current!.attempted).toBe(false);
   expect(creations.current!.threadId).toBe(id);
@@ -994,11 +994,11 @@ it("restores text and choices after a full reload and persists deleting the inpu
   });
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   reload("/");
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
     "Build this",
@@ -1022,7 +1022,7 @@ it("creates the selected project only on Send, then starts a fresh singleton aft
   await fill();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   await waitFor(() =>
     expect(
@@ -1055,7 +1055,7 @@ it("retains the exact identity and frozen project when creation is uncertain acr
   );
   reload(newConversationPath("project-two"));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(creations.current!.attempted).toBe(true);
   expect(creations.current!.threadId).toBe(id);
@@ -1110,7 +1110,7 @@ it("retains staged files across project switches and explicitly requires reattac
   });
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(creations.current!.composer.uploads.size).toBe(1);
   reload("/");
@@ -1136,7 +1136,7 @@ it("retains accepted input on a saved-page read failure and starts a fresh draft
   expect(creations.current).toBeUndefined();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
-    name: "What are we working on?",
+    name: "What can I help with?",
   });
   expect(creations.current!.threadId).not.toBe(id);
   expect(creations.current!.attempted).toBe(false);

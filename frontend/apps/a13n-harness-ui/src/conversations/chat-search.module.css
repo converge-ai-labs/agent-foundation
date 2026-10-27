@@ -1,0 +1,86 @@
+.popup {
+  display: flex;
+  flex-direction: column;
+  max-width: 580px;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 60px 12px 20px;
+  color: var(--a13n-secondary);
+}
+.search input {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: 15px;
+}
+.search > [data-slot="input-control"] {
+  flex: 1;
+  min-width: 0;
+}
+.search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.scope {
+  padding: 0 20px 12px;
+}
+.scope > button {
+  width: auto;
+  max-width: 100%;
+  height: 28px;
+  padding-inline: 8px;
+  border: 0;
+  box-shadow: none;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.results {
+  min-height: 120px;
+  max-height: min(420px, 55dvh);
+  overflow: auto;
+  padding: 4px 8px 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+.result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+.result:hover,
+.result:focus-visible {
+  background: var(--a13n-hover);
+  outline: none;
+}
+.result > svg {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.result > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.result strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.result small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.empty {
+  padding: 20px 12px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+}

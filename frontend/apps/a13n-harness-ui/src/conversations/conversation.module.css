@@ -8,22 +8,6 @@
 .navigation label {
   font-size: 12px;
 }
-.navigationFilters {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.navigationFilters > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-.scopePopup {
-  width: 240px;
-}
-.activeFilter {
-  color: var(--a13n-text);
-  background: var(--a13n-hover);
-}
 .navigationHeading {
   display: flex;
   align-items: center;
@@ -164,6 +148,12 @@
 }
 .projectGroup[open] {
   margin-bottom: 8px;
+}
+.projectPreview {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--a13n-border);
+  box-shadow: var(--shadow-floating);
 }
 .projectSummary {
   width: 280px;
@@ -635,11 +625,13 @@
   color: var(--a13n-text);
   padding: 10px 16px;
   background: var(--a13n-surface);
-  border-radius: 16px 16px 4px 16px;
-  line-height: 1.6;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .assistantMessage {
+  position: relative;
   margin: 12px 0 20px;
   line-height: 1.7;
 }
@@ -660,10 +652,28 @@
   right: -32px;
   margin: 0;
 }
+.assistantMessage > .messageActions {
+  position: absolute;
+  bottom: 0;
+  right: -32px;
+  margin: 0;
+}
 @container conversation-page (max-width: 600px) {
+  .userInput {
+    margin-bottom: 36px;
+  }
+  .messageActions {
+    opacity: 1;
+  }
+  .assistantMessage:has(> .messageActions) {
+    padding-bottom: 32px;
+  }
+  .assistantMessage > .messageActions {
+    right: 0;
+  }
   .userInput > .messageActions {
     top: auto;
-    bottom: -26px;
+    bottom: -32px;
     right: 0;
   }
 }
@@ -689,7 +699,24 @@
   color: var(--a13n-danger);
   font-size: 12px;
 }
+.userInput > .messageActions:has([role="alert"]),
+.assistantMessage > .messageActions:has([role="alert"]) {
+  position: static;
+  margin-top: 6px;
+  opacity: 1;
+}
 @media (pointer: coarse) {
+  .userInput {
+    margin-bottom: 48px;
+  }
+  .userInput > .messageActions {
+    top: auto;
+    right: 0;
+    bottom: -44px;
+  }
+  .assistantMessage:has(> .messageActions) {
+    padding-bottom: 44px;
+  }
   .copyMessage {
     width: 44px;
     height: 44px;
@@ -1294,8 +1321,7 @@
   border-top: 1px solid var(--a13n-border);
 }
 
-.sectionHeading,
-.recentToggle {
+.sectionHeading {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1315,26 +1341,6 @@
   margin-inline-start: auto;
   width: 24px;
   height: 24px;
-}
-.recentToggle {
-  width: 100%;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  text-align: start;
-}
-.recentToggle:hover {
-  background: var(--a13n-hover);
-}
-.recentToggle:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-.recentToggle > svg {
-  width: 12px;
-  height: 12px;
-  transition: transform 120ms ease;
 }
 .showMore {
   margin: 4px 0 0 8px;
@@ -1405,10 +1411,10 @@
   display: none;
 }
 .inputText {
-  font-size: 15px;
+  font-size: inherit;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.8;
+  line-height: inherit;
 }
 .inputAttachment {
   display: inline-block;
@@ -1518,12 +1524,13 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 12px 14px;
-  margin-block: 14px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 12px;
+  padding: 10px 12px;
+  margin-block: 12px;
+  border: 0;
+  border-radius: 10px;
   font-size: 13px;
-  background: var(--muted);
+  line-height: 1.5;
+  background: var(--a13n-surface);
 }
 .failureNotice > svg {
   flex: 0 0 18px;
@@ -1533,7 +1540,11 @@
 .failureNotice > div {
   min-width: 0;
 }
+.failureNotice strong {
+  font-weight: 500;
+}
 .failureNotice p {
+  color: var(--a13n-secondary);
   margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
@@ -1626,6 +1637,12 @@
   margin-bottom: 28px;
   outline: none;
   scroll-margin-top: 16px;
+}
+.turn:has(+ .failureNotice) {
+  margin-bottom: 0;
+}
+.turn:has(+ .failureNotice) .assistantMessage:last-child {
+  margin-bottom: 0;
 }
 .turn:focus-visible {
   outline: 2px solid var(--a13n-border);

@@ -8,13 +8,7 @@ import {
 } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Folder,
-  ArrowUpRight,
-  Code,
-  MagnifyingGlass,
-  ListChecks,
-} from "@phosphor-icons/react";
+import { Folder } from "@phosphor-icons/react";
 import { Button, SearchPicker } from "a13n-ui";
 import {
   useProjects,
@@ -357,13 +351,7 @@ function NewConversation({
       onContinue={() => setShowAvailable(true)}
     >
       <section className={styles.page} aria-label="New chat">
-        <div className={styles.welcome}>
-          <span className={styles.eyebrow}>
-            {project ? project.name : "Your workspace"}
-          </span>
-          <h1>What are we working on?</h1>
-          <p>Bring a question, a rough idea, or a task to finish.</p>
-        </div>
+        <h1 className={styles.welcome}>What can I help with?</h1>
         <div className={styles.inputArea}>
           <ConversationTranscript
             entries={[]}
@@ -563,60 +551,6 @@ function NewConversation({
             <Link className={styles.setup} to="/setup">
               Continue setup
             </Link>
-          )}
-          {!composerDraft.doc.getText("text").length && !choicesDisabled && (
-            <div
-              className={styles.suggestions}
-              aria-label="Ideas to get started"
-            >
-              {[
-                {
-                  title: "Explore a project",
-                  description: "Find your way around the code",
-                  icon: MagnifyingGlass,
-                  prompt:
-                    "Explore this project. Explain how it is organized, where the main entry points are, and what I should know before making changes.",
-                },
-                {
-                  title: "Make a change",
-                  description: "Turn an idea into working code",
-                  icon: Code,
-                  prompt:
-                    "Help me make a change to this project. First, ask what I want to build, then inspect the relevant code and propose an approach.",
-                },
-                {
-                  title: "Review my work",
-                  description: "Find issues before they ship",
-                  icon: ListChecks,
-                  prompt:
-                    "Review the current changes. Look for bugs, missing cases, and unclear behavior. Explain the most important findings first.",
-                },
-              ].map(({ title, description, icon: Icon, prompt }) => (
-                <button
-                  type="button"
-                  key={title}
-                  onClick={(event) => {
-                    const text = composerDraft.doc.getText("text");
-                    if (text.length || choicesDisabled) return;
-                    text.insert(0, prompt);
-                    composerDraft.notify();
-                    event.currentTarget
-                      .closest("section")
-                      ?.querySelector<HTMLElement>("[data-composer-editor]")
-                      ?.focus();
-                  }}
-                >
-                  <Icon size={18} aria-hidden="true" />
-                  <strong>{title}</strong>
-                  <span>{description}</span>
-                  <ArrowUpRight
-                    className={styles.suggestionArrow}
-                    size={14}
-                    aria-hidden="true"
-                  />
-                </button>
-              ))}
-            </div>
           )}
         </div>
       </section>

@@ -679,6 +679,10 @@ a.resourceRow:hover {
   overflow: hidden;
   max-width: 300px;
 }
+.mobileNavigation[data-nested-dialog-open] {
+  opacity: 0;
+  pointer-events: none;
+}
 .mobileNavigationHeader {
   display: flex;
   align-items: center;
