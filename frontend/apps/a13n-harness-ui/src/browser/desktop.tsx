@@ -15,12 +15,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "a13n-ui";
-import {
-  ArrowClockwise,
-  Camera,
-  HandArrowDown,
-  HandArrowUp,
-} from "@phosphor-icons/react";
+import { ArrowClockwise, Camera, HandArrowDown } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { bindClipboard, waitForClipboardWrites } from "./clipboard";
@@ -533,9 +528,8 @@ export function Desktop({
                   "Wait for the connection or reconnect."
                 ) : session.control === "human" ? (
                   <>
-                    Click <HandArrowUp aria-label="Hand back to Agent" /> to
-                    hand back, then <HandArrowDown aria-label="Take control" />{" "}
-                    to take control here.
+                    Click <HandArrowDown aria-label="Take control here" /> to
+                    move control to this browser. Agent tools stay paused.
                   </>
                 ) : (
                   <>

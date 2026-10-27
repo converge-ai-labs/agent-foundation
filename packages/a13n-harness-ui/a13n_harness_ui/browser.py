@@ -626,12 +626,10 @@ class HostBrowsers:
             item = self.checked(thread_id, binding)
             if human:
                 reconnecting = self.human_thread == thread_id
-                if self.human_thread and (
-                    not reconnecting or self.controller is not None or isinstance(self.desktop, MacDesktop)
-                ):
+                if self.human_thread and (not reconnecting or isinstance(self.desktop, MacDesktop)):
                     raise failure("Browser is already under human control.", "control_conflict")
-                # Explicit recovery can replace an unconnected controller's
-                # credentials without briefly releasing the automation barrier.
+                # Explicit transfer or recovery replaces the previous controller
+                # without briefly releasing the automation barrier.
                 if item.status != "ready":
                     raise failure("Start the browser before taking control.", "not_ready")
                 self.human_thread = thread_id

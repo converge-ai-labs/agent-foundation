@@ -212,13 +212,17 @@ export function BrowserPanel({
     !!(error || session?.error || session?.status === "failed");
   const human = session?.control === "human";
   const mac = session?.platform === "macos";
+  const transfer = human && !mac && !controlToken;
+  const handback = human && !transfer;
   const controlLabel = mac
     ? human
       ? "Resume automation"
       : "Pause automation"
-    : human
-      ? "Hand back to Agent"
-      : "Take control";
+    : transfer
+      ? "Take control here"
+      : human
+        ? "Hand back to Agent"
+        : "Take control";
   const canResize = !busy && !!controlToken && !!session?.resize_available;
   const viewport = session?.viewports?.find(
     (item) => item.preset === session.viewport,
@@ -230,12 +234,14 @@ export function BrowserPanel({
         aria-label={controlLabel}
         variant={human ? "default" : "outline"}
         title={
-          human
-            ? "Resume browser tools in all conversations"
-            : "Pause browser tools in all conversations"
+          transfer
+            ? "Move control to this browser while keeping Agent tools paused"
+            : human
+              ? "Resume browser tools in all conversations"
+              : "Pause browser tools in all conversations"
         }
         disabled={busy}
-        onClick={() => void command(human ? "handback" : "take-control")}
+        onClick={() => void command(handback ? "handback" : "take-control")}
       >
         {mac ? (
           human ? (
@@ -243,7 +249,7 @@ export function BrowserPanel({
           ) : (
             <Pause />
           )
-        ) : human ? (
+        ) : handback ? (
           <HandArrowUp />
         ) : (
           <HandArrowDown />
@@ -254,12 +260,22 @@ export function BrowserPanel({
             : "Taking control…"
           : pending === "handback"
             ? "Handing back…"
-            : mac
-              ? controlLabel
-              : human
-                ? "Hand back"
-                : "Take control"}
+            : handback && !mac
+              ? "Hand back"
+              : controlLabel}
       </Button>
+      {transfer && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Hand back to Agent"
+          title="Resume browser tools in all conversations"
+          disabled={busy}
+          onClick={() => void command("handback")}
+        >
+          <HandArrowUp />
+        </Button>
+      )}
       <Button
         size="icon-sm"
         variant="ghost"

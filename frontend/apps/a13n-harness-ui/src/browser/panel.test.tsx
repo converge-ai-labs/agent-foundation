@@ -43,6 +43,7 @@ function show({
   platform = "linux",
   resizeAvailable = true,
   status = "ready",
+  control = "agent",
   threadId = "thread-a",
   fullControl = true,
   setup = {
@@ -62,7 +63,7 @@ function show({
     platform,
     session_id: status === "disabled" ? "" : "binding-a",
     status,
-    control: "agent",
+    control,
     url: "https://example.com",
     viewport: "desktop",
     resize_available: resizeAvailable,
@@ -182,6 +183,39 @@ it("uses one page stream for read-only and explicit control, then clears authori
   fireEvent.click(screen.getByRole("button", { name: "Hand back to Agent" }));
   await screen.findByRole("button", { name: "Take control" });
   expect(screen.getByTestId("stream").textContent).toBe("thread-a:readonly");
+});
+it("transfers control here with one explicit command and keeps handback available", async () => {
+  const { client } = show({ control: "human" });
+  const transfer = await screen.findByRole("button", {
+    name: "Take control here",
+  });
+  expect(screen.getByTestId("stream").textContent).toBe("thread-a:readonly");
+  expect(
+    screen.getByRole("button", { name: "Hand back to Agent" }),
+  ).toBeTruthy();
+  expect(client.POST).not.toHaveBeenCalled();
+  fireEvent.click(transfer);
+  await waitFor(() =>
+    expect(screen.getByTestId("stream").textContent).toBe(
+      "thread-a:controller-a",
+    ),
+  );
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/take-control",
+  ]);
+  expect(
+    screen.queryByRole("button", { name: "Take control here" }),
+  ).toBeNull();
+});
+it("can hand back from a fresh viewer without acquiring control", async () => {
+  const { client } = show({ control: "human" });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Hand back to Agent" }),
+  );
+  await screen.findByRole("button", { name: "Take control" });
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/handback",
+  ]);
 });
 it("never passes the previous conversation's control token to another stream", async () => {
   const view = show();

@@ -216,12 +216,14 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         await wait_value(runtime, page, "document.querySelector('input').value", "a")
         with pytest.raises(HarnessUiError, match="user controls"):
             await backend.observe()
-        # Recover the controller without releasing the global automation pause.
-        assert browsers.controller is not None
-        await browsers.disconnect(browsers.controller)
+        # Transfer an active controller without releasing the automation pause.
+        old_controller = browsers.controller
+        assert old_controller is not None
+        renewed = await browsers.control("thread-a", state.session_id, human=True)
         assert writable.is_closing()
         assert not browsers.released.is_set()
-        renewed = await browsers.control("thread-a", state.session_id, human=True)
+        await browsers.disconnect(old_controller)
+        assert browsers.control_token == renewed.control_token
         assert renewed.control_token != control.control_token
         with pytest.raises(HarnessUiError, match="revoked"):
             await browsers.access(
