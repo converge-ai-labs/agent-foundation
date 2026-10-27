@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
-import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { SessionBodyLoading, SessionError } from "../session-feedback";
@@ -93,7 +92,7 @@ export function RunContent({
   const presentation = ready ? { run, runIds } : retained;
   const switching = !ready;
   const agent = useAgent(presentation?.run.agent_id);
-  // Keep the last complete presentation until both bounded reads are ready.
+  // Keep mounted Thread state while the next observation is covered by a skeleton.
   // Query keys own the data: a late response for another selection cannot win.
   useEffect(() => {
     if (ready) setRetained({ run, runIds });
@@ -205,6 +204,7 @@ export function RunContent({
         <RunBody
           run={presentation.run}
           runIds={presentation.runIds}
+          inspectionId={runIds[0]!}
           thread={thread}
           level={level}
           agentName={agent.data?.name}
@@ -234,6 +234,7 @@ export function RunContent({
 function RunBody({
   run,
   runIds,
+  inspectionId,
   thread,
   level,
   agentName,
@@ -244,6 +245,7 @@ function RunBody({
 }: {
   run: Schema["RunView"];
   runIds: string[];
+  inspectionId: string;
   thread: Schema["ThreadView"];
   level: ViewLevel;
   agentName?: string;
@@ -256,7 +258,10 @@ function RunBody({
   const { can } = useWorkspace();
   const interactive = useInteractiveThread(thread);
   const transcript = useRef<HTMLDivElement>(null);
-  const scroll = useTranscriptScroll(transcript, level, runIds[0]);
+  const scroll = useTranscriptScroll(transcript, level, inspectionId);
+  // Manual selections replace the inspection. Automatic successors extend it
+  // and keep the existing transcript and draft visible while their items load.
+  const replacing = switching && inspectionId !== runIds[0];
   const stopped = ["failed", "cancelled"].includes(run.status);
   // A stopped Run is asked again from the dock, while it is still the
   // Thread's latest: its message is prefilled there to be sent again.
@@ -294,18 +299,11 @@ function RunBody({
       className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
       ref={transcript}
     >
-      {pending && (
-        <div className={styles.switchStatus}>
-          <Loading />
-        </div>
-      )}
-      {error != null && (
-        <div className={styles.switchStatus}>
-          <ErrorNotice error={error} retry={retry} />
-        </div>
-      )}
+      {pending && replacing && <SessionBodyLoading />}
+      <SessionError error={error} retry={retry} />
       <div
         key={runIds[0]}
+        hidden={replacing}
         inert={switching}
         aria-busy={pending}
         className={styles.observation}
@@ -343,7 +341,7 @@ function RunBody({
             ))}
         </div>
       </div>
-      <ThreadDock thread={thread}>
+      <ThreadDock thread={thread} hidden={replacing}>
         <div inert={switching} className={styles.dockRun}>
           <RunDock
             key={runIds[0]}
