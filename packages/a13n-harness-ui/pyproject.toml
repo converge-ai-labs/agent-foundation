@@ -106,7 +106,7 @@ a13n-logging = ">=0.2.0,<0.3.0"
 
 [tool.deptry]
 known_first_party = ["a13n_harness_ui"]
-package_module_name_map = { "a13n-envd-client" = "a13n_envd_client", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "fastmcp-slim" = "fastmcp", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-envd-client" = "a13n_envd_client", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "fastmcp-slim" = "fastmcp", "sqlalchemy" = "sqlalchemy", "pyobjc-core" = "objc", "pyobjc-framework-Cocoa" = "Foundation", "pyobjc-framework-CoreMedia" = "CoreMedia", "pyobjc-framework-Quartz" = "Quartz", "pyobjc-framework-ScreenCaptureKit" = "ScreenCaptureKit", "pyobjc-framework-libdispatch" = "dispatch" }
 
 # aiosqlite is loaded by SQLAlchemy through the configured async driver;
 # websockets is loaded by Uvicorn's selected sans-I/O protocol implementation.
