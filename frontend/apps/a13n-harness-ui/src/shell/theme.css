@@ -182,6 +182,13 @@
   line-height: 20px;
 }
 
+/* Match leading icons to the inset used by labels inside switch rows. */
+[data-slot="menu-item"] > svg,
+[data-slot="menu-link-item"] > svg,
+[data-slot="menu-sub-trigger"] > svg:not(:last-child) {
+  margin-inline: 0;
+}
+
 [data-slot="select-item"],
 [data-slot="combobox-item"] {
   min-height: var(--harness-menu-row);
