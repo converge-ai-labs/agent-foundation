@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from a13n_harness import AgentSpec as HarnessAgentSpec
@@ -34,8 +35,13 @@ from pydantic_ai.usage import RunUsage
 pytestmark = pytest.mark.anyio
 
 
-def _run_context(messages):
-    return RunContext(deps=None, model=TestModel(), usage=RunUsage(), messages=list(messages))
+def _run_context(messages, *, compacting=False):
+    return RunContext(
+        deps=SimpleNamespace(_compacting=compacting),
+        model=TestModel(),
+        usage=RunUsage(),
+        messages=list(messages),
+    )
 
 
 def _request_context(messages):
@@ -49,6 +55,23 @@ def _request_context(messages):
         model_settings=None,
         model_request_parameters=ModelRequestParameters(),
     )
+
+
+@pytest.mark.parametrize("capability_type", [MessageIntegrityFilterCapability, ColdStartFilterCapability])
+async def test_filters_preserve_full_history_during_explicit_compaction(capability_type) -> None:
+    messages = [
+        ModelRequest(parts=[ToolReturnPart("lookup", "x" * 5000, tool_call_id="orphan")]),
+        ModelResponse(parts=[TextPart("Consumed")], timestamp=datetime.now(UTC) - timedelta(days=2)),
+    ]
+    ctx = _run_context(messages, compacting=True)
+    request = _request_context(messages)
+
+    prepared = await capability_type().before_model_request(ctx, request)
+
+    assert prepared is request
+    assert prepared.messages is messages
+    assert ctx.messages == messages
+    assert prepared.messages[0].parts[0].content == "x" * 5000
 
 
 async def test_message_integrity_filter_keeps_only_one_result_for_the_current_call() -> None:
