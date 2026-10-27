@@ -938,6 +938,9 @@
   width: min(var(--harness-reading-width), 100% - 84px);
   margin: 0 auto;
 }
+.page > .composer {
+  margin-top: 8px;
+}
 .composerInput {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto 28px;
@@ -947,15 +950,14 @@
   border-radius: 14px;
   padding: 6px 8px;
   background: var(--card);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--a13n-text) 4%, transparent);
+  box-shadow: none;
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
 .composerInput:focus-within {
   border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
-  box-shadow: 0 2px 12px -6px
-    color-mix(in srgb, var(--a13n-text) 12%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent);
 }
 @media (max-width: 640px) {
   .reading {
@@ -1875,14 +1877,53 @@ dl.detailGrid > .detailLongRow dd {
   gap: 12px;
   flex-shrink: 0;
   width: min(var(--harness-reading-width), 100% - 84px);
-  min-height: 28px;
-  margin: 0 auto;
+  min-height: 24px;
+  margin: 6px auto 0;
   padding-inline: 8px;
 }
 .conversationFooter > div {
   width: auto;
   margin: 0;
   padding: 0;
+}
+.conversationFooter button {
+  position: relative;
+  isolation: isolate;
+  height: 24px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  line-height: 18px;
+}
+.conversationFooter button:is(:hover, [data-popup-open]) {
+  background: transparent;
+  color: var(--a13n-text);
+}
+/* Keep the quiet hover surface compact even when the touch target grows. */
+.conversationFooter button::before {
+  content: "";
+  position: absolute;
+  inset: calc(50% - 12px) 0;
+  z-index: -1;
+  border-radius: 5px;
+  pointer-events: none;
+}
+.conversationFooter button:is(:hover, [data-popup-open])::before {
+  background: var(--a13n-surface);
+}
+.conversationFooter button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.conversationFooter button:focus-visible::before {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .conversationFooter button {
+    height: 44px;
+    min-height: 44px;
+  }
 }
 @container conversation-page (max-width: 600px) {
   .conversationFooter {

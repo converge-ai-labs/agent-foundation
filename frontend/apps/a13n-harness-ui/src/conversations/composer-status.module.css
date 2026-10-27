@@ -17,10 +17,7 @@
   font-variant-numeric: tabular-nums;
 }
 .metric {
-  padding: 5px 8px;
-  min-height: 28px;
   border: 0;
-  border-radius: 6px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -28,14 +25,6 @@
 }
 button.metric {
   cursor: pointer;
-}
-button.metric:hover,
-.metric[data-popup-open] {
-  background: var(--a13n-surface);
-  color: var(--a13n-text);
-}
-.metric:focus-visible {
-  outline: 1px solid var(--ring);
 }
 .metrics strong {
   margin-left: 3px;
@@ -340,12 +329,11 @@ button.metric:hover,
 .numbers .scope {
   margin: 2px 0 0;
 }
-/* One quiet line at every width; overflow scrolls under a fade. */
+/* Keep trailing values and inset focus outlines visible at every width. */
 .metrics {
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
-  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
 }
 .metrics::-webkit-scrollbar {
   display: none;

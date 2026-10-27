@@ -16,11 +16,6 @@
   font-size: 12px;
   color: var(--a13n-secondary);
 }
-.strip button:hover,
-.strip button[data-popup-open] {
-  color: var(--a13n-text);
-  background: var(--a13n-surface);
-}
 .count {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -185,8 +180,6 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
-    /* Overflow scrolls under a fade, matching the metrics line. */
-    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
   }
   .strip::-webkit-scrollbar {
     display: none;
