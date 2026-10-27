@@ -2,6 +2,7 @@
   "Background compaction": "Background compaction",
   "Enable background compaction": "Enable background compaction",
   "Blocking threshold (%)": "Blocking threshold (%)",
+  "Blocking threshold must be greater than 0% and at most 100%.": "Blocking threshold must be greater than 0% and at most 100%.",
   "Summarize older context while the conversation continues. Subagents compact synchronously.": "Summarize older context while the conversation continues. Subagents compact synchronously.",
   "Wait for compaction when input reaches this share of the context window. Output capacity can require waiting earlier.": "Wait for compaction when input reaches this share of the context window. Output capacity can require waiting earlier.",
   "References": "References",

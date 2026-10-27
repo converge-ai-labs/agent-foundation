@@ -247,15 +247,16 @@ async def test_real_runs_overlap_then_commit_compaction(
 
 
 @pytest.mark.parametrize("disposition", ["applied", "skipped"])
+@pytest.mark.parametrize("background", [True, False])
 async def test_exact_checkpoint_acknowledgement_survives_cas_failure(
-    service, scripted_model, runs_kit, monkeypatch, disposition
+    service, scripted_model, runs_kit, monkeypatch, disposition, background
 ):
     from a13n_harness import AgentSpec, HarnessBuilder, HarnessState
     from a13n_harness.compaction import compaction_disposition
     from a13n_service.runs import checkpoints
     from pydantic_ai.models.function import FunctionModel
 
-    lease = await setup(service, scripted_model, runs_kit)
+    lease = await setup(service, scripted_model, runs_kit, background=background)
     input = frozen(lease)
     owner = await compactions.reserve(service.runtime, lease, input)
     assert owner is not None
@@ -276,7 +277,10 @@ async def test_exact_checkpoint_acknowledgement_survives_cas_failure(
     state = completed.state
     assert state is not None
     assert await compaction_disposition(state, basis=input.basis) == disposition
-    attempt = _Attempt(service.runtime, lease, AttemptControl(), await _plan(service.runtime, lease))
+    plan = await _plan(service.runtime, lease)
+    assert plan.background_compaction is background
+    assert plan.compaction_result == result
+    attempt = _Attempt(service.runtime, lease, AttemptControl(), plan)
     commit = checkpoints.commit
 
     async def reject(*args, **kwargs):
@@ -303,6 +307,7 @@ async def test_exact_checkpoint_acknowledgement_survives_cas_failure(
         pointer = checkpoints.StatePointer.model_validate(run.checkpoint)
     saved = checkpoints.RunState.model_validate_json(await checkpoints.load(service.runtime.objects, pointer))
     assert await compaction_disposition(saved.harness, basis=input.basis) == disposition
+    assert (await _plan(service.runtime, lease)).compaction_result is None
 
 
 async def test_retention_waits_for_idle_thread(service, scripted_model, runs_kit):

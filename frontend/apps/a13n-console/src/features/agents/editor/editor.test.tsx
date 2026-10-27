@@ -215,6 +215,14 @@ it("saves an opt-in background compaction policy with a percentage threshold", (
   expect(threshold.value).toBe("95");
   expect(threshold.disabled).toBe(true);
   fireEvent.click(toggle);
+  fireEvent.change(threshold, { target: { value: "0" } });
+  fireEvent.submit(document.getElementById("compaction-form")!);
+  expect(submit).not.toHaveBeenCalled();
+  expect(
+    screen.getByText(
+      "Blocking threshold must be greater than 0% and at most 100%.",
+    ),
+  ).toBeTruthy();
   fireEvent.change(threshold, { target: { value: "" } });
   expect(threshold.value).toBe("");
   fireEvent.submit(document.getElementById("compaction-form")!);

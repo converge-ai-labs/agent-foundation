@@ -253,6 +253,11 @@ export function buildDraftConfig(
     };
   }
   try {
+    const threshold = draft.backgroundCompaction.blocking_threshold;
+    if (threshold !== undefined && !(threshold > 0 && threshold <= 1))
+      throw new Error(
+        t("Blocking threshold must be greater than 0% and at most 100%."),
+      );
     if (!validSpaceSelection(draft.memory))
       throw new Error(
         t(

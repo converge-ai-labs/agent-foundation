@@ -719,7 +719,7 @@ class _Attempt:
         started = time.monotonic()
         acknowledgement = (
             await compactions.acknowledgement(self.runtime, state, RunObjects(self.runtime, self.lease, self.control))
-            if self.plan.background_compaction
+            if self.plan.background_compaction or self.plan.compaction_result is not None
             else None
         )
         consumed = self.offers.incorporated(state)
