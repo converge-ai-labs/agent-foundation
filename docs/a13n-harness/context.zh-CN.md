@@ -133,9 +133,9 @@ continued = await executable.run("Continue", previous_state=compacted.state, bin
 
 请求接收完整历史，不进行裁剪。它保持相同的系统提示、工具 schema、输出配置和模型设置，在末尾追加内置的禁止调用工具等约束，再拼接 `instruction`。`None` 使用默认压缩指导；传入字符串则替换默认指导。保持 executable 和 bindings 稳定，以保留提供方的缓存前缀。缓存是否可用仍由提供方决定。
 
-现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。返回前恢复保留的工具发现并通知上下文监听器。若替换后恢复失败，失败结果保留待恢复标记，供下次普通 Run 继续恢复。
+现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。返回前恢复保留的工具发现并通知上下文监听器。若替换后恢复失败，失败结果保留待恢复标记，供下次普通 Run 继续恢复。摘要或恢复阶段的失败包含 `failure.details.phase` 和 `failure.details.state_replaced`；当 `state_replaced` 为 true 时，按 Host 的检查点策略保存替换结果，并通过普通 Run 恢复。
 
-检查点必须处于已完成的边界：待处理工具、保留的执行和未恢复的 handoff 应先通过普通 Run 的恢复流程完成。Host 负责阻止 Thread 并发推进，并决定何时保存返回的 State。`compact()` 不修改传入的检查点。空闲计时器和自动调度由 Host 实现。
+检查点必须处于已完成的边界：待处理工具、保留的执行、未恢复的 handoff 和待完成的压缩恢复应先通过普通 Run 的恢复流程完成。对这些状态调用 `compact()` 会返回 `compaction_boundary_pending`，不发起摘要请求，也不覆盖待恢复标记。Host 负责阻止 Thread 并发推进，并决定何时保存返回的 State。`compact()` 不修改传入的检查点。空闲计时器和自动调度由 Host 实现。
 
 ### 后台压缩
 

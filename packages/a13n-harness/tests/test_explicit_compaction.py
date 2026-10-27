@@ -173,6 +173,7 @@ async def test_compact_failure_preserves_history_and_never_dispatches_tools(kind
     assert result.status == "failed"
     assert result.state.message_history == previous.message_history
     assert calls == 1
+    assert result.failure.details == {"phase": "summary", "state_replaced": False}
     assert "a13n.working-state" not in result.state.agent_context_state.entries
 
 
@@ -277,6 +278,7 @@ async def test_compact_restoration_failure_can_resume(cancel):
     from pydantic_ai.capabilities import AbstractCapability
 
     contexts = []
+    calls = []
 
     class Listener(AbstractCapability):
         async def on_event(self, ctx, *, event):
@@ -286,6 +288,7 @@ async def test_compact_restoration_failure_can_resume(cancel):
                     raise asyncio.CancelledError() if cancel else RuntimeError("listener failed")
 
     async def stream(messages, info):
+        calls.append(deepcopy(messages))
         yield "summary"
 
     agent = HarnessBuilder().build(
@@ -298,9 +301,20 @@ async def test_compact_restoration_failure_can_resume(cancel):
     else:
         failed = await agent.compact(previous_state=_previous())
         assert failed.status == "failed"
+        assert failed.failure.details == {"phase": "restoration", "state_replaced": True}
         state = failed.state
-    assert state.agent_context_state.entries["a13n.compaction"].data["restoration_pending"] is True
-    resumed = await agent.run("continue", previous_state=state)
+    marker = state.agent_context_state.entries["a13n.compaction"]
+    assert marker.data["restoration_pending"] is True
+    frozen = state.model_dump_json()
+    retried = await agent.compact(previous_state=state)
+    assert retried.status == "failed"
+    assert retried.failure.code == "compaction_boundary_pending"
+    assert len(calls) == 1
+    assert len(contexts) == 1
+    assert retried.state.message_history == state.message_history
+    assert retried.state.agent_context_state.entries["a13n.compaction"] == marker
+    assert state.model_dump_json() == frozen
+    resumed = await agent.run("continue", previous_state=retried.state)
     assert resumed.status == "completed", resumed.failure
     assert len(contexts) == 2
     assert resumed.state.agent_context_state.entries["a13n.compaction"].data["restoration_pending"] is False

@@ -29,6 +29,7 @@ from a13n_harness.compaction import (
     COMPACTION_CAPABILITY_ID,
     CompactionBasis,
     CompactionResult,
+    _CompactionState,
     _prefix_digest,
     _prepare_compaction,
 )
@@ -108,10 +109,12 @@ class _CompactionRunStream(HarnessRunStream[str]):
                 code="compaction_history_empty", message="Compaction requires conversation history."
             )
         handoff = await self.context.state.read(HANDOFF_CAPABILITY_ID, _HandoffState, version=_HANDOFF_STATE_VERSION)
+        previous = await self.context.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
         if (
             _requires_exact_history(history)
             or self.context._tool_executions.history_calls
             or (handoff is not None and handoff.summary is not None)
+            or (previous is not None and previous.restoration_pending)
         ):
             return await self._failed_candidate(
                 code="compaction_boundary_pending", message="Compaction requires a settled history boundary."
@@ -185,7 +188,7 @@ class _CompactionRunStream(HarnessRunStream[str]):
                                 summary=summary,
                             )
                             messages, marker = _prepare_compaction(
-                                result, thread_id=self.thread_id, messages=history, previous=None
+                                result, thread_id=self.thread_id, messages=history, previous=previous
                             )
                             assert marker is not None
                             await self.context.state.write(COMPACTION_CAPABILITY_ID, marker, version="1")
@@ -225,4 +228,8 @@ class _CompactionRunStream(HarnessRunStream[str]):
                     retryable=False,
                 ),
             )
-            return await self._failed_candidate(code=code, message="Explicit compaction failed.")
+            return await self._failed_candidate(
+                code=code,
+                message="Explicit compaction failed.",
+                details={"phase": phase, "state_replaced": phase == "restoration"},
+            )
