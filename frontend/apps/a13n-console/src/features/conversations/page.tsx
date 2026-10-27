@@ -242,7 +242,7 @@ export function NewConversation() {
 
 export function SessionLayout() {
   const { sessionId = "", threadId, runId } = useParams(),
-    { basePath, workspace } = useWorkspace();
+    { workspace } = useWorkspace();
   const client = useClient(),
     cache = useQueryClient();
   useEffect(() => {
@@ -262,13 +262,6 @@ export function SessionLayout() {
     return (
       <ErrorNotice error={session.error} retry={() => void session.refetch()} />
     );
-  if (session.data.schedule_id && !threadId)
-    return (
-      <Navigate
-        to={`${basePath}/schedules/${session.data.schedule_id}`}
-        replace
-      />
-    );
   return <SessionContent scheduleId={session.data.schedule_id ?? undefined} />;
 }
 
@@ -281,20 +274,21 @@ function SessionContent({ scheduleId }: { scheduleId?: string }) {
     queries = conversationQueries(client, workspace.id);
   const ordinary = useQuery({
     ...queries.threads(sessionId),
-    enabled: !scheduleId,
+    enabled: !scheduleId || !threadId,
   });
   const selectedThread = useQuery({
     ...queries.thread(threadId ?? ""),
     enabled: !!scheduleId && !!threadId,
   });
-  const threads = scheduleId
-    ? {
-        data: selectedThread.data ? [selectedThread.data] : undefined,
-        error: selectedThread.error,
-        isPending: selectedThread.isPending,
-        refetch: selectedThread.refetch,
-      }
-    : ordinary;
+  const threads =
+    scheduleId && threadId
+      ? {
+          data: selectedThread.data ? [selectedThread.data] : undefined,
+          error: selectedThread.error,
+          isPending: selectedThread.isPending,
+          refetch: selectedThread.refetch,
+        }
+      : ordinary;
   // Chat returns to the main conversation, never the most recently listed child.
   // An explicit Thread URL remains authoritative, including forks and children.
   const { search } = useLocation();

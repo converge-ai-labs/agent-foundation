@@ -1,9 +1,15 @@
-import { ClockIcon, PlayIcon } from "@phosphor-icons/react";
+import {
+  ArchiveIcon,
+  ClockIcon,
+  DotsThreeOutlineVerticalIcon,
+  PlayIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ApiError, type SessionEvent } from "../../service-client";
@@ -17,7 +23,9 @@ import {
 } from "../../shared/feedback";
 import { IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
-import { DetailHeader, DetailPage } from "../../shared/page";
+import { DetailHeader, DetailPage, Section } from "../../shared/page";
+import { JsonView } from "../../shared/forms";
+import { AgentLink } from "../agents/link";
 import { conversationKeys } from "../conversations/api";
 import {
   SessionStreamProvider,
@@ -154,14 +162,26 @@ function ScheduleContent({
   const stale = action.error instanceof ApiError && action.error.status === 412;
   const busy =
     !!status.data?.pending_occurrence_id || status.data?.has_unfinished_work;
-  const creator = auth.data?.user.value.id === schedule.principal_id;
-  const open = schedule.state !== "archived",
-    editable =
-      open &&
-      schedule.state !== "completed" &&
-      creator &&
-      can("write") &&
-      can("run");
+  const creator = auth.data?.user.value.id === schedule.created_by_id;
+  const open = schedule.state !== "archived";
+  const editReason =
+    schedule.state === "archived"
+      ? t("Archived schedules cannot be edited.")
+      : schedule.state === "completed"
+        ? t("Schedules that have finished cannot be edited.")
+        : !creator
+          ? t(
+              "Only the account that created this schedule can edit it. You are signed in with a different account.",
+            )
+          : !can("write") || !can("run")
+            ? t(
+                "Editing this schedule requires both write and run permissions in this workspace.",
+              )
+            : undefined;
+  const editable = !editReason;
+  const canDispatch =
+    open && schedule.state !== "completed" && creator && can("run");
+  const canArchive = open && can("write");
   return (
     <DetailPage
       back={`${basePath}/schedules`}
@@ -188,7 +208,6 @@ function ScheduleContent({
           description={schedule.description}
           actions={
             <>
-              {can("admin") && <WebhookEditor scheduleId={schedule.id} />}
               {open && (
                 <>
                   {editable && <ScheduleEditor schedule={schedule} />}
@@ -205,33 +224,67 @@ function ScheduleContent({
                       {t(schedule.state === "enabled" ? "Pause" : "Enable")}
                     </Button>
                   )}
-                  {schedule.state !== "completed" && creator && can("run") && (
-                    <Button
-                      disabled={action.isPending || busy || !status.data}
-                      loading={
-                        action.isPending && action.variables === "dispatch"
-                      }
-                      onClick={() => action.mutate("dispatch")}
-                    >
-                      <PlayIcon size={14} />
-                      {t("Run once")}
-                    </Button>
-                  )}
-                  {can("write") && (
-                    <Confirm
-                      title={t("Archive schedule")}
-                      subject={schedule.name}
-                      description={t(
-                        "Stop future triggers and cancel pending submissions. Existing runs and history remain available.",
-                      )}
-                      trigger={t("Archive")}
-                      triggerVariant="ghost"
-                      action={commands.archive}
-                      onSuccess={refresh}
-                      retry={refresh}
-                    />
-                  )}
                 </>
+              )}
+              {(can("admin") || canDispatch || canArchive) && (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label={t("More schedule actions")}
+                      />
+                    }
+                  >
+                    <DotsThreeOutlineVerticalIcon
+                      size={18}
+                      weight="fill"
+                      aria-hidden="true"
+                    />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    {can("admin") && (
+                      <WebhookEditor
+                        scheduleId={schedule.id}
+                        trigger={
+                          <MenuItem closeOnClick={false}>
+                            <PlusIcon aria-hidden="true" />
+                            {t("Add Webhook")}
+                          </MenuItem>
+                        }
+                      />
+                    )}
+                    {canDispatch && (
+                      <MenuItem
+                        disabled={action.isPending || busy || !status.data}
+                        onClick={() => action.mutate("dispatch")}
+                      >
+                        <PlayIcon aria-hidden="true" />
+                        {t("Run once")}
+                      </MenuItem>
+                    )}
+                    {canArchive && (
+                      <Confirm
+                        title={t("Archive schedule")}
+                        subject={schedule.name}
+                        description={t(
+                          "Stop future triggers and cancel pending submissions. Existing runs and history remain available.",
+                        )}
+                        danger
+                        triggerElement={
+                          <MenuItem closeOnClick={false} variant="destructive">
+                            <ArchiveIcon aria-hidden="true" />
+                            {t("Archive")}
+                          </MenuItem>
+                        }
+                        action={commands.archive}
+                        onSuccess={refresh}
+                        retry={refresh}
+                      />
+                    )}
+                  </MenuPopup>
+                </Menu>
               )}
             </>
           }
@@ -271,6 +324,7 @@ function ScheduleContent({
         </p>
       )}
       <ErrorNotice error={stream?.error} />
+      {editReason && <p className={styles.notice}>{editReason}</p>}
       <dl className={styles.summary}>
         <div>
           <dt>{t("Timing")}</dt>
@@ -301,6 +355,47 @@ function ScheduleContent({
           </dd>
         </div>
       </dl>
+      <Section
+        title={t("Execution instructions")}
+        description={t("This input is sent to the agent on every trigger.")}
+      >
+        <dl className={styles.summary}>
+          <div>
+            <dt>{t("Target agent")}</dt>
+            <dd>
+              <AgentLink agentId={schedule.invocation.agent_id} />
+            </dd>
+            <dd className={styles.resourceId}>
+              {schedule.invocation.agent_id}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("Target session")}</dt>
+            <dd>
+              <Link to={`${basePath}/sessions/${schedule.session_id}`}>
+                {schedule.session_id}
+              </Link>
+            </dd>
+          </div>
+          <div>
+            <dt>{t("Agent version")}</dt>
+            <dd>{schedule.invocation.agent_revision_id ?? t("Default")}</dd>
+          </div>
+        </dl>
+        <div className={styles.instructions}>
+          {schedule.invocation.payload.content.map((part, index) =>
+            part.type === "text" ? (
+              <div key={index} className={styles.instructionText}>
+                {part.text}
+              </div>
+            ) : part.type === "json" ? (
+              <JsonView key={index} value={part.value} />
+            ) : (
+              <JsonView key={index} value={part} />
+            ),
+          )}
+        </div>
+      </Section>
       {schedule.state === "completed" && (
         <p className={styles.notice}>
           {t(

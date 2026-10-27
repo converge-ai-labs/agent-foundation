@@ -3477,5 +3477,14 @@
   "Memory configuration": "Memory configuration",
   "This session has already been created. Retry with the same memory settings.": "This session has already been created. Retry with the same memory settings.",
   "Uses the first agent's memory settings when this session starts.": "Uses the first agent's memory settings when this session starts.",
-  "Configure this session without changing the agent's defaults.": "Configure this session without changing the agent's defaults."
+  "Configure this session without changing the agent's defaults.": "Configure this session without changing the agent's defaults.",
+  "Execution instructions": "Execution instructions",
+  "This input is sent to the agent on every trigger.": "This input is sent to the agent on every trigger.",
+  "Target agent": "Target agent",
+  "Target session": "Target session",
+  "Archived schedules cannot be edited.": "Archived schedules cannot be edited.",
+  "Schedules that have finished cannot be edited.": "Schedules that have finished cannot be edited.",
+  "Only the account that created this schedule can edit it. You are signed in with a different account.": "Only the account that created this schedule can edit it. You are signed in with a different account.",
+  "Editing this schedule requires both write and run permissions in this workspace.": "Editing this schedule requires both write and run permissions in this workspace.",
+  "More schedule actions": "More schedule actions"
 }
