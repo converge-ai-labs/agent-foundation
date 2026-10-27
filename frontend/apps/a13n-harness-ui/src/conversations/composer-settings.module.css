@@ -114,10 +114,10 @@
   max-width: 100%;
 }
 .modelTrigger {
-  max-width: 240px;
+  max-width: 160px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   gap: 6px;
 }
@@ -133,8 +133,8 @@
 .optionRow {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 14px 8px;
+  gap: 16px;
+  padding: 10px 8px;
 }
 .optionRow > div {
   flex: 1;
@@ -145,13 +145,13 @@
   max-width: 44%;
 }
 .optionRow strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
 }
 .optionRow p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 20px;
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 18px;
   color: var(--a13n-secondary);
 }
 .environmentButton {
@@ -201,7 +201,7 @@
   padding: 10px 8px;
   justify-content: space-between;
   text-align: left;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   white-space: normal;
   overflow-wrap: anywhere;

@@ -102,14 +102,18 @@
   margin-bottom: 0;
 }
 .groupDisclosure > div {
-  padding: 0 0 16px;
+  padding: 0 0 12px;
 }
 .groupDisclosure > div > [data-slot="settings-row"] {
   padding-top: 10px;
 }
 .groupDisclosure > div > p,
 .groupDisclosure > div > [role="status"] {
-  padding-block: 12px;
+  margin: 0;
+  padding-block: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 @media (pointer: coarse) {

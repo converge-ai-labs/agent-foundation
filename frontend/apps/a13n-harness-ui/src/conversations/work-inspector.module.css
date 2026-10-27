@@ -5,7 +5,7 @@
   gap: 2px;
   flex-shrink: 0;
   /* Same column as the composer (see conversation.module.css). */
-  width: min(760px, 100% - 84px);
+  width: min(var(--harness-reading-width), 100% - 84px);
   margin: 0 auto 6px;
   /* Controls start on the composer content inset (border + padding). */
   padding-inline: 13px;
@@ -68,7 +68,11 @@
   display: flex;
   gap: 2px;
   overflow-x: auto;
+  scrollbar-width: none;
   padding: 8px 0 12px;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 .tabs button {
   flex-shrink: 0;

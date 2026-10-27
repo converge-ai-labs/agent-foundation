@@ -1,4 +1,4 @@
-import { Button, Logo, Wordmark } from "a13n-ui";
+import { Button, Logo } from "a13n-ui";
 import shell from "./workbench.module.css";
 import styles from "./startup.module.css";
 
@@ -25,8 +25,8 @@ export function Startup({
       >
         <div className={shell.sidebarHeader}>
           <span className={shell.brand}>
-            <Logo alt="" width={28} height={28} />
-            <Wordmark />
+            <Logo alt="" width={20} height={20} />
+            <span>Harness</span>
           </span>
         </div>
         <div className={styles.rows}>

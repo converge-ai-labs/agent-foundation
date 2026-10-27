@@ -86,7 +86,7 @@
 }
 .resourceInfo > a,
 .resourceInfo > strong {
-  font-size: 14px;
+  font-size: 13px;
 }
 .resourceMeta {
   display: flex;
@@ -111,7 +111,7 @@
 .modelList {
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--a13n-canvas);
   border: 1px solid var(--a13n-border);
   overflow: hidden;
@@ -124,7 +124,7 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  padding-block: 18px;
+  padding-block: 16px;
 }
 .modelLink::after {
   content: "";
@@ -146,19 +146,24 @@
   outline-offset: -2px;
   border-radius: 12px;
 }
-.subagentInfo {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-.subagentInfo small {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
 @media (max-width: 600px) {
-  .modelRow {
-    gap: 8px;
+  .modelList > .modelRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    align-items: start;
+  }
+  .modelRow > .resourceIdentity,
+  .modelRow > .resourceMeta {
+    grid-column: 1;
+  }
+  .modelRow > .resourceMeta {
+    align-items: flex-start;
+    max-width: 100%;
+    text-align: left;
+  }
+  .modelRow > button {
+    grid-column: 2;
+    grid-row: 1;
   }
 }

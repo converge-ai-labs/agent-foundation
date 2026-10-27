@@ -6,6 +6,12 @@
   line-height: 20px;
   font-weight: 500;
 }
+.section > :first-child:has(> h3) > p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
   border-radius: 10px;
   padding-inline: 16px;
@@ -32,7 +38,7 @@
 }
 .row > :last-child {
   min-width: 0;
-  max-width: 48%;
+  max-width: 60%;
   color: var(--a13n-secondary);
 }
 .row [data-slot="select-trigger"],
@@ -83,5 +89,27 @@
   .row {
     gap: 16px;
     padding-block: 12px;
+  }
+  .row:has([data-slot="input-control"]) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: 6px 16px;
+  }
+  .row:has([data-slot="input-control"]) > :first-child {
+    display: contents;
+  }
+  .row:has([data-slot="input-control"]) [data-slot="settings-row-label"] {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .row:has([data-slot="input-control"]) > :first-child > p {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin-top: 0;
+  }
+  .row:has([data-slot="input-control"]) > :last-child {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 100%;
   }
 }

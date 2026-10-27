@@ -56,6 +56,24 @@ import { OpenHostFile } from "../conversations/tool-call";
 import { DebugOnly } from "../shell/debug";
 import { CoordinatorMark } from "../conversations/coordinator-icon";
 
+const PAGE_TITLES: Record<string, string> = {
+  "/": "New chat",
+  "/new": "New chat",
+  "/memory": "Memory",
+  "/usage": "Usage",
+  "/archived": "Archived chats",
+  "/setup": "Set up Harness",
+  "/projects": "Projects",
+  "/settings": "General settings",
+  "/settings/agents": "Agents",
+  "/settings/models": "Models",
+  "/settings/environments": "Environments",
+  "/settings/accounts": "Accounts & API keys",
+  "/settings/connections": "Connections",
+  "/settings/resources": "Configuration files",
+  "/settings/source": "Edit configuration",
+};
+
 export function NativeWorkspace({
   children,
   onFocus,
@@ -428,11 +446,15 @@ export function NativeWorkspace({
         thread.data?.thread,
         composers.get(threadId)?.localInputs,
       )
-    : "";
+    : (PAGE_TITLES[location.pathname] ??
+      (matchPath("/projects/:projectId", location.pathname)
+        ? "Project settings"
+        : "Page not found"));
+  const ToolbarTitle = isWorkspace || threadId ? "h1" : "span";
   useEffect(() => {
-    document.title = title ? `${title} · a13n harness ui` : "a13n harness ui";
+    document.title = `${title} · Harness UI`;
     return () => {
-      document.title = "a13n harness ui";
+      document.title = "Harness UI";
     };
   }, [title]);
   const runState = thread.data?.thread.root_activity?.state;
@@ -512,7 +534,7 @@ export function NativeWorkspace({
         className={`${styles.workarea} ${isWorkspace && pane ? styles.withPane : ""} ${isWorkspace && terminalOpen && status.data?.features?.host_terminal ? styles.withTerminal : ""}`}
       >
         <header
-          className={`${styles.workToolbar} ${location.pathname.startsWith("/settings") ? styles.settingsToolbar : ""}`}
+          className={`${styles.workToolbar} ${!isWorkspace && !threadId ? styles.documentToolbar : ""}`}
         >
           {navigation}
           {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
@@ -522,26 +544,9 @@ export function NativeWorkspace({
                 {resolvedProject.name}
               </span>
             )}
-            <h1 className={styles.workspaceTitle}>
-              {threadId
-                ? conversationTitle(
-                    thread.data?.thread,
-                    composers.get(threadId)?.localInputs,
-                  )
-                : isWorkspace
-                  ? "New chat"
-                  : memoryMode
-                    ? "Memory"
-                    : location.pathname === "/archived"
-                      ? "Archived chats"
-                      : location.pathname === "/usage"
-                        ? "Usage"
-                        : /^\/(settings|setup|projects)(\/|$)/.test(
-                              location.pathname,
-                            )
-                          ? "Settings"
-                          : "Page not found"}
-            </h1>
+            <ToolbarTitle className={styles.workspaceTitle}>
+              {title}
+            </ToolbarTitle>
           </div>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
@@ -625,7 +630,7 @@ export function NativeWorkspace({
               tabIndex={-1}
               onFocusCapture={() => setFocusedArea("page")}
               onPointerDown={() => setFocusedArea("page")}
-              className={`${styles.page} a13n-scrollbar ${location.pathname === "/memory" || /^\/(settings|setup|projects)(\/|$)/.test(location.pathname) ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
+              className={`${styles.page} a13n-scrollbar ${isWorkspace ? styles.chatPage : location.pathname === "/memory" || /^\/(settings|setup|projects)(\/|$)/.test(location.pathname) ? styles.flushPage : !threadId && !memoryMode ? styles.documentPage : ""}`}
             >
               <OpenHostFile
                 value={
@@ -861,13 +866,11 @@ export function NativeWorkspace({
               )}
               {!projectLoading &&
                 directory &&
-                (view === "page" ||
+                ((view === "page" &&
+                  (pane === "files" || localRoots.length > 1)) ||
                   (pane === "files" &&
                     (localRoots.length > 1 || directory !== fileRoot))) && (
                   <div className={styles.location}>
-                    {pane === "changes" && (
-                      <strong title={root}>{project?.name}</strong>
-                    )}
                     {localRoots.length > 1 && (
                       <nav
                         className={styles.projectFolders}

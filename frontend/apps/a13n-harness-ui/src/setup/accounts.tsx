@@ -277,35 +277,39 @@ export function ProviderAccount({
       />
       {!active && (
         <>
-          <p className={accountStyles.accountStatus}>
-            {account.isPending
-              ? "Checking account…"
-              : account.data?.usable
-                ? "Connected"
-                : ready
-                  ? "Account available · refreshes on first use"
-                  : "Not connected"}
-            {account.data?.availability === "available" &&
-              ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
-          </p>
-          {account.data?.account_id && (
-            <p>
-              Account: {account.data.account_id} ·{" "}
-              {account.data.shared_with_cli
-                ? `Shared with ${label} CLI`
-                : "Host account"}
+          <div className={accountStyles.identity}>
+            <p className={accountStyles.accountStatus}>
+              {account.isPending
+                ? "Checking account…"
+                : account.data?.usable
+                  ? "Connected"
+                  : ready
+                    ? "Account available · refreshes on first use"
+                    : "Not connected"}
+              {account.data?.availability === "available" &&
+                ` · ${account.data.source}${account.data.expiry === "unknown" ? "" : ` · ${account.data.expiry}`}`}
             </p>
-          )}
-          {account.data?.expires_at && (
-            <p className={accountStyles.help}>
-              Session expires{" "}
-              {new Date(account.data.expires_at).toLocaleString()}
-              {account.data.required_action === "refresh"
-                ? " · refreshes on first use"
-                : ""}
-            </p>
-          )}
-          {account.data?.message && <p role="status">{account.data.message}</p>}
+            {account.data?.account_id && (
+              <p>
+                Account: {account.data.account_id} ·{" "}
+                {account.data.shared_with_cli
+                  ? `Shared with ${label} CLI`
+                  : "Host account"}
+              </p>
+            )}
+            {account.data?.expires_at && (
+              <p className={accountStyles.help}>
+                Session expires{" "}
+                {new Date(account.data.expires_at).toLocaleString()}
+                {account.data.required_action === "refresh"
+                  ? " · refreshes on first use"
+                  : ""}
+              </p>
+            )}
+            {account.data?.message && (
+              <p role="status">{account.data.message}</p>
+            )}
+          </div>
           {!inline && provider === "copilot" && (
             <CopilotAllowance
               key={identity}
@@ -404,7 +408,7 @@ export function ProviderAccount({
               >
                 {account.data?.usable ? "Reconnect account" : "Connect account"}
               </Button>
-              <Button variant="outline" onClick={() => void account.refetch()}>
+              <Button variant="ghost" onClick={() => void account.refetch()}>
                 Refresh status
               </Button>
               {account.data?.availability === "available" && (
@@ -586,7 +590,7 @@ export function ProviderAccount({
     </>
   );
   return inline ? (
-    <div className={styles.stack}>{content}</div>
+    <div className={accountStyles.inlineAccount}>{content}</div>
   ) : (
     <Panel title={`${label} account`}>{content}</Panel>
   );

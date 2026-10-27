@@ -1,14 +1,38 @@
+.inlineAccount {
+  display: grid;
+  gap: 12px;
+  padding-block: 12px;
+  min-width: 0;
+}
+.identity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.identity p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
 .accountStatus {
   margin: 0;
   font-size: 13px;
 }
+.identity .accountStatus {
+  color: var(--a13n-text);
+  font-size: 13px;
+}
 .advanced {
+  composes: details from "../shell/workbench.module.css";
   font-size: 13px;
   color: var(--a13n-text-supporting);
 }
 .advanced summary {
-  width: fit-content;
   cursor: pointer;
+  min-height: 36px;
+  padding-block: 8px;
 }
 .advanced[open] > summary {
   margin-bottom: 16px;
@@ -33,7 +57,7 @@
 .loginHeader h3 {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .loginStatus {
   color: var(--a13n-secondary);

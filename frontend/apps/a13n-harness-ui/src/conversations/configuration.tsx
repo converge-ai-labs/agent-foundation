@@ -33,7 +33,7 @@ function ConfigurationSummary({
         <dt>Default model</dt>
         <dd>{configuration.default_model_id ?? "Follow Agent model"}</dd>
       </div>
-      <div>
+      <div className={styles.detailLongRow}>
         <dt>Environments</dt>
         <dd>
           <EnvironmentsSummary value={configuration} />
@@ -152,7 +152,7 @@ export function ConversationConfiguration({
                       {reasoningModeLabel(data.captured.agent.reasoning_mode)}
                     </dd>
                   </div>
-                  <div>
+                  <div className={styles.detailLongRow}>
                     <dt>Captured environments</dt>
                     <dd>
                       <EnvironmentsSummary

@@ -79,7 +79,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 20px;
+  font-size: 16px;
+  font-weight: 500;
 }
 .sidebarCaption {
   font-size: 11px;
@@ -238,6 +239,8 @@
   grid-row: 2;
   max-width: 660px;
   color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 20px;
 }
 .pageHeader > .actions {
   grid-column: 2;
@@ -670,25 +673,28 @@ a.resourceRow:hover {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
 }
 .accessCard {
-  width: min(100%, 440px);
+  width: min(100%, 400px);
   background: var(--a13n-elevated);
   border: 1px solid var(--a13n-border);
-  border-radius: 16px;
-  padding: 36px;
+  border-radius: 12px;
+  padding: 28px;
   display: grid;
   gap: 20px;
 }
 .accessCard h1 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 500;
   letter-spacing: -0.03em;
 }
 .accessCard p {
   color: var(--a13n-secondary);
   font-size: 13px;
+}
+.accessCard .accessError {
+  color: var(--a13n-danger);
 }
 .skipLink {
   position: fixed;
@@ -943,8 +949,21 @@ a.resourceRow:hover {
 .fieldGroup:has(> .stack > [data-slot="settings-row"]) {
   padding-block: 0;
 }
-.fieldGroup.stack:has(> [data-slot="settings-row"]) {
-  padding-top: 0;
+.sectionNote {
+  padding-block: 12px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.sectionNote > :is(h3, p) {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+.sectionNote > h3 {
+  color: var(--a13n-text);
+  font-weight: 500;
+  margin-bottom: 4px;
 }
 .selectionOptions {
   display: grid;
@@ -1079,7 +1098,7 @@ a.resourceRow:hover {
 }
 
 .pageHeader > div > h1 {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 500;
 }
 

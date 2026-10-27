@@ -9,8 +9,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 20px;
-  min-height: 60px;
+  padding: 8px 16px;
+  min-height: 48px;
   flex-shrink: 0;
   border-bottom: 0;
 }
@@ -29,7 +29,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -56,10 +56,10 @@
   gap: 12px;
 }
 @media (min-width: 768px) {
-  .settingsToolbar .workspaceHeading {
+  .documentToolbar .workspaceHeading {
     visibility: hidden;
   }
-  .settingsToolbar {
+  .documentToolbar {
     height: 48px;
     min-height: 48px;
   }
@@ -126,6 +126,10 @@
      workarea axis whether or not the page scrolls. */
   scrollbar-gutter: stable both-edges;
 }
+.center > .page.chatPage {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
 .page[hidden] {
   display: none;
 }
@@ -142,7 +146,7 @@
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  padding: 24px clamp(20px, 5vw, 64px) 40px;
+  padding: 28px clamp(20px, 5vw, 64px) 48px;
 }
 /* The drawer keeps one 12px content inset on every row: header and tab
    controls sit 4px in so their ghost padding lands on the same line, and
@@ -179,11 +183,6 @@
     display: none;
   }
 }
-.changeGroup > summary {
-  cursor: pointer;
-  font-weight: 500;
-  padding-block: 8px;
-}
 .expandedPane {
   flex-basis: 70%;
 }
@@ -214,7 +213,7 @@
   flex-wrap: wrap;
 }
 .paneHeader strong {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
 }
 .paneHeader small {
@@ -555,21 +554,86 @@
   padding: 4px;
 }
 .repo {
-  display: grid;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.repo > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  list-style: none;
+}
+.repo > summary > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo > div {
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.repo p {
+  margin: 0 0 6px;
+}
+.changes {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   gap: 8px;
+  padding-top: 8px;
 }
 .changeGroup {
-  display: grid;
-  gap: 4px;
+  min-width: 0;
 }
-.changeGroup h3 {
+.changeGroup > summary {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 0;
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--a13n-secondary);
-  margin-bottom: 4px;
 }
-.changeGroup h3 span {
-  font-size: 11px;
+.changeGroup > summary small {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.repo > summary::-webkit-details-marker,
+.changeGroup > summary::-webkit-details-marker {
+  display: none;
+}
+.repo > summary::before,
+.changeGroup > summary::before {
+  content: none;
+}
+.repo[open] > summary > svg:last-child,
+.changeGroup[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.repo > summary:focus-visible,
+.changeGroup > summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.changeEmpty {
+  margin: 0;
+  padding: 12px 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.changeNavigation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 @media (max-width: 999px) {
   .withPane .center {
@@ -588,6 +652,9 @@
   }
   .workToolbar {
     padding-inline: 8px;
+  }
+  .page.chatPage {
+    padding: 12px;
   }
 }
 
@@ -635,11 +702,15 @@
 .diffSummary {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 12px;
   color: var(--a13n-secondary);
 }
-.diffSummary small {
+.diffSummary > nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
 }
 .addedCount {
@@ -667,8 +738,8 @@
 }
 
 .panelTools svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .paneFeedback {

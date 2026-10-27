@@ -437,6 +437,9 @@
   padding: 0.875rem 1rem;
   overflow-wrap: anywhere;
 }
+.answers:empty {
+  display: none;
+}
 .questionHeader {
   font-size: 0.75rem;
   font-weight: 500;
@@ -461,6 +464,7 @@
   font-size: 0.8125rem;
 }
 .answers p,
+.questionContext p,
 .originalQuestion p {
   margin: 0;
   white-space: pre-wrap;

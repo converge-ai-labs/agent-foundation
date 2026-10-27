@@ -12,7 +12,7 @@
 .navigation h2 {
   margin: 18px 0 8px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 20px;
   font-weight: 500;
   color: var(--a13n-secondary);
@@ -52,7 +52,12 @@
 .pageHeading {
   display: grid;
   gap: 24px;
-  padding: 32px clamp(20px, 5vw, 64px) 0;
+  width: min(
+    var(--harness-reading-width),
+    calc(100% - clamp(40px, 10vw, 128px))
+  );
+  margin-inline: auto;
+  padding-top: 28px;
   flex-shrink: 0;
 }
 .pageHeading [data-slot="tabs-tab"] {
@@ -76,7 +81,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px clamp(20px, 5vw, 64px);
+  width: min(
+    var(--harness-reading-width),
+    calc(100% - clamp(40px, 10vw, 128px))
+  );
+  margin-inline: auto;
+  padding-block: 16px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
@@ -91,6 +101,11 @@
   padding: 24px clamp(20px, 5vw, 64px) 32px;
   overflow: auto;
 }
+.files > * {
+  width: 100%;
+  max-width: var(--harness-reading-width);
+  margin-inline: auto;
+}
 .fileToolbar {
   display: flex;
   flex-wrap: wrap;
@@ -98,8 +113,9 @@
   justify-content: space-between;
   gap: 12px 24px;
   width: 100%;
-  max-width: 760px;
+  max-width: var(--harness-reading-width);
   margin-bottom: 24px;
+  margin-inline: auto;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
@@ -107,7 +123,9 @@
   width: min(100%, 320px);
 }
 .file {
-  max-width: 760px;
+  width: 100%;
+  max-width: var(--harness-reading-width);
+  margin-inline: auto;
   overflow-wrap: anywhere;
 }
 .loading {

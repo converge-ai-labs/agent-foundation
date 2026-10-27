@@ -4,10 +4,23 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import {
+  Button,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuCheckboxItem,
+} from "a13n-ui";
+import {
+  CaretRight,
+  GitBranch,
+  DotsThree,
+  ArrowLeft,
+  ArrowRight,
+} from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useStatus, useTransport } from "../transport/context";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice, SearchField } from "../shell/ui";
 import { PatchEditor } from "./patch-editor";
 import { gitPath } from "./buffer";
 import styles from "./native.module.css";
@@ -136,7 +149,7 @@ export function Changes({
       .includes(filter.toLowerCase()),
   );
   return (
-    <div className={styles.stack}>
+    <div className={styles.changes}>
       <ErrorNotice
         error={discovery.error || status.error}
         retry={() => {
@@ -162,35 +175,54 @@ export function Changes({
       )}
       {repository && (
         <>
-          <div className={styles.repo}>
-            <strong>
-              {repository.branch ?? "Detached HEAD"}
-              {!repository.head_oid ? " · No commits yet" : ""}
-            </strong>
-            <div className={styles.path}>{repository.root}</div>
-            <details>
-              <summary>Repository details</summary>
+          <details className={styles.repo}>
+            <summary aria-label="Repository details" title={repository.root}>
+              <GitBranch size={14} aria-hidden />
+              <span>
+                {repository.branch ?? "Detached HEAD"}
+                {!repository.head_oid ? " · No commits yet" : ""}
+              </span>
+              <CaretRight size={12} aria-hidden />
+            </summary>
+            <div>
+              <p>Worktree: {repository.root}</p>
               <p>HEAD: {repository.head_oid ?? "Empty tree (no commits)"}</p>
               <p>Git directory: {repository.git_dir}</p>
               <p>Common directory: {repository.common_dir}</p>
               <p>
                 This is shared checkout state, not changes attributed to a Run.
               </p>
-            </details>
-          </div>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={ignored}
-              onChange={(event) => setIgnored(event.target.checked)}
+            </div>
+          </details>
+          <div className={styles.directoryToolbar}>
+            <SearchField
+              label="Filter loaded changes by path"
+              placeholder="Filter changes…"
+              value={filter}
+              onChange={setFilter}
             />
-            Show ignored entries
-          </label>
-          <TextField
-            label="Filter loaded changes by path"
-            value={filter}
-            onChange={setFilter}
-          />
+            <Menu>
+              <MenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Change filters"
+                  />
+                }
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuCheckboxItem
+                  checked={ignored}
+                  onCheckedChange={setIgnored}
+                >
+                  Show ignored entries
+                </MenuCheckboxItem>
+              </MenuPopup>
+            </Menu>
+          </div>
           {status.hasNextPage && (
             <small>Counts and filtering cover loaded changes only.</small>
           )}
@@ -198,18 +230,30 @@ export function Changes({
             const rows = matches.filter((entry) =>
               changeAxes(entry).includes(axis),
             );
+            if (!rows.length) return null;
             return (
               <details className={styles.changeGroup} key={axis} open>
-                <summary>
-                  {axis === "staged"
-                    ? "Staged · HEAD → index"
-                    : axis === "unstaged"
-                      ? "Unstaged · index → worktree"
-                      : "Untracked · new files"}{" "}
+                <summary
+                  title={
+                    axis === "staged"
+                      ? "HEAD → index"
+                      : axis === "unstaged"
+                        ? "Index → worktree"
+                        : "New files"
+                  }
+                >
+                  <CaretRight size={12} aria-hidden />
                   <span>
+                    {axis === "staged"
+                      ? "Staged"
+                      : axis === "unstaged"
+                        ? "Unstaged"
+                        : "Untracked"}
+                  </span>
+                  <small>
                     {rows.length}
                     {status.hasNextPage ? "+" : ""}
-                  </span>
+                  </small>
                 </summary>
                 {rows.map((entry) => (
                   <button
@@ -246,12 +290,6 @@ export function Changes({
                     </small>
                   </button>
                 ))}
-                {!rows.length && status.isSuccess && !status.error && (
-                  <small>
-                    No {axis} entries{status.hasNextPage ? " in this page" : ""}
-                    .
-                  </small>
-                )}
               </details>
             );
           })}
@@ -269,6 +307,15 @@ export function Changes({
                   <small>Ignored · open in Files</small>
                 </button>
               ))}
+          {!matches.length && status.isSuccess && !status.error && (
+            <p className={styles.changeEmpty}>
+              {filter
+                ? "No loaded changes match this filter."
+                : status.hasNextPage
+                  ? "No changes in this loaded page."
+                  : "No changes in this worktree."}
+            </p>
+          )}
           {status.hasNextPage && (
             <Button
               variant="ghost"
@@ -319,7 +366,34 @@ export function DiffView({
   return (
     <section className={styles.file} aria-label="Reviewed Git diff">
       <div className={styles.fileHeader}>
-        <strong>{selection.path}</strong>
+        {navigate && choices.length > 1 && (
+          <nav
+            className={styles.changeNavigation}
+            aria-label="Review changed files"
+          >
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Previous file"
+              title="Previous file"
+              disabled={index <= 0}
+              onClick={() => navigate(choices[index - 1]!)}
+            >
+              <ArrowLeft />
+            </Button>
+            <span>{index >= 0 ? `${index + 1} / ${choices.length}` : "—"}</span>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Next file"
+              title="Next file"
+              disabled={index < 0 || index >= choices.length - 1}
+              onClick={() => navigate(choices[index + 1]!)}
+            >
+              <ArrowRight />
+            </Button>
+          </nav>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -330,31 +404,6 @@ export function DiffView({
           Open in Files
         </Button>
       </div>
-      {navigate && choices.length > 1 && (
-        <nav className={styles.actions} aria-label="Review changed files">
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={index <= 0}
-            onClick={() => navigate(choices[index - 1]!)}
-          >
-            Previous file
-          </Button>
-          <small>
-            {index >= 0
-              ? `${index + 1} / ${choices.length} loaded comparisons`
-              : "Comparison no longer in the list"}
-          </small>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={index < 0 || index >= choices.length - 1}
-            onClick={() => navigate(choices[index + 1]!)}
-          >
-            Next file
-          </Button>
-        </nav>
-      )}
       <ErrorNotice error={diff.error} retry={() => void diff.refetch()} />
       {diff.isFetching && <p role="status">Reading comparison…</p>}
       {value && (

@@ -1,5 +1,9 @@
 import { SettingsChoice as ChoiceField } from "../shell/settings";
-import { SettingsSection, SettingsToggle } from "../shell/settings";
+import {
+  SettingsRow,
+  SettingsSection,
+  SettingsToggle,
+} from "../shell/settings";
 import layout from "./settings.module.css";
 import type { ReactNode } from "react";
 import { ArrowCounterClockwise, Trash } from "@phosphor-icons/react";
@@ -227,85 +231,85 @@ export function AgentFields({
         <SettingsSection title="Connections">{connections}</SettingsSection>
       )}
       <SettingsSection variant="outlined" title="Delegation">
-        <div className={`${styles.stack} ${styles.fieldGroup}`}>
-          {children.map((item, index) => (
-            <div className={management.capabilityHeader} key={index}>
-              <div className={management.subagentInfo}>
-                <span>
-                  {item.agent ? agentName(item.agent) : item.markdown}
-                </span>
-                <small>
-                  {item.agent
-                    ? `Agent · ${selectors.data?.models?.find((model) => model.model_id === selectors.data?.agents.find((agent) => agent.agent_id === item.agent)?.model_id)?.name ?? "No model selected"}`
-                    : "Markdown · inherits this Agent's model"}
-                </small>
-              </div>
-              <Button
-                variant="ghost"
-                aria-label={`Remove subagent ${item.agent ?? item.markdown}`}
-                onClick={() => remove("subagents", index)}
+        {children.map((item, index) => (
+          <SettingsRow
+            key={index}
+            label={item.agent ? agentName(item.agent) : item.markdown!}
+            description={
+              item.agent
+                ? `Agent · ${selectors.data?.models?.find((model) => model.model_id === selectors.data?.agents.find((agent) => agent.agent_id === item.agent)?.model_id)?.name ?? "No model selected"}`
+                : "Markdown · inherits this Agent's model"
+            }
+          >
+            <Button
+              variant="ghost"
+              aria-label={`Remove subagent ${item.agent ?? item.markdown}`}
+              onClick={() => remove("subagents", index)}
+            >
+              <Trash aria-hidden="true" />
+              Remove
+            </Button>
+          </SettingsRow>
+        ))}
+        <ResourceChoice
+          loading={sources.isPending}
+          label="Add subagent"
+          value=""
+          onValueChange={(child) => {
+            if (child) {
+              const [kind, id] = child.split(":");
+              add("subagents", { [kind]: id });
+            }
+          }}
+          options={[
+            {
+              value: "",
+              label: "Choose subagent",
+            },
+            ...(sources.data?.sources ?? [])
+              .filter(
+                (item) =>
+                  item.resource_kind === "agent" ||
+                  item.resource_kind === "subagent",
+              )
+              .flatMap((item) =>
+                item.resource_ids
+                  .filter(
+                    (id) =>
+                      id !== raw.id &&
+                      !children.some(
+                        (child) => (child.agent ?? child.markdown) === id,
+                      ),
+                  )
+                  .map((id) => ({
+                    value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
+                    label:
+                      item.resource_kind === "agent"
+                        ? `Agent · ${agentName(id)}`
+                        : `Markdown · ${id}`,
+                  })),
+              ),
+          ]}
+        />
+        {!!root.configuration?.subagents?.include?.length && (
+          <div className={styles.sectionNote}>
+            <h3>Instance roles</h3>
+            <p>{root.configuration.subagents.include.join(", ")}</p>
+            <small>
+              Appended when this Agent runs as a root.{" "}
+              <Link
+                to={`/settings/source?path=${encodeURIComponent(root.path!)}`}
               >
-                <Trash aria-hidden="true" />
-                Remove
-              </Button>
-            </div>
-          ))}
-          <ResourceChoice
-            loading={sources.isPending}
-            label="Add subagent"
-            value=""
-            onValueChange={(child) => {
-              if (child) {
-                const [kind, id] = child.split(":");
-                add("subagents", { [kind]: id });
-              }
-            }}
-            options={[
-              {
-                value: "",
-                label: "Choose subagent",
-              },
-              ...(sources.data?.sources ?? [])
-                .filter(
-                  (item) =>
-                    item.resource_kind === "agent" ||
-                    item.resource_kind === "subagent",
-                )
-                .flatMap((item) =>
-                  item.resource_ids
-                    .filter(
-                      (id) =>
-                        id !== raw.id &&
-                        !children.some(
-                          (child) => (child.agent ?? child.markdown) === id,
-                        ),
-                    )
-                    .map((id) => ({
-                      value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
-                      label:
-                        item.resource_kind === "agent"
-                          ? `Agent · ${agentName(id)}`
-                          : `Markdown · ${id}`,
-                    })),
-                ),
-            ]}
-          />
-          {!!root.configuration?.subagents?.include?.length && (
-            <div>
-              <h3>Instance roles</h3>
-              <p>{root.configuration.subagents.include.join(", ")}</p>
-              <small>
-                Appended when this Agent runs as a root.{" "}
-                <Link
-                  to={`/settings/source?path=${encodeURIComponent(root.path!)}`}
-                >
-                  Manage instance roles
-                </Link>
-              </small>
-            </div>
-          )}
-          <ErrorNotice error={root.error} />
-        </div>
+                Manage instance roles
+              </Link>
+            </small>
+          </div>
+        )}
+        {root.error && (
+          <div className={styles.sectionNote}>
+            <ErrorNotice error={root.error} />
+          </div>
+        )}
       </SettingsSection>
       <SettingsSection title="Advanced tools">
         <details className={layout.groupDisclosure}>

@@ -39,9 +39,7 @@ export function TaskOptions({
         <div className={styles.optionRow}>
           <div>
             <strong>Goal mode</strong>
-            <p>
-              Continue and check the result until the objective is complete.
-            </p>
+            <p>Keep working and checking until the objective is complete.</p>
           </div>
           {goal}
         </div>
@@ -50,8 +48,7 @@ export function TaskOptions({
             <div>
               <strong>Coordinator</strong>
               <p>
-                Plan and delegate work in this project. This role becomes
-                permanent after sending.
+                Plan and delegate work in this project. Permanent after sending.
               </p>
             </div>
             {coordinator}
@@ -61,7 +58,7 @@ export function TaskOptions({
           <div className={styles.optionRow}>
             <div>
               <strong>Working environment</strong>
-              <p>Choose where the agent works and which folders it can use.</p>
+              <p>Choose where this chat runs and which folders it can use.</p>
             </div>
             {environment}
           </div>
@@ -70,7 +67,7 @@ export function TaskOptions({
           <div className={styles.optionRow}>
             <div>
               <strong>Start with fresh context</strong>
-              <p>Keep your chat history, files and unsent message.</p>
+              <p>Keep your chat history, files and draft.</p>
             </div>
             {context}
           </div>

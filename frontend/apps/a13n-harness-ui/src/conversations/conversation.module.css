@@ -591,32 +591,33 @@
   overflow-anchor: none;
 }
 .transcript {
-  max-width: 760px;
+  max-width: var(--harness-reading-width);
   margin: 0 auto;
 }
 .entry {
   margin-bottom: 4px;
 }
 .userInput {
-  margin: 12px 0 24px auto;
+  margin: 8px 0 18px;
   position: relative;
-  width: fit-content;
+  width: 100%;
   min-width: 64px;
-  max-width: min(85%, 640px);
+  max-width: 100%;
 }
 .userMessage {
   color: var(--a13n-text);
-  padding: 10px 16px;
+  padding: 10px 12px;
   background: var(--a13n-surface);
-  border-radius: 16px;
-  font-size: 16px;
-  line-height: 1.7;
+  border-radius: 10px;
+  font-size: var(--harness-prose-size);
+  line-height: var(--harness-prose-leading);
   overflow-wrap: anywhere;
 }
 .assistantMessage {
   position: relative;
-  margin: 12px 0 20px;
-  line-height: 1.7;
+  margin: 10px 0 16px;
+  padding-inline: 12px;
+  line-height: var(--harness-prose-leading);
 }
 .messageActions {
   display: flex;
@@ -642,6 +643,9 @@
   margin: 0;
 }
 @container conversation-page (max-width: 600px) {
+  .assistantMessage {
+    padding-inline: 6px;
+  }
   .userInput {
     margin-bottom: 36px;
   }
@@ -846,8 +850,8 @@
   color: var(--a13n-text);
 }
 .reasoning[open] > div {
-  font-size: 14px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.6;
   padding-inline-start: 14px;
   border-inline-start: 1px solid var(--a13n-border);
 }
@@ -941,27 +945,29 @@
 }
 .composer {
   container: composer / inline-size;
-  --composer-font-size: 16px;
-  --composer-content-height: 48px;
+  --composer-font-size: 14px;
+  --composer-content-height: 28px;
   flex-shrink: 0;
   /* Match the transcript column: reader inset (36px) plus scrollbar gutter on
      each side. */
-  width: min(760px, 100% - 84px);
+  width: min(var(--harness-reading-width), 100% - 84px);
   margin: 0 auto;
+}
+.composerInput {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto 28px;
+  align-items: flex-end;
+  gap: 4px;
   border: 1px solid var(--a13n-input-border);
-  border-radius: 20px;
-  /* The editor, action row and surrounding work strip share a calm
-     inset without drawing another frame around each control. */
-  padding: 12px 14px 10px;
+  border-radius: 14px;
+  padding: 6px 8px;
   background: var(--card);
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--a13n-text) 4%, transparent),
-    0 4px 16px -8px color-mix(in srgb, var(--a13n-text) 10%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--a13n-text) 4%, transparent);
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
-.composer:focus-within {
+.composerInput:focus-within {
   border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
   box-shadow: 0 2px 12px -6px
     color-mix(in srgb, var(--a13n-text) 12%, transparent);
@@ -970,17 +976,13 @@
   .reading {
     padding: 16px 12px;
   }
-  .userInput {
-    max-width: 90%;
-  }
-  .composer {
-    border-radius: 16px;
-    padding: 8px 12px 6px;
+  .composerInput {
+    padding: 6px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .messageActions,
-  .composer,
+  .composerInput,
   .activity > summary,
   .reasoning > summary {
     transition: none;
@@ -992,7 +994,6 @@
   color: var(--a13n-secondary);
 }
 .sendButton {
-  grid-area: send;
   flex-shrink: 0;
   border-radius: 50%;
   box-shadow: none;
@@ -1030,7 +1031,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .goalButton {
   flex-shrink: 0;
@@ -1079,10 +1080,11 @@
   max-width: 100%;
 }
 .composerEditor {
+  flex: 1;
   min-width: 0;
 }
 .attachButton {
-  grid-area: attach;
+  align-self: end;
 }
 .composerSync {
   display: flex;
@@ -1102,17 +1104,18 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
+  min-height: 28px;
 }
-/* Icon controls share a 34px box; touch devices retain the shared
-   44px hit area. */
+.composerInput > button,
 .composerActions > button {
-  width: 34px;
-  height: 34px;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
 }
+.composerInput > button svg,
 .composerActions > button svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 .composerChoices {
   display: flex;
@@ -1122,10 +1125,30 @@
   min-width: 0;
   gap: 8px;
 }
+.composerInput[data-filled] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.composerInput[data-filled] .composerEditor {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+.composerInput[data-filled] .attachButton {
+  grid-column: 1;
+  grid-row: 2;
+}
+.composerInput[data-filled] .composerActions {
+  grid-column: 2;
+  grid-row: 2;
+  justify-content: flex-end;
+}
+.composerInput[data-filled] .sendButton {
+  grid-column: 3;
+  grid-row: 2;
+}
 @container composer (max-width: 480px) {
   .composerBody {
     --composer-font-size: 16px;
-    --composer-content-height: 44px;
+    --composer-content-height: 32px;
   }
   /* Phone chrome keeps desktop type: 13px labels and 16px glyphs. */
   .composerHeader {
@@ -1141,7 +1164,40 @@
   }
   .composerActions {
     gap: 4px;
-    margin-top: 6px;
+  }
+}
+@container composer (max-width: 600px) {
+  .composerInput {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .composerEditor {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .attachButton {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .composerActions {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+  }
+  .sendButton {
+    grid-column: 3;
+    grid-row: 2;
+  }
+}
+@media (pointer: coarse) {
+  @container composer (min-width: 601px) {
+    .composerInput:not([data-filled]) {
+      grid-template-columns: 44px minmax(0, 1fr) auto 44px;
+    }
+  }
+  .composerInput > button,
+  .composerActions > button {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 .composerStatus {
@@ -1222,14 +1278,14 @@
 }
 dl.detailGrid {
   display: block;
-  margin-block: 16px;
+  margin-block: 12px;
 }
 dl.detailGrid > div {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   align-items: start;
   gap: 24px;
-  padding-block: 12px;
+  padding-block: 8px;
 }
 dl.detailGrid dt {
   color: var(--a13n-text);
@@ -1242,8 +1298,15 @@ dl.detailGrid dd {
   text-align: right;
   line-height: 20px;
 }
+dl.detailGrid > .detailLongRow {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+dl.detailGrid > .detailLongRow dd {
+  text-align: left;
+}
 .inspection {
-  gap: 24px;
+  gap: 20px;
 }
 .inspection [data-slot="tabs-list"] {
   max-width: 100%;
@@ -1253,7 +1316,7 @@ dl.detailGrid dd {
   font-size: 13px;
 }
 .inspection [data-slot="tabs-panel"] > section + section {
-  margin-top: 32px;
+  margin-top: 24px;
 }
 @media (max-width: 700px) {
   .header {
@@ -1264,9 +1327,6 @@ dl.detailGrid dd {
   .headerActions {
     width: 100%;
   }
-  .userInput {
-    max-width: 95%;
-  }
   .reading {
     padding-right: 0;
   }
@@ -1276,19 +1336,28 @@ dl.detailGrid dd {
 }
 
 .decision {
-  margin: 20px 0;
-  padding: 18px;
+  margin: 16px 0;
+  padding: 16px;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;
 }
 .decision h2 {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   margin-bottom: 8px;
 }
 .decision p {
   font-size: 13px;
   line-height: 1.6;
+}
+.decision > p {
+  margin: 0 0 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.decision > form {
+  margin-top: 16px;
 }
 .question {
   border: 0;
@@ -1297,9 +1366,14 @@ dl.detailGrid dd {
   margin: 0;
 }
 .question legend {
-  font-size: 13px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.question > p {
+  margin-bottom: 10px;
+  font-size: 14px;
   font-weight: 500;
-  margin-bottom: 8px;
 }
 .answerOption {
   display: flex;
@@ -1315,6 +1389,14 @@ dl.detailGrid dd {
 .answerOption input {
   margin-top: 4px;
   flex-shrink: 0;
+  accent-color: var(--a13n-text);
+}
+.answerOption:has(input:checked) {
+  background: var(--a13n-selected);
+}
+.answerOption:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 .answerOption strong {
   font-weight: 500;
@@ -1322,7 +1404,9 @@ dl.detailGrid dd {
 .answerOption small {
   display: block;
   color: var(--a13n-secondary);
-  margin-top: 4px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .responseInputs {
@@ -1686,7 +1770,7 @@ dl.detailGrid dd {
   border-radius: 8px;
 }
 .execution {
-  margin-block: 8px 18px;
+  margin: 6px 12px 14px;
 }
 .executionToggle {
   display: flex;
@@ -1786,8 +1870,8 @@ dl.detailGrid dd {
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
-  width: min(760px, 100% - 84px);
-  min-height: 36px;
+  width: min(var(--harness-reading-width), 100% - 84px);
+  min-height: 28px;
   margin: 0 auto;
   padding-inline: 8px;
 }

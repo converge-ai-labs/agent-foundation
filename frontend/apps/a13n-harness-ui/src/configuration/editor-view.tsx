@@ -136,7 +136,7 @@ export function SourceEditor({
         }),
         EditorView.theme({
           "&": {
-            fontSize: "13px",
+            fontSize: "12px",
             ...(fill ? { height: "100%" } : {}),
             backgroundColor: "var(--a13n-canvas)",
             color: "var(--a13n-text)",

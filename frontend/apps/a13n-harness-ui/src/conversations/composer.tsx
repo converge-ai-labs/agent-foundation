@@ -1016,61 +1016,192 @@ export function Composer({
                   : null)}
           </div>
         )}
-        <div inert={preparing} className={styles.composerEditor}>
-          <ComposerEditor
-            autoFocus={autoFocus}
-            local={local}
-            skillContext={skillContext}
-            loadSkills={
-              transport.shareId
-                ? undefined
-                : async () => {
-                    try {
-                      return await loadSkills();
-                    } catch (failure) {
-                      setError(
-                        failure instanceof Error
-                          ? `Could not load skills: ${failure.message}`
-                          : "Could not load skills. Type $ again to retry.",
-                      );
-                      throw failure;
-                    }
-                  }
+        <div
+          className={styles.composerInput}
+          data-filled={hasInput || undefined}
+        >
+          <input
+            ref={upload}
+            type="file"
+            multiple
+            hidden
+            onChange={(event) =>
+              void uploadFiles(Array.from(event.target.files ?? []))
             }
-            draft={draft}
-            profile={profile}
-            presence={(value) => {
-              editorPresence.current = { draft, value };
-              connection.current?.presence(value);
-            }}
-            submit={() => void submit(busy ? "steer" : "send")}
-            editor={editor}
-            attachments={{
-              transport,
-              threadId,
-              metadata: new Map(
-                attachments.flatMap((item) =>
-                  item.data
-                    ? [[item.data.attachment_id, item.data] as const]
-                    : [],
-                ),
-              ),
-              preview: (id, attachment) => void showAttachment(id, attachment),
-              upload: (files, at) => void uploadFiles(files, at),
-              retry: (key) => {
-                const item = draft.uploads.get(key);
-                if (
-                  !local &&
-                  (item?.status === "failed" || item?.status === "staged")
-                )
-                  void uploadOne(key, item.file);
-                else if (!item)
-                  setError(
-                    "This upload is unavailable in this tab. Remove it and attach the file again.",
-                  );
-              },
-            }}
           />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={styles.attachButton}
+            aria-label="Attach files"
+            title="Attach files · you can also paste or drop files"
+            loading={uploading}
+            disabled={preparing}
+            onClick={() => upload.current?.click()}
+          >
+            <Plus />
+          </Button>
+          <div inert={preparing} className={styles.composerEditor}>
+            <ComposerEditor
+              autoFocus={autoFocus}
+              local={local}
+              skillContext={skillContext}
+              loadSkills={
+                transport.shareId
+                  ? undefined
+                  : async () => {
+                      try {
+                        return await loadSkills();
+                      } catch (failure) {
+                        setError(
+                          failure instanceof Error
+                            ? `Could not load skills: ${failure.message}`
+                            : "Could not load skills. Type $ again to retry.",
+                        );
+                        throw failure;
+                      }
+                    }
+              }
+              draft={draft}
+              profile={profile}
+              presence={(value) => {
+                editorPresence.current = { draft, value };
+                connection.current?.presence(value);
+              }}
+              submit={() => void submit(busy ? "steer" : "send")}
+              editor={editor}
+              attachments={{
+                transport,
+                threadId,
+                metadata: new Map(
+                  attachments.flatMap((item) =>
+                    item.data
+                      ? [[item.data.attachment_id, item.data] as const]
+                      : [],
+                  ),
+                ),
+                preview: (id, attachment) =>
+                  void showAttachment(id, attachment),
+                upload: (files, at) => void uploadFiles(files, at),
+                retry: (key) => {
+                  const item = draft.uploads.get(key);
+                  if (
+                    !local &&
+                    (item?.status === "failed" || item?.status === "staged")
+                  )
+                    void uploadOne(key, item.file);
+                  else if (!item)
+                    setError(
+                      "This upload is unavailable in this tab. Remove it and attach the file again.",
+                    );
+                },
+              }}
+            />
+          </div>
+          <div className={styles.composerActions}>
+            <span className={styles.composerSync}>
+              {showSyncStatus && draft.status === "Connected" && (
+                <span
+                  role="status"
+                  aria-label="Syncing edits…"
+                  title="Syncing edits…"
+                >
+                  <CircleNotch
+                    className={styles.threadRunning}
+                    aria-hidden="true"
+                  />
+                </span>
+              )}
+            </span>
+            {!transport.shareId && (
+              <TaskOptions
+                goal={
+                  <Switch
+                    aria-label="Goal"
+                    title={goalToggle.props.title}
+                    checked={draft.mode === "goal"}
+                    disabled={
+                      !canRun || busy || preparing || pending || unknown
+                    }
+                    onCheckedChange={(enabled) => {
+                      draft.mode = enabled ? "goal" : "normal";
+                      draft.notify();
+                    }}
+                  />
+                }
+                coordinator={
+                  !owner && !coordinatorActive && coordinator ? (
+                    <Switch
+                      aria-label="Coordinator"
+                      title={
+                        coordinatorControl
+                          ? coordinatorControl.props.title
+                          : undefined
+                      }
+                      checked={draft.coordinator}
+                      disabled={coordinatorDisabled}
+                      onCheckedChange={(enabled) => {
+                        draft.coordinator = enabled;
+                        draft.notify();
+                      }}
+                    />
+                  ) : undefined
+                }
+                environment={leadingControls}
+                context={
+                  !local && (
+                    <ClearContext
+                      threadId={threadId}
+                      continuationId={continuationId}
+                      disabled={
+                        !canClearContext ||
+                        busy ||
+                        preparing ||
+                        pending ||
+                        unknown
+                      }
+                      onPendingChange={setClearing}
+                      onCleared={() => setContextCleared(true)}
+                      reconcile={reconcile}
+                    />
+                  )
+                }
+              />
+            )}
+            <div className={styles.composerChoices}>{controls?.()}</div>
+          </div>
+          <Button
+            ref={sendButton}
+            size="icon"
+            className={styles.sendButton}
+            aria-label={
+              stopAction
+                ? stopLabel
+                : pending
+                  ? "Submitting"
+                  : preparing
+                    ? "Preparing"
+                    : busy
+                      ? "Steer"
+                      : "Send"
+            }
+            title={
+              (stopAction ? cancellation.request?.message : undefined) ??
+              blockedReason ??
+              (stopAction
+                ? "Stop this operation"
+                : busy
+                  ? "Steer current operation · Enter"
+                  : "Send message · Enter")
+            }
+            disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
+            loading={stopAction ? stopping : pending || preparing}
+            onClick={() =>
+              stopAction ? void stop() : void submit(busy ? "steer" : "send")
+            }
+          >
+            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
+          </Button>
         </div>
         {blockedReason && (
           <p role="status" className={styles.composerConnection}>
@@ -1140,129 +1271,6 @@ export function Composer({
             )}
           </div>
         )}
-        <div className={styles.composerActions}>
-          <input
-            ref={upload}
-            type="file"
-            multiple
-            hidden
-            onChange={(event) =>
-              void uploadFiles(Array.from(event.target.files ?? []))
-            }
-          />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className={styles.attachButton}
-            aria-label="Attach files"
-            title="Attach files · you can also paste or drop files"
-            loading={uploading}
-            disabled={preparing}
-            onClick={() => upload.current?.click()}
-          >
-            <Plus />
-          </Button>
-          <span className={styles.composerSync}>
-            {showSyncStatus && draft.status === "Connected" && (
-              <span
-                role="status"
-                aria-label="Syncing edits…"
-                title="Syncing edits…"
-              >
-                <CircleNotch
-                  className={styles.threadRunning}
-                  aria-hidden="true"
-                />
-              </span>
-            )}
-          </span>
-          {!transport.shareId && (
-            <TaskOptions
-              goal={
-                <Switch
-                  aria-label="Goal"
-                  title={goalToggle.props.title}
-                  checked={draft.mode === "goal"}
-                  disabled={!canRun || busy || preparing || pending || unknown}
-                  onCheckedChange={(enabled) => {
-                    draft.mode = enabled ? "goal" : "normal";
-                    draft.notify();
-                  }}
-                />
-              }
-              coordinator={
-                !owner && !coordinatorActive && coordinator ? (
-                  <Switch
-                    aria-label="Coordinator"
-                    title={
-                      coordinatorControl
-                        ? coordinatorControl.props.title
-                        : undefined
-                    }
-                    checked={draft.coordinator}
-                    disabled={coordinatorDisabled}
-                    onCheckedChange={(enabled) => {
-                      draft.coordinator = enabled;
-                      draft.notify();
-                    }}
-                  />
-                ) : undefined
-              }
-              environment={leadingControls}
-              context={
-                !local && (
-                  <ClearContext
-                    threadId={threadId}
-                    continuationId={continuationId}
-                    disabled={
-                      !canClearContext ||
-                      busy ||
-                      preparing ||
-                      pending ||
-                      unknown
-                    }
-                    onPendingChange={setClearing}
-                    onCleared={() => setContextCleared(true)}
-                    reconcile={reconcile}
-                  />
-                )
-              }
-            />
-          )}
-          <div className={styles.composerChoices}>{controls?.()}</div>
-          <Button
-            ref={sendButton}
-            size="icon"
-            className={styles.sendButton}
-            aria-label={
-              stopAction
-                ? stopLabel
-                : pending
-                  ? "Submitting"
-                  : preparing
-                    ? "Preparing"
-                    : busy
-                      ? "Steer"
-                      : "Send"
-            }
-            title={
-              (stopAction ? cancellation.request?.message : undefined) ??
-              blockedReason ??
-              (stopAction
-                ? "Stop this operation"
-                : busy
-                  ? "Steer current operation · Enter"
-                  : "Send message · Enter")
-            }
-            disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
-            loading={stopAction ? stopping : pending || preparing}
-            onClick={() =>
-              stopAction ? void stop() : void submit(busy ? "steer" : "send")
-            }
-          >
-            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
-          </Button>
-        </div>
       </div>
       {preview?.image && preview.url && (
         <ImagePreview

@@ -38,11 +38,14 @@
 .textAction {
   composes: textAction from "./shell/workbench.module.css";
 }
-.manage summary {
-  cursor: pointer;
+.manage {
+  composes: details from "./shell/workbench.module.css";
+}
+.manage > summary {
+  min-height: 36px;
   color: var(--a13n-secondary);
   font-size: 12px;
-  padding: 4px 0;
+  padding: 8px 0;
 }
 .grant {
   display: flex;
@@ -127,14 +130,13 @@
   min-height: 0;
 }
 .sidebar {
-  width: 280px;
+  width: 240px;
   flex-shrink: 0;
-  padding: 12px;
+  padding: 10px 8px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--a13n-surface);
-  border-radius: 0 12px 0 0;
+  background: var(--sidebar);
 }
 .sidebarTop {
   display: flex;
@@ -197,8 +199,8 @@
 }
 .welcome h2,
 .unavailable h1 {
-  font-size: 24px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 500;
   letter-spacing: -0.02em;
   margin: 20px 0 10px;
 }

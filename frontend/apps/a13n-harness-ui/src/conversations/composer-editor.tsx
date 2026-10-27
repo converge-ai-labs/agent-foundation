@@ -189,12 +189,12 @@ export function ComposerEditor({
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
             fontSize: "var(--composer-font-size, 14px)",
-            minHeight: "var(--composer-content-height, 48px)",
+            minHeight: "var(--composer-content-height, 28px)",
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "var(--composer-content-height, 48px)",
-            padding: "8px",
+            minHeight: "var(--composer-content-height, 28px)",
+            padding: "3px 4px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {

@@ -105,6 +105,7 @@ export function TextField({
   description,
   type = "text",
   disabled = false,
+  autoFocus = false,
 }: {
   label: string;
   value: string;
@@ -112,6 +113,7 @@ export function TextField({
   description?: string;
   type?: string;
   disabled?: boolean;
+  autoFocus?: boolean;
 }) {
   return (
     <FormField label={label} description={description}>
@@ -120,6 +122,7 @@ export function TextField({
         onChange={(event) => onChange(event.target.value)}
         type={type}
         disabled={disabled}
+        autoFocus={autoFocus}
         autoComplete="off"
       />
     </FormField>

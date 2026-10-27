@@ -62,12 +62,14 @@ const file: Schema<"FileText"> = {
 };
 function fixture() {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
-  const get = vi.fn(async (path: string): Promise<{ data: unknown }> => {
-    if (path === "/api/status")
-      return { data: { features: { host_files: true, host_git: true } } };
-    if (path === "/api/projects") return { data: [] };
-    return { data: file };
-  });
+  const get = vi.fn(
+    async (path: string, _options?: unknown): Promise<{ data: unknown }> => {
+      if (path === "/api/status")
+        return { data: { features: { host_files: true, host_git: true } } };
+      if (path === "/api/projects") return { data: [] };
+      return { data: file };
+    },
+  );
   const post = vi.fn();
   const put = vi.fn();
   const transport = {
@@ -346,6 +348,95 @@ it("missing Git is an explicit unavailable view, not a clean tree", async () => 
   expect(screen.queryByText(/No staged entries/)).toBeNull();
   expect(f.get.mock.calls.some(([path]) => path.startsWith("/api/host"))).toBe(
     false,
+  );
+});
+
+it("filters changed files, keeps pagination scoped, and exposes ignored files in the filter menu", async () => {
+  const f = fixture();
+  const select = vi.fn();
+  const openFile = vi.fn();
+  const repository = {
+    root: "/code",
+    git_dir: "/code/.git",
+    common_dir: "/code/.git",
+    head_oid: "head",
+    branch: "main",
+  };
+  f.get.mockImplementation(async (path, ...args) => {
+    const options = args[0] as
+      | { params?: { query?: { include_ignored?: boolean; offset?: number } } }
+      | undefined;
+    const query = options?.params?.query;
+    if (path === "/api/status")
+      return { data: { features: { host_git: true } } };
+    if (path === "/api/host/git/repository")
+      return { data: { state: "repository", repository } };
+    return {
+      data: {
+        repository,
+        revision: "status-version",
+        next_offset: query?.offset ? null : 1,
+        entries: query?.offset
+          ? []
+          : query?.include_ignored
+            ? [{ path: "cache.log", kind: "ignored" }]
+            : [
+                {
+                  path: "checkout.ts",
+                  kind: "ordinary",
+                  index_status: ".",
+                  worktree_status: "M",
+                },
+              ],
+      },
+    };
+  });
+  render(
+    <Changes
+      path="/code"
+      selected={null}
+      select={select}
+      openFile={openFile}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^checkout\.ts\s*M$/ }),
+  );
+  expect(select).toHaveBeenCalledWith(
+    { repository_path: "/code", path: "checkout.ts", comparison: "unstaged" },
+    [{ repository_path: "/code", path: "checkout.ts", comparison: "unstaged" }],
+  );
+  expect(screen.queryByText("Staged")).toBeNull();
+  expect(
+    screen.getByText("Counts and filtering cover loaded changes only."),
+  ).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Filter loaded changes by path"), {
+    target: { value: "missing" },
+  });
+  expect(screen.getByText("No loaded changes match this filter.")).toBeTruthy();
+  expect(screen.queryByText("No changes in this worktree.")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Filter loaded changes by path"), {
+    target: { value: "" },
+  });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Change filters" }));
+  await user.click(
+    await screen.findByRole("menuitemcheckbox", {
+      name: "Show ignored entries",
+    }),
+  );
+  await user.click(
+    await screen.findByRole("button", {
+      name: /^cache\.log\s*Ignored · open in Files$/,
+    }),
+  );
+  expect(openFile).toHaveBeenCalledWith("/code/cache.log");
+  await user.click(screen.getByRole("button", { name: "Load more changes" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Load more changes" }),
+    ).toBeNull(),
   );
 });
 

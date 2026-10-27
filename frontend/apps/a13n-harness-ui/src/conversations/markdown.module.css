@@ -1,7 +1,7 @@
 .markdown {
   min-width: 0;
-  font-size: 16px;
-  line-height: 1.7;
+  font-size: var(--harness-prose-size);
+  line-height: var(--harness-prose-leading);
   overflow-wrap: anywhere;
 }
 .markdown > :first-child {
@@ -11,7 +11,7 @@
   margin-bottom: 0;
 }
 .markdown p {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   font-size: inherit;
   line-height: inherit;
   color: inherit;
@@ -46,8 +46,8 @@
 }
 .markdown ul,
 .markdown ol {
-  padding-left: 24px;
-  margin-block: 12px;
+  padding-left: 22px;
+  margin-block: 10px;
 }
 .markdown ul {
   list-style: disc;
@@ -62,7 +62,7 @@
   color: var(--a13n-secondary);
 }
 .markdown li {
-  margin: 4px 0;
+  margin: 3px 0;
 }
 .markdown li > p {
   margin-bottom: 6px;
@@ -75,23 +75,22 @@
 .markdown h6 {
   font-weight: 500;
   line-height: 1.4;
-  margin: 22px 0 10px;
+  margin: 18px 0 8px;
   color: var(--a13n-text);
 }
 .markdown h1 {
-  font-size: 24px;
-}
-.markdown h2 {
   font-size: 20px;
 }
-.markdown h3 {
+.markdown h2 {
   font-size: 17px;
-  font-weight: 600;
+}
+.markdown h3 {
+  font-size: 15px;
 }
 .markdown h4,
 .markdown h5,
 .markdown h6 {
-  font-size: 15px;
+  font-size: 14px;
 }
 .markdown code {
   font-family: var(--a13n-mono);
@@ -104,21 +103,21 @@
 }
 .markdown pre {
   margin: 0;
-  padding: 14px 16px;
+  padding: 12px 14px;
   max-height: 440px;
   overflow: auto;
   white-space: pre;
   overflow-wrap: normal;
   font-family: var(--a13n-mono);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12px;
+  line-height: 1.6;
   tab-size: 2;
 }
 .markdown pre code {
   font-size: inherit;
 }
 .codeBlock {
-  margin: 16px 0;
+  margin: 12px 0;
   min-width: 0;
   overflow: hidden;
   background: var(--a13n-surface);
@@ -130,8 +129,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 38px;
-  padding: 2px 8px 2px 16px;
+  min-height: 32px;
+  padding: 2px 6px 2px 14px;
   border-bottom: 1px solid var(--a13n-border);
   color: var(--a13n-secondary);
   font-size: 12px;
@@ -191,7 +190,7 @@
 .tableScroll {
   max-width: 100%;
   overflow: auto;
-  margin: 18px 0;
+  margin: 14px 0;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;
   scrollbar-width: thin;
@@ -205,13 +204,13 @@
   overflow-wrap: normal;
   word-break: normal;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
 }
 .markdown th,
 .markdown td {
-  padding: 10px 14px;
+  padding: 8px 12px;
   vertical-align: top;
 }
 .markdown th {
@@ -254,9 +253,6 @@
   accent-color: var(--a13n-secondary);
 }
 @media (max-width: 600px) {
-  .markdown {
-    font-size: 16px;
-  }
   .markdown th,
   .markdown td {
     padding: 8px 10px;

@@ -739,9 +739,7 @@ export function QuestionInteraction({ tool }: { tool: ToolView }) {
             </div>
           ))}
           {(tool.failure || typeof tool.result === "string") && (
-            <p className={styles.answerDescription}>
-              {tool.failure || (tool.result as string)}
-            </p>
+            <p className={styles.answerDescription}>No answer was submitted.</p>
           )}
         </div>
       )}

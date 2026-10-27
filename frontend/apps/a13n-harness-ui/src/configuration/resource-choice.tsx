@@ -11,7 +11,7 @@ export function ResourceChoice({
   options,
   onValueChange,
   description,
-  placeholder = "Choose a resource",
+  placeholder,
   loading = false,
   row = true,
   actions,
@@ -40,7 +40,11 @@ export function ResourceChoice({
     <SearchPicker
       id={id}
       label={label}
-      placeholder={placeholder}
+      placeholder={
+        placeholder ??
+        choices.find((item) => item.value === "")?.label ??
+        "Choose a resource"
+      }
       emptyMessage={loading ? "Loading resources…" : "No matching resources."}
       value={value}
       onValueChange={onValueChange}

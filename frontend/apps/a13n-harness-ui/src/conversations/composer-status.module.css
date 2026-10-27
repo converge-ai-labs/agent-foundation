@@ -1,6 +1,6 @@
 .bar {
   /* Same column as the composer (see conversation.module.css). */
-  width: min(760px, 100% - 84px);
+  width: min(var(--harness-reading-width), 100% - 84px);
   margin: 4px auto 0;
   /* Metric text starts on the composer content line (13px inset + 8px). */
   padding-inline: 13px;

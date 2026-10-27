@@ -589,79 +589,73 @@ export function ResourceFields({
               : "Plugin configuration"
           }
         >
-          <div className={`${styles.stack} ${styles.fieldGroup}`}>
-            <ResourceChoice
-              loading={catalog.isPending}
-              label={
-                kind === "environment_profile"
-                  ? "Environment provider"
-                  : "Plugin"
-              }
-              value={text([
-                kind === "harness_plugin"
-                  ? "plugin_key"
-                  : kind === "environment_profile"
-                    ? "provider_key"
-                    : "extension_key",
-              ])}
-              options={(catalog.data ?? [])
-                .filter(
-                  (item) =>
-                    item.kind ===
-                      (kind === "environment_profile"
-                        ? "environment_provider"
-                        : kind) && item.configurable,
-                )
-                .map((item) => ({ value: item.key, label: item.key }))}
-              onValueChange={(value) =>
-                set(
-                  [
-                    kind === "harness_plugin"
-                      ? "plugin_key"
-                      : kind === "environment_profile"
-                        ? "provider_key"
-                        : "extension_key",
-                  ],
-                  value,
-                )
-              }
-            />
-            {kind === "environment_profile" &&
-              field("Adapter key", ["adapter_key"])}
-            <p>
-              Configure plugin-specific options in the configuration file below.
-              Provider and adapter settings vary by plugin.
-            </p>
-          </div>
+          <ResourceChoice
+            loading={catalog.isPending}
+            label={
+              kind === "environment_profile" ? "Environment provider" : "Plugin"
+            }
+            value={text([
+              kind === "harness_plugin"
+                ? "plugin_key"
+                : kind === "environment_profile"
+                  ? "provider_key"
+                  : "extension_key",
+            ])}
+            options={(catalog.data ?? [])
+              .filter(
+                (item) =>
+                  item.kind ===
+                    (kind === "environment_profile"
+                      ? "environment_provider"
+                      : kind) && item.configurable,
+              )
+              .map((item) => ({ value: item.key, label: item.key }))}
+            onValueChange={(value) =>
+              set(
+                [
+                  kind === "harness_plugin"
+                    ? "plugin_key"
+                    : kind === "environment_profile"
+                      ? "provider_key"
+                      : "extension_key",
+                ],
+                value,
+              )
+            }
+          />
+          {kind === "environment_profile" &&
+            field("Adapter key", ["adapter_key"])}
+          <p className={styles.sectionNote}>
+            Configure plugin-specific options in the configuration file below.
+            Provider and adapter settings vary by plugin.
+          </p>
         </SettingsSection>
       )}
       {kind === "mcp_server" && (
         <SettingsSection variant="outlined" title="Server connection">
-          <div className={`${styles.stack} ${styles.fieldGroup}`}>
-            <ChoiceField
-              label="Transport"
-              value={document.hasIn(["transport", "url"]) ? "http" : "stdio"}
-              options={[
-                { value: "stdio", label: "Local command" },
-                { value: "http", label: "Remote HTTP" },
-              ]}
-              onValueChange={(value) =>
-                set(
-                  ["transport"],
-                  value === "http"
-                    ? { url: "https://" }
-                    : { command: "", arguments: [] },
-                )
-              }
-            />
-            {document.hasIn(["transport", "url"])
-              ? field("Server URL", ["transport", "url"])
-              : field("Command", ["transport", "command"])}
-            <p>
-              Arguments and environment/header references belong in advanced
-              YAML. Saved MCP source cannot be read back through this API.
-            </p>
-          </div>
+          <ChoiceField
+            label="Transport"
+            value={document.hasIn(["transport", "url"]) ? "http" : "stdio"}
+            options={[
+              { value: "stdio", label: "Local command" },
+              { value: "http", label: "Remote HTTP" },
+            ]}
+            onValueChange={(value) =>
+              set(
+                ["transport"],
+                value === "http"
+                  ? { url: "https://" }
+                  : { command: "", arguments: [] },
+              )
+            }
+          />
+          {document.hasIn(["transport", "url"])
+            ? field("Server URL", ["transport", "url"])
+            : field("Command", ["transport", "command"])}
+          <p className={styles.sectionNote}>
+            Arguments and environment/header references belong in advanced YAML.
+            Saved MCP source cannot be read back through this API.
+          </p>
         </SettingsSection>
       )}
     </div>

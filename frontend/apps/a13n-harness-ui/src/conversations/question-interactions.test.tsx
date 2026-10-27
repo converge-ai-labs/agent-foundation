@@ -288,7 +288,7 @@ it("does not correlate equal question text or provider call IDs", () => {
 
 it.each(["failed", "denied", "interrupted"] as const)(
   "keeps %s questions visible without inferring an answer",
-  (outcome) => {
+  async (outcome) => {
     render(
       <ConversationTranscript
         threadId="one"
@@ -307,7 +307,15 @@ it.each(["failed", "denied", "interrupted"] as const)(
     expect(question.closest("[data-execution-reader]")).toBeNull();
     expect(screen.getByText("Which scope?")).toBeTruthy();
     expect(screen.getByText("Not answered")).toBeTruthy();
-    expect(screen.getByText("Response window ended")).toBeTruthy();
+    expect(screen.getByText("No answer was submitted.")).toBeTruthy();
+    expect(screen.queryByText("Response window ended")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Questions & details" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Arguments & result" }),
+    );
+    expect(await screen.findByText(/Response window ended/)).toBeTruthy();
   },
 );
 

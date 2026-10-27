@@ -380,6 +380,28 @@ it("consumes the fragment before all network requests and retains only an accept
   expect(document.body.textContent).not.toContain("generated+key");
 });
 
+it("starts login quietly and reports a rejected key only after an attempt", async () => {
+  const fetcher = vi.fn(() => Promise.resolve(json({}, 401)));
+  vi.stubGlobal("fetch", fetcher);
+  render(<BrowserApp />);
+  const input = await screen.findByLabelText("Instance API key");
+  expect(document.activeElement).toBe(input);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "Log in" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  const user = userEvent.setup();
+  await user.type(input, "incorrect-key");
+  await user.click(screen.getByRole("button", { name: "Log in" }));
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    "This instance key wasn't accepted. Check it and try again.",
+  );
+  expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
 it("accepts a replacement key after authentication failure without replaying mutations", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "old-key");
   vi.stubGlobal(
@@ -394,7 +416,7 @@ it("accepts a replacement key after authentication failure without replaying mut
   );
   render(<BrowserApp />);
   await screen.findByText(
-    "Access expired. Enter the API key printed by this server.",
+    "This instance key wasn't accepted. Check it and try again.",
   );
   fireEvent.change(screen.getByLabelText("Instance API key"), {
     target: { value: "new-key" },
@@ -452,9 +474,8 @@ it("forgets the retained credential and closes protected views", async () => {
   );
   await screen.findByText("Harness UI · 1.2.3rc2");
   fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
-  await screen.findByText(
-    "Access expired. Enter the API key printed by this server.",
-  );
+  await screen.findByRole("heading", { name: "Log in to Harness UI" });
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
   expect(
     screen.queryByRole("heading", { name: "What can I help with?" }),
@@ -707,6 +728,14 @@ it("retains source edits across rejected access and reauthentication", async () 
   fireEvent.click(screen.getByRole("button", { name: "Check configuration" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
+  );
+  expect(screen.getByText(/unsaved/i)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Instance API key"), {
+    target: { value: "incorrect-replacement" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+  await screen.findByText(
+    "This instance key wasn't accepted. Check it and try again.",
   );
   expect(screen.getByText(/unsaved/i)).toBeTruthy();
   expire = false;

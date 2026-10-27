@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Decoration, EditorView, GutterMarker, gutter } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { Button } from "a13n-ui";
+import { ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
 import { SourceEditor } from "../configuration/editor";
 import { CaptureContext } from "./capture";
@@ -79,9 +80,9 @@ export function PatchEditor({
         ".cm-line": { paddingInline: "12px" },
         ".cm-diffLineNumbers .cm-gutterElement > span": { display: "flex" },
         ".cm-diffLineNumbers .cm-gutterElement > span > span": {
-          minWidth: "4ch",
+          minWidth: "3ch",
           textAlign: "right",
-          paddingInline: "8px",
+          paddingInline: "6px",
           boxSizing: "content-box",
         },
         ".cm-diffLineNumbers .cm-gutterElement > span > span + span": {
@@ -116,23 +117,28 @@ export function PatchEditor({
         <span className={styles.deletedCount}>
           −{lines.filter((line) => line.kind === "deletion").length}
         </span>
-        <small>Old / new lines</small>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={hunk <= 0}
-          onClick={() => setHunk(hunk - 1)}
-        >
-          Previous change
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={hunk >= hunks.length - 1}
-          onClick={() => setHunk(hunk + 1)}
-        >
-          Next change
-        </Button>
+        <nav aria-label="Review changed lines">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Previous change"
+            title="Previous change"
+            disabled={hunk <= 0}
+            onClick={() => setHunk(hunk - 1)}
+          >
+            <ArrowUp />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Next change"
+            title="Next change"
+            disabled={hunk >= hunks.length - 1}
+            onClick={() => setHunk(hunk + 1)}
+          >
+            <ArrowDown />
+          </Button>
+        </nav>
         {range && openLine && lines[range.start_line - 1]?.newLine != null && (
           <Button
             size="sm"

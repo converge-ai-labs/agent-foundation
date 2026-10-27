@@ -3,7 +3,7 @@ import { BrowserRouter } from "react-router";
 import { GuestApp } from "./guest-app";
 import { DebugProvider } from "./shell/debug";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Button, Logo, Wordmark } from "a13n-ui";
+import { Button, Logo } from "a13n-ui";
 import {
   ApiError,
   createTransport,
@@ -77,6 +77,7 @@ function OwnerApp() {
   const [error, setError] = useState("");
   const [pushWarning, setPushWarning] = useState("");
   const [connecting, setConnecting] = useState(true);
+  const hadAccess = useRef(false);
   const [access, setAccess] = useState<"checking" | "login" | "unavailable">(
     "checking",
   );
@@ -119,11 +120,17 @@ function OwnerApp() {
     transportRef.current?.close();
     setStatus(null);
     setAccess("login");
-    setError("Access expired. Enter the API key printed by this server.");
+    setError(
+      hadAccess.current
+        ? "Access expired. Enter the API key printed by this server."
+        : key
+          ? "This instance key wasn't accepted. Check it and try again."
+          : "",
+    );
     setConnecting(false);
     void queries.cancelQueries();
     queries.clear();
-  }, [queries]);
+  }, [queries, key]);
   const transport = useMemo(
     () => createTransport(key, unauthorized),
     [key, unauthorized, attempt],
@@ -150,6 +157,7 @@ function OwnerApp() {
             "This server returned an incompatible status response.",
           );
         if (!active) return;
+        hadAccess.current = true;
         retainKey(key);
         queries.setQueryData(["status"], next);
         setStatus(next);
@@ -157,10 +165,13 @@ function OwnerApp() {
       })
       .catch((failure: unknown) => {
         if (active) {
-          if (!(failure instanceof ApiError && failure.status === 401))
-            setAccess((current) =>
-              current === "login" ? current : "unavailable",
-            );
+          // The authentication callback owns the initial-login, rejected-key,
+          // and expired-access messages; the transport's generic 401 must not
+          // replace that context.
+          if (failure instanceof ApiError && failure.status === 401) return;
+          setAccess((current) =>
+            current === "login" ? current : "unavailable",
+          );
           setError(
             failure instanceof Error ? failure.message : "Connection failed.",
           );
@@ -180,6 +191,7 @@ function OwnerApp() {
       setPushWarning(PUSH_CLEANUP_WARNING);
     });
     transport.close();
+    hadAccess.current = false;
     retainKey("");
     setInput("");
     setKey("");
@@ -223,24 +235,21 @@ function OwnerApp() {
                     <main className={styles.access}>
                       <div className={styles.accessCard}>
                         <div className={styles.accessBrand}>
-                          <Logo alt="" width={28} height={28} />
-                          <Wordmark />
+                          <Logo alt="" width={24} height={24} />
+                          <span>Harness</span>
                         </div>
                         <h1>Log in to Harness UI</h1>
                         <p>
                           Use the instance API key printed by your server, not a
                           model provider key.
                         </p>
-                        {(error || connecting) && (
-                          <p role="status">
-                            {error || "Connecting to server…"}
-                          </p>
-                        )}
                         {pushWarning && <p role="alert">{pushWarning}</p>}
                         <form
                           className={styles.stack}
                           onSubmit={(event) => {
                             event.preventDefault();
+                            if (!input.trim() || connecting) return;
+                            hadAccess.current = false;
                             setKey(input);
                             setAttempt((value) => value + 1);
                           }}
@@ -248,10 +257,20 @@ function OwnerApp() {
                           <TextField
                             label="Instance API key"
                             type="password"
+                            autoFocus
                             value={input}
                             onChange={setInput}
                           />
-                          <Button type="submit" loading={connecting}>
+                          {error && (
+                            <p role="alert" className={styles.accessError}>
+                              {error}
+                            </p>
+                          )}
+                          <Button
+                            type="submit"
+                            loading={connecting}
+                            disabled={!input.trim()}
+                          >
                             Log in
                           </Button>
                         </form>

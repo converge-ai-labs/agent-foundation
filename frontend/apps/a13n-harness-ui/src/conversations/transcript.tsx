@@ -1070,7 +1070,7 @@ function ExecutionSegment({
       ["Receiving input", "Awaiting result"].includes(describeTool(tool).phase),
     ).length;
   const preview = toolInfo
-    ? `${toolInfo.label} ${toolInfo.summary} · ${toolInfo.phase}`
+    ? `${toolInfo.label} ${toolInfo.summary}${toolInfo.phase === "Result received" ? "" : ` · ${toolInfo.phase}`}`
     : latest?.kind === "thinking"
       ? "Reasoning…"
       : "View the available execution steps";

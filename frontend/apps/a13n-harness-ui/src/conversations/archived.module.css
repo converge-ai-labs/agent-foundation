@@ -1,9 +1,10 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
   width: 100%;
-  max-width: 840px;
+  max-width: 680px;
+  margin-inline: auto;
 }
 .page > button {
   align-self: flex-start;
@@ -11,7 +12,7 @@
 .rows {
   display: grid;
   border: 1px solid var(--a13n-border);
-  border-radius: 14px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .rows:empty {
@@ -19,10 +20,16 @@
 }
 .row {
   min-width: 0;
-  padding: 16px 12px;
+  padding: 8px;
 }
 .row + .row {
   border-top: 1px solid var(--a13n-border-soft);
+}
+.row strong {
+  font-size: 13px;
+}
+.row small {
+  font-size: 12px;
 }
 .empty {
   display: flex;
@@ -36,4 +43,6 @@
 .empty h2 {
   margin: 0;
   color: var(--a13n-text);
+  font-size: 15px;
+  font-weight: 500;
 }
