@@ -11,10 +11,9 @@
 }
 .heading h2 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  /* One 32px title row, so the action button centers on the title. */
-  line-height: 32px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 28px;
 }
 .heading p {
   margin: 0;
@@ -32,7 +31,7 @@
 }
 .accountCard {
   min-width: 0;
-  padding: 16px;
+  padding: 10px 12px;
 }
 .accountHeader,
 .accountIdentity,
@@ -123,18 +122,18 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px;
+  padding: 12px;
   background: var(--a13n-canvas);
   border: 1px solid var(--a13n-border);
-  border-radius: 12px;
+  border-radius: 8px;
 }
 .identity {
   display: grid;
-  gap: 5px;
+  gap: 2px;
   min-width: 0;
 }
 .identity strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   overflow-wrap: anywhere;
 }
@@ -243,10 +242,10 @@
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  padding: 16px;
+  padding: 12px;
   background: var(--a13n-canvas);
   border: 1px solid var(--a13n-border);
-  border-radius: 12px;
+  border-radius: 8px;
 }
 .voucherRow > button {
   flex-shrink: 0;
@@ -294,11 +293,11 @@
 }
 .providerSection {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 .providerSection + .providerSection {
-  margin-top: 24px;
+  margin-top: 16px;
 }
 .providerHeading {
   display: flex;
@@ -309,7 +308,7 @@
 .providerHeading h3,
 .groupFields h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
 }
 .providerHeading > span {
@@ -318,7 +317,7 @@
 }
 .groupDetail {
   display: grid;
-  gap: 24px;
+  gap: 20px;
 }
 .back {
   justify-self: start;
@@ -328,7 +327,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 28px;
+  gap: 20px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -381,7 +380,7 @@
 }
 @media (max-width: 700px) {
   .accountCard {
-    padding: 16px;
+    padding: 12px;
   }
   .accountIdentity {
     gap: 8px;
@@ -451,7 +450,7 @@
 .accountList {
   display: grid;
   border: 1px solid var(--a13n-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--a13n-canvas);
   overflow: hidden;
 }
@@ -466,8 +465,8 @@
   transform: rotate(90deg);
 }
 .usageDetails {
-  margin-top: 16px;
-  padding: 16px;
+  margin-top: 12px;
+  padding: 12px;
   border-radius: 8px;
   background: var(--a13n-surface);
 }

@@ -51,13 +51,13 @@
 }
 .pageHeading {
   display: grid;
-  gap: 24px;
+  gap: 20px;
   width: min(
     var(--harness-reading-width),
     calc(100% - clamp(40px, 10vw, 128px))
   );
   margin-inline: auto;
-  padding-top: 28px;
+  padding-top: 24px;
   flex-shrink: 0;
 }
 .pageHeading [data-slot="tabs-tab"] {
@@ -86,7 +86,7 @@
     calc(100% - clamp(40px, 10vw, 128px))
   );
   margin-inline: auto;
-  padding-block: 16px;
+  padding-block: 12px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
@@ -114,7 +114,7 @@
   gap: 12px 24px;
   width: 100%;
   max-width: var(--harness-reading-width);
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   margin-inline: auto;
   color: var(--a13n-secondary);
   font-size: 12px;

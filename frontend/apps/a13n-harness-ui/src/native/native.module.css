@@ -9,18 +9,18 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 16px;
-  min-height: 48px;
+  padding: 6px 12px;
+  min-height: 40px;
   flex-shrink: 0;
   border-bottom: 0;
 }
-/* Toolbar controls share one 32px height at every width; touch devices keep
+/* Toolbar controls share one 28px height; touch devices keep
    a centered 44px hit area from Button. */
 .workToolbar button {
-  height: 32px;
+  height: 28px;
 }
-.workToolbar button:has(> svg:only-child) {
-  width: 32px;
+.workToolbar button[data-size^="icon"] {
+  width: 28px;
 }
 .workToolbar [aria-pressed="true"] {
   background: var(--a13n-surface);
@@ -60,8 +60,8 @@
     visibility: hidden;
   }
   .documentToolbar {
-    height: 48px;
-    min-height: 48px;
+    height: 40px;
+    min-height: 40px;
   }
 }
 .projectBreadcrumb {
@@ -187,10 +187,16 @@
   flex-basis: 70%;
 }
 .pane > .paneHeader {
-  padding: 8px 4px;
-  min-height: 48px;
+  padding: 5px 4px;
+  min-height: 40px;
   border-bottom: 1px solid var(--a13n-border);
   flex-shrink: 0;
+}
+.pane > .paneHeader button {
+  height: 28px;
+}
+.pane > .paneHeader button[data-size^="icon"] {
+  width: 28px;
 }
 .pane > .paneHeader > .panelTools > strong {
   padding-inline: 8px;

@@ -18,7 +18,7 @@
   color: var(--destructive);
 }
 .popup {
-  width: min(380px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
   max-height: min(600px, calc(100dvh - 40px));
   overflow: hidden;
   font-size: 13px;
@@ -43,8 +43,8 @@
 }
 .outcome h3 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--a13n-text);
 }
 .outcome p {
@@ -52,7 +52,7 @@
   color: var(--a13n-secondary);
 }
 .objective {
-  margin-top: 20px;
+  margin-top: 12px;
 }
 .objective button {
   display: flex;
@@ -95,7 +95,7 @@
 .metrics {
   display: grid;
   gap: 4px;
-  margin: 20px 0 0;
+  margin: 12px 0 0;
   font-size: 12px;
   color: var(--a13n-secondary);
 }

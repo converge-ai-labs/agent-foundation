@@ -223,9 +223,7 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Speed" }));
     await user.click(screen.getByRole("button", { name: "Use model speed" }));
     expect(draft.controls).toEqual({ thinking: "low", fast: null });
-    await user.click(
-      screen.getByRole("button", { name: "Close Agent & Model settings" }),
-    );
+    await user.keyboard("[Escape]");
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull(),
     );

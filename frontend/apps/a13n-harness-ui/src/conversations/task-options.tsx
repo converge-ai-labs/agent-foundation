@@ -17,11 +17,13 @@ import styles from "./composer-settings.module.css";
 export function TaskOptions({
   goal,
   coordinator,
+  coordinatorEnabled = false,
   environment,
   context,
 }: {
   goal: ReactNode;
   coordinator?: ReactNode;
+  coordinatorEnabled?: boolean;
   environment?: ReactNode;
   context?: ReactNode;
 }) {
@@ -30,23 +32,30 @@ export function TaskOptions({
     <>
       <PopoverTitle className={styles.srOnly}>Chat options</PopoverTitle>
       <div className={styles.optionList}>
-        <label className={styles.optionRow} aria-label="Keep working">
+        <label
+          className={styles.optionRow}
+          aria-label="Keep working"
+          title="Continue until your goal is complete or the continuation limit is reached."
+        >
           <Target aria-hidden />
-          <span className={styles.optionCopy}>
-            <span>Keep working</span>
-            <small>Continue until your goal is complete</small>
-          </span>
+          <span>Keep working</span>
           {goal}
         </label>
         {coordinator && (
-          <label className={styles.optionRow} aria-label="Coordinate agents">
+          <label
+            className={styles.optionRow}
+            aria-label="Coordinate agents"
+            title="Plan and delegate work across agents. This cannot be turned off after sending."
+          >
             <TreeStructure aria-hidden />
-            <span className={styles.optionCopy}>
-              <span>Coordinate agents</span>
-              <small>Can't be turned off after sending</small>
-            </span>
+            <span>Coordinate agents</span>
             {coordinator}
           </label>
+        )}
+        {coordinator && coordinatorEnabled && (
+          <p className={styles.optionHint}>
+            Agent coordination stays on after sending.
+          </p>
         )}
         {(environment || context) && (
           <div className={styles.optionActions}>
@@ -70,7 +79,7 @@ export function TaskOptions({
       <PopoverPopup
         side="top"
         align="end"
-        sideOffset={8}
+        sideOffset={6}
         className={`${styles.popup} ${styles.taskPopup}`}
       >
         {content}

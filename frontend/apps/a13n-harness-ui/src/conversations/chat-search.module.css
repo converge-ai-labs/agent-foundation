@@ -1,14 +1,14 @@
 .popup {
   display: flex;
   flex-direction: column;
-  max-width: 600px;
+  max-width: 520px;
 }
 .search {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 60px;
-  padding: 8px 10px 8px 20px;
+  min-height: 44px;
+  padding: 6px 8px 6px 14px;
   color: var(--a13n-secondary);
 }
 .search > svg {
@@ -20,7 +20,7 @@
   border: 0;
   box-shadow: none;
   background: transparent;
-  font-size: 14px;
+  font-size: 13px;
 }
 .search > [data-slot="input-control"] {
   flex: 1;
@@ -42,7 +42,7 @@
   padding: 6px;
 }
 .scope {
-  padding: 0 20px 12px;
+  padding: 0 14px 8px;
 }
 .scope button {
   display: inline-flex;
@@ -64,8 +64,8 @@
 .result {
   display: flex;
   align-items: center;
-  min-height: 56px;
-  padding: 9px 14px;
+  min-height: 44px;
+  padding: 6px 8px;
   border-radius: 6px;
 }
 .result:hover,
@@ -75,7 +75,7 @@
 }
 .result > span {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 .result strong {
@@ -88,6 +88,7 @@
 .result small {
   color: var(--a13n-secondary);
   font-size: 12px;
+  line-height: 17px;
 }
 .empty {
   padding: 16px 14px;

@@ -1,15 +1,15 @@
 .wizard {
-  width: min(820px, calc(100vw - 48px));
-  max-width: 820px;
-  height: min(760px, calc(100dvh - 48px));
+  width: min(680px, calc(100vw - 48px));
+  max-width: 680px;
+  height: min(600px, calc(100dvh - 48px));
   color: var(--a13n-text);
 }
 .steps {
   display: flex;
-  gap: 24px;
+  gap: 20px;
   list-style: none;
   padding: 0;
-  margin: 24px 0 0;
+  margin: 16px 0 0;
 }
 .steps li {
   display: flex;
@@ -21,8 +21,8 @@
 .steps li > span {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--a13n-hover);
 }
@@ -49,7 +49,7 @@
 }
 .content h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
 }
 .content p {
@@ -97,9 +97,9 @@
   align-items: flex-start;
   text-align: left;
   gap: 8px;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--a13n-surface);
   color: var(--a13n-text);
   cursor: pointer;

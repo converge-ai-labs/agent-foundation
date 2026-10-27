@@ -1,12 +1,13 @@
 .preview {
   display: grid;
-  gap: 6px;
+  gap: 2px;
   width: 100%;
-  margin-block: 8px 18px;
-  padding: 12px;
+  min-height: 44px;
+  margin-block: 8px 12px;
+  padding: 6px 0;
   border: 0;
   border-radius: 8px;
-  background: var(--a13n-surface);
+  background: transparent;
   color: var(--a13n-text-supporting);
   text-align: start;
   cursor: pointer;
@@ -24,16 +25,16 @@
 }
 .previewHeading > svg {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
 }
 .excerpt {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 18px;
 }
 .fullscreen[data-slot="dialog-popup"] {
   position: fixed;

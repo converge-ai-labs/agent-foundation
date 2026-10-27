@@ -1117,6 +1117,7 @@ export function Composer({
             </span>
             {!transport.shareId && (
               <TaskOptions
+                coordinatorEnabled={draft.coordinator}
                 goal={
                   <Switch
                     aria-label="Keep working"

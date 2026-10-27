@@ -105,7 +105,9 @@ export function RunEnvironments({
         <Desktop aria-hidden />
         <span className={panelStyles.optionCopy}>
           <span>Environment</span>
-          <small className={panelStyles.environmentLabel}>{summary}</small>
+          <small className={panelStyles.environmentLabel}>
+            {bindings.length ? `${bindings.length} remote` : "Local"}
+          </small>
         </span>
         <CaretRight aria-hidden="true" size={14} />
       </Button>

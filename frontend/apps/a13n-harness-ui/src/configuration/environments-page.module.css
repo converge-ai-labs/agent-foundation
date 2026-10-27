@@ -1,7 +1,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 20px;
   width: 100%;
   min-width: 0;
 }

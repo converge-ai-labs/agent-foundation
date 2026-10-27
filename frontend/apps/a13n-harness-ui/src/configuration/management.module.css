@@ -26,16 +26,16 @@
   color: var(--a13n-secondary);
 }
 .instructions {
-  min-height: 136px;
-  padding: 16px 20px;
-  border-radius: 14px;
-  font-size: 14px;
-  line-height: 22px;
+  min-height: 96px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 21px;
 }
 .modelEditor {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   min-width: 0;
 }
 .groupActions {
@@ -77,7 +77,7 @@
 }
 .resourceInfo {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 .resourceInfo small,
@@ -111,7 +111,7 @@
 .modelList {
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--a13n-canvas);
   border: 1px solid var(--a13n-border);
   overflow: hidden;
@@ -124,7 +124,7 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-  padding-block: 16px;
+  padding-block: 10px;
 }
 .modelLink::after {
   content: "";

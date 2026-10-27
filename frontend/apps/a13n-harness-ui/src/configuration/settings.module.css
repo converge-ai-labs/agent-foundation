@@ -8,9 +8,9 @@
 }
 .emptySection {
   margin: 0;
-  padding: 20px;
+  padding: 16px 12px;
   border: 1px solid var(--a13n-border);
-  border-radius: 14px;
+  border-radius: 8px;
   color: var(--a13n-secondary);
   font-size: 13px;
   line-height: 20px;
@@ -18,7 +18,7 @@
 .collectionPage {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   min-width: 0;
 }
 .collection {
@@ -93,8 +93,8 @@
   composes: details from "../shell/workbench.module.css";
 }
 .groupDisclosure > summary {
-  min-height: 40px;
-  padding-block: 8px;
+  min-height: 34px;
+  padding-block: 6px;
   font-size: 13px;
   font-weight: 400;
 }

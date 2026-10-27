@@ -23,6 +23,12 @@
   --primary-foreground: #ffffff;
   --sidebar: #f5f5f5;
   --a13n-selected: rgb(0 0 0 / 7%);
+  --harness-menu-row: 30px;
+  --harness-control-height: 28px;
+  --elevation-overlay:
+    0 0 0 1px rgb(0 0 0 / 8%), 0 6px 20px -6px rgb(0 0 0 / 18%);
+  --elevation-floating:
+    0 0 0 1px rgb(0 0 0 / 8%), 0 12px 40px -12px rgb(0 0 0 / 22%);
 }
 
 :root.dark {
@@ -43,6 +49,10 @@
   --primary-foreground: #262626;
   --sidebar: #171717;
   --a13n-selected: rgb(255 255 255 / 8%);
+  --elevation-overlay:
+    0 0 0 1px rgb(255 255 255 / 9%), 0 6px 20px -6px rgb(0 0 0 / 45%);
+  --elevation-floating:
+    0 0 0 1px rgb(255 255 255 / 9%), 0 12px 40px -12px rgb(0 0 0 / 55%);
 }
 
 [data-slot="menu-popup"],
@@ -50,7 +60,98 @@
 [data-slot="select-popup"],
 [data-slot="combobox-popup"] {
   max-width: calc(100vw - 24px);
-  border-radius: 10px;
+  border-radius: 8px;
+}
+
+/* App-wide defaults stay below local component rules in specificity. */
+:where([data-slot="button"]) {
+  border-radius: 6px;
+  font-weight: 400;
+}
+:where([data-slot="button"][data-size="default"]) {
+  height: var(--harness-control-height);
+  padding-inline: 10px;
+}
+:where(
+  [data-slot="button"][data-variant="default"],
+  [data-slot="button"][data-variant="destructive"]
+) {
+  font-weight: 500;
+}
+:where(
+  [data-slot="button"]:not(:focus-visible),
+  [data-slot="button"]:not(:focus-visible)::before
+) {
+  box-shadow: none;
+}
+:where(
+  [data-slot="input-control"],
+  [data-slot="select-trigger"],
+  [data-slot="select-button"]
+) {
+  min-height: var(--harness-control-height);
+  border-radius: 6px;
+}
+:where([data-slot="input-control"][data-size="default"] > [data-slot="input"]) {
+  height: calc(var(--harness-control-height) - 2px);
+  line-height: calc(var(--harness-control-height) - 2px);
+}
+:where([data-slot="switch"]) {
+  --thumb-size: 14px;
+}
+:where([data-slot="tooltip-popup"]) {
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 17px;
+}
+:where([data-slot="popover-viewport"]) {
+  --viewport-inline-padding: 12px;
+  padding-block: 12px;
+}
+:where([data-slot="popover-title"]) {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+:where(
+  [data-slot="menu-popup"],
+  [data-slot="select-list"],
+  [data-slot="combobox-list"]
+) {
+  padding: 4px;
+}
+
+[data-a13n-modal][data-size="md"] {
+  max-width: 440px;
+}
+[data-a13n-modal][data-size="lg"] {
+  max-width: 600px;
+}
+:where([data-a13n-modal] [data-slot="dialog-header"]) {
+  padding: 16px 44px 12px 16px;
+  gap: 6px;
+}
+:where([data-a13n-modal] [data-slot="dialog-title"]) {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+:where([data-a13n-modal] [data-slot="dialog-description"]) {
+  font-size: 12px;
+  line-height: 18px;
+}
+:where([data-a13n-modal] [data-slot="dialog-panel"]) {
+  padding: 0 16px 16px;
+}
+:where([data-a13n-modal] [data-slot="dialog-footer"]) {
+  padding: 12px 16px 16px;
+}
+:where([data-a13n-modal] > [data-slot="dialog-close"]) {
+  top: 12px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
 }
 
 [data-slot="button"],
@@ -67,7 +168,7 @@
   width: max(var(--anchor-width), 300px);
   min-width: min(300px, calc(100vw - 24px));
   max-width: calc(100vw - 24px);
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 [data-slot="menu-item"],
@@ -75,19 +176,25 @@
 [data-slot="menu-checkbox-item"],
 [data-slot="menu-radio-item"],
 [data-slot="menu-sub-trigger"] {
-  min-height: 32px;
-  padding-block: 6px;
+  min-height: var(--harness-menu-row);
+  padding-block: 4px;
   font-size: 13px;
   line-height: 20px;
 }
 
 [data-slot="select-item"],
 [data-slot="combobox-item"] {
+  min-height: var(--harness-menu-row);
+  padding-block: 4px;
   font-size: 13px;
   line-height: 20px;
 }
 
 @media (max-width: 639px) {
+  :root {
+    --harness-menu-row: 44px;
+    --harness-control-height: 36px;
+  }
   [data-slot="input"],
   [data-slot="textarea"] {
     font-size: 16px;
@@ -104,6 +211,10 @@
 }
 
 @media (pointer: coarse) {
+  :root {
+    --harness-menu-row: 44px;
+    --harness-control-height: 36px;
+  }
   [data-slot="menu-item"],
   [data-slot="menu-link-item"],
   [data-slot="menu-checkbox-item"],

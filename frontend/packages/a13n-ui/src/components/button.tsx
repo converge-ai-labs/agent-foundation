@@ -90,6 +90,8 @@ export function Button({
     "aria-busy": loading || undefined,
     "data-loading": loading ? "" : undefined,
     "data-slot": "button",
+    "data-size": size ?? "default",
+    "data-variant": variant ?? "default",
     disabled: isDisabled,
     type: typeValue,
   };

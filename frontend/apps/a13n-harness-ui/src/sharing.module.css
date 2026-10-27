@@ -1,26 +1,26 @@
 .panel {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .panel p {
   margin: 0;
 }
 [data-slot="dialog-popup"]:has(.panel) {
-  max-width: 440px;
+  max-width: 400px;
 }
 [data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-header"] {
-  padding: 20px 52px 12px 20px;
+  padding: 16px 44px 10px 16px;
 }
 [data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-title"] {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
 }
 [data-slot="dialog-popup"]:has(.panel) [data-slot="dialog-panel"] {
-  padding: 0 20px 20px;
+  padding: 0 16px 16px;
 }
 [data-slot="dialog-popup"]:has(.panel) > [data-slot="dialog-close"] {
-  top: 13px;
-  right: 12px;
+  top: 12px;
+  right: 10px;
 }
 .linkOptions {
   display: grid;
@@ -28,16 +28,16 @@
 }
 .linkOption {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: 2px 10px;
-  min-height: 42px;
+  min-height: 36px;
   font-size: 13px;
   line-height: 20px;
 }
 .linkOption > svg {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   color: var(--a13n-secondary);
 }
 .linkChoice {
@@ -87,7 +87,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--a13n-border);
 }
 .linkFooter > button:last-child {

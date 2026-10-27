@@ -42,7 +42,7 @@
   flex-shrink: 0;
 }
 .popup {
-  width: min(600px, calc(100vw - 24px));
+  width: min(480px, calc(100vw - 24px));
   max-height: min(640px, calc(100dvh - 40px));
   overflow: hidden;
   font-size: 13px;
@@ -69,7 +69,7 @@
   gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
-  padding: 8px 0 12px;
+  padding: 4px 0 8px;
 }
 .tabs::-webkit-scrollbar {
   display: none;
@@ -82,7 +82,7 @@
   background: var(--a13n-surface);
 }
 .inspectorBody {
-  min-height: 120px;
+  min-height: 64px;
   padding: 4px 2px;
 }
 .caption {
@@ -100,7 +100,7 @@
   display: flex;
   align-items: start;
   gap: 10px;
-  padding: 10px 0;
+  padding: 6px 0;
 }
 .tasks li + li {
   border-top: 1px solid var(--a13n-border);
@@ -154,7 +154,7 @@
   color: var(--a13n-secondary);
 }
 .notes > details {
-  padding: 10px 0;
+  padding: 6px 0;
 }
 .notes > details + details {
   border-top: 1px solid var(--a13n-border);

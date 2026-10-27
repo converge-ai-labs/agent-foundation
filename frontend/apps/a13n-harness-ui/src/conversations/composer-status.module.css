@@ -46,7 +46,7 @@ button.metric:hover,
   color: var(--warning-foreground);
 }
 .popup {
-  width: min(380px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
   font-size: 13px;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
@@ -56,8 +56,8 @@ button.metric:hover,
 .numbers {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 16px;
-  margin: 16px 0;
+  gap: 6px 16px;
+  margin: 10px 0;
 }
 .numbers dt {
   color: var(--a13n-secondary);
@@ -75,7 +75,7 @@ button.metric:hover,
   font-weight: 400;
 }
 .sectionTitle {
-  margin: 16px 0 0;
+  margin: 12px 0 0;
   font-size: 13px;
   font-weight: 500;
 }
@@ -85,7 +85,7 @@ button.metric:hover,
   padding: 0;
 }
 .models li {
-  padding: 12px 0;
+  padding: 8px 0;
   border-top: 1px solid var(--a13n-border-soft);
 }
 .modelHeader {
@@ -100,9 +100,9 @@ button.metric:hover,
 }
 .scopeSelector {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  margin-top: 12px;
+  gap: 2px;
+  padding: 2px;
+  margin-top: 10px;
   background: var(--a13n-surface);
   border-radius: 10px;
 }

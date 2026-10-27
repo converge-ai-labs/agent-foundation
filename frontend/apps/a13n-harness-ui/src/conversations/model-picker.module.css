@@ -1,15 +1,13 @@
 .modelOption {
   flex: 1;
   min-width: 0;
-}
-.modelOption {
   width: 100%;
   height: auto;
-  min-height: 44px;
+  min-height: var(--harness-menu-row);
   justify-content: space-between;
   text-align: left;
-  padding: 10px 8px;
-  gap: 12px;
+  padding: 5px 8px;
+  gap: 8px;
   font-size: 13px;
   font-weight: 400;
   white-space: normal;
@@ -32,10 +30,11 @@
   overflow-wrap: anywhere;
 }
 .search {
-  margin-top: 12px;
+  margin: 4px;
+  width: calc(100% - 8px);
 }
 .modelList {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .divider {
   border-top: 1px solid var(--a13n-border-soft);

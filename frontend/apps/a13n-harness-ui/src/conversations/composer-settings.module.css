@@ -1,5 +1,5 @@
 .popup {
-  width: min(360px, calc(100vw - 24px));
+  width: min(280px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -12,8 +12,8 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px 6px;
+  gap: 6px;
+  padding: 6px 8px 4px;
   outline: none;
 }
 .title {
@@ -21,22 +21,26 @@
   font-size: 13px;
   font-weight: 500;
 }
+.header > button {
+  width: 24px;
+  height: 24px;
+}
 .body {
   min-width: 0;
   min-height: 0;
   max-height: min(65dvh, 540px);
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 12px 12px;
+  padding: 4px;
 }
 .row {
   display: flex;
   width: 100%;
-  min-height: 40px;
+  min-height: var(--harness-menu-row);
   height: auto;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 8px;
+  gap: 8px;
+  padding: 4px 8px;
   font-weight: 400;
 }
 .row > span:first-child {
@@ -54,13 +58,13 @@
 .choices {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
 }
 .choice {
   width: 100%;
   height: auto;
-  min-height: 44px;
-  padding: 10px 8px;
+  min-height: var(--harness-menu-row);
+  padding: 5px 8px;
   justify-content: space-between;
   white-space: normal;
   text-align: left;
@@ -72,7 +76,7 @@
 }
 .choice small {
   display: block;
-  margin-top: 4px;
+  margin-top: 1px;
   font-size: 12px;
   color: var(--a13n-secondary);
 }
@@ -98,6 +102,9 @@
 @media (max-width: 639px) {
   .body input {
     font-size: 16px;
+  }
+  .header button {
+    min-width: 44px;
   }
   .header button,
   .body button,
@@ -131,22 +138,22 @@
   flex-shrink: 0;
 }
 .taskPopup {
-  width: min(336px, calc(100vw - 24px));
+  width: min(240px, calc(100vw - 24px));
 }
 .optionList {
-  padding: 6px;
+  padding: 4px;
 }
 .optionRow,
 .optionAction {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  min-height: 54px;
+  min-height: var(--harness-menu-row);
   height: auto;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 4px;
   text-align: left;
   font-size: 13px;
   font-weight: 400;
@@ -160,19 +167,20 @@
 }
 .optionRow > svg,
 .optionAction > svg {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   color: var(--a13n-secondary);
 }
 .optionAction > svg:last-child {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 .optionCopy {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   min-width: 0;
-  gap: 1px;
+  gap: 8px;
 }
 .optionCopy small {
   font-size: 12px;
@@ -182,14 +190,27 @@
   white-space: normal;
 }
 .optionActions {
-  margin-top: 5px;
-  padding-top: 5px;
+  margin-top: 3px;
+  padding-top: 3px;
   border-top: 1px solid var(--a13n-border);
 }
 .optionCopy .environmentLabel {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.optionRow [data-slot="switch"] {
+  --thumb-size: 12px;
+}
+.optionHint {
+  margin: 4px 8px 6px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+.optionRow:has([data-disabled]) {
+  cursor: default;
+  color: var(--a13n-tertiary);
 }
 .srOnly {
   position: absolute;
@@ -233,8 +254,8 @@
 .levels > button {
   width: 100%;
   height: auto;
-  min-height: 40px;
-  padding: 10px 8px;
+  min-height: var(--harness-menu-row);
+  padding: 5px 8px;
   justify-content: space-between;
   text-align: left;
   font-size: 13px;
@@ -250,7 +271,7 @@
 }
 .levels small {
   display: block;
-  margin-top: 4px;
+  margin-top: 1px;
   color: var(--a13n-secondary);
   font-size: 12px;
   line-height: 18px;
@@ -258,10 +279,10 @@
 .speedControl {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
 .speedControl .hint {
-  margin: 0;
+  margin: 6px 8px;
   line-height: 1.6;
 }
 @container composer (max-width: 480px) {

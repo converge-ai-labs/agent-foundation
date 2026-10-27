@@ -81,9 +81,14 @@ export function ComposerSettings({
     }
   };
   const Title = mobile ? DialogTitle : PopoverTitle;
+  const showHeader = mobile || page !== "root";
   const content = (
     <SettingsContext value={{ page, navigate }}>
-      <div className={styles.header} ref={heading} tabIndex={-1}>
+      <div
+        className={showHeader ? styles.header : styles.srOnly}
+        ref={heading}
+        tabIndex={-1}
+      >
         {page !== "root" && (
           <Button
             variant="ghost"
@@ -98,15 +103,17 @@ export function ComposerSettings({
         <Title className={styles.title}>
           {page === "root" ? rootTitle : titles[page]}
         </Title>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Close ${navigationLabel}`}
-          title={`Close ${navigationLabel}`}
-          onClick={() => changeOpen(false)}
-        >
-          <X />
-        </Button>
+        {showHeader && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Close ${navigationLabel}`}
+            title={`Close ${navigationLabel}`}
+            onClick={() => changeOpen(false)}
+          >
+            <X />
+          </Button>
+        )}
       </div>
       <div className={styles.body}>{children}</div>
     </SettingsContext>

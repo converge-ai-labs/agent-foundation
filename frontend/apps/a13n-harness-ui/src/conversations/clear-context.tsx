@@ -64,10 +64,7 @@ export function ClearContext({
         }}
       >
         <ArrowCounterClockwise aria-hidden />
-        <span className={styles.optionCopy}>
-          <span>Clear context</span>
-          <small>Keep history, files and draft</small>
-        </span>
+        <span>Clear context</span>
         <CaretRight aria-hidden size={14} />
       </Button>
       <ModalFrame

@@ -361,7 +361,7 @@
   flex-direction: column;
   background: var(--a13n-canvas);
   border: 1px solid var(--a13n-border);
-  border-radius: 12px;
+  border-radius: 8px;
   overflow: hidden;
 }
 .resourceList:empty {
@@ -371,10 +371,10 @@
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 16px 20px;
+  padding: 10px 12px;
   text-decoration: none;
   border-bottom: 1px solid var(--a13n-border);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 20px;
   overflow-wrap: anywhere;
 }
@@ -391,9 +391,9 @@ a.resourceRow:hover {
 .resourceRow small {
   color: var(--a13n-secondary);
   display: block;
-  margin-top: 4px;
-  font-size: 13px;
-  line-height: 20px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
 }
 .resourceRow strong {
   font-weight: 500;
@@ -542,13 +542,13 @@ a.resourceRow:hover {
 .details {
   width: 100%;
 }
-.details > summary {
+:where(.details) > summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 12px;
   align-items: center;
   gap: 4px 16px;
-  min-height: 48px;
-  padding: 12px 0;
+  min-height: 36px;
+  padding: 8px 0;
   list-style: none;
   cursor: pointer;
   font-size: 13px;
@@ -556,13 +556,13 @@ a.resourceRow:hover {
   line-height: 20px;
   user-select: none;
 }
-.details > summary::-webkit-details-marker {
+:where(.details) > summary::-webkit-details-marker {
   display: none;
 }
-.details > summary::before {
+:where(.details) > summary::before {
   content: "";
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   justify-self: center;
   width: 6px;
   height: 6px;
@@ -572,28 +572,31 @@ a.resourceRow:hover {
   transform: rotate(-45deg);
   transition: transform 150ms ease-out;
 }
-.details[open] > summary::before {
+:where(.details) > summary:has(small)::before {
+  grid-row: 1 / span 2;
+}
+:where(.details)[open] > summary::before {
   transform: rotate(45deg);
 }
-.details > summary:hover {
+:where(.details) > summary:hover {
   color: var(--a13n-secondary);
 }
 @media (prefers-reduced-motion: reduce) {
-  .details > summary,
-  .details > summary::before {
+  :where(.details) > summary,
+  :where(.details) > summary::before {
     transition: none;
   }
 }
-.details > summary:focus-visible {
+:where(.details) > summary:focus-visible {
   outline: 2px solid var(--a13n-signal);
   outline-offset: 2px;
 }
 /* Opened content sits close to its summary; the parent's gap separates the
    disclosure from its siblings, so the last child adds no trailing space. */
-.details[open] > summary {
+:where(.details)[open] > summary {
   margin-bottom: 12px;
 }
-.details > summary small {
+:where(.details) > summary small {
   grid-column: 1;
   grid-row: 2;
   margin: 0;
@@ -602,10 +605,10 @@ a.resourceRow:hover {
   font-weight: 400;
   line-height: 18px;
 }
-.details > :not(summary):not(:last-child) {
+:where(.details) > :not(summary):not(:last-child) {
   margin-bottom: 12px;
 }
-.details pre {
+:where(.details) pre {
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -638,7 +641,7 @@ a.resourceRow:hover {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 12px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--a13n-border);
 }
 .definitionList > div:last-child {
@@ -836,12 +839,12 @@ a.resourceRow:hover {
 .settingsContent {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 28px clamp(24px, 5vw, 64px) 48px;
+  padding: 24px clamp(24px, 5vw, 64px) 40px;
   scrollbar-gutter: stable both-edges;
 }
 .settingsContent > * {
@@ -868,7 +871,7 @@ a.resourceRow:hover {
 }
 .emptyList {
   margin: 0;
-  padding: 20px 16px;
+  padding: 16px 12px;
   border-radius: 8px;
   color: var(--a13n-secondary);
   font-size: 13px;
@@ -887,7 +890,7 @@ a.resourceRow:hover {
 .sourceDocument {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   width: 100%;
   max-width: 680px;
   min-width: 0;
@@ -917,8 +920,8 @@ a.resourceRow:hover {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 16px;
-  padding-block: 16px;
+  gap: 12px;
+  padding-block: 12px;
   border-top: 1px solid var(--a13n-border);
   background: var(--a13n-canvas);
 }
@@ -936,11 +939,11 @@ a.resourceRow:hover {
 .configurationForm {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   min-width: 0;
 }
 .configurationForm > .stack {
-  gap: 24px;
+  gap: 20px;
 }
 /* Field groups use spacing to separate their controls. */
 .fieldGroup {
@@ -1104,6 +1107,6 @@ a.resourceRow:hover {
 
 .configurationFields {
   display: grid;
-  gap: 28px;
+  gap: 20px;
   min-width: 0;
 }

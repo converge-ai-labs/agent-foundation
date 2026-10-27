@@ -67,10 +67,10 @@
   font-variant-numeric: tabular-nums;
 }
 .draftsPopup {
-  width: min(320px, var(--available-width));
+  width: min(280px, var(--available-width));
 }
 .draftsTitle {
-  font-size: 15px;
+  font-size: 13px;
 }
 .draftsDescription {
   margin-block: 6px 12px;
@@ -87,8 +87,8 @@
 .draftShortcut {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 9px 8px;
+  gap: 2px;
+  padding: 6px 8px;
   border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
@@ -1257,7 +1257,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding-top: 24px;
+  padding-top: 16px;
 }
 .detailActions:empty {
   display: none;
@@ -1284,8 +1284,8 @@ dl.detailGrid > div {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   align-items: start;
-  gap: 24px;
-  padding-block: 8px;
+  gap: 20px;
+  padding-block: 6px;
 }
 dl.detailGrid dt {
   color: var(--a13n-text);
@@ -1306,7 +1306,7 @@ dl.detailGrid > .detailLongRow dd {
   text-align: left;
 }
 .inspection {
-  gap: 20px;
+  gap: 16px;
 }
 .inspection [data-slot="tabs-list"] {
   max-width: 100%;
@@ -1316,7 +1316,7 @@ dl.detailGrid > .detailLongRow dd {
   font-size: 13px;
 }
 .inspection [data-slot="tabs-panel"] > section + section {
-  margin-top: 24px;
+  margin-top: 20px;
 }
 @media (max-width: 700px) {
   .header {

@@ -1,7 +1,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   width: 100%;
   max-width: 680px;
   margin-inline: auto;
@@ -12,7 +12,7 @@
 .rows {
   display: grid;
   border: 1px solid var(--a13n-border);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
 }
 .rows:empty {
@@ -36,7 +36,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 64px 16px;
+  padding: 40px 16px;
   text-align: center;
   color: var(--a13n-secondary);
 }
