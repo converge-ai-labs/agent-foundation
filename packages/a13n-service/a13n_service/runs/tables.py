@@ -448,6 +448,12 @@ class RunRow(Stamped, Base):
         Index("ix_runs_search_vector", "search_vector", postgresql_using="gin"),
         Index("ix_runs_thread_created", "thread_id", "created_at", "id"),
         Index("ix_runs_session_created", "workspace_id", "session_id", "created_at", "id"),
+        Index(
+            "ix_runs_workspace_started",
+            "workspace_id",
+            "started_at",
+            postgresql_where=text("started_at IS NOT NULL"),
+        ),
         UniqueConstraint("thread_id", "id"),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),

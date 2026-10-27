@@ -1,6 +1,8 @@
 """The generated revisions build exactly the schema the tests use: tables, rules and all."""
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from a13n_service.distribution import OSS
@@ -60,6 +62,68 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     assert len(migrated) >= len(OSS.rules())
 
 
+@pytest.mark.parametrize("invalid_index", [False, True])
+def test_run_usage_index_retries_after_concurrent_build(empty_database: Database, invalid_index: bool) -> None:
+    upgrade(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, "48a66dd56558")
+        # The build committed but the process stopped before stamping the revision.
+        command.stamp(config, "a9a9c6399e27")
+        if invalid_index:
+            connection = config.attributes["connection"]
+            connection.execute(
+                text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'ix_runs_workspace_started'::regclass")
+            )
+            connection.commit()
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    assert rows(
+        empty_database, "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_runs_workspace_started'::regclass"
+    ) == [("true",)]
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, "a9a9c6399e27")
+    assert rows(empty_database, "SELECT to_regclass('ix_runs_workspace_started')::text") == [(None,)]
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+
+
+def test_run_usage_index_build_allows_run_writers(empty_database: Database) -> None:
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, "a9a9c6399e27")
+    engine = create_engine(empty_database.url.get_secret_value())
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool, engine.connect() as writer:
+            transaction = writer.begin()
+            writer.execute(text("LOCK TABLE runs IN ROW EXCLUSIVE MODE"))
+            future = pool.submit(upgrade, empty_database, OSS)
+            try:
+                with engine.connect() as probe:
+                    deadline = time.monotonic() + 10
+                    while not probe.scalar(
+                        text(
+                            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity"
+                            " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                            " AND query LIKE 'CREATE INDEX CONCURRENTLY%ix_runs_workspace_started%')"
+                        )
+                    ):
+                        probe.rollback()
+                        if future.done():
+                            future.result()
+                            pytest.fail("Index creation did not wait for the existing writer")
+                        assert time.monotonic() < deadline, "Index build did not start"
+                        time.sleep(0.01)
+                    # The build waits for the old writer, but permits a new write lock.
+                    probe.execute(text("SET LOCAL lock_timeout = '1s'"))
+                    probe.execute(text("LOCK TABLE runs IN ROW EXCLUSIVE MODE"))
+                    probe.rollback()
+            finally:
+                transaction.rollback()
+            future.result(timeout=10)
+    finally:
+        engine.dispose()
+    check(empty_database, OSS)
+
+
 def test_compaction_revision_roundtrip(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, "1c461368ce87")
@@ -68,7 +132,7 @@ def test_compaction_revision_roundtrip(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, "a9a9c6399e27")
     assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("a9a9c6399e27",)]
-    check(empty_database, OSS)
+    # This revision is no longer the head; metadata parity is checked after the full upgrade below.
     with migration_connection(empty_database, OSS) as config:
         command.downgrade(config, "1c461368ce87")
     assert rows(empty_database, RULES) == original_rules
