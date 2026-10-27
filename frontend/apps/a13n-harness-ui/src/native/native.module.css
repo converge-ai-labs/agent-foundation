@@ -10,9 +10,9 @@
   align-items: center;
   gap: 4px;
   padding: 8px 20px;
-  min-height: 54px;
+  min-height: 60px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--a13n-border);
+  border-bottom: 0;
 }
 /* Toolbar controls share one 32px height at every width; touch devices keep
    a centered 44px hit area from Button. */
@@ -44,7 +44,39 @@
 /* Phones keep the title readable: Files, Changes and Terminal fold into one
    "More views" menu below 640px. */
 .panelTools .viewsMenu {
-  display: none;
+  display: inline-flex;
+  gap: 6px;
+  color: var(--a13n-secondary);
+}
+.workspaceHeading {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.projectBreadcrumb {
+  flex-shrink: 1;
+  max-width: 180px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.projectBreadcrumb::after {
+  content: "/";
+  margin-left: 12px;
+  color: var(--a13n-tertiary);
+}
+@media (max-width: 700px) {
+  .projectBreadcrumb {
+    display: none;
+  }
+  .viewsMenu > span {
+    display: none;
+  }
 }
 @media (max-width: 639px) {
   .panelTools .viewsMenu {

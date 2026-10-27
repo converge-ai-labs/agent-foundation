@@ -1120,7 +1120,7 @@ function ExecutionReader({
       ref={reader}
       hidden={!open}
       role="region"
-      aria-label="Run details"
+      aria-label="Work log"
       tabIndex={0}
       data-execution-reader
       className={`${styles.executionContent} a13n-scrollbar`}

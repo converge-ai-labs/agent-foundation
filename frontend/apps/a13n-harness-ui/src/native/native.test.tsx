@@ -275,7 +275,7 @@ it("sharing off keeps the page usable and never attempts native reads", async ()
   }));
   render(
     <NativeWorkspace onFocus={vi.fn()} unauthorized={vi.fn()}>
-      <p>Conversation stays mounted</p>
+      <p>Chat stays mounted</p>
     </NativeWorkspace>,
     { wrapper: f.Wrapper },
   );
@@ -287,7 +287,7 @@ it("sharing off keeps the page usable and never attempts native reads", async ()
   expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
-  expect(screen.getByText("Conversation stays mounted")).toBeTruthy();
+  expect(screen.getByText("Chat stays mounted")).toBeTruthy();
   expect(f.get.mock.calls.some(([path]) => path.startsWith("/api/host"))).toBe(
     false,
   );

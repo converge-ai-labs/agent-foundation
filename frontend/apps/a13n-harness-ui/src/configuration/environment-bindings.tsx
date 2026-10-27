@@ -63,8 +63,7 @@ export function DefaultWorkingDirectory({
             ? [
                 {
                   value: "",
-                  label:
-                    "Keep conversation default (automatic for new conversations)",
+                  label: "Keep chat default (automatic for new chats)",
                 },
               ]
             : []),

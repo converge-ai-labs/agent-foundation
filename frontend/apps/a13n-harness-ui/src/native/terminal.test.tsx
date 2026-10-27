@@ -443,7 +443,7 @@ it.each(["project-two", ""])(
       { wrapper: f.Wrapper },
     );
     await screen.findByText(
-      "This terminal is not available in the current project. Open a conversation in its project to view it.",
+      "This terminal is not available in the current project. Open a chat in its project to view it.",
     );
     expect(onActive).toHaveBeenLastCalledWith("");
     expect(onActive.mock.calls.some(([id]) => id)).toBe(false);

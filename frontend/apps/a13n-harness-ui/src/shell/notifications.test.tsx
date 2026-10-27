@@ -385,9 +385,7 @@ it.each(["completed", "failed", "suspended"] as const)(
     expect(screen.getAllByText(event.notice!.brief)).toHaveLength(
       currentCount + 1,
     );
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Open conversation" })[0],
-    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Open chat" })[0]);
     expect(await screen.findByText("/threads/never-visited")).toBeTruthy();
     expect(native).not.toHaveBeenCalled();
   },

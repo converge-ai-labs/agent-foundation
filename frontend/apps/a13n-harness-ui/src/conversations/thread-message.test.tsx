@@ -60,10 +60,7 @@ it.each(["live", "saved"])(
               />
             }
           />
-          <Route
-            path="/threads/thread-origin"
-            element={<h1>Source conversation</h1>}
-          />
+          <Route path="/threads/thread-origin" element={<h1>Source chat</h1>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -96,9 +93,7 @@ it.each(["live", "saved"])(
     expect(link.getAttribute("href")).toBe("/threads/thread-origin");
     expect(inputCopyText(parts)).toBe(parts[1].text);
     await user.click(link);
-    expect(
-      screen.getByRole("heading", { name: "Source conversation" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Source chat" })).toBeTruthy();
   },
 );
 

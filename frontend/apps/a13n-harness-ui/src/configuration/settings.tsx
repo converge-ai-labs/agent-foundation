@@ -261,7 +261,7 @@ export function ConnectionsPage() {
       />
       {root && (
         <details className={layout.disclosure}>
-          <summary>Conversation defaults</summary>
+          <summary>Chat defaults</summary>
           <SourceDocument
             path={root.relative_path}
             title="Default connections & extensions"

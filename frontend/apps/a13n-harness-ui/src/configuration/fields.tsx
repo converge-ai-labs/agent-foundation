@@ -150,7 +150,7 @@ export function ResourceFields({
         inherited={
           kind === "agent"
             ? root.configuration
-              ? `${(root.configuration.defaults?.[path[0]] ?? []).map((id: string) => options.find((option) => option.value === id)?.label ?? id).join(", ") || "None"} · Instance defaults for new conversations`
+              ? `${(root.configuration.defaults?.[path[0]] ?? []).map((id: string) => options.find((option) => option.value === id)?.label ?? id).join(", ") || "None"} · Instance defaults for new chats`
               : "Loading instance defaults…"
             : undefined
         }
@@ -192,7 +192,7 @@ export function ResourceFields({
   );
   if (connectionsOnly)
     return (
-      <SettingsSection description="Used for new conversations.">
+      <SettingsSection description="Used for new chats.">
         <ErrorNotice error={selectors.error || sources.error} />
         {referenceLists(["defaults"])}
       </SettingsSection>
@@ -267,23 +267,23 @@ export function ResourceFields({
       {kind === "project" && (
         <>
           <SettingsSection
-            title="Conversation defaults"
-            description="Applies to new conversations. Existing conversations can explicitly apply Project defaults."
+            title="Chat defaults"
+            description="Applies to new chats. Existing chats can explicitly apply Project defaults."
           >
             {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
             title="Environments"
-            description="Project defaults are copied into new conversations. Applying them to an existing conversation changes only the specified settings."
+            description="Project defaults are copied into new chats. Applying them to an existing chat changes only the specified settings."
           >
             <div className={styles.fieldGroup}>
               <p className="mb-3 text-sm text-muted-foreground">
                 {rawBindings == null
-                  ? "Device environments are unspecified: new conversations add none; applying project defaults keeps the conversation's selection."
+                  ? "Device environments are unspecified: new chats add none; applying project defaults keeps the chat's selection."
                   : bindings.length
-                    ? "This selection replaces the conversation's added environments when project defaults are applied."
-                    : "Empty: applying project defaults removes environments added to this conversation."}
+                    ? "This selection replaces the chat's added environments when project defaults are applied."
+                    : "Empty: applying project defaults removes environments added to this chat."}
               </p>
               {roots ? (
                 <EnvironmentsEditor
@@ -363,7 +363,7 @@ export function ResourceFields({
                     disabled={!roots?.length}
                     onClick={() => setEnvironments(undefined, null)}
                   >
-                    Keep this conversation's environments
+                    Keep this chat's environments
                   </Button>
                 )}
               </div>
@@ -376,8 +376,8 @@ export function ResourceFields({
         !document.has("mcpServers") && (
           <>
             <SettingsSection
-              title="Conversation defaults"
-              description="Used for new conversations."
+              title="Chat defaults"
+              description="Used for new chats."
             >
               {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             </SettingsSection>
@@ -393,7 +393,7 @@ export function ResourceFields({
               <SettingsSection>
                 <SettingsRow
                   label="Live"
-                  description="Start voice conversations from the workspace."
+                  description="Start voice chats from the workspace."
                 >
                   <ChoiceField
                     label="Live"
@@ -584,12 +584,12 @@ export function ResourceFields({
             </details>
             <details className={layout.disclosure}>
               <summary>
-                Sidekick<small>Defaults for delegated conversations</small>
+                Sidekick<small>Defaults for delegated chats</small>
               </summary>
               <SettingsSection>
                 <SettingsRow
                   label="Sidekick"
-                  description="Guide the agent to delegate work to separate conversations."
+                  description="Guide the agent to delegate work to separate chats."
                 >
                   <ChoiceField
                     label="Sidekick"

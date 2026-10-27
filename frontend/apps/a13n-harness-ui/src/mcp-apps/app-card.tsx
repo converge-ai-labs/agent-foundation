@@ -272,8 +272,8 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
     <section className={styles.request} aria-label="App message confirmation">
       <strong>
         {session.view.route?.length
-          ? "Send child App handoff to the owning conversation?"
-          : "Send this App message to the conversation?"}
+          ? "Send child App handoff to the owning chat?"
+          : "Send this App message to the chat?"}
       </strong>
       <p>
         {session.view.reference.server_id} / {session.view.reference.tool_name}{" "}
@@ -281,7 +281,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
       </p>
       <p>
         This starts an ordinary turn. It does not edit your draft, steer active
-        work or queue behind a busy conversation.
+        work or queue behind a busy chat.
       </p>
       <pre>{state.request.content.map((part) => part.text).join("\n")}</pre>
       {state.context && (
@@ -294,7 +294,7 @@ function AppMessageConfirmation({ session }: { session: AppSession }) {
       {state.receipt?.reason && <p role="alert">{state.receipt.reason}</p>}
       {state.receipt?.receipt && (
         <p role="status">
-          Accepted by the conversation · {state.receipt.receipt.receipt_id}
+          Accepted by the chat · {state.receipt.receipt.receipt_id}
         </p>
       )}
       {!state.sent ? (

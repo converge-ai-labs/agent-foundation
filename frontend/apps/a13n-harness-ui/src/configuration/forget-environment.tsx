@@ -85,9 +85,8 @@ export function ForgetEnvironment({
     >
       <p>
         Update any <Link to="/settings">General defaults</Link> or Project
-        defaults that reference this resource first. Existing conversations keep
-        their selections; remove or replace those selections before the next
-        Run.
+        defaults that reference this resource first. Existing chats keep their
+        selections; remove or replace those selections before the next Run.
       </p>
       {references.length > 0 && (
         <div>

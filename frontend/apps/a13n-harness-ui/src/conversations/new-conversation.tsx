@@ -8,7 +8,13 @@ import {
 } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Robot, Folder } from "@phosphor-icons/react";
+import {
+  Folder,
+  ArrowUpRight,
+  Code,
+  MagnifyingGlass,
+  ListChecks,
+} from "@phosphor-icons/react";
 import { Button, SearchPicker } from "a13n-ui";
 import {
   useProjects,
@@ -85,8 +91,8 @@ export async function ensureConversation(
       const found = await checkConversation(transport, threadId, draft);
       throw new Error(
         found
-          ? "This conversation already exists. Open it to review its settings before sending your retained input."
-          : "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
+          ? "This chat already exists. Open it to review its settings before sending your retained input."
+          : "The chat was not found. Your input is retained; Send again to retry with the same identity.",
       );
     }
     draft.attempted = true;
@@ -107,7 +113,7 @@ export async function ensureConversation(
       );
       if (created.thread_id !== threadId)
         throw new Error(
-          "The conversation acknowledgement was incomplete. Send again to check its identity.",
+          "The chat acknowledgement was incomplete. Send again to check its identity.",
         );
       draft.created = true;
     } catch (error) {
@@ -347,24 +353,16 @@ function NewConversation({
   return (
     <ConversationOpening
       ready={pageReady}
-      label="Preparing your conversation…"
+      label="Preparing your chat…"
       onContinue={() => setShowAvailable(true)}
     >
-      <section className={styles.page} aria-label="New conversation">
+      <section className={styles.page} aria-label="New chat">
         <div className={styles.welcome}>
-          <Robot aria-hidden="true" />
-          <h1>
-            What would you like to build
-            {project ? (
-              <>
-                {" "}
-                in <span>{project.name}</span>
-              </>
-            ) : (
-              ""
-            )}
-            ?
-          </h1>
+          <span className={styles.eyebrow}>
+            {project ? project.name : "Your workspace"}
+          </span>
+          <h1>What are we working on?</h1>
+          <p>Bring a question, a rough idea, or a task to finish.</p>
         </div>
         <div className={styles.inputArea}>
           <ConversationTranscript
@@ -374,7 +372,7 @@ function NewConversation({
             threadId={threadId}
           />
           <fieldset className={styles.context} disabled={choicesDisabled}>
-            <legend className={styles.srOnly}>Conversation settings</legend>
+            <legend className={styles.srOnly}>Chat settings</legend>
             <div className={styles.location}>
               <Folder aria-hidden="true" />
               <SearchPicker
@@ -417,10 +415,10 @@ function NewConversation({
                   {preparing
                     ? "Finishing your first message. Wait for this attempt to finish before changing projects."
                     : unknownSubmission
-                      ? "The previous message may already have been accepted. Open the conversation to review its outcome. Your input is retained."
+                      ? "The previous message may already have been accepted. Open the chat to review its outcome. Your input is retained."
                       : draft.created
-                        ? "This draft belongs to an existing conversation. Open it to continue with your retained input."
-                        : "Conversation creation could not be confirmed. Check its status before changing projects. Your input is retained."}
+                        ? "This draft belongs to an existing chat. Open it to continue with your retained input."
+                        : "Chat creation could not be confirmed. Check its status before changing projects. Your input is retained."}
                 </p>
               </div>
               {!preparing &&
@@ -428,7 +426,7 @@ function NewConversation({
                   <Link
                     to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
                   >
-                    Open conversation with retained input
+                    Open chat with retained input
                   </Link>
                 ) : (
                   <Button
@@ -437,9 +435,7 @@ function NewConversation({
                     disabled={review.isPending}
                     onClick={() => review.mutate()}
                   >
-                    {review.isPending
-                      ? "Checking conversation…"
-                      : "Check conversation status"}
+                    {review.isPending ? "Checking chat…" : "Check chat status"}
                   </Button>
                 ))}
               <ErrorNotice error={review.error} />
@@ -447,8 +443,8 @@ function NewConversation({
           )}
           {!choicesDisabled && review.isSuccess && !review.data && (
             <p className={styles.recoveryStatus} role="status">
-              No conversation was found. You can now change projects; your input
-              is retained.
+              No chat was found. You can now change projects; your input is
+              retained.
             </p>
           )}
           <Composer
@@ -487,9 +483,9 @@ function NewConversation({
                 : !ownerAvailable
                   ? "The coordinator must be available in this project. Retry or remove the assignment."
                   : preview.isPending
-                    ? "Updating conversation settings…"
+                    ? "Updating chat settings…"
                     : preview.error
-                      ? "Review conversation settings before sending."
+                      ? "Review chat settings before sending."
                       : undefined
             }
             profile={profile}
@@ -548,9 +544,8 @@ function NewConversation({
           ) && (
             <p role="alert">
               Some attachments are unavailable. Local files are not saved across
-              reloads, and uploaded files belong to their original conversation.
-              Remove unavailable attachments and attach the files again before
-              sending.
+              reloads, and uploaded files belong to their original chat. Remove
+              unavailable attachments and attach the files again before sending.
             </p>
           )}
           <ErrorNotice
@@ -568,6 +563,60 @@ function NewConversation({
             <Link className={styles.setup} to="/setup">
               Continue setup
             </Link>
+          )}
+          {!composerDraft.doc.getText("text").length && !choicesDisabled && (
+            <div
+              className={styles.suggestions}
+              aria-label="Ideas to get started"
+            >
+              {[
+                {
+                  title: "Explore a project",
+                  description: "Find your way around the code",
+                  icon: MagnifyingGlass,
+                  prompt:
+                    "Explore this project. Explain how it is organized, where the main entry points are, and what I should know before making changes.",
+                },
+                {
+                  title: "Make a change",
+                  description: "Turn an idea into working code",
+                  icon: Code,
+                  prompt:
+                    "Help me make a change to this project. First, ask what I want to build, then inspect the relevant code and propose an approach.",
+                },
+                {
+                  title: "Review my work",
+                  description: "Find issues before they ship",
+                  icon: ListChecks,
+                  prompt:
+                    "Review the current changes. Look for bugs, missing cases, and unclear behavior. Explain the most important findings first.",
+                },
+              ].map(({ title, description, icon: Icon, prompt }) => (
+                <button
+                  type="button"
+                  key={title}
+                  onClick={(event) => {
+                    const text = composerDraft.doc.getText("text");
+                    if (text.length || choicesDisabled) return;
+                    text.insert(0, prompt);
+                    composerDraft.notify();
+                    event.currentTarget
+                      .closest("section")
+                      ?.querySelector<HTMLElement>("[data-composer-editor]")
+                      ?.focus();
+                  }}
+                >
+                  <Icon size={18} aria-hidden="true" />
+                  <strong>{title}</strong>
+                  <span>{description}</span>
+                  <ArrowUpRight
+                    className={styles.suggestionArrow}
+                    size={14}
+                    aria-hidden="true"
+                  />
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </section>

@@ -115,9 +115,9 @@ it("starts voice in place, retains the call on navigation, and hides pending cap
       },
     }),
   );
-  fireEvent.click(screen.getByRole("link", { name: "Open Live conversation" }));
+  fireEvent.click(screen.getByRole("link", { name: "Open Live chat" }));
   expect(
-    await screen.findByRole("heading", { name: "Live conversation" }),
+    await screen.findByRole("heading", { name: "Live chat" }),
   ).toBeTruthy();
   expect(screen.getByRole("status").textContent).toBe("Connected");
   expect(screen.getByText("You")).toBeTruthy();
@@ -213,8 +213,6 @@ it.each(["starting", "connecting", "active"] as const)(
     fireEvent.click(screen.getByRole("button", { name: "Stop voice" }));
     expect(voice.stop).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Start voice" })).toBeNull();
-    expect(
-      screen.queryByRole("link", { name: "Open Live conversation" }),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "Open Live chat" })).toBeNull();
   },
 );

@@ -108,9 +108,7 @@ export function ThreadRow({
     .join(" · ");
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
-  const starLabel = row.thread.starred
-    ? "Unstar conversation"
-    : "Star conversation";
+  const starLabel = row.thread.starred ? "Unstar chat" : "Star chat";
   const star = useMutation({
     mutationFn: () =>
       result(
@@ -252,7 +250,7 @@ export function ThreadRow({
           <span
             className={styles.threadStar}
             role="img"
-            aria-label={`Starred conversation: ${title}`}
+            aria-label={`Starred chat: ${title}`}
             title="Starred · Shared with everyone in this project"
           >
             <Star size={12} weight="fill" aria-hidden="true" />
@@ -293,9 +291,9 @@ export function ThreadRow({
             )}
             {(
               [
-                ["rename", "Rename conversation", PencilSimple],
-                ["share", "Share conversation", ShareNetwork],
-                ["details", "Conversation details", SlidersHorizontal],
+                ["rename", "Rename chat", PencilSimple],
+                ["share", "Share chat", ShareNetwork],
+                ["details", "Chat details", SlidersHorizontal],
               ] as const
             ).map(([action, label, Icon]) => (
               <MenuItem
@@ -318,7 +316,7 @@ export function ThreadRow({
                   disabled={fork.isPending}
                   onClick={() => fork.mutate()}
                 >
-                  <GitFork /> Fork conversation
+                  <GitFork /> Fork chat
                 </MenuItem>
               )}
             {row.thread.role === "ordinary" &&
@@ -352,9 +350,7 @@ export function ThreadRow({
                 onClick={() => archive.mutate()}
               >
                 <Archive />
-                {row.thread.archived
-                  ? "Restore conversation"
-                  : "Archive conversation"}
+                {row.thread.archived ? "Restore chat" : "Archive chat"}
               </MenuItem>
             )}
           </MenuPopup>

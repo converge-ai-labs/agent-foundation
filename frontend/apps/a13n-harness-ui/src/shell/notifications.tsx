@@ -263,9 +263,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         "detail",
       ]);
       const name =
-        detail?.thread.title ||
-        detail?.thread.excerpt?.first_input ||
-        "Conversation";
+        detail?.thread.title || detail?.thread.excerpt?.first_input || "Chat";
       const state = {
         completed: "Task completed",
         failed: "Task failed",
@@ -290,11 +288,11 @@ function NotificationState({ children }: { children: ReactNode }) {
         actionProps: {
           children: (
             <>
-              <span className={styles.desktopLabel}>Open conversation</span>
+              <span className={styles.desktopLabel}>Open chat</span>
               <span className={styles.mobileLabel}>Open</span>
             </>
           ),
-          "aria-label": "Open conversation",
+          "aria-label": "Open chat",
           onClick: () => current.current.navigate(path),
         },
       });
@@ -470,7 +468,7 @@ export function NotificationSettings({
         <SettingsRow
           label="Enable browser notifications"
           controlId="desktop-notifications"
-          description="Alerts from every conversation in this browser. Previews may appear on your lock screen."
+          description="Alerts from every chat in this browser. Previews may appear on your lock screen."
         >
           <Switch
             id="desktop-notifications"
@@ -576,9 +574,9 @@ export function NotificationSettings({
         <p>
           In-app notices remain available without notification permission.
           Background push uses your browser's push service and can show alerts
-          alongside in-app notices even for the conversation you are viewing.
-          Keeping a WebUI page visible renews the six-hour delivery window.
-          Missed history is not replayed as new alerts.
+          alongside in-app notices even for the chat you are viewing. Keeping a
+          WebUI page visible renews the six-hour delivery window. Missed history
+          is not replayed as new alerts.
         </p>
       </details>
     </div>

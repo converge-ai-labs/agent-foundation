@@ -262,7 +262,7 @@ it("navigates to a created Thread inline even when run admission failed, without
             />
           }
         />
-        <Route path="/threads/:threadId" element={<p>Worker conversation</p>} />
+        <Route path="/threads/:threadId" element={<p>Worker chat</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -270,7 +270,7 @@ it("navigates to a created Thread inline even when run admission failed, without
   expect(link.closest("button")).toBeNull();
   expect(screen.queryByText("Model unavailable")).toBeNull();
   fireEvent.click(link);
-  expect(screen.getByText("Worker conversation")).toBeTruthy();
+  expect(screen.getByText("Worker chat")).toBeTruthy();
 });
 
 it.each(["run_thread", "steer_thread", "send_thread_message"])(
@@ -294,9 +294,7 @@ it.each(["run_thread", "steer_thread", "send_thread_message"])(
       </MemoryRouter>,
     );
     expect(
-      screen
-        .getByRole("link", { name: "Open conversation" })
-        .getAttribute("href"),
+      screen.getByRole("link", { name: "Open chat" }).getAttribute("href"),
     ).toBe("/threads/thread%20%2F%20target");
     expect(screen.queryByText(/completed/i)).toBeNull();
     expect(
@@ -337,7 +335,7 @@ it("refines all collaboration tools and exposes discovered Thread links on expan
       />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Find conversations/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Find chats/ }));
   expect(
     screen.getByRole("link", { name: "Research" }).getAttribute("href"),
   ).toBe("/threads/thread-one");

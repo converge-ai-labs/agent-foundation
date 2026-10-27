@@ -199,7 +199,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const openConversation = async (
     pending: NonNullable<WizardDraft["pending"]>,
   ) => {
-    setPhase("Opening your first conversation…");
+    setPhase("Opening your first chat…");
     const lookup = async () => {
       try {
         return await result(
@@ -244,7 +244,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       (configured.project_id ?? null) !== (pending.selection.project ?? null)
     )
       throw new Error(
-        "The first conversation already exists with different choices. Inspect its agent, project, and execution environment before continuing; this setup has not changed that conversation.",
+        "The first chat already exists with different choices. Inspect its agent, project, and execution environment before continuing; this setup has not changed that chat.",
       );
     finishWizard(scope);
     navigate(`/threads/${encodeURIComponent(draft.threadId)}?compose=1`, {
@@ -347,8 +347,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                 <h3>Resume your saved setup</h3>
                 <p>
                   Settings may have been saved even if the response was lost.
-                  Check the exact files and first conversation before retrying.
-                  No prompt will be sent.
+                  Check the exact files and first chat before retrying. No
+                  prompt will be sent.
                 </p>
                 <Button
                   loading={busy}
@@ -359,7 +359,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     })
                   }
                 >
-                  Check saved setup and open conversation
+                  Check saved setup and open chat
                 </Button>
                 <Button
                   variant="outline"
@@ -573,7 +573,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                           project_path: path || null,
                         })
                       }
-                      description="Existing server directory. Leave blank for a new conversation workspace."
+                      description="Existing server directory. Leave blank for a new chat workspace."
                     />
                     <LiveOptIn
                       model={selection.model}

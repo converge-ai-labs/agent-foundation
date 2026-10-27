@@ -513,7 +513,7 @@ export function SourceDocument({
             : section === "envd"
               ? "Settings for this whole server. Save, then restart Harness UI to apply them."
               : section === "execution"
-                ? "Default for new conversations. Projects can override this selection."
+                ? "Default for new chats. Projects can override this selection."
                 : undefined
         }
         title={

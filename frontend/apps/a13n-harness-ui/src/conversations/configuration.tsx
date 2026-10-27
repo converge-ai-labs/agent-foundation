@@ -422,7 +422,7 @@ export function ThreadSelections({
           value={{ ...configuration, ...patch }}
           profiles={selectors.data?.environments}
           inheritedProfile={configuration.environment_profile_id}
-          inheritLabel="Keep conversation local mode"
+          inheritLabel="Keep chat local mode"
           onChange={(environments) => setPatch({ ...patch, ...environments })}
         />
         {(

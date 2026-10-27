@@ -19,10 +19,12 @@ import {
   Terminal,
   Wrench,
   X,
+  CaretDown,
 } from "@phosphor-icons/react";
 import { type Schema } from "../transport/client";
 import { useGuestAccess } from "../transport/context";
 import { useThreadWork, workCaption } from "./work";
+import { useDebug } from "../shell/debug";
 import { ErrorNotice } from "../shell/ui";
 import { MessageText } from "./message-text";
 import { Children } from "./details";
@@ -141,6 +143,7 @@ export function WorkInspector({
   onUseGoal?: () => void;
 }) {
   const guest = useGuestAccess();
+  const debug = useDebug();
   const [tab, setTab] = useState<
     "goal" | "tasks" | "notes" | "children" | "processes" | "tools" | null
   >(null);
@@ -182,6 +185,7 @@ export function WorkInspector({
   const tabs = (
     ["tasks", "notes", "children", "processes", "tools"] as const
   ).filter((key) => !guest || (key !== "processes" && key !== "tools"));
+  const key = tab && tab !== "goal" ? tab : "tasks";
   return (
     <div className={styles.strip} aria-label="Work inspection">
       {goal && (
@@ -193,144 +197,146 @@ export function WorkInspector({
           onUseObjective={onUseGoal}
         />
       )}
-      {tabs.map((key) => {
-        const Icon =
-          key === "tasks"
-            ? ListChecks
-            : key === "notes"
-              ? Notebook
-              : key === "children"
-                ? UsersThree
-                : key === "tools"
-                  ? Wrench
-                  : Terminal;
-        return (
-          <Popover
-            key={key}
-            open={tab === key}
-            onOpenChange={(open) => setTab(open ? key : null)}
-          >
-            <PopoverTrigger
-              render={<Button variant="ghost" size="sm" />}
-              aria-label={`Inspect ${labels[key].toLowerCase()}`}
-              title={
-                key === "processes"
-                  ? undefined
-                  : workCaption(
-                      summary,
-                      work.stale || !connected,
-                      work.summary.isFetching,
-                    )
-              }
+      <Popover
+        open={tab !== null && tab !== "goal"}
+        onOpenChange={(open) => setTab(open ? "tasks" : null)}
+      >
+        <PopoverTrigger
+          render={<Button variant="ghost" size="sm" />}
+          aria-label="Chat activity"
+        >
+          <ListChecks />
+          Activity
+          {!!total && (
+            <span className={styles.count}>
+              {complete}/{total}
+            </span>
+          )}
+          <CaretDown />
+        </PopoverTrigger>
+        <PopoverPopup
+          side="top"
+          align="start"
+          sideOffset={10}
+          className={styles.popup}
+        >
+          <div className={styles.heading}>
+            <PopoverTitle>Chat activity</PopoverTitle>
+            <PopoverClose
+              render={<Button variant="ghost" size="icon-sm" />}
+              aria-label="Close activity"
             >
-              <Icon />
-              {labels[key]}
-              {key === "children" && !!childTotal && (
-                <span className={styles.count}>{childTotal}</span>
-              )}
-              {key === "notes" && !!summary?.notes.total && (
-                <span className={styles.count}>{summary.notes.total}</span>
-              )}
-              {key === "processes" && running > 0 && (
-                <span className={styles.count}>
-                  {running}
-                  {incomplete || display.processes.omitted ? "+" : ""}
-                </span>
-              )}
-              {key === "tasks" && !!total && (
-                <span className={styles.count}>
-                  {complete}/{total}
-                </span>
-              )}
-            </PopoverTrigger>
-            <PopoverPopup
-              side="top"
-              align="start"
-              sideOffset={10}
-              className={styles.popup}
-            >
-              <div className={styles.heading}>
-                <PopoverTitle>{labels[key]}</PopoverTitle>
-                <PopoverClose
-                  render={<Button variant="ghost" size="icon-sm" />}
-                  aria-label={`Close ${labels[key].toLowerCase()}`}
+              <X />
+            </PopoverClose>
+          </div>
+          <div className={styles.tabs} aria-label="Activity views">
+            {tabs.map((item) => {
+              const Icon =
+                item === "tasks"
+                  ? ListChecks
+                  : item === "notes"
+                    ? Notebook
+                    : item === "children"
+                      ? UsersThree
+                      : item === "tools"
+                        ? Wrench
+                        : Terminal;
+              const count =
+                item === "children"
+                  ? childTotal
+                  : item === "notes"
+                    ? summary?.notes.total
+                    : item === "processes"
+                      ? running
+                      : undefined;
+              return (
+                <Button
+                  key={item}
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Inspect ${labels[item].toLowerCase()}`}
+                  aria-pressed={key === item}
+                  onClick={() => setTab(item)}
                 >
-                  <X />
-                </PopoverClose>
-              </div>
-              {key === "processes" && (
-                <PopoverDescription className={styles.caption}>
-                  Last observed processes from this conversation and its
-                  subagents, not all server processes.
-                </PopoverDescription>
-              )}
-              {(key === "tasks" || key === "notes") && (
-                <p className={styles.caption}>
-                  {workCaption(
-                    key === "tasks" ? work.tasks.data : work.notes.data,
-                    work.stale || !connected,
-                    work.summary.isFetching ||
-                      (key === "tasks"
-                        ? work.tasks.isFetching
-                        : work.notes.isFetching),
-                  )}
-                </p>
-              )}
-              {key === "tasks" && (
-                <>
-                  <ErrorNotice
-                    error={saved.error}
-                    retry={() => void saved.refetch()}
-                  />
-                  {!page && saved.isPending && (
-                    <Loading label="Loading tasks" />
-                  )}
-                  {!saved.isPending && !page && <p>Task state unavailable.</p>}
-                  <TaskList page={page} />
-                </>
-              )}
-              {key === "tools" && tab === key && (
-                <ToolExecutions threadId={threadId} />
-              )}
-              {key === "processes" && tab === key && (
-                <Processes
-                  observations={processes}
-                  omitted={display.processes.omitted}
-                  incomplete={incomplete}
+                  <Icon />
+                  {labels[item]}
+                  {!!count && <span className={styles.count}>{count}</span>}
+                </Button>
+              );
+            })}
+          </div>
+          <div className={styles.inspectorBody}>
+            {key === "processes" && (
+              <PopoverDescription className={styles.caption}>
+                Last observed processes from this chat and its subagents, not
+                all server processes.
+              </PopoverDescription>
+            )}
+            {(key === "tasks" || key === "notes") && (
+              <p className={styles.caption}>
+                {workCaption(
+                  key === "tasks" ? work.tasks.data : work.notes.data,
+                  work.stale || !connected,
+                  work.summary.isFetching ||
+                    (key === "tasks"
+                      ? work.tasks.isFetching
+                      : work.notes.isFetching),
+                  debug.enabled,
+                )}
+              </p>
+            )}
+            {key === "tasks" && (
+              <>
+                <ErrorNotice
+                  error={saved.error}
+                  retry={() => void saved.refetch()}
                 />
-              )}
-              {key === "notes" && tab === key && (
-                <>
-                  <ErrorNotice
-                    error={work.notes.error}
-                    retry={() => void work.notes.refetch()}
-                  />
-                  {work.notes.isPending && <Loading label="Loading notes" />}
-                  {!work.notes.isPending && !work.notes.data?.notes.page && (
-                    <p>Notes unavailable.</p>
-                  )}
-                  <NoteList page={work.notes.data?.notes.page} />
-                </>
-              )}
-              {key === "children" && tab === key && (
-                <>
-                  {summary && (
-                    <p className={styles.caption}>
-                      {summary.children.active ?? 0} active ·{" "}
-                      {summary.children.unavailable ?? 0} unavailable
-                    </p>
-                  )}
-                  <Children
-                    threadId={threadId}
-                    reconcile={reconcile}
-                    display={display}
-                  />
-                </>
-              )}
-            </PopoverPopup>
-          </Popover>
-        );
-      })}
+                {!page && saved.isPending && <Loading label="Loading tasks" />}
+                {!saved.isPending && !page && <p>Task state unavailable.</p>}
+                <TaskList page={page} />
+              </>
+            )}
+            {key === "tools" && tab === key && (
+              <ToolExecutions threadId={threadId} />
+            )}
+            {key === "processes" && tab === key && (
+              <Processes
+                observations={processes}
+                omitted={display.processes.omitted}
+                incomplete={incomplete}
+              />
+            )}
+            {key === "notes" && tab === key && (
+              <>
+                <ErrorNotice
+                  error={work.notes.error}
+                  retry={() => void work.notes.refetch()}
+                />
+                {work.notes.isPending && <Loading label="Loading notes" />}
+                {!work.notes.isPending && !work.notes.data?.notes.page && (
+                  <p>Notes unavailable.</p>
+                )}
+                <NoteList page={work.notes.data?.notes.page} />
+              </>
+            )}
+            {key === "children" && tab === key && (
+              <>
+                {summary && (
+                  <p className={styles.caption}>
+                    {summary.children.active ?? 0} active ·{" "}
+                    {summary.children.unavailable ?? 0} unavailable
+                  </p>
+                )}
+                <Children
+                  threadId={threadId}
+                  reconcile={reconcile}
+                  display={display}
+                />
+              </>
+            )}
+          </div>
+        </PopoverPopup>
+      </Popover>
       {active && (
         <span
           className={styles.active}

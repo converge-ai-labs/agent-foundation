@@ -96,7 +96,7 @@ export function ParticipantAvatars({
       </PopoverTrigger>
       <PopoverPopup side="right" align="start" className={styles.popup}>
         <PopoverTitle className={styles.title}>
-          In this conversation <span>{count}</span>
+          In this chat <span>{count}</span>
         </PopoverTitle>
         <ul className={styles.people}>
           {participants.map((participant) => (

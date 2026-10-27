@@ -95,7 +95,7 @@ export function CaptureContext({
     try {
       if (!draft.synchronized || draft.replacement)
         throw new Error(
-          "Reconnect the conversation's shared input before capturing context.",
+          "Reconnect the chat's shared input before capturing context.",
         );
       if (attachmentSelections(draft.doc).length >= 8)
         throw new Error("Remove an attachment first (limit: eight).");
@@ -128,7 +128,7 @@ export function CaptureContext({
         setMessage(
           compact
             ? "Added to chat."
-            : "Added to the conversation. Review it before sending.",
+            : "Added to the chat. Review it before sending.",
         );
     } catch (failure) {
       if (currentThread.current === threadId) setError(failure);
@@ -210,8 +210,8 @@ export function CaptureContext({
       )}
       <small>
         {threadId
-          ? "Adds a saved copy to this conversation; it does not send a message."
-          : "Open a conversation to add file context."}
+          ? "Adds a saved copy to this chat; it does not send a message."
+          : "Open a chat to add file context."}
       </small>
       {disabled && (
         <small>
@@ -222,7 +222,7 @@ export function CaptureContext({
         <div className={styles.actions}>
           <p role="status">{message}</p>
           <Button size="sm" variant="ghost" onClick={returnToChat}>
-            Return to conversation
+            Return to chat
           </Button>
         </div>
       )}

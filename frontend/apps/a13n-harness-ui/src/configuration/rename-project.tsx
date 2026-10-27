@@ -94,7 +94,7 @@ export function RenameProject({
     <ModalFrame
       open
       title="Rename project"
-      description="Change the display name without changing folders, project identity, or conversations."
+      description="Change the display name without changing folders, project identity, or chats."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();

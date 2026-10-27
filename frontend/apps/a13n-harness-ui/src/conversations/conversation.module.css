@@ -50,6 +50,24 @@
 .homeLink.selected {
   background: var(--a13n-selected);
 }
+.newConversationLink {
+  composes: row from "../shell/navigation-row.module.css";
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+.newConversationLink > svg:last-child {
+  margin-left: auto;
+  width: 14px;
+}
+.shortcuts button.homeLink {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 .draftsTrigger {
   composes: row from "../shell/navigation-row.module.css";
   width: 100%;
@@ -596,7 +614,7 @@
   flex: 1;
   min-height: 100px;
   overflow: auto;
-  padding: 28px 16px 24px;
+  padding: 20px 16px 28px;
   overflow-anchor: none;
 }
 .transcript {
@@ -607,7 +625,8 @@
   margin-bottom: 4px;
 }
 .userInput {
-  margin: 24px 0 20px auto;
+  margin: 12px 0 24px auto;
+  position: relative;
   width: fit-content;
   min-width: 64px;
   max-width: min(85%, 640px);
@@ -616,7 +635,7 @@
   color: var(--a13n-text);
   padding: 10px 16px;
   background: var(--a13n-surface);
-  border-radius: 20px;
+  border-radius: 16px 16px 4px 16px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -636,8 +655,17 @@
   transition: opacity 120ms ease;
 }
 .userInput > .messageActions {
-  justify-content: flex-end;
-  margin-inline: 0 -6px;
+  position: absolute;
+  top: 4px;
+  right: -32px;
+  margin: 0;
+}
+@container conversation-page (max-width: 600px) {
+  .userInput > .messageActions {
+    top: auto;
+    bottom: -26px;
+    right: 0;
+  }
 }
 .userInput:hover > .messageActions,
 .userInput:focus-within > .messageActions,
@@ -902,8 +930,8 @@
      each side. */
   width: min(760px, 100% - 84px);
   margin: 0 auto;
-  border: 1px solid var(--a13n-border);
-  border-radius: 18px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 16px;
   /* 1px border + 12px padding = 13px content inset, shared with the work
      strip and metrics row so their controls start on the same line. */
   padding: 10px 12px 8px;
@@ -916,10 +944,9 @@
     box-shadow 120ms ease;
 }
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--ring) 70%, var(--a13n-border));
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent),
-    0 4px 16px -8px color-mix(in srgb, var(--a13n-text) 10%, transparent);
+  border-color: color-mix(in srgb, var(--a13n-text) 24%, transparent);
+  box-shadow: 0 2px 12px -6px
+    color-mix(in srgb, var(--a13n-text) 12%, transparent);
 }
 @media (max-width: 640px) {
   .reading {
@@ -1056,8 +1083,8 @@
 .composerActions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 4px;
 }
 /* Icon controls share one 32px box so their glyphs sit on the content line
    (8px inset). Touch devices get a centered 44px hit area from Button. */
@@ -1622,6 +1649,16 @@
   margin-inline-start: -8px;
   cursor: pointer;
 }
+.executionPreview {
+  flex: 1;
+  min-width: 100px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-tertiary);
+  padding-left: 8px;
+}
 .executionTitle {
   display: inline-flex;
   align-items: center;
@@ -1643,15 +1680,16 @@
 .executionContent {
   position: relative;
   max-height: min(480px, 52dvh);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: 2px 0 2px 14px;
+  padding: 2px 0 2px 12px;
   margin-block-start: 4px;
   margin-inline-start: 5px;
   border-inline-start: 1px solid var(--a13n-border);
 }
-/* Inside Run details, reasoning keeps the 32px row rhythm of the tool groups
+/* Inside the work log, reasoning keeps the 32px row rhythm of the tool groups
    instead of the looser spacing it has between transcript paragraphs. */
 .executionContent .reasoning {
   margin: 2px 0;
@@ -1686,5 +1724,29 @@
 @container conversation-page (max-width: 600px) {
   .composer {
     width: 100%;
+  }
+}
+
+.conversationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  width: min(760px, 100% - 84px);
+  min-height: 36px;
+  margin: 0 auto;
+  padding-inline: 8px;
+}
+.conversationFooter > div {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+@container conversation-page (max-width: 600px) {
+  .conversationFooter {
+    width: 100%;
+    gap: 4px;
+    padding-inline: 4px;
   }
 }

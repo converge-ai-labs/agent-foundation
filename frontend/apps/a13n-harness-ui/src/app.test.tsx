@@ -344,7 +344,10 @@ it("distinguishes an unavailable listener from rejected credentials and retries 
   expect(screen.queryByLabelText("API key")).toBeNull();
   unavailable = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
-  await screen.findByText("1.2.3rc2");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("retained-key");
 });
 
@@ -358,7 +361,10 @@ it("consumes the fragment before all network requests and retains only an accept
   });
   vi.stubGlobal("fetch", fetcher);
   render(<BrowserApp />);
-  await screen.findByText("1.2.3rc2");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("generated+key");
   expect(document.body.textContent).not.toContain("generated+key");
 });
@@ -383,7 +389,10 @@ it("accepts a replacement key after authentication failure without replaying mut
     target: { value: "new-key" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Log in" }));
-  await screen.findByText("1.2.3rc2");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("new-key");
 });
 
@@ -400,7 +409,10 @@ it("supports explicit server bypass without inventing a frontend version", async
     }),
   );
   render(<BrowserApp />);
-  await screen.findByText("0.0.0");
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 0.0.0");
   expect(screen.getByText(/Instance authentication is disabled/)).toBeTruthy();
 });
 
@@ -424,14 +436,17 @@ it("forgets the retained credential and closes protected views", async () => {
     ),
   );
   render(<BrowserApp />);
-  await screen.findByText("1.2.3rc2");
-  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
   expect(
-    screen.queryByRole("heading", { name: "What would you like to build?" }),
+    screen.queryByRole("heading", { name: "What are we working on?" }),
   ).toBeNull();
 });
 
@@ -463,8 +478,11 @@ it("keeps logout cleanup authenticated and warns when background delivery cannot
     }),
   );
   render(<BrowserApp />);
-  await screen.findByText("1.2.3rc2");
-  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Workspace menu" }),
+  );
+  await screen.findByText("Harness UI · 1.2.3rc2");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
   await screen.findByRole("heading", { name: "Log in to Harness UI" });
   expect(await screen.findByRole("alert")).toHaveProperty(
     "textContent",
@@ -742,10 +760,13 @@ it("works without browser storage", async () => {
   try {
     render(<BrowserApp />);
     await screen.findByRole("heading", {
-      name: "What would you like to build?",
+      name: "What are we working on?",
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Switch to dark theme" }),
+    await userEvent.click(
+      screen.getByRole("button", { name: "Workspace menu" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Dark appearance" }),
     );
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   } finally {
@@ -1244,7 +1265,7 @@ it("persists generated and edited collaboration names across visits and rejects 
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
   let component = render(<BrowserApp />);
   await screen.findByRole("button", {
-    name: /^Your collaboration name: Guest /,
+    name: "Workspace menu",
   });
   const generated = localStorage.getItem("a13n-harness-ui.display-name");
   expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
@@ -1252,8 +1273,11 @@ it("persists generated and edited collaboration names across visits and rejects 
   component = render(<BrowserApp />);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Your collaboration name: ${generated}`,
+      name: "Workspace menu",
     }),
+  );
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "People & display name" }),
   );
   const input = await screen.findByLabelText("Your display name");
   fireEvent.change(input, { target: { value: "   " } });
@@ -1263,11 +1287,11 @@ it("persists generated and edited collaboration names across visits and rejects 
   expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe(generated);
   fireEvent.change(input, { target: { value: "  Alex  " } });
   fireEvent.click(screen.getByRole("button", { name: "Save name" }));
-  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+  await screen.findByRole("button", { name: "Workspace menu" });
   expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe("Alex");
   component.unmount();
   render(<BrowserApp />);
-  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+  await screen.findByRole("button", { name: "Workspace menu" });
 });
 
 it("shows Live entries only after enabling and saving, and hides them again without a reload", async () => {
@@ -1329,7 +1353,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
   ).toBe(false);
 });
 
-it("configures Sidekick in General without changing defaults or starting conversations", async () => {
+it("configures Sidekick in General without changing defaults or starting chats", async () => {
   window.history.replaceState(null, "", "/settings");
   const rootSource = {
     ...source,
@@ -1449,8 +1473,11 @@ it("persists the initial collaboration color and restores explicit changes", asy
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", {
-        name: /^Your collaboration name:/,
+        name: "Workspace menu",
       }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "People & display name" }),
     );
     const color = await screen.findByRole("combobox", { name: "Your color" });
     expect(color.textContent).toBe("Purple");
@@ -1461,8 +1488,11 @@ it("persists the initial collaboration color and restores explicit changes", asy
     const reopened = render(<BrowserApp />);
     await user.click(
       await screen.findByRole("button", {
-        name: /^Your collaboration name:/,
+        name: "Workspace menu",
       }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "People & display name" }),
     );
     const remembered = await screen.findByRole("combobox", {
       name: "Your color",
@@ -1479,8 +1509,11 @@ it("persists the initial collaboration color and restores explicit changes", asy
     render(<BrowserApp />);
     await user.click(
       await screen.findByRole("button", {
-        name: /^Your collaboration name:/,
+        name: "Workspace menu",
       }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: "People & display name" }),
     );
     expect(
       (await screen.findByRole("combobox", { name: "Your color" })).textContent,
@@ -1578,7 +1611,7 @@ it("shows one connection notice for server loss and reconciles on retry without 
   });
   expect(
     await screen.findByRole("heading", {
-      name: "What would you like to build?",
+      name: "What are we working on?",
     }),
   ).toBeTruthy();
   expect(
@@ -1717,7 +1750,7 @@ it("shares the root draft across General, execution, runtime and connection sett
   );
   await user.click(screen.getByRole("link", { name: "Connections" }));
   await user.click(
-    await screen.findByText("Conversation defaults", { selector: "summary" }),
+    await screen.findByText("Chat defaults", { selector: "summary" }),
   );
   expect(writes).toEqual([]);
   await user.click(screen.getByRole("button", { name: "Save changes" }));

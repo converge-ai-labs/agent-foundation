@@ -75,7 +75,7 @@ export function NewProject({
       open
       title="Add project"
       size="lg"
-      description="Name this Project and choose local or Device directories. Adding a Project does not create a conversation."
+      description="Name this Project and choose local or Device directories. Adding a Project does not create a chat."
       closeLabel="Close"
       onOpenChange={(open) => {
         if (!open && !save.isPending) close();

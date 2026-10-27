@@ -97,21 +97,16 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
   await screen.findByText("Checking output");
   expect(screen.queryByText(/Work observation.*unavailable/)).toBeNull();
   expect(
-    screen.getByRole("button", { name: "Inspect tasks" }).textContent,
+    screen.getByRole("button", { name: "Chat activity" }).textContent,
   ).toContain("1/2");
-  expect(
-    screen.getByRole("button", { name: "Inspect notes" }).textContent,
-  ).toContain("3");
-  expect(
-    screen.getByRole("button", { name: "Inspect subagents" }).textContent,
-  ).toContain("1");
+  expect(screen.queryByRole("button", { name: "Inspect notes" })).toBeNull();
   expect(
     GET.mock.calls.every(
       ([, options]) => options.params.query.include.length === 0,
     ),
   ).toBe(true);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Inspect tasks" }));
+  await user.click(screen.getByRole("button", { name: "Chat activity" }));
   await screen.findByText("task-before");
   const summary = screen
     .getAllByText("Checking output")
@@ -119,9 +114,13 @@ it("observes closed badges and lazily reads current tasks and notes across Runs"
   fireEvent.click(summary);
   expect(screen.getByText("task-after")).toBeTruthy();
   await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Chat activity" }));
+  expect(
+    screen.getByRole("button", { name: "Inspect notes" }).textContent,
+  ).toContain("3");
   await user.click(screen.getByRole("button", { name: "Inspect notes" }));
   await screen.findByText("Decision");
-  expect(screen.getByText(/not a saved checkpoint/)).toBeTruthy();
+  expect(screen.getByText(/Not saved yet/)).toBeTruthy();
   expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
   await user.keyboard("{Escape}");
   run = "run-two";
@@ -379,6 +378,7 @@ it("inspects observed processes in place, updates status and discloses missing o
     harness(GET),
   );
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Chat activity" }));
   await user.click(screen.getByRole("button", { name: "Inspect processes" }));
   expect(screen.getByText("No background processes observed.")).toBeTruthy();
   display.processes.result(
@@ -480,8 +480,8 @@ it("shares one open inspector with Goal and forgets a cleared Goal selection", a
     screen.getByRole("button", { name: "Inspect Goal: Verified" }),
   );
   await screen.findByRole("heading", { name: "Verified by the Agent" });
-  await user.click(screen.getByRole("button", { name: "Inspect tasks" }));
-  await screen.findByRole("heading", { name: "Tasks" });
+  await user.click(screen.getByRole("button", { name: "Chat activity" }));
+  await screen.findByRole("heading", { name: "Chat activity" });
   await waitFor(() =>
     expect(
       screen.queryByRole("heading", { name: "Verified by the Agent" }),
@@ -492,7 +492,7 @@ it("shares one open inspector with Goal and forgets a cleared Goal selection", a
   );
   await screen.findByRole("heading", { name: "Verified by the Agent" });
   await waitFor(() =>
-    expect(screen.queryByRole("heading", { name: "Tasks" })).toBeNull(),
+    expect(screen.queryByRole("heading", { name: "Chat activity" })).toBeNull(),
   );
   await user.keyboard("{Escape}");
   await waitFor(() =>

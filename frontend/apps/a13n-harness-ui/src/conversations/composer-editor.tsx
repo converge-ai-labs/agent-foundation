@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -55,7 +55,7 @@ export function ComposerEditor({
   const currentView = useRef<EditorView | null>(null);
   const description = local
     ? "Not shared until you send. Text and selections are saved in this browser when storage is available. Local files may need reattaching after reload. Files upload on Send. Enter to send; Shift+Enter for a new line."
-    : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
+    : "Shared with this chat. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () => [
       EditorView.contentAttributes.of({
@@ -182,6 +182,7 @@ export function ComposerEditor({
           ...composerWordKeymap,
           ...defaultKeymap,
         ]),
+        placeholder("Ask anything, or describe a task…"),
         yCollab(doc.getText("text"), awareness, { undoManager: draft.undo }),
         EditorView.theme({
           "&": {

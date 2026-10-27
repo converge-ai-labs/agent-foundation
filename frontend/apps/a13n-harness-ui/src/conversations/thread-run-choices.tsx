@@ -66,7 +66,7 @@ export function RunEnvironments({
           closeEditor();
         }}
       >
-        Use conversation defaults
+        Use chat defaults
       </Button>
       <Button
         type="button"
@@ -86,7 +86,7 @@ export function RunEnvironments({
       value={editing}
       profiles={catalog?.environments}
       inheritedProfile={configuration?.environment_profile_id}
-      inheritLabel="Follow conversation local mode"
+      inheritLabel="Follow chat local mode"
       onChange={(patch) => setEditing({ ...editing, ...patch })}
     />
   );
@@ -112,7 +112,7 @@ export function RunEnvironments({
         }}
         title="Environments"
         closeLabel="Cancel"
-        description="Choose environments and their working directories for subsequent Runs in this tab. Conversation defaults and the active Run stay unchanged."
+        description="Choose environments and their working directories for subsequent Runs in this tab. Chat defaults and the active Run stay unchanged."
         footer={footer}
       >
         <fieldset className="min-w-0" disabled={disabled}>
@@ -151,8 +151,6 @@ export function ThreadRunChoices(props: RunChoiceProps) {
   const model = catalog?.models?.find(
     (item) => item.model_id === selectedModelId,
   );
-  const agentName =
-    agent?.name ?? (agentId ? `${agentId} (unavailable)` : "Default agent");
   const modelName =
     model?.name ??
     (selectedModelId
@@ -174,17 +172,12 @@ export function ThreadRunChoices(props: RunChoiceProps) {
     previousSelection.current = selectionKey;
   }, [selectionKey, onControlsChange]);
   return (
-    <div className={panelStyles.identity}>
-      <span
-        className={panelStyles.summary}
-        title={`${agentName} · ${modelName}`}
-        aria-label={`Agent: ${agentName}. Model: ${modelName}`}
-      >
-        <span>{agentName}</span>
-        <span aria-hidden>·</span>
-        <span>{modelName}</span>
-      </span>
-      <ComposerSettings>
+    <div
+      className={panelStyles.identity}
+      aria-label={`Agent: ${agent?.name ?? "Default agent"}. Model: ${modelName}`}
+      title={`${agent?.name ?? "Default agent"} · ${modelName}`}
+    >
+      <ComposerSettings label={modelName}>
         <AgentModelChoices {...props} />
       </ComposerSettings>
     </div>

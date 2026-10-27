@@ -130,7 +130,7 @@ export class AppMessage {
         this.publish({
           ...this.state,
           uncertain:
-            "Message outcome unknown. It was not resent. Check its receipt or inspect the conversation.",
+            "Message outcome unknown. It was not resent. Check its receipt or inspect the chat.",
         });
     }
   }

@@ -291,7 +291,7 @@ export default function TerminalScreen({
   const addSelection = () => {
     const draft = threadId ? drafts.get(threadId) : undefined;
     if (!draft?.synchronized || draft.replacement) {
-      setFeedback("Reconnect the conversation's shared input first.");
+      setFeedback("Reconnect the chat's shared input first.");
       return;
     }
     const text = draft.doc.getText("text");
@@ -311,7 +311,7 @@ export default function TerminalScreen({
     draft.undo.stopCapturing();
     text.insert(text.length, excerpt);
     draft.undo.stopCapturing();
-    setFeedback("Added to this conversation's input. Review before sending.");
+    setFeedback("Added to this chat's input. Review before sending.");
   };
   const copySelection = async () => {
     const text = terminal.current?.getSelection();
@@ -537,10 +537,7 @@ export default function TerminalScreen({
             {feedback}
           </p>
           {feedback.startsWith("Added") && (
-            <TerminalAction
-              label="Return to conversation"
-              onClick={returnToChat}
-            >
+            <TerminalAction label="Return to chat" onClick={returnToChat}>
               <ArrowBendUpLeft />
             </TerminalAction>
           )}

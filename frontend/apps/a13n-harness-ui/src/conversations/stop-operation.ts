@@ -69,8 +69,8 @@ export function useStopOperation(
     request.outcome = status;
     request.message =
       status === "cancelled"
-        ? "Operation stopped. Refreshing conversation…"
-        : `Operation ${status}. Refreshing conversation…`;
+        ? "Operation stopped. Refreshing chat…"
+        : `Operation ${status}. Refreshing chat…`;
     draft.notify();
     reconcile();
   }, [draft, request, operation.data, reconcile]);

@@ -1,7 +1,7 @@
 .markdown {
   min-width: 0;
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .markdown > :first-child {
@@ -75,17 +75,18 @@
 .markdown h6 {
   font-weight: 500;
   line-height: 1.4;
-  margin: 24px 0 12px;
+  margin: 22px 0 10px;
   color: var(--a13n-text);
 }
 .markdown h1 {
-  font-size: 23px;
+  font-size: 24px;
 }
 .markdown h2 {
-  font-size: 20px;
+  font-size: 17px;
 }
 .markdown h3 {
-  font-size: 17px;
+  font-size: 15px;
+  font-weight: 600;
 }
 .markdown h4,
 .markdown h5,

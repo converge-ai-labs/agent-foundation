@@ -33,7 +33,7 @@ async function until(predicate: () => boolean) {
 it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focused realtime", async () => {
   const created = await result(
     transport.client.POST("/api/threads", {
-      body: { title: "Protocol conversation" },
+      body: { title: "Protocol chat" },
     }),
   );
   const thread = created.thread_id;
@@ -805,7 +805,7 @@ it("captures an HTTP environment override without changing defaults and never fa
   expect(retained.next_run.configuration).toEqual(before.thread.configuration);
 });
 
-it("forks a saved conversation and its attachments through the real HTTP boundary", async () => {
+it("forks a saved chat and its attachments through the real HTTP boundary", async () => {
   const source = await result(
     transport.client.POST("/api/threads", {
       body: { title: "Fork this title" },

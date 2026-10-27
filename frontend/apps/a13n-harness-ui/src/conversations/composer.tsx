@@ -1,4 +1,5 @@
 import {
+  cloneElement,
   createContext,
   useContext,
   useEffect,
@@ -40,6 +41,7 @@ import { ComposerEditor } from "./composer-editor";
 import { CoordinatorIcon } from "./coordinator-icon";
 import { useCoordinatorMutation } from "./coordinator-settings";
 import { ClearContext } from "./clear-context";
+import { TaskOptions } from "./task-options";
 import { useStopOperation } from "./stop-operation";
 import {
   loadThreadSkills,
@@ -594,12 +596,11 @@ export function Composer({
           ? "Waiting for attachments…"
           : "Resolve unavailable attachments before sending."
         : coordinatorBlocked && !busy
-          ? "Select an available Project and an idle conversation to enable Coordinator."
+          ? "Select an available Project and an idle chat to enable Coordinator."
           : !ready
             ? "Waiting for the shared draft connection…"
             : !busy && !canRun
-              ? (unavailableReason ??
-                "Refresh conversation status before sending.")
+              ? (unavailableReason ?? "Refresh chat status before sending.")
               : busy && !canSteer
                 ? "This operation cannot accept another message yet."
                 : undefined
@@ -727,7 +728,7 @@ export function Composer({
         setError(
           failure instanceof Error
             ? failure.message
-            : "Could not prepare the conversation. Your input is retained.",
+            : "Could not prepare the chat. Your input is retained.",
         );
     } finally {
       preparation.current = null;
@@ -907,7 +908,7 @@ export function Composer({
           variant="ghost"
           size="icon-sm"
           aria-label="Remove Coordinator assignment"
-          title="Create an independent conversation instead"
+          title="Create an independent chat instead"
           disabled={owner.locked || preparing || pending || unknown}
           onClick={owner.onRemove}
         >
@@ -922,7 +923,7 @@ export function Composer({
     (coordinatorActive ? (
       <span
         className={styles.coordinatorIdentity}
-        title="This conversation is a coordinator. This can't be undone."
+        title="This chat is a coordinator. This can't be undone."
       >
         <CoordinatorIcon size={16} /> Coordinator
       </span>
@@ -935,7 +936,7 @@ export function Composer({
         title={
           coordinator.available
             ? "Become a Coordinator when you send. The role cannot be reversed after creation or conversion."
-            : "Requires an available Project and an idle conversation without pending decisions."
+            : "Requires an available Project and an idle chat without pending decisions."
         }
         disabled={coordinatorDisabled}
         onClick={toggleCoordinator}
@@ -997,11 +998,24 @@ export function Composer({
         </div>
       )}
       <div className={styles.composerBody}>
-        <div className={styles.composerHeader}>
-          {!transport.shareId && goalToggle}
-          {ownerControl || coordinatorControl}
-          <div className={styles.composerEnvironment}>{leadingControls}</div>
-        </div>
+        {(draft.mode === "goal" ||
+          ownerControl ||
+          coordinatorActive ||
+          draft.coordinator) && (
+          <div className={styles.composerHeader}>
+            {!transport.shareId &&
+              draft.mode === "goal" &&
+              cloneElement(goalToggle, { "aria-label": "Turn off Goal" })}
+            {ownerControl ||
+              (coordinatorActive
+                ? coordinatorControl
+                : draft.coordinator && coordinatorControl
+                  ? cloneElement(coordinatorControl, {
+                      "aria-label": "Turn off Coordinator",
+                    })
+                  : null)}
+          </div>
+        )}
         <div inert={preparing} className={styles.composerEditor}>
           <ComposerEditor
             autoFocus={autoFocus}
@@ -1105,7 +1119,7 @@ export function Composer({
                   onClick={onReviewOutcome ?? reconcile}
                 >
                   {onReviewOutcome
-                    ? "Review submission in conversation"
+                    ? "Review submission in chat"
                     : "Refresh operation and history"}
                 </Button>
                 {!onReviewOutcome && (
@@ -1114,7 +1128,7 @@ export function Composer({
                       <Button variant="ghost">I reviewed the outcome</Button>
                     }
                     title="Enable a new submission?"
-                    description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
+                    description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the chat."
                     confirmLabel="Enable submission"
                     onConfirm={() => {
                       draft.submission = { kind: "idle" };
@@ -1163,20 +1177,30 @@ export function Composer({
             )}
           </span>
           {!transport.shareId && (
-            <ClearContext
-              threadId={threadId}
-              continuationId={continuationId}
-              disabled={
-                local ||
-                !canClearContext ||
-                busy ||
-                preparing ||
-                pending ||
-                unknown
+            <TaskOptions
+              goal={goalToggle}
+              coordinator={
+                !owner && !coordinatorActive ? coordinatorControl : undefined
               }
-              onPendingChange={setClearing}
-              onCleared={() => setContextCleared(true)}
-              reconcile={reconcile}
+              environment={leadingControls}
+              context={
+                !local && (
+                  <ClearContext
+                    threadId={threadId}
+                    continuationId={continuationId}
+                    disabled={
+                      !canClearContext ||
+                      busy ||
+                      preparing ||
+                      pending ||
+                      unknown
+                    }
+                    onPendingChange={setClearing}
+                    onCleared={() => setContextCleared(true)}
+                    reconcile={reconcile}
+                  />
+                )
+              }
             />
           )}
           <div className={styles.composerChoices}>{controls?.()}</div>

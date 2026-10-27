@@ -183,7 +183,7 @@ it("keeps one live App frame outside execution details when the original becomes
     { wrapper },
   );
   const frame = await screen.findByTitle("counter");
-  expect(frame.closest('[aria-label="Run details"]')).toBeNull();
+  expect(frame.closest('[aria-label="Work log"]')).toBeNull();
   view.rerender(
     <ConversationTranscript
       {...props}
@@ -271,7 +271,7 @@ it("exposes inspect, opt-in selection and discard outside the frame without repl
   expect(screen.getByTitle("counter")).toBe(frame);
 });
 
-it("contains malformed original payload errors without crashing the conversation", async () => {
+it("contains malformed original payload errors without crashing the chat", async () => {
   const { wrapper } = setup({
     ...presentation,
     snapshot: { ...presentation.snapshot, result: { content: "invalid" } },
@@ -385,7 +385,7 @@ it("requires a trusted one-time confirmation for a child App handoff without rep
     }),
   );
   fireEvent.click(screen.getByText("Send once"));
-  await screen.findByText(/Accepted by the conversation/);
+  await screen.findByText(/Accepted by the chat/);
   expect(POST).toHaveBeenCalledExactlyOnceWith(
     "/api/threads/{thread_id}/apps/{view_id}/messages",
     expect.objectContaining({

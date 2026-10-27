@@ -56,7 +56,7 @@ export type FocusFrame =
   | (Schema<"FocusEventFrame"> & { kind: "event" })
   | (Schema<"ResetFrame"> & { kind: "reset" });
 export function focusFrame(value: unknown): FocusFrame {
-  if (!object(value)) throw new Error("Invalid conversation stream frame.");
+  if (!object(value)) throw new Error("Invalid chat stream frame.");
   if (
     value.kind === "snapshot" &&
     object(value.snapshot) &&
@@ -84,7 +84,7 @@ export function focusFrame(value: unknown): FocusFrame {
     return value as FocusFrame;
   if (value.kind === "reset" && typeof value.reason === "string")
     return value as FocusFrame;
-  throw new Error("Invalid conversation stream frame.");
+  throw new Error("Invalid chat stream frame.");
 }
 
 class RootRunChanged extends Error {}
@@ -227,7 +227,7 @@ export class FocusDisplay {
       if (!this.ready)
         throw new Error("Live output arrived before replay was ready.");
       if (frame.event.epoch !== this.snapshot?.epoch)
-        throw new Error("Conversation stream epoch changed.");
+        throw new Error("Chat stream epoch changed.");
       if (frame.event.sequence <= this.sequence) return;
       if (
         frame.event.run_kind === "root" &&
@@ -237,7 +237,7 @@ export class FocusDisplay {
         // observer's finite prefix instead of assigning the previous Run's base.
         this.cursor = undefined;
         throw new RootRunChanged(
-          "This conversation changed. Reload to see the latest.",
+          "This chat changed. Reload to see the latest.",
         );
       }
       this.sequence = frame.event.sequence; // Global sequences are sparse within one Thread.

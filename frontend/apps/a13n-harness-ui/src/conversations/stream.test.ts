@@ -95,7 +95,7 @@ function event(sequence: number, delta = "live", run_kind = "root") {
     },
   });
 }
-it("does not turn diagnostics into conversation output and only saves cursor after ready", () => {
+it("does not turn diagnostics into chat output and only saves cursor after ready", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(2));
   expect(display.cursor).toBeUndefined();
@@ -754,7 +754,7 @@ it("keeps task activity in its transcript without mixing private child tasks int
 });
 
 it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(
-  "keeps %s out of conversation blocks in live delivery and replay",
+  "keeps %s out of chat blocks in live delivery and replay",
   (name) => {
     const payload = {
       type: "CUSTOM",

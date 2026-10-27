@@ -15,15 +15,17 @@ import {
 import {
   Button,
   Logo,
-  Wordmark,
   ChoiceField,
   ModalFrame,
   Sheet,
   SheetPopup,
   SheetTitle,
-  Tooltip,
-  TooltipTrigger,
-  TooltipPopup,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuSeparator,
+  MenuCheckboxItem,
 } from "a13n-ui";
 import {
   Archive,
@@ -39,6 +41,8 @@ import {
   Users,
   Gear,
   Compass,
+  CaretUpDown,
+  Bug,
 } from "@phosphor-icons/react";
 import { useSetup, useSources, useStatus } from "../transport/context";
 import type { Schema } from "../transport/client";
@@ -70,6 +74,7 @@ import { ResultsProvider, useResults } from "../conversations/results";
 import { LiveThreadsProvider } from "../conversations/live-threads";
 import { UnsentProvider } from "../conversations/unsent";
 
+import { useDebug } from "./debug";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 import { NotificationSettings } from "./notifications";
@@ -118,6 +123,7 @@ function WorkbenchContent({
   unauthorized: () => void;
 }) {
   const results = useResults();
+  const debug = useDebug();
   const setup = useSetup();
   const voiceSettings = useVoiceSettings();
   const statusQuery = useStatus();
@@ -193,47 +199,9 @@ function WorkbenchContent({
     ...(voiceSettings.data?.enabled
       ? [{ to: "/live", label: "Live", icon: Waveform }]
       : []),
-    { to: "/archived", label: "Archived", icon: Archive },
     ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Gear },
   ];
-  const themeToggle = (
-    <Tooltip>
-      <TooltipTrigger
-        render={<Button variant="ghost" size="icon-sm" />}
-        aria-label={
-          theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
-        }
-        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      >
-        {theme === "dark" ? <Sun /> : <Moon />}
-      </TooltipTrigger>
-      <TooltipPopup>
-        {theme === "dark" ? "Light theme" : "Dark theme"}
-      </TooltipPopup>
-    </Tooltip>
-  );
-  const usageEntry = (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            render={<Link to="/usage" />}
-          />
-        }
-        aria-label="Usage"
-        aria-current={location.pathname === "/usage" ? "page" : undefined}
-        className={
-          location.pathname === "/usage" ? styles.usageSelected : undefined
-        }
-      >
-        <ChartBar />
-      </TooltipTrigger>
-      <TooltipPopup>Usage</TooltipPopup>
-    </Tooltip>
-  );
   const navigation = (
     <>
       {memoryMode && memoryEnabled ? (
@@ -263,36 +231,64 @@ function WorkbenchContent({
         ))}
       </nav>
       <div className={styles.sidebarFooter}>
-        <div className={styles.footerRow}>
-          <button
-            type="button"
-            className={styles.peopleButton}
-            onClick={openPeople}
+        <Menu>
+          <MenuTrigger
+            className={styles.workspaceMenu}
+            aria-label="Workspace menu"
           >
-            <Users />
-            <span>
-              {disconnected
-                ? "People"
-                : `${live.presence?.participants.length ?? 0} online`}
+            <span
+              className={styles.profileAvatar}
+              style={{ backgroundColor: profile.color }}
+              aria-hidden="true"
+            >
+              {Array.from(profile.display_name)[0]?.toUpperCase()}
             </span>
-          </button>
-          <span className={styles.footerIcons}>
-            {themeToggle}
-            <Tooltip>
-              <TooltipTrigger
-                render={<Button variant="ghost" size="icon-sm" />}
-                aria-label="Log out"
-                onClick={forget}
-              >
-                <SignOut />
-              </TooltipTrigger>
-              <TooltipPopup>Log out</TooltipPopup>
-            </Tooltip>
-          </span>
-        </div>
-        <small>
-          {live.summary} · Version <span>{status.version}</span>
-        </small>
+            <span className={styles.workspacePerson}>
+              <strong>{profile.display_name}</strong>
+              <small>{disconnected ? "Reconnecting…" : "Your workspace"}</small>
+            </span>
+            <CaretUpDown size={16} aria-hidden="true" />
+          </MenuTrigger>
+          <MenuPopup side="top" align="start" className={styles.workspacePopup}>
+            <MenuItem onClick={openPeople}>
+              <Users />
+              People & display name
+            </MenuItem>
+            <MenuItem render={<Link to="/usage" />}>
+              <ChartBar />
+              Usage
+            </MenuItem>
+            <MenuItem render={<Link to="/archived" />}>
+              <Archive />
+              Archived chats
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun /> : <Moon />}
+              {theme === "dark" ? "Light appearance" : "Dark appearance"}
+            </MenuItem>
+            <MenuCheckboxItem
+              checked={debug.enabled}
+              onCheckedChange={debug.setEnabled}
+              variant="switch"
+            >
+              <span className={styles.debugMenuLabel}>
+                <Bug />
+                Debug mode
+              </span>
+            </MenuCheckboxItem>
+            <MenuSeparator />
+            <MenuItem onClick={forget}>
+              <SignOut />
+              Log out
+            </MenuItem>
+            <span className={styles.version}>
+              Harness UI · {status.version}
+            </span>
+          </MenuPopup>
+        </Menu>
       </div>
     </>
   );
@@ -313,11 +309,10 @@ function WorkbenchContent({
       >
         <header className={styles.sidebarHeader}>
           <Link to="/" className={styles.brand} aria-label="Harness UI home">
-            <Logo alt="" width={28} height={28} />
-            <Wordmark />
+            <Logo alt="" width={24} height={24} />
+            <span>Harness</span>
           </Link>
           <div className={styles.headerActions}>
-            {usageEntry}
             <Button
               ref={collapseButton}
               variant="ghost"
@@ -355,7 +350,6 @@ function WorkbenchContent({
         >
           <header className={styles.mobileNavigationHeader}>
             <SheetTitle>Harness UI</SheetTitle>
-            {usageEntry}
           </header>
           {navigation}
         </SheetPopup>
@@ -413,25 +407,17 @@ function WorkbenchContent({
                   ownId={live.presence?.participant_id}
                   threadTitle="this page"
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={styles.profileButton}
-                  title={`${profile.display_name} · Edit collaboration name`}
-                  aria-label={`Your collaboration name: ${profile.display_name}`}
-                  onClick={openPeople}
-                >
-                  <span
-                    className={styles.profileAvatar}
-                    style={{ backgroundColor: profile.color }}
-                    aria-hidden="true"
+                {debug.enabled && (
+                  <button
+                    type="button"
+                    className={styles.debugIndicator}
+                    onClick={() => debug.setEnabled(false)}
+                    title="Turn off Debug mode"
                   >
-                    {Array.from(profile.display_name)[0]?.toUpperCase()}
-                  </span>
-                  <span className={styles.profileName}>
-                    {profile.display_name}
-                  </span>
-                </Button>
+                    <Bug size={14} />
+                    Debug
+                  </button>
+                )}
               </>
             }
             navigation={

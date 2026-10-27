@@ -529,7 +529,7 @@ function ToolActions({ tool }: { tool: ToolView }) {
           title={info.threadId}
         >
           <ArrowSquareOut aria-hidden="true" />
-          {info.threadTitle || "Open conversation"}
+          {info.threadTitle || "Open chat"}
         </Link>
       )}
       {openFile && path && (
@@ -591,9 +591,8 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
             "steer_thread",
           ].includes(tool.name) && (
             <small>
-              Acceptance is not completion or saved delivery. Open the
-              conversation to inspect progress; do not blindly retry an
-              uncertain operation.
+              Acceptance is not completion or saved delivery. Open the chat to
+              inspect progress; do not blindly retry an uncertain operation.
             </small>
           )}
         </>

@@ -88,7 +88,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
       kind: "unknown",
       action: "send",
       message:
-        "The previous input may already have been accepted. Open the conversation and review its history before sending again.",
+        "The previous input may already have been accepted. Open the chat and review its history before sending again.",
     };
   return {
     threadId: saved.threadId,
@@ -169,7 +169,7 @@ export class NewDraftStore {
         kind: "unknown",
         action: "send",
         message:
-          "Review the archived conversation's outcome before sending this input again.",
+          "Review the archived chat's outcome before sending this input again.",
       };
     this.retain({
       threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,

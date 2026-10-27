@@ -64,6 +64,23 @@
   font-size: 14px;
   font-weight: 500;
 }
+.tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 8px 0 12px;
+}
+.tabs button {
+  flex-shrink: 0;
+}
+.tabs button[aria-pressed="true"] {
+  color: var(--a13n-text);
+  background: var(--a13n-surface);
+}
+.inspectorBody {
+  min-height: 120px;
+  padding: 4px 2px;
+}
 .caption {
   overflow-wrap: anywhere;
   color: var(--a13n-secondary);

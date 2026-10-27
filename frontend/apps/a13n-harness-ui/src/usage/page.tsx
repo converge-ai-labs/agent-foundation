@@ -101,7 +101,7 @@ export function UsagePage() {
       label: filters.project_id ?? "No project",
     });
   const threadOptions = [
-    { value: "all", label: "All conversations" },
+    { value: "all", label: "All chats" },
     ...options(data?.threads),
   ];
   if (
@@ -123,7 +123,7 @@ export function UsagePage() {
     <div className={styles.page}>
       <PageHeader
         title="Usage"
-        description="Tokens and estimated model cost across your conversations."
+        description="Tokens and estimated model cost across your chats."
         actions={
           <Button
             variant="ghost"
@@ -173,12 +173,12 @@ export function UsagePage() {
           />
         </div>
         <div className={styles.picker}>
-          <span>Conversation</span>
+          <span>Chat</span>
           <SearchPicker
-            label="Conversation"
-            placeholder="All conversations"
-            emptyMessage="No conversations found"
-            groups={[{ label: "Conversations", options: threadOptions }]}
+            label="Chat"
+            placeholder="All chats"
+            emptyMessage="No chats found"
+            groups={[{ label: "Chats", options: threadOptions }]}
             value={filters.thread_id ?? "all"}
             onValueChange={(value) =>
               change({ thread_id: value === "all" ? undefined : value })
@@ -281,7 +281,7 @@ export function UsagePage() {
                 onValueChange={(value) => change({ group_by: value })}
                 options={[
                   { value: "project", label: "Projects" },
-                  { value: "thread", label: "Conversations" },
+                  { value: "thread", label: "Chats" },
                   { value: "model", label: "Models" },
                 ]}
               />
@@ -304,7 +304,7 @@ export function UsagePage() {
                       {filters.group_by === "model"
                         ? "Model"
                         : filters.group_by === "thread"
-                          ? "Conversation"
+                          ? "Chat"
                           : "Project"}
                     </th>
                     {[
@@ -337,8 +337,8 @@ export function UsagePage() {
                           {group.thread_id && (
                             <Link
                               to={`/threads/${encodeURIComponent(group.thread_id)}`}
-                              aria-label={`Open conversation: ${group.label}`}
-                              title="Open conversation"
+                              aria-label={`Open chat: ${group.label}`}
+                              title="Open chat"
                             >
                               <ArrowUpRight size={16} />
                             </Link>

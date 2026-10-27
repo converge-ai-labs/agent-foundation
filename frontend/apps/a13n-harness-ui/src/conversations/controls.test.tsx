@@ -528,8 +528,6 @@ it("edits Run-only local and remote selections without changing the Thread", asy
     default_environment: "build",
   });
   await user.click(screen.getByRole("button", { name: "Environments" }));
-  await user.click(
-    screen.getByRole("button", { name: "Use conversation defaults" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Use chat defaults" }));
   expect(onChange).toHaveBeenLastCalledWith(undefined);
 });

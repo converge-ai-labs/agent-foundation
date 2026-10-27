@@ -337,8 +337,8 @@ export function EnvdRuntime() {
         }
         description={
           confirmation === "stop"
-            ? "Interrupts local envd commands in all conversations. Workspace files are kept."
-            : "Closes local envd Sessions in all conversations, then checks Full Control and Sandbox. Workspace files are kept."
+            ? "Interrupts local envd commands in all chats. Workspace files are kept."
+            : "Closes local envd Sessions in all chats, then checks Full Control and Sandbox. Workspace files are kept."
         }
         closeLabel="Close confirmation"
         footer={

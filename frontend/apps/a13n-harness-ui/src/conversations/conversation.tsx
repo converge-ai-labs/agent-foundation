@@ -117,7 +117,7 @@ function ConversationContent({
   const agentSelection = useMutation({
     mutationFn: async (agentId: string) => {
       if (!detail.data)
-        throw new Error("Refresh the conversation before choosing an agent.");
+        throw new Error("Refresh the chat before choosing an agent.");
       return result(
         transport.client.PATCH("/api/threads/{thread_id}/configuration", {
           params: { path: { thread_id: threadId } },
@@ -605,20 +605,20 @@ function ConversationContent({
   if (thread?.parent_thread_id)
     return (
       <div>
-        <h1>Child conversation</h1>
+        <h1>Child chat</h1>
         <p>
           Inspect child execution through its parent; it does not have a root
           composer.
         </p>
         <Link to={`/threads/${encodeURIComponent(thread.parent_thread_id)}`}>
-          Open parent conversation
+          Open parent chat
         </Link>
       </div>
     );
   return (
     <ConversationOpening
       ready={pageReady}
-      label="Opening conversation…"
+      label="Opening chat…"
       onContinue={() => setShowAvailable(true)}
     >
       <div className={styles.page}>
@@ -629,13 +629,13 @@ function ConversationContent({
 
         {!guest && !readOnly && thread?.archived && (
           <div className={styles.warning}>
-            <p>This conversation is archived. Its history remains available.</p>
+            <p>This chat is archived. Its history remains available.</p>
             <Button
               variant="outline"
               loading={metadata.isPending}
               onClick={() => metadata.mutate({ archived: false })}
             >
-              Restore conversation
+              Restore chat
             </Button>
           </div>
         )}
@@ -831,8 +831,7 @@ function ConversationContent({
                       <>
                         <h2>No messages yet</h2>
                         <p>
-                          Messages will appear here when this conversation gets
-                          started.
+                          Messages will appear here when this chat gets started.
                         </p>
                       </>
                     ) : readOnly ? (
@@ -855,8 +854,8 @@ function ConversationContent({
                       <>
                         <h2>Start something together.</h2>
                         <p>
-                          Write a prompt below. People on this conversation can
-                          edit the same input.
+                          Write a prompt below. People on this chat can edit the
+                          same input.
                         </p>
                       </>
                     )}
@@ -881,33 +880,6 @@ function ConversationContent({
               ? "Response needed"
               : "New output"}
           </Button>
-        )}
-        {!readOnly && detail.data && (
-          <WorkInspector
-            threadId={threadId}
-            display={display}
-            connected={connection === "Live"}
-            reconcile={reconcile}
-            goal={showGoal ? goal : null}
-            activity={thread?.root_activity}
-            onUseGoal={
-              goal &&
-              thread?.root_activity.state === "inactive" &&
-              detail.data?.available_actions?.includes("run") &&
-              draft.submission.kind !== "pending" &&
-              draft.submission.kind !== "unknown"
-                ? () => {
-                    const text = draft.doc.getText("text");
-                    text.insert(
-                      text.length,
-                      `${text.length ? "\n\n" : ""}${goal.objective}`,
-                    );
-                    draft.mode = "goal";
-                    draft.notify();
-                  }
-                : undefined
-            }
-          />
         )}
         {!guest && !readOnly && !thread?.archived && (
           <ErrorNotice error={agentSelection.error || selectors.error} />
@@ -966,9 +938,9 @@ function ConversationContent({
             }
             unavailableReason={
               agentSelection.isPending
-                ? "Updating conversation settings…"
+                ? "Updating chat settings…"
                 : !detail.data
-                  ? "Loading conversation…"
+                  ? "Loading chat…"
                   : undefined
             }
             modelId={draft.modelId}
@@ -1028,17 +1000,46 @@ function ConversationContent({
         )}
         {guest && !canCompose && (
           <p className={styles.composerConnection}>
-            View-only link · Following this conversation live.
+            View-only link · Following this chat live.
           </p>
         )}
-        {!guest && !readOnly && thread && !thread.archived && (
-          <ComposerStatus
-            threadId={threadId}
-            receipt={receipt}
-            busy={thread.root_activity.state !== "inactive"}
-            liveTokens={showLive ? display.contextUsage?.tokens : undefined}
-          />
-        )}
+        <div className={styles.conversationFooter}>
+          {!readOnly && detail.data && (
+            <WorkInspector
+              threadId={threadId}
+              display={display}
+              connected={connection === "Live"}
+              reconcile={reconcile}
+              goal={showGoal ? goal : null}
+              activity={thread?.root_activity}
+              onUseGoal={
+                goal &&
+                thread?.root_activity.state === "inactive" &&
+                detail.data?.available_actions?.includes("run") &&
+                draft.submission.kind !== "pending" &&
+                draft.submission.kind !== "unknown"
+                  ? () => {
+                      const text = draft.doc.getText("text");
+                      text.insert(
+                        text.length,
+                        `${text.length ? "\n\n" : ""}${goal.objective}`,
+                      );
+                      draft.mode = "goal";
+                      draft.notify();
+                    }
+                  : undefined
+              }
+            />
+          )}
+          {!guest && !readOnly && thread && !thread.archived && (
+            <ComposerStatus
+              threadId={threadId}
+              receipt={receipt}
+              busy={thread.root_activity.state !== "inactive"}
+              liveTokens={showLive ? display.contextUsage?.tokens : undefined}
+            />
+          )}
+        </div>
         {!guest && !readOnly && (
           <SharePanel
             open={dialog === "share"}
@@ -1050,7 +1051,7 @@ function ConversationContent({
         <ModalFrame
           open={rename}
           onOpenChange={setRename}
-          title="Rename conversation"
+          title="Rename chat"
           closeLabel="Close"
         >
           <form
@@ -1078,8 +1079,8 @@ function ConversationContent({
         <ModalFrame
           open={inspection}
           onOpenChange={setInspection}
-          title="Conversation details"
-          description="See how this conversation runs. Nothing here changes the current run."
+          title="Chat details"
+          description="See how this chat runs. Nothing here changes the current run."
           closeLabel="Close"
         >
           <ConversationDetails
@@ -1102,7 +1103,7 @@ function ConversationContent({
                 loading={metadata.isPending}
                 onClick={() => metadata.mutate({ archived: true })}
               >
-                Archive conversation
+                Archive chat
               </Button>
             )}
         </ModalFrame>

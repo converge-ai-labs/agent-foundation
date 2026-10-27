@@ -264,9 +264,7 @@ export function TerminalPanel({
             shortcut={shortcuts.create}
             disabled={pending || attempted || !projectId || !directory}
             description={
-              directory
-                ? `Start in ${directory}`
-                : "Open a project conversation first"
+              directory ? `Start in ${directory}` : "Open a project chat first"
             }
             onClick={() => void create()}
           >
@@ -348,10 +346,10 @@ export function TerminalPanel({
           </h3>
           <p>
             {selected && sessions.isSuccess
-              ? "This terminal is not available in the current project. Open a conversation in its project to view it."
+              ? "This terminal is not available in the current project. Open a chat in its project to view it."
               : projectId
                 ? "Start a shell in this project's folder, or select one of its existing sessions."
-                : "Open a conversation in a project to see its terminals."}
+                : "Open a chat in a project to see its terminals."}
           </p>
         </div>
       )}

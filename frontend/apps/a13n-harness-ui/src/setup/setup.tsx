@@ -152,7 +152,7 @@ export function SetupPage() {
         </SettingsRow>
         <SettingsRow
           label="Execution defaults"
-          description="The environment new conversations start in."
+          description="The environment new chats start in."
         >
           <Button
             variant="outline"

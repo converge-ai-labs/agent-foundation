@@ -208,10 +208,7 @@ function mount(selected = status) {
         <BrowserRouter>
           <Routes>
             <Route path="/setup" element={<SetupWizard status={selected} />} />
-            <Route
-              path="/threads/:threadId"
-              element={<p>First conversation</p>}
-            />
+            <Route path="/threads/:threadId" element={<p>First chat</p>} />
             <Route path="/" element={<p>Workbench</p>} />
           </Routes>
         </BrowserRouter>
@@ -274,7 +271,7 @@ it("keeps a connected account ready when reselecting the current connection", as
   expect(await screen.findByText("Decide where your agent works")).toBeTruthy();
 });
 
-it("uses server model choices, saves, reconciles and creates exactly one conversation without sending input", async () => {
+it("uses server model choices, saves, reconciles and creates exactly one chat without sending input", async () => {
   mount();
   await reviewConfiguration();
   expect(
@@ -288,7 +285,7 @@ it("uses server model choices, saves, reconciles and creates exactly one convers
   fireEvent.click(
     screen.getByRole("button", { name: "Save and start chatting" }),
   );
-  await screen.findByText("First conversation");
+  await screen.findByText("First chat");
   expect(creationId).toBe(identity);
   expect(
     calls.filter((c) => c.path === "/api/threads" && c.method === "POST"),
@@ -317,7 +314,7 @@ it.each(["_", "-"])(
     fireEvent.click(
       screen.getByRole("button", { name: "Save and start chatting" }),
     );
-    await screen.findByText("First conversation");
+    await screen.findByText("First chat");
     expect(creationId).toBe(identity);
   },
 );
@@ -341,7 +338,7 @@ it("recovers lost publication and creation acknowledgements through exact reads,
   fireEvent.click(
     screen.getByRole("button", { name: "Save and start chatting" }),
   );
-  await screen.findByText("First conversation");
+  await screen.findByText("First chat");
   expect(calls.filter((c) => c.path === "/api/setup/apply")).toHaveLength(1);
   expect(calls.filter((c) => c.path === "/api/threads")).toHaveLength(1);
 });
@@ -447,7 +444,7 @@ it("resumes the server's active device login without starting another authorizat
   expect(JSON.stringify(localStorage)).not.toContain("ABCD-1234");
 });
 
-it("does not complete recovery into an existing conversation with different execution authority", async () => {
+it("does not complete recovery into an existing chat with different execution authority", async () => {
   const first = mount();
   await waitFor(() =>
     expect(readWizardDraft(status.draft_scope!)).toBeTruthy(),
@@ -472,12 +469,10 @@ it("does not complete recovery into an existing conversation with different exec
   mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Check saved setup and open conversation",
+      name: "Check saved setup and open chat",
     }),
   );
-  await screen.findByText(
-    /first conversation already exists with different choices/,
-  );
+  await screen.findByText(/first chat already exists with different choices/);
   expect(window.location.pathname).toBe("/setup");
   expect(readWizardDraft(status.draft_scope!)?.pending).toBeTruthy();
   expect(
@@ -728,7 +723,7 @@ it("shows download, verification and isolation progress; cancels and retries bef
   fireEvent.click(
     screen.getByRole("button", { name: "Save and start chatting" }),
   );
-  await screen.findByText("First conversation");
+  await screen.findByText("First chat");
   expect(calls.filter((call) => call.path === "/api/setup/apply")).toHaveLength(
     1,
   );

@@ -69,7 +69,7 @@ export function ConversationDetails({
               loading={activity.isFetchingNextPage}
               onClick={() => void activity.fetchNextPage()}
             >
-              Find this conversation in remaining activity results
+              Find this chat in remaining activity results
             </Button>
           )}
           <Children threadId={threadId} reconcile={reconcile} />
@@ -603,7 +603,7 @@ function ContextDetails({ threadId }: { threadId: string }) {
       <section>
         <h3>Context</h3>
         <p>Last reported request footprint, not a live token counter.</p>
-        <DebugId label="Conversation ID" value={threadId} />
+        <DebugId label="Chat ID" value={threadId} />
         <dl className={styles.detailGrid}>
           <div>
             <dt>Request tokens</dt>

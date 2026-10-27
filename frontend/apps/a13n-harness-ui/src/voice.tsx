@@ -61,7 +61,7 @@ export function VoiceIndicator() {
       <div className={styles.indicator} data-active={voice.status === "active"}>
         {running ? (
           <>
-            <Link to="/live" aria-label="Open Live conversation">
+            <Link to="/live" aria-label="Open Live chat">
               <Microphone size={16} />
               <span>
                 {voice.status === "active" ? "Microphone on" : "Connecting…"}
@@ -137,16 +137,16 @@ export function VoicePage() {
       <section
         className={styles.center}
         data-running={running}
-        aria-label="Voice conversation"
+        aria-label="Voice chat"
       >
         <p className={styles.eyebrow}>Harness UI · Live</p>
         <h1>
           {running ? (
-            "Live conversation"
+            "Live chat"
           ) : (
             <>
               A little less typing.
-              <br />A little more conversation.
+              <br />A little more chat.
             </>
           )}
         </h1>
@@ -181,7 +181,7 @@ export function VoicePage() {
             ? "Microphone on · Speak naturally, interrupt anytime"
             : running
               ? "Preparing your microphone and audio connection…"
-              : "Start a continuous voice conversation"}
+              : "Start a continuous voice chat"}
         </p>
         {(voice.error || settings.error) && (
           <p className={styles.error} role="alert">

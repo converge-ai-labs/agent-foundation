@@ -43,7 +43,7 @@ beforeEach(() => {
           fail
             ? {
                 error: {
-                  message: "Conversation changed. Try again after refreshing.",
+                  message: "Chat changed. Try again after refreshing.",
                 },
               }
             : {},
@@ -136,7 +136,7 @@ it("archives directly from the menu with its observed version and opens the New 
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    await screen.findByRole("menuitem", { name: "Archive chat" }),
   );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0].method).toBe("PATCH");
@@ -155,29 +155,27 @@ it("keeps the persistent Live destination out of archive actions", async () => {
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await screen.findByRole("menu");
-  expect(
-    screen.queryByRole("menuitem", { name: "Archive conversation" }),
-  ).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Archive chat" })).toBeNull();
   expect(requests).toHaveLength(0);
 });
-it("does not change the current page when archiving another conversation", async () => {
+it("does not change the current page when archiving another chat", async () => {
   mount({ selected: false });
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    await screen.findByRole("menuitem", { name: "Archive chat" }),
   );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(screen.getByLabelText("Location").textContent).toBe("/settings");
 });
-it("restores an archived conversation directly from the same menu", async () => {
+it("restores an archived chat directly from the same menu", async () => {
   mount({ archived: true });
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Restore conversation" }),
+    await screen.findByRole("menuitem", { name: "Restore chat" }),
   );
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(await requests[0].json()).toEqual({
@@ -194,7 +192,7 @@ it("does not archive an active operation or silently retry a metadata conflict",
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   const item = await screen.findByRole("menuitem", {
-    name: "Archive conversation",
+    name: "Archive chat",
   });
   expect(item.getAttribute("aria-disabled")).toBe("true");
   fireEvent.click(item);
@@ -206,9 +204,9 @@ it("does not archive an active operation or silently retry a metadata conflict",
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    await screen.findByRole("menuitem", { name: "Archive chat" }),
   );
-  await screen.findByText("Conversation changed. Try again after refreshing.");
+  await screen.findByText("Chat changed. Try again after refreshing.");
   expect(requests).toHaveLength(1);
   expect(screen.getByLabelText("Location").textContent).toBe(
     "/threads/thread-one",
@@ -229,12 +227,10 @@ it.each([false, true])(
       screen.getByRole("button", { name: "Actions for Example" }),
     );
     await userEvent.click(
-      await screen.findByRole("menuitem", { name: "Archive conversation" }),
+      await screen.findByRole("menuitem", { name: "Archive chat" }),
     );
     if (failure) {
-      await screen.findByText(
-        "Conversation changed. Try again after refreshing.",
-      );
+      await screen.findByText("Chat changed. Try again after refreshing.");
       expect(newDrafts.current).toBe(draft);
     } else {
       await waitFor(() =>
@@ -267,19 +263,17 @@ it.each([false, true])(
   "toggles a shared star while running without navigation (starred=%s)",
   async (starred) => {
     mount({ starred, running: true });
-    expect(
-      screen.queryByRole("button", { name: /Star conversation:/ }),
-    ).toBeNull();
-    expect(
-      !!screen.queryByRole("img", { name: "Starred conversation: Example" }),
-    ).toBe(starred);
+    expect(screen.queryByRole("button", { name: /Star chat:/ })).toBeNull();
+    expect(!!screen.queryByRole("img", { name: "Starred chat: Example" })).toBe(
+      starred,
+    );
     expect(screen.getByText("Running")).toBeTruthy();
     await userEvent.click(
       screen.getByRole("button", { name: "Actions for Example" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", {
-        name: `${starred ? "Unstar" : "Star"} conversation`,
+        name: `${starred ? "Unstar" : "Star"} chat`,
       }),
     );
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -300,32 +294,28 @@ it("keeps failed star changes explicit without showing an optimistic star", asyn
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Star conversation" }),
+    await screen.findByRole("menuitem", { name: "Star chat" }),
   );
-  await screen.findByText("Conversation changed. Try again after refreshing.");
+  await screen.findByText("Chat changed. Try again after refreshing.");
   expect(requests).toHaveLength(1);
   expect(
-    screen.queryByRole("img", { name: "Starred conversation: Example" }),
+    screen.queryByRole("img", { name: "Starred chat: Example" }),
   ).toBeNull();
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
   expect(
-    await screen.findByRole("menuitem", { name: "Star conversation" }),
+    await screen.findByRole("menuitem", { name: "Star chat" }),
   ).toBeTruthy();
 });
 
 it("does not offer stars for coordinator workers", async () => {
   mount({ worker: true });
-  expect(
-    screen.queryByRole("button", { name: /Star conversation/ }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /Star chat/ })).toBeNull();
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
   );
-  expect(
-    screen.queryByRole("menuitem", { name: "Star conversation" }),
-  ).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Star chat" })).toBeNull();
 });
 
 it("opens a worker draft from a running Coordinator without sending it a message", async () => {
@@ -414,7 +404,7 @@ it("finishes Star on confirmation without waiting for list refresh or invalidati
   const actions = screen.getByRole("button", { name: "Actions for Example" });
   await userEvent.click(actions);
   await userEvent.click(
-    await screen.findByRole("menuitem", { name: "Star conversation" }),
+    await screen.findByRole("menuitem", { name: "Star chat" }),
   );
   await waitFor(() => expect(actions.getAttribute("aria-busy")).toBe("true"));
   expect(

@@ -113,6 +113,57 @@
   min-width: 0;
   max-width: 100%;
 }
+.modelTrigger {
+  max-width: 240px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  gap: 6px;
+}
+.modelTrigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelTrigger > svg {
+  width: 12px;
+  flex-shrink: 0;
+}
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+}
+.optionRow > div {
+  flex: 1;
+  min-width: 0;
+}
+.optionRow > button {
+  flex-shrink: 0;
+}
+.optionRow strong,
+.optionSection strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.optionRow p,
+.optionSection p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--a13n-secondary);
+}
+.optionSection {
+  margin-block: 8px;
+  padding: 14px;
+  background: var(--a13n-surface);
+  border-radius: 10px;
+}
+.optionSection > button {
+  margin: 8px 0 0 -8px;
+}
 .identity > button {
   flex-shrink: 0;
 }
@@ -204,11 +255,8 @@
   background: var(--a13n-accent);
 }
 @container composer (max-width: 480px) {
-  .environmentButton {
-    width: 44px;
-  }
-  .environmentLabel {
-    display: none;
+  .modelTrigger {
+    max-width: 170px;
   }
   /* Narrow composers keep one line: the model name only; the agent stays
      available in the settings popover the summary opens. */

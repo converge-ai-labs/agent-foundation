@@ -203,6 +203,8 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   mobile = true;
   const user = userEvent.setup();
   mount();
+  if (!screen.queryByRole("button", { name: "Environments" }))
+    await user.click(screen.getByRole("button", { name: "Task options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   const folder = screen.getByDisplayValue("/workspace");
@@ -210,6 +212,8 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.type(folder, "/changed");
   await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(draft.environment).toBeUndefined();
+  if (!screen.queryByRole("button", { name: "Environments" }))
+    await user.click(screen.getByRole("button", { name: "Task options" }));
   await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getByDisplayValue("/workspace")).toBeTruthy();
   const restoredFolder = screen.getByDisplayValue("/workspace");
@@ -232,6 +236,7 @@ it("edits working folders in-place, cancels without applying, and locks pending 
   await user.click(
     screen.getByRole("button", { name: "Close Agent & Model settings" }),
   );
+  await user.click(screen.getByRole("button", { name: "Task options" }));
   expect(
     (
       screen.getByRole("button", {
@@ -253,6 +258,8 @@ it.each([false, true])(
     const user = userEvent.setup();
     mount();
     const editor = screen.getByRole("textbox", { name: "Message" });
+    if (!screen.queryByRole("button", { name: "Environments" }))
+      await user.click(screen.getByRole("button", { name: "Task options" }));
     await user.click(screen.getByRole("button", { name: "Environments" }));
     const folder = screen.getByDisplayValue("/workspace");
     await user.clear(folder);
@@ -267,7 +274,9 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Use for next run" }));
     expect(draft.environment?.local_roots).toEqual(["/staged"]);
     expect(draft.environment?.environment_profile_id).toBe("sandbox");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Environments" })).toBeNull(),
+    );
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   },
 );

@@ -178,7 +178,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
     screen.getByRole("combobox", { name: "Default working directory" }),
   );
   await user.click(
-    await screen.findByRole("option", { name: "Local · Conversation files" }),
+    await screen.findByRole("option", { name: "Local · Chat files" }),
   );
   let value = parse(screen.getByTestId("source").textContent ?? "");
   expect(value.defaults).toEqual({
@@ -198,7 +198,7 @@ it("keeps Project environment axes unspecified until explicitly edited", async (
   });
   await user.click(
     screen.getByRole("button", {
-      name: "Keep this conversation's environments",
+      name: "Keep this chat's environments",
     }),
   );
   expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual(
@@ -226,7 +226,7 @@ it("allows the last local Project root to be removed only with Device bindings",
   expect(
     (
       screen.getByRole("button", {
-        name: "Keep this conversation's environments",
+        name: "Keep this chat's environments",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);

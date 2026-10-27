@@ -22,7 +22,8 @@ import {
   Funnel,
   Folder,
   CaretRight,
-  House,
+  PencilSimple,
+  MagnifyingGlass,
   DotsThree,
   DotsSixVertical,
   Gear,
@@ -62,6 +63,9 @@ export function ConversationNavigation() {
   const selectedDetail = useThread(selectedId);
   const selected = selectedDetail.data?.thread;
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const searchTrigger = useRef<HTMLButtonElement>(null);
   const [scope, setScope] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const scopedProject = projects.data?.find(
@@ -108,69 +112,93 @@ export function ConversationNavigation() {
   }, [searching, order.cancel]);
   return (
     <div className={styles.navigation}>
-      <div className={styles.navigationFilters}>
-        <FormField label="Find conversations" hideLabel>
-          <Input
-            type="search"
-            placeholder="Find conversations…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </FormField>
-        <Popover open={filterOpen} onOpenChange={setFilterOpen}>
-          <PopoverTrigger
-            render={<Button variant="ghost" size="icon-sm" />}
-            aria-label="Filter by project"
-            title={
-              scopedProject
-                ? `Project: ${scopedProject.name}`
-                : "Filter by project"
-            }
-            className={scopedProject ? styles.activeFilter : undefined}
-          >
-            <Funnel weight={scopedProject ? "fill" : "regular"} />
-          </PopoverTrigger>
-          <PopoverPopup align="end" className={styles.scopePopup}>
-            <SearchPicker
-              label="Project scope"
-              placeholder="All Projects"
-              emptyMessage="No matching projects."
-              value={scopedProject?.project_id ?? ""}
-              onValueChange={(value) => {
-                setScope(value);
-                setFilterOpen(false);
-              }}
-              groups={[
-                {
-                  label: "Projects",
-                  options: [
-                    { value: "", label: "All Projects", icon: <Folder /> },
-                    ...(projects.data ?? []).map((project) => ({
-                      value: project.project_id,
-                      label: project.name,
-                      keywords: [project.project_id],
-                      icon: <Folder />,
-                    })),
-                  ],
-                },
-              ]}
-            />
-          </PopoverPopup>
-        </Popover>
-      </div>
-      <nav aria-label="Conversation shortcuts" className={styles.shortcuts}>
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            `${styles.homeLink} ${isActive ? styles.selected : ""}`
-          }
-        >
-          <House size={18} />
-          <span>Home</span>
+      <nav aria-label="Chat shortcuts" className={styles.shortcuts}>
+        <NavLink to="/" end className={styles.newConversationLink}>
+          <PencilSimple size={18} />
+          <span>New chat</span>
+          <Plus size={14} />
         </NavLink>
+        <button
+          ref={searchTrigger}
+          type="button"
+          className={styles.homeLink}
+          aria-expanded={searchOpen}
+          onClick={() => {
+            setSearchOpen(!searchOpen);
+            if (!searchOpen)
+              requestAnimationFrame(() => searchInput.current?.focus());
+            else {
+              setQuery("");
+              setScope("");
+            }
+          }}
+        >
+          <MagnifyingGlass size={18} />
+          <span>Search chats</span>
+        </button>
         <DraftNavigation />
       </nav>
+      {searchOpen && (
+        <div className={styles.navigationFilters}>
+          <FormField label="Find chats" hideLabel>
+            <Input
+              ref={searchInput}
+              type="search"
+              placeholder="Find chats…"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setQuery("");
+                  setScope("");
+                  setSearchOpen(false);
+                  searchTrigger.current?.focus();
+                }
+              }}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </FormField>
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+            <PopoverTrigger
+              render={<Button variant="ghost" size="icon-sm" />}
+              aria-label="Filter by project"
+              title={
+                scopedProject
+                  ? `Project: ${scopedProject.name}`
+                  : "Filter by project"
+              }
+              className={scopedProject ? styles.activeFilter : undefined}
+            >
+              <Funnel weight={scopedProject ? "fill" : "regular"} />
+            </PopoverTrigger>
+            <PopoverPopup align="end" className={styles.scopePopup}>
+              <SearchPicker
+                label="Project scope"
+                placeholder="All Projects"
+                emptyMessage="No matching projects."
+                value={scopedProject?.project_id ?? ""}
+                onValueChange={(value) => {
+                  setScope(value);
+                  setFilterOpen(false);
+                }}
+                groups={[
+                  {
+                    label: "Projects",
+                    options: [
+                      { value: "", label: "All Projects", icon: <Folder /> },
+                      ...(projects.data ?? []).map((project) => ({
+                        value: project.project_id,
+                        label: project.name,
+                        keywords: [project.project_id],
+                        icon: <Folder />,
+                      })),
+                    ],
+                  },
+                ]}
+              />
+            </PopoverPopup>
+          </Popover>
+        </div>
+      )}
       <div className={styles.navigationHeading}>
         <span title={scopedProject?.name}>
           {scopedProject?.name ?? "Projects"}
@@ -453,7 +481,7 @@ function ProjectGroup({
       ref={recentRef}
       className={styles.recentToggle}
       aria-expanded={recentExpanded}
-      aria-label={`Recent conversations in ${group.name}`}
+      aria-label={`Recent chats in ${group.name}`}
       onClick={() => setRecentExpanded(!recentExpanded)}
     >
       <CaretRight
@@ -509,8 +537,8 @@ function ProjectGroup({
             {unreadCount > 0 && (
               <small
                 className={styles.resultCount}
-                aria-label={`${unreadCount} conversations with new results`}
-                title="Conversations with new results"
+                aria-label={`${unreadCount} chats with new results`}
+                title="Chats with new results"
               >
                 {unreadCount}
               </small>
@@ -538,7 +566,7 @@ function ProjectGroup({
                 {list.data && (
                   <p>
                     <ChatCircle size={16} />
-                    {list.data.pages[0].total} conversations
+                    {list.data.pages[0].total} chats
                   </p>
                 )}
                 {(activeRows.length > 0 || unreadCount > 0) && (
@@ -570,7 +598,7 @@ function ProjectGroup({
             <span
               role="status"
               className={styles.srOnly}
-              aria-label={`Updating conversations in ${group.name}`}
+              aria-label={`Updating chats in ${group.name}`}
             >
               Updating…
             </span>
@@ -579,7 +607,7 @@ function ProjectGroup({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={`New conversation in ${group.name}`}
+              aria-label={`New chat in ${group.name}`}
               onClick={create}
             >
               <Plus />
@@ -714,15 +742,15 @@ function ProjectGroup({
           {expanded && !rows.length && !list.data && list.isPending && (
             <div
               role="status"
-              aria-label="Loading conversations"
+              aria-label="Loading chats"
               aria-busy="true"
               className={styles.initialLoading}
             >
-              <span>Loading conversations…</span>
+              <span>Loading chats…</span>
             </div>
           )}
           {list.isSuccess && !list.isPreviousData && !rows.length && (
-            <small className={styles.emptyGroup}>No conversations yet</small>
+            <small className={styles.emptyGroup}>No chats yet</small>
           )}
           <ErrorNotice error={list.error} retry={() => void list.refetch()} />
           {recentExpanded && (hasHiddenRows || list.hasNextPage) && (
@@ -732,8 +760,8 @@ function ProjectGroup({
               className={styles.showMore}
               loading={list.isFetchingNextPage}
               onClick={showMore}
-              aria-label={`Show more conversations in ${group.name}`}
-              title={`Show more conversations in ${group.name}`}
+              aria-label={`Show more chats in ${group.name}`}
+              title={`Show more chats in ${group.name}`}
             >
               Show more
             </Button>
@@ -747,7 +775,7 @@ function ProjectGroup({
                 setShowAll(false);
                 recentRef.current?.focus();
               }}
-              aria-label={`Show fewer conversations in ${group.name}`}
+              aria-label={`Show fewer chats in ${group.name}`}
             >
               Show less
             </Button>
@@ -775,7 +803,7 @@ function SearchResults({
     ).values(),
   ];
   return (
-    <section aria-label="Conversation search results">
+    <section aria-label="Chat search results">
       <small className={styles.emptyGroup}>
         {project ? `Results from ${project.name}` : "Results from all projects"}
       </small>
@@ -790,10 +818,10 @@ function SearchResults({
       ))}
       {list.isFetching && !list.isFetchingNextPage && (
         <p role="status">
-          {list.data ? "Updating results…" : "Searching conversations…"}
+          {list.data ? "Updating results…" : "Searching chats…"}
         </p>
       )}
-      {list.isSuccess && !rows.length && <p>No matching conversations.</p>}
+      {list.isSuccess && !rows.length && <p>No matching chats.</p>}
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       {list.hasNextPage && (
         <Button

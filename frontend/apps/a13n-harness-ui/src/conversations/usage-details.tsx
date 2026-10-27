@@ -136,7 +136,7 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
         ))}
       </div>
       <p className={styles.scope}>
-        Recorded conversation usage · auxiliary models included
+        Recorded chat usage · auxiliary models included
       </p>
       <a href={`/usage?thread_id=${encodeURIComponent(usage.thread_id)}`}>
         Open analytics

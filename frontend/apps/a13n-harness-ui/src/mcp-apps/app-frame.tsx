@@ -157,8 +157,8 @@ export function AppFrame(props: Props) {
     <div>
       {error && (
         <p role="alert">
-          {error} The original tool result remains in the conversation. Close
-          and reopen the View to retry; the tool will not be called again.
+          {error} The original tool result remains in the chat. Close and reopen
+          the View to retry; the tool will not be called again.
         </p>
       )}
       <div ref={container} />

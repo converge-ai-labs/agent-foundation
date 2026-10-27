@@ -41,6 +41,20 @@ An alternate environment file is used unchanged. If it does not exist, the launc
 
 `open_harness_ui_app()` initializes an App-owned OTLP/HTTP tracing provider when tracing is enabled and no Host provider exists. Root and child Harness builds share it; the App drains it after its tasks finish. Supplied or preconfigured Host providers remain externally owned. No `opentelemetry-instrument` wrapper is needed.
 
+## Disposable design review
+
+For browser layout and interaction review without model credentials, run two terminals from the repository root:
+
+```bash
+uv run --locked python dev/harness-ui/review.py --port 8876
+```
+
+```bash
+A13N_HARNESS_UI_URL=http://127.0.0.1:8876 pnpm --dir frontend --filter a13n-harness-ui-webui dev --port 5184
+```
+
+Open `http://127.0.0.1:5184` and log in with `test-only-key`. The disposable instance seeds fictional Projects and chats with Markdown, code, tables, tool steps, long output, and failure states. Prompts containing `[slow]`, `[long]`, `[failure]`, or `[question]` exercise those states through the real App. Model output and tool results are scripted; the shell tool never executes its supplied command. Native Files and Terminal use the local Host, so deliberate native actions retain their normal effects. Ctrl+C removes the temporary configuration, history, and fixture workspace; existing configuration and credentials are not copied.
+
 ## Disposable MCP Apps demo
 
 Run `make mcp-apps-demo` to build and launch the [stateful MCP App example](../../examples/mcp-apps/README.md) in an isolated WebUI with a scripted local HTTP model. Send `[mcp-app] Open the counter.` The server uses real stdio MCP, the bundled public App SDK and normal Host permissions; no model API key or browser automation service is required. Native computer sharing is off by default. `WEBUI_ARGS='--port 9000'` chooses another WebUI port. Ctrl+C stops the model and WebUI and removes the launcher's temporary state. The demo does not copy or alter daily-use configuration.

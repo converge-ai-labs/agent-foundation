@@ -68,8 +68,8 @@ export function ClearContext({
         onOpenChange={(open) => {
           if (!open && !clear.isPending) setTarget(null);
         }}
-        title="Clear conversation context?"
-        description="Start the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded. Chat history, files, conversation settings, and your unsent draft are kept."
+        title="Clear chat context?"
+        description="Start the next message without previous model messages, notes, tasks, or other saved Agent working state. Pending questions and approvals are discarded. Chat history, files, chat settings, and your unsent draft are kept."
         closeLabel="Close confirmation"
         footer={
           <>
@@ -94,14 +94,14 @@ export function ClearContext({
         <ErrorNotice error={clear.error} />
         {clear.error && !(clear.error instanceof ApiError) && (
           <p role="alert">
-            The result could not be confirmed. Refresh the conversation before
-            trying again; the context may already have been cleared.
+            The result could not be confirmed. Refresh the chat before trying
+            again; the context may already have been cleared.
           </p>
         )}
         {stale && (
           <p role="alert">
-            The conversation changed. Close this dialog and review it before
-            clearing context.
+            The chat changed. Close this dialog and review it before clearing
+            context.
           </p>
         )}
       </ModalFrame>

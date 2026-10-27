@@ -40,7 +40,7 @@ const usage: Schema<"ThreadUsageView"> = {
   recent_runs: [],
   other_runs: totals,
 };
-it("matches conversation-wide CLI accounting while context stays request-local", () => {
+it("matches chat-wide CLI accounting while context stays request-local", () => {
   expect(
     usageSummary(usage, {
       thread_id: "thread-one",

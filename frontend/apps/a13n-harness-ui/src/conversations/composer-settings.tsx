@@ -24,7 +24,7 @@ import {
   CaretLeft,
   CaretRight,
   Check,
-  SlidersHorizontal,
+  CaretDown,
   X,
 } from "@phosphor-icons/react";
 import styles from "./composer-settings.module.css";
@@ -49,13 +49,14 @@ export const useComposerSettings = () => useContext(SettingsContext);
 export function ComposerSettings({
   children,
   className,
+  label,
 }: {
   children: ReactNode;
   className?: string;
+  label?: ReactNode;
 }) {
   const rootTitle = "Agent & Model";
-  const label = "Agent & Model settings";
-  const navigationLabel = label;
+  const navigationLabel = "Agent & Model settings";
   const [open, setOpen] = useState(false);
   const [page, navigate] = useState<Page>("root");
   const [mobile, setMobile] = useState(
@@ -109,10 +110,14 @@ export function ComposerSettings({
     </SettingsContext>
   );
   const trigger = (
-    <Button variant="ghost" size="icon-sm" className={className} />
+    <Button
+      variant="ghost"
+      size="sm"
+      className={`${styles.modelTrigger} ${className ?? ""}`}
+    />
   );
   const triggerProps = {
-    "aria-label": label,
+    "aria-label": navigationLabel,
     title: rootTitle,
     // Do not bring the mobile keyboard back when the panel closes.
     onClick: () => {
@@ -123,7 +128,8 @@ export function ComposerSettings({
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
-        <SlidersHorizontal />
+        <span>{label ?? "Model"}</span>
+        <CaretDown aria-hidden="true" />
       </DialogTrigger>
       <DialogPopup
         bottomStickOnMobile
@@ -136,7 +142,8 @@ export function ComposerSettings({
   ) : (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
-        <SlidersHorizontal />
+        <span>{label ?? "Model"}</span>
+        <CaretDown aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" className={styles.popup}>
         {content}

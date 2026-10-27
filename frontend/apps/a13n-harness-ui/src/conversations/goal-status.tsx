@@ -42,8 +42,7 @@ const phases: Record<
   suspended: {
     label: "Needs input",
     title: "Your response is needed",
-    detail:
-      "Respond to the pending request in the conversation to continue this Goal.",
+    detail: "Respond to the pending request in the chat to continue this Goal.",
   },
   verified: {
     label: "Verified",
@@ -64,8 +63,7 @@ const phases: Record<
   error: {
     label: "Not verified",
     title: "Completion not verified",
-    detail:
-      "Execution ended with an error. Review the error in the conversation.",
+    detail: "Execution ended with an error. Review the error in the chat.",
   },
   unverified_stop: {
     label: "Not verified",

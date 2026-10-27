@@ -33,7 +33,7 @@ export function DeviceFields({
   return (
     <SettingsSection
       title="Device connection"
-      description="Save the connection once; select working directories separately for Projects and conversations."
+      description="Save the connection once; select working directories separately for Projects and chats."
     >
       <TextField
         label="Native Device ID"

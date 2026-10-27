@@ -97,12 +97,12 @@ function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 
-it("shows only a read-only identity and one settings entry, with explicit default choices", async () => {
+it("uses the selected model as the settings entry, retaining Agent context and explicit defaults", async () => {
   const user = userEvent.setup();
   render(<Choices />);
   expect(
     screen.getByLabelText("Agent: Writer. Model: Reasoning model").textContent,
-  ).toBe("Writer·Reasoning model");
+  ).toBe("Reasoning model");
   expect(screen.queryByRole("combobox", { name: "Agent" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Model settings" })).toBeNull();
   const trigger = button("Agent & Model settings");
@@ -157,7 +157,7 @@ it("searches models in one panel and resets overrides on model changes", async (
   expect(screen.getByText("Model default: High")).toBeTruthy();
 });
 
-it("follows the saved Conversation default and restores it after an explicit Run choice", async () => {
+it("follows the saved Chat default and restores it after an explicit Run choice", async () => {
   const user = userEvent.setup();
   render(<Choices defaultModelId="model-two" />);
   expect(
@@ -165,13 +165,11 @@ it("follows the saved Conversation default and restores it after an explicit Run
   ).toBeTruthy();
   await user.click(button("Agent & Model settings"));
   await user.click(button("Model"));
-  expect(button(/Conversation default/).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(button(/Chat default/).getAttribute("aria-pressed")).toBe("true");
   await user.click(button("Reasoning model"));
   expect(button("Model").textContent).toBe("ModelReasoning model");
   await user.click(button("Model"));
-  await user.click(button(/Conversation default/));
+  await user.click(button(/Chat default/));
   expect(button("Model").textContent).toBe("ModelOther model");
 });
 

@@ -89,7 +89,7 @@ it("shows a fallback for malformed JSON and a real preview for a valid push", as
   );
 });
 
-it("opens a same-origin conversation with no window and no login credentials", async () => {
+it("opens a same-origin chat with no window and no login credentials", async () => {
   const { self, dispatch } = worker();
   const close = vi.fn();
   await dispatch("notificationclick", {
@@ -101,7 +101,7 @@ it("opens a same-origin conversation with no window and no login credentials", a
   );
 });
 
-it("focuses the matching conversation without reloading or replacing unsaved editors", async () => {
+it("focuses the matching chat without reloading or replacing unsaved editors", async () => {
   const { self, dispatch } = worker();
   const focus = vi.fn();
   const navigate = vi.fn();

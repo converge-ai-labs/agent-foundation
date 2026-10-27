@@ -27,7 +27,7 @@ self.addEventListener("push", (event) => {
           body:
             typeof notice.body === "string"
               ? notice.body.slice(0, 360)
-              : "Open Harness UI to check your conversations.",
+              : "Open Harness UI to check your chats.",
           tag:
             typeof notice.tag === "string"
               ? notice.tag.slice(0, 200)

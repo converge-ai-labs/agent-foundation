@@ -60,7 +60,7 @@ export function useAppLink() {
       <strong>Open this external website?</strong>
       <p>
         The App requested this destination. It opens in a new tab without access
-        to this conversation.
+        to this chat.
       </p>
       <pre>{href}</pre>
       <div className={styles.actions}>

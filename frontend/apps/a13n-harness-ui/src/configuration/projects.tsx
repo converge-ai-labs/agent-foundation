@@ -70,9 +70,8 @@ export function ProjectsPage() {
       {projects.data?.length === 0 && (
         <Panel title="Work with or without a Project">
           <p>
-            Projects are optional. Add one to group conversations around local
-            or Device directories and choose their default Agent and
-            environments.
+            Projects are optional. Add one to group chats around local or Device
+            directories and choose their default Agent and environments.
           </p>
           <NewResourceButton kind="project" label="Add your first project" />
         </Panel>
@@ -112,9 +111,9 @@ export function ProjectPage() {
       ) : (
         <>
           <p>
-            Saved defaults apply to new conversations. Existing conversations
-            keep their selections until you explicitly apply Project
-            environments or defaults.
+            Saved defaults apply to new chats. Existing chats keep their
+            selections until you explicitly apply Project environments or
+            defaults.
           </p>
           <details className={styles.details}>
             <summary>Preview defaults and check readiness</summary>
@@ -164,7 +163,7 @@ export function ReadinessPreview({
   const effectiveEnvironment = config?.environment_profile_id;
   const current = inspected === JSON.stringify(body);
   return (
-    <Panel title="New conversation settings">
+    <Panel title="New chat settings">
       <div className={styles.stack}>
         <ErrorNotice error={selectors.error || preview.error} />
         <div className={styles.formGrid}>

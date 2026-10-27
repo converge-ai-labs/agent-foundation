@@ -183,7 +183,7 @@ it("sets Project access and expiry, preserves the link on copy failure and reset
       /prompts use the agent’s tools and environment permissions/,
     ),
   ).toBeTruthy();
-  expect(screen.getByText(/Guests can also start conversations/)).toBeTruthy();
+  expect(screen.getByText(/Guests can also start chats/)).toBeTruthy();
   await user.click(screen.getByRole("combobox", { name: "Expires in" }));
   await user.click(await screen.findByRole("option", { name: "7 days" }));
   expect(writes).toEqual([]);

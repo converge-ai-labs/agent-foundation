@@ -59,7 +59,7 @@ it("supports keyboard opening and removes the stack when disconnected", async ()
     screen.getByRole("button", { name: "1 person online in Chat" }),
   );
   await user.keyboard("{Enter}");
-  await screen.findByText("In this conversation");
+  await screen.findByText("In this chat");
   rerender(<ParticipantAvatars participants={[]} threadTitle="Chat" />);
   expect(screen.queryByRole("button")).toBeNull();
 });

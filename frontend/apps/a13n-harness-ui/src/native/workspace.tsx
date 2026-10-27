@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
-import { matchPath, useLocation } from "react-router";
+import { matchPath, useLocation, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
 import {
@@ -23,6 +23,10 @@ import {
   ArrowsOutSimple,
   ArrowsInSimple,
   LinkSimple,
+  SidebarSimple,
+  PencilSimple,
+  SlidersHorizontal,
+  ShareNetwork,
 } from "@phosphor-icons/react";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useProjects, useStatus, useTransport } from "../transport/context";
@@ -49,6 +53,7 @@ import { ComposerDrafts } from "../conversations/composer";
 import { conversationTitle } from "../conversations/local-input";
 import { nativeLink, pageLink } from "../shell/page-links";
 import { OpenHostFile } from "../conversations/tool-call";
+import { DebugOnly } from "../shell/debug";
 import { CoordinatorMark } from "../conversations/coordinator-icon";
 
 export function NativeWorkspace({
@@ -70,6 +75,7 @@ export function NativeWorkspace({
   const queries = useQueryClient();
   const buffers = useContext(FileBuffers);
   const location = useLocation();
+  const navigate = useNavigate();
   const threadId = matchPath("/threads/:threadId", location.pathname)?.params
     .threadId;
   const thread = useThread(threadId ?? "");
@@ -508,38 +514,48 @@ export function NativeWorkspace({
         <header className={styles.workToolbar}>
           {navigation}
           {thread.data?.thread.role === "coordinator" && <CoordinatorMark />}
-          <h1 className={styles.workspaceTitle}>
-            {threadId
-              ? conversationTitle(
-                  thread.data?.thread,
-                  composers.get(threadId)?.localInputs,
-                )
-              : isWorkspace
-                ? "New conversation"
-                : memoryMode
-                  ? "Memory"
-                  : location.pathname === "/archived"
-                    ? "Archived conversations"
-                    : location.pathname === "/usage"
-                      ? "Usage"
-                      : /^\/(settings|setup|projects)(\/|$)/.test(
-                            location.pathname,
-                          )
-                        ? "Settings"
-                        : "Page not found"}
-          </h1>
+          <div className={styles.workspaceHeading}>
+            {resolvedProject && (
+              <span className={styles.projectBreadcrumb}>
+                {resolvedProject.name}
+              </span>
+            )}
+            <h1 className={styles.workspaceTitle}>
+              {threadId
+                ? conversationTitle(
+                    thread.data?.thread,
+                    composers.get(threadId)?.localInputs,
+                  )
+                : isWorkspace
+                  ? "New chat"
+                  : memoryMode
+                    ? "Memory"
+                    : location.pathname === "/archived"
+                      ? "Archived chats"
+                      : location.pathname === "/usage"
+                        ? "Usage"
+                        : /^\/(settings|setup|projects)(\/|$)/.test(
+                              location.pathname,
+                            )
+                          ? "Settings"
+                          : "Page not found"}
+            </h1>
+          </div>
           {isWorkspace && (
             <div className={styles.panelTools} aria-label="Workbench views">
-              <EnvironmentMonitor />
+              <DebugOnly>
+                <EnvironmentMonitor />
+              </DebugOnly>
               {hasViews && (
                 <Menu>
                   <MenuTrigger
-                    render={<Button variant="ghost" size="icon" />}
+                    render={<Button variant="ghost" size="sm" />}
                     className={styles.viewsMenu}
-                    aria-label="More views"
-                    title="More views"
+                    aria-label="Workspace tools"
+                    title="Files, changes and terminal"
                   >
-                    <DotsThree weight="bold" />
+                    <SidebarSimple />
+                    <span>Workspace</span>
                   </MenuTrigger>
                   <MenuPopup align="end">
                     {status.data?.features?.host_files && (
@@ -561,50 +577,44 @@ export function NativeWorkspace({
                   </MenuPopup>
                 </Menu>
               )}
-              {status.data?.features?.host_files && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={styles.viewButton}
-                  title="Files"
-                  aria-label="Files"
-                  aria-pressed={pane === "files"}
-                  onClick={() => show("files")}
-                >
-                  <Folder weight={pane === "files" ? "duotone" : "regular"} />
-                </Button>
-              )}
-              {status.data?.features?.host_git && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={styles.viewButton}
-                  title="Changes"
-                  aria-label="Changes"
-                  aria-pressed={pane === "changes"}
-                  onClick={() => show("changes")}
-                >
-                  <GitDiff
-                    weight={pane === "changes" ? "duotone" : "regular"}
-                  />
-                </Button>
-              )}
-              {status.data?.features?.host_terminal && (
-                <TerminalAction
-                  className={styles.viewButton}
-                  label="Terminal"
-                  shortcut={terminalShortcutLabels().toggle}
-                  aria-pressed={terminalOpen}
-                  onClick={toggleTerminal}
-                >
-                  <TerminalWindow
-                    weight={terminalOpen ? "duotone" : "regular"}
-                  />
-                </TerminalAction>
-              )}
             </div>
           )}
           {profile}
+          {threadId && (
+            <Menu>
+              <MenuTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+                aria-label="Chat actions"
+                title="Chat actions"
+              >
+                <DotsThree />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                {(
+                  [
+                    ["rename", "Rename", PencilSimple],
+                    ["details", "Chat settings", SlidersHorizontal],
+                    ["share", "Share", ShareNetwork],
+                  ] as const
+                ).map(([action, label, Icon]) => (
+                  <MenuItem
+                    key={action}
+                    onClick={() => {
+                      const search = new URLSearchParams(location.search);
+                      search.set("dialog", action);
+                      navigate({
+                        pathname: location.pathname,
+                        search: search.toString(),
+                      });
+                    }}
+                  >
+                    <Icon />
+                    {label}
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
+          )}
         </header>
         <div className={styles.layout}>
           <div className={styles.center}>
@@ -989,14 +999,14 @@ export function NativeWorkspace({
                 <p className={styles.empty}>
                   {project
                     ? "This project has no folders configured."
-                    : "Open a conversation in a project to see its files and changes."}
+                    : "Open a chat in a project to see its files and changes."}
                 </p>
               ) : !status.data?.features?.host_files ? (
                 <div className={styles.empty}>
                   <h3>Native sharing is disabled</h3>
                   <p>
-                    The server has not enabled computer sharing. Conversations
-                    remain available; this view cannot enable native access.
+                    The server has not enabled computer sharing. Chats remain
+                    available; this view cannot enable native access.
                   </p>
                 </div>
               ) : (
