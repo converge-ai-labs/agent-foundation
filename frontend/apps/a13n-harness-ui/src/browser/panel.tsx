@@ -39,7 +39,8 @@ export function BrowserPanel({
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState("");
+  const busy = !!pending;
   const [scale, setScale] = useState<BrowserScale>("fit");
   const [error, setError] = useState("");
   const [authority, setAuthority] = useState<{
@@ -49,14 +50,16 @@ export function BrowserPanel({
   } | null>(null);
   const state = useQuery({
     queryKey: ["browser", threadId],
-    enabled: !!threadId && fullControl,
-    queryFn: () =>
+    enabled: !!threadId && fullControl && !busy,
+    queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/browser", {
           params: { path: { thread_id: threadId! } },
+          signal,
         }),
       ),
     refetchInterval: 2000,
+    staleTime: 2000,
     retry: false,
   });
   const session = state.data;
@@ -87,8 +90,9 @@ export function BrowserPanel({
     kind: "start" | "reset" | "stop" | "take-control" | "handback",
   ) => {
     if (!threadId || busy) return;
-    setBusy(true);
+    setPending(kind);
     setError("");
+    await queries.cancelQueries({ queryKey: ["browser", threadId] });
     try {
       const path = {
         params: { path: { thread_id: threadId } },
@@ -143,18 +147,19 @@ export function BrowserPanel({
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-      if (kind === "start" || kind === "reset") await preparation.refetch();
+      if (kind === "start" || kind === "reset") void preparation.refetch();
+      void refresh();
     } finally {
-      await refresh();
-      setBusy(false);
+      setPending("");
     }
   };
   const changeViewport = async (
     preset: Schema<"BrowserViewportRequest">["preset"],
   ) => {
     if (!threadId || !session?.session_id || !controlToken || busy) return;
-    setBusy(true);
+    setPending("viewport");
     setError("");
+    await queries.cancelQueries({ queryKey: ["browser", threadId] });
     try {
       const value = await result(
         client.POST("/api/threads/{thread_id}/browser/viewport", {
@@ -169,9 +174,9 @@ export function BrowserPanel({
       queries.setQueryData(["browser", threadId], value);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      void refresh();
     } finally {
-      await refresh();
-      setBusy(false);
+      setPending("");
     }
   };
   useEffect(() => {
@@ -243,7 +248,17 @@ export function BrowserPanel({
         ) : (
           <HandArrowDown />
         )}
-        {mac ? controlLabel : human ? "Hand back" : "Take control"}
+        {pending === "take-control"
+          ? mac
+            ? "Pausing…"
+            : "Taking control…"
+          : pending === "handback"
+            ? "Handing back…"
+            : mac
+              ? controlLabel
+              : human
+                ? "Hand back"
+                : "Take control"}
       </Button>
       <Button
         size="icon-sm"
@@ -367,6 +382,16 @@ export function BrowserPanel({
             session={session}
             controlToken={human ? controlToken : ""}
             busy={busy}
+            activity={
+              pending === "take-control"
+                ? "Taking control…"
+                : pending === "handback"
+                  ? "Handing back…"
+                  : busy
+                    ? "Updating browser…"
+                    : ""
+            }
+            onReconnectControl={() => void command("take-control")}
             scale={scale}
             actions={actions}
           />

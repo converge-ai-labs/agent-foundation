@@ -105,6 +105,16 @@
   gap: 4px;
   padding: 6px 8px;
 }
+.connectionState {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: auto;
+  padding-inline: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
 .desktop {
   flex: 1;
   min-height: 0;

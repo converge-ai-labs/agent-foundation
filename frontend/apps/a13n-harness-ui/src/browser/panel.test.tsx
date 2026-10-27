@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,15 +19,20 @@ vi.mock("./desktop", () => ({
     controlToken,
     scale,
     actions,
+    busy,
+    onReconnectControl,
   }: {
     threadId: string;
     controlToken: string;
     scale: string;
     actions?: React.ReactNode;
+    busy: boolean;
+    onReconnectControl: () => void;
   }) => (
     <>
       {actions}
-      <div data-testid="stream" data-scale={scale}>
+      <button onClick={onReconnectControl}>Reconnect control</button>
+      <div data-testid="stream" data-scale={scale} data-busy={busy}>
         {threadId}:{controlToken || "readonly"}
       </div>
     </>
@@ -123,7 +129,11 @@ function show({
     </QueryClientProvider>
   );
   const result = render(view(threadId));
-  return { client, switchThread: () => result.rerender(view("thread-b")) };
+  return {
+    client,
+    queries,
+    switchThread: () => result.rerender(view("thread-b")),
+  };
 }
 async function toggleBrowser() {
   const toggle = screen.getByRole("switch", { name: "Enable browser" });
@@ -217,15 +227,17 @@ it("binds viewport changes to current control", async () => {
   fireEvent.click(
     await screen.findByRole("menuitemradio", { name: "Phone (390 × 844)" }),
   );
-  expect(client.POST).toHaveBeenCalledWith(
-    expect.stringContaining("/viewport"),
-    expect.objectContaining({
-      body: {
-        session_id: "binding-a",
-        control_token: "controller-a",
-        preset: "phone",
-      },
-    }),
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      expect.stringContaining("/viewport"),
+      expect.objectContaining({
+        body: {
+          session_id: "binding-a",
+          control_token: "controller-a",
+          preset: "phone",
+        },
+      }),
+    ),
   );
 });
 
@@ -369,4 +381,54 @@ it("pauses Mac automation for local operation and resumes it without remote take
     "/api/threads/{thread_id}/browser/handback",
     expect.objectContaining({ body: { session_id: "binding-a" } }),
   );
+});
+
+it("unblocks input from the takeover response without waiting for another state request", async () => {
+  const { client } = show();
+  await screen.findByTestId("stream");
+  client.GET.mockImplementation(() => new Promise(() => {}));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByRole("button", { name: "Hand back to Agent" });
+  await waitFor(() =>
+    expect(screen.getByTestId("stream").getAttribute("data-busy")).toBe(
+      "false",
+    ),
+  );
+  expect(screen.getByTestId("stream").textContent).toBe(
+    "thread-a:controller-a",
+  );
+});
+
+it("ignores a stale poll response and keeps the newly acquired authority", async () => {
+  const { client, queries } = show();
+  await screen.findByTestId("stream");
+  const old = queries.getQueryData(["browser", "thread-a"]);
+  let finish!: (value: { data: typeof old }) => void;
+  client.GET.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve as typeof finish;
+      }),
+  );
+  void queries.invalidateQueries({ queryKey: ["browser", "thread-a"] });
+  await waitFor(() => expect(finish).toBeDefined());
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByRole("button", { name: "Hand back to Agent" });
+  await act(async () => finish({ data: old }));
+  expect(screen.getByTestId("stream").textContent).toBe(
+    "thread-a:controller-a",
+  );
+});
+
+it("renews control directly on explicit reconnect without a handback gap", async () => {
+  const { client } = show();
+  await screen.findByTestId("stream");
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await screen.findByRole("button", { name: "Hand back to Agent" });
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect control" }));
+  await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2));
+  expect(client.POST.mock.calls.map(([url]) => url)).toEqual([
+    "/api/threads/{thread_id}/browser/take-control",
+    "/api/threads/{thread_id}/browser/take-control",
+  ]);
 });
