@@ -345,7 +345,10 @@ class _Host:
             FileContextCapability(),
             self._permissions(agent),
             # Compacts at the agent's threshold of the model's context window.
-            CompactionCapability(background=compaction is not None, operator=compaction),
+            CompactionCapability(
+                background=config.background_compaction if compaction is not None else False,
+                operator=compaction,
+            ),
         ]
         if (web := toolsets.web_tools(config.toolsets)) is not None:
             sources["web"] = WebCapability(toolsets.web_configuration(web))

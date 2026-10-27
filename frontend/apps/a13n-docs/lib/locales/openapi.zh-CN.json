@@ -1,4 +1,5 @@
 {
+  "Host-selected overlap policy, separate from the common compaction trigger.": "Host 选择的并行压缩策略，独立于普通压缩触发线。",
   "Explicit business headers, frozen in accepted Run options and kept out of model projections.": "显式业务请求头，冻结保存在已接受的 Run 选项中，不包含在模型可见的投影中。",
   "Sparse choices: null inherits; Thread PATCH distinguishes omission from null.": "按需覆盖：null 表示继承；Thread PATCH 区分省略字段与 null。",
   "List Tool Executions": "列出工具执行",

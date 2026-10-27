@@ -56,6 +56,7 @@ from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.compaction import (
     COMPACTION_CAPABILITY_ID,
+    BackgroundCompactionPolicy,
     CompactionInput,
     CompactionOperation,
     CompactionOperator,
@@ -839,23 +840,26 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self,
         policy: CompactionPolicy | None = None,
         *,
-        background: bool = False,
+        background: bool | BackgroundCompactionPolicy = False,
         operator: CompactionOperator | None = None,
     ) -> None:
         if policy is not None and not isinstance(policy, CompactionPolicy):
             policy = CompactionPolicy.model_validate(policy, strict=True)
-        if not isinstance(background, bool):
-            raise TypeError("background must be a boolean")
-        if background and not isinstance(operator, CompactionOperator):
+        if isinstance(background, bool):
+            background = BackgroundCompactionPolicy(enabled=background)
+        if not isinstance(background, BackgroundCompactionPolicy):
+            raise TypeError("background must be a boolean or BackgroundCompactionPolicy")
+        if background.enabled and not isinstance(operator, CompactionOperator):
             raise DefinitionError(
                 "Background compaction requires a Host operator.", code="compaction_operator_required"
             )
-        if not background and operator is not None:
+        if not background.enabled and operator is not None:
             raise DefinitionError(
                 "A compaction operator requires background mode.", code="compaction_operator_unexpected"
             )
         self.policy = policy.model_copy(deep=True) if policy is not None else None
-        self.background = background
+        self.background_policy = background
+        self.background = background.enabled
         self.operator = operator
         self._depth = 0
         self._failed_fallback_id: str | None = None
@@ -884,7 +888,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return existing
         replacement = CompactionCapability(
             self.policy,
-            background=self.background,
+            background=self.background_policy,
             operator=self.operator,
         )
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
@@ -945,7 +949,12 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             snapshot = _compaction_snapshot(ctx, request.messages, self.policy)
             if snapshot is None or not snapshot[2]:
                 return request
-            if await _compaction_request_fits(ctx, request) is not True:
+            if (
+                await _compaction_request_fits(
+                    ctx, request, blocking_threshold=self.background_policy.blocking_threshold
+                )
+                is not True
+            ):
                 return await self._foreground_fallback(ctx, request)
             limits = ctx.usage_limits
             if (
@@ -1014,7 +1023,10 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return request
         if operation.status == "failed":
             return await self._foreground_fallback(ctx, request, failed=operation)
-        if await _compaction_request_fits(ctx, request) is True:
+        if (
+            await _compaction_request_fits(ctx, request, blocking_threshold=self.background_policy.blocking_threshold)
+            is True
+        ):
             return request
         completed = await self.operator.wait(ctx.deps.thread_id, operation.input.basis.operation_id)
         if completed.input != operation.input:
@@ -1264,6 +1276,8 @@ async def _project_compaction_media(ctx: RunContext[AgentContext], request: Mode
 async def _compaction_request_fits(
     ctx: RunContext[AgentContext],
     request: ModelRequestContext,
+    *,
+    blocking_threshold: float | None = None,
 ) -> bool | None:
     """Use native counting on the actual outgoing request, never lagging usage.
 
@@ -1285,7 +1299,9 @@ async def _compaction_request_fits(
             )
     except (NotImplementedError, TimeoutError):
         return None
-    return usage.input_tokens + reserve <= window
+    return usage.input_tokens + reserve <= window and (
+        blocking_threshold is None or usage.input_tokens < window * blocking_threshold
+    )
 
 
 def _replace_context_history(

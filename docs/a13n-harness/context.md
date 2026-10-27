@@ -121,12 +121,17 @@ Select `HandoffCapability()` when you also want the `summarize` tool for explici
 A Host can run summary generation independently of the foreground Run:
 
 ```python
-from a13n_harness.compaction import CompactionOperator
+from a13n_harness.compaction import BackgroundCompactionPolicy, CompactionOperator
 
 
 def background_compaction(operator: CompactionOperator) -> CompactionCapability:
-    return CompactionCapability(background=True, operator=operator)
+    return CompactionCapability(
+        background=BackgroundCompactionPolicy(enabled=True, blocking_threshold=0.95),
+        operator=operator,
+    )
 ```
+
+`BackgroundCompactionPolicy` defaults to `enabled=False` and `blocking_threshold=0.95`. The blocking threshold accepts values greater than zero and at most one. Counted input must be below this share of the context window to start background work or continue while it runs; equality blocks. The output reserve can require blocking earlier. The common compaction trigger remains 90%, and a physically fitting replacement can proceed above the blocking line. `background=True` uses the default enabled policy.
 
 Implement `submit(input)`, `inspect(thread_id)` and `wait(thread_id, operation_id)` on the operator. Keep execution alive after the submitting Run closes. Admit one unacknowledged operation per Thread, save ready results before notification, and make reads non-consuming. Use `generate_compaction(input, request)` for the summary protocol and bounded transient retries. The callback receives `CompactionInput`, reads fresh `request_messages`, `settings` and `parameters`, and uses fresh Host model authority to account for each attempt; it must not capture the parent Run's Agent, resources or mutable usage.
 

@@ -1,4 +1,9 @@
 {
+  "Background compaction": "后台压缩",
+  "Enable background compaction": "启用后台压缩",
+  "Blocking threshold (%)": "阻塞阈值（%）",
+  "Summarize older context while the conversation continues. Subagents compact synchronously.": "在对话继续时总结较早的上下文。子智能体使用同步压缩。",
+  "Wait for compaction when input reaches this share of the context window. Output capacity can require waiting earlier.": "输入达到上下文窗口的此比例时，等待压缩完成。输出容量限制可能使等待提前。",
   "References": "标识与关联",
   "Empty": "空值",
   "Follow latest": "跟随最新进展",

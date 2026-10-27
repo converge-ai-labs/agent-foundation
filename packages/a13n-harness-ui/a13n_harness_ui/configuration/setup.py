@@ -26,6 +26,7 @@ from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _read_bounded_stable, _scan_directory, load_harness_ui_configuration
 from .models import (
+    BackgroundCompactionConfiguration,
     CapabilitySelection,
     ResourceId,
     StrictModel,
@@ -383,7 +384,7 @@ async def preview_setup(
         }
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if not selection.is_addition:
-        root.setdefault("background_compaction", True)
+        root.setdefault("background_compaction", BackgroundCompactionConfiguration().model_dump(mode="json"))
         memory = root.setdefault("memory", {})
         if isinstance(memory, dict):
             memory.setdefault("enabled", True)

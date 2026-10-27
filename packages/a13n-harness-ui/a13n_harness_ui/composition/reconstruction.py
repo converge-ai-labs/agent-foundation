@@ -282,14 +282,16 @@ class AgentReconstructor:
             )
             compaction = (
                 CompactionRun(background_compaction, model_resolver.fresh(), pricing_catalog)
-                if background_compaction is not None and composition.background_compaction
+                if background_compaction is not None and composition.background_compaction.enabled
                 else None
             )
             if compaction is not None:
                 definition = replace(
                     definition,
                     capabilities=tuple(
-                        CompactionCapability(item.policy, background=True, operator=compaction)
+                        CompactionCapability(
+                            item.policy, background=composition.background_compaction, operator=compaction
+                        )
                         if isinstance(item, CompactionCapability)
                         else item
                         for item in definition.capabilities

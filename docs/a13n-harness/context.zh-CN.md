@@ -121,12 +121,17 @@ flowchart TD
 Host 可以独立于前台 Run 执行总结生成：
 
 ```python
-from a13n_harness.compaction import CompactionOperator
+from a13n_harness.compaction import BackgroundCompactionPolicy, CompactionOperator
 
 
 def background_compaction(operator: CompactionOperator) -> CompactionCapability:
-    return CompactionCapability(background=True, operator=operator)
+    return CompactionCapability(
+        background=BackgroundCompactionPolicy(enabled=True, blocking_threshold=0.95),
+        operator=operator,
+    )
 ```
+
+`BackgroundCompactionPolicy` 默认 `enabled=False`、`blocking_threshold=0.95`。阻塞阈值取值大于零且不超过一。只有精确计数的输入低于窗口的这个比例时，才启动后台操作或在后台运行期间继续前台；达到阈值即阻塞。输出预留空间可能要求更早阻塞。普通压缩触发线仍为 90%，替换后请求只要能容纳于实际窗口，即使高于阻塞线也可继续。`background=True` 使用默认的已开启策略。
 
 在 operator 中实现 `submit(input)`、`inspect(thread_id)` 和 `wait(thread_id, operation_id)`。提交总结的 Run 关闭后，后台执行仍应继续。每个 Thread 同时只接纳一个未确认的操作，先保存就绪结果再通知，读取结果不消费结果。使用 `generate_compaction(input, request)` 执行总结协议与有界瞬态重试。回调接收 `CompactionInput`，通过 `request_messages`、`settings` 和 `parameters` 获取新的可变副本，使用新的 Host 模型调用授权，并统计每次尝试；不要捕获父 Run 的 Agent、资源或可变用量对象。
 

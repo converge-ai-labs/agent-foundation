@@ -38,6 +38,7 @@ from a13n_harness.storage import RunStorage
 
 __all__ = [
     "COMPACTION_CAPABILITY_ID",
+    "BackgroundCompactionPolicy",
     "CompactionBasis",
     "CompactionInput",
     "CompactionModelRequest",
@@ -54,6 +55,15 @@ COMPACTION_CAPABILITY_ID = "a13n.compaction"
 
 _PARAMETERS = TypeAdapter(ModelRequestParameters)
 _SETTINGS = TypeAdapter(dict[str, JsonValue])
+
+
+class BackgroundCompactionPolicy(BaseModel):
+    """Host-selected overlap policy, separate from the common compaction trigger."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    blocking_threshold: float = Field(default=0.95, gt=0, le=1)
 
 
 class _CompactionState(BaseModel):

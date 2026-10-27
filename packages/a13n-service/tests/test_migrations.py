@@ -60,6 +60,23 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     assert len(migrated) >= len(OSS.rules())
 
 
+def test_compaction_revision_roundtrip(empty_database: Database) -> None:
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, "1c461368ce87")
+    original_rules = rows(empty_database, RULES)
+    original_objects = rows(empty_database, OBJECTS)
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, "a9a9c6399e27")
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [("a9a9c6399e27",)]
+    check(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        command.downgrade(config, "1c461368ce87")
+    assert rows(empty_database, RULES) == original_rules
+    assert rows(empty_database, OBJECTS) == original_objects
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+
+
 def test_monitoring_revision_upgrades_and_restores_main_schema(empty_database: Database) -> None:
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, "9cc1d8d6a9c0")

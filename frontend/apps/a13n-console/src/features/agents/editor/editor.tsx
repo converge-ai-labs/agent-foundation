@@ -22,6 +22,7 @@ import {
 import { AgentEnvironment } from "../environment";
 import { AgentToolsets } from "../toolsets";
 import { AdvancedSection } from "./advanced";
+import { CompactionSection } from "./compaction";
 import {
   ConnectionsSection,
   SkillsSection,
@@ -357,6 +358,18 @@ export function AgentEditor({
                   readOnly={configurationReadonly}
                   mark={mark("toolSearch")}
                   error={toolSearchValidation}
+                />
+              </Section>
+              <Section
+                title={t("Background compaction")}
+                description={t(
+                  "Summarize older context while the conversation continues. Subagents compact synchronously.",
+                )}
+                className={styles.parameterSection}
+              >
+                <CompactionSection
+                  draft={draft}
+                  readOnly={configurationReadonly}
                 />
               </Section>
               <Section

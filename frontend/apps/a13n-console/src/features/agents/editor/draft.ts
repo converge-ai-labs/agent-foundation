@@ -80,8 +80,13 @@ export function useAgentDraft(initial: AgentConfig) {
     ),
     [memoryMounts, setMemoryMounts] = useState(initial.memory_mounts ?? []),
     [memory, setMemory] = useState(initial.memory ?? {}),
+    [backgroundCompaction, setBackgroundCompaction] = useState(
+      initial.background_compaction ?? {},
+    ),
     [execution, setExecution] = useState(initial.execution ?? {});
   const dirty =
+    JSON.stringify(backgroundCompaction) !==
+      JSON.stringify(initial.background_compaction ?? {}) ||
     JSON.stringify(plugins) !== JSON.stringify(initial.plugins ?? []) ||
     JSON.stringify(execution) !== JSON.stringify(initial.execution ?? {}) ||
     JSON.stringify(toolSearch) !==
@@ -111,6 +116,8 @@ export function useAgentDraft(initial: AgentConfig) {
       JSON.stringify(initial.memory_mounts ?? []);
   return {
     initial,
+    backgroundCompaction,
+    setBackgroundCompaction,
     execution,
     setExecution,
     initialExtraSettings,
@@ -258,6 +265,7 @@ export function buildDraftConfig(
         initial,
         {
           execution: executionOverride(draft.execution),
+          background_compaction: draft.backgroundCompaction,
           instructions: draft.instructions,
           toolsets: draft.toolsets,
           reviewer: draft.reviewer,

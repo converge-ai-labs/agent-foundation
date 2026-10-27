@@ -360,10 +360,15 @@ Compaction replaces an eligible history with a cache-friendly plain-text summary
 class CompactionPolicy(BaseModel):
     trigger_tokens: int
 
+class BackgroundCompactionPolicy(BaseModel):
+    enabled: bool = False
+    blocking_threshold: float = 0.95  # 0 < value <= 1
+
 class CompactionCapability:
     def __init__(
         self, policy: CompactionPolicy | None = None, *,
-        background: bool = False, operator: CompactionOperator | None = None,
+        background: bool | BackgroundCompactionPolicy = False,
+        operator: CompactionOperator | None = None,
     ) -> None: ...
 ```
 
@@ -420,9 +425,9 @@ Ordinary compact-run failures, including an empty plain-text summary, emit a bou
 
 ### Background Execution and Result Application
 
-`CompactionCapability(background=True, operator=...)` selects Host-owned background execution. The operator is a trusted runtime collaborator, outside serialized configuration and Capability state. The same threshold policy applies; an explicit absolute token threshold is optional. Existing synchronous behavior remains the default.
+`CompactionCapability(background=BackgroundCompactionPolicy(enabled=True), operator=...)` selects Host-owned background execution. `background=True` selects the same default policy. The immutable `BackgroundCompactionPolicy` owns `enabled` (default `false`) and `blocking_threshold` (default `0.95`, greater than zero and at most one). The operator is a trusted runtime collaborator, outside serialized configuration and Capability state. The compaction trigger remains independent: its default is 90%, and an explicit absolute token threshold is optional. Synchronous behavior remains the default.
 
-`a13n_harness.compaction` owns `CompactionBasis`, `CompactionInput`, `CompactionResult`, `CompactionOperation`, `CompactionOperator`, `CompactionModelRequest`, `generate_compaction`, `apply_compaction`, and `compaction_disposition`.
+`a13n_harness.compaction` owns `BackgroundCompactionPolicy`, `CompactionBasis`, `CompactionInput`, `CompactionResult`, `CompactionOperation`, `CompactionOperator`, `CompactionModelRequest`, `generate_compaction`, `apply_compaction`, and `compaction_disposition`.
 
 - `CompactionBasis` identifies the operation and Thread, the canonical prefix's native message count and SHA-256 digest, and its semantic replay inputs. The digest compares a detached view excluding typed `SystemPromptPart` values only. It preserves message slots and ordering, including empty requests, every other field and part, and semantic content annotations with rebuilt part indices. Capture and application use the same comparison. An intervening Run may replace, reorder, add or remove system blocks without invalidating the result; edits to user, assistant, tool or media history still invalidate it. The original prefix remains in canonical history. Replay remains detached native input because the originating Run's semantic ledger may no longer exist.
 - `CompactionInput` combines that basis with the projected summary request, request parameters, JSON model settings, remaining request allowance, originating Run and effective model selection. Model and Run identifiers supply Host dispatch and accounting attribution. Native values are encoded on capture and decoded afresh by accessors. The input contains no Agent, parent context, provider client or live execution authority. Request-only image splitting, compression and pruning, and video compatibility, materialization and byte-limit checks apply to summary generation and the merged foreground request without replacing retained originals.
@@ -436,18 +441,18 @@ The Host operator admits at most one unacknowledged operation per Thread and mak
 
 The default maximum is three attempts, including the initial attempt. Retries use `is_recoverable_model_failure` and capped exponential equal-jitter delays on the same fixed request. Cancellation, Host refusal, quota/context-window failures, empty summaries, and function-tool calls are terminal. The Host retains terminal outcomes, and storage or notification retry reuses the generated result. This is independent of foreground `ModelRecoveryPolicy` orchestration.
 
-At each eligible model boundary, Harness inspects existing work before capturing new input. Harness owns the foreground/background decision for both the active Run and subsequent Runs; the Host supplies the operation's observed state, including interrupted work after process loss. Verified headroom means native `Model.count_tokens` for the projected request plus explicit `max_tokens` output reserve fits the resolved window. Counting is bounded to five seconds. Missing window, reserve, unsupported counting or counting timeout leaves capacity unknown. Provider-reported usage is only a trigger, never a next-request size estimate.
+At each eligible model boundary, Harness inspects existing work before capturing new input. Harness owns the foreground/background decision for both the active Run and subsequent Runs; the Host supplies the operation's observed state, including interrupted work after process loss. Verified headroom means native `Model.count_tokens` for the projected request plus explicit `max_tokens` output reserve fits the resolved window. Counting is bounded to five seconds. Missing window, reserve, unsupported counting or counting timeout leaves capacity unknown. Provider-reported usage is only a trigger, never a next-request size estimate. Starting background work or continuing while it runs also requires counted input tokens to be strictly below `context_window * blocking_threshold`. Equality reaches the blocking line. At that line, no outstanding operation selects synchronous compaction; an existing operation is awaited. Output reserve can require either action earlier. Result application and post-fallback checks use physical capacity, so a replacement that fits the window may proceed even above the blocking line.
 
-| Outstanding operation | Context condition                                 | Harness action                                                                   |
-| --------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------- |
-| None                  | Below the compaction trigger                      | Continue normally                                                                |
-| None                  | Trigger reached, verified headroom                | Submit background work and continue                                              |
-| None                  | Trigger reached, insufficient or unknown headroom | Compact synchronously without submitting background work                         |
-| Running               | Verified headroom                                 | Continue normally                                                                |
-| Running               | Insufficient or unknown headroom                  | Wait for the same operation; apply success or fall back synchronously on failure |
-| Ready                 | Applicable result                                 | Apply the result                                                                 |
-| Failed                | Trigger reached or capacity insufficient/unknown  | Compact synchronously without resubmitting background work                       |
-| Failed                | Below trigger and verified headroom               | Continue normally and retain the failure                                         |
+| Outstanding operation | Context condition                                                       | Harness action                                                                   |
+| --------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| None                  | Below the compaction trigger                                            | Continue normally                                                                |
+| None                  | Trigger reached, verified headroom below blocking line                  | Submit background work and continue                                              |
+| None                  | Trigger reached, blocking line reached or insufficient/unknown headroom | Compact synchronously without submitting background work                         |
+| Running               | Verified headroom below blocking line                                   | Continue normally                                                                |
+| Running               | Blocking line reached or insufficient/unknown headroom                  | Wait for the same operation; apply success or fall back synchronously on failure |
+| Ready                 | Applicable result                                                       | Apply the result                                                                 |
+| Failed                | Trigger reached or capacity insufficient/unknown                        | Compact synchronously without resubmitting background work                       |
+| Failed                | Below trigger and verified headroom                                     | Continue normally and retain the failure                                         |
 
 Synchronous fallback summarizes current complete history, including input delivered after background capture, under current Run authority and shared usage/admission limits. It does not replay the old background request. A recursion guard also covers nested summary requests in background mode. Successful fallback refreshes discovery and dynamic context before media projection and capacity checking. For a failed background operation, successful replacement records `skipped` against that old operation's basis together with the new canonical history; its summary was not applied. The Host can acknowledge that failure as recovered only after committing this checkpoint. Unsuccessful fallback retains the old history and operation, attempts no more than once for that failed operation per Run, and permits ordinary dispatch only with verified capacity. Otherwise it raises `compaction_capacity_unavailable`. A later Run may attempt synchronous recovery again with fresh authority. Cancellation and Host admission refusal propagate, and switching execution mode never resets usage limits.
 

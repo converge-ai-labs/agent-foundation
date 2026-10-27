@@ -293,7 +293,8 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         memory_cursors = dict(run.memory_cursors)
         # Space organization keeps its memory-only surface and completes calls within the round.
         retain_tools = thread.purpose == "conversation"
-        background_compaction = thread.origin != "child" and retain_tools
+        root_compaction = thread.origin != "child" and retain_tools
+        background_compaction = root_compaction and resolved.config.background_compaction.enabled
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
@@ -320,7 +321,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state = await restore_executions(runtime, state, thread_id=lease.thread_id, origin_run_id=origin_run_id)
     if resume is not None:
         resume = resume.remaining(state.message_history)
-    compaction = await runtime.compactions.inspect(lease.thread_id) if background_compaction else None
+    compaction = await runtime.compactions.inspect(lease.thread_id) if root_compaction else None
     return _Plan(
         session_id=session_id,
         background_compaction=background_compaction,

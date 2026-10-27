@@ -40,9 +40,9 @@ def frozen(lease, *, identity="compaction-test", model_id="model"):
     )
 
 
-async def setup(service, scripted_model, runs_kit):
+async def setup(service, scripted_model, runs_kit, *, background=True):
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model)
+    agent = await runs_kit.create_agent(service, scripted_model, background_compaction={"enabled": background})
     await runs_kit.start_thread(service, agent, "hi")
     [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
     return lease
@@ -187,6 +187,7 @@ async def test_real_runs_overlap_then_commit_compaction(
     agent = await runs_kit.create_agent(
         service,
         scripted_model,
+        background_compaction={"enabled": True},
         model_settings={"max_tokens": 100},
         model_characteristics={"context_window_tokens": 10000, "compact_threshold": 0.001},
         **runs_kit.LOOKUP,
@@ -555,6 +556,7 @@ async def test_oversized_frozen_input_uses_synchronous_fallback(
     agent = await runs_kit.create_agent(
         service,
         scripted_model,
+        background_compaction={"enabled": True},
         model_settings={"max_tokens": 100},
         model_characteristics={"context_window_tokens": 10000, "compact_threshold": 0.001},
     )
@@ -574,3 +576,24 @@ async def test_oversized_frozen_input_uses_synchronous_fallback(
     assert "Synchronous summary" in json.dumps(request["messages"])
     async with transaction(service.runtime.storage) as session:
         assert await session.scalar(select(CompactionRow.id)) is None
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_agent_policy_selects_background_generation_and_preserves_ready_delivery(
+    service, scripted_model, runs_kit, enabled
+):
+    from a13n_service.resources.agents.schemas import AgentConfig
+
+    assert AgentConfig(model="test").background_compaction.enabled is False
+    lease = await setup(service, scripted_model, runs_kit, background=enabled)
+    plan = await _plan(service.runtime, lease)
+    assert plan.background_compaction is enabled
+    assert (_Attempt(service.runtime, lease, AttemptControl(), plan).compaction is not None) is enabled
+    input = frozen(lease)
+    owner = await compactions.reserve(service.runtime, lease, input)
+    assert owner is not None
+    await compactions.publish(service.runtime, owner, input)
+    result = CompactionResult.from_summary(input.basis, "Retained summary")
+    await compactions.publish(service.runtime, owner, result)
+    refreshed = await _plan(service.runtime, lease)
+    assert refreshed.compaction_result == result

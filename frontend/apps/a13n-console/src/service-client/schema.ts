@@ -4505,6 +4505,7 @@ export interface components {
     };
     /** AgentConfig */
     "AgentConfig-Input": {
+      background_compaction?: components["schemas"]["BackgroundCompactionPolicy"];
       /**
        * Builtin Skills
        * @default []
@@ -4587,6 +4588,7 @@ export interface components {
     };
     /** AgentConfig */
     "AgentConfig-Output": {
+      background_compaction?: components["schemas"]["BackgroundCompactionPolicy"];
       /**
        * Builtin Skills
        * @default []
@@ -5373,6 +5375,22 @@ export interface components {
       state: "disconnected" | "connected" | "reauthentication_required";
       /** Subject */
       subject?: string | null;
+    };
+    /**
+     * BackgroundCompactionPolicy
+     * @description Host-selected overlap policy, separate from the common compaction trigger.
+     */
+    BackgroundCompactionPolicy: {
+      /**
+       * Blocking Threshold
+       * @default 0.95
+       */
+      blocking_threshold?: number;
+      /**
+       * Enabled
+       * @default false
+       */
+      enabled?: boolean;
     };
     /** BearerCredential */
     BearerCredential: {

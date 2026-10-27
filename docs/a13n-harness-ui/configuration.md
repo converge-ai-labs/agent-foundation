@@ -70,7 +70,9 @@ This starter document shows the main root settings. Optional integrations are de
 ```yaml
 schema_version: "1"
 max_goal_iterations: 10
-background_compaction: true
+background_compaction:
+  enabled: true
+  blocking_threshold: 0.95
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -125,13 +127,13 @@ webui:
 
 ### Background compaction
 
-`background_compaction` defaults to `true`. Agents with the `compaction` Capability can summarize older history while the foreground Run continues, when the Model can verify enough context capacity. At the compaction trigger, insufficient or unknown capacity selects synchronous compaction when no background operation exists. If one is already running, the Run waits for it. Failed background work falls back to synchronous compaction, including failures observed in a later Run or after restart; current usage limits still apply. Only root Threads use this mode; inline and asynchronous subagents retain synchronous compaction.
+`background_compaction.enabled` defaults to `true`. `blocking_threshold` defaults to `0.95` and accepts values greater than zero and at most one. At 95% counted input occupancy, a Run waits for existing background work or compacts synchronously if none exists. The output reserve can require blocking earlier. The normal compaction trigger remains 90%. Agents with the `compaction` Capability can summarize older history while the foreground Run continues, when the Model can verify enough context capacity. At the compaction trigger, insufficient or unknown capacity selects synchronous compaction when no background operation exists. If one is already running, the Run waits for it. Failed background work falls back to synchronous compaction, including failures observed in a later Run or after restart; current usage limits still apply. Only root Threads use this mode; inline and asynchronous subagents retain synchronous compaction.
 
 Completed summaries are saved before use. The current Run applies a ready summary at a safe model boundary, or a later Run restores it together with its current input. Completion alone does not rewrite an idle conversation. App restart restores completed work and never replays an interrupted summary request.
 
 Processed summaries and cleared operations are marked together with their saved checkpoint, then removed by automatic cleanup. Cleanup runs at startup and hourly. Unused operations expire after seven days; active Runs and background requests are protected. Expiry preserves conversation history, and later Runs can generate a new summary when needed. Embedded Apps can change the age threshold through `StorageSettings.compaction_retention_seconds`.
 
-Set `background_compaction: false` to use synchronous compaction for later Runs. Already saved, unexpired summaries remain available. Model context budgets and explicit compaction thresholds are unchanged.
+Set `background_compaction.enabled: false` to use synchronous compaction for later Runs. Already saved, unexpired summaries remain available. Model context budgets and explicit compaction thresholds are unchanged.
 
 ### File memory
 

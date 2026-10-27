@@ -1,4 +1,9 @@
 {
+  "Background compaction": "Background compaction",
+  "Enable background compaction": "Enable background compaction",
+  "Blocking threshold (%)": "Blocking threshold (%)",
+  "Summarize older context while the conversation continues. Subagents compact synchronously.": "Summarize older context while the conversation continues. Subagents compact synchronously.",
+  "Wait for compaction when input reaches this share of the context window. Output capacity can require waiting earlier.": "Wait for compaction when input reaches this share of the context window. Output capacity can require waiting earlier.",
   "References": "References",
   "Empty": "Empty",
   "Follow latest": "Follow latest",

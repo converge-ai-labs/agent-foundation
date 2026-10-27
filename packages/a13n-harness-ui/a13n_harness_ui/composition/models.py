@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
     AgentToolSearch,
+    BackgroundCompactionConfiguration,
     DeviceResource,
     ModelCharacteristics,
     SidekickConfiguration,
@@ -179,7 +180,10 @@ class ResolvedRunComposition(CompositionModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
     memory_organization: bool = Field(default=False, exclude_if=lambda value: not value)
-    background_compaction: bool = Field(default=False, exclude_if=lambda value: not value)
+    background_compaction: BackgroundCompactionConfiguration = Field(
+        default_factory=lambda: BackgroundCompactionConfiguration(enabled=False),
+        exclude_if=lambda value: value == BackgroundCompactionConfiguration(enabled=False),
+    )
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     run_configuration: RunConfiguration = Field(

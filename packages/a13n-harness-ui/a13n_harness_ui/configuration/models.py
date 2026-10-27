@@ -12,6 +12,7 @@ from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
+from a13n_harness.compaction import BackgroundCompactionPolicy
 from a13n_harness.models.codex_live import CodexLiveVoice
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -95,6 +96,15 @@ class ConfigurationModel(StrictModel):
     model_config = ConfigDict(extra="allow")
     # Pydantic uses this narrower annotation to validate retained JSON extras.
     __pydantic_extra__: dict[str, JsonValue] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class BackgroundCompactionConfiguration(BackgroundCompactionPolicy, ConfigurationModel):
+    enabled: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _boolean_switch(cls, value: object) -> object:
+        return {"enabled": value} if isinstance(value, bool) else value
 
 
 class ProcessConfiguration(ConfigurationModel):
@@ -370,7 +380,7 @@ class HarnessUiDocument(ConfigurationModel):
     memory: MemoryConfiguration = Field(default_factory=MemoryConfiguration)
     live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
-    background_compaction: bool = True
+    background_compaction: BackgroundCompactionConfiguration = Field(default_factory=BackgroundCompactionConfiguration)
 
 
 class EnvironmentVariableSource(StrictModel):

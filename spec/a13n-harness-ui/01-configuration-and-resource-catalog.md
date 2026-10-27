@@ -202,9 +202,9 @@ Grouping semantics and immutable Run capture belong to [Agent composition](02-ag
 
 ## Background Compaction
 
-Root `background_compaction` defaults to `true`; starter configuration writes it explicitly. Run composition captures the value. It switches an enabled native compaction Capability to App-owned background generation for root Threads. Harness UI selects this mode at root Run reconstruction; both inline and asynchronous subagents retain synchronous compaction. Harness leaves this execution policy to the Host. Existing captures without the field retain synchronous behavior. Memory organization retains its synchronous composition.
+Root `background_compaction` contains `enabled` (default `true`) and `blocking_threshold` (default `0.95`, greater than zero and at most one). Starter configuration writes both values explicitly. Run composition captures the policy. It switches an enabled native compaction Capability to App-owned background generation for root Threads. Harness UI selects this mode at root Run reconstruction; both inline and asynchronous subagents retain synchronous compaction. Harness leaves this execution policy to the Host. Existing captures without the field retain synchronous behavior. Memory organization retains its synchronous composition.
 
-Setting the field to `false` disables new background generation for later captured Runs while preserving delivery of already retained results. It changes neither compaction thresholds nor Model context characteristics. Harness itself retains its synchronous default. [Local Storage and Recovery](03-local-storage-and-recovery.md#retained-background-compaction) owns result persistence, checkpoint acknowledgement, interruption, and shutdown.
+Setting `background_compaction.enabled` to `false` disables new background generation for later captured Runs while preserving delivery of already retained results. The blocking threshold uses Harness's [background policy](../a13n-harness/09-context-and-memory.md#background-execution-and-result-application); the common compaction trigger and Model context characteristics remain independent. Harness itself retains its synchronous default. [Local Storage and Recovery](03-local-storage-and-recovery.md#retained-background-compaction) owns result persistence, checkpoint acknowledgement, interruption, and shutdown.
 
 ## Goal Iteration Policy
 

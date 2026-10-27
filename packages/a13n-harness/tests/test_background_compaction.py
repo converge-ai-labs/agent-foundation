@@ -9,6 +9,7 @@ from a13n_harness import AgentSpec, HarnessBuilder, HarnessModelCharacteristics,
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.compaction import (
+    BackgroundCompactionPolicy,
     CompactionInput,
     CompactionOperation,
     CompactionOperator,
@@ -1463,3 +1464,103 @@ async def test_failed_operation_below_trigger_continues_without_fallback():
     assert result.output_or_raise() == "done"
     assert len(calls) == 1 and operator.submissions == 0
     assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None
+
+
+@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize(
+    "tokens,reserve,threshold,blocked",
+    [
+        (9499, 100, 0.95, False),
+        (9500, 100, 0.95, True),
+        (9501, 100, 0.95, True),
+        (9200, 100, 0.92, True),
+        (9500, 100, 0.99, False),
+        (9400, 1000, 0.95, True),
+    ],
+)
+async def test_background_blocking_threshold_is_distinct_from_physical_capacity(
+    running, tokens, reserve, threshold, blocked
+):
+    previous = _previous()
+
+    class Operator(_Operator):
+        async def wait(self, thread_id, operation_id):
+            self.waiting.set()
+            return CompactionOperation(
+                input=self.operation.input,
+                status="ready",
+                result=CompactionResult.from_summary(self.operation.input.basis, "background summary"),
+            )
+
+    operator = Operator()
+    if running:
+        operator.operation = CompactionOperation(input=_input(previous), status="running")
+    requests = []
+
+    class Model(FunctionModel):
+        async def count_tokens(self, messages, model_settings, model_request_parameters):
+            compacted = any(isinstance(m, ModelResponse) and m.metadata == {"keep": "compact"} for m in messages)
+            # Applied summaries need physical fit, not headroom below the policy line.
+            return RequestUsage(input_tokens=min(tokens, 10000 - reserve) if compacted else tokens)
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "foreground summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": reserve},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=Model(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=8000),
+                background=BackgroundCompactionPolicy(enabled=True, blocking_threshold=threshold),
+                operator=operator,
+            ),
+        ),
+    )
+    result = await executable.run("current input", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert operator.waiting.is_set() is (running and blocked)
+    assert operator.submissions == int(not running and not blocked)
+    assert len(requests) == (2 if blocked and not running else 1)
+    if operator.task is not None:
+        operator.release.set()
+        await operator.task
+
+
+async def test_disabled_background_policy_uses_common_trigger():
+    requests = []
+
+    async def stream(messages, info):
+        requests.append(deepcopy(messages))
+        yield "foreground summary" if _COMPACTION_PROMPT in _user_values(messages) else "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model_settings={"max_tokens": 100},
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=10000),
+        ),
+        model=_CountingModel(stream_function=stream),
+        output_type=str,
+        capabilities=(
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=8000),
+                background=BackgroundCompactionPolicy(enabled=False, blocking_threshold=1),
+            ),
+        ),
+    )
+    result = await executable.run("current input", previous_state=_previous())
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("threshold", [0, -0.1, 1.01, float("nan"), float("inf")])
+async def test_background_policy_rejects_invalid_threshold(threshold):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        BackgroundCompactionPolicy(blocking_threshold=threshold)

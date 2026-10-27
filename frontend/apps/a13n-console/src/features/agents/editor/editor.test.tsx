@@ -181,3 +181,58 @@ it("rejects duplicate execution variable names before saving the agent", () => {
     null,
   );
 });
+
+it("saves an opt-in background compaction policy with a percentage threshold", () => {
+  http.GET.mockResolvedValue({
+    data: { items: [], next_cursor: null },
+    response: new Response(null, { status: 200 }),
+  });
+  const submit = vi.fn();
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <AgentEditor
+          id="compaction-form"
+          initial={{ model: "test" }}
+          pending={false}
+          error={undefined}
+          submit={submit}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  const toggle = screen.getByRole("switch", {
+    name: "Enable background compaction",
+  });
+  const threshold = screen.getByRole("spinbutton", {
+    name: "Blocking threshold (%)",
+  }) as HTMLInputElement;
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(threshold.value).toBe("95");
+  expect(threshold.disabled).toBe(true);
+  fireEvent.click(toggle);
+  fireEvent.change(threshold, { target: { value: "" } });
+  expect(threshold.value).toBe("");
+  fireEvent.submit(document.getElementById("compaction-form")!);
+  expect(
+    submit.mock.lastCall?.[0].background_compaction.blocking_threshold,
+  ).toBeUndefined();
+  fireEvent.change(threshold, { target: { value: "92.5" } });
+  fireEvent.submit(document.getElementById("compaction-form")!);
+  expect(submit.mock.lastCall?.[0]).toEqual(
+    expect.objectContaining({
+      background_compaction: { enabled: true, blocking_threshold: 0.925 },
+    }),
+  );
+  fireEvent.click(toggle);
+  fireEvent.submit(document.getElementById("compaction-form")!);
+  expect(submit.mock.lastCall?.[0]).toEqual(
+    expect.objectContaining({
+      background_compaction: { enabled: false, blocking_threshold: 0.925 },
+    }),
+  );
+});
