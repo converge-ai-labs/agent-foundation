@@ -214,6 +214,13 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 24px;
 }
+.formGrid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+.formGrid > * {
+  min-width: 0;
+}
 .hero {
   border: 1px solid var(--a13n-border);
   border-radius: 14px;
@@ -537,8 +544,7 @@ a.resourceRow:hover {
   .mobileMenu {
     display: inline-flex;
   }
-  .cardGrid,
-  .formGrid {
+  .cardGrid {
     grid-template-columns: 1fr;
   }
   .hero {
@@ -600,6 +606,7 @@ a.resourceRow:hover {
   margin-bottom: 16px;
 }
 .settingsContent {
+  container: settings-content / inline-size;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -607,10 +614,32 @@ a.resourceRow:hover {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 0 8px 24px 0;
 }
 .settingsContent > * {
   flex-shrink: 0;
+  min-width: 0;
+}
+.settingsContent .pageHeader {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+.settingsContent .pageHeader > :first-child {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.settingsContent .pageHeader > .actions {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+.settingsContent .pageHeader :is(h1, h2) {
+  margin: 0;
+}
+.settingsContent .pageHeader p {
+  margin-top: 8px;
 }
 .settingsContent:has(.editorActions) {
   padding-bottom: 0;
@@ -652,20 +681,11 @@ a.resourceRow:hover {
   flex-direction: column;
   gap: 24px;
   width: 100%;
-  max-width: 760px;
+  max-width: 680px;
   min-width: 0;
-}
-.sourceDocument > .pageHeader {
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
 }
 .sourceDocument > .pageHeader > :first-child {
-  min-width: 0;
   overflow-wrap: anywhere;
-}
-.sourceDocument > .pageHeader > .actions {
-  flex-shrink: 0;
 }
 .editorActions {
   position: sticky;
@@ -702,6 +722,11 @@ a.resourceRow:hover {
 }
 .fieldGroup {
   padding-block: 20px;
+}
+@container (max-width: 420px) {
+  .settingControl {
+    width: 100%;
+  }
 }
 .selectionOptions {
   display: grid;

@@ -602,7 +602,10 @@ export function AccountsPage() {
         title="Accounts & API keys"
         description="Manage subscription access, account routing, and saved model credentials."
       />
-      <nav className={accountStyles.tabs} aria-label="Account settings">
+      <nav
+        className={`${accountStyles.tabs} a13n-scrollbar`}
+        aria-label="Account settings"
+      >
         {[
           ["accounts", "Subscription accounts"],
           ["groups", "Account groups"],

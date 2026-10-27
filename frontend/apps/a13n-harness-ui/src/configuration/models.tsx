@@ -119,14 +119,12 @@ export function ModelsPage() {
   });
   return (
     <>
-      <div className={management.collectionHeader}>
-        <PageHeader
-          title="Models"
-          actions={
-            <AddModelButton onSaved={() => void queries.invalidateQueries()} />
-          }
-        />
-      </div>
+      <PageHeader
+        title="Models"
+        actions={
+          <AddModelButton onSaved={() => void queries.invalidateQueries()} />
+        }
+      />
       <ErrorNotice
         error={
           selectors.error || sources.error || clone.error || setDefault.error
