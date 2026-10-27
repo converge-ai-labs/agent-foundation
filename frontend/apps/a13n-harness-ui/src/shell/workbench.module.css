@@ -5,7 +5,7 @@
   background: var(--a13n-canvas);
 }
 .sidebar {
-  width: 264px;
+  width: 240px;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;
@@ -830,12 +830,12 @@ a.resourceRow:hover {
 .settingsContent {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 28px;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 40px clamp(24px, 5vw, 64px) 64px;
+  padding: 28px clamp(24px, 5vw, 64px) 48px;
   scrollbar-gutter: stable both-edges;
 }
 .settingsContent > * {
@@ -843,8 +843,16 @@ a.resourceRow:hover {
   /* One reading measure for every settings page: headers, lists, cards
      and disclosures share the same right edge. */
   width: 100%;
-  max-width: 760px;
+  max-width: 680px;
   margin-inline: auto;
+}
+.settingsContent .pageHeader > div > h1 {
+  min-height: 24px;
+  font-size: 18px;
+  line-height: 24px;
+}
+.settingsContent .pageHeader p {
+  font-size: 13px;
 }
 .settingsContent:has(.editorActions) {
   padding-bottom: 0;
@@ -873,9 +881,9 @@ a.resourceRow:hover {
 .sourceDocument {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 28px;
   width: 100%;
-  max-width: 760px;
+  max-width: 680px;
   min-width: 0;
 }
 .sourceHeader > .pageHeader {
@@ -1071,6 +1079,6 @@ a.resourceRow:hover {
 
 .configurationFields {
   display: grid;
-  gap: 40px;
+  gap: 28px;
   min-width: 0;
 }

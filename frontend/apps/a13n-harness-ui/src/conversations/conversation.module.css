@@ -200,7 +200,7 @@
   align-items: center;
   justify-content: space-between;
   color: var(--a13n-text);
-  font-size: 14px;
+  font-size: 13px;
   border-radius: 8px;
 }
 .groupHeading:hover {
@@ -219,8 +219,8 @@
   gap: 8px;
   flex: 1;
   min-width: 0;
-  min-height: 36px;
-  padding: 8px 88px 8px 10px;
+  min-height: 32px;
+  padding: 6px 88px 6px 10px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -329,7 +329,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-height: 36px;
+  min-height: 32px;
   border-radius: 8px;
   transition: background-color 120ms ease-out;
 }
@@ -688,6 +688,10 @@
   opacity: 1;
 }
 @media (pointer: coarse) {
+  .groupToggle,
+  .threadLink {
+    min-height: 44px;
+  }
   .userInput {
     margin-bottom: 48px;
   }

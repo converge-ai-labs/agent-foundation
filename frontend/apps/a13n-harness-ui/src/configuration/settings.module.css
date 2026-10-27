@@ -18,7 +18,7 @@
 .collectionPage {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
   min-width: 0;
 }
 .collection {
@@ -93,8 +93,9 @@
   composes: details from "../shell/workbench.module.css";
 }
 .groupDisclosure > summary {
-  min-height: 60px;
-  font-size: 14px;
+  min-height: 40px;
+  padding-block: 8px;
+  font-size: 13px;
   font-weight: 400;
 }
 .groupDisclosure[open] > summary {
@@ -104,9 +105,15 @@
   padding: 0 0 16px;
 }
 .groupDisclosure > div > [data-slot="settings-row"] {
-  padding-top: 16px;
+  padding-top: 10px;
 }
 .groupDisclosure > div > p,
 .groupDisclosure > div > [role="status"] {
   padding-block: 12px;
+}
+
+@media (pointer: coarse) {
+  .groupDisclosure > summary {
+    min-height: 44px;
+  }
 }

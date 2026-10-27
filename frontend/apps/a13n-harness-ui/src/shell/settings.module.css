@@ -1,20 +1,20 @@
 .section > :first-child:has(> h3) {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 .section h3 {
-  font-size: 15px;
-  line-height: 22px;
+  font-size: 13px;
+  line-height: 20px;
   font-weight: 500;
 }
 .section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
-  border-radius: 14px;
-  padding-inline: 20px;
+  border-radius: 10px;
+  padding-inline: 16px;
 }
 .row {
-  min-height: 68px;
-  gap: 24px;
-  padding-block: 18px;
-  font-size: 14px;
+  min-height: 52px;
+  gap: 20px;
+  padding-block: 10px;
+  font-size: 13px;
   line-height: 20px;
 }
 .row > :first-child {
@@ -25,10 +25,10 @@
   font-weight: 400;
 }
 .row > :first-child > p {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--a13n-secondary);
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 12px;
+  line-height: 18px;
 }
 .row > :last-child {
   min-width: 0;
@@ -45,6 +45,12 @@
   box-shadow: none;
   text-align: right;
   justify-content: flex-end;
+}
+.row [data-slot="button"],
+.row [data-slot="input-control"],
+.row [data-slot="select-trigger"],
+.row [data-slot="combobox-trigger"] {
+  font-size: 13px;
 }
 .row [data-slot="select-value"] {
   text-align: right;
@@ -72,10 +78,10 @@
 @media (max-width: 600px) {
   .section
     > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
-    padding-inline: 16px;
+    padding-inline: 14px;
   }
   .row {
     gap: 16px;
-    padding-block: 16px;
+    padding-block: 12px;
   }
 }
