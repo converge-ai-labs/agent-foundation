@@ -81,27 +81,36 @@ it("dismisses edited forms on outside press without submitting", async () => {
   expect(submit).not.toHaveBeenCalled();
 });
 
-it("outside press dismisses only the topmost nested modal", async () => {
-  const user = userEvent.setup();
-  render(
-    <ModalFrame title="Parent" closeLabel="Close" defaultOpen>
-      <ModalFrame
-        title="Child"
-        closeLabel="Close"
-        trigger={<Button>Inspect</Button>}
-      >
-        <p>Child content</p>
-      </ModalFrame>
-    </ModalFrame>,
-  );
-  await user.click(screen.getByRole("button", { name: "Inspect" }));
-  const viewports = document.querySelectorAll('[data-slot="dialog-viewport"]');
-  await user.click(viewports[viewports.length - 1]);
-  await waitFor(() =>
-    expect(screen.queryByRole("dialog", { name: "Child" })).toBeNull(),
-  );
-  expect(screen.getByRole("dialog", { name: "Parent" })).toBeTruthy();
-});
+it.each(["outside", "escape"])(
+  "%s dismisses only the topmost nested modal",
+  async (dismiss) => {
+    const user = userEvent.setup();
+    render(
+      <ModalFrame title="Parent" closeLabel="Close" defaultOpen>
+        <ModalFrame
+          title="Child"
+          closeLabel="Close"
+          trigger={<Button>Inspect</Button>}
+        >
+          <p>Child content</p>
+        </ModalFrame>
+      </ModalFrame>,
+    );
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    if (dismiss === "escape") {
+      await user.keyboard("{Escape}");
+    } else {
+      const viewports = document.querySelectorAll(
+        '[data-slot="dialog-viewport"]',
+      );
+      await user.click(viewports[viewports.length - 1]);
+    }
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Child" })).toBeNull(),
+    );
+    expect(screen.getByRole("dialog", { name: "Parent" })).toBeTruthy();
+  },
+);
 
 it("lets a dialog opened from a menu own typing and Escape", async () => {
   const user = userEvent.setup();
