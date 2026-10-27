@@ -1,6 +1,7 @@
 """Caller-owned session identity, atomic first input, and finding sessions by recognizable context."""
 
 import hashlib
+from datetime import datetime, timedelta
 
 import pytest
 from a13n_service.runs.inbox import Request
@@ -152,3 +153,53 @@ def test_old_thread_requests_retain_their_idempotency_digest() -> None:
     previous = body.model_dump(mode="json", exclude={"session"})
     expected = hashlib.sha256(canonical_json(["thread", "ws_example", previous])).hexdigest()
     assert Request.of("retry", "thread", "ws_example", body).digest == expected
+
+
+async def test_navigation_pages_keep_global_positions_and_parent_references(service, scripted_model, runs_kit):
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.tables import SessionRow
+    from a13n_service.runs.threads import new_thread
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    receipt = await runs_kit.start_thread(service, agent, "Navigation fixture")
+    session_id, root_id, run_id = receipt["thread"]["session_id"], receipt["thread"]["id"], receipt["run"]["id"]
+    async with transaction(service.runtime.storage) as db:
+        session = await db.get_one(SessionRow, session_id)
+        branches = []
+        for index in range(3):
+            branch = new_thread(session, mcp_headers={}, origin="fork", origin_thread_id=root_id, origin_run_id=run_id)
+            branch.created_at = datetime.fromisoformat(receipt["thread"]["created_at"]) + timedelta(seconds=index + 1)
+            db.add(branch)
+            await db.flush()
+            branches.append(branch.id)
+        child = new_thread(
+            session,
+            mcp_headers={},
+            origin="child",
+            origin_thread_id=branches[1],
+            origin_run_id=run_id,
+            origin_tool_call_id="tool_navigation",
+            subagent="research",
+        )
+        db.add(child)
+        await db.flush()
+        child_id = child.id
+    path = f"{service.api}/sessions/{session_id}/threads"
+    first = await service.client.get(path, params={"origin": "fork", "limit": 2})
+    assert first.status_code == 200, first.text
+    page = first.json()
+    assert [item["origin_number"] for item in page["items"]] == [1, 2]
+    assert all(item["origin_count"] == 3 for item in page["items"])
+    assert page["items"][0]["origin_thread"]["origin_count"] == 1
+    assert not {"mcp_headers", "execution", "message_history", "labels"}.intersection(page["items"][0])
+    last = (await service.client.get(path, params={"origin": "fork", "limit": 2, "cursor": page["next_cursor"]})).json()
+    assert [(item["id"], item["origin_number"]) for item in last["items"]] == [(branches[2], 3)]
+    assert last["next_cursor"] is None
+    changed = await service.client.get(path, params={"origin": "new", "cursor": page["next_cursor"]})
+    assert changed.status_code == 400
+    selected = (await service.client.get(path, params={"thread_id": child_id})).json()["items"]
+    assert len(selected) == 1 and selected[0]["subagent"] == "research"
+    assert selected[0]["origin_thread"]["origin_number"] == 2
+    missing = await service.client.get(f"{service.api}/sessions/missing/threads")
+    assert missing.status_code == 404

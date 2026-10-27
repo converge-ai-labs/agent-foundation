@@ -33,6 +33,7 @@ import { Suspense, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { Loading } from "../shared/feedback";
+import { SessionRouteLoading } from "../features/conversations/session-feedback";
 import { routeSkeleton } from "./navigation";
 import { AccountMenu } from "./account-menu";
 import { navigationGroups } from "./navigation";
@@ -44,11 +45,14 @@ function PageOutlet() {
   const { pathname } = useLocation();
   // Route transitions to a known destination keep its layout while it loads.
   const skeleton = routeSkeleton(pathname);
+  const session = /\/sessions\/(?!new(?:\/|$))[^/]+/.test(pathname);
   return (
     <main id="main-content" className="min-h-0 min-w-0 flex-1">
       <Suspense
         fallback={
-          skeleton ? (
+          session ? (
+            <SessionRouteLoading />
+          ) : skeleton ? (
             <Loading
               page
               variant={skeleton.variant}

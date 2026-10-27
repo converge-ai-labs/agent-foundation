@@ -1,5 +1,9 @@
 import { Button, MenuItem } from "a13n-ui";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   ArrowRightIcon,
   ChatsIcon,
@@ -7,7 +11,7 @@ import {
   PencilSimpleIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -30,6 +34,7 @@ import { ResourceReference } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AgentAvatar } from "../agents/avatar";
 import {
+  conversationKeys,
   conversationQueries,
   isConsoleSession,
   type SessionFilters,
@@ -102,6 +107,26 @@ function SessionResults({
     placeholderData: keepPreviousData,
     refetchInterval: REFRESH_MS,
   });
+  const cache = useQueryClient();
+  useEffect(() => {
+    if (sessions.isPlaceholderData) return;
+    for (const session of sessions.data?.items ?? []) {
+      const key = conversationKeys(workspace.id).session(session.id);
+      const held = cache.getQueryData<Schema["SessionView"]>(key);
+      const updated = cache.getQueryState(key)?.dataUpdatedAt ?? 0;
+      if (
+        (!held || held.version <= session.version) &&
+        updated <= sessions.dataUpdatedAt
+      )
+        cache.setQueryData(key, session, { updatedAt: sessions.dataUpdatedAt });
+    }
+  }, [
+    cache,
+    workspace.id,
+    sessions.data,
+    sessions.dataUpdatedAt,
+    sessions.isPlaceholderData,
+  ]);
   const agents = useSessionAgents();
   if (sessions.isPending) return <Loading variant="table" columns={4} />;
   if (!sessions.data)

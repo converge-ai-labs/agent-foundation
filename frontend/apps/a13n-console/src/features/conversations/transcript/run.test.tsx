@@ -370,8 +370,13 @@ it("keeps loaded Run rows, scroll and focus through routed inspection and Back",
   expectStable();
   expect(screen.getByText("Message run_6")).toBe(oldContent);
   expect(oldContent.closest("[inert]")).not.toBeNull();
-  expect(document.querySelector('[data-variant="detail"]')).not.toBeNull();
-  expect(oldContent.closest("[hidden]")).not.toBeNull();
+  expect(document.querySelector('[data-variant="detail"]')).toBeNull();
+  expect(
+    screen
+      .getAllByRole("status")
+      .some((status) => status.textContent?.includes("Loading…")),
+  ).toBe(true);
+  expect(oldContent.closest("[hidden]")).toBeNull();
   expect(screen.queryByText("Loading run…")).toBeNull();
   expect(screen.getByText("Thread inbox")).toBe(queue);
   await act(async () => {
@@ -447,7 +452,9 @@ it("ignores a late item response after selecting another Run", async () => {
   await screen.findByText("Message run_6");
   rendered.rerender(view("run_4"));
   await waitFor(() =>
-    expect(document.querySelector('[data-variant="detail"]')).not.toBeNull(),
+    expect(
+      screen.getByText("Message run_6").closest("[aria-busy=true]"),
+    ).not.toBeNull(),
   );
   rendered.rerender(view("run_3"));
   await screen.findByText("Message run_3");

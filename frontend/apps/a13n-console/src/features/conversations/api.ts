@@ -5,6 +5,7 @@ import {
   queryOptions,
   replaceEqualDeep,
   type QueryClient,
+  type InfiniteData,
 } from "@tanstack/react-query";
 import { allPages, data, type Schema } from "../../shared/api";
 
@@ -17,6 +18,12 @@ export type ContextScope =
   { thread_id: string } | { run_id: string } | { record_id: string };
 
 export type UsageScope = { session_id: string } | { run_id: string };
+export type ThreadNavigationFilter = Omit<
+  NonNullable<
+    paths["/api/v1/sessions/{session_id}/threads"]["get"]["parameters"]["query"]
+  >,
+  "cursor"
+>;
 
 export function conversationKeys(workspaceId: string) {
   const root = ["conversations", workspaceId] as const;
@@ -24,7 +31,8 @@ export function conversationKeys(workspaceId: string) {
     root,
     sessions: () => [...root, "sessions"] as const,
     session: (sessionId: string) => [...root, "session", sessionId] as const,
-    threads: (sessionId: string) => [...root, "threads", sessionId] as const,
+    navigation: (sessionId: string) =>
+      [...root, "thread-navigation", sessionId] as const,
     thread: (threadId: string) => [...root, "thread", threadId] as const,
     runs: (threadId: string) => [...root, "runs", threadId] as const,
     inbox: (threadId: string) => [...root, "inbox", threadId] as const,
@@ -75,9 +83,64 @@ function newerRunPage(previous: unknown, next: unknown) {
   });
 }
 
+type NavigationData =
+  Schema["ThreadNavigationPage"] | InfiniteData<Schema["ThreadNavigationPage"]>;
+
+function mapNavigation(
+  value: NavigationData,
+  update: (
+    page: Schema["ThreadNavigationPage"],
+  ) => Schema["ThreadNavigationPage"],
+): NavigationData {
+  return "pages" in value
+    ? { ...value, pages: value.pages.map(update) }
+    : update(value);
+}
+
+/** Late navigation reads cannot overwrite newer stream pointers. */
+function newerNavigation(previous: unknown, next: unknown) {
+  if (!previous) return next;
+  const held = previous as NavigationData;
+  const items = new Map(
+    ("pages" in held ? held.pages : [held])
+      .flatMap((page) => page.items)
+      .map((thread) => [thread.id, thread]),
+  );
+  return replaceEqualDeep(
+    previous,
+    mapNavigation(next as NavigationData, (page) => ({
+      ...page,
+      items: page.items.map((thread) => {
+        const old = items.get(thread.id);
+        return old && old.version > thread.version
+          ? {
+              ...thread,
+              version: old.version,
+              current_run_id: old.current_run_id,
+              last_run_id: old.last_run_id,
+            }
+          : thread;
+      }),
+    })),
+  );
+}
+
 /** Query owns request cancellation; delivery attachments never abort shared reads. */
 export function conversationQueries(client: Client, workspaceId: string) {
   const keys = conversationKeys(workspaceId);
+  const navigation = (
+    session_id: string,
+    filters: ThreadNavigationFilter,
+    cursor: string | undefined,
+    signal: AbortSignal,
+  ) =>
+    client
+      .workspace(workspaceId)
+      .GET("/api/v1/sessions/{session_id}/threads", {
+        params: { path: { session_id }, query: { ...filters, cursor } },
+        signal,
+      })
+      .then(data);
   return {
     context: (scope: ContextScope) =>
       queryOptions({
@@ -122,6 +185,7 @@ export function conversationQueries(client: Client, workspaceId: string) {
       }),
     session: (session_id: string) =>
       queryOptions({
+        structuralSharing: newer,
         queryKey: keys.session(session_id),
         queryFn: ({ signal }) =>
           client
@@ -241,24 +305,41 @@ export function conversationQueries(client: Client, workspaceId: string) {
         queryFn: ({ signal }) =>
           client
             .workspace(workspaceId)
-            .GET("/api/v1/usage", { params: { query: scope }, signal })
+            .GET("/api/v1/usage", {
+              params: { query: scope },
+              signal,
+            })
             .then(data),
       }),
-    threads: (session_id: string) =>
+    threadPage: (session_id: string, filters: ThreadNavigationFilter = {}) =>
       queryOptions({
-        queryKey: keys.threads(session_id),
+        structuralSharing: newerNavigation,
+        queryKey: [...keys.navigation(session_id), "page", filters],
         queryFn: ({ signal }) =>
-          allPages((cursor) =>
-            client
-              .workspace(workspaceId)
-              .GET("/api/v1/threads", {
-                params: {
-                  query: { session_id, cursor },
-                },
-                signal,
-              })
-              .then(data),
-          ),
+          navigation(session_id, filters, undefined, signal),
+      }),
+    threadPages: (session_id: string, filters: ThreadNavigationFilter = {}) =>
+      infiniteQueryOptions({
+        structuralSharing: newerNavigation,
+        queryKey: [...keys.navigation(session_id), "pages", filters],
+        initialPageParam: undefined as string | undefined,
+        queryFn: ({ signal, pageParam }) =>
+          navigation(session_id, filters, pageParam, signal),
+        getNextPageParam: (page) => page.next_cursor ?? undefined,
+      }),
+    usageRuns: (session_id: string) =>
+      infiniteQueryOptions({
+        queryKey: [...keys.usage({ session_id }), "runs"],
+        initialPageParam: undefined as string | undefined,
+        queryFn: ({ signal, pageParam }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/usage/runs", {
+              params: { query: { session_id, limit: 50, cursor: pageParam } },
+              signal,
+            })
+            .then(data),
+        getNextPageParam: (page) => page.next_cursor ?? undefined,
       }),
     runs: (
       thread_id: string,
@@ -350,19 +431,23 @@ export function invalidateConversation(
 ) {
   return cache.invalidateQueries({
     queryKey: conversationKeys(workspaceId).root,
-    predicate: ({ queryKey: [, , kind, id, position], state }) =>
+    predicate: ({ queryKey: [, , kind, id, position], state, meta }) =>
       changes.some((change) => {
         switch (kind) {
           case "sessions":
             return !!(change.sessionId || change.threadId || change.runId);
           case "session":
-          case "threads":
+          case "thread-navigation":
             return !!change.sessionId && id === change.sessionId;
           case "context":
             return id === change.threadId || id === change.runId;
           // Usage is keyed by the Session or the Run it sums.
           case "usage":
-            return id === change.sessionId || id === change.runId;
+            return (
+              id === change.sessionId ||
+              id === change.runId ||
+              (!!change.sessionId && meta?.sessionId === change.sessionId)
+            );
           case "runs":
             return (
               !!change.threadId &&
@@ -426,8 +511,17 @@ export function applyThreadState(
       },
     );
     // A run's version moves with its attempts.
-    if (held >= 0 && held < run.version)
+    if (held >= 0 && held < run.version) {
       void cache.invalidateQueries({ queryKey: keys.attempts(run.id) });
+      void cache.invalidateQueries(
+        { queryKey: keys.usage({ run_id: run.id }) },
+        { cancelRefetch: false },
+      );
+      void cache.invalidateQueries(
+        { queryKey: keys.usage({ session_id: run.session_id }) },
+        { cancelRefetch: false },
+      );
+    }
   }
   const previous = cache.getQueryData<Schema["ThreadView"]>(
     keys.thread(thread.id),
@@ -435,28 +529,79 @@ export function applyThreadState(
   const held = version(previous);
   if (held >= thread.version) return;
   cache.setQueryData(keys.thread(thread.id), thread);
+  const session = cache.getQueryData<Schema["SessionView"]>(
+    keys.session(thread.session_id),
+  );
+  // The first stream snapshot contains old Threads too. Only a newer acceptance
+  // or a changed latest preview requires another Session summary read.
+  const sessionChanged =
+    !session ||
+    [current_run, last_run].some(
+      (run) =>
+        run &&
+        (run.created_at > session.updated_at ||
+          (session.preview?.run_id === run.id &&
+            session.preview.status !== run.status)),
+    );
+  let listed = false;
+  cache.setQueriesData<NavigationData>(
+    { queryKey: keys.navigation(thread.session_id) },
+    (value) => {
+      if (!value) return;
+      let changed = false;
+      const next = mapNavigation(value, (page) => ({
+        ...page,
+        items: page.items.map((item) => {
+          if (item.id !== thread.id) return item;
+          listed = true;
+          if (item.version >= thread.version) return item;
+          changed = true;
+          return {
+            ...item,
+            version: thread.version,
+            current_run_id: thread.current_run_id,
+            last_run_id: thread.last_run_id,
+          };
+        }),
+      }));
+      return changed ? next : undefined;
+    },
+  );
+  if (!previous && !listed)
+    void cache.invalidateQueries(
+      {
+        queryKey: keys.navigation(thread.session_id),
+        refetchType: sessionChanged ? "active" : "none",
+      },
+      { cancelRefetch: false },
+    );
   const membershipChanged =
     !previous ||
     previous.current_run_id !== thread.current_run_id ||
     previous.last_run_id !== thread.last_run_id;
+  const latest = thread.current_run_id ?? thread.last_run_id;
   void cache.invalidateQueries(
     {
       queryKey: keys.root,
       predicate: ({ queryKey: [, , kind, id, position], state }) =>
-        kind === "sessions" ||
-        (kind === "context" &&
+        (sessionChanged &&
+          (kind === "sessions" ||
+            (kind === "session" && id === thread.session_id))) ||
+        (!!previous &&
+          kind === "context" &&
           (id === thread.id ||
             id === current_run?.id ||
             id === last_run?.id)) ||
-        ((kind === "session" || kind === "threads") &&
-          id === thread.session_id) ||
-        (kind === "inbox" && id === thread.id) ||
+        (!!previous && kind === "inbox" && id === thread.id) ||
         (kind === "runs" &&
           id === thread.id &&
           membershipChanged &&
-          isLiveRunPage(position, state.data)),
+          !!latest &&
+          isLiveRunPage(position, state.data) &&
+          !(state.data as Schema["ThreadRunPage"] | undefined)?.items.some(
+            (run) => run.id === latest,
+          )),
     },
-    // A thread seen first does not restart the reads that load the page.
     { cancelRefetch: held >= 0 },
   );
 }

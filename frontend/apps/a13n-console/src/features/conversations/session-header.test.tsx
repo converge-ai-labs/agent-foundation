@@ -16,6 +16,7 @@ import { SessionHeader } from "./session-header";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { DebugRunSection } from "./transcript/debug/run-section";
 import {
+  fixtureNavigationPage,
   fixtureRun,
   fixtureRunPage,
   fixtureRunAgent,
@@ -99,10 +100,14 @@ const child = fixtureThread({
   origin_thread_id: "thr_1",
 });
 
+let currentThreads: ReturnType<typeof fixtureThread>[];
+let usageRequests: URL[];
 let contextRequests: URL[];
 let toolRequests: URL[];
 
 beforeEach(() => {
+  currentThreads = [fixtureThread(), child];
+  usageRequests = [];
   contextRequests = [];
   toolRequests = [];
   labels = { "a13n.console": "debug" };
@@ -118,6 +123,18 @@ beforeEach(() => {
       }
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
+      if (url.pathname.endsWith("/usage/runs")) {
+        usageRequests.push(url);
+        return Response.json({ items: usage.runs, next_cursor: null });
+      }
+      if (url.pathname.endsWith("/sessions/ses_1/threads"))
+        return Response.json(
+          fixtureNavigationPage(currentThreads, url.searchParams),
+        );
+      const thread = currentThreads.find((thread) =>
+        url.pathname.endsWith(`/threads/${thread.id}`),
+      );
+      if (thread) return Response.json(thread);
       if (url.pathname.endsWith("/runs"))
         return Response.json(
           fixtureRunPage([fixtureRun(), fixtureRun({ id: "run_1" })]),
@@ -134,7 +151,15 @@ beforeEach(() => {
           context_window_tokens: 200000,
         });
       }
-      if (url.pathname.endsWith("/usage")) return Response.json(usage);
+      if (url.pathname.endsWith("/usage")) {
+        usageRequests.push(url);
+        const runId = url.searchParams.get("run_id");
+        return Response.json({
+          models: runId
+            ? (usage.runs.find((run) => run.run_id === runId)?.models ?? [])
+            : usage.models,
+        });
+      }
       if (url.pathname.endsWith("/models"))
         return Response.json({
           items: [
@@ -191,6 +216,7 @@ function show(
   path = "/sessions/ses_1/threads/thr_1/runs/run_2",
   section = false,
 ) {
+  currentThreads = threads;
   return render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[path]}>
@@ -199,7 +225,7 @@ function show(
             path="/sessions/:sessionId/threads/:threadId/runs?/:runId?"
             element={
               <RunCollapseProvider>
-                <SessionHeader threads={threads} />
+                <SessionHeader />
                 <Location />
                 {section && (
                   <DebugRunSection
@@ -271,14 +297,16 @@ it("opens a child thread in Debug and still offers Chat", async () => {
   expect(await screen.findByText("level:?view=chat")).toBeTruthy();
 });
 
-it("keeps the switch beside the breadcrumb inside a child thread", () => {
+it("keeps the switch beside the breadcrumb inside a child thread", async () => {
   show(
     [fixtureThread(), child],
     "/sessions/ses_1/threads/thr_child/runs/run_2",
   );
   expect(screen.getByRole("button", { name: "Chat" })).toBeTruthy();
   expect(
-    screen.getByRole("link", { name: "Root thread" }).getAttribute("href"),
+    (await screen.findByRole("link", { name: "Root thread" })).getAttribute(
+      "href",
+    ),
   ).toBe("/workspace/design/sessions/ses_1/threads/thr_1?view=debug");
 });
 
@@ -364,20 +392,27 @@ it("uses the latest run of the thread when no run is selected", async () => {
   expect(contextRequests.at(-1)?.searchParams.has("run_id")).toBe(false);
 });
 
-it("numbers old usage rows directly without fetching any Run pages", async () => {
-  const requests: string[] = [];
+it("loads usage pages only on demand and numbers old rows without fetching Run history", async () => {
+  const requests: URL[] = [];
   client.close();
   client = createClient({
     baseUrl: "https://test.invalid",
     auth: { type: "session" },
     fetch: async (request) => {
-      const path = new URL((request as Request).url).pathname;
-      requests.push(path);
-      if (path.endsWith("/usage"))
+      const url = new URL((request as Request).url),
+        path = url.pathname;
+      requests.push(url);
+      if (path.endsWith("/usage/runs"))
         return Response.json({
-          ...usage,
-          runs: [{ ...usage.runs[0], run_number: 42 }],
+          items: url.searchParams.has("cursor")
+            ? [{ ...usage.runs[1], run_number: 75 }]
+            : [{ ...usage.runs[0], run_number: 42 }],
+          next_cursor: url.searchParams.has("cursor") ? null : "next",
         });
+      if (path.endsWith("/threads"))
+        return Response.json(fixtureNavigationPage([fixtureThread()]));
+      if (path.endsWith("/usage"))
+        return Response.json({ models: usage.models });
       if (path.endsWith("/models"))
         return Response.json({ items: [], next_cursor: null });
       throw new Error(`Unexpected request ${path}`);
@@ -386,13 +421,35 @@ it("numbers old usage rows directly without fetching any Run pages", async () =>
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <SessionUsage sessionId="ses_1" threads={[fixtureThread()]} />
+        <SessionUsage sessionId="ses_1" />
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  await userEvent
-    .setup()
-    .click(await screen.findByRole("button", { name: "Session usage: $0.30" }));
+  const trigger = await screen.findByRole("button", {
+    name: "Session usage: $0.30",
+  });
+  expect(requests.map((url) => url.pathname)).toEqual(["/api/v1/usage"]);
+  const user = userEvent.setup();
+  await user.click(trigger);
   expect(await screen.findByRole("link", { name: "Run 42" })).toBeTruthy();
-  expect(requests.some((path) => path.endsWith("/runs"))).toBe(false);
+  expect(
+    requests.filter((url) => url.pathname.endsWith("/usage/runs")),
+  ).toHaveLength(1);
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(await screen.findByRole("link", { name: "Run 75" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Run 42" })).toBeTruthy();
+  expect(
+    requests
+      .filter((url) => url.pathname.endsWith("/usage/runs"))
+      .map((url) => [
+        url.searchParams.get("limit"),
+        url.searchParams.get("cursor"),
+      ]),
+  ).toEqual([
+    ["50", null],
+    ["50", "next"],
+  ]);
+  expect(
+    requests.some((url) => /\/threads\/[^/]+\/runs$/.test(url.pathname)),
+  ).toBe(false);
 });

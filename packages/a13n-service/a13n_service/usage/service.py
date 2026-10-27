@@ -45,6 +45,8 @@ from a13n_service.usage.schemas import (
     OverviewQuery,
     RunMetrics,
     RunUsage,
+    RunUsagePage,
+    RunUsageQuery,
     UsageFilter,
     UsageOverview,
     UsageSummary,
@@ -283,13 +285,7 @@ async def request_metrics(storage: Storage, actor: Principal, workspace_id: str,
     return ModelRequestMetrics.model_validate(row)
 
 
-async def summarize(storage: Storage, actor: Principal, workspace_id: str, where: UsageFilter) -> UsageSummary:
-    """Model usage recorded in the workspace, per model and per Run, including reports that arrived after a seal.
-
-    Cost sums each record's own priced cost; records the Harness could not price count tokens only. One
-    statement groups both ways, so the per-Run rows always add up to the per-model totals.
-    """
-    by_run = (RunRow.created_at, RunRow.id, RunRow.thread_id)
+def _scoped_usage(workspace_id: str, where: UsageFilter) -> Select:
     timing = _timing_metrics()
     query = (
         _model_totals()
@@ -297,63 +293,100 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
             timing["time_to_first_chunk_seconds"].label("average_time_to_first_chunk_seconds"),
             timing["output_tokens_per_second"].label("output_tokens_per_second"),
             ModelRow.key.label("model"),
-            RunRow.id.label("run_id"),
-            RunRow.thread_id,
-            func.grouping(RunRow.id).label("total"),
         )
         .join(RunRow, RunRow.id == UsageRecordRow.run_id)
         .outerjoin(ModelRow, ModelRow.id == UsageRecordRow.model_id)
-        .group_by(func.grouping_sets(tuple_(ModelRow.key), tuple_(*by_run, ModelRow.key)))
-        .order_by(*by_run, ModelRow.key)
+        .where(UsageRecordRow.workspace_id == workspace_id)
     )
-    async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        query = query.where(UsageRecordRow.workspace_id == scope.workspace_id)
-        for column, value in (
-            (RunRow.id, where.run_id),
-            (RunRow.thread_id, where.thread_id),
-            (RunRow.session_id, where.session_id),
-        ):
-            if value is not None:
-                query = query.where(column == value)
-        if where.ingested_after is not None:
-            query = query.where(UsageRecordRow.ingested_at >= where.ingested_after)
-        if where.ingested_before is not None:
-            query = query.where(UsageRecordRow.ingested_at < where.ingested_before)
-        # Number the complete scoped threads, including Runs with no matching usage.
-        # Joining this projection keeps all labels in the aggregate's single snapshot.
-        numbered = select(
-            RunRow.id,
-            func.row_number()
-            .over(partition_by=RunRow.thread_id, order_by=(RunRow.created_at, RunRow.id))
-            .label("number"),
-        ).where(RunRow.workspace_id == scope.workspace_id)
-        for column, value in ((RunRow.thread_id, where.thread_id), (RunRow.session_id, where.session_id)):
-            if value is not None:
-                numbered = numbered.where(column == value)
-        if where.run_id is not None:
-            numbered = numbered.where(
-                RunRow.thread_id.in_(
-                    select(RunRow.thread_id).where(RunRow.workspace_id == scope.workspace_id, RunRow.id == where.run_id)
-                )
+    for column, value in (
+        (RunRow.id, where.run_id),
+        (RunRow.thread_id, where.thread_id),
+        (RunRow.session_id, where.session_id),
+    ):
+        if value is not None:
+            query = query.where(column == value)
+    if where.ingested_after is not None:
+        query = query.where(UsageRecordRow.ingested_at >= where.ingested_after)
+    if where.ingested_before is not None:
+        query = query.where(UsageRecordRow.ingested_at < where.ingested_before)
+    return query
+
+
+def _run_numbers(workspace_id: str, where: UsageFilter) -> Select:
+    # Number complete Threads before filtering usage or selecting a page.
+    query = select(
+        RunRow.id,
+        func.row_number().over(partition_by=RunRow.thread_id, order_by=(RunRow.created_at, RunRow.id)).label("number"),
+    ).where(RunRow.workspace_id == workspace_id)
+    for column, value in ((RunRow.thread_id, where.thread_id), (RunRow.session_id, where.session_id)):
+        if value is not None:
+            query = query.where(column == value)
+    if where.run_id is not None:
+        query = query.where(
+            RunRow.thread_id.in_(
+                select(RunRow.thread_id).where(RunRow.workspace_id == workspace_id, RunRow.id == where.run_id)
             )
-        numbers = numbered.cte("run_numbers")
-        query = query.join(numbers, numbers.c.id == RunRow.id).add_columns(
-            func.max(numbers.c.number).label("run_number")
         )
-        rows = (await session.execute(query)).mappings().all()
-    models: list[ModelUsage] = []
+    return query
+
+
+def _run_usage_rows(rows: list[RowMapping]) -> list[RunUsage]:
     runs: dict[tuple[str, str, int], list[ModelUsage]] = {}
     for row in rows:
-        usage = ModelUsage.model_validate(row)
-        if row["total"]:
-            models.append(usage)
-        else:
-            runs.setdefault((row["run_id"], row["thread_id"], row["run_number"]), []).append(usage)
-    return UsageSummary(
-        models=models,
-        runs=[
-            RunUsage(run_id=run, thread_id=thread, run_number=number, models=usage)
-            for (run, thread, number), usage in runs.items()
-        ],
+        runs.setdefault((row["run_id"], row["thread_id"], row["run_number"]), []).append(ModelUsage.model_validate(row))
+    return [
+        RunUsage(run_id=run, thread_id=thread, run_number=number, models=models)
+        for (run, thread, number), models in runs.items()
+    ]
+
+
+async def summarize(storage: Storage, actor: Principal, workspace_id: str, where: UsageFilter) -> UsageSummary:
+    """Current per-model totals, independent of the paginated Run breakdown."""
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        query = _scoped_usage(scope.workspace_id, where).group_by(ModelRow.key).order_by(ModelRow.key)
+        rows = (await session.execute(query)).mappings().all()
+    return UsageSummary(models=[ModelUsage.model_validate(row) for row in rows])
+
+
+async def run_usage(storage: Storage, actor: Principal, workspace_id: str, where: RunUsageQuery) -> RunUsagePage:
+    """Page whole Runs before aggregating their models, in one database snapshot."""
+    owner = cursors.query_owner(workspace_id, where.model_dump(exclude={"limit", "cursor"}))
+    async with short_session(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        query = _scoped_usage(scope.workspace_id, where)
+        page = query.with_only_columns(
+            RunRow.created_at, RunRow.id, RunRow.thread_id, maintain_column_froms=True
+        ).group_by(RunRow.created_at, RunRow.id, RunRow.thread_id)
+        if where.cursor:
+            page = page.where(
+                tuple_(RunRow.created_at, RunRow.id) > cursors.time_position(where.cursor, "run-usage", owner)
+            )
+        selected = page.order_by(RunRow.created_at, RunRow.id).limit(where.limit + 1).cte("usage_page")
+        numbers = (
+            _run_numbers(scope.workspace_id, where)
+            .where(RunRow.thread_id.in_(select(selected.c.thread_id)))
+            .cte("run_numbers")
+        )
+        query = (
+            query.join(selected, selected.c.id == RunRow.id)
+            .join(numbers, numbers.c.id == RunRow.id)
+            .add_columns(
+                RunRow.created_at,
+                RunRow.id.label("run_id"),
+                RunRow.thread_id,
+                numbers.c.number.label("run_number"),
+            )
+            .group_by(RunRow.created_at, RunRow.id, RunRow.thread_id, numbers.c.number, ModelRow.key)
+            .order_by(RunRow.created_at, RunRow.id, ModelRow.key)
+        )
+        rows = (await session.execute(query)).mappings().all()
+    runs = _run_usage_rows(list(rows))
+    items = runs[: where.limit]
+    times = {row["run_id"]: row["created_at"] for row in rows}
+    return RunUsagePage(
+        items=items,
+        next_cursor=cursors.encode("run-usage", owner, times[items[-1].run_id].isoformat(), items[-1].run_id)
+        if len(runs) > where.limit
+        else None,
     )

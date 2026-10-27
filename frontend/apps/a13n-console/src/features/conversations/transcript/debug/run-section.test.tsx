@@ -115,17 +115,11 @@ beforeEach(() => {
       if (url.pathname.endsWith("/environments"))
         return Response.json({ items: [], next_cursor: null });
       if (url.pathname.endsWith("/usage")) {
-        expect(url.searchParams.get("session_id")).toBe("ses_1");
+        expect(url.searchParams.get("run_id")).toBe("run_2");
+        expect(url.searchParams.has("session_id")).toBe(false);
         if (usageStatus !== 200)
           return Response.json({}, { status: usageStatus });
-        return Response.json({
-          // Another Run in this Session must never inflate this Run's totals.
-          models: [...recorded, ...recorded],
-          runs: [
-            { run_id: "run_2", thread_id: "thr_1", models: recorded },
-            { run_id: "run_other", thread_id: "thr_1", models: recorded },
-          ],
-        });
+        return Response.json({ models: recorded });
       }
       if (url.pathname.includes("/runs/")) return Response.json(fixtureRun());
       throw new Error(`Unexpected request: ${url.pathname}`);

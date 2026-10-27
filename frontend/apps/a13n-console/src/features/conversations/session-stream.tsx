@@ -32,10 +32,12 @@ const Context = createContext<SessionStream | undefined>(undefined);
  */
 export function SessionStreamProvider({
   sessionId,
+  enabled = true,
   onEvent,
   children,
 }: {
   sessionId: string;
+  enabled?: boolean;
   onEvent?: (event: SessionEvent) => void;
   children: ReactNode;
 }) {
@@ -49,6 +51,7 @@ export function SessionStreamProvider({
   const [generation, setGeneration] = useState(0);
   const received = useEffectEvent((event: SessionEvent) => onEvent?.(event));
   useEffect(() => {
+    if (!enabled) return;
     const controller = new AbortController(),
       keys = conversationKeys(workspace.id);
     async function follow() {
@@ -87,7 +90,7 @@ export function SessionStreamProvider({
       setConnection({ state: "closed", error });
     });
     return () => controller.abort();
-  }, [client, workspace.id, sessionId, cache, displays, generation]);
+  }, [client, workspace.id, sessionId, cache, displays, generation, enabled]);
   useEffect(() => () => displays.close(), [displays]);
   const value = useMemo(
     () => ({

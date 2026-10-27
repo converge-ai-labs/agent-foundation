@@ -10,6 +10,7 @@ import type { Schema } from "../../../shared/api";
 import { ErrorNotice, Loading } from "../../../shared/feedback";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
+import { SessionBodyLoading, SessionError } from "../session-feedback";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
 import { BranchOrigin } from "../thread-branches";
@@ -171,67 +172,60 @@ export function RunContent({
 
   // The navigator belongs to the Thread. Keep it mounted while the selected
   // Run loads; only its transcript and composer start a new inspection lifetime.
-  if (threadQuery.isPending || session.isPending)
-    return <Loading variant="detail" />;
+  if (threadQuery.isPending || session.isPending) return <SessionBodyLoading />;
   if (!thread)
     return (
-      <ErrorNotice
+      <SessionError
         error={threadQuery.error}
         retry={() => void threadQuery.refetch()}
       />
     );
+  if (!presentation) {
+    const error =
+      run && !valid
+        ? new Error(t("This run does not belong to this thread."))
+        : (runQuery.error ?? items.error);
+    return error ? (
+      <SessionError
+        error={error}
+        retry={() => {
+          void runQuery.refetch();
+          void items.refetch();
+        }}
+      />
+    ) : (
+      <SessionBodyLoading />
+    );
+  }
   const debugLevel = level === "debug";
   return (
     <div className={debugLevel ? debug.page : styles.page}>
       <div className={debugLevel ? debug.frame : styles.page}>
         {debugLevel && <RunNavigator thread={thread} runId={runId} />}
-        {presentation ? (
-          <RunBody
-            run={presentation.run}
-            runIds={presentation.runIds}
-            thread={thread}
-            level={level}
-            agentName={agent.data?.name}
-            switching={switching}
-            pending={
-              switching &&
-              !runQuery.isError &&
-              !items.isError &&
-              (!run || valid)
-            }
-            retry={() => {
-              void runQuery.refetch();
-              void items.refetch();
-            }}
-            error={
-              run && !valid
-                ? new Error(t("This run does not belong to this thread."))
-                : (runQuery.error ??
-                  items.error ??
-                  threadQuery.error ??
-                  successor.error ??
-                  lineage.error)
-            }
-          />
-        ) : (
-          <div className={styles.opening}>
-            {runQuery.isError || items.isError || (run && !valid) ? (
-              <ErrorNotice
-                error={
-                  run && !valid
-                    ? new Error(t("This run does not belong to this thread."))
-                    : (runQuery.error ?? items.error)
-                }
-                retry={() => {
-                  void runQuery.refetch();
-                  void items.refetch();
-                }}
-              />
-            ) : (
-              <Loading variant="detail" />
-            )}
-          </div>
-        )}
+        <RunBody
+          run={presentation.run}
+          runIds={presentation.runIds}
+          thread={thread}
+          level={level}
+          agentName={agent.data?.name}
+          switching={switching}
+          pending={
+            switching && !runQuery.isError && !items.isError && (!run || valid)
+          }
+          retry={() => {
+            void runQuery.refetch();
+            void items.refetch();
+          }}
+          error={
+            run && !valid
+              ? new Error(t("This run does not belong to this thread."))
+              : (runQuery.error ??
+                items.error ??
+                threadQuery.error ??
+                successor.error ??
+                lineage.error)
+          }
+        />
       </div>
     </div>
   );
@@ -259,13 +253,8 @@ function RunBody({
   error: unknown;
 }) {
   const { t } = useTranslation();
-  const { can, workspace } = useWorkspace();
+  const { can } = useWorkspace();
   const interactive = useInteractiveThread(thread);
-  const client = useClient();
-  const threads = useQuery({
-    ...conversationQueries(client, workspace.id).threads(thread.session_id),
-    enabled: thread.origin === "fork",
-  });
   const transcript = useRef<HTMLDivElement>(null);
   const scroll = useTranscriptScroll(transcript, level, runIds[0]);
   const stopped = ["failed", "cancelled"].includes(run.status);
@@ -305,7 +294,11 @@ function RunBody({
       className={debugLevel ? `${styles.run} ${debug.main}` : styles.run}
       ref={transcript}
     >
-      {pending && <Loading variant="detail" />}
+      {pending && (
+        <div className={styles.switchStatus}>
+          <Loading />
+        </div>
+      )}
       {error != null && (
         <div className={styles.switchStatus}>
           <ErrorNotice error={error} retry={retry} />
@@ -314,15 +307,10 @@ function RunBody({
       <div
         key={runIds[0]}
         inert={switching}
-        hidden={pending}
         aria-busy={pending}
         className={styles.observation}
       >
-        <BranchOrigin
-          thread={thread}
-          threads={threads.data ?? [thread]}
-          level={level}
-        />
+        <BranchOrigin thread={thread} level={level} />
         <div className={debugLevel ? debug.sections : styles.transcript}>
           {level === "chat" && (
             <HistoryTranscript

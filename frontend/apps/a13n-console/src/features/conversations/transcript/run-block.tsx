@@ -48,7 +48,7 @@ export function RunBlock({
   // the session for its threads.
   const threads = useChildThreads(
     hasDelegation(blocks) ? run.session_id : "",
-    run.thread_id,
+    run.id,
   );
   const child = childThreadOf(threads, run.id);
   const replies = blocks.flatMap((block) =>

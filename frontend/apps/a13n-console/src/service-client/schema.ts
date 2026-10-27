@@ -2973,6 +2973,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/sessions/{session_id}/threads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Session Threads
+     * @description Lightweight Session navigation, oldest first, with stable per-origin positions and parent references.
+     */
+    get: operations["list_session_threads"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/skills": {
     parameters: {
       query?: never;
@@ -3879,6 +3899,26 @@ export interface paths {
     };
     /** Model Request Metrics */
     get: operations["model_request_metrics"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Run Usage
+     * @description One page of Run usage; Run numbers include all Runs in each Thread, including those without usage.
+     */
+    get: operations["list_run_usage"];
     put?: never;
     post?: never;
     delete?: never;
@@ -10428,6 +10468,13 @@ export interface components {
       /** Thread Id */
       thread_id: string;
     };
+    /** RunUsagePage */
+    RunUsagePage: {
+      /** Items */
+      items: components["schemas"]["RunUsage"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** RunView */
     RunView: {
       /** Agent Id */
@@ -11753,12 +11800,72 @@ export interface components {
       /** Version */
       version: string;
     };
+    /**
+     * ThreadNavigation
+     * @description Bounded navigation metadata; positions count the complete Session before filtering.
+     */
+    ThreadNavigation: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Current Run Id */
+      current_run_id: string | null;
+      /** Id */
+      id: string;
+      /** Last Run Id */
+      last_run_id: string | null;
+      /**
+       * Origin
+       * @enum {string}
+       */
+      origin: "new" | "fork" | "child";
+      /** Origin Count */
+      origin_count: number;
+      /** Origin Number */
+      origin_number: number;
+      /** Origin Run Id */
+      origin_run_id: string | null;
+      origin_thread: components["schemas"]["ThreadReference"] | null;
+      /** Origin Thread Id */
+      origin_thread_id: string | null;
+      /** Session Id */
+      session_id: string;
+      /** Subagent */
+      subagent: string | null;
+      /** Version */
+      version: number;
+    };
+    /** ThreadNavigationPage */
+    ThreadNavigationPage: {
+      /** Items */
+      items: components["schemas"]["ThreadNavigation"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** ThreadPage */
     ThreadPage: {
       /** Items */
       items: components["schemas"]["ThreadView"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** ThreadReference */
+    ThreadReference: {
+      /** Id */
+      id: string;
+      /**
+       * Origin
+       * @enum {string}
+       */
+      origin: "new" | "fork" | "child";
+      /** Origin Count */
+      origin_count: number;
+      /** Origin Number */
+      origin_number: number;
+      /** Subagent */
+      subagent: string | null;
     };
     /**
      * ThreadRunPage
@@ -12340,8 +12447,6 @@ export interface components {
     UsageSummary: {
       /** Models */
       models: components["schemas"]["ModelUsage"][];
-      /** Runs */
-      runs: components["schemas"]["RunUsage"][];
     };
     /** UserKeyCreate */
     UserKeyCreate: {
@@ -19420,6 +19525,39 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_session_threads: {
+    parameters: {
+      query?: {
+        origin?: ("new" | "fork" | "child")[] | null;
+        thread_id?: string[] | null;
+        origin_run_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadNavigationPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_skills: {
     parameters: {
       query?: {
@@ -21404,6 +21542,39 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelRequestMetrics"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_run_usage: {
+    parameters: {
+      query?: {
+        run_id?: string | null;
+        thread_id?: string | null;
+        session_id?: string | null;
+        ingested_after?: string | null;
+        ingested_before?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunUsagePage"];
         };
       };
       400: components["responses"]["Error"];

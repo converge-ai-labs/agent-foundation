@@ -45,7 +45,7 @@ export function ThreadExecutionDialog({
       const keys = conversationKeys(workspace.id);
       cache.setQueryData(keys.thread(value.id), value);
       void cache.invalidateQueries({
-        queryKey: keys.threads(value.session_id),
+        queryKey: keys.navigation(value.session_id),
       });
       onClose();
     },

@@ -517,6 +517,32 @@ class ThreadPage(BaseModel):
     next_cursor: str | None
 
 
+class ThreadReference(BaseModel):
+    id: str
+    origin: Literal["new", "fork", "child"]
+    subagent: str | None
+    origin_number: int
+    origin_count: int
+
+
+class ThreadNavigation(ThreadReference):
+    """Bounded navigation metadata; positions count the complete Session before filtering."""
+
+    version: int
+    session_id: str
+    origin_thread_id: str | None
+    origin_thread: ThreadReference | None
+    origin_run_id: str | None
+    current_run_id: str | None
+    last_run_id: str | None
+    created_at: datetime
+
+
+class ThreadNavigationPage(BaseModel):
+    items: list[ThreadNavigation]
+    next_cursor: str | None
+
+
 class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str

@@ -434,11 +434,6 @@
 .observation {
   min-width: 0;
 }
-.opening {
-  padding: 20px 0;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-sm);
-}
 .switchStatus {
   position: sticky;
   top: 0;

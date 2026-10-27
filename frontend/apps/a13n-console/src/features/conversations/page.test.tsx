@@ -12,7 +12,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
 import { ConversationsPage, NewConversation } from "./page";
-import { fixtureRun, fixtureThread } from "./transcript/fixture";
+import { conversationKeys, conversationQueries } from "./api";
+import {
+  fixtureRun,
+  fixtureSession,
+  fixtureThread,
+} from "./transcript/fixture";
 
 let client: Client;
 let allowed: string[] = [];
@@ -52,6 +57,7 @@ it("renders a full Session page from collection previews without per-row Thread 
       return Response.json({
         items: Array.from({ length: 20 }, (_, index) => ({
           id: `session_${index}`,
+          version: 1,
           workspace_id: "workspace",
           labels: {},
           title: `Question ${index}`,
@@ -79,6 +85,11 @@ it("renders a full Session page from collection previews without per-row Thread 
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const keys = conversationKeys("workspace");
+  cache.setQueryData(
+    keys.session("session_0"),
+    fixtureSession({ id: "session_0", version: 2, title: "Newer title" }),
+  );
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={["/workspace/ws_design/sessions"]}>
@@ -108,6 +119,19 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.getByText("Not started")).toBeTruthy();
   expect(screen.getByRole("searchbox")).toBeTruthy();
   expect(screen.queryByText("Session detail")).toBeNull();
+  expect(requests).toEqual(["/api/v1/sessions"]);
+  const detail = conversationQueries(client, "workspace").session("session_1");
+  expect(cache.getQueryState(detail.queryKey)?.dataUpdatedAt).toBe(
+    cache.getQueryCache().find({ queryKey: keys.sessions(), exact: false })
+      ?.state.dataUpdatedAt,
+  );
+  expect(
+    await cache.fetchQuery({ ...detail, staleTime: 15_000 }),
+  ).toMatchObject({ id: "session_1", title: "Question 1" });
+  expect(cache.getQueryData(keys.session("session_0"))).toMatchObject({
+    title: "Newer title",
+    version: 2,
+  });
   expect(requests).toEqual(["/api/v1/sessions"]);
   const row = screen.getByText("Question 0").closest("tr")!;
   await user.click(
