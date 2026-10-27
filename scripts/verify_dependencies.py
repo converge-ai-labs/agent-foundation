@@ -12,6 +12,10 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 TEST_INPUTS: dict[str, tuple[str, ...]] = {
+    "packages/a13n-service/tests/environment_providers/test_cloudflare.py": (
+        "packages/a13n-service/a13n_service/providers/environments/cloudflare/*.mjs",
+        "packages/a13n-service/tests/environment_providers/cloudflare_worker.test.mjs",
+    ),
     "packages/a13n-service/tests/test_documentation.py": (
         "docs/a13n-service/*",
         "packages/a13n-service/build_docs.py",

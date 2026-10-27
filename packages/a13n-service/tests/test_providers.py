@@ -803,6 +803,7 @@ async def test_provider_types_describe_each_registered_definition(service) -> No
     environments = await types("environment")
     # External envd targets are no provider type; Sprites cannot stop, and only a Docker account can be tested.
     assert {name: tuple(item[flag] for flag in lifecycle) for name, item in environments.items()} == {
+        "cloudflare": (True, True, False),
         "daytona": (True, True, False),
         "docker": (True, True, True),
         "e2b": (True, True, False),
