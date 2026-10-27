@@ -3856,6 +3856,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/usage/members": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Usage Members */
+    get: operations["list_usage_members"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/usage/models": {
     parameters: {
       query?: never;
@@ -7984,6 +8001,32 @@ export interface components {
     MemberPage: {
       /** Items */
       items: components["schemas"]["PrincipalSummary"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** MemberUsage */
+    MemberUsage: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "user" | "service_account";
+      /** Name */
+      name: string;
+      /** Principal Id */
+      principal_id: string;
+      runs: components["schemas"]["RunMetrics"];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "active" | "disabled";
+      usage: components["schemas"]["ModelMetrics"];
+    };
+    /** MemberUsagePage */
+    MemberUsagePage: {
+      /** Items */
+      items: components["schemas"]["MemberUsage"][];
       /** Next Cursor */
       next_cursor: string | null;
     };
@@ -21399,6 +21442,8 @@ export interface operations {
       query: {
         start: string;
         end: string;
+        /** @description Filter by Run execution identity; requires workspace admin. */
+        principal_id?: string | null;
         limit?: number;
         cursor?: string | null;
       };
@@ -21453,11 +21498,45 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_usage_members: {
+    parameters: {
+      query: {
+        start: string;
+        end: string;
+        /** @description Filter by Run execution identity; requires workspace admin. */
+        principal_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemberUsagePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   usage_models: {
     parameters: {
       query: {
         start: string;
         end: string;
+        /** @description Filter by Run execution identity; requires workspace admin. */
+        principal_id?: string | null;
         limit?: number;
         cursor?: string | null;
       };
@@ -21488,6 +21567,8 @@ export interface operations {
       query: {
         start: string;
         end: string;
+        /** @description Filter by Run execution identity; requires workspace admin. */
+        principal_id?: string | null;
         timezone?: string;
       };
       header?: {

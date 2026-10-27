@@ -257,6 +257,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert ("/api/v1/usage", "get") in selected
     assert ("/api/v1/usage/records/{record_id}/metrics", "get") in selected
     assert ("/api/v1/usage/context", "get") in selected
+    for path in ("overview", "agents", "models", "members"):
+        assert (f"/api/v1/usage/{path}", "get") in selected
     assert ("/api/v1/skills", "post") in selected
     assert {
         ("/api/v1/sessions", "get"),

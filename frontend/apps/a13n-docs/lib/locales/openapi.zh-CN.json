@@ -581,5 +581,7 @@
   "Delete Connector Provider": "删除 connector provider",
   "Delete Memory Provider": "删除记忆 provider",
   "Delete Model Provider": "删除模型 provider",
-  "Delete Web Provider": "删除 Web provider"
+  "Delete Web Provider": "删除 Web provider",
+  "Filter by Run execution identity; requires workspace admin.": "按 Run 执行身份筛选；需要工作空间管理员权限。",
+  "List Usage Members": "列出成员用量"
 }

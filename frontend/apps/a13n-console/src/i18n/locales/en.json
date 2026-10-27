@@ -3534,5 +3534,12 @@
   "Prompt preview": "Prompt preview",
   "Copy {{label}}": "Copy {{label}}",
   "Use a saved key, or create a new one.": "Use a saved key, or create a new one.",
-  "No active personal key. Create one to get started.": "No active personal key. Create one to get started."
+  "No active personal key. Create one to get started.": "No active personal key. Create one to get started.",
+  "By member": "By member",
+  "All members": "All members",
+  "View usage": "View usage",
+  "Viewing usage for": "Viewing usage for",
+  "Clear member filter": "Clear member filter",
+  "Members with usage in this period": "Members with usage in this period",
+  "Shared bots are attributed to their service account. View a member’s usage to filter the entire page.": "Shared bots are attributed to their service account. View a member’s usage to filter the entire page."
 }

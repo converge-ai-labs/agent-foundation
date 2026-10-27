@@ -396,6 +396,7 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 | -------------------------------------- | ------- | ------------------------------------------------------- |
 | `/usage/overview`                      | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
 | `/usage/agents`                        | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
+| `/usage/members`                       | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
 | `/usage/models`                        | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
 | `/usage`                               | GET     | [07](07-facts-and-delivery.md#usage-records)            |
 | `/usage/runs`                          | GET     | [07](07-facts-and-delivery.md#usage-records)            |
