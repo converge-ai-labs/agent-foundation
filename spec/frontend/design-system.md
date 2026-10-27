@@ -50,7 +50,7 @@ Product layouts, navigation, conversation rendering, protocol state, data fetchi
 | Overlay      | `--a13n-shadow`             | Popovers, menus, selects, and tooltips                               |
 | Floating     | `--a13n-shadow-floating`    | Dialogs and floating bars                                            |
 
-Console uses cool neutrals; Harness UI uses subtly warm neutrals to support long reading sessions. Each elevation step is a 1px hairline ring plus a softer, larger shadow, so layers separate without borders. Radii: 12px for grouping surfaces, dialogs, and empty states; 10px for popovers and menus; 8px for rows, tiles, inputs, and buttons; 6px for chips; 999px for pills. Dark mode uses the same roles with inverted alpha fills and raises elevated surfaces slightly above the canvas; every surface must read correctly in both themes. The document color scheme follows the selected theme, including native controls and syntax colors.
+Console uses cool neutrals; Harness UI's light theme uses a near-white canvas and a light neutral-gray sidebar and grouping surfaces. Each elevation step is a 1px hairline ring plus a softer, larger shadow, so layers separate without borders. Radii: 12px for grouping surfaces, dialogs, and empty states; 10px for popovers and menus; 8px for rows, tiles, inputs, and buttons; 6px for chips; 999px for pills. Dark mode uses the same roles with inverted alpha fills and raises elevated surfaces slightly above the canvas; every surface must read correctly in both themes. The document color scheme follows the selected theme, including native controls and syntax colors.
 
 ## Typography
 

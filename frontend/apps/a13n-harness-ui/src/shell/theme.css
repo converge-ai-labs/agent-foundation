@@ -4,11 +4,11 @@
   --text-sm: 0.875rem;
   --text-sm--line-height: 1.25rem;
   --a13n-text-body: 16px;
-  --background: #fcfcfb;
+  --background: #fefefe;
   --foreground: #252522;
   --card: #ffffff;
   --card-foreground: #252522;
-  --muted: #f3f3f1;
+  --muted: #f5f5f5;
   --muted-foreground: #74746f;
   --popover: #ffffff;
   --popover-foreground: #252522;
@@ -18,7 +18,7 @@
   --accent-foreground: #252522;
   --primary: #30302d;
   --primary-foreground: #ffffff;
-  --sidebar: #f3f3f1;
+  --sidebar: #f5f5f5;
   --a13n-selected: rgb(37 37 34 / 7%);
 }
 
