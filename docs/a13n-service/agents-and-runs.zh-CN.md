@@ -527,7 +527,7 @@ curl -N "$A13N_URL/api/v1/sessions/$SESSION/stream" -H "Authorization: Bearer $A
 
 ## 用量
 
-每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总，并对每个运行做同样的汇总：
+每次模型请求记录 token 数量和模型价格快照。`GET …/usage` 按模型汇总全部匹配记录。Session 总量覆盖所有运行，不受分页影响：
 
 ```sh
 curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_API_KEY"
@@ -536,11 +536,18 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 ```json
 {"models": [{"model": "gpt-5.5", "requests": 12, "input_tokens": 48210, "output_tokens": 3104,
              "cache_read_tokens": 30112, "cache_write_tokens": 0, "cost": "0.0931",
-             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}],
- "runs": [{"run_id": "run_…", "thread_id": "thread_…", "models": [{"model": "gpt-5.5", "requests": 3, …}]}, …]}
+             "average_time_to_first_chunk_seconds": 0.84, "output_tokens_per_second": 62.4}]}
 ```
 
-每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。`runs` 按从早到晚列出记录了用量的匹配运行，各运行的条目相加等于 `models`。缓存输入（`cache_read_tokens`）包含在 `input_tokens` 中。已完成的流式请求还会给出 `average_time_to_first_chunk_seconds`（等待首个流式分片的平均时间）和 `output_tokens_per_second`（首个分片之后的生成速度）；没有这类请求时两者为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+每条记录的 `model` 是模型 key；未归属模型的记录为 `null`。缓存输入（`cache_read_tokens`）包含在 `input_tokens` 中。已完成的流式请求还会给出 `average_time_to_first_chunk_seconds`（等待首个流式分片的平均时间）和 `output_tokens_per_second`（首个分片之后的生成速度）；没有这类请求时两者为 `null`。可按 `run_id`、`thread_id`、`session_id` 和 `ingested_after`/`ingested_before` 筛选。某模型没有任何已计价记录时，`cost` 为 `null`。运行的 `usage_at_seal` 是结束时的用量；延迟到达的报告仍计入 `/usage`。
+
+按运行查看明细时，单独请求 `GET …/usage/runs`，使用相同筛选条件以及 `limit` 和 `cursor`：
+
+```sh
+curl "$A13N_URL/api/v1/usage/runs?session_id=$SESSION&limit=50" -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+响应为 `{ "items": [{ "run_id": "run_…", "thread_id": "thread_…", "run_number": 3, "models": [...] }], "next_cursor": "…" }`。记录了用量的运行按时间从早到晚排列，同一运行的各模型用量始终在同一页。保持筛选条件不变，使用 `next_cursor` 继续读取；值为 `null` 时结束。`run_number` 是运行在线程中的时间顺序编号，计数包含没有用量的运行。单页明细只覆盖部分运行，完整总量始终读取 `/usage`。原先读取 `/usage.runs` 的客户端需要改为读取这些分页。
 
 ## Trace
 

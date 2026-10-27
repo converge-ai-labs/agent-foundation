@@ -260,14 +260,14 @@ export function SessionLayout() {
   const session = useSession(sessionId);
   const chat = new URLSearchParams(search).get("view") === "chat";
   const roots = useQuery({
-    ...queries.threadPage(
+    ...queries.threads(
       sessionId,
       chat ? { origin: ["new"], limit: 2 } : { limit: 1 },
     ),
     enabled: !!session.data && !threadId && !session.data.schedule_id,
   });
   const fallback = useQuery({
-    ...queries.threadPage(sessionId, { limit: 1 }),
+    ...queries.threads(sessionId, { limit: 1 }),
     enabled:
       !!session.data &&
       !session.data.schedule_id &&
@@ -281,6 +281,8 @@ export function SessionLayout() {
   const selectedThread = useQuery({
     ...queries.thread(targetThread ?? ""),
     enabled: !!targetThread,
+    initialData: first?.id === targetThread ? first : undefined,
+    initialDataUpdatedAt: roots.dataUpdatedAt,
   });
   const target =
     selectedThread.data ?? (first?.id === targetThread ? first : undefined);

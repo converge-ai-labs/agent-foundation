@@ -453,3 +453,85 @@ it("loads usage pages only on demand and numbers old rows without fetching Run h
     requests.some((url) => /\/threads\/[^/]+\/runs$/.test(url.pathname)),
   ).toBe(false);
 });
+
+it("keeps loaded thread names and order while the next usage page resolves new names", async () => {
+  const threads = ["first", "second", "third"].map((id, index) =>
+    fixtureThread({ id, created_at: `2026-09-21T10:00:0${index}Z` }),
+  );
+  const names: string[][] = [];
+  let finishNames!: (response: Response) => void;
+  const pendingNames = new Promise<Response>((resolve) => {
+    finishNames = resolve;
+  });
+  client.close();
+  client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      const url = new URL((request as Request).url);
+      if (url.pathname.endsWith("/usage/runs")) {
+        const loaded = url.searchParams.has("cursor")
+          ? [threads[2]!]
+          : threads.slice(0, 2);
+        return Response.json({
+          items: loaded.map((thread) => ({
+            ...usage.runs[0],
+            run_id: `run_${thread.id}`,
+            thread_id: thread.id,
+            run_number: 1,
+          })),
+          next_cursor: url.searchParams.has("cursor") ? null : "next",
+        });
+      }
+      if (url.pathname.endsWith("/threads")) {
+        const ids = url.searchParams.getAll("thread_id");
+        names.push(ids);
+        if (ids.includes("third")) return pendingNames;
+        return Response.json(fixtureNavigationPage(threads, url.searchParams));
+      }
+      if (url.pathname.endsWith("/usage"))
+        return Response.json({ models: usage.models });
+      if (url.pathname.endsWith("/models"))
+        return Response.json({ items: [], next_cursor: null });
+      throw new Error(`Unexpected request ${url.pathname}`);
+    },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <SessionUsage sessionId="ses_1" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Session usage: $0.30" }),
+  );
+  const first = await screen.findByText("Thread 1");
+  const second = await screen.findByText("Thread 2");
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  await waitFor(() => expect(names).toEqual([["first", "second"], ["third"]]));
+  expect(screen.getByText("Thread 1")).toBe(first);
+  expect(screen.getByText("Thread 2")).toBe(second);
+  expect(screen.queryByText("Thread")).toBeNull();
+  finishNames(
+    Response.json(
+      fixtureNavigationPage(
+        threads,
+        new URLSearchParams({ thread_id: "third" }),
+      ),
+    ),
+  );
+  await screen.findByText("Thread 3");
+  const table = screen.getByRole("table", { name: "Usage by run" });
+  expect(
+    within(table)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href")),
+  ).toEqual(
+    threads.map(
+      (thread) =>
+        `/workspace/design/sessions/ses_1/threads/${thread.id}/runs/run_${thread.id}?view=debug`,
+    ),
+  );
+});

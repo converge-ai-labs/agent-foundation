@@ -184,33 +184,50 @@ it("hydrates initial stream snapshots without refetching settled opening reads, 
   client.close();
 });
 
-it("keeps streamed navigation pointers when a slower HTTP page arrives", async () => {
+it("compares acceptance timestamps numerically when fractional seconds differ", () => {
   const cache = new QueryClient();
-  const original = fixtureThread();
-  const client = createClient({
-    baseUrl: "https://test.invalid",
-    auth: { type: "session" },
-    fetch: async () => Response.json(fixtureNavigationPage([original])),
-  });
-  const page = conversationQueries(client, "ws_1").threadPage(
-    original.session_id,
-    { limit: 1 },
+  const keys = conversationKeys("ws_1");
+  cache.setQueryData(
+    keys.session("ses_1"),
+    fixtureSession({
+      updated_at: "2026-09-21T10:00:00Z",
+    }),
   );
-  cache.setQueryData(page.queryKey, fixtureNavigationPage([original]));
   applyThreadState(cache, "ws_1", {
-    thread: {
-      ...original,
-      version: original.version + 1,
-      current_run_id: "successor",
-    },
-    current_run: null,
+    thread: fixtureThread(),
+    current_run: fixtureRun({ created_at: "2026-09-21T10:00:00.100Z" }),
     last_run: null,
     entries: [],
   });
-  await cache.fetchQuery(page);
-  expect(cache.getQueryData(page.queryKey)?.items[0]).toMatchObject({
-    version: original.version + 1,
-    current_run_id: "successor",
+  expect(cache.getQueryState(keys.session("ses_1"))?.isInvalidated).toBe(true);
+  cache.clear();
+});
+
+it("uses a bounded ordinary Thread query for delegation links", async () => {
+  const requested: URL[] = [];
+  const client = createClient({
+    baseUrl: "https://test.invalid",
+    auth: { type: "session" },
+    fetch: async (request) => {
+      requested.push(new URL((request as Request).url));
+      return Response.json({ items: [], next_cursor: null });
+    },
+  });
+  const cache = new QueryClient();
+  await cache.fetchQuery(
+    conversationQueries(client, "ws_1").threads("ses_1", {
+      origin: ["child"],
+      origin_run_id: "run_2",
+      limit: 1,
+    }),
+  );
+  expect(requested).toHaveLength(1);
+  expect(requested[0]!.pathname).toBe("/api/v1/threads");
+  expect(Object.fromEntries(requested[0]!.searchParams)).toEqual({
+    session_id: "ses_1",
+    origin: "child",
+    origin_run_id: "run_2",
+    limit: "1",
   });
   cache.clear();
   client.close();

@@ -172,7 +172,6 @@ async def list_session_threads(
     actor: Actor,
     origin: Annotated[list[Literal["new", "fork", "child"]] | None, Query(max_length=3)] = None,
     thread_id: Annotated[list[str] | None, Query(max_length=100)] = None,
-    origin_run_id: str | None = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> ThreadNavigationPage:
@@ -184,7 +183,6 @@ async def list_session_threads(
         session_id,
         origins=origin or [],
         thread_ids=thread_id or [],
-        origin_run_id=origin_run_id,
         limit=limit,
         cursor=cursor,
     )
@@ -197,6 +195,8 @@ async def list_threads(
     actor: Actor,
     session_id: str | None = None,
     occurrence_id: str | None = None,
+    origin: Annotated[list[Literal["new", "fork", "child"]] | None, Query(max_length=3)] = None,
+    origin_run_id: str | None = None,
     text_query: Annotated[str | None, Query(max_length=1024)] = None,
     label: Annotated[list[str] | None, Query()] = None,
     limit: PageLimit = 50,
@@ -208,6 +208,8 @@ async def list_threads(
         workspace_id,
         session_id=session_id,
         occurrence_id=occurrence_id,
+        origins=origin or [],
+        origin_run_id=origin_run_id,
         text_query=text_query,
         label=label or [],
         limit=limit,

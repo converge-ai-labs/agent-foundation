@@ -4,16 +4,11 @@ import { useParams } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import type { Schema } from "../../../shared/api";
-import { conversationQueries, runPath } from "../api";
+import { conversationQueries } from "../api";
 
 type Thread = Pick<
   Schema["ThreadView"],
-  | "id"
-  | "session_id"
-  | "origin"
-  | "origin_run_id"
-  | "current_run_id"
-  | "last_run_id"
+  "id" | "session_id" | "origin" | "origin_run_id"
 >;
 
 export const chronological = <T extends { created_at: string; id: string }>(
@@ -129,7 +124,7 @@ export function useChildThreads(sessionId: string, runId: string) {
   const client = useClient(),
     { workspace } = useWorkspace();
   const threads = useQuery({
-    ...conversationQueries(client, workspace.id).threadPage(sessionId, {
+    ...conversationQueries(client, workspace.id).threads(sessionId, {
       origin: ["child"],
       origin_run_id: runId,
       limit: 1,
@@ -156,13 +151,5 @@ export function childThreadOf(
 
 /** Where a child Thread opens: its latest Run, which is inspected in Debug. */
 export function childThreadPath(basePath: string, child: Thread) {
-  return runPath(
-    basePath,
-    {
-      session_id: child.session_id,
-      thread_id: child.id,
-      run_id: child.current_run_id ?? child.last_run_id ?? "",
-    },
-    "debug",
-  );
+  return `${basePath}/sessions/${child.session_id}/threads/${child.id}?view=debug`;
 }

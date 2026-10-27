@@ -21847,31 +21847,9 @@
             "title": "Created At",
             "type": "string"
           },
-          "current_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Run Id"
-          },
           "id": {
             "title": "Id",
             "type": "string"
-          },
-          "last_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Run Id"
           },
           "origin": {
             "enum": [
@@ -21890,17 +21868,6 @@
             "title": "Origin Number",
             "type": "integer"
           },
-          "origin_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Origin Run Id"
-          },
           "origin_thread": {
             "anyOf": [
               {
@@ -21910,17 +21877,6 @@
                 "type": "null"
               }
             ]
-          },
-          "origin_thread_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Origin Thread Id"
           },
           "session_id": {
             "title": "Session Id",
@@ -21936,10 +21892,6 @@
               }
             ],
             "title": "Subagent"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
           }
         },
         "required": [
@@ -21948,13 +21900,8 @@
           "subagent",
           "origin_number",
           "origin_count",
-          "version",
           "session_id",
-          "origin_thread_id",
           "origin_thread",
-          "origin_run_id",
-          "current_run_id",
-          "last_run_id",
           "created_at"
         ],
         "title": "ThreadNavigation",
@@ -44125,22 +44072,6 @@
           },
           {
             "in": "query",
-            "name": "origin_run_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Origin Run Id"
-            }
-          },
-          {
-            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -46030,6 +45961,47 @@
                 }
               ],
               "title": "Occurrence Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "new",
+                      "fork",
+                      "child"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 3,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin Run Id"
             }
           },
           {

@@ -11810,12 +11810,8 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
-      /** Current Run Id */
-      current_run_id: string | null;
       /** Id */
       id: string;
-      /** Last Run Id */
-      last_run_id: string | null;
       /**
        * Origin
        * @enum {string}
@@ -11825,17 +11821,11 @@ export interface components {
       origin_count: number;
       /** Origin Number */
       origin_number: number;
-      /** Origin Run Id */
-      origin_run_id: string | null;
       origin_thread: components["schemas"]["ThreadReference"] | null;
-      /** Origin Thread Id */
-      origin_thread_id: string | null;
       /** Session Id */
       session_id: string;
       /** Subagent */
       subagent: string | null;
-      /** Version */
-      version: number;
     };
     /** ThreadNavigationPage */
     ThreadNavigationPage: {
@@ -19530,7 +19520,6 @@ export interface operations {
       query?: {
         origin?: ("new" | "fork" | "child")[] | null;
         thread_id?: string[] | null;
-        origin_run_id?: string | null;
         limit?: number;
         cursor?: string | null;
       };
@@ -20151,6 +20140,8 @@ export interface operations {
       query?: {
         session_id?: string | null;
         occurrence_id?: string | null;
+        origin?: ("new" | "fork" | "child")[] | null;
+        origin_run_id?: string | null;
         text_query?: string | null;
         label?: string[] | null;
         limit?: number;

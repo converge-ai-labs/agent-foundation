@@ -5,7 +5,6 @@ import {
   queryOptions,
   replaceEqualDeep,
   type QueryClient,
-  type InfiniteData,
 } from "@tanstack/react-query";
 import { allPages, data, type Schema } from "../../shared/api";
 
@@ -81,48 +80,6 @@ function newerRunPage(previous: unknown, next: unknown) {
     total: Math.max(held.total, page.total),
     items: page.items.map((item) => newer(versions.get(item.id), item)),
   });
-}
-
-type NavigationData =
-  Schema["ThreadNavigationPage"] | InfiniteData<Schema["ThreadNavigationPage"]>;
-
-function mapNavigation(
-  value: NavigationData,
-  update: (
-    page: Schema["ThreadNavigationPage"],
-  ) => Schema["ThreadNavigationPage"],
-): NavigationData {
-  return "pages" in value
-    ? { ...value, pages: value.pages.map(update) }
-    : update(value);
-}
-
-/** Late navigation reads cannot overwrite newer stream pointers. */
-function newerNavigation(previous: unknown, next: unknown) {
-  if (!previous) return next;
-  const held = previous as NavigationData;
-  const items = new Map(
-    ("pages" in held ? held.pages : [held])
-      .flatMap((page) => page.items)
-      .map((thread) => [thread.id, thread]),
-  );
-  return replaceEqualDeep(
-    previous,
-    mapNavigation(next as NavigationData, (page) => ({
-      ...page,
-      items: page.items.map((thread) => {
-        const old = items.get(thread.id);
-        return old && old.version > thread.version
-          ? {
-              ...thread,
-              version: old.version,
-              current_run_id: old.current_run_id,
-              last_run_id: old.last_run_id,
-            }
-          : thread;
-      }),
-    })),
-  );
 }
 
 /** Query owns request cancellation; delivery attachments never abort shared reads. */
@@ -311,16 +268,33 @@ export function conversationQueries(client: Client, workspaceId: string) {
             })
             .then(data),
       }),
+    threads: (
+      session_id: string,
+      filters: {
+        origin?: ("new" | "fork" | "child")[];
+        origin_run_id?: string;
+        limit: number;
+      },
+    ) =>
+      queryOptions({
+        queryKey: [...keys.navigation(session_id), "threads", filters],
+        queryFn: ({ signal }) =>
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads", {
+              params: { query: { session_id, ...filters } },
+              signal,
+            })
+            .then(data),
+      }),
     threadPage: (session_id: string, filters: ThreadNavigationFilter = {}) =>
       queryOptions({
-        structuralSharing: newerNavigation,
         queryKey: [...keys.navigation(session_id), "page", filters],
         queryFn: ({ signal }) =>
           navigation(session_id, filters, undefined, signal),
       }),
     threadPages: (session_id: string, filters: ThreadNavigationFilter = {}) =>
       infiniteQueryOptions({
-        structuralSharing: newerNavigation,
         queryKey: [...keys.navigation(session_id), "pages", filters],
         initialPageParam: undefined as string | undefined,
         queryFn: ({ signal, pageParam }) =>
@@ -539,35 +513,13 @@ export function applyThreadState(
     [current_run, last_run].some(
       (run) =>
         run &&
-        (run.created_at > session.updated_at ||
+        (Date.parse(run.created_at) > Date.parse(session.updated_at) ||
           (session.preview?.run_id === run.id &&
             session.preview.status !== run.status)),
     );
-  let listed = false;
-  cache.setQueriesData<NavigationData>(
-    { queryKey: keys.navigation(thread.session_id) },
-    (value) => {
-      if (!value) return;
-      let changed = false;
-      const next = mapNavigation(value, (page) => ({
-        ...page,
-        items: page.items.map((item) => {
-          if (item.id !== thread.id) return item;
-          listed = true;
-          if (item.version >= thread.version) return item;
-          changed = true;
-          return {
-            ...item,
-            version: thread.version,
-            current_run_id: thread.current_run_id,
-            last_run_id: thread.last_run_id,
-          };
-        }),
-      }));
-      return changed ? next : undefined;
-    },
-  );
-  if (!previous && !listed)
+  // Thread creation changes collection membership and global navigation names.
+  // Initial stream snapshots only mark those reads stale.
+  if (!previous)
     void cache.invalidateQueries(
       {
         queryKey: keys.navigation(thread.session_id),

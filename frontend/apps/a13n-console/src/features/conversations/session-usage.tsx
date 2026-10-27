@@ -113,10 +113,18 @@ function SessionUsageReport({
   const pages = useInfiniteQuery(queries.usageRuns(sessionId));
   const selected = useThreadNavigation(sessionId, thread?.id);
   const runs = pages.data?.pages.flatMap((page) => page.items) ?? [];
-  const threadIds = [...new Set(runs.map((run) => run.thread_id))];
-  const batches: string[][] = [];
-  for (let i = 0; i < threadIds.length; i += 50)
-    batches.push(threadIds.slice(i, i + 50));
+  // Keep earlier page keys stable when another usage page arrives.
+  const seen = new Set<string>();
+  const batches = (pages.data?.pages ?? [])
+    .map((page) =>
+      [...new Set(page.items.map((run) => run.thread_id))].filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      }),
+    )
+    .filter((ids) => ids.length);
+  const threadIds = [...seen];
   const navigation = useQueries({
     queries: batches.map((thread_id) =>
       queries.threadPage(sessionId, { thread_id, limit: 50 }),
@@ -128,23 +136,16 @@ function SessionUsageReport({
       .map((thread) => [thread.id, thread]),
   );
   const perModel = summary.models.length > 1;
-  const sections: UsageSection[] = [...threadIds]
+  const sections: UsageSection[] = [...known.values()]
     .sort(
       (a, b) =>
-        (known.get(a)?.created_at ?? "").localeCompare(
-          known.get(b)?.created_at ?? "",
-        ) || a.localeCompare(b),
+        a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
     )
-    .map((threadId) => {
-      const thread = known.get(threadId);
+    .map((thread) => {
+      const threadId = thread.id;
       return {
         key: threadId,
-        title:
-          threadIds.length > 1
-            ? thread
-              ? threadName(thread, t)
-              : t("Thread")
-            : undefined,
+        title: threadIds.length > 1 ? threadName(thread, t) : undefined,
         groups: runs
           .filter((run) => run.thread_id === threadId)
           .map((run) => {
@@ -209,7 +210,9 @@ function SessionUsageReport({
             for (const page of navigation) if (page.error) void page.refetch();
           }}
         />
-        {pages.isPending && <Loading variant="list" rows={3} />}
+        {(pages.isPending || navigation.some((page) => page.isPending)) && (
+          <Loading variant="list" rows={3} />
+        )}
         <UsageTable
           caption={t("Usage by run")}
           leading={t("Run")}

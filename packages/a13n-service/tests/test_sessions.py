@@ -192,7 +192,15 @@ async def test_navigation_pages_keep_global_positions_and_parent_references(serv
     assert [item["origin_number"] for item in page["items"]] == [1, 2]
     assert all(item["origin_count"] == 3 for item in page["items"])
     assert page["items"][0]["origin_thread"]["origin_count"] == 1
-    assert not {"mcp_headers", "execution", "message_history", "labels"}.intersection(page["items"][0])
+    assert not {
+        "mcp_headers",
+        "execution",
+        "message_history",
+        "labels",
+        "current_run_id",
+        "last_run_id",
+        "version",
+    }.intersection(page["items"][0])
     last = (await service.client.get(path, params={"origin": "fork", "limit": 2, "cursor": page["next_cursor"]})).json()
     assert [(item["id"], item["origin_number"]) for item in last["items"]] == [(branches[2], 3)]
     assert last["next_cursor"] is None
@@ -201,5 +209,20 @@ async def test_navigation_pages_keep_global_positions_and_parent_references(serv
     selected = (await service.client.get(path, params={"thread_id": child_id})).json()["items"]
     assert len(selected) == 1 and selected[0]["subagent"] == "research"
     assert selected[0]["origin_thread"]["origin_number"] == 2
+    children = await service.client.get(
+        f"{service.api}/threads",
+        params={"session_id": session_id, "origin": "child", "origin_run_id": run_id, "limit": 1},
+    )
+    assert children.status_code == 200, children.text
+    assert [item["id"] for item in children.json()["items"]] == [child_id]
+    assert children.json()["next_cursor"] is None
+    forks = await service.client.get(
+        f"{service.api}/threads", params={"session_id": session_id, "origin": "fork", "limit": 1}
+    )
+    changed_filter = await service.client.get(
+        f"{service.api}/threads",
+        params={"session_id": session_id, "origin": "child", "cursor": forks.json()["next_cursor"]},
+    )
+    assert changed_filter.status_code == 400
     missing = await service.client.get(f"{service.api}/sessions/missing/threads")
     assert missing.status_code == 404

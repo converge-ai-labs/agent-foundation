@@ -528,13 +528,8 @@ class ThreadReference(BaseModel):
 class ThreadNavigation(ThreadReference):
     """Bounded navigation metadata; positions count the complete Session before filtering."""
 
-    version: int
     session_id: str
-    origin_thread_id: str | None
     origin_thread: ThreadReference | None
-    origin_run_id: str | None
-    current_run_id: str | None
-    last_run_id: str | None
     created_at: datetime
 
 

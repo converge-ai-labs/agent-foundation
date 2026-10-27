@@ -68,7 +68,10 @@ function show(
       requested.push(url.pathname);
       if (url.pathname === "/api/v1/sessions/ses_1")
         return Response.json({ id: "ses_1", schedule_id: scheduleId });
-      if (url.pathname === "/api/v1/sessions/ses_1/threads") {
+      if (
+        url.pathname === "/api/v1/sessions/ses_1/threads" ||
+        url.pathname === "/api/v1/threads"
+      ) {
         if (navigationFails)
           return Response.json(
             {
@@ -241,14 +244,14 @@ it("starts known thread, run, page and display reads while the session read is s
   await act(async () => finish(Response.json({ id: "ses_1" })));
 });
 
-it("keeps one opening surface and starts the bounded Run reads before Thread details finish", async () => {
+it("keeps one opening surface and opens Run reads from one bounded Thread page", async () => {
   let finishSession!: (response: Response) => void;
-  let finishThread!: (response: Response) => void;
+  let finishTargets!: (response: Response) => void;
   const sessionRead = new Promise<Response>((resolve) => {
     finishSession = resolve;
   });
-  const threadRead = new Promise<Response>((resolve) => {
-    finishThread = resolve;
+  const targetsRead = new Promise<Response>((resolve) => {
+    finishTargets = resolve;
   });
   const requested: URL[] = [];
   const thread = fixtureThread();
@@ -260,9 +263,7 @@ it("keeps one opening surface and starts the bounded Run reads before Thread det
       const url = new URL((input as Request).url);
       requested.push(url);
       if (url.pathname === "/api/v1/sessions/ses_1") return sessionRead;
-      if (url.pathname === "/api/v1/sessions/ses_1/threads")
-        return Response.json(fixtureNavigationPage([thread], url.searchParams));
-      if (url.pathname === "/api/v1/threads/thr_1") return threadRead;
+      if (url.pathname === "/api/v1/threads") return targetsRead;
       if (url.pathname.endsWith("/items"))
         return Response.json({ run, items: [], complete: true });
       if (url.pathname === "/api/v1/threads/thr_1/runs")
@@ -295,14 +296,23 @@ it("keeps one opening surface and starts the bounded Run reads before Thread det
   ).toHaveLength(1);
   await act(async () => finishSession(Response.json(fixtureSession())));
   await waitFor(() =>
-    expect(
-      requested.filter((url) => url.pathname === "/api/v1/runs/run_2/items"),
-    ).toHaveLength(1),
+    expect(requested.some((url) => url.pathname === "/api/v1/threads")).toBe(
+      true,
+    ),
   );
   expect(screen.getByTestId("session-header")).toBe(header);
   expect(
     view.container.querySelectorAll("[data-session-loading]"),
   ).toHaveLength(1);
+  await act(async () =>
+    finishTargets(Response.json({ items: [thread], next_cursor: null })),
+  );
+  await waitFor(() =>
+    expect(
+      requested.filter((url) => url.pathname === "/api/v1/runs/run_2/items"),
+    ).toHaveLength(1),
+  );
+  expect(screen.getByTestId("session-header")).toBe(header);
   expect(
     requested
       .filter((url) => url.pathname === "/api/v1/threads/thr_1/runs")
@@ -310,13 +320,9 @@ it("keeps one opening surface and starts the bounded Run reads before Thread det
   ).toEqual(["run_2"]);
   expect(
     requested
-      .filter((url) => url.pathname === "/api/v1/sessions/ses_1/threads")
+      .filter((url) => url.pathname === "/api/v1/threads")
       .map((url) => url.search),
-  ).toEqual(["?limit=1"]);
-  expect(requested.some((url) => url.pathname === "/api/v1/threads")).toBe(
-    false,
-  );
-  await act(async () => finishThread(Response.json(thread)));
+  ).toEqual(["?session_id=ses_1&limit=1"]);
   await screen.findByText(
     "/sessions/ses_1/threads/thr_1/runs/run_2?view=debug&follow=latest",
   );
@@ -324,5 +330,5 @@ it("keeps one opening surface and starts the bounded Run reads before Thread det
   expect(view.container.querySelector("[data-session-loading]")).toBeNull();
   expect(
     requested.filter((url) => url.pathname === "/api/v1/threads/thr_1"),
-  ).toHaveLength(1);
+  ).toHaveLength(0);
 });

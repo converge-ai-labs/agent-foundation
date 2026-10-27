@@ -24,7 +24,7 @@ This query requires workspace `read` and returns only message entries in the nam
 
 Use only these read operations for diagnosis. Do not start, interrupt, fork or resume executions. Explain evidence limits and partial results; absence of retained trace data is not proof of correct execution.
 
-Use `list_session_threads` for lightweight navigation within one Session. Filter `origin` to roots, forks or children, `thread_id` to known Threads, or `origin_run_id` to a delegation's Run. Follow `next_cursor` with unchanged filters. `origin_number` and `origin_count` describe the complete Session's Threads of that origin; do not infer names or totals from the loaded page length. Read the selected Thread for its execution settings or headers.
+Use `list_session_threads` for lightweight navigation within one Session. Filter `origin` to roots, forks or children, or `thread_id` to known Threads. Use `list_threads` with `session_id`, `origin=child` and `origin_run_id` for a bounded delegation lookup. Follow `next_cursor` with unchanged filters. `origin_number` and `origin_count` describe the complete Session's Threads of that origin; do not infer names or totals from the loaded page length. Read the selected Thread for its latest Run, execution settings or headers.
 
 `summarize_usage` returns only model totals for the selected Run, Thread, Session or ingestion window. Use `list_run_usage` for a paginated Run breakdown with the same filters. A page contains complete per-model groups for each returned Run, and `run_number` counts all Runs in that Thread, including those with no matching usage. Totals cover the whole filter scope, not just the loaded pages.
 

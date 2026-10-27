@@ -111,6 +111,8 @@ async def list_threads(
     cursor: str | None,
     text_query: str | None = None,
     occurrence_id: str | None = None,
+    origins: Sequence[str] = (),
+    origin_run_id: str | None = None,
 ) -> ThreadPage:
     """Oldest first, so a session opens at its first thread and child threads follow their parents."""
     match = predicate(RunRow.search_vector, text_query)
@@ -129,6 +131,10 @@ async def list_threads(
             query = query.where(ThreadRow.session_id == session_id)
         if occurrence_id is not None:
             query = query.where(ThreadRow.schedule_occurrence_id == occurrence_id)
+        if origins:
+            query = query.where(ThreadRow.origin.in_(origins))
+        if origin_run_id is not None:
+            query = query.where(ThreadRow.origin_run_id == origin_run_id)
         if match is not None:
             query = query.where(
                 ThreadRow.id.in_(select(RunRow.thread_id).where(RunRow.workspace_id == scope.workspace_id, match))
@@ -138,7 +144,9 @@ async def list_threads(
             query,
             (ThreadRow.created_at, ThreadRow.id),
             kind="threads",
-            owner=cursors.query_owner(scope.workspace_id, session_id, label, text_query, occurrence_id),
+            owner=cursors.query_owner(
+                scope.workspace_id, session_id, label, text_query, occurrence_id, sorted(origins), origin_run_id
+            ),
             cursor=cursor,
             limit=limit,
             newest_first=False,
@@ -160,12 +168,11 @@ async def navigation(
     *,
     origins: Sequence[str],
     thread_ids: Sequence[str],
-    origin_run_id: str | None,
     limit: int,
     cursor: str | None,
 ) -> ThreadNavigationPage:
     """Read one lightweight page without loading execution settings or message history."""
-    owner = cursors.query_owner(workspace_id, session_id, sorted(origins), sorted(thread_ids), origin_run_id)
+    owner = cursors.query_owner(workspace_id, session_id, sorted(origins), sorted(thread_ids))
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         if not await session.scalar(
@@ -174,14 +181,10 @@ async def navigation(
             raise not_found("session", session_id)
         fields = (
             ThreadRow.id,
-            ThreadRow.version,
             ThreadRow.session_id,
             ThreadRow.origin,
             ThreadRow.subagent,
             ThreadRow.origin_thread_id,
-            ThreadRow.origin_run_id,
-            ThreadRow.current_run_id,
-            ThreadRow.last_run_id,
             ThreadRow.created_at,
         )
         numbered = (
@@ -208,8 +211,6 @@ async def navigation(
             query = query.where(numbered.c.origin.in_(origins))
         if thread_ids:
             query = query.where(numbered.c.id.in_(thread_ids))
-        if origin_run_id is not None:
-            query = query.where(numbered.c.origin_run_id == origin_run_id)
         if cursor:
             query = query.where(
                 tuple_(numbered.c.created_at, numbered.c.id) > cursors.time_position(cursor, "thread-navigation", owner)
