@@ -115,10 +115,6 @@
   min-width: 0;
   margin: 0 auto;
 }
-/* A section that edits fields keeps a reading measure; one that lists resources uses the column. */
-.content:not([data-content="collection"]) > * {
-  max-width: 680px;
-}
 .heading {
   margin-bottom: 28px;
   display: flex;

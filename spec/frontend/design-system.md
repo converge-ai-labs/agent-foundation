@@ -92,7 +92,7 @@ Choose English casing for its context and keep peer controls consistent: status 
 
 **Editor with drafts.** Edits accumulate in a draft. A floating save bar appears at the bottom center with a pulse dot, "Unsaved changes", a one-line consequence, an optional note field, Discard, and the primary Save. Autosaved settings show an inline status beside the control instead.
 
-**Settings page.** A contextual layout with its own left navigation (Back to workspace, search, grouped entries). Content is one column up to 1040px whose forms and groups stop at 680px while collections use the full width, so the left edge never moves between sections: 24px title, then outlined configuration groups with rows (name and explanation at the left, control at the right, hairline between rows). Groups are separated by whitespace and titled outside the surface.
+**Settings page.** A contextual layout with its own left navigation (Back to workspace, search, grouped entries). Content is one centered column up to 1040px. Headings, forms, groups and collections fill the same available width, so both edges stay aligned between sections: 24px title, then outlined configuration groups with rows (name and explanation at the left, control at the right, hairline between rows). Groups are separated by whitespace and titled outside the surface.
 
 Disclosure panels and their carets use synchronized 150ms ease-out transitions and disable motion when reduced motion is requested.
 

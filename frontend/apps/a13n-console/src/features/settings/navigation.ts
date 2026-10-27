@@ -34,8 +34,6 @@ export type SettingsSectionDefinition = {
   /** Content title when it differs from the navigation label. */
   title?: string;
   description?: string;
-  /** Forms keep the 760px column; collections need room for their table. */
-  layout?: "form" | "collection";
   icon: Icon;
   permission?: Schema["Verb"];
 };
@@ -44,28 +42,24 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   personal: [
     {
       value: "preferences",
-      layout: "form",
       label: "Preferences",
       description: "Choose how Console looks and feels.",
       icon: SlidersHorizontalIcon,
     },
     {
       value: "language",
-      layout: "form",
       label: "Language",
       description: "Used for navigation, dates, and controls.",
       icon: TranslateIcon,
     },
     {
       value: "profile",
-      layout: "form",
       label: "Profile",
       description: "Manage your name and image.",
       icon: UserIcon,
     },
     {
       value: "security",
-      layout: "form",
       label: "Security",
       description: "Manage how you sign in and keep your account secure.",
       icon: ShieldCheckIcon,
@@ -86,7 +80,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   workspace: [
     {
       value: "general",
-      layout: "form",
       label: "General",
       description: "Manage this workspace's name and icon.",
       icon: GearSixIcon,
@@ -98,7 +91,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
     },
     {
       value: "media-understanding",
-      layout: "form",
       label: "Media understanding",
       description:
         "Models that read images, video and audio for agents whose model cannot.",
@@ -131,7 +123,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Webhooks",
       description:
         "Send Run and Attempt lifecycle changes to your application.",
-      layout: "collection",
       icon: WebhooksLogoIcon,
       permission: "admin",
     },
@@ -146,7 +137,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   organization: [
     {
       value: "general",
-      layout: "form",
       label: "General",
       description: "Manage this organization's name and icon.",
       icon: GearSixIcon,
