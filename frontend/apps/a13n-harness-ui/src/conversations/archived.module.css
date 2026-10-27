@@ -1,7 +1,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
   width: 100%;
   max-width: 840px;
 }
@@ -10,17 +10,19 @@
 }
 .rows {
   display: grid;
-  gap: 12px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.rows:empty {
+  display: none;
 }
 .row {
   min-width: 0;
-  padding-block-end: 12px;
-  border-bottom: 1px solid var(--a13n-border);
+  padding: 16px 12px;
 }
-.row > small {
-  padding-inline: 8px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
+.row + .row {
+  border-top: 1px solid var(--a13n-border-soft);
 }
 .empty {
   display: flex;

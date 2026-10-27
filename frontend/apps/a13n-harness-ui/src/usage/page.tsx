@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ArrowClockwise, ArrowUpRight } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ArrowUpRight,
+  SlidersHorizontal,
+} from "@phosphor-icons/react";
 import { Button, ChoiceField, SearchPicker, SegmentedControl } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -47,6 +51,11 @@ export function UsagePage() {
   const { client } = useTransport();
   const filters = usageFilters(params);
   const invalid = rangeError(filters);
+  const [moreFilters, setMoreFilters] = useState(
+    !!(filters.thread_id || filters.model),
+  );
+  const [tokenDetails, setTokenDetails] = useState(false);
+  const extraFilters = Number(!!filters.thread_id) + Number(!!filters.model);
   const query = useQuery({
     queryKey: ["usage-analytics", filters],
     queryFn: ({ signal }) =>
@@ -172,33 +181,47 @@ export function UsagePage() {
             }
           />
         </div>
-        <div className={styles.picker}>
-          <span>Chat</span>
-          <SearchPicker
-            label="Chat"
-            placeholder="All chats"
-            emptyMessage="No chats found"
-            groups={[{ label: "Chats", options: threadOptions }]}
-            value={filters.thread_id ?? "all"}
-            onValueChange={(value) =>
-              change({ thread_id: value === "all" ? undefined : value })
-            }
-          />
-        </div>
-        <div className={styles.picker}>
-          <span>Model</span>
-          <SearchPicker
-            label="Model"
-            placeholder="All models"
-            emptyMessage="No models in this period"
-            groups={[{ label: "Recorded models", options: modelOptions }]}
-            value={filters.model ?? "all"}
-            onValueChange={(value) =>
-              change({ model: value === "all" ? undefined : value })
-            }
-          />
-        </div>
+        <Button
+          variant="outline"
+          className={styles.filterToggle}
+          aria-expanded={moreFilters}
+          aria-controls="usage-more-filters"
+          onClick={() => setMoreFilters(!moreFilters)}
+        >
+          <SlidersHorizontal />
+          Filters{extraFilters ? ` · ${extraFilters}` : ""}
+        </Button>
       </div>
+      {moreFilters && (
+        <div className={styles.extraFilters} id="usage-more-filters">
+          <div className={styles.picker}>
+            <span>Chat</span>
+            <SearchPicker
+              label="Chat"
+              placeholder="All chats"
+              emptyMessage="No chats found"
+              groups={[{ label: "Chats", options: threadOptions }]}
+              value={filters.thread_id ?? "all"}
+              onValueChange={(value) =>
+                change({ thread_id: value === "all" ? undefined : value })
+              }
+            />
+          </div>
+          <div className={styles.picker}>
+            <span>Model</span>
+            <SearchPicker
+              label="Model"
+              placeholder="All models"
+              emptyMessage="No models in this period"
+              groups={[{ label: "Recorded models", options: modelOptions }]}
+              value={filters.model ?? "all"}
+              onValueChange={(value) =>
+                change({ model: value === "all" ? undefined : value })
+              }
+            />
+          </div>
+        </div>
+      )}
       {params.get("range") === "custom" && (
         <div className={styles.dates}>
           <TextField
@@ -248,53 +271,52 @@ export function UsagePage() {
               <dd>
                 <Count value={data.summary.total_tokens} />
               </dd>
-              <small>Input + output</small>
-            </div>
-            <div>
-              <dt>Input tokens</dt>
-              <dd>
-                <Count value={data.summary.input_tokens} />
-              </dd>
-              <small>Includes cache reads / writes</small>
-            </div>
-            <div>
-              <dt>Output tokens</dt>
-              <dd>
-                <Count value={data.summary.output_tokens} />
-              </dd>
+              <small>
+                <Count value={data.summary.input_tokens} /> input ·{" "}
+                <Count value={data.summary.output_tokens} /> output
+              </small>
             </div>
             <div>
               <dt>Model requests</dt>
               <dd>
                 <Count value={data.summary.model_requests} />
               </dd>
-              <small>Recorded contributions</small>
             </div>
           </dl>
           <DailyChart key={`${data.start}:${data.end}`} days={data.daily} />
           <section className={styles.breakdown} aria-label="Usage breakdown">
             <div className={styles.sectionHeader}>
               <h2>Breakdown</h2>
-              <SegmentedControl
-                label="Group by"
-                value={filters.group_by ?? "project"}
-                onValueChange={(value) => change({ group_by: value })}
-                options={[
-                  { value: "project", label: "Projects" },
-                  { value: "thread", label: "Chats" },
-                  { value: "model", label: "Models" },
-                ]}
-              />
-              <ChoiceField
-                label="Sort"
-                variant="filter"
-                value={filters.order_by ?? "tokens"}
-                onValueChange={(value) => change({ order_by: value })}
-                options={[
-                  { value: "tokens", label: "Most tokens" },
-                  { value: "cost", label: "Highest cost" },
-                ]}
-              />
+              <div className={styles.breakdownControls}>
+                <SegmentedControl
+                  label="Group by"
+                  value={filters.group_by ?? "project"}
+                  onValueChange={(value) => change({ group_by: value })}
+                  options={[
+                    { value: "project", label: "Projects" },
+                    { value: "thread", label: "Chats" },
+                    { value: "model", label: "Models" },
+                  ]}
+                />
+                <ChoiceField
+                  label="Sort"
+                  variant="filter"
+                  value={filters.order_by ?? "tokens"}
+                  onValueChange={(value) => change({ order_by: value })}
+                  options={[
+                    { value: "tokens", label: "Most tokens" },
+                    { value: "cost", label: "Highest cost" },
+                  ]}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={tokenDetails}
+                  onClick={() => setTokenDetails(!tokenDetails)}
+                >
+                  Token details
+                </Button>
+              </div>
             </div>
             <div className={styles.tableScroll}>
               <table className={styles.table}>
@@ -309,12 +331,12 @@ export function UsagePage() {
                     </th>
                     {[
                       "Requests",
-                      "Input",
-                      "Output",
-                      "Cache read",
-                      "Cache write",
-                      "Est. cost (USD)",
-                      "Unknown cost",
+                      "Tokens",
+                      ...(tokenDetails
+                        ? ["Input", "Output", "Cache read", "Cache write"]
+                        : []),
+                      "Est. cost",
+                      ...(tokenDetails ? ["Unknown cost"] : []),
                     ].map((label) => (
                       <th scope="col" key={label}>
                         {label}
@@ -349,23 +371,32 @@ export function UsagePage() {
                         <Count value={group.totals.model_requests} />
                       </td>
                       <td>
-                        <Count value={group.totals.input_tokens} />
+                        <Count value={group.totals.total_tokens} />
                       </td>
-                      <td>
-                        <Count value={group.totals.output_tokens} />
-                      </td>
-                      <td>
-                        <Count value={group.totals.cache_read_tokens} />
-                      </td>
-                      <td>
-                        <Count value={group.totals.cache_write_tokens} />
-                      </td>
+                      {tokenDetails && (
+                        <>
+                          <td>
+                            <Count value={group.totals.input_tokens} />
+                          </td>
+                          <td>
+                            <Count value={group.totals.output_tokens} />
+                          </td>
+                          <td>
+                            <Count value={group.totals.cache_read_tokens} />
+                          </td>
+                          <td>
+                            <Count value={group.totals.cache_write_tokens} />
+                          </td>
+                        </>
+                      )}
                       <td>
                         <Cost totals={group.totals} />
                       </td>
-                      <td>
-                        <Count value={group.totals.unknown_model_costs} />
-                      </td>
+                      {tokenDetails && (
+                        <td>
+                          <Count value={group.totals.unknown_model_costs} />
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -412,15 +443,20 @@ export function UsagePage() {
               </div>
             </footer>
           </section>
-          <p className={styles.note}>
-            Includes retained archived, Memory and Live threads, subagents and
-            auxiliary model calls. Projects use each root thread’s current
-            assignment. Model estimates are not invoices or subscription spend;
-            unknown costs are excluded from known subtotals (+). Cache counters
-            are subsets. Days use each record’s latest response time, not
-            streaming increments. Missing records do not establish zero lifetime
-            usage.
-          </p>
+          <details className={styles.note}>
+            <summary>About these estimates</summary>
+            <p>
+              Model estimates are not invoices or subscription spend. Unknown
+              prices are excluded from known subtotals (+).
+            </p>
+            <p>
+              Includes retained archived, Memory and Live chats, subagents and
+              auxiliary model calls. Projects use each root chat’s current
+              assignment. Cache counters are subsets. Days use each record’s
+              latest response time, not streaming increments. Missing records do
+              not establish zero lifetime usage.
+            </p>
+          </details>
         </div>
       )}
     </div>

@@ -1,11 +1,15 @@
+import {
+  SettingsChoice as ChoiceField,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+import { Button, FormField, Input, ModalFrame } from "a13n-ui";
 import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ErrorNotice, PageHeader, Panel } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
 import accountStyles from "./accounts.module.css";
 import { SubscriptionAccounts, AccountGroups } from "./subscriptions";

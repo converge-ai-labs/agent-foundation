@@ -245,9 +245,8 @@ it("edits working folders in-place, cancels without applying, and locks pending 
     ).disabled,
   ).toBe(true);
   expect(
-    (screen.getByRole("button", { name: "Goal" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
+    screen.getByRole("switch", { name: "Goal" }).getAttribute("aria-disabled"),
+  ).toBe("true");
 });
 
 it.each([false, true])(

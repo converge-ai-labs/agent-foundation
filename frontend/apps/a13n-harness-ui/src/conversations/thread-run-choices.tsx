@@ -1,5 +1,5 @@
 import { Button, ModalFrame } from "a13n-ui";
-import { FoldersIcon } from "@phosphor-icons/react";
+import { CaretRight } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
 import { ModelOptions } from "./model-picker";
@@ -102,8 +102,8 @@ export function RunEnvironments({
         className={panelStyles.environmentButton}
         onClick={beginEditing}
       >
-        <FoldersIcon aria-hidden="true" />
         <span className={panelStyles.environmentLabel}>{summary}</span>
+        <CaretRight aria-hidden="true" size={14} />
       </Button>
       <ModalFrame
         open={editing !== undefined}

@@ -1,5 +1,7 @@
-import { ChoiceField, SettingsSection } from "a13n-ui";
-import { TextField } from "../shell/ui";
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsSection } from "../shell/settings";
+
 import { readDocument, updateDocument } from "./documents";
 
 export function DeviceFields({

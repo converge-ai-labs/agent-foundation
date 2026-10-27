@@ -1,5 +1,4 @@
 import { useId } from "react";
-import { Lightning } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { speedLabel } from "./speed-label";
@@ -61,7 +60,6 @@ export function FastPicker({
           disabled={disabled || !control?.supported}
           onClick={() => onChange(!active)}
         >
-          <Lightning aria-hidden weight={active ? "fill" : "regular"} />
           Fast
         </Button>
         {showUltrafast && (
@@ -76,7 +74,6 @@ export function FastPicker({
             disabled={disabled || !control?.ultrafast_supported}
             onClick={() => onChange(ultraActive ? false : "ultrafast")}
           >
-            <Lightning aria-hidden weight={ultraActive ? "fill" : "regular"} />
             Ultrafast
           </Button>
         )}

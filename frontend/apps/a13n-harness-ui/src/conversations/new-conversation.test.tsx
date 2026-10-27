@@ -2365,15 +2365,15 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
   mount();
   await fill();
   await userEvent.click(screen.getByRole("button", { name: "Task options" }));
-  const toggle = screen.getByRole("button", { name: "Coordinator" });
+  const toggle = screen.getByRole("switch", { name: "Coordinator" });
   fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
   fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
   fireEvent.click(toggle);
-  if (!screen.queryByRole("button", { name: "Goal" }))
+  if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Task options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   expect(writes).toHaveLength(0);
   expect(screen.queryByRole("dialog", { name: /coordinator/i })).toBeNull();
   const restored = new NewDraftStore();
@@ -2393,7 +2393,7 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
     mode: "goal",
     parts: ["Build this"],
   });
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Coordinator" })).toBeNull();
   expect(screen.getByText("Coordinator")).toBeTruthy();
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
   failure = null;
@@ -2405,9 +2405,9 @@ it("stages Coordinator locally, restores it and creates directly before Goal sub
 it("retains Coordinator intent across Project changes without falling back to ordinary submission", async () => {
   mount();
   await fill();
-  if (!screen.queryByRole("button", { name: "Coordinator" }))
+  if (!screen.queryByRole("switch", { name: "Coordinator" }))
     await userEvent.click(screen.getByRole("button", { name: "Task options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Coordinator" }));
   fireEvent.click(screen.getByRole("link", { name: "New without project" }));
   await waitFor(() =>
     expect(
@@ -2416,9 +2416,9 @@ it("retains Coordinator intent across Project changes without falling back to or
     ).toBe(true),
   );
   expect(drafts.get(id)!.coordinator).toBe(true);
-  if (!screen.queryByRole("button", { name: "Coordinator" }))
+  if (!screen.queryByRole("switch", { name: "Coordinator" }))
     await userEvent.click(screen.getByRole("button", { name: "Task options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Coordinator" }));
   await waitFor(() =>
     expect(
       (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
@@ -2432,14 +2432,14 @@ it("restores worker assignment and removes only ownership without losing the aut
   mount(newConversationPath("project-one", ownerId));
   await fill();
   await screen.findByText("Managed by · Project manager");
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Coordinator" })).toBeNull();
   expect(
     (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  if (!screen.queryByRole("button", { name: "Goal" }))
+  if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Task options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   const composer = drafts.get(id)!;
   act(() => {
     composer.modelId = "model-two";
@@ -2459,8 +2459,8 @@ it("restores worker assignment and removes only ownership without losing the aut
   expect(creations.current?.coordinatorThreadId).toBeUndefined();
   expect(
     screen
-      .getByRole("button", { name: "Coordinator" })
-      .getAttribute("aria-pressed"),
+      .getByRole("switch", { name: "Coordinator" })
+      .getAttribute("aria-checked"),
   ).toBe("false");
   expect(
     (screen.getByRole("combobox", { name: "Project" }) as HTMLButtonElement)
@@ -2474,9 +2474,9 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   mount(newConversationPath("project-one", ownerId));
   await fill();
   await screen.findByText("Managed by · Project manager");
-  if (!screen.queryByRole("button", { name: "Goal" }))
+  if (!screen.queryByRole("switch", { name: "Goal" }))
     await userEvent.click(screen.getByRole("button", { name: "Task options" }));
-  fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Goal" }));
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Chat busy");
   expect(await writes[0].clone().json()).toEqual({
@@ -2491,7 +2491,7 @@ it("creates an owned worker directly and keeps fixed ownership after a rejected 
   expect(
     screen.queryByRole("button", { name: "Remove Coordinator assignment" }),
   ).toBeNull();
-  expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+  expect(screen.queryByRole("switch", { name: "Coordinator" })).toBeNull();
   expect(screen.getByText("Managed by · Project manager")).toBeTruthy();
   failure = null;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));

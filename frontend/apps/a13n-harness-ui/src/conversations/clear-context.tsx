@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eraser } from "@phosphor-icons/react";
 import { Button, ModalFrame } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { ApiError, result } from "../transport/client";
@@ -50,8 +49,8 @@ export function ClearContext({
   return (
     <>
       <Button
-        variant="ghost"
-        size="icon-sm"
+        variant="outline"
+        size="sm"
         aria-label="Clear context"
         title="Clear context · keep chat history and your draft"
         disabled={disabled || !continuationId || clear.isPending}
@@ -61,7 +60,7 @@ export function ClearContext({
           setTarget(continuationId!);
         }}
       >
-        <Eraser />
+        Clear
       </Button>
       <ModalFrame
         open={!!target}

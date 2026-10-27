@@ -1,28 +1,12 @@
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsSection } from "../shell/settings";
 import type { ReactNode } from "react";
-import {
-  Wrench,
-  TreeStructure,
-  ListChecks,
-  PuzzlePiece,
-  Books,
-  Globe,
-  ShieldCheck,
-  Stack,
-  ArrowCounterClockwise,
-  Trash,
-} from "@phosphor-icons/react";
+import { ArrowCounterClockwise, Trash } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { Link } from "react-router";
 import { useRootConfiguration } from "./root-configuration";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Button,
-  Checkbox,
-  ChoiceField,
-  FormField,
-  SettingsSection,
-  Textarea,
-} from "a13n-ui";
+import { Button, Checkbox, FormField, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { AgentNativeTools, nativeToolKind } from "./native-tools";
 import { useSelectors, useSources, useTransport } from "../transport/context";
@@ -141,18 +125,12 @@ export function AgentFields({
       <SettingsSection
         variant="outlined"
         title={
-          <span className={management.sectionTitle}>
-            <Wrench aria-hidden="true" weight="duotone" />
-            Tools & capabilities
-          </span>
+          <span className={management.sectionTitle}>Tools & capabilities</span>
         }
       >
         <AgentNativeTools source={source} onChange={onChange} />
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
-          <h4 className={management.subsectionTitle}>
-            <ListChecks aria-hidden="true" />
-            Tasks & notes
-          </h4>
+          <h4 className={management.subsectionTitle}>Tasks & notes</h4>
           <div className={management.checkboxRow}>
             <label className={management.check}>
               <Checkbox
@@ -173,10 +151,7 @@ export function AgentFields({
               Notes
             </label>
           </div>
-          <h4 className={management.subsectionTitle}>
-            <PuzzlePiece aria-hidden="true" />
-            Capabilities
-          </h4>
+          <h4 className={management.subsectionTitle}>Capabilities</h4>
           {capabilities.map(
             (item, index) =>
               !nativeToolKind(item) &&
@@ -184,13 +159,6 @@ export function AgentFields({
                 <div className={management.capability} key={index}>
                   <div className={management.capabilityHeader}>
                     <span className={management.inlineLabel}>
-                      {item.capability === "skills" ? (
-                        <Books aria-hidden="true" />
-                      ) : item.capability === "web" ? (
-                        <Globe aria-hidden="true" />
-                      ) : (
-                        <PuzzlePiece aria-hidden="true" />
-                      )}
                       {item.capability.replaceAll("_", " ")}
                     </span>
                     <Button
@@ -256,12 +224,7 @@ export function AgentFields({
       </SettingsSection>
       <SettingsSection
         variant="outlined"
-        title={
-          <span className={management.sectionTitle}>
-            <TreeStructure aria-hidden="true" weight="duotone" />
-            Delegation
-          </span>
-        }
+        title={<span className={management.sectionTitle}>Delegation</span>}
       >
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
           {children.map((item, index) => (
@@ -345,10 +308,7 @@ export function AgentFields({
       </SettingsSection>
       <details className={styles.details}>
         <summary>
-          <span className={management.inlineLabel}>
-            <ShieldCheck aria-hidden="true" />
-            Tool restrictions
-          </span>
+          <span className={management.inlineLabel}>Tool restrictions</span>
         </summary>
         <div className={styles.stack}>
           <label className={management.check}>
@@ -395,10 +355,7 @@ export function AgentFields({
       </details>
       <details className={styles.details}>
         <summary>
-          <span className={management.inlineLabel}>
-            <Stack aria-hidden="true" />
-            Saved tool groups
-          </span>
+          <span className={management.inlineLabel}>Saved tool groups</span>
         </summary>
         <p>
           Saved configuration, not unsaved edits. Edit groups in Advanced
@@ -467,10 +424,7 @@ function CapabilityOptions({
     return (
       <details className={styles.details}>
         <summary>
-          <span className={management.inlineLabel}>
-            <Globe aria-hidden="true" />
-            Web options
-          </span>
+          <span className={management.inlineLabel}>Web options</span>
         </summary>
         <div className={styles.stack}>
           <ChoiceField

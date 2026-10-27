@@ -1,5 +1,6 @@
+import { SettingsRow } from "../shell/settings";
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { FormField, SearchPicker, SettingsRow } from "a13n-ui";
+import { FormField, SearchPicker } from "a13n-ui";
 import styles from "../shell/workbench.module.css";
 
 // Keep unresolved references visible without substituting a different resource.
@@ -12,7 +13,7 @@ export function ResourceChoice({
   description,
   placeholder = "Choose a resource",
   loading = false,
-  row = false,
+  row = true,
 }: {
   label: string;
   value: string;

@@ -1,6 +1,7 @@
+import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";

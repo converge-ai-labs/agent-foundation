@@ -1189,6 +1189,16 @@
   margin-bottom: 8px;
   position: relative;
 }
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 24px;
+}
+.detailActions:empty {
+  display: none;
+}
 .detailGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1202,6 +1212,41 @@
   margin: 4px 0 12px;
   overflow-wrap: anywhere;
   font-size: 13px;
+}
+dl.detailGrid {
+  display: block;
+  margin-block: 16px;
+}
+dl.detailGrid > div {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
+  gap: 24px;
+  padding-block: 12px;
+}
+dl.detailGrid dt {
+  color: var(--a13n-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+dl.detailGrid dd {
+  margin: 0;
+  color: var(--a13n-secondary);
+  text-align: right;
+  line-height: 20px;
+}
+.inspection {
+  gap: 24px;
+}
+.inspection [data-slot="tabs-list"] {
+  max-width: 100%;
+  gap: 20px;
+}
+.inspection [data-slot="tabs-tab"] {
+  font-size: 13px;
+}
+.inspection [data-slot="tabs-panel"] > section + section {
+  margin-top: 32px;
 }
 @media (max-width: 700px) {
   .header {

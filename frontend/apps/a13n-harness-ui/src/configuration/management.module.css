@@ -15,7 +15,7 @@
 .subsectionTitle {
   margin: 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .subsectionTitle > svg,
 .inlineLabel > svg,
@@ -89,9 +89,17 @@
   margin-top: 12px;
 }
 .nativeOption {
-  padding: 10px;
-  margin-inline: -10px;
+  align-items: center;
+  padding: 16px 0;
+  margin: 0;
   border-radius: 8px;
+}
+.nativeOption > [data-slot="checkbox"] {
+  order: 1;
+  margin-left: auto;
+}
+.nativeOption > .optionText {
+  flex: 1;
 }
 .nativeOption:not(:has([data-disabled])):hover {
   background: var(--a13n-hover);
@@ -127,19 +135,6 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-}
-.resourceIcon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: var(--a13n-elevated);
-  color: var(--a13n-secondary);
-}
-.resourceIcon > svg {
-  width: 20px;
-  height: 20px;
 }
 .resourceInfo {
   display: grid;
@@ -181,7 +176,7 @@
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: flex-start;
-  padding-block: 16px;
+  padding-block: 20px;
 }
 .subagentInfo {
   display: grid;

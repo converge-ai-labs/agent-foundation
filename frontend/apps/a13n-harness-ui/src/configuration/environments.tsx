@@ -1,4 +1,5 @@
-import { ChoiceField } from "a13n-ui";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+
 import type { Schema } from "../transport/client";
 import {
   BindingSummary,

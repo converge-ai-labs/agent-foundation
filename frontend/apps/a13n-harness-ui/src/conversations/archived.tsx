@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Archive } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { PageHeader, ErrorNotice, SearchField } from "../shell/ui";
 import { useThreads } from "./queries";
@@ -23,7 +22,7 @@ export function ArchivedPage() {
     <section className={styles.page} aria-label="Archived chats">
       <PageHeader
         title="Archived chats"
-        description="Chats you've put away. Their history is kept, and you can restore them to the sidebar at any time."
+        description="Saved history you can restore to the sidebar."
       />
       <SearchField
         label="Search archived chats"
@@ -34,7 +33,6 @@ export function ArchivedPage() {
       {list.isPending && <p role="status">Loading archived chats…</p>}
       {list.isSuccess && !rows.length && (
         <div className={styles.empty}>
-          <Archive size={32} aria-hidden="true" />
           <h2>{query.trim() ? "No matching chats" : "No archived chats"}</h2>
           <p>
             {query.trim()
@@ -46,8 +44,7 @@ export function ArchivedPage() {
       <div className={styles.rows}>
         {rows.map((row) => (
           <div key={row.thread.thread_id} className={styles.row}>
-            <small>{row.project_name}</small>
-            <ThreadRow row={row} showRestore />
+            <ThreadRow row={row} showRestore showProject />
           </div>
         ))}
       </div>

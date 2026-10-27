@@ -431,9 +431,9 @@ it("keeps Goal intent visible after task-option selection and disables it during
   const view = render(renderComposer());
   const editor = screen.getByRole("textbox", { name: "Message" });
   fireEvent.click(screen.getByRole("button", { name: "Task options" }));
-  const goal = screen.getByRole("button", { name: "Goal" });
+  const goal = screen.getByRole("switch", { name: "Goal" });
   fireEvent.click(goal);
-  expect(goal.getAttribute("aria-pressed")).toBe("true");
+  expect(goal.getAttribute("aria-checked")).toBe("true");
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
   expect(screen.getByRole("button", { name: "Turn off Goal" })).toBeTruthy();
@@ -450,7 +450,7 @@ it("keeps Goal intent visible after task-option selection and disables it during
     "Verify the full objective",
   );
   view.rerender(renderComposer(true));
-  expect((goal as HTMLButtonElement).disabled).toBe(true);
+  expect(goal.getAttribute("aria-disabled")).toBe("true");
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   view.unmount();
   query.clear();
@@ -1377,7 +1377,7 @@ it.each([
       </QueryClientProvider>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Task options" }));
-    fireEvent.click(screen.getByRole("button", { name: "Coordinator" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Coordinator" }));
     expect(calls).toEqual([]);
     expect(screen.queryByRole("dialog", { name: /Make this/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1413,7 +1413,7 @@ it.each([
         );
         await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
         expect(
-          screen.queryByRole("button", { name: "Coordinator" }),
+          screen.queryByRole("switch", { name: "Coordinator" }),
         ).toBeNull();
         expect(calls).toHaveLength(1);
         fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1425,7 +1425,7 @@ it.each([
       }
     } else {
       expect(calls[1]).toBe("/api/threads/{thread_id}/submit");
-      expect(screen.queryByRole("button", { name: "Coordinator" })).toBeNull();
+      expect(screen.queryByRole("switch", { name: "Coordinator" })).toBeNull();
       expect(screen.getByText("Coordinator")).toBeTruthy();
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");

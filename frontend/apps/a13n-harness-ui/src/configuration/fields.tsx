@@ -1,22 +1,16 @@
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useLocation } from "react-router";
-import { Plug, HeadCircuit } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
-import {
-  Button,
-  ChoiceField,
-  FormField,
-  SettingsRow,
-  SettingsSection,
-  Switch,
-  Textarea,
-} from "a13n-ui";
+import { Button, FormField, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
@@ -203,17 +197,14 @@ export function ResourceFields({
       <ErrorNotice
         error={selectors.error || sources.error || catalog.error || root.error}
       />
-      {kind && kind !== "agent" && <div>{field("Name", ["name"])}</div>}
+      {kind && kind !== "agent" && kind !== "model" && (
+        <SettingsSection title="General">
+          {field("Name", ["name"])}
+        </SettingsSection>
+      )}
       {kind === "model" && (
-        <SettingsSection
-          variant="outlined"
-          title={
-            <span className={management.sectionTitle}>
-              <Plug aria-hidden="true" weight="duotone" />
-              Model connection
-            </span>
-          }
-        >
+        <SettingsSection variant="outlined" title="General">
+          {field("Name", ["name"])}
           <div className={styles.fieldGroup}>
             <ModelFields
               source={source}
@@ -225,15 +216,7 @@ export function ResourceFields({
       )}
       {kind === "agent" && (
         <>
-          <SettingsSection
-            variant="outlined"
-            title={
-              <span className={management.sectionTitle}>
-                <HeadCircuit aria-hidden="true" weight="duotone" />
-                Basics
-              </span>
-            }
-          >
+          <SettingsSection variant="outlined" title="General">
             <div className={`${styles.fieldGroup} ${styles.stack}`}>
               {field("Name", ["name"])}
               <div className={management.modelPickerRow}>

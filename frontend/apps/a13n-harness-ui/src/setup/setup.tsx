@@ -1,7 +1,8 @@
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useMutation } from "@tanstack/react-query";
-import { Button, SettingsRow, SettingsSection } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { useSetup, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, PageHeader } from "../shell/ui";

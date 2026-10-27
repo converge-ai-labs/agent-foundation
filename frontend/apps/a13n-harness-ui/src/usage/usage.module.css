@@ -6,9 +6,20 @@
 }
 .filters {
   display: grid;
-  grid-template-columns: 160px repeat(3, minmax(0, 1fr));
+  grid-template-columns: 160px minmax(0, 240px) auto;
+  align-items: end;
   gap: 16px;
   margin-top: 24px;
+}
+.filterToggle {
+  justify-self: start;
+}
+.extraFilters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 560px;
+  gap: 16px;
+  margin-top: 16px;
 }
 .picker {
   display: flex;
@@ -29,19 +40,19 @@
   gap: 16px;
   margin-top: 16px;
 }
-.freshness {
+.page .freshness {
   min-height: 18px;
-  margin: 12px 0 24px;
+  margin: 16px 0 32px;
   color: var(--a13n-secondary);
   font-size: 12px;
 }
 .results {
   display: grid;
-  gap: 32px;
+  gap: 40px;
 }
 .summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24px;
   margin: 0;
 }
@@ -64,11 +75,12 @@
   display: block;
   margin-top: 6px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 .trend {
-  background: var(--a13n-surface);
-  border-radius: 12px;
+  background: var(--a13n-canvas);
+  border: 1px solid var(--a13n-border);
+  border-radius: 14px;
   padding: 20px 24px 16px;
   min-width: 0;
 }
@@ -86,6 +98,12 @@
 }
 .sectionHeader > :last-child {
   margin-left: auto;
+}
+.breakdownControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .chartReadout {
   color: var(--a13n-secondary);
@@ -221,6 +239,15 @@
   color: var(--a13n-secondary);
   max-width: 960px;
 }
+.note > summary {
+  cursor: pointer;
+  padding-block: 8px;
+}
+.page .note p {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
 .barTarget:focus-visible,
 .rowName button:focus-visible,
 .rowName a:focus-visible {
@@ -228,20 +255,19 @@
   outline-offset: 3px;
   border-radius: 3px;
 }
-@media (max-width: 1100px) {
-  .filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
 @media (max-width: 600px) {
   .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+  }
+  .filterToggle {
+    grid-column: 1 / -1;
   }
   .summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .summary > :first-child {
+    grid-column: 1 / -1;
   }
   .summary dd {
     font-size: 24px;

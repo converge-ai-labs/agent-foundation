@@ -1,4 +1,5 @@
-import { ChoiceField, SettingsRow } from "a13n-ui";
+import { SettingsRow } from "../shell/settings";
+import { ChoiceField } from "a13n-ui";
 import { useSelectors } from "../transport/context";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";

@@ -1,3 +1,7 @@
+import {
+  SettingsChoice as ChoiceField,
+  SettingsTextField as TextField,
+} from "../shell/settings";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import {
@@ -9,7 +13,6 @@ import {
 import {
   BrandIcon,
   Button,
-  ChoiceField,
   FormField,
   Input,
   Menu,
@@ -35,7 +38,7 @@ import {
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { EmptyList, ErrorNotice, SearchField, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, SearchField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 import {
   ChatGPTAllowance,

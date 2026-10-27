@@ -67,7 +67,11 @@ def configuration(root: Path) -> Path:
         "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n"
     )
     docs = {
-        "a13n-harness-ui.yaml": {"schema_version": "1", "defaults": {"agent": "agent-review"}},
+        "a13n-harness-ui.yaml": {
+            "schema_version": "1",
+            "defaults": {"agent": "agent-review"},
+            "memory": {"auto_organize": {"enabled": False}},
+        },
         "models/review.yaml": {
             "schema_version": "1",
             "kind": "model",
@@ -102,7 +106,21 @@ def configuration(root: Path) -> Path:
         path = root / "config" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(value))
+    seed_memory(root / "config")
     return root / "config/a13n-harness-ui.yaml"
+
+
+def seed_memory(configuration_root: Path) -> None:
+    """Populate fictional read-only browsing examples without invoking a model."""
+    files = {
+        "global/MEMORY.md": "# Working preferences\n\nKeep summaries concise, explain important tradeoffs, and include the checks that were run.\n\n## Communication\n\nUse plain language. Put the result first and keep supporting detail close to the relevant decision.\n",
+        "projects/project-atlas/MEMORY.md": "# Atlas storefront\n\nAtlas is a fictional storefront used for interface review.\n\n## Project conventions\n\n- Keep checkout retries explicit and preserve the form after a failed request.\n- Reuse the order identifier as the idempotency key.\n- Run focused checks before changing the payment flow.\n\n## More detail\n\nCheckout decisions are recorded in `checkout.md`.\n",
+        "projects/project-atlas/checkout.md": "# Checkout decisions\n\n## Submission and retries\n\nDisable submission while a request is in flight. Retrying a failed order should reuse its identifier so the payment provider can reject duplicates.\n\n## Failure feedback\n\nKeep the original address and payment choices visible. Explain what failed and provide a clear retry action.\n\n## Review checklist\n\n1. Double-click creates one order.\n2. A slow response keeps the pending state visible.\n3. A network failure preserves the form.\n",
+    }
+    for name, text in files.items():
+        target = configuration_root / "memory" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
 
 
 async def model(messages, info):

@@ -1,4 +1,5 @@
-import { SettingsRow, Switch } from "a13n-ui";
+import { SettingsRow } from "../shell/settings";
+import { Switch } from "a13n-ui";
 import type { Schema } from "../transport/client";
 
 export function LiveOptIn({

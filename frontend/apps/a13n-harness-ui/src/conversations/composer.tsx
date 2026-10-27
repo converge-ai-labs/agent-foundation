@@ -11,7 +11,7 @@ import {
 import { modelControlRequest } from "./model-controls";
 import { useAppContextSelection } from "../mcp-apps/context-selection";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame, Switch } from "a13n-ui";
 import {
   Plus,
   ArrowUp,
@@ -1178,9 +1178,35 @@ export function Composer({
           </span>
           {!transport.shareId && (
             <TaskOptions
-              goal={goalToggle}
+              goal={
+                <Switch
+                  aria-label="Goal"
+                  title={goalToggle.props.title}
+                  checked={draft.mode === "goal"}
+                  disabled={!canRun || busy || preparing || pending || unknown}
+                  onCheckedChange={(enabled) => {
+                    draft.mode = enabled ? "goal" : "normal";
+                    draft.notify();
+                  }}
+                />
+              }
               coordinator={
-                !owner && !coordinatorActive ? coordinatorControl : undefined
+                !owner && !coordinatorActive && coordinator ? (
+                  <Switch
+                    aria-label="Coordinator"
+                    title={
+                      coordinatorControl
+                        ? coordinatorControl.props.title
+                        : undefined
+                    }
+                    checked={draft.coordinator}
+                    disabled={coordinatorDisabled}
+                    onCheckedChange={(enabled) => {
+                      draft.coordinator = enabled;
+                      draft.notify();
+                    }}
+                  />
+                ) : undefined
               }
               environment={leadingControls}
               context={

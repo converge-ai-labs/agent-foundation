@@ -1,7 +1,8 @@
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useContext, useState } from "react";
 import { Link, Outlet, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { SettingsRow, SettingsSection, Skeleton, Switch } from "a13n-ui";
+import { Skeleton, Switch } from "a13n-ui";
 import { debugShortcutLabel, useDebug } from "../shell/debug";
 import {
   useSelectors,

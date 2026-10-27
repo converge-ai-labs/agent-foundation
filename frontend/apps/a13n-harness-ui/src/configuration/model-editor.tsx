@@ -1,16 +1,15 @@
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow } from "../shell/settings";
 import { useEffect, useRef, useState } from "react";
-import {
-  Key,
-  SlidersHorizontal,
-  ArrowCounterClockwise,
-} from "@phosphor-icons/react";
+import { ArrowCounterClockwise } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
+import { Button, FormField, Input, SearchPicker } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { ProviderAccount } from "../setup/accounts";
 import { useSubscriptions } from "../setup/subscriptions";
 import { readDocument, updateDocument } from "./documents";
@@ -116,7 +115,6 @@ function CredentialField({
       {!expanded ? (
         <div className={management.credentialSummary}>
           <span className={management.inlineLabel}>
-            <Key aria-hidden="true" />
             {selected === "env" && value?.kind === "api_key"
               ? `Environment · ${value.env}`
               : keys.data?.some((key) => key.credential_ref === selected)
@@ -529,6 +527,11 @@ function LoadedModelEditor({
       <ErrorNotice error={options.error || prepare.error} />
       <ChoiceField
         label="Model connection"
+        description={
+          !selected
+            ? "This connection is managed in Advanced configuration."
+            : undefined
+        }
         value={connection}
         options={
           choices.connections?.map((item) => ({
@@ -645,10 +648,7 @@ function LoadedModelEditor({
           )}
         </>
       )}
-      {!selected && (
-        <p>This connection is managed in Advanced configuration.</p>
-      )}
-      <FormField label="Model">
+      <SettingsRow label="Model">
         <SearchPicker
           label="Model"
           placeholder="Find a model"
@@ -665,7 +665,7 @@ function LoadedModelEditor({
             },
           ]}
         />
-      </FormField>
+      </SettingsRow>
 
       {api && (catalog.isPending || catalog.error) && (
         <small role="status">
@@ -694,10 +694,7 @@ function LoadedModelEditor({
         <>
           <details className={styles.details}>
             <summary>
-              <span className={management.inlineLabel}>
-                <SlidersHorizontal aria-hidden="true" />
-                Model defaults
-              </span>
+              <span className={management.inlineLabel}>Model defaults</span>
             </summary>
             <div className={styles.stack}>
               <small>
@@ -881,7 +878,6 @@ function LoadedModelEditor({
           <details className={styles.details}>
             <summary>
               <span className={management.inlineLabel}>
-                <SlidersHorizontal aria-hidden="true" />
                 Advanced connection options
               </span>
             </summary>

@@ -258,7 +258,12 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   });
   render(<BrowserApp />);
   await screen.findByText("Global-only memory");
-  await screen.findByRole("button", { name: "Inspect & usage" });
+  expect(
+    screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.queryByRole("button", { name: "Usage & details" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "Organization history" }));
+  await screen.findByRole("button", { name: "Usage & details" });
   await waitFor(() =>
     expect(
       vi
@@ -276,15 +281,21 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
       /memory-global\/draft|configuration-preview/.test(path),
     ),
   ).toBe(false);
-  fireEvent.click(screen.getByRole("button", { name: "Inspect & usage" }));
+  fireEvent.click(screen.getByRole("button", { name: "Usage & details" }));
   await screen.findByRole("dialog");
-  expect(screen.getByText("Inspect")).toBeTruthy();
+  expect(
+    screen.getByRole("tab", { name: "Activity" }).getAttribute("aria-selected"),
+  ).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   fireEvent.click(screen.getByRole("link", { name: "Main" }));
   await screen.findByText("Project-only memory");
+  expect(
+    screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("tab", { name: "Organization history" }));
   await screen.findByText("No organization history yet");
   expect(screen.queryByText("Global-only memory")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Inspect & usage" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Usage & details" })).toBeNull();
   expect(reads.some((path) => path.includes("project_id=project-main"))).toBe(
     true,
   );

@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Check,
   Copy,
-  Globe,
   LinkSimple,
   ShareNetwork,
 } from "@phosphor-icons/react";
@@ -14,6 +13,7 @@ import { result, type Schema } from "./transport/client";
 import { useProjects, useTransport } from "./transport/context";
 import { useThread } from "./conversations/queries";
 import { ErrorNotice } from "./shell/ui";
+import { SettingsRow, SettingsSection } from "./shell/settings";
 import styles from "./sharing.module.css";
 import { copyText } from "./platform";
 
@@ -149,89 +149,90 @@ function ShareContents({
   };
   return (
     <div className={styles.panel}>
-      <div className={styles.scope}>
-        <ChoiceField
-          label="Share"
-          hideLabel
-          value={scope}
-          readOnly={!!created || !(threadId && projectId)}
-          disabled={create.isPending}
-          options={[
-            ...(threadId ? [{ value: "thread", label: "This chat" }] : []),
-            ...(projectId
-              ? [{ value: "project", label: `Project · ${projectName}` }]
-              : []),
-          ]}
-          onValueChange={(value) => setScope(value as Scope)}
-        />
-        {scope === "project" && (
-          <p className={styles.hint}>Includes current and future chats.</p>
-        )}
-      </div>
-      <section className={styles.linkSettings} aria-label="Link sharing">
-        <div className={styles.permissionRow}>
-          <span className={styles.linkAudience}>
-            <span className={styles.linkIcon}>
-              <Globe size={20} aria-hidden />
-            </span>
-            Anyone with the link
-          </span>
-          <ChoiceField
-            label="Link permission"
-            className={styles.permissionControl}
-            hideLabel
-            value={created ? currentGrant?.permission : permission}
-            readOnly={!!created}
-            disabled={create.isPending}
-            options={permissions}
-            onValueChange={(value) => setPermission(value as Permission)}
-          />
-        </div>
-        {!created && permission === "prompt" && (
-          <p className={styles.authority}>
-            For trusted people: prompts use the agent’s tools and environment
-            permissions.
-            {scope === "project" ? " Guests can also start chats." : ""}
-          </p>
-        )}
-        {created && (
-          <div className={styles.linkResult}>
-            <Input
-              aria-label="Sharing link"
-              readOnly
-              value={link}
-              onFocus={(e) => e.target.select()}
+      <section aria-label="Link sharing">
+        <SettingsSection>
+          <SettingsRow
+            label="Share"
+            description={
+              scope === "project"
+                ? "Includes current and future chats."
+                : undefined
+            }
+          >
+            <ChoiceField
+              label="Share"
+              hideLabel
+              value={scope}
+              readOnly={!!created || !(threadId && projectId)}
+              disabled={create.isPending}
+              options={[
+                ...(threadId ? [{ value: "thread", label: "This chat" }] : []),
+                ...(projectId
+                  ? [{ value: "project", label: `Project · ${projectName}` }]
+                  : []),
+              ]}
+              onValueChange={(value) => setScope(value as Scope)}
             />
-            <p className={styles.hint}>
-              Copy before closing. This link is shown only once.
-            </p>
-            {copyError && (
-              <p className={styles.hint} role="status">
-                {copyError}
-              </p>
+          </SettingsRow>
+          <SettingsRow
+            label="Anyone with the link"
+            description={
+              !created && permission === "prompt"
+                ? `For trusted people: prompts use the agent’s tools and environment permissions.${scope === "project" ? " Guests can also start chats." : ""}`
+                : undefined
+            }
+          >
+            <ChoiceField
+              label="Link permission"
+              hideLabel
+              value={created ? currentGrant?.permission : permission}
+              readOnly={!!created}
+              disabled={create.isPending}
+              options={permissions}
+              onValueChange={(value) => setPermission(value as Permission)}
+            />
+          </SettingsRow>
+          <SettingsRow label={created ? "Expires" : "Expires in"}>
+            {created ? (
+              <span>{expires(created.grant.expires_at)}</span>
+            ) : (
+              <ChoiceField
+                label="Expires in"
+                hideLabel
+                value={String(hours)}
+                disabled={create.isPending}
+                options={[
+                  { value: "1", label: "1 hour" },
+                  { value: "24", label: "1 day" },
+                  { value: "168", label: "7 days" },
+                ]}
+                onValueChange={(value) =>
+                  setHours(Number(value) as 1 | 24 | 168)
+                }
+              />
             )}
-          </div>
-        )}
+          </SettingsRow>
+        </SettingsSection>
       </section>
-      <div className={styles.actions}>
-        {created ? (
-          <span className={styles.hint}>
-            Expires {expires(created.grant.expires_at)}
-          </span>
-        ) : (
-          <ChoiceField
-            label="Expires in"
-            variant="filter"
-            value={String(hours)}
-            disabled={create.isPending}
-            options={[
-              { value: "1", label: "1 hour" },
-              { value: "24", label: "1 day" },
-              { value: "168", label: "7 days" },
-            ]}
-            onValueChange={(value) => setHours(Number(value) as 1 | 24 | 168)}
+      {created && (
+        <div className={styles.linkResult}>
+          <Input
+            aria-label="Sharing link"
+            readOnly
+            value={link}
+            onFocus={(e) => e.target.select()}
           />
-        )}
+          <p className={styles.hint}>
+            Copy before closing. This link is shown only once.
+          </p>
+          {copyError && (
+            <p className={styles.hint} role="status">
+              {copyError}
+            </p>
+          )}
+        </div>
+      )}
+      <div className={styles.actions}>
         {created ? (
           <Button onClick={() => void copy()}>
             {copied ? (

@@ -1,5 +1,3 @@
-/* The memory scope list shares the sidebar row geometry: 32px rows,
-   18px icons on the 18px column and labels on the 44px column. */
 .navigation {
   display: flex;
   flex-direction: column;
@@ -8,38 +6,19 @@
   min-height: 0;
   overflow: auto;
 }
-.heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--a13n-text);
-}
-.heading > svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-.heading strong {
-  font-weight: inherit;
-}
-.heading span {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--a13n-secondary);
+.back {
+  composes: backToChats from "./shell/workbench.module.css";
 }
 .navigation h2 {
-  margin: 14px 0 2px;
+  margin: 18px 0 8px;
   padding: 0 8px;
   font-size: 12px;
   line-height: 20px;
   font-weight: 500;
   color: var(--a13n-secondary);
+}
+.navigation .heading {
+  margin-top: 0;
 }
 .scope {
   composes: row from "./shell/navigation-row.module.css";
@@ -57,90 +36,84 @@
   white-space: nowrap;
 }
 .hint {
-  margin: 14px 0 0;
-  padding: 0 8px;
+  margin: 8px;
   font-size: 12px;
-  line-height: 18px;
   color: var(--a13n-secondary);
 }
 .workspace {
   display: flex;
+  flex-direction: column;
+  gap: 0;
   flex: 1;
   min-height: 0;
   height: 100%;
   overflow: hidden;
 }
-.history {
+.pageHeading {
+  display: grid;
+  gap: 24px;
+  padding: 32px clamp(20px, 5vw, 64px) 0;
+  flex-shrink: 0;
+}
+.pageHeading [data-slot="tabs-tab"] {
+  font-size: 13px;
+}
+.history,
+.filesPanel {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
-.header {
+.history[hidden],
+.filesPanel[hidden] {
+  display: none;
+}
+.historyToolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 72px;
-  /* 20px matches the top bar inset so titles share one left edge. */
-  padding: 14px 20px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--a13n-border);
-}
-.header h2 {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-}
-.header p {
-  margin: 2px 0 0;
+  padding: 16px clamp(20px, 5vw, 64px);
   color: var(--a13n-secondary);
   font-size: 12px;
-  line-height: 18px;
+}
+.historyToolbar > button {
+  flex-shrink: 0;
 }
 .files {
-  width: 34%;
-  min-width: 280px;
-  max-width: 520px;
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
-  border-left: 1px solid var(--a13n-border);
-  background: var(--a13n-surface);
+  padding: 24px clamp(20px, 5vw, 64px) 32px;
+  overflow: auto;
+}
+.fileToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  width: 100%;
+  max-width: 760px;
+  margin-bottom: 24px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
 }
 .picker {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px 12px;
-  font-size: 12px;
-  color: var(--a13n-secondary);
-}
-.picker select {
-  min-width: 0;
-  flex: 1;
-  height: 32px;
-  padding: 0 8px;
-  background: var(--a13n-canvas);
-  color: var(--a13n-text);
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
-  font: inherit;
-  font-size: 13px;
+  width: min(100%, 320px);
 }
 .file {
-  overflow: auto;
-  min-height: 0;
-  padding: 4px 20px 24px;
+  max-width: 760px;
   overflow-wrap: anywhere;
 }
 .loading {
   margin: 0;
-  padding: 4px 20px;
-  font-size: 13px;
   color: var(--a13n-secondary);
+  font-size: 13px;
 }
 .empty {
   display: flex;
@@ -149,47 +122,38 @@
   justify-content: center;
   gap: 8px;
   flex: 1;
+  min-height: 220px;
   margin: 0;
-  padding: 32px;
+  padding: 40px 24px;
   text-align: center;
   font-size: 13px;
   color: var(--a13n-secondary);
 }
 .empty > svg {
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .empty h2 {
   margin: 0;
   font-size: 15px;
-  line-height: 22px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--a13n-text);
 }
 .empty p {
   margin: 0;
-  max-width: 380px;
-  font-size: 13px;
-  line-height: 20px;
+  max-width: 360px;
+  line-height: 1.6;
 }
-@media (max-width: 900px) {
-  .workspace {
-    flex-direction: column;
-    overflow: auto;
+.empty > button {
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .pageHeading {
+    padding-top: 24px;
   }
-  .history {
-    flex: 1 0 60dvh;
+  .fileToolbar {
+    margin-bottom: 20px;
   }
-  .files {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    min-height: 260px;
-    max-height: 45dvh;
-    border-left: 0;
-    border-top: 1px solid var(--a13n-border);
-    flex-shrink: 0;
-  }
-  .header {
-    padding-inline: 16px;
+  .historyToolbar {
+    align-items: flex-start;
   }
 }

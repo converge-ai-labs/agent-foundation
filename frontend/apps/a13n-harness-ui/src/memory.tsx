@@ -1,28 +1,41 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
-import { Brain, Folder, Globe } from "@phosphor-icons/react";
+import {
+  Button,
+  SearchPicker,
+  Tabs,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from "a13n-ui";
+import { ArrowLeft, Brain, Folder, Globe } from "@phosphor-icons/react";
 import { result } from "./transport/client";
 import { useProjects, useStatus, useTransport } from "./transport/context";
 import { Conversation } from "./conversations/conversation";
 import { useMemoryThread } from "./conversations/queries";
 import { MessageText } from "./conversations/message-text";
-import { ErrorNotice } from "./shell/ui";
+import { ErrorNotice, PageHeader } from "./shell/ui";
 import type { Profile } from "./shell/presence";
 import styles from "./memory.module.css";
 
-export function MemoryNavigation({ projectId }: { projectId?: string | null }) {
+export function MemoryNavigation({
+  projectId,
+  backTo = "/",
+}: {
+  projectId?: string | null;
+  backTo?: string;
+}) {
   const projects = useProjects();
   const [search] = useSearchParams();
   const selected = projectId === undefined ? search.get("project") : projectId;
   return (
     <div className={styles.navigation}>
-      <div className={styles.heading}>
-        <Brain size={18} />
-        <strong>Memory</strong>
-        <span>Read only</span>
-      </div>
+      <Link className={styles.back} to={backTo}>
+        <ArrowLeft size={16} />
+        Back to chats
+      </Link>
+      <h2 className={styles.heading}>Memory</h2>
       <Link className={!selected ? styles.selected : styles.scope} to="/memory">
         <Globe size={18} />
         <span>Global</span>
@@ -47,9 +60,6 @@ export function MemoryNavigation({ projectId }: { projectId?: string | null }) {
       {projects.data?.length === 0 && (
         <p className={styles.hint}>No configured projects.</p>
       )}
-      <p className={styles.hint}>
-        Each scope keeps its own automatic organization history.
-      </p>
     </div>
   );
 }
@@ -73,34 +83,67 @@ export function MemoryPage(props: {
     return (
       <div className={styles.empty}>
         <h2>Memory is disabled</h2>
-        <p>Enable Memory in the existing settings to view these scopes.</p>
+        <p>
+          Enable memory to keep preferences and project knowledge across chats.
+        </p>
+        <Button variant="outline" render={<Link to="/settings" />}>
+          Open settings
+        </Button>
       </div>
     );
   return (
-    <div className={styles.workspace}>
-      <section
+    <Tabs
+      className={styles.workspace}
+      value={search.get("view") === "activity" ? "activity" : "files"}
+      onValueChange={(value) =>
+        setSearch((current) => {
+          const next = new URLSearchParams(current);
+          if (value === "activity") next.set("view", "activity");
+          else next.delete("view");
+          return next;
+        })
+      }
+    >
+      <div className={styles.pageHeading}>
+        <PageHeader
+          title={`${name} memory`}
+          description={
+            projectId
+              ? "Knowledge shared by chats in this project."
+              : "Preferences and context shared across your chats."
+          }
+        />
+        <TabsList variant="underline" aria-label="Memory views">
+          <TabsTab value="files">Files</TabsTab>
+          <TabsTab value="activity">Organization history</TabsTab>
+        </TabsList>
+      </div>
+      <TabsPanel value="files" keepMounted className={styles.filesPanel}>
+        <MemoryFiles key={projectId ?? "global"} projectId={projectId} />
+      </TabsPanel>
+      <TabsPanel
+        value="activity"
+        keepMounted
         className={styles.history}
         aria-label="Memory organization history"
       >
-        <header className={styles.header}>
-          <div>
-            <h2>{name} memory</h2>
-            <p>Automatic organization · fresh context each run</p>
-          </div>
+        <div className={styles.historyToolbar}>
+          <span>Automatic updates to this memory</span>
           {thread && (
             <Button
               variant="ghost"
               onClick={() =>
                 setSearch((current) => {
-                  current.set("dialog", "details");
-                  return current;
+                  const next = new URLSearchParams(current);
+                  next.set("dialog", "details");
+                  return next;
                 })
               }
             >
-              Inspect & usage
+              Usage & details
             </Button>
           )}
-        </header>
+        </div>
         <ErrorNotice
           error={history.error}
           retry={() => void history.refetch()}
@@ -113,21 +156,18 @@ export function MemoryPage(props: {
           />
         ) : (
           <div className={styles.empty}>
-            <Brain size={32} />
             <h2>
               {history.isPending
                 ? "Loading history…"
                 : "No organization history yet"}
             </h2>
             <p>
-              Organization runs appear here. Opening this page does not start
-              one.
+              Automatic organization appears here when saved memory is updated.
             </p>
           </div>
         )}
-      </section>
-      <MemoryFiles key={projectId ?? "global"} projectId={projectId} />
-    </div>
+      </TabsPanel>
+    </Tabs>
   );
 }
 
@@ -162,13 +202,7 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
       ),
   });
   return (
-    <aside className={styles.files} aria-label="Current memory files">
-      <header className={styles.header}>
-        <div>
-          <h2>Current files</h2>
-          <p>Read only · not a historical snapshot</p>
-        </div>
-      </header>
+    <section className={styles.files} aria-label="Current memory files">
       <ErrorNotice
         error={files.error || file.error}
         retry={() => {
@@ -176,24 +210,43 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
           if (path) void file.refetch();
         }}
       />
+      {files.isPending && (
+        <p role="status" className={styles.loading}>
+          Loading memory…
+        </p>
+      )}
       {files.data?.length === 0 && (
-        <p className={styles.empty}>This scope has no memory files yet.</p>
+        <div className={styles.empty}>
+          <Brain size={28} aria-hidden="true" />
+          <h2>Nothing saved yet</h2>
+          <p>
+            Your agent can remember useful preferences and project knowledge as
+            you work.
+          </p>
+        </div>
       )}
       {!!files.data?.length && (
-        <label className={styles.picker}>
-          File
-          <select
-            aria-label="Memory file"
-            value={path ?? ""}
-            onChange={(event) => select(event.target.value)}
-          >
-            {files.data.map((entry) => (
-              <option key={entry.path} value={entry.path}>
-                {entry.path}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className={styles.fileToolbar}>
+          <div className={styles.picker}>
+            <SearchPicker
+              label="Memory file"
+              placeholder="Choose a file"
+              emptyMessage="No matching memory files"
+              value={path ?? ""}
+              onValueChange={select}
+              groups={[
+                {
+                  label: "Memory files",
+                  options: files.data.map((entry) => ({
+                    value: entry.path,
+                    label: entry.path,
+                  })),
+                },
+              ]}
+            />
+          </div>
+          <span>Current files · read only</span>
+        </div>
       )}
       {file.isFetching && !file.data && path && (
         <p role="status" className={styles.loading}>
@@ -205,6 +258,6 @@ export function MemoryFiles({ projectId }: { projectId?: string }) {
           <MessageText text={file.data.text} />
         </div>
       )}
-    </aside>
+    </section>
   );
 }

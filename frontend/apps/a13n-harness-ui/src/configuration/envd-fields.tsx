@@ -1,9 +1,12 @@
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField, SettingsRow, SettingsSection, Switch } from "a13n-ui";
+import { Switch } from "a13n-ui";
 import { useSelectors, useTransport } from "../transport/context";
 import { result } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 
 type FieldsProps = { source: string; onChange: (source: string) => void };

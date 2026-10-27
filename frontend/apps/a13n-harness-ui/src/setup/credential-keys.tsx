@@ -1,3 +1,4 @@
+import { SettingsTextField as TextField } from "../shell/settings";
 import { useState } from "react";
 import {
   useMutation,
@@ -8,10 +9,10 @@ import {
 import { Link } from "react-router";
 import { parseDocument } from "yaml";
 import { Button, ModalFrame } from "a13n-ui";
-import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { EmptyList, ErrorNotice, SearchField, TextField } from "../shell/ui";
+import { EmptyList, ErrorNotice, SearchField } from "../shell/ui";
 import styles from "./subscriptions.module.css";
 
 export function CredentialKeys({
@@ -186,7 +187,6 @@ export function CredentialKeys({
             aria-label={`${provider} keys`}
           >
             <header className={styles.providerHeading}>
-              <KeyIcon size={20} />
               <h3>{provider}</h3>
               <span>
                 {items.length} {items.length === 1 ? "key" : "keys"}

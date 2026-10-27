@@ -1,0 +1,61 @@
+.section > :first-child:has(> h3) {
+  margin-bottom: 16px;
+}
+.section h3 {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+.section > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
+  border-radius: 14px;
+  padding-inline: 20px;
+}
+.row {
+  min-height: 68px;
+  gap: 24px;
+  padding-block: 18px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.row [data-slot="settings-row-label"] {
+  font-weight: 400;
+}
+.row > :first-child > p {
+  margin-top: 4px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.row > :last-child {
+  min-width: 0;
+  max-width: 48%;
+  color: var(--a13n-secondary);
+}
+.row [data-slot="select-trigger"],
+.row button[role="combobox"] {
+  width: auto;
+  max-width: 100%;
+  min-height: 32px;
+  background: var(--a13n-canvas);
+}
+.row button[data-slot="combobox-trigger"] {
+  width: 220px;
+}
+.textInput {
+  width: 260px;
+  max-width: 100%;
+}
+@media (max-width: 600px) {
+  .section
+    > [data-slot="settings-section-content"]:not([data-variant="plain"]) {
+    padding-inline: 16px;
+  }
+  .row {
+    gap: 16px;
+    padding-block: 16px;
+  }
+}

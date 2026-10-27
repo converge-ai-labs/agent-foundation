@@ -38,7 +38,7 @@ export function TaskOptions({
       <div className={styles.body}>
         <div className={styles.optionRow}>
           <div>
-            <strong>Keep working toward a goal</strong>
+            <strong>Goal mode</strong>
             <p>
               Continue and check the result until the objective is complete.
             </p>
@@ -48,7 +48,7 @@ export function TaskOptions({
         {coordinator && (
           <div className={styles.optionRow}>
             <div>
-              <strong>Coordinate multiple agents</strong>
+              <strong>Coordinator</strong>
               <p>
                 Plan and delegate work in this project. This role becomes
                 permanent after sending.
@@ -58,9 +58,11 @@ export function TaskOptions({
           </div>
         )}
         {environment && (
-          <div className={styles.optionSection}>
-            <strong>Working environment</strong>
-            <p>Choose where the agent works and which folders it can use.</p>
+          <div className={styles.optionRow}>
+            <div>
+              <strong>Working environment</strong>
+              <p>Choose where the agent works and which folders it can use.</p>
+            </div>
             {environment}
           </div>
         )}

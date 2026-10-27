@@ -1,5 +1,6 @@
+import { SettingsSection } from "./settings";
 import { useContext, type ReactNode } from "react";
-import { Button, FormField, Input, SettingsSection } from "a13n-ui";
+import { Button, FormField, Input } from "a13n-ui";
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { isConnectionError } from "../transport/client";
 import { ConnectionNoticeContext } from "./connection";

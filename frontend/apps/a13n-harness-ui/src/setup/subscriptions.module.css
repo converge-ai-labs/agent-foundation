@@ -277,6 +277,9 @@
   display: grid;
   gap: 16px;
 }
+.form:has(> [data-slot="settings-row"]) {
+  gap: 0;
+}
 .member {
   display: flex;
   align-items: center;

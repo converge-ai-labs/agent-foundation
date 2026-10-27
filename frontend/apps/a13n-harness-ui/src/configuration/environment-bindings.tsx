@@ -1,10 +1,12 @@
+import { SettingsTextField as TextField } from "../shell/settings";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { DeviceDirectory, useDeviceInfo } from "./device-directory";
 import { ConnectDevice } from "./connect-device";
 import {

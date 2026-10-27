@@ -1,5 +1,5 @@
 .popup {
-  width: min(400px, calc(100vw - 24px));
+  width: min(440px, calc(100vw - 24px));
 }
 .popup [data-slot="popover-viewport"] {
   padding: 0;
@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 16px 20px;
   outline: none;
 }
 .title {
@@ -27,16 +27,16 @@
   max-height: min(65dvh, 540px);
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 0 16px 16px;
+  padding: 0 20px 20px;
 }
 .row {
   display: flex;
   width: 100%;
-  min-height: 44px;
+  min-height: 52px;
   height: auto;
   justify-content: flex-start;
   gap: 12px;
-  padding: 10px 8px;
+  padding: 14px 8px;
   font-weight: 400;
 }
 .row > span:first-child {
@@ -133,8 +133,8 @@
 .optionRow {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 14px 0;
+  gap: 24px;
+  padding: 20px 0;
 }
 .optionRow > div {
   flex: 1;
@@ -142,27 +142,25 @@
 }
 .optionRow > button {
   flex-shrink: 0;
+  max-width: 44%;
 }
-.optionRow strong,
-.optionSection strong {
-  font-size: 13px;
-  font-weight: 500;
+.optionRow strong {
+  font-size: 14px;
+  font-weight: 400;
 }
-.optionRow p,
-.optionSection p {
+.optionRow p {
   margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 20px;
   color: var(--a13n-secondary);
 }
-.optionSection {
-  margin-block: 8px;
-  padding: 14px;
-  background: var(--a13n-surface);
-  border-radius: 10px;
+.environmentButton {
+  min-width: 0;
 }
-.optionSection > button {
-  margin: 8px 0 0 -8px;
+.environmentLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .identity > button {
   flex-shrink: 0;

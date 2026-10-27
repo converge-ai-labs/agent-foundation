@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { applyThreadMutation } from "./thread-updates";
 import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
-import { Button, ChoiceField } from "a13n-ui";
+import { Button } from "a13n-ui";
+import { SettingsChoice as ChoiceField } from "../shell/settings";
+import { DebugData } from "../shell/debug";
 import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -166,12 +168,7 @@ export function ConversationConfiguration({
                     <dd>{data.captured.capability_ids.join(", ") || "None"}</dd>
                   </div>
                 </dl>
-                <details className={styles.activity}>
-                  <summary>Configuration used</summary>
-                  <pre className={styles.code}>
-                    {JSON.stringify(data.captured, null, 2)}
-                  </pre>
-                </details>
+                <DebugData label="Configuration used" value={data.captured} />
               </>
             ) : (
               <p>
@@ -211,19 +208,13 @@ export function ConversationConfiguration({
                 configuration={data.next_run.configuration}
               />
               <p>Model: {data.next_model_id || "Not configured"}</p>
-              <details className={styles.activity}>
-                <summary>Where these settings come from</summary>
-                <pre className={styles.code}>
-                  {JSON.stringify(
-                    {
-                      provenance: data.next_run.provenance,
-                      tool_search: data.next_tool_search,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </details>
+              <DebugData
+                label="Where these settings come from"
+                value={{
+                  provenance: data.next_run.provenance,
+                  tool_search: data.next_tool_search,
+                }}
+              />
               {!readOnly && (
                 <ThreadSelections
                   key={threadId}

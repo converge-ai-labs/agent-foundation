@@ -51,7 +51,8 @@
   composes: details from "../shell/workbench.module.css";
 }
 .groupDisclosure > summary {
-  min-height: 48px;
+  min-height: 60px;
+  font-size: 14px;
   font-weight: 400;
 }
 .groupDisclosure[open] > summary {
@@ -61,5 +62,5 @@
   padding: 0 0 16px;
 }
 .groupDisclosure > div > [data-slot="settings-row"] {
-  padding-top: 8px;
+  padding-top: 16px;
 }

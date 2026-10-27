@@ -1,6 +1,6 @@
 .panel {
   display: grid;
-  gap: 16px;
+  gap: 24px;
 }
 .panel p {
   margin: 0;
@@ -10,42 +10,10 @@
   font-size: 12px;
   line-height: 1.6;
 }
-.scope {
-  display: grid;
-  gap: 6px;
-}
-.linkSettings {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 12px;
-  background: var(--a13n-surface);
-}
-.permissionRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 .permissionControl {
   width: auto;
   min-width: 0;
   flex-shrink: 0;
-}
-.linkAudience {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.linkIcon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
 }
 .authority {
   color: var(--a13n-secondary);
@@ -65,6 +33,7 @@
 }
 .actions > button {
   flex-shrink: 0;
+  margin-left: auto;
 }
 .textAction {
   composes: textAction from "./shell/workbench.module.css";
@@ -291,25 +260,12 @@
   .mobileToggle {
     display: inline-flex;
   }
-  .linkSettings {
-    padding: 12px;
-  }
-  .permissionRow {
-    gap: 8px;
-  }
-  .linkAudience {
-    gap: 8px;
-  }
   .secondaryActions {
     flex-wrap: wrap;
   }
 }
 
-/* Phones keep "Anyone with the link" on one line beside its permission. */
 @media (max-width: 480px) {
-  .linkIcon {
-    display: none;
-  }
   .permissionControl button {
     min-width: 0;
   }

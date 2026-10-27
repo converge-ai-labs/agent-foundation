@@ -1,3 +1,4 @@
+import { SettingsRow, SettingsSection } from "./settings";
 import {
   createContext,
   useCallback,
@@ -11,14 +12,7 @@ import { Link, useMatch, useNavigate } from "react-router";
 import { fitVisualViewport } from "./visual-viewport";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell, X } from "@phosphor-icons/react";
-import {
-  Button,
-  SettingsRow,
-  SettingsSection,
-  Switch,
-  ToastProvider,
-  useToast,
-} from "a13n-ui";
+import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
 import { TransportContext } from "../transport/context";

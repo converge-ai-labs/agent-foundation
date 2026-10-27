@@ -1,7 +1,8 @@
+import { SettingsChoice as ChoiceField } from "../shell/settings";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { useMutation } from "@tanstack/react-query";
-import { Button, ChoiceField } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { Folder } from "@phosphor-icons/react";
 import {
   useProjects,

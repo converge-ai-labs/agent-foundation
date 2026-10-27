@@ -22,15 +22,7 @@ import { DraftContext, DraftLinks, SourceDocument } from "./sources";
 import { mediaKinds, mediaLabels } from "./media-understanding";
 import { ModelEditor } from "./model-editor";
 import { readDocument, updateDocument } from "./documents";
-import {
-  DotsThree,
-  Cube,
-  Key,
-  HeadCircuit,
-  Plus,
-  Copy,
-  Image,
-} from "@phosphor-icons/react";
+import { DotsThree, Plus, Copy, Image } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import styles from "../shell/workbench.module.css";
@@ -161,9 +153,6 @@ export function ModelsPage() {
                 className={`${styles.resourceRow} ${management.modelRow}`}
               >
                 <div className={management.resourceIdentity}>
-                  <span className={management.resourceIcon}>
-                    <Cube aria-hidden="true" weight="duotone" />
-                  </span>
                   <div className={management.resourceInfo}>
                     {source ? (
                       <Link
@@ -180,7 +169,6 @@ export function ModelsPage() {
                         <ModelCredentialSummary path={source.relative_path} />
                       )}
                       <small className={management.metadata}>
-                        <HeadCircuit aria-hidden="true" />
                         <span>
                           {selectors.data?.agents
                             .filter(
@@ -314,7 +302,6 @@ function ModelCredentialSummary({ path }: { path: string }) {
   if (auth?.kind !== "api_key") return null;
   return (
     <small className={management.metadata}>
-      <Key aria-hidden="true" />
       <span>
         {auth.env
           ? `Environment · ${auth.env}`

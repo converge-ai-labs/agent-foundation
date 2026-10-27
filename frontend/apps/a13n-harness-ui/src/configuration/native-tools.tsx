@@ -1,7 +1,6 @@
 import { useId } from "react";
 import { Checkbox } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
-import { Lightning } from "@phosphor-icons/react";
 import management from "./management.module.css";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
@@ -123,10 +122,7 @@ export function AgentNativeTools({
   const tools = options.data?.native_tools ?? [];
   return (
     <div className={styles.fieldGroup}>
-      <h4 className={management.subsectionTitle}>
-        <Lightning aria-hidden="true" />
-        Model-native tools
-      </h4>
+      <h4 className={management.subsectionTitle}>Model-native tools</h4>
       <div className={management.nativeOptions}>
         <ErrorNotice error={saved.error || options.error} />
         {!raw?.model ? (

@@ -126,12 +126,17 @@
 }
 .profileForm {
   display: flex;
-  align-items: end;
-  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  padding-block: 0 16px;
 }
 .profileForm > :first-child {
-  flex: 1;
+  flex: 1 0 100%;
   min-width: 0;
+}
+.profileForm > button {
+  margin-left: auto;
 }
 @media (max-width: 700px) {
   .profileButton {
@@ -267,6 +272,9 @@
 .panel > button {
   align-self: flex-start;
 }
+.stack:has(> [data-slot="settings-row"]) {
+  gap: 0;
+}
 .formGrid,
 .twoColumns {
   display: grid;
@@ -360,10 +368,10 @@
   display: flex;
   gap: 16px;
   align-items: center;
-  padding: 12px 16px;
+  padding: 18px 20px;
   text-decoration: none;
   border-bottom: 1px solid var(--a13n-border);
-  font-size: 13px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .resourceRow:last-child {
@@ -379,7 +387,9 @@ a.resourceRow:hover {
 .resourceRow small {
   color: var(--a13n-secondary);
   display: block;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 20px;
 }
 .resourceRow strong {
   font-weight: 500;
@@ -800,13 +810,13 @@ a.resourceRow:hover {
   background: var(--a13n-selected);
 }
 .settingControl {
-  width: 280px;
+  width: auto;
   max-width: 100%;
 }
 .settingsContent {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 40px;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -847,7 +857,7 @@ a.resourceRow:hover {
 .sourceDocument {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 40px;
   width: 100%;
   max-width: 760px;
   min-width: 0;
@@ -898,6 +908,12 @@ a.resourceRow:hover {
 /* Field groups use spacing to separate their controls. */
 .fieldGroup {
   padding-block: 16px;
+}
+.fieldGroup:has(> .stack > [data-slot="settings-row"]) {
+  padding-block: 0;
+}
+.fieldGroup.stack:has(> [data-slot="settings-row"]) {
+  padding-top: 0;
 }
 .selectionOptions {
   display: grid;
@@ -1032,6 +1048,6 @@ a.resourceRow:hover {
 
 .configurationFields {
   display: grid;
-  gap: 32px;
+  gap: 40px;
   min-width: 0;
 }

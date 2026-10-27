@@ -1,13 +1,7 @@
+import { SettingsRow, SettingsSection } from "../shell/settings";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  ModalFrame,
-  SettingsRow,
-  SettingsSection,
-  Skeleton,
-  StatusPill,
-} from "a13n-ui";
+import { Button, ModalFrame, Skeleton, StatusPill } from "a13n-ui";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice, PageHeader } from "../shell/ui";

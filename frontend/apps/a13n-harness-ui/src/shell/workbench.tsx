@@ -15,7 +15,7 @@ import {
 import {
   Button,
   Logo,
-  ChoiceField,
+  Input,
   ModalFrame,
   Sheet,
   SheetPopup,
@@ -32,7 +32,6 @@ import {
   ChartBar,
   Waveform,
   Brain,
-  House,
   SidebarSimple,
   Moon,
   SignOut,
@@ -59,7 +58,12 @@ import {
 } from "../configuration/settings";
 import { SettingsNavigation } from "../configuration/settings-navigation";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
-import { ErrorNotice, TextField } from "./ui";
+import { ErrorNotice } from "./ui";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsRow,
+  SettingsSection,
+} from "./settings";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
 import { ParticipantAvatars } from "./participant-avatars";
@@ -166,19 +170,20 @@ function WorkbenchContent({
   const location = useLocation();
   const settingsMode = /^\/(settings|setup)(\/|$)/.test(location.pathname);
   const lastChat = useRef("/");
-  if (
-    !settingsMode &&
-    (location.pathname === "/" ||
-      location.pathname === "/new" ||
-      location.pathname.startsWith("/threads/"))
-  ) {
-    lastChat.current = `${location.pathname}${location.search}`;
-  }
   const selectedThreadId = useMatch("/threads/:threadId")?.params.threadId;
   const selectedThread = useThread(selectedThreadId ?? "");
   const memoryMode =
     location.pathname === "/memory" ||
     !!selectedThread.data?.thread.memory_scope;
+  if (
+    !settingsMode &&
+    !memoryMode &&
+    (location.pathname === "/" ||
+      location.pathname === "/new" ||
+      (selectedThread.data && location.pathname.startsWith("/threads/")))
+  ) {
+    lastChat.current = `${location.pathname}${location.search}`;
+  }
   const memoryEnabled = !!status.app?.memory_organization?.memory_enabled;
   // Decide first-use routing before mounting the conversation, whose own
   // effect normalizes the empty root URL to a draft route.
@@ -204,9 +209,6 @@ function WorkbenchContent({
   }, [sidebarCollapsed]);
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
-    ...(memoryMode && memoryEnabled
-      ? [{ to: "/", label: "Home", icon: House }]
-      : []),
     ...(voiceSettings.data?.enabled
       ? [{ to: "/live", label: "Live", icon: Waveform }]
       : []),
@@ -216,6 +218,7 @@ function WorkbenchContent({
       <div hidden={settingsMode} className={styles.navigationBody}>
         {memoryMode && memoryEnabled ? (
           <MemoryNavigation
+            backTo={lastChat.current}
             projectId={
               selectedThread.data?.thread.memory_scope
                 ? selectedThread.data.thread.configuration.project_id
@@ -598,43 +601,52 @@ function WorkbenchContent({
         closeLabel="Close"
       >
         <div className={styles.stack}>
-          <form
-            className={styles.profileForm}
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (
-                !displayName.trim() ||
-                Array.from(displayName.trim()).length > 80
-              )
-                return;
-              updateProfile({ ...profile, display_name: displayName.trim() });
-              setPeopleOpen(false);
-            }}
-          >
-            <TextField
-              label="Your display name"
-              value={displayName}
-              onChange={setDisplayName}
-            />
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={
-                !displayName.trim() ||
-                Array.from(displayName.trim()).length > 80
-              }
+          <SettingsSection title="Your profile">
+            <form
+              className={styles.profileForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (
+                  !displayName.trim() ||
+                  Array.from(displayName.trim()).length > 80
+                )
+                  return;
+                updateProfile({ ...profile, display_name: displayName.trim() });
+                setPeopleOpen(false);
+              }}
             >
-              Save name
-            </Button>
-          </form>
-          <ChoiceField
-            label="Your color"
-            value={profile.color}
-            onValueChange={(color) => updateProfile({ ...profile, color })}
-            options={profileColors}
-          />
-          <p>Presence: {live.presenceState}</p>
-          <details>
+              <SettingsRow
+                label="Your display name"
+                controlId="workspace-display-name"
+              >
+                <Input
+                  id="workspace-display-name"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                />
+              </SettingsRow>
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={
+                  !displayName.trim() ||
+                  Array.from(displayName.trim()).length > 80
+                }
+              >
+                Save name
+              </Button>
+            </form>
+            <ChoiceField
+              label="Your color"
+              value={profile.color}
+              onValueChange={(color) => updateProfile({ ...profile, color })}
+              options={profileColors}
+            />
+            <SettingsRow label="Presence">
+              <span>{live.presenceState}</span>
+            </SettingsRow>
+          </SettingsSection>
+          <details className={styles.details}>
             <summary>About this instance</summary>
             <p>
               Version {status.version} · {status.app?.state ?? "Connected"}

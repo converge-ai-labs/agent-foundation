@@ -1090,22 +1090,24 @@ function ConversationContent({
             reconcile={reconcile}
             readOnly={readOnly}
           />
-          {!readOnly && thread && (
-            <CoordinatorSettings
-              thread={thread}
-              pending={!!detail.data?.deferred_requests?.length}
-            />
-          )}
-          {!thread?.archived &&
-            detail.data?.available_actions?.includes("archive") && (
-              <Button
-                variant="outline"
-                loading={metadata.isPending}
-                onClick={() => metadata.mutate({ archived: true })}
-              >
-                Archive chat
-              </Button>
+          <div className={styles.detailActions}>
+            {!readOnly && thread && (
+              <CoordinatorSettings
+                thread={thread}
+                pending={!!detail.data?.deferred_requests?.length}
+              />
             )}
+            {!thread?.archived &&
+              detail.data?.available_actions?.includes("archive") && (
+                <Button
+                  variant="outline"
+                  loading={metadata.isPending}
+                  onClick={() => metadata.mutate({ archived: true })}
+                >
+                  Archive chat
+                </Button>
+              )}
+          </div>
         </ModalFrame>
       </div>
     </ConversationOpening>

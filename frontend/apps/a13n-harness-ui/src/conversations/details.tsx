@@ -1,7 +1,14 @@
 import { useThreadWork, workCaption } from "./work";
 import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, readContentParts } from "a13n-ui";
+import {
+  Button,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
+  readContentParts,
+} from "a13n-ui";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
@@ -42,18 +49,17 @@ export function ConversationDetails({
     .flatMap((page) => page.rows)
     .find((item) => item.thread.thread_id === threadId);
   return (
-    <div className={styles.form}>
-      <ChoiceField
-        label="Inspect"
-        value={tab}
-        onValueChange={setTab}
-        options={[
-          { value: "execution", label: "Execution & subagents" },
-          { value: "configuration", label: "Configuration" },
-          { value: "context", label: "Tasks, notes & usage" },
-        ]}
-      />
-      {tab === "execution" && (
+    <Tabs
+      className={styles.inspection}
+      value={tab}
+      onValueChange={(value) => setTab(String(value))}
+    >
+      <TabsList variant="underline" aria-label="Chat details">
+        <TabsTab value="execution">Activity</TabsTab>
+        <TabsTab value="configuration">Configuration</TabsTab>
+        <TabsTab value="context">Tasks & usage</TabsTab>
+      </TabsList>
+      <TabsPanel value="execution">
         <>
           <ErrorNotice
             error={activity.error}
@@ -74,16 +80,18 @@ export function ConversationDetails({
           )}
           <Children threadId={threadId} reconcile={reconcile} />
         </>
-      )}
-      {tab === "configuration" && (
+      </TabsPanel>
+      <TabsPanel value="configuration">
         <ConversationConfiguration
           threadId={threadId}
           reconcile={reconcile}
           readOnly={readOnly}
         />
-      )}
-      {tab === "context" && <ContextDetails threadId={threadId} />}
-    </div>
+      </TabsPanel>
+      <TabsPanel value="context">
+        <ContextDetails threadId={threadId} />
+      </TabsPanel>
+    </Tabs>
   );
 }
 function Operation({
@@ -103,7 +111,7 @@ function Operation({
     );
   return (
     <section>
-      <h3>Root operation</h3>
+      <h3>Latest run</h3>
       <ErrorNotice
         error={operation.error}
         retry={() => void operation.refetch()}
@@ -111,19 +119,29 @@ function Operation({
       {operation.data && (
         <>
           <p>
-            {operation.data.status} · {receipt}
+            {operation.data.status.charAt(0).toUpperCase() +
+              operation.data.status.slice(1)}
           </p>
+          <DebugId label="Operation receipt" value={receipt} />
           {operation.data.failure && (
             <p role="alert">{operation.data.failure.message}</p>
           )}
           <dl className={styles.detailGrid}>
             <div>
               <dt>Started</dt>
-              <dd>{operation.data.started_at || "Preparing"}</dd>
+              <dd>
+                {operation.data.started_at
+                  ? new Date(operation.data.started_at).toLocaleString()
+                  : "Preparing"}
+              </dd>
             </div>
             <div>
               <dt>Completed</dt>
-              <dd>{operation.data.completed_at || "Not completed"}</dd>
+              <dd>
+                {operation.data.completed_at
+                  ? new Date(operation.data.completed_at).toLocaleString()
+                  : "Not completed"}
+              </dd>
             </div>
           </dl>
           {operation.data.outcome && (
@@ -164,18 +182,10 @@ function Operation({
             </>
           )}
           {operation.data.outcome && (
-            <details className={styles.activity}>
-              <summary>
-                Execution, continuation and Environment outcomes
-              </summary>
-              <p>
-                Model execution, saved continuation and Environment cleanup are
-                separate outcomes.
-              </p>
-              <pre className={styles.code}>
-                {JSON.stringify(operation.data.outcome, null, 2)}
-              </pre>
-            </details>
+            <DebugData
+              label="Execution, continuation and Environment outcomes"
+              value={operation.data.outcome}
+            />
           )}
         </>
       )}
@@ -317,9 +327,8 @@ export function Child({
       </summary>
       {open && (
         <>
-          <small>
-            {child.execution_id} · segment {child.segment_index}
-          </small>
+          <DebugId label="Execution" value={child.execution_id} />
+          <DebugData label="Execution segment" value={child.segment_index} />
           <dl className={styles.detailGrid}>
             <div>
               <dt>Started</dt>
