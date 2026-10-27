@@ -255,6 +255,7 @@ export function Desktop({
                 root: host.current!,
                 active,
                 connection,
+                targetMac: session.platform === "macos",
               });
               bridge = bindClipboard({
                 root: host.current!,
@@ -262,6 +263,25 @@ export function Desktop({
                 connection,
                 shortcut: keyboard.shortcut,
                 notice: setClipboardError,
+                nativeClipboard:
+                  session.platform === "macos"
+                    ? async (text) => {
+                        const clipboard = await result(
+                          client.POST(
+                            "/api/threads/{thread_id}/browser/clipboard",
+                            {
+                              params: { path: { thread_id: threadId } },
+                              body: {
+                                session_id: session.session_id!,
+                                control_token: controlToken,
+                                text,
+                              },
+                            },
+                          ),
+                        );
+                        return clipboard.text;
+                      }
+                    : undefined,
               });
               clipboard.current = bridge;
               if (editing.current) void bridge.suspend();
@@ -321,6 +341,7 @@ export function Desktop({
     client,
     threadId,
     session.session_id,
+    session.platform,
     session.control,
     controlToken,
     reconnect,

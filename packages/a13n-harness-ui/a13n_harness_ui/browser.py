@@ -26,7 +26,9 @@ from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 from pydantic import Field
 
 from a13n_harness_ui.browser_display import FIXED_DESKTOP, VncDesktop, sway_command, sway_windows
-from a13n_harness_ui.browser_setup import BrowserSetup, inspect_browser
+from a13n_harness_ui.browser_macos import MacDesktop
+from a13n_harness_ui.browser_setup import BrowserPlatform, BrowserSetup, host_platform, inspect_browser
+from a13n_harness_ui.browser_vnc import VncConnection
 from a13n_harness_ui.configuration.models import BrowserConfiguration
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.surfaces import SurfaceModel
@@ -54,6 +56,7 @@ VIEWPORT_BY_PRESET = {viewport.preset: viewport for viewport in VIEWPORTS}
 
 
 class BrowserState(SurfaceModel):
+    platform: BrowserPlatform = Field(default_factory=host_platform)
     session_id: str = ""
     status: Literal["disabled", "enabled", "ready", "stopped", "failed"] = "disabled"
     control: Literal["agent", "human"] = "agent"
@@ -70,6 +73,14 @@ class BrowserCommand(SurfaceModel):
 
 class BrowserAccessRequest(BrowserCommand):
     control_token: str = Field(default="", max_length=80, repr=False)
+
+
+class BrowserClipboardRequest(BrowserAccessRequest):
+    text: str | None = Field(default=None, max_length=65536, repr=False)
+
+
+class BrowserClipboard(SurfaceModel):
+    text: str = Field(repr=False)
 
 
 class BrowserViewportRequest(BrowserCommand):
@@ -147,7 +158,7 @@ class HostBrowsers:
         self.runtime: Chromium | None = None
         self.runtime_failed = False
         self.keepalive: str | None = None
-        self.desktop: VncDesktop | None = None
+        self.desktop: VncDesktop | MacDesktop | None = None
         self.native_windows: dict[int, int] = {}
         self.process: asyncio.subprocess.Process | None = None
         self.monitor: asyncio.Task | None = None
@@ -159,8 +170,8 @@ class HostBrowsers:
         self.human_thread = ""
         self.control_token = ""
         self.tickets: dict[str, tuple[str, str, int, bool, float]] = {}
-        self.connections: dict[asyncio.StreamWriter, str] = {}
-        self.controller: asyncio.StreamWriter | None = None
+        self.connections: dict[VncConnection, str] = {}
+        self.controller: VncConnection | None = None
         self.generation = 0
 
     @property
@@ -183,7 +194,7 @@ class HostBrowsers:
             url=item.page.url if item.page else "",
             error=item.error,
             viewport=item.viewport,
-            resize_available=bool(self.desktop and self.desktop.desktop.xrandr),
+            resize_available=bool(self.desktop and self.desktop.resize_available),
         )
 
     def binding(self, thread_id: str) -> str | None:
@@ -209,24 +220,32 @@ class HostBrowsers:
         return self.state(thread_id)
 
     def revoke_viewers(self, thread_id: str | None = None) -> None:
-        for writer, owner in tuple(self.connections.items()):
+        for connection, owner in tuple(self.connections.items()):
             if thread_id is None or owner == thread_id:
-                writer.close()
+                connection.close()
         self.tickets = {
             key: value for key, value in self.tickets.items() if thread_id is not None and value[0] != thread_id
         }
+
+    async def settle_viewers(self) -> None:
+        connections = tuple(self.connections)
+        self.revoke_viewers()
+        async with asyncio.timeout(5):
+            await asyncio.gather(*(connection.wait_closed() for connection in connections))
+        for connection in connections:
+            self.connections.pop(connection, None)
 
     async def revoke(self) -> None:
         self.generation += 1
         self.control_token = ""
         self.controller = None
-        self.revoke_viewers()
-        if self.desktop:
-            try:
+        try:
+            await self.settle_viewers()
+            if self.desktop:
                 await self.desktop.settle_input()
-            except Exception:
-                self.failed("VNC input authority could not be renewed. Start the browser again.")
-                raise
+        except Exception:
+            self.failed("VNC input authority could not be renewed. Start the browser again.")
+            raise
 
     def failed(self, reason: str) -> None:
         self.runtime_failed = True
@@ -251,8 +270,12 @@ class HostBrowsers:
             return
         await self.close_runtime()
         preparation = await require_browser(self.configuration, no_sandbox=self.no_sandbox)
-        assert preparation.browser is not None and preparation.vnc is not None
-        self.desktop = VncDesktop(preparation.vnc)
+        assert preparation.browser is not None
+        if preparation.platform == "macos":
+            self.desktop = MacDesktop()
+        else:
+            assert preparation.vnc is not None
+            self.desktop = VncDesktop(preparation.vnc)
         try:
             await self.desktop.start()
         except BaseException:
@@ -266,7 +289,7 @@ class HostBrowsers:
             f"--user-data-dir={self.root}",
             "--remote-debugging-address=127.0.0.1",
             "--remote-debugging-port=0",
-            f"--ozone-platform={'wayland' if preparation.vnc.kind == 'wayvnc' else 'x11'}",
+            *self.desktop.chromium_arguments,
             "--window-position=0,0",
             "--mute-audio",
             # Owned windows must keep rendering for page-targeted CDP input
@@ -278,10 +301,6 @@ class HostBrowsers:
             "--no-default-browser-check",
             "about:blank",
         ]
-        if preparation.vnc.kind == "wayvnc":
-            # The private headless compositor uses Pixman and has no GPU/DRM
-            # device. Render Chromium's Wayland surfaces in software as well.
-            arguments.append("--disable-gpu")
         if self.no_sandbox:
             arguments.append("--no-sandbox")
         self.process = await asyncio.create_subprocess_exec(
@@ -310,7 +329,7 @@ class HostBrowsers:
             internal = await self.runtime.attach(keepalive["targetId"], keepalive.get("url", "about:blank"))
             self.keepalive = internal.target
             await self.runtime.evaluate(internal, "document.title='A13n Harness browser runtime'")
-            if self.desktop.desktop.kind == "wayvnc":
+            if self.desktop.wayland:
                 await sway_command(self.desktop.env, await self.native_window(internal), "move scratchpad")
             else:
                 identity = (await self.runtime.window(internal))["windowId"]
@@ -360,7 +379,7 @@ class HostBrowsers:
     async def focus(self, page: Page) -> None:
         assert self.runtime and self.desktop
         await self.runtime.activate(page)
-        if self.desktop.desktop.kind == "wayvnc":
+        if self.desktop.wayland:
             await sway_command(self.desktop.env, await self.native_window(page), "focus")
 
     async def fit_desktop(self, width: int, height: int) -> None:
@@ -373,12 +392,13 @@ class HostBrowsers:
                 if bounds.get("windowState", "normal") == "normal":
                     width, height = max(width, bounds["width"]), max(height, bounds["height"])
         # X11 constrains normal windows strictly below the screen dimensions.
+        assert isinstance(self.desktop, VncDesktop)
         await self.desktop.resize(width + 1, height + 1)
 
     async def layout(self, page: Page, item: Binding, *, preset: BrowserPreset | None = None) -> None:
         assert self.runtime and self.desktop
         viewport = preset or item.viewport
-        if self.desktop.desktop.xrandr:
+        if self.desktop.resize_available:
             size = VIEWPORT_BY_PRESET[viewport]
             await self.runtime.resize_window(
                 page, size.width, size.height, prepare_bounds=self.fit_desktop, allow_minimum=True
@@ -387,7 +407,9 @@ class HostBrowsers:
             identity = (await self.runtime.window(page))["windowId"]
             await self.runtime.window_bounds(identity, {"windowState": "normal"})
             width, height = FIXED_DESKTOP
-            if self.desktop.desktop.kind == "wayvnc":
+            if isinstance(self.desktop, MacDesktop):
+                await self.runtime.window_bounds(identity, {"windowState": "maximized"})
+            elif self.desktop.wayland:
                 # Wayland leaves window placement to the compositor; Chromium's
                 # CDP bounds do not move a native Wayland window.
                 await sway_command(
@@ -397,9 +419,9 @@ class HostBrowsers:
                 )
             else:
                 await self.runtime.window_bounds(identity, {"left": 0, "top": 0, "width": width, "height": height})
-        if self.desktop.desktop.xrandr:
+        if self.desktop.resize_available:
             await self.fit_desktop(32, 32)
-        if viewport == "desktop" and self.desktop.desktop.window_manager:
+        if viewport == "desktop" and self.desktop.window_manager:
             identity = (await self.runtime.window(page))["windowId"]
             await self.runtime.window_bounds(identity, {"windowState": "maximized"})
 
@@ -447,7 +469,7 @@ class HostBrowsers:
                         self.checked(thread_id, item.identity)
 
                     item.scope = CdpBrowserBackend(self.runtime, page, check_access=check_access)
-                    if self.desktop and self.desktop.desktop.xrandr is None:
+                    if self.desktop and not self.desktop.resize_available:
                         item.viewport = "desktop"
                     await self.layout(page, item)
                     await self.focus(page)
@@ -481,7 +503,7 @@ class HostBrowsers:
         await self.authorize(thread_id)
         async with self.control_lock, self.lifecycle:
             item = self.require_control(thread_id, request.session_id, request.control_token)
-            if not self.desktop or not self.desktop.desktop.xrandr:
+            if not self.desktop or not self.desktop.resize_available:
                 raise failure("Desktop resizing is unavailable on this Host.", "resize_unavailable")
             if item.page is None:
                 raise failure("Open a tab before resizing the browser.", "not_ready")
@@ -620,6 +642,21 @@ class HostBrowsers:
             raise failure("Take control before operating this page.", "control_required")
         return item
 
+    async def clipboard(self, thread_id: str, request: BrowserClipboardRequest) -> BrowserClipboard:
+        await self.authorize(thread_id)
+        async with self.control_lock:
+            self.require_control(thread_id, request.session_id, request.control_token)
+            if not self.controller or self.controller.is_closing():
+                raise failure("Connect the controlling viewer before transferring clipboard text.", "control_required")
+            if not isinstance(self.desktop, MacDesktop):
+                raise failure("This desktop transfers clipboard text through VNC.", "clipboard_unavailable")
+            try:
+                text = await self.desktop.clipboard(request.text)
+            except (OSError, TimeoutError, UnicodeError) as exc:
+                raise failure("macOS clipboard transfer failed.", "clipboard_unavailable") from exc
+            self.require_control(thread_id, request.session_id, request.control_token)
+            return BrowserClipboard(text=text)
+
     async def access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
         await self.authorize(thread_id)
         async with self.control_lock:
@@ -647,7 +684,7 @@ class HostBrowsers:
                 password=self.desktop.password if controlling else self.desktop.readonly_password,
             )
 
-    async def connect(self, thread: str, ticket: str) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    async def connect(self, thread: str, ticket: str) -> VncConnection:
         claim = self.tickets.pop(ticket, None)
         if claim is None or claim[0] != thread or claim[4] <= time.monotonic():
             raise failure("Viewer access expired.", "access_expired")
@@ -658,12 +695,7 @@ class HostBrowsers:
             raise failure("Viewer access was revoked.", "access_expired")
         if len(self.connections) >= 8 or (controlling and self.controller is not None):
             raise failure("Too many viewers or another controller is connected.", "limit")
-        path = (
-            self.desktop.readonly_socket
-            if not controlling and self.desktop.readonly_socket
-            else self.desktop.control_socket
-        )
-        reader, writer = await asyncio.open_unix_connection(path)
+        connection = await self.desktop.connect(controlling=controlling)
         try:
             await self.authorize(thread)
             item = self.checked(thread, binding)
@@ -676,27 +708,35 @@ class HostBrowsers:
             ):
                 raise failure("Viewer access was revoked.", "access_expired")
         except BaseException:
-            writer.close()
-            await writer.wait_closed()
+            connection.close()
+            await connection.wait_closed()
             raise
-        self.connections[writer] = thread
+        self.connections[connection] = thread
         if controlling:
-            self.controller = writer
-        return reader, writer
+            self.controller = connection
+        return connection
 
-    async def disconnect(self, writer: asyncio.StreamWriter) -> None:
-        self.connections.pop(writer, None)
-        writer.close()
-        if self.controller is writer:
+    async def disconnect(self, connection: VncConnection) -> None:
+        connection.close()
+        if self.controller is connection:
             async with self.control_lock:
-                if self.controller is writer:
+                if self.controller is connection:
                     # Revoke native input without silently resuming Agent tools.
                     await self.revoke()
+        self.connections.pop(connection, None)
 
     def backend(self, thread_id: str, binding: str) -> HostBrowserBackend:
         return HostBrowserBackend(self, thread_id, binding)
 
     async def close_runtime(self) -> None:
+        self.generation += 1
+        self.controller = None
+        self.control_token = ""
+        try:
+            # Release native input before closing browser windows on the shared desktop.
+            await self.settle_viewers()
+        except (OSError, TimeoutError):
+            pass
         monitor, self.monitor = self.monitor, None
         if monitor:
             monitor.cancel()
@@ -731,9 +771,7 @@ class HostBrowsers:
             from a13n_harness_ui.browser_display import terminate
 
             await terminate(process)
-        self.revoke_viewers()
         self.connections.clear()
-        self.controller = None
         if self.desktop:
             desktop, self.desktop = self.desktop, None
             await desktop.close()

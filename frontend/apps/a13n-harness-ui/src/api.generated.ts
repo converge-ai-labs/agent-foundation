@@ -835,6 +835,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/browser/clipboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Browser Clipboard */
+        post: operations["browser_clipboard_api_threads__thread_id__browser_clipboard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/terminals": {
         parameters: {
             query?: never;
@@ -3199,6 +3216,11 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** BrowserClipboard */
+        BrowserClipboard: {
+            /** Text */
+            text: string;
+        };
         /** BrowserControl */
         BrowserControl: {
             state: components["schemas"]["BrowserState"];
@@ -3254,6 +3276,8 @@ export interface components {
         };
         /** BrowserScan */
         BrowserScan: {
+            /** @default linux */
+            platform?: components["schemas"]["BrowserPlatform"];
             /**
              * Browsers
              * @default []
@@ -3294,6 +3318,7 @@ export interface components {
         };
         /** BrowserState */
         BrowserState: {
+            platform?: components["schemas"]["BrowserPlatform"];
             /**
              * Session Id
              * @default
@@ -8877,6 +8902,18 @@ export interface components {
              */
             control_token?: string;
         };
+        /** BrowserClipboardRequest */
+        BrowserClipboardRequest: {
+            /** Session Id */
+            session_id: string;
+            /**
+             * Control Token
+             * @default
+             */
+            control_token?: string;
+            /** Text */
+            text?: string | null;
+        };
         /** TerminalCreate */
         TerminalCreate: {
             /**
@@ -10943,6 +10980,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserAccess"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    browser_clipboard_api_threads__thread_id__browser_clipboard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserClipboardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserClipboard"];
                 };
             };
             /** @description Validation Error */

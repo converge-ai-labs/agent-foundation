@@ -175,7 +175,7 @@ Back up `memory/` beside the selected YAML separately from application data. `.a
 
 ### Host browser
 
-Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null` and require an absolute path on the Host. For example, after installing Chromium and TigerVNC at these paths:
+Root `browser.executable` and `browser.vnc_executable` bind the programs used by the native WebUI Browser drawer. Both default to `null`; configured values require absolute Host paths. `vnc_executable` applies only to Linux. For example, after installing Chromium and TigerVNC at these paths:
 
 ```yaml
 browser:
@@ -183,7 +183,7 @@ browser:
   vnc_executable: /usr/bin/Xtigervnc
 ```
 
-Use **Settings → General → Host browser** to scan and select installed programs, or replace the example paths with your installation's paths. Save both bindings and restart Harness UI to apply them. Missing or invalid bindings block startup; runtime selection does not fall back to another program. Browser automation requires a Linux WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation.
+Use **Settings → General → Host browser** to scan and select installed programs, or replace the example paths with your installation's paths. Save the required bindings and restart Harness UI to apply them. Missing or invalid bindings block startup; runtime selection does not fall back to another program. Browser automation requires a Linux or macOS WebUI Host, computer sharing, and a Full Control Run in a browser-enabled conversation. macOS uses built-in Screen Sharing and requires only `browser.executable`; supply its dedicated VNC password through `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` in the Host process environment, not YAML. Follow the [macOS preparation steps](webui.md#install-host-components) before starting.
 
 The bindings apply to all Projects. One browser instance and profile are shared; the profile lives at `<data_root>/browsers/profile` and has no separate path setting. See the [browser quick start](webui.md#first-time-setup) for Host packages, selection and first use, and [sandbox startup options](command-reference.md#webui) for deployments that explicitly require disabling Chromium's sandbox.
 

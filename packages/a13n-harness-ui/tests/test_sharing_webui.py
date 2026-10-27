@@ -77,7 +77,7 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
             ("GET", f"/api/threads/{thread.thread_id}/browser/setup"),
             *(
                 ("POST", f"/api/threads/{thread.thread_id}/browser/{action}")
-                for action in ("enable", "start", "reset", "stop", "take-control", "handback", "viewport")
+                for action in ("enable", "start", "reset", "stop", "take-control", "handback", "viewport", "clipboard")
             ),
         ):
             assert (await client.request(method, path, headers=headers)).status_code == 401

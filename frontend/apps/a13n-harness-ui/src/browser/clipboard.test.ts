@@ -299,3 +299,101 @@ it.each(["reconnect", "cancel and reopen"])(
     expect(local).toBe("PNG");
   },
 );
+
+it.each([false, true])(
+  "waits for native Unicode clipboard writes before paste (revoked=%s)",
+  async (revoked) => {
+    bridge.stop();
+    let complete!: (text: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      complete = resolve;
+    });
+    const nativeClipboard = vi.fn(() => pending);
+    bridge = bindClipboard({
+      root,
+      active: () => controller,
+      connection,
+      shortcut,
+      notice,
+      nativeClipboard,
+    });
+    bridge.pasteText("你好世界 🚀");
+    await vi.waitFor(() =>
+      expect(nativeClipboard).toHaveBeenCalledWith("你好世界 🚀"),
+    );
+    expect(shortcut).not.toHaveBeenCalled();
+    expect(connection.clipboardPasteFrom).not.toHaveBeenCalled();
+    if (revoked) {
+      controller = false;
+      bridge.stop();
+    }
+    complete("你好世界 🚀");
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(shortcut).toHaveBeenCalledTimes(revoked ? 0 : 1);
+  },
+);
+
+it.each([false, true])(
+  "reads native UTF-8 on a legacy clipboard notification (revoked=%s)",
+  async (revoked) => {
+    bridge.stop();
+    let complete!: (text: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      complete = resolve;
+    });
+    const nativeClipboard = vi.fn(() => pending);
+    bridge = bindClipboard({
+      root,
+      active: () => controller,
+      connection,
+      shortcut,
+      notice,
+      nativeClipboard,
+    });
+    receive("????");
+    await vi.waitFor(() => expect(nativeClipboard).toHaveBeenCalledWith());
+    if (revoked) {
+      controller = false;
+      bridge.stop();
+    }
+    complete("远端中文 🚀");
+    await pending;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (revoked) expect(writeText).not.toHaveBeenCalled();
+    else expect(writeText).toHaveBeenCalledWith("远端中文 🚀");
+  },
+);
+
+it("detects native Unicode changes without an RFB notification", async () => {
+  bridge.stop();
+  let remote = "";
+  const nativeClipboard = vi.fn(async (text?: string) => {
+    if (text !== undefined) remote = text;
+    return remote;
+  });
+  bridge = bindClipboard({
+    root,
+    active: () => controller,
+    connection,
+    shortcut,
+    notice,
+    nativeClipboard,
+  });
+  bridge.sync();
+  await vi.waitFor(() => expect(remote).toBe(local));
+  remote = "中文";
+  await vi.waitFor(() => {
+    bridge.sync();
+    expect(writeText).toHaveBeenCalledWith("中文");
+  });
+  remote = "另一段中文";
+  await vi.waitFor(() => {
+    bridge.sync();
+    expect(writeText).toHaveBeenCalledWith("另一段中文");
+  });
+  controller = false;
+  nativeClipboard.mockClear();
+  bridge.sync();
+  expect(nativeClipboard).not.toHaveBeenCalled();
+});

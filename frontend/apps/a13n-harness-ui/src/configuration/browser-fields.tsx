@@ -72,9 +72,15 @@ export function BrowserFields({
           ? "Required components are missing. Review the checks above before starting the browser."
           : null;
 
+  const mac = scan.data?.platform === "macos";
   const requirements = setup?.requirements ?? [
     { name: "Browser", installed: false, detail: "", required: true },
-    { name: "VNC server", installed: false, detail: "", required: true },
+    {
+      name: mac ? "Screen Sharing" : "VNC server",
+      installed: false,
+      detail: "",
+      required: true,
+    },
   ];
   return (
     <SettingsSection
@@ -136,9 +142,9 @@ export function BrowserFields({
           </p>
         )}
         <p className="text-xs text-muted-foreground">
-          Missing a program? Install a Chromium-based browser and VNC server on
-          this Host (inside the container for Docker), then Scan again. Use
-          Other for an installed program outside the detected locations.{" "}
+          {mac
+            ? "macOS shares the entire logged-in desktop, including other applications. Enable Screen Sharing manually; no separate VNC server is needed. "
+            : "Missing a program? Install a Chromium-based browser and VNC server on this Host (inside the container for Docker), then Scan again. Use Other for an installed program outside the detected locations. "}
           <a
             href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
             target="_blank"

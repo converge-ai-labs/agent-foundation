@@ -42,6 +42,8 @@ from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
+    BrowserClipboard,
+    BrowserClipboardRequest,
     BrowserCommand,
     BrowserControl,
     BrowserState,
@@ -1189,6 +1191,14 @@ def create_webui(
     async def browser_access(thread_id: str, request: Request) -> BrowserAccess:
         return await app().browser_access(thread_id, await _document(request, BrowserAccessRequest))
 
+    @server.post(
+        "/api/threads/{thread_id}/browser/clipboard",
+        response_model=BrowserClipboard,
+        openapi_extra=_body(BrowserClipboardRequest),
+    )
+    async def browser_clipboard(thread_id: str, request: Request) -> BrowserClipboard:
+        return await app().browser_clipboard(thread_id, await _document(request, BrowserClipboardRequest))
+
     @server.websocket("/api/threads/{thread_id}/browser/connect")
     async def connect_browser(
         socket: WebSocket, thread_id: str, ticket: Annotated[str, Query(min_length=16, max_length=80)]
@@ -1196,8 +1206,8 @@ def create_webui(
         # HTTP authentication issues a short-lived single-use ticket. The API key never enters the URL.
         try:
             browsers = app().browsers()
-            reader, writer = await browsers.connect(thread_id, ticket)
-        except (HarnessUiError, OSError):
+            connection = await browsers.connect(thread_id, ticket)
+        except (HarnessUiError, OSError, TimeoutError, asyncio.IncompleteReadError):
             await socket.close(code=4403)
             return
         try:
@@ -1206,7 +1216,7 @@ def create_webui(
 
                 async def output() -> None:
                     try:
-                        while data := await reader.read(64 * 1024):
+                        while data := await connection.read(64 * 1024):
                             async with asyncio.timeout(10):
                                 await socket.send_bytes(data)
                     finally:
@@ -1219,8 +1229,7 @@ def create_webui(
                             data = message.get("bytes")
                             if not isinstance(data, bytes) or len(data) > 64 * 1024:
                                 break
-                            writer.write(data)
-                            await writer.drain()
+                            await connection.send(data)
                     finally:
                         group.cancel_scope.cancel()
 
@@ -1229,7 +1238,7 @@ def create_webui(
                         while True:
                             await asyncio.sleep(1)
                             await browsers.authorize(thread_id)
-                            if writer.is_closing():
+                            if connection.is_closing():
                                 return
                     finally:
                         group.cancel_scope.cancel()
@@ -1240,9 +1249,9 @@ def create_webui(
         except* (WebSocketDisconnect, OSError, HarnessUiError, TimeoutError):
             pass
         finally:
-            await browsers.disconnect(writer)
+            await browsers.disconnect(connection)
             try:
-                await writer.wait_closed()
+                await connection.wait_closed()
             except OSError:
                 pass
             try:

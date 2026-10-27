@@ -70,7 +70,8 @@ def browser_configuration(request, browser_executable):
 
 async def rfb(browsers, thread, binding, token="", *, native_password=None):
     access = await browsers.access(thread, BrowserAccessRequest(session_id=binding, control_token=token))
-    reader, writer = await browsers.connect(thread, access.ticket)
+    connection = await browsers.connect(thread, access.ticket)
+    reader, writer = connection.reader, connection.writer
     assert (await asyncio.wait_for(reader.readexactly(12), 10)).startswith(b"RFB ")
     writer.write(b"RFB 003.008\n")
     count = (await reader.readexactly(1))[0]
@@ -90,7 +91,7 @@ async def rfb(browsers, thread, binding, token="", *, native_password=None):
         encryptor = Cipher(TripleDES(password * 3), modes.ECB()).encryptor()
         writer.write(encryptor.update(challenge) + encryptor.finalize())
         if await reader.readexactly(4) != b"\0\0\0\0":
-            await browsers.disconnect(writer)
+            await browsers.disconnect(connection)
             raise PermissionError("Native VNC credentials were revoked")
     writer.write(b"\x01")
     header = await reader.readexactly(24)
@@ -171,7 +172,9 @@ async def test_native_viewing_control_lifecycle_and_profile(tmp_path, site, brow
         # not settle an X/Wayland input queue, so allow a bounded quiet interval.
         await asyncio.sleep(0.15)
         assert await runtime.evaluate(page, "document.querySelector('input').value") == ""
-        await browsers.disconnect(readonly)
+        await browsers.disconnect(
+            next(connection for connection in browsers.connections if connection.writer is readonly)
+        )
         control = await browsers.control("thread-a", state.session_id, human=True)
         old_password = browsers.desktop.password
         input_reader, writable, _ = await rfb(browsers, "thread-a", state.session_id, control.control_token)

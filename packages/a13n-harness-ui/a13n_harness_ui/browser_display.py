@@ -13,6 +13,7 @@ from pathlib import Path
 
 from a13n_harness_ui.browser_auth import vnc_passwords, write_private, xauthority
 from a13n_harness_ui.browser_setup import VncExecutable
+from a13n_harness_ui.browser_vnc import VncConnection
 
 
 async def terminate(process: asyncio.subprocess.Process) -> None:
@@ -209,6 +210,26 @@ class VncDesktop:
         self.display_output = ""
         self.display_modes: set[str] = set()
         self.processes: list[tuple[asyncio.subprocess.Process, str]] = []
+
+    @property
+    def wayland(self) -> bool:
+        return self.desktop.kind == "wayvnc"
+
+    @property
+    def resize_available(self) -> bool:
+        return self.desktop.xrandr is not None
+
+    @property
+    def window_manager(self) -> bool:
+        return self.desktop.window_manager is not None
+
+    @property
+    def chromium_arguments(self) -> tuple[str, ...]:
+        return ("--ozone-platform=wayland", "--disable-gpu") if self.wayland else ("--ozone-platform=x11",)
+
+    async def connect(self, *, controlling: bool) -> VncConnection:
+        path = self.readonly_socket if not controlling and self.readonly_socket else self.control_socket
+        return VncConnection(*await asyncio.open_unix_connection(path))
 
     async def rotate_passwords(self) -> None:
         if self.password_file is None:

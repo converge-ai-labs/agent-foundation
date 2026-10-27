@@ -2142,6 +2142,55 @@
         }
       }
     },
+    "/api/threads/{thread_id}/browser/clipboard": {
+      "post": {
+        "summary": "Browser Clipboard",
+        "operationId": "browser_clipboard_api_threads__thread_id__browser_clipboard_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserClipboard"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserClipboardRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/terminals": {
       "get": {
         "summary": "Terminals",
@@ -9606,6 +9655,20 @@
         ],
         "title": "BrowserAccess"
       },
+      "BrowserClipboard": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "BrowserClipboard"
+      },
       "BrowserControl": {
         "properties": {
           "state": {
@@ -9733,6 +9796,10 @@
       },
       "BrowserScan": {
         "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/BrowserPlatform",
+            "default": "linux"
+          },
           "browsers": {
             "items": {
               "$ref": "#/components/schemas/BrowserExecutable"
@@ -9831,6 +9898,9 @@
       },
       "BrowserState": {
         "properties": {
+          "platform": {
+            "$ref": "#/components/schemas/BrowserPlatform"
+          },
           "session_id": {
             "type": "string",
             "title": "Session Id",
@@ -24983,6 +25053,40 @@
           "session_id"
         ],
         "title": "BrowserAccessRequest",
+        "type": "object"
+      },
+      "BrowserClipboardRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Session Id",
+            "type": "string"
+          },
+          "control_token": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Control Token",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 65536,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "BrowserClipboardRequest",
         "type": "object"
       },
       "TerminalCreate": {

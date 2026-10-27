@@ -108,21 +108,21 @@ Thread 链接直接打开对应的 Thread 页面，Project 链接增加简洁的
 
 副本包含已保存的历史、笔记、任务、设置和 Thread 自有文件。原对话仍在执行时，复制的是最后保存的检查点，不包含尚未保存的实时输出。Project 目录、远程目标和沙箱仍指向相同的外部资源，副本不会将它们隔离。Coordinator、其 Worker、Subagent Thread 和内部 Memory/Live Thread 无法创建副本。创建结果不确定时，先检查对话列表再决定是否重试。
 
-## 使用 Linux Host 浏览器
+## 使用 Host 浏览器
 
 **Browser** 旁栏显示运行在 WebUI 服务器上的全局共享 Chromium。启用电脑共享后，打开空闲的 **Full Control** 对话并选择 **Browser**。旁栏验证已保存的浏览器和 VNC 可执行文件路径，并检查配套组件；不会安装依赖或下载浏览器。请先在 Host 上准备缺少的组件，再点击 **Check again**。
 
 ### 首次设置
 
-1. 按照[下方安装说明](#install-host-components)，在 Linux Host 上准备 Chromium 系浏览器和 VNC 服务。启动 `a13n-harness-ui webui` 时保持电脑共享开启。
-2. 打开 **Settings → General → Host browser**，等待自动扫描完成，选择 **Browser executable** 和 **VNC executable**。已安装的程序不在检测位置时，使用 **Other** 输入绝对路径。
+1. 按照[下方安装说明](#install-host-components)，准备 Linux 或 macOS Host。启动 `a13n-harness-ui webui` 时保持电脑共享开启。
+2. 打开 **Settings → General → Host browser**，等待自动扫描完成，选择 **Browser executable**；Linux 上还需选择 **VNC executable**。已安装的程序不在检测位置时，使用 **Other** 输入绝对路径。
 3. 检查 **Required** 项，点击 **Save changes**，然后使用同一配置重启 Harness UI 服务器并刷新 WebUI。仅刷新网页不会应用可执行文件的变更。
 4. 打开空闲的 **Full Control** 对话，打开 **Browser** 并点击 **Start browser**，再发送新提示让 Agent 浏览。已启用浏览器的对话在 Full Control Run 中自动获得浏览器工具，无需手动添加 Capability。
 5. 登录或修正页面时点击 **Take control**，完成后点击 **Hand back to Agent**，再让 Agent 继续。
 
 ### 探测并选择可执行文件
 
-展开 **Settings → General → Host browser** 时会自动扫描已安装的程序，扫描成功后即可从浏览器和 VNC 下拉框选择检测到的程序。最后一项 **Other** 会显示绝对路径输入框，用于指定 Chromium 浏览器或兼容的 TigerVNC `Xvnc`、x11vnc 或 WayVNC 服务。启用浏览器前必须选择并保存这两个可执行文件的路径，然后重启 Harness UI。启动时不会自动选择程序；路径未配置或失效时会阻止启动。重新展开此设置区域会刷新扫描结果，也可以点击 **Scan** 手动刷新或重试。扫描不会修改已保存的配置。检测 `Xtigervnc`、`Xvnc`、`x11vnc` 和 `wayvnc` 程序名；自定义路径无效时明确报错，不会回退到其他程序。旁栏显示解析后的实际路径。Harness 负责启动和清理自己的浏览器及显示进程，不连接已有 VNC 桌面。
+展开 **Settings → General → Host browser** 时会自动扫描已安装的程序。macOS 只需选择浏览器，其他组件行检查屏幕共享和仅由 Host 使用的 VNC 密码。以下 VNC 程序选择说明适用于 Linux：扫描成功后即可从浏览器和 VNC 下拉框选择检测到的程序。最后一项 **Other** 会显示绝对路径输入框，用于指定 Chromium 浏览器或兼容的 TigerVNC `Xvnc`、x11vnc 或 WayVNC 服务。启用浏览器前必须选择并保存这两个可执行文件的路径，然后重启 Harness UI。启动时不会自动选择程序；路径未配置或失效时会阻止启动。重新展开此设置区域会刷新扫描结果，也可以点击 **Scan** 手动刷新或重试。扫描不会修改已保存的配置。检测 `Xtigervnc`、`Xvnc`、`x11vnc` 和 `wayvnc` 程序名；自定义路径无效时明确报错，不会回退到其他程序。旁栏显示解析后的实际路径。Harness 负责启动和清理自己的浏览器及 Linux 显示进程；macOS 则连接系统内置的屏幕共享，退出后保持该服务运行。
 
 Linux 上的浏览器探测会在 WebUI 服务器的 `PATH` 中查找 `google-chrome`、`google-chrome-stable`、`chromium`、`chromium-browser`、`microsoft-edge` 和 `microsoft-edge-stable`，验证版本输出，并按解析后的路径去重。探测对象不是打开 WebUI 的客户端设备。列表为空时，先在 Host 上安装浏览器再点击 **Scan**，或通过 **Other** 指定已安装程序的绝对路径。修改服务器的 `PATH` 后，需要重启服务器才能继承变更。
 
@@ -132,7 +132,16 @@ Linux 上的浏览器探测会在 WebUI 服务器的 `PATH` 中查找 `google-ch
 
 ### 安装 Host 组件
 
-Harness 已自带 cdp-use 自动化依赖，按照供应商或发行版说明安装 Chrome、Chromium 或 Edge。Debian/Ubuntu 上可通过以下命令安装受管理的 VNC 服务：
+macOS：
+
+1. 安装 Chrome、Chromium 或 Edge，并以已登录桌面的用户运行 Harness UI。
+2. 打开 **系统设置 → 通用 → 共享 → 屏幕共享**，启用屏幕共享和 **VNC 显示程序可以使用密码控制屏幕**。使用专用 VNC 密码，包含 1–8 个 Latin-1 字符且不含 NUL；不要使用 macOS 账户密码。
+3. 在启动 Harness UI 的环境中通过 `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` 提供该密码。不要写入 YAML 或聊天，修改后重启 Harness UI。
+4. 在 **Host browser** 中选择浏览器可执行文件、保存并重启。Chrome 的常见路径为 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，无需额外的 VNC 程序。
+
+屏幕共享显示整个 Mac 桌面，包括其他应用、菜单栏和程序坞。请保持用户登录且桌面解锁。Harness UI 只连接回环地址的 5900 端口，不修改系统共享或防火墙设置；请将直接屏幕共享访问限制在可信网络。查看器保持物理显示分辨率，提供本地缩放并禁用 Viewport 预设。停止 Harness UI 会关闭其浏览器和查看连接，不会停止屏幕共享。
+
+Linux 上，Harness 已自带 cdp-use 自动化依赖，按照供应商或发行版说明安装 Chrome、Chromium 或 Edge。Debian/Ubuntu 上可通过以下命令安装受管理的 VNC 服务：
 
 ```bash
 sudo apt-get update
@@ -153,17 +162,17 @@ sudo apt-get install --no-install-recommends openbox x11-xserver-utils
 
 ### 启动与控制浏览器
 
-检测通过后，选择 **Start browser** 即可一步启用并启动浏览器。启用后 Agent 也可通过导航启动浏览器。桌面窗口在有窗口管理器时默认最大化；固定尺寸桌面会让浏览器铺满可用区域，并保留地址栏和浏览器控件。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。macOS 和 Windows Host 会检测已有的兼容浏览器，但当前仍不支持运行远程桌面；旁栏会明确说明，不会提供 Linux 安装命令。这些平台上的网页浏览器可以连接 Linux Host。
+检测通过后，选择 **Start browser** 即可一步启用并启动浏览器。启用后 Agent 也可通过导航启动浏览器。桌面窗口在有窗口管理器时默认最大化；固定尺寸桌面会让浏览器铺满可用区域，并保留地址栏和浏览器控件。普通 Files、Shell 和聊天不会启动浏览器或图形会话；安装后的运行时无需另装 Node.js。Windows Host 可以检测已有的兼容浏览器，但不能运行远程桌面。Windows、macOS 和 Linux 上的网页浏览器均可连接受支持的 Host。
 
-Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选地复用已有窗口管理器。cdp-use 提供浏览器自动化；TigerVNC 的 `Xtigervnc` 或 `Xvnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb 或 websockify 服务。也可选择 x11vnc 配合 Xvfb，或 WayVNC 配合无头 Sway。后两者目前使用固定尺寸桌面；WayVNC 要求兼容的私有 socket 和只读输入选项，旧版本可能不满足，且 Harness UI 需要以非 root 用户运行。Sway 使用专用运行目录和软件渲染，不连接用户现有桌面。不同 VNC 服务的 Unicode 剪贴板支持可能不同。可选窗口管理器管理浏览器窗口，Harness UI 负责显示认证；可用的 RandR 支持负责调整显示尺寸。界面包含完整的标签页、地址栏、菜单和设置。
+Linux Host 使用独立的虚拟显示器和 VNC 服务运行 Chromium，可选地复用已有窗口管理器。cdp-use 提供浏览器自动化；TigerVNC 的 `Xtigervnc` 或 `Xvnc` 在同一进程内提供 X 显示与原生 VNC 权限控制，无需另启 Xvfb 或 websockify 服务。也可选择 x11vnc 配合 Xvfb，或 WayVNC 配合无头 Sway。后两者目前使用固定尺寸桌面；WayVNC 要求兼容的私有 socket 和只读输入选项，旧版本可能不满足，且 Harness UI 需要以非 root 用户运行。Sway 使用专用运行目录和软件渲染，不连接用户现有桌面。不同 VNC 服务的 Unicode 剪贴板支持可能不同。可选窗口管理器管理浏览器窗口，Harness UI 负责显示认证；可用的 RandR 支持负责调整显示尺寸。界面包含完整的标签页、地址栏、菜单和设置。
 
 Host 支持桌面尺寸调整时，接管后可通过浏览器工具栏中的尺寸选择器 切换桌面、笔记本、高清桌面、平板和手机尺寸，平板和手机均提供横竖屏预设。标注的是网页 CSS 视口尺寸，不包括浏览器外框。切换会触发响应式排版，不刷新页面，也不丢失登录状态；其他查看者会看到同样的尺寸。Stop/Start 和 Reset 保留当前选择，WebUI 服务器重启后恢复默认桌面尺寸。这些预设用于响应式布局，不模拟手机操作系统、User-Agent 或触摸硬件。
 
 默认只能观看。**Take control** 会暂停 Agent 的浏览器操作、页面采集和截图，你可以直接完成登录、验证码或修正。**Hand back to Agent** 撤销人类输入，Agent 必须重新观察后才能继续操作。每次只有一个控制端，其他设备保持只读。控制设备断线后，Agent 仍保持暂停，需要已认证用户明确交还控制。
 
-本机输入法可以在你的设备上组合文字、选择候选词。查看器仅通过剪贴板桥接粘贴最终选词结果，不会改写本机剪贴板。这要求 VNC 服务端支持扩展 Unicode 剪贴板，且远端输入框允许粘贴。此路径可使用 TigerVNC 或 WayVNC；已测试的 x11vnc 服务端不支持该扩展。Host 也需要安装对应语言的字体。
+本机输入法可以在你的设备上组合文字、选择候选词。查看器仅通过剪贴板桥接粘贴最终选词结果，不会改写本机剪贴板。远端输入框需要允许粘贴。Linux 要求 VNC 服务端支持扩展 Unicode 剪贴板，可使用 TigerVNC 或 WayVNC；已测试的 x11vnc 服务端不支持该扩展。macOS 使用原生 UTF-8 剪贴板传输文本。Host 也需要安装对应语言的字体。
 
-接管期间，浏览器桌面获得焦点时会自动双向同步纯文本剪贴板。输入前先点击远端桌面。macOS 的 Command 会映射为 Linux Host 的 Ctrl，适用于全选、复制、粘贴和撤销等快捷键。使用平常的复制、粘贴快捷键即可，支持中文和 emoji，最多传输 65536 个字符。同步要求 HTTPS 或 localhost，并获得本机浏览器的剪贴板权限；权限被阻止时，面板会提示如何开启。交还控制权、断线或关闭查看面板后停止同步。远端剪贴板桥接不传输图片或文件。文件对话框访问 Host 文件，尚不支持从客户端自动传文件。浏览器使用 Host 权限与网络，不继承 Sandbox 隔离。登录信息、浏览器保存的密码和设置通过所选数据目录的 `browsers/profile` 全局共享，不导入个人浏览器配置。每个对话拥有独立窗口及其标签页。接管会暂停所有对话的浏览器工具，并聚焦当前对话窗口。Stop 只关闭当前对话的窗口和标签页，Reset 只重建当前对话窗口并恢复其位置；其他对话的窗口及 Agent 绑定保持有效。VNC 仍显示共享桌面，人工控制者仍可看到和操作其他窗口。
+接管期间，浏览器桌面获得焦点时会自动双向同步纯文本剪贴板。输入前先点击远端桌面。Mac 客户端的 Command 在 Linux Host 上映射为 Ctrl，在 Mac Host 上保持 Command，适用于全选、复制、粘贴和撤销等快捷键。使用平常的复制、粘贴快捷键即可，支持中文和 emoji，最多传输 65536 个字符。同步要求 HTTPS 或 localhost，并获得本机浏览器的剪贴板权限；权限被阻止时，面板会提示如何开启。交还控制权、断线或关闭查看面板后停止同步。远端剪贴板桥接不传输图片或文件。文件对话框访问 Host 文件，尚不支持从客户端自动传文件。浏览器使用 Host 权限与网络，不继承 Sandbox 隔离。登录信息、浏览器保存的密码和设置通过所选数据目录的 `browsers/profile` 全局共享，不导入个人浏览器配置。每个对话拥有独立窗口及其标签页。接管会暂停所有对话的浏览器工具，并聚焦当前对话窗口。Stop 只关闭当前对话的窗口和标签页，Reset 只重建当前对话窗口并恢复其位置；其他对话的窗口及 Agent 绑定保持有效。VNC 仍显示共享桌面，人工控制者仍可看到和操作其他窗口。
 
 关闭旁栏、切换对话或结束 Run 都保留浏览器。**Stop browser** 只关闭当前对话的窗口，并显示 **Start browser**。**Reset browser**（圆形箭头）只重建当前对话窗口并恢复其位置，适合窗口被拖出视野的情况。两者都保留共享 Chromium 实例、VNC 服务和 profile。查看器断线时可以点击 **Reconnect**，只重新连接画面，不重启 Chromium。服务器退出也会关闭实时进程，服务器重启后再次选择 **Start browser**。内嵌远程查看器采用 [noVNC](https://github.com/novnc/noVNC)，对应版本的未修改源码链接与许可声明位于 `/assets/LICENSE.noVNC`，其他打包依赖声明位于 `/third-party-licenses.txt`。
 

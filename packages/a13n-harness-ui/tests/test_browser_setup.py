@@ -118,13 +118,27 @@ async def test_missing_components_only_produce_manual_guidance(host, monkeypatch
     module.probe.assert_not_awaited()
 
 
-@pytest.mark.parametrize("platform", ["macos", "windows", "other"])
+@pytest.mark.parametrize("platform", ["windows", "other"])
 async def test_other_platforms_report_browser_but_never_offer_linux_runtime(host, monkeypatch, platform):
     monkeypatch.setattr(module, "host_platform", lambda: platform)
     setup = await module.inspect_browser(host)
     assert setup.browser and not setup.supported and not setup.ready
     assert setup.vnc is None and not setup.steps
-    assert "Linux Host" in setup.message
+    assert "Linux or macOS Host" in setup.message
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+@pytest.mark.parametrize("password", ["", "testpass"])
+async def test_macos_requires_native_sharing_and_host_only_password(host, monkeypatch, sharing, password):
+    monkeypatch.setattr(module, "host_platform", lambda: "macos")
+    monkeypatch.setattr(module, "screen_sharing_available", AsyncMock(return_value=sharing))
+    monkeypatch.setenv(module.PASSWORD_ENV, password)
+    setup = await module.inspect_browser(host)
+    assert setup.supported and setup.ready == (sharing and bool(password))
+    assert setup.vnc is None and not setup.steps
+    assert [item.name for item in setup.requirements] == ["Browser", "Screen Sharing", "VNC password"]
+    assert not password or password not in setup.model_dump_json()
+    module.probe.assert_awaited_once_with(host.executable, "--version")
 
 
 @pytest.mark.parametrize(("identifier", "version"), [("ubuntu", "20.04"), ("debian", "11")])

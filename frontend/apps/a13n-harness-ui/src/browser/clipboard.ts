@@ -18,6 +18,7 @@ export function bindClipboard({
   connection,
   shortcut,
   notice,
+  nativeClipboard,
 }: {
   root: HTMLElement;
   active: () => boolean;
@@ -27,6 +28,7 @@ export function bindClipboard({
   >;
   shortcut: (action: "copy" | "cut" | "paste") => void;
   notice: (message: string) => void;
+  nativeClipboard?: (text?: string) => Promise<string>;
 }) {
   let stopped = false;
   let suspended = false;
@@ -77,14 +79,15 @@ export function bindClipboard({
       return Promise.resolve({ text: undefined });
     }
   };
-  const send = (text: string) => {
-    connection.clipboardPasteFrom(bounded(text));
+  const send = async (text: string) => {
+    if (nativeClipboard) await nativeClipboard(bounded(text));
+    else connection.clipboardPasteFrom(bounded(text));
     last = text;
     notice("");
   };
   const sync = (gesture = false) => {
-    // Browsers have no clipboard-change event. Poll only the local clipboard;
-    // remote changes arrive through noVNC's clipboard event, without HTTP or sleeps.
+    // Browsers have no clipboard-change event. macOS also needs a native read:
+    // Apple's legacy RFB notifications cannot represent every Unicode change.
     if (!allowed() || queued || (readBlocked && !gesture)) return;
     const before = revision;
     const local = readLocal();
@@ -93,29 +96,35 @@ export function bindClipboard({
       if (!current() || before !== revision) return;
       readBlocked = text === undefined;
       if (text === undefined) notice(unavailable);
-      else if (text !== last) send(text);
+      else if (text !== last) await send(text);
+      else if (nativeClipboard)
+        await writeLocal(await nativeClipboard(), current);
     });
+  };
+  const writeLocal = async (text: string, current: () => boolean) => {
+    if (!current() || text === last) return;
+    try {
+      const write = navigator.clipboard.writeText(bounded(text));
+      // A submitted OS write cannot be cancelled. Screenshot copy waits for it.
+      const settled = write.catch(() => {});
+      pendingWrites.add(settled);
+      void settled.then(() => pendingWrites.delete(settled));
+      await write;
+    } catch {
+      throw new Error(unavailable);
+    }
+    if (current()) {
+      last = text;
+      notice("");
+    }
   };
   const receive = (event: Event) => {
     if (!allowed()) return;
-    const { text } = (event as CustomEvent<{ text: string }>).detail;
+    const received = (event as CustomEvent<{ text: string }>).detail.text;
     revision++;
     enqueue(async (current) => {
-      if (text === last) return;
-      try {
-        const write = navigator.clipboard.writeText(bounded(text));
-        // A submitted OS write cannot be cancelled. Screenshot copy waits for it.
-        const settled = write.catch(() => {});
-        pendingWrites.add(settled);
-        void settled.then(() => pendingWrites.delete(settled));
-        await write;
-      } catch {
-        throw new Error(unavailable);
-      }
-      if (current()) {
-        last = text;
-        notice("");
-      }
+      const text = nativeClipboard ? await nativeClipboard() : received;
+      await writeLocal(text, current);
     });
   };
   const paste = (content: Promise<{ text: string | undefined }>) =>
@@ -123,9 +132,9 @@ export function bindClipboard({
       const { text } = await content;
       if (!current()) return;
       if (text === undefined) throw new Error(unavailable);
-      // Clipboard negotiation and keys share the ordered RFB transport.
-      if (text !== last) send(text);
-      shortcut("paste");
+      // Native clipboard writes must settle before the VNC paste shortcut.
+      if (text !== last) await send(text);
+      if (current()) shortcut("paste");
     });
   const keydown = (event: KeyboardEvent) => {
     if (

@@ -288,3 +288,47 @@ it("checks unsaved VNC selections, switches requirements and preserves optional 
     parse(screen.getByTestId("source").textContent!).browser.vnc_executable,
   ).toBe("/custom/invalid");
 });
+
+it("prepares native Screen Sharing on macOS without a Linux VNC selector", async () => {
+  post.mockImplementation(async (url: string) => ({
+    data:
+      url === "/api/browser/scan"
+        ? { ...discovered, platform: "macos", vncs: [] }
+        : {
+            platform: "macos",
+            supported: true,
+            ready: false,
+            requirements: [
+              {
+                name: "Browser",
+                required: true,
+                installed: true,
+                detail: "/opt/chrome",
+              },
+              {
+                name: "Screen Sharing",
+                required: true,
+                installed: false,
+                detail: "Enable Screen Sharing in System Settings.",
+              },
+              {
+                name: "VNC password",
+                required: true,
+                installed: false,
+                detail: "Set A13N_HARNESS_UI_MACOS_VNC_PASSWORD on the Host.",
+              },
+            ],
+            steps: [],
+          },
+  }));
+  show();
+  await screen.findByText("Screen Sharing");
+  expect(
+    screen.getByRole("combobox", { name: "Browser executable" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: "VNC executable" })).toBeNull();
+  expect(
+    screen.getByText(/macOS shares the entire logged-in desktop/),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText(/password/i)).toBeNull();
+});

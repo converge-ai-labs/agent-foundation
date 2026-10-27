@@ -143,3 +143,44 @@ it("retains keys when focus stays inside the desktop and forgets normal releases
   binding.stop();
   expect(released).toHaveBeenCalledOnce();
 });
+
+it("uses native Command and Option on a Mac Host, preserving physical Control", () => {
+  binding.stop();
+  binding = bindKeyboard({
+    root,
+    active: () => active,
+    connection: { sendKey },
+    targetMac: true,
+  });
+  key("keydown", "Meta", "MetaLeft");
+  key("keydown", "Meta", "MetaRight");
+  key("keydown", "Alt", "AltRight");
+  key("keydown", "Control", "ControlLeft");
+  binding.shortcut("copy");
+  expect(nativeKey).toHaveBeenCalledOnce();
+  expect(sendKey.mock.calls).toContainEqual([0xffe9, "MetaLeft", true]);
+  expect(sendKey.mock.calls).toContainEqual([0xffe8, "AltRight", true]);
+  expect(sendKey.mock.calls).not.toContainEqual([0xffe3, "ControlLeft", true]);
+  key("keyup", "Meta", "MetaLeft");
+  expect(sendKey.mock.calls).not.toContainEqual([0xffe9, "MetaLeft", false]);
+  window.dispatchEvent(new Event("blur"));
+  expect(sendKey.mock.calls).toContainEqual([0xffe9, "MetaLeft", false]);
+  expect(sendKey.mock.calls).toContainEqual([0xffe8, "AltRight", false]);
+});
+
+it("sends Command paste from a Windows client to a Mac Host", () => {
+  binding.stop();
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  binding = bindKeyboard({
+    root,
+    active: () => active,
+    connection: { sendKey },
+    targetMac: true,
+  });
+  binding.shortcut("paste");
+  expect(sendKey.mock.calls).toEqual([
+    [0xffe9, "MetaLeft", true],
+    [118, "KeyV"],
+    [0xffe9, "MetaLeft", false],
+  ]);
+});

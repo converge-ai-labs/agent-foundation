@@ -40,6 +40,8 @@ from pydantic_ai.messages import TextContent, UserContent
 from a13n_harness_ui.browser import (
     BrowserAccess,
     BrowserAccessRequest,
+    BrowserClipboard,
+    BrowserClipboardRequest,
     BrowserCommand,
     BrowserControl,
     BrowserState,
@@ -1839,6 +1841,10 @@ class HarnessUiApp:
     async def browser_access(self, thread_id: str, request: BrowserAccessRequest) -> BrowserAccess:
         async with self._operation():
             return await self.browsers().access(thread_id, request)
+
+    async def browser_clipboard(self, thread_id: str, request: BrowserClipboardRequest) -> BrowserClipboard:
+        async with self._operation():
+            return await self.browsers().clipboard(thread_id, request)
 
     async def browser_setup(self, thread_id: str) -> BrowserSetup:
         async with self._operation():

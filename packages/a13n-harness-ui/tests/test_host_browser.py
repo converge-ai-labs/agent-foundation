@@ -10,6 +10,8 @@ from a13n_harness.capabilities.browser.actions import Scroll, TextCondition
 from a13n_harness.capabilities.browser.cdp import Chromium, Page
 from a13n_harness.capabilities.browser.scope import CdpBrowserBackend
 from a13n_harness_ui.browser import Binding, BrowserAccessRequest, BrowserViewportRequest, HostBrowsers
+from a13n_harness_ui.browser_display import VncDesktop
+from a13n_harness_ui.browser_setup import VncExecutable
 from a13n_harness_ui.errors import HarnessUiError
 
 pytestmark = pytest.mark.anyio
@@ -39,8 +41,10 @@ def browsers(tmp_path):
     runtime.evaluate = AsyncMock(return_value={})
     runtime.release_keys = AsyncMock()
     runtime.activate = AsyncMock()
-    host.desktop = AsyncMock()
-    host.desktop.desktop.xrandr = "/usr/bin/xrandr"
+    host.desktop = VncDesktop(VncExecutable(path="/usr/bin/Xvnc", source="custom", xrandr="/usr/bin/xrandr"))
+    host.desktop.settle_input = AsyncMock()
+    host.desktop.close = AsyncMock()
+    host.desktop.resize = AsyncMock()
     host.desktop.control_socket = "/private/desktop.sock"
     host.desktop.readonly_socket = "/private/readonly.sock"
     host.desktop.password = "control-password"
@@ -62,7 +66,8 @@ async def test_viewer_admission_is_readonly_and_tickets_are_single_use(browsers,
     writer = Mock(wait_closed=AsyncMock())
     connect = AsyncMock(return_value=(reader, writer))
     monkeypatch.setattr(asyncio, "open_unix_connection", connect)
-    assert await browsers.connect("thread-a", access.ticket) == (reader, writer)
+    connection = await browsers.connect("thread-a", access.ticket)
+    assert (connection.reader, connection.writer) == (reader, writer)
     connect.assert_awaited_once_with("/private/readonly.sock")
     with pytest.raises(HarnessUiError, match="expired"):
         await browsers.connect("thread-a", access.ticket)
@@ -86,7 +91,7 @@ async def test_tickets_reject_other_threads_expiry_and_authority_changes(browser
 
 async def test_control_revokes_native_connections_and_old_tokens(browsers):
     identity = browsers.state("thread-a").session_id
-    viewer = Mock()
+    viewer = Mock(wait_closed=AsyncMock())
     browsers.connections[viewer] = "thread-a"
     control = await browsers.control("thread-a", identity, human=True)
     viewer.close.assert_called()
@@ -105,7 +110,7 @@ async def test_control_revokes_native_connections_and_old_tokens(browsers):
 async def test_losing_controller_revokes_input_without_resuming_agent(browsers):
     identity = browsers.state("thread-a").session_id
     await browsers.control("thread-a", identity, human=True)
-    writer = Mock()
+    writer = Mock(wait_closed=AsyncMock())
     browsers.controller = writer
     browsers.connections[writer] = "thread-a"
     await browsers.disconnect(writer)
@@ -282,8 +287,16 @@ async def test_shutdown_waits_for_profile_flush_before_disconnecting_and_stoppin
     process.wait = AsyncMock(side_effect=lambda: event("process-exit"))
     browsers.process = process
     browsers.desktop.close.side_effect = lambda: event("display-close")
+    viewer = Mock(
+        close=Mock(side_effect=lambda: event("viewer-close")),
+        wait_closed=AsyncMock(side_effect=lambda: event("viewer-settled")),
+    )
+    browsers.connections[viewer] = "thread-a"
+    browsers.controller = viewer
     await browsers.close_runtime()
     assert events == [
+        "viewer-close",
+        "viewer-settled",
         "page-close:thread-a",
         "page-close:thread-b",
         "browser-close",
@@ -423,27 +436,30 @@ async def test_private_x11_desktop_does_not_inherit_host_wayland(monkeypatch, ki
 
 
 @pytest.mark.parametrize("no_sandbox", [False, True])
-async def test_chromium_sandbox_requires_explicit_startup_opt_in(tmp_path, monkeypatch, no_sandbox):
+@pytest.mark.parametrize("platform", ["linux", "macos"])
+async def test_chromium_sandbox_requires_explicit_startup_opt_in(tmp_path, monkeypatch, no_sandbox, platform):
     import a13n_harness_ui.browser as module
     from a13n_harness_ui.browser_setup import BrowserExecutable, BrowserSetup, VncExecutable
 
     host = HostBrowsers(root=tmp_path, available=True, authorize=AsyncMock(), no_sandbox=no_sandbox)
     desktop = AsyncMock()
     desktop.env = {}
+    desktop.chromium_arguments = ("--ozone-platform=x11",) if platform == "linux" else ()
     preparation = BrowserSetup(
-        platform="linux",
+        platform=platform,
         supported=True,
         ready=True,
         browser=BrowserExecutable(name="Chromium", path="/prepared/chromium", source="custom"),
         vnc=VncExecutable(path="/prepared/Xvnc", source="custom"),
     )
     monkeypatch.setattr(module, "require_browser", AsyncMock(return_value=preparation))
-    monkeypatch.setattr(module, "VncDesktop", Mock(return_value=desktop))
+    monkeypatch.setattr(module, "VncDesktop" if platform == "linux" else "MacDesktop", Mock(return_value=desktop))
     spawn = AsyncMock(return_value=Mock(returncode=1))
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
     with pytest.raises(RuntimeError, match="exited during startup"):
         await host.launch()
     assert ("--no-sandbox" in spawn.call_args.args) is no_sandbox
+    assert ("--ozone-platform=x11" in spawn.call_args.args) is (platform == "linux")
     desktop.close.assert_awaited_once()
     assert host.desktop is None and host.process is None
 
@@ -743,3 +759,51 @@ async def test_recreated_window_reports_creation_when_takeover_precedes_layout(b
     assert page.target in item.scope.targets
     assert browsers.human_thread == "thread-a"
     browsers.layout.assert_not_awaited()
+
+
+async def test_native_clipboard_requires_controller_and_handback_drains_transfer(browsers):
+    from a13n_harness_ui.browser import BrowserClipboardRequest
+    from a13n_harness_ui.browser_macos import MacDesktop
+
+    browsers.desktop = MacDesktop()
+    entered, finish = asyncio.Event(), asyncio.Event()
+
+    async def transfer(text):
+        entered.set()
+        await finish.wait()
+        return text
+
+    browsers.desktop.clipboard = AsyncMock(side_effect=transfer)
+    identity = browsers.state("thread-a").session_id
+    control = await browsers.control("thread-a", identity, human=True)
+    request = BrowserClipboardRequest(session_id=identity, control_token=control.control_token, text="你好 🚀")
+    with pytest.raises(HarnessUiError, match="controlling viewer"):
+        await browsers.clipboard("thread-a", request)
+    viewer = Mock(is_closing=Mock(return_value=False), wait_closed=AsyncMock())
+    browsers.controller = viewer
+    browsers.connections[viewer] = "thread-a"
+    transfer_task = asyncio.create_task(browsers.clipboard("thread-a", request))
+    await entered.wait()
+    handback = asyncio.create_task(browsers.control("thread-a", identity, human=False))
+    await asyncio.sleep(0)
+    assert not handback.done() and not browsers.released.is_set()
+    finish.set()
+    assert (await transfer_task).text == "你好 🚀"
+    await handback
+    viewer.wait_closed.assert_awaited_once()
+    assert not browsers.connections and browsers.released.is_set()
+    with pytest.raises(HarnessUiError, match="Take control"):
+        await browsers.clipboard("thread-a", request)
+    browsers.desktop.clipboard.assert_awaited_once()
+
+
+async def test_macos_layout_keeps_physical_resolution(browsers):
+    from a13n_harness_ui.browser_macos import MacDesktop
+
+    browsers.desktop = MacDesktop()
+    browsers.runtime.window = AsyncMock(return_value={"windowId": 42})
+    browsers.runtime.window_bounds = AsyncMock()
+    item = browsers.bindings["thread-a"]
+    await HostBrowsers.layout(browsers, item.page, item)
+    assert not browsers.state("thread-a").resize_available
+    assert browsers.runtime.window_bounds.await_args_list[-1].args == (42, {"windowState": "maximized"})

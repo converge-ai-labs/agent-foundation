@@ -175,7 +175,7 @@ memory:
 
 ### Host 浏览器
 
-根配置 `browser.executable` 和 `browser.vnc_executable` 绑定原生 WebUI Browser 旁栏使用的程序。两者默认都是 `null`，需要填写 Host 上的绝对路径。例如，Chromium 和 TigerVNC 安装在以下路径时：
+根配置 `browser.executable` 和 `browser.vnc_executable` 绑定原生 WebUI Browser 旁栏使用的程序。两者默认都是 `null`；配置值需要使用 Host 上的绝对路径，`vnc_executable` 仅适用于 Linux。例如，Chromium 和 TigerVNC 安装在以下路径时：
 
 ```yaml
 browser:
@@ -183,7 +183,7 @@ browser:
   vnc_executable: /usr/bin/Xtigervnc
 ```
 
-在 **Settings → General → Host browser** 中扫描并选择已安装程序，或将示例路径替换为实际安装路径。保存两个绑定后，重启 Harness UI 才会应用。路径缺失或无效会阻止启动，不会回退到其他程序。浏览器自动化需要 Linux WebUI Host、电脑共享，以及已启用浏览器的对话中的 Full Control Run。
+在 **Settings → General → Host browser** 中扫描并选择已安装程序，或将示例路径替换为实际安装路径。保存必需的绑定后，重启 Harness UI 才会应用。路径缺失或无效会阻止启动，不会回退到其他程序。浏览器自动化需要 Linux 或 macOS WebUI Host、电脑共享，以及已启用浏览器的对话中的 Full Control Run。macOS 使用系统内置屏幕共享，只需配置 `browser.executable`；专用 VNC 密码通过 Host 进程环境中的 `A13N_HARNESS_UI_MACOS_VNC_PASSWORD` 提供，不写入 YAML。启动前请完成 [macOS 准备步骤](webui.md#install-host-components)。
 
 绑定对所有 Project 生效，所有对话共用一个浏览器实例和 Profile。Profile 位于 `<data_root>/browsers/profile`，没有单独的路径设置。Host 依赖、选择和首次使用见[浏览器快速开始](webui.md#first-time-setup)；部署明确需要关闭 Chromium 沙箱时，见[沙箱启动选项](command-reference.md#webui)。
 

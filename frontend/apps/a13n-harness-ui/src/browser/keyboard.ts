@@ -1,24 +1,34 @@
 import type RFB from "@novnc/novnc";
 
-/** Adapt viewer shortcuts to the Linux desktop; noVNC owns ordinary keys. */
+/** Adapt modifiers to the Host desktop; noVNC owns ordinary keys. */
 export function bindKeyboard({
   root,
   active,
   connection,
+  targetMac = false,
 }: {
   root: HTMLElement;
   active: () => boolean;
   connection: Pick<RFB, "sendKey">;
+  targetMac?: boolean;
 }) {
   const mac = /mac|ipad|iphone|ipod/i.test(navigator.platform);
   const commands = new Set<string>();
   const controls = new Set<string>();
   const pressed = new Map<string, KeyboardEvent>();
-  const sendControl = (down: boolean) =>
-    connection.sendKey(0xffe3, "ControlLeft", down);
+  const options = new Map<string, number>();
+  const sendPrimary = (down: boolean) =>
+    connection.sendKey(
+      targetMac ? 0xffe9 : 0xffe3,
+      targetMac ? "MetaLeft" : "ControlLeft",
+      down,
+    );
   const release = () => {
-    if (commands.size) sendControl(false);
+    if (commands.size) sendPrimary(false);
     commands.clear();
+    for (const [code, symbol] of options)
+      connection.sendKey(symbol, code, false);
+    options.clear();
     // Keyup follows focus, so noVNC's canvas can miss it. Release through
     // its own listener to settle AltGr detection and clear its key state too.
     for (const event of pressed.values())
@@ -28,25 +38,37 @@ export function bindKeyboard({
   };
   const key = (event: KeyboardEvent) => {
     const down = event.type === "keydown";
-    if (mac && event.key === "Meta") {
-      // noVNC maps Command to Alt by default. Stop that mapping before its
-      // canvas listener, so Command+A/C/V and browser shortcuts use Ctrl.
+    if (targetMac && event.key === "Alt") {
+      if (down && !active()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      // Apple's RFB server uses Meta for Option and Alt for Command.
+      const symbol = event.code === "AltRight" ? 0xffe8 : 0xffe7;
+      connection.sendKey(symbol, event.code, down);
+      if (down) options.set(event.code, symbol);
+      else options.delete(event.code);
+      return;
+    }
+    if ((mac || targetMac) && event.key === "Meta") {
+      // noVNC maps a Mac client's Command to Alt. Select the Host's
+      // native shortcut modifier before its canvas listener.
       if (down && !active()) return;
       event.preventDefault();
       event.stopPropagation();
       if (down) {
-        if (!commands.size) sendControl(true);
+        if (!commands.size) sendPrimary(true);
         commands.add(event.code);
       } else {
         commands.delete(event.code);
-        if (!commands.size && !controls.has("ControlLeft")) sendControl(false);
+        if (!commands.size && (targetMac || !controls.has("ControlLeft")))
+          sendPrimary(false);
       }
     } else if (event.key === "Control") {
       if (down) controls.add(event.code);
       else controls.delete(event.code);
       // Let noVNC keep its platform-specific Ctrl/AltGr handling.
     }
-    if (!(mac && event.key === "Meta")) {
+    if (!((mac || targetMac) && event.key === "Meta")) {
       const code = event.code || event.key;
       if (down) pressed.set(code, event);
       else pressed.delete(code);
@@ -72,9 +94,10 @@ export function bindKeyboard({
     shortcut: (action: "copy" | "cut" | "paste") => {
       if (!active()) return;
       const letter = { copy: "c", cut: "x", paste: "v" }[action];
-      sendControl(true);
+      sendPrimary(true);
       connection.sendKey(letter.charCodeAt(0), `Key${letter.toUpperCase()}`);
-      if (!commands.size && !controls.has("ControlLeft")) sendControl(false);
+      if (!commands.size && (targetMac || !controls.has("ControlLeft")))
+        sendPrimary(false);
     },
     stop: () => {
       release();

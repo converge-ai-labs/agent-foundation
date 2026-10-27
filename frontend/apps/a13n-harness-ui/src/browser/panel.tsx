@@ -308,6 +308,11 @@ export function BrowserPanel({
       )}
       {ready ? (
         <>
+          {session.platform === "macos" && (
+            <p className={styles.notice}>
+              Screen Sharing shows the entire Mac desktop.
+            </p>
+          )}
           <Desktop
             key={session.session_id}
             threadId={threadId}
