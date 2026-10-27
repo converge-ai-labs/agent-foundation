@@ -50,6 +50,16 @@ The plain-text clipboard bridge runs only for the focused controller in a visibl
 
 Remote viewport changes require current human authority and desktop resizing support. Presets include desktop, laptop, tablet and phone orientations with fixed width and height. Presets request browser content dimensions, subject to native minimum window sizes; browser chrome remains visible. Desktop windows start maximized when an X11 window manager is available; fixed-size desktops place the browser at the origin and size it to fill the desktop. Other presets verify actual content dimensions after native window restoration, correct delayed decoration changes within a bounded wait, and report an error if the requested size cannot be reached. The shared desktop stays large enough for other owned windows. Unsupported adapters disable remote resizing while retaining local zoom. The preset belongs to the Thread binding and survives Stop/Reset within the WebUI process. It does not emulate mobile hardware or a mobile user agent.
 
+## Local Screenshot Annotation
+
+The viewer's capture action freezes the current rendered noVNC desktop in the client, including native browser chrome. It is available in read-only and controlling views after a frame arrives. Capture neither acquires human control nor pauses Agent operations; the captured frame stays fixed while the live browser continues. It uses no backend capture endpoint or CDP screenshot.
+
+A local editor provides crop, arrows, rectangles, ellipses, freehand strokes, multiline text, mosaic and opaque redaction. Marks can be selected, moved, resized and deleted. Undo/redo records completed edits, not pointer samples. Text uses native client input and composition. Icon controls have accessible names and tooltips; the annotation picker and keyboard commands support selection, nudging, deletion and history. Mosaic is a visual effect; sensitive content requires opaque redaction, which remains above source-sampling mosaic regions.
+
+Document geometry and export dimensions use source pixels. Preview zoom and client device pixel ratio do not change PNG resolution. Export flattens the current crop and annotations without selection handles or other editor UI. Copy writes an `image/png` item to the client clipboard; Download provides a local PNG when image clipboard access is unavailable or rejected. Failed export or copy retains the editor and edits for retry. Closing discards local edits; editor state and captured pixels are not persisted by Harness UI.
+
+Remote input and plain-text clipboard synchronization are suspended while this viewer edits. Queued transfers and permission-delayed reads are invalidated. Copy waits for every already-issued text clipboard write, including writes from replaced connections, so an older write cannot overwrite the PNG. Successful copy closes the editor and returns focus to chat without focusing the remote desktop. The user explicitly pastes into the existing composer attachment flow or another application; capture and copy do not upload, attach or send content automatically. Existing attachment limits and upload errors remain owned by the composer.
+
 ## Presentation and Limits
 
 VNC displays actual graphical-session pixels rather than reconstructing DOM or streaming CDP screenshots. Chromium starts muted; the viewer does not transport audio.

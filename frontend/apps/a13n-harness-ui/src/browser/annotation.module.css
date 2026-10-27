@@ -1,0 +1,165 @@
+.editor {
+  width: min(1200px, 100%);
+  max-width: 1200px;
+  height: min(860px, calc(100dvh - 3rem));
+  color: var(--a13n-text);
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--a13n-border);
+}
+.description {
+  margin-top: 4px;
+}
+.actions,
+.tools,
+.colors {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.actions {
+  flex-shrink: 0;
+}
+.body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px 4px;
+}
+.tools {
+  flex-wrap: wrap;
+}
+.options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-height: 44px;
+  gap: 10px;
+  padding: 4px 20px 8px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.spacer {
+  flex: 1;
+}
+.editor select {
+  min-width: 0;
+  max-width: 180px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--a13n-input-border);
+  border-radius: 6px;
+  background: var(--a13n-elevated);
+  color: var(--a13n-text);
+  font-size: 12px;
+}
+.swatch {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgb(128 128 128 / 50%);
+  border-radius: 50%;
+  margin: 3px;
+}
+.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: 2px;
+}
+.swatch:focus-visible {
+  outline: 2px solid var(--a13n-accent);
+  outline-offset: 3px;
+}
+.viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  padding: 24px;
+  background: var(--a13n-surface);
+}
+.paper {
+  position: relative;
+  flex-shrink: 0;
+  margin: auto;
+  background: white;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 14%);
+  touch-action: none;
+}
+.textEditor {
+  position: absolute;
+  z-index: 1;
+  max-width: min(320px, 65vw);
+}
+.textEditor textarea {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  min-height: 80px;
+  padding: 4px;
+  border: 1px solid #3b82f6;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 92%);
+  font-family: sans-serif;
+  line-height: 1.2;
+  resize: both;
+}
+.textActions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.footer span {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .editor {
+    height: calc(100dvh - 2rem);
+  }
+  .header {
+    padding: 12px;
+  }
+  .description {
+    display: none;
+  }
+  .toolbar {
+    padding-inline: 8px;
+    align-items: flex-start;
+  }
+  .tools {
+    gap: 0;
+  }
+  .options {
+    padding-inline: 12px;
+    gap: 6px;
+  }
+  .viewport {
+    padding: 12px;
+  }
+  .footer {
+    padding-inline: 12px;
+  }
+  .footer select {
+    max-width: 120px;
+  }
+}

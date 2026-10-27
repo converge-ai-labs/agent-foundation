@@ -4,6 +4,13 @@ const LIMIT = 65536;
 const unavailable =
   "Clipboard sync unavailable. Allow clipboard access in your browser's site settings.";
 
+// The local clipboard outlives individual connections and mounted viewers.
+// Keep every submitted write until settlement, including stopped bridges.
+const pendingWrites = new Set<Promise<void>>();
+export async function waitForClipboardWrites(): Promise<void> {
+  await Promise.all(pendingWrites);
+}
+
 /** Bridge the focused controller's OS clipboard to noVNC's native clipboard API. */
 export function bindClipboard({
   root,
@@ -22,6 +29,8 @@ export function bindClipboard({
   notice: (message: string) => void;
 }) {
   let stopped = false;
+  let suspended = false;
+  let generation = 0;
   let last: string | undefined;
   let revision = 0;
   let readBlocked = false;
@@ -29,6 +38,7 @@ export function bindClipboard({
   let serial = Promise.resolve();
   const allowed = () =>
     !stopped &&
+    !suspended &&
     active() &&
     document.visibilityState === "visible" &&
     document.hasFocus() &&
@@ -40,18 +50,20 @@ export function bindClipboard({
       );
     return text;
   };
-  const enqueue = (operation: () => Promise<void>) => {
+  const enqueue = (operation: (current: () => boolean) => Promise<void>) => {
+    const epoch = generation;
+    const current = () => epoch === generation && allowed();
     queued++;
     serial = serial
       .then(async () => {
-        if (allowed()) await operation();
+        if (current()) await operation(current);
       })
       .catch((error: unknown) => {
-        if (allowed())
+        if (current())
           notice(error instanceof Error ? error.message : unavailable);
       })
       .finally(() => {
-        queued--;
+        if (epoch === generation) queued--;
       });
   };
   const readLocal = () => {
@@ -76,9 +88,9 @@ export function bindClipboard({
     if (!allowed() || queued || (readBlocked && !gesture)) return;
     const before = revision;
     const local = readLocal();
-    enqueue(async () => {
+    enqueue(async (current) => {
       const { text } = await local;
-      if (!allowed() || before !== revision) return;
+      if (!current() || before !== revision) return;
       readBlocked = text === undefined;
       if (text === undefined) notice(unavailable);
       else if (text !== last) send(text);
@@ -88,23 +100,28 @@ export function bindClipboard({
     if (!allowed()) return;
     const { text } = (event as CustomEvent<{ text: string }>).detail;
     revision++;
-    enqueue(async () => {
+    enqueue(async (current) => {
       if (text === last) return;
       try {
-        await navigator.clipboard.writeText(bounded(text));
+        const write = navigator.clipboard.writeText(bounded(text));
+        // A submitted OS write cannot be cancelled. Screenshot copy waits for it.
+        const settled = write.catch(() => {});
+        pendingWrites.add(settled);
+        void settled.then(() => pendingWrites.delete(settled));
+        await write;
       } catch {
         throw new Error(unavailable);
       }
-      if (allowed()) {
+      if (current()) {
         last = text;
         notice("");
       }
     });
   };
   const paste = (content: Promise<{ text: string | undefined }>) =>
-    enqueue(async () => {
+    enqueue(async (current) => {
       const { text } = await content;
-      if (!allowed()) return;
+      if (!current()) return;
       if (text === undefined) throw new Error(unavailable);
       // Clipboard negotiation and keys share the ordered RFB transport.
       if (text !== last) send(text);
@@ -153,11 +170,23 @@ export function bindClipboard({
   const interval = setInterval(sync, 500);
   return {
     sync: focus,
+    suspend: () => {
+      suspended = true;
+      generation++;
+      // Permission reads may stay pending indefinitely; they must not block copy.
+      serial = Promise.resolve();
+      queued = 0;
+      return waitForClipboardWrites();
+    },
+    resume: () => {
+      suspended = false;
+    },
     // IME commits reuse ordered clipboard transfer without writing the local
     // clipboard. The next sync restores its contents on the Host.
     pasteText: (text: string) => paste(Promise.resolve({ text })),
     stop: () => {
       stopped = true;
+      generation++;
       last = undefined;
       clearInterval(interval);
       connection.removeEventListener("clipboard", receive);

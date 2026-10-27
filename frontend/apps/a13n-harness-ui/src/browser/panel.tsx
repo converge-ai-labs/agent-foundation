@@ -308,7 +308,6 @@ export function BrowserPanel({
       )}
       {ready ? (
         <>
-          <div className={styles.toolbar}>{actions}</div>
           <Desktop
             key={session.session_id}
             threadId={threadId}
@@ -316,6 +315,7 @@ export function BrowserPanel({
             controlToken={human ? controlToken : ""}
             busy={busy}
             scale={scale}
+            actions={actions}
           />
         </>
       ) : !preparation.data?.ready ? (

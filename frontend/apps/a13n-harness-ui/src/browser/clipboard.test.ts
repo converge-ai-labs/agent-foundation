@@ -199,3 +199,103 @@ it("does not truncate or partially transfer an oversized clipboard", async () =>
   );
   expect(connection.clipboardPasteFrom).not.toHaveBeenCalled();
 });
+
+it("suspends queued transfers and waits only for an already-issued OS write", async () => {
+  let finish!: () => void;
+  writeText.mockReturnValue(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  receive("in flight");
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+  receive("queued");
+  const settled = vi.fn();
+  const ready = bridge.suspend().then(settled);
+  bridge.sync();
+  receive("while editing");
+  await Promise.resolve();
+  expect(settled).not.toHaveBeenCalled();
+  finish();
+  await ready;
+  bridge.resume();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(writeText).toHaveBeenCalledOnce();
+  expect(readText).not.toHaveBeenCalled();
+});
+it.each(["sync", "paste"])(
+  "invalidates delayed %s across a suspend/resume and allows fresh reads",
+  async (operation) => {
+    let finish!: (text: string) => void;
+    readText.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    if (operation === "sync") bridge.sync();
+    else
+      root.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "v",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+    await Promise.resolve();
+    await bridge.suspend();
+    bridge.resume();
+    bridge.sync();
+    await vi.waitFor(() =>
+      expect(connection.clipboardPasteFrom).toHaveBeenCalledWith(local),
+    );
+    finish("stale permission result");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(connection.clipboardPasteFrom).toHaveBeenCalledOnce();
+    expect(shortcut).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["reconnect", "cancel and reopen"])(
+  "waits for every issued write across %s before copying a screenshot",
+  async (transition) => {
+    const finishes: (() => void)[] = [];
+    writeText.mockImplementation(
+      (text: string) =>
+        new Promise<void>((resolve) => {
+          finishes.push(() => {
+            local = text;
+            resolve();
+          });
+        }),
+    );
+    receive("first write");
+    await vi.waitFor(() => expect(finishes).toHaveLength(1));
+    if (transition === "reconnect") {
+      bridge.stop();
+      bridge = bindClipboard({
+        root,
+        active: () => controller,
+        connection,
+        shortcut,
+        notice,
+      });
+    } else {
+      void bridge.suspend();
+      bridge.resume();
+    }
+    receive("second write");
+    await vi.waitFor(() => expect(finishes).toHaveLength(2));
+    const copied = vi.fn(() => {
+      local = "PNG";
+    });
+    const ready = bridge.suspend().then(copied);
+    finishes[1]();
+    // Drain the settled write and all barrier continuations, without a timer.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    const copiedEarly = copied.mock.calls.length;
+    finishes[0]();
+    await ready;
+    expect(copiedEarly).toBe(0);
+    expect(local).toBe("PNG");
+  },
+);

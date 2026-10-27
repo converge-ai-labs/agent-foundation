@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
@@ -11,6 +11,22 @@ import {
 import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
 import { Desktop, type BrowserScale } from "./desktop";
+import { ReturnToChat } from "../native/capture";
+
+vi.mock("./annotation-editor", () => ({
+  default: ({
+    onClose,
+    onCopied,
+  }: {
+    onClose: () => void;
+    onCopied: () => void;
+  }) => (
+    <div role="dialog" aria-label="Screenshot editor">
+      <button onClick={onClose}>Cancel screenshot</button>
+      <button onClick={onCopied}>Copy screenshot</button>
+    </div>
+  ),
+}));
 
 const { connections } = vi.hoisted(() => ({
   connections: [] as (EventTarget & {
@@ -28,6 +44,11 @@ vi.mock("@novnc/novnc", () => ({
     focus = vi.fn();
     clipboardPasteFrom = vi.fn();
     sendKey = vi.fn();
+    getImageData = () => ({
+      width: 800,
+      height: 600,
+      data: new Uint8ClampedArray([0, 0, 0, 255]),
+    });
     canvas: HTMLCanvasElement;
     constructor(root: HTMLElement) {
       super();
@@ -40,13 +61,20 @@ vi.mock("@novnc/novnc", () => ({
     }
   },
 }));
+beforeEach(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    putImageData: vi.fn(),
+    getImageData: () => ({ data: [0, 0, 0, 255] }),
+  } as unknown as CanvasRenderingContext2D);
+});
 afterEach(() => {
   cleanup();
   connections.length = 0;
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
-async function show() {
+async function show(returnToChat = vi.fn()) {
   const post = vi.fn(
     async (_url: string, options: { body: { control_token: string } }) => ({
       data: {
@@ -60,17 +88,19 @@ async function show() {
   const client = { POST: post };
   const renderView = (token = "", scale: BrowserScale = "fit") => (
     <TransportContext value={{ client } as unknown as Transport}>
-      <Desktop
-        threadId="thread-a"
-        session={{
-          session_id: "binding-a",
-          status: "ready",
-          control: token ? "human" : "agent",
-        }}
-        controlToken={token}
-        busy={false}
-        scale={scale}
-      />
+      <ReturnToChat value={returnToChat}>
+        <Desktop
+          threadId="thread-a"
+          session={{
+            session_id: "binding-a",
+            status: "ready",
+            control: token ? "human" : "agent",
+          }}
+          controlToken={token}
+          busy={false}
+          scale={scale}
+        />
+      </ReturnToChat>
     </TransportContext>
   );
   const rendered = render(renderView());
@@ -173,4 +203,50 @@ it("focuses the local IME input on takeover and removes it on handback", async (
   ).toBeNull();
   fireEvent.compositionEnd(input, { data: "不要发送" });
   expect(connections[1].clipboardPasteFrom).toHaveBeenCalledTimes(count);
+});
+
+it("captures a read-only framebuffer without acquiring control or reconnecting", async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    putImageData: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
+  const view = await show();
+  const capture = screen.getByRole("button", {
+    name: "Capture and annotate screenshot",
+  });
+  fireEvent.click(capture);
+  await screen.findByRole("dialog", { name: "Screenshot editor" });
+  expect(view.post).toHaveBeenCalledOnce();
+  expect(connections).toHaveLength(1);
+  expect(connections[0].viewOnly).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Cancel screenshot" }));
+  await waitFor(() => expect(document.activeElement).toBe(capture));
+  expect(connections[0].viewOnly).toBe(true);
+});
+it("suspends controller input while editing and returns to chat after copy", async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    putImageData: vi.fn(),
+    getImageData: () => ({ data: [0, 0, 0, 255] }),
+  } as unknown as CanvasRenderingContext2D);
+  const returnToChat = vi.fn();
+  const view = await show(returnToChat);
+  view.update("controller-a");
+  const input = await screen.findByRole("textbox", {
+    name: "Remote browser keyboard input",
+  });
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture and annotate screenshot" }),
+  );
+  await screen.findByRole("dialog", { name: "Screenshot editor" });
+  expect(connections[1].viewOnly).toBe(true);
+  connections[1].sendKey.mockClear();
+  fireEvent.compositionEnd(input, { data: "local annotation" });
+  fireEvent.keyDown(input, { key: "a", code: "KeyA" });
+  await Promise.resolve();
+  expect(connections[1].sendKey).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Copy screenshot" }));
+  await waitFor(() => expect(returnToChat).toHaveBeenCalledOnce());
+  expect(connections[1].viewOnly).toBe(false);
+  expect(connections).toHaveLength(2);
+  expect(connections[1].disconnect).not.toHaveBeenCalled();
 });

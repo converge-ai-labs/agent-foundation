@@ -1,16 +1,76 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "a13n-ui";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  Button,
+  Dialog,
+  DialogPopup,
+  DialogTitle,
+  DialogDescription,
+} from "a13n-ui";
 import {
   ArrowClockwise,
+  Camera,
   HandArrowDown,
   HandArrowUp,
 } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
-import { bindClipboard } from "./clipboard";
+import { bindClipboard, waitForClipboardWrites } from "./clipboard";
 import { bindKeyboard } from "./keyboard";
 import { bindTextInput } from "./text-input";
 import styles from "./panel.module.css";
+import { ReturnToChat } from "../native/capture";
+
+const AnnotationEditor = lazy(() =>
+  import("./annotation-editor").catch(() => ({
+    default: ({ onClose }: { onClose: () => void }) => (
+      <CaptureStatus onClose={onClose} failed />
+    ),
+  })),
+);
+
+function CaptureStatus({
+  onClose,
+  failed = false,
+}: {
+  onClose: () => void;
+  failed?: boolean;
+}) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogPopup finalFocus={false} showCloseButton={false}>
+        <div style={{ padding: 24 }}>
+          <DialogTitle>
+            {failed
+              ? "Screenshot editor unavailable"
+              : "Loading screenshot editor…"}
+          </DialogTitle>
+          <DialogDescription>
+            {failed
+              ? "Reload the page and capture again."
+              : "Preparing local editing tools."}
+          </DialogDescription>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </DialogPopup>
+    </Dialog>
+  );
+}
 
 export type BrowserScale = "fit" | "50" | "75" | "100" | "125" | "150" | "200";
 
@@ -20,14 +80,33 @@ export function Desktop({
   controlToken,
   busy,
   scale = "fit",
+  actions,
 }: {
   threadId: string;
   session: Schema<"BrowserState">;
   controlToken: string;
   busy: boolean;
   scale?: BrowserScale;
+  actions?: ReactNode;
 }) {
   const { client } = useTransport();
+  const returnToChat = useContext(ReturnToChat);
+  const captureButton = useRef<HTMLButtonElement>(null);
+  const editing = useRef(false);
+  const [capture, setCapture] = useState<{
+    source: HTMLCanvasElement;
+    ready: Promise<void>;
+  } | null>(null);
+  const closeCapture = (copied = false) => {
+    editing.current = false;
+    setCapture(null);
+    clipboard.current?.resume();
+    // Never focus the remote desktop after writing an image to the local clipboard.
+    requestAnimationFrame(() => {
+      if (copied) returnToChat();
+      else captureButton.current?.focus();
+    });
+  };
   const host = useRef<HTMLDivElement>(null);
   const snapshot = useRef<HTMLCanvasElement>(null);
   const rfb = useRef<import("@novnc/novnc").default | null>(null);
@@ -55,13 +134,16 @@ export function Desktop({
     [],
   );
   const zoom = scale === "fit" ? 1 : Number(scale) / 100;
-  const interactive = canControl && !busy;
+  const interactive = canControl && !busy && !capture;
   inputAllowed.current = interactive && !!controlToken;
   useEffect(() => {
-    if (interactive) {
+    if (canControl && !busy && !editing.current) {
       textInput.current?.focus();
       clipboard.current?.sync();
     }
+  }, [canControl, busy]);
+  useEffect(() => {
+    if (rfb.current) rfb.current.viewOnly = !interactive;
   }, [interactive]);
   useEffect(() => {
     let disposed = false;
@@ -130,7 +212,7 @@ export function Desktop({
           credentials: { password: access.password },
         });
         rfb.current = connection;
-        connection.viewOnly = !access.control;
+        connection.viewOnly = !access.control || editing.current;
         connection.scaleViewport = true;
         connection.addEventListener("connect", () => {
           if (!disposed) {
@@ -182,6 +264,7 @@ export function Desktop({
                 notice: setClipboardError,
               });
               clipboard.current = bridge;
+              if (editing.current) void bridge.suspend();
             }
           }
         });
@@ -242,8 +325,62 @@ export function Desktop({
     controlToken,
     reconnect,
   ]);
+  const captureFrame = () => {
+    try {
+      const pixels = rfb.current?.getImageData();
+      if (
+        !connected ||
+        !pixels?.width ||
+        !pixels.height ||
+        pixels.data[3] !== 255
+      )
+        throw new Error("Wait for a browser frame before capturing.");
+      const source = document.createElement("canvas");
+      source.width = pixels.width;
+      source.height = pixels.height;
+      const context = source.getContext("2d");
+      if (!context)
+        throw new Error("Screenshot capture is unavailable in this browser.");
+      context.putImageData(pixels, 0, 0);
+      editing.current = true;
+      inputAllowed.current = false;
+      if (rfb.current) rfb.current.viewOnly = true;
+      const ready = clipboard.current?.suspend() ?? waitForClipboardWrites();
+      setClipboardError("");
+      setCapture({ source, ready });
+    } catch (error) {
+      setClipboardError(
+        error instanceof Error
+          ? error.message
+          : "Could not capture the browser.",
+      );
+    }
+  };
   return (
     <>
+      <div className={styles.toolbar}>
+        <Button
+          ref={captureButton}
+          size="icon"
+          variant="ghost"
+          aria-label="Capture and annotate screenshot"
+          disabled={!connected || busy || !!capture}
+          onClick={captureFrame}
+        >
+          <Camera />
+        </Button>
+        {actions}
+      </div>
+      {capture && (
+        <Suspense fallback={<CaptureStatus onClose={() => closeCapture()} />}>
+          <AnnotationEditor
+            source={capture.source}
+            clipboardReady={capture.ready}
+            onClose={() => closeCapture()}
+            onCopied={() => closeCapture(true)}
+          />
+        </Suspense>
+      )}
       <div
         className={`${styles.desktop} ${scale === "fit" ? styles.desktopFit : ""}`}
         aria-label="Remote browser desktop"
