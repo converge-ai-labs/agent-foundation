@@ -268,6 +268,20 @@ class ExecutableAgent[OutputT]:
     definition: AgentDefinition[OutputT]
     subagents: SubagentCollection
 
+    async def compact(
+        self,
+        *,
+        previous_state: HarnessState,
+        instruction: str | None = None,
+        environment: EnvironmentSource | EnvironmentMount | None = None,
+        environments: Mapping[str, EnvironmentSource | EnvironmentMount] | None = None,
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
+        resume_usage: bool = False,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunResult[str]: ...
+
     async def run(
         self,
         input: RunInputValue | None = None,

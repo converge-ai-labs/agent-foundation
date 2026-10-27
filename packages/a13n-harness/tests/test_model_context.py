@@ -59,6 +59,8 @@ pytestmark = pytest.mark.anyio
 
 
 class _ProjectionDeps:
+    _compacting = False
+
     def __init__(
         self,
         deferred_resume: Any = None,

@@ -116,6 +116,27 @@ The summary request uses the same Agent and complete history. The summary replac
 
 Select `HandoffCapability()` when you also want the `summarize` tool for explicit handoffs. Its default reminder starts at 65% of the context window. Both Capabilities are opt-in; threshold configuration alone enables neither.
 
+### Host-triggered compaction
+
+Call `compact()` between Runs to summarize the selected checkpoint without continuing the task. No `CompactionCapability` or threshold is required:
+
+```python
+compacted = await executable.compact(
+    previous_state=latest_state,
+    instruction=None,  # Or custom guidance, such as "Preserve the migration plan."
+    bindings=bindings,
+)
+summary = compacted.output_or_raise()
+# Commit compacted.state through the Host's fenced checkpoint path.
+continued = await executable.run("Continue", previous_state=compacted.state, bindings=bindings)
+```
+
+The request receives full history without trimming. It keeps the same system prompts, tool schemas, output configuration and model settings, and appends built-in no-tools constraints plus your `instruction`. `None` selects the default compaction guidance; a string replaces that guidance. Keep the executable and bindings stable to preserve the provider's cache prefix. Cache availability remains provider-controlled.
+
+The existing output mode must permit free text; native and prompted JSON modes fail instead of switching schemas. A tool call or empty summary fails without replacing history. The operation uses ordinary Run admission, usage, plugins, Environment cleanup and state export, and needs only the summary request's budget. It restores retained discovery and context listeners before returning. If restoration fails after replacement, the failed result retains a pending restoration marker for the next ordinary Run.
+
+The checkpoint must have a settled boundary: pending tools, retained executions and unrestored handoffs must finish through ordinary Run recovery first. The Host must prevent concurrent Thread progress and decide when to save the returned State. `compact()` leaves the supplied checkpoint unchanged. Idle timers and automatic scheduling belong to the Host.
+
 ### Background compaction
 
 A Host can run summary generation independently of the foreground Run:

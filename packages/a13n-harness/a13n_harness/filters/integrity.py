@@ -44,6 +44,8 @@ class MessageIntegrityFilterCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         filtered, changed = _filter_tool_result_pairs(request_context.messages)
         if not changed:
             return request_context

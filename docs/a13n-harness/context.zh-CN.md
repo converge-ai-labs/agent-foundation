@@ -116,6 +116,27 @@ flowchart TD
 
 需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
+### Host 主动压缩
+
+在两个 Run 之间调用 `compact()`，总结选定的检查点而不继续业务任务。无需配置 `CompactionCapability` 或达到阈值：
+
+```python
+compacted = await executable.compact(
+    previous_state=latest_state,
+    instruction=None,  # Or custom guidance, such as "Preserve the migration plan."
+    bindings=bindings,
+)
+summary = compacted.output_or_raise()
+# Commit compacted.state through the Host's fenced checkpoint path.
+continued = await executable.run("Continue", previous_state=compacted.state, bindings=bindings)
+```
+
+请求接收完整历史，不进行裁剪。它保持相同的系统提示、工具 schema、输出配置和模型设置，在末尾追加内置的禁止调用工具等约束，再拼接 `instruction`。`None` 使用默认压缩指导；传入字符串则替换默认指导。保持 executable 和 bindings 稳定，以保留提供方的缓存前缀。缓存是否可用仍由提供方决定。
+
+现有输出模式必须允许自由文本；原生 JSON 和提示式 JSON 模式直接失败，不切换 schema。模型返回工具调用或空摘要时失败，不替换历史。操作沿用普通 Run 的准入、用量、插件、Environment 清理和状态导出，只需为摘要请求保留预算。返回前恢复保留的工具发现并通知上下文监听器。若替换后恢复失败，失败结果保留待恢复标记，供下次普通 Run 继续恢复。
+
+检查点必须处于已完成的边界：待处理工具、保留的执行和未恢复的 handoff 应先通过普通 Run 的恢复流程完成。Host 负责阻止 Thread 并发推进，并决定何时保存返回的 State。`compact()` 不修改传入的检查点。空闲计时器和自动调度由 Host 实现。
+
 ### 后台压缩
 
 Host 可以独立于前台 Run 执行总结生成：

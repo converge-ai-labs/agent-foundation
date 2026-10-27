@@ -688,6 +688,8 @@ class HandoffCapability(AbstractModelContextCapability):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        if ctx.deps._compacting:
+            return request_context
         prepared = await self._restore_history(ctx, request_context)
         if prepared is not request_context:
             from a13n_harness.tools.discovery import finish_discovery_replacement
@@ -894,7 +896,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         state = await ctx.deps.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
-        if self._depth > 0 or (state is not None and state.restoration_pending):
+        if ctx.deps._compacting or self._depth > 0 or (state is not None and state.restoration_pending):
             return request_context
         if self.background:
             prepared = await self._background_history(ctx, request_context)
