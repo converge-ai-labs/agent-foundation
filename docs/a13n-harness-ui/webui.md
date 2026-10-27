@@ -112,11 +112,25 @@ The fork copies saved history, notes, tasks, settings and Thread-owned files. An
 
 The **Browser** drawer shows the shared Chromium browser running on the WebUI server. With computer sharing enabled, open an idle **Full Control** conversation and select **Browser**. The drawer validates the saved browser and VNC executable paths and checks their supporting components. It never installs dependencies or downloads a browser. Prepare missing components on the Host, then choose **Check again**.
 
-Opening **Settings → General → Host browser** automatically scans installed programs. After scanning finishes, choose a detected executable from the browser and VNC dropdowns. The final **Other** option reveals an absolute-path field for a Chromium-based browser or compatible TigerVNC `Xvnc`, x11vnc or WayVNC server. Select and save both executable paths before enabling the browser. There is no automatic runtime selection; missing or invalid bindings block startup. Reopening this section refreshes the results. Use **Scan** to refresh or retry manually. Scanning preserves saved settings. Detection recognizes `Xtigervnc`, `Xvnc`, `x11vnc` and `wayvnc`; an invalid custom path is reported without falling back. The panel shows the resolved executable paths. Harness launches and cleans up its own browser/display processes; it does not connect to an existing VNC desktop.
+### First-time setup
+
+1. Prepare a Linux Host with a Chromium-based browser and VNC server using the [installation instructions below](#install-host-components). Keep computer sharing enabled when starting `a13n-harness-ui webui`.
+2. Open **Settings → General → Host browser**. Wait for the automatic scan, then select **Browser executable** and **VNC executable**. Use **Other** for an installed program outside the detected locations.
+3. Review the **Required** checks, then choose **Save changes**. Restart the Harness UI server with the same configuration and reload WebUI; reloading the page alone does not apply executable changes.
+4. Open an idle **Full Control** conversation, open **Browser**, and choose **Start browser**. Send a new prompt asking the Agent to browse. Browser tools are added automatically for the enabled conversation's Full Control Run; no manual Capability entry is needed.
+5. To log in or correct a page, choose **Take control**, then **Hand back to Agent** before asking it to continue.
+
+### Detect and select executables
+
+Opening **Settings → General → Host browser** automatically scans installed programs. After scanning finishes, choose a detected executable from the browser and VNC dropdowns. The final **Other** option reveals an absolute-path field for a Chromium-based browser or compatible TigerVNC `Xvnc`, x11vnc or WayVNC server. Select and save both executable paths, then restart Harness UI before enabling the browser. There is no automatic runtime selection; missing or invalid bindings block startup. Reopening this section refreshes the results. Use **Scan** to refresh or retry manually. Scanning preserves saved settings. Detection recognizes `Xtigervnc`, `Xvnc`, `x11vnc` and `wayvnc`; an invalid custom path is reported without falling back. The panel shows the resolved executable paths. Harness launches and cleans up its own browser/display processes; it does not connect to an existing VNC desktop.
+
+On Linux, browser detection looks on the WebUI server's `PATH` for `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`, `microsoft-edge` and `microsoft-edge-stable`, verifies their version output, and deduplicates resolved paths. It does not scan browsers installed on the device viewing WebUI. If the list is empty, install a browser on the Host and choose **Scan**, or use **Other** with its absolute executable path. If you changed the server's `PATH`, restart the server so it inherits the change.
 
 The **Browser components** panel combines executable selection and dependency checks. Choose browser and VNC paths directly in their component rows. Checks use your current selections before saving, including custom paths. Each row shows its purpose, detection result and **Required** or **Optional** status. TigerVNC includes its display server; optional xrandr enables Viewport switching and an X11 window manager adds window controls. Selecting x11vnc checks for required Xvfb; selecting WayVNC checks for required Sway and a non-root Host account. These two adapters use fixed-size desktops, so installing xrandr does not enable Viewport switching for them. The panel only lists components to prepare on the Host; bundled libraries and TigerVNC’s integrated display server are hidden. **Scan** refreshes discovery and dependency checks without saving or launching the browser.
 
 The shared browser profile is stored at `<data_root>/browsers/profile` (`~/.a13n-harness-ui/data/browsers/profile` with the default data root). Its location cannot be configured separately. Every conversation and Project shares this profile and one browser instance, with separate windows and Agent tabs. Existing profile directories are not moved or merged.
+
+### Install Host components
 
 cdp-use is included with Harness. Install Chrome, Chromium or Edge using its vendor's or your distribution's instructions. On Debian/Ubuntu, the managed VNC server can be installed with:
 
@@ -125,9 +139,19 @@ sudo apt-get update
 sudo apt-get install --no-install-recommends tigervnc-standalone-server
 ```
 
+Optional window controls and TigerVNC viewport resizing on Debian/Ubuntu:
+
+```bash
+sudo apt-get install --no-install-recommends openbox x11-xserver-utils
+```
+
+Install a Chromium-based browser separately using its vendor's or distribution's instructions; these commands install only desktop components. Return to **Host browser** and choose **Scan** after installation. **Manual installation commands** in the UI can be copied and run on the Host; the UI does not execute them.
+
 For other distributions, install a compatible VNC server with their package manager. Password and X11 authentication files are generated by Harness UI; separate `vncpasswd` and `xauth` programs are unnecessary. An X11 window manager such as Openbox, Fluxbox, IceWM or twm is recommended for window dragging and native close controls. Without one, basic browsing and the panel’s Stop/Reset controls still work, but native window controls may be unavailable. Install `x11-xserver-utils` on Debian/Ubuntu for optional desktop resizing; without a usable RandR utility, basic browsing remains available on a fixed desktop and the size selector explains why it is disabled. Select an installed Chromium-based browser by its executable path; cdp-use does not download a browser. In Docker, install dependencies in the container or image. Readiness checks do not guarantee startup: missing shared libraries or display permissions can still produce explicit errors.
 
 Run Harness UI as a non-root user with Chromium's sandbox enabled. The sandbox stays enabled by default; preparation and startup reject root without an explicit opt-out and explain how to proceed. There is no automatic fallback. If your deployment explicitly requires disabling it, start with `a13n-harness-ui webui --browser-no-sandbox` or set `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`. This removes Chromium's sandbox protection. `--browser-sandbox` overrides the environment setting and restores the default.
+
+### Start and control the browser
 
 Once ready, choose **Start browser**. The drawer enables and starts the browser in one step. The Agent can also start an enabled browser by navigating. Desktop windows open maximized when a window manager is available; fixed-size desktops fill the available desktop. The browser's address bar and controls remain visible. Ordinary Files, Shell and chat use do not start Chromium or a graphical session. Installed use requires no separately installed Node.js. macOS and Windows Hosts detect existing compatible browsers but cannot run the remote desktop yet; the drawer explains this instead of offering Linux installation commands. Web browsers on these platforms can view a Linux Host.
 

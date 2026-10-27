@@ -65,7 +65,9 @@ export function BrowserSetup({
             {loading ? "Checking…" : "Check again"}
           </Button>
         </div>
-        <a href="/settings#browser">Browser settings</a>
+        <a href="/settings#browser">
+          Scan and select programs in Browser settings
+        </a>
       </div>
     </div>
   );

@@ -135,6 +135,19 @@ export function BrowserFields({
             Viewport size switching is unavailable.
           </p>
         )}
+        <p className="text-xs text-muted-foreground">
+          Missing a program? Install a Chromium-based browser and VNC server on
+          this Host (inside the container for Docker), then Scan again. Use
+          Other for an installed program outside the detected locations.{" "}
+          <a
+            href="https://a13n.dev/docs/a13n-harness-ui/webui#first-time-setup"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4"
+          >
+            Browser setup guide
+          </a>
+        </p>
         <BrowserInstallInstructions steps={setup?.steps ?? []} />
       </div>
     </SettingsSection>

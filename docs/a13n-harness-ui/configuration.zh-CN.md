@@ -23,6 +23,8 @@ description: 根配置文件、加载优先级，以及修改何时生效。
 | 外部工具                                         | `mcp/*.yaml` 或 `mcp/*.json`        | [MCP 字段](mcp.md#mcp-field-reference)                                   |
 | Harness Plugin、Environment 配置和 Run Extension | `extensions/*.yaml`                 | [扩展字段](extensions-and-mcp.md#harness-plugin-and-run-extension-files) |
 
+Host 浏览器的可执行文件绑定位于根配置 `browser`，见 [Host 浏览器](#host-browser)。
+
 资源引用使用 **`id`**，不用文件名或显示名称。例如，`defaults.agent: agent-coder` 选择 YAML 中 `id: agent-coder` 的 Agent。
 
 ## 定位并验证文件
@@ -168,6 +170,20 @@ memory:
 ### 媒体理解
 
 `media_understanding.image`、`.video` 和 `.audio` 选择已保存 Model ID，供活动 Model 无法原生接受媒体时作为文件 `view` 回退。每项默认 `null`，保留对应的 Harness 环境变量回退。在 **Settings → Models** 或 `/model defaults` 中配置。优先级、模型输入能力要求和 Run 捕获行为见[媒体理解默认值](models-and-authentication.md#media-understanding-defaults)。
+
+### Host 浏览器
+
+根配置 `browser.executable` 和 `browser.vnc_executable` 绑定原生 WebUI Browser 旁栏使用的程序。两者默认都是 `null`，需要填写 Host 上的绝对路径。例如，Chromium 和 TigerVNC 安装在以下路径时：
+
+```yaml
+browser:
+  executable: /usr/bin/chromium
+  vnc_executable: /usr/bin/Xtigervnc
+```
+
+在 **Settings → General → Host browser** 中扫描并选择已安装程序，或将示例路径替换为实际安装路径。保存两个绑定后，重启 Harness UI 才会应用。路径缺失或无效会阻止启动，不会回退到其他程序。浏览器自动化需要 Linux WebUI Host、电脑共享，以及已启用浏览器的对话中的 Full Control Run。
+
+绑定对所有 Project 生效，所有对话共用一个浏览器实例和 Profile。Profile 位于 `<data_root>/browsers/profile`，没有单独的路径设置。Host 依赖、选择和首次使用见[浏览器快速开始](webui.md#first-time-setup)；部署明确需要关闭 Chromium 沙箱时，见[沙箱启动选项](command-reference.md#webui)。
 
 ### WebUI 允许的 origin
 

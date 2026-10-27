@@ -37,13 +37,18 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 
 运行一个前台 WebUI 服务器，使用内置浏览器资源。
 
-| 参数                                                            | 类型 / 选项   | 解析器默认值  | 含义                                                                                   |
-| --------------------------------------------------------------- | ------------- | ------------- | -------------------------------------------------------------------------------------- |
-| `--host`                                                        | 文本          | `"127.0.0.1"` | 监听 IPv4 或 IPv6 地址。                                                               |
-| `--port`                                                        | 整数 1..65535 | `8765`        | 监听 TCP 端口。                                                                        |
-| `--apikey, --api-key`                                           | 文本          | 未设置        | 监听器 API 密钥；覆盖 `A13N_HARNESS_UI_API_KEY`（在 shell 参数中可见）。               |
-| `--dangerous-skip-permissions, --dangerously-bypass-permission` | 布尔值        | `false`       | 只关闭 Web 身份验证，不改变 Agent 权限。                                               |
-| `--share-computer` / `--no-share-computer`                      | 布尔值        | `true`        | 以服务器 OS 账户共享原生 Host Files、Git Changes 和 Terminal 面板，与 Agent 权限独立。 |
+| 参数                                                            | 类型 / 选项   | 解析器默认值        | 含义                                                                                   |
+| --------------------------------------------------------------- | ------------- | ------------------- | -------------------------------------------------------------------------------------- |
+| `--host`                                                        | 文本          | `"127.0.0.1"`       | 监听 IPv4 或 IPv6 地址。                                                               |
+| `--port`                                                        | 整数 1..65535 | `8765`              | 监听 TCP 端口。                                                                        |
+| `--apikey, --api-key`                                           | 文本          | 未设置              | 监听器 API 密钥；覆盖 `A13N_HARNESS_UI_API_KEY`（在 shell 参数中可见）。               |
+| `--dangerous-skip-permissions, --dangerously-bypass-permission` | 布尔值        | `false`             | 只关闭 Web 身份验证，不改变 Agent 权限。                                               |
+| `--share-computer` / `--no-share-computer`                      | 布尔值        | `true`              | 以服务器 OS 账户共享原生 Host Files、Git Changes 和 Terminal 面板，与 Agent 权限独立。 |
+| `--browser-no-sandbox` / `--browser-sandbox`                    | 布尔值        | `false`（沙箱启用） | 明确关闭或启用 Chromium 沙箱，覆盖 `A13N_HARNESS_UI_BROWSER_NO_SANDBOX`。              |
+
+`--no-share-computer` 也会关闭 Host Browser 旁栏、程序探测及浏览器自动化。
+
+以非 root 用户运行浏览器 Host，并保持默认沙箱启用。单独隔离的 Host 确实需要关闭时，使用 `--browser-no-sandbox` 或设置 `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`，这会移除 Chromium 沙箱保护。即使设置了该环境变量，`--browser-sandbox` 也会恢复沙箱。未明确关闭沙箱时，root 会被拒绝。这些是服务器启动选项，[可执行文件绑定](configuration.md#host-browser)单独配置。
 
 ### `envd update`
 
